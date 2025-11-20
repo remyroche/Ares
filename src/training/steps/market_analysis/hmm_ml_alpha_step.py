@@ -304,8 +304,26 @@ class HMMMLAlphaStep(BaseStep):
                     if regime_thresholds and "extraction_error" not in regime_thresholds:
                         # Save thresholds as artifact
                         try:
+                            # Convert regime_thresholds to DataFrame format for HDF5 compatibility
+                            # Extract the regime_thresholds dict and convert to DataFrame
+                            if "regime_thresholds" in regime_thresholds and isinstance(regime_thresholds["regime_thresholds"], dict):
+                                regime_df = pd.DataFrame.from_dict(regime_thresholds["regime_thresholds"], orient='index')
+                                regime_df.index.name = 'regime'
+                                regime_thresholds_for_save = {
+                                    "regime_thresholds_df": regime_df,
+                                    "metadata": {
+                                        "extraction_timestamp": regime_thresholds.get("extraction_timestamp"),
+                                        "symbol": regime_thresholds.get("symbol"),
+                                        "regime_col_name": regime_thresholds.get("regime_col_name"),
+                                        "total_samples": regime_thresholds.get("total_samples"),
+                                        "n_regimes": regime_thresholds.get("n_regimes"),
+                                    }
+                                }
+                            else:
+                                regime_thresholds_for_save = regime_thresholds
+
                             regime_thresholds_path = self._save_artifact(
-                                data=regime_thresholds,
+                                data=regime_thresholds_for_save,
                                 artifact_name="hmm_alpha_regime_thresholds_1h",
                                 artifact_type="model",
                                 data_category="config",
@@ -827,7 +845,7 @@ class HMMMLAlphaStep(BaseStep):
         """Compute forward-return-based alpha labels on the aligned dataset.
 
         For regression:
-            - Compute forward returns for horizons 1–4h.
+            - Compute forward returns for horizons 1–3h.
             - Use the average of these horizons as a smoother macro alpha target.
 
         For classification:
@@ -850,8 +868,8 @@ class HMMMLAlphaStep(BaseStep):
             fwd_ret_1h = np.log(close.shift(-1) / close)
         df["alpha_forward_return_1h"] = fwd_ret_1h
 
-        # Multi-horizon forward returns (1–4h)
-        max_h = 4
+        # Multi-horizon forward returns (1–3h)
+        max_h = 3
         fwd_cols: Dict[int, str] = {1: "alpha_forward_return_1h"}
         for h in range(2, max_h + 1):
             if return_type == "simple":
@@ -884,7 +902,7 @@ class HMMMLAlphaStep(BaseStep):
                     )
 
         if target_type == "regression":
-            # Average of 1–4h forward returns as macro target
+            # Average of 1–3h forward returns as macro target
             horizon_keys = [h for h in fwd_cols.keys() if 1 <= h <= max_h]
             fwd_stack = [df[fwd_cols[h]] for h in horizon_keys]
             multi_target = pd.concat(fwd_stack, axis=1).mean(axis=1)
@@ -1196,6 +1214,7 @@ class HMMMLAlphaStep(BaseStep):
 
                 if regression_calibration_enabled and IsotonicRegression is not None:
                     try:
+                        tprint_info(f"🔧 Starting regression calibration (Isotonic Regression) on {len(y_val)} validation samples...")
                         calibrator = IsotonicRegression(out_of_bounds="clip")
                         calibrator.fit(val_pred, y_val.to_numpy(dtype=float, copy=False))
 
@@ -1208,6 +1227,13 @@ class HMMMLAlphaStep(BaseStep):
                             if rmse_cal is not None:
                                 training_metrics["val_rmse_calibrated"] = rmse_cal
 
+                            # Log calibration improvement
+                            if rmse_uncal is not None and rmse_cal is not None:
+                                improvement = ((rmse_uncal - rmse_cal) / rmse_uncal) * 100 if rmse_uncal > 0 else 0.0
+                                tprint_info(f"  ✓ Regression calibration complete: RMSE {rmse_uncal:.6f} → {rmse_cal:.6f} (improvement: {improvement:.2f}%)")
+                            else:
+                                tprint_info(f"  ✓ Regression calibration complete")
+
                         training_metrics["regression_calibration_method"] = "isotonic_regression"
                         training_metrics["regression_calibration_used"] = True
                     except Exception as calib_err:
@@ -1215,10 +1241,13 @@ class HMMMLAlphaStep(BaseStep):
                         training_metrics["regression_calibration_used"] = False
                         training_metrics["regression_calibration_failed"] = True
                         training_metrics["regression_calibration_error"] = str(calib_err)
+                        tprint_warning(f"⚠️ Regression calibration failed: {calib_err}")
                 elif not regression_calibration_enabled:
                     training_metrics["regression_calibration_used"] = False
+                    tprint_info("ℹ️  Regression calibration disabled (alpha_enable_regression_calibration=False)")
                 elif IsotonicRegression is None:
                     training_metrics["regression_calibration_used"] = False
+                    tprint_warning("⚠️ Regression calibration unavailable (IsotonicRegression not imported)")
 
             if calibrator is not None:
                 full_raw_pred = model.predict(X_scaled_full)

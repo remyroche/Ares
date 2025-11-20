@@ -1301,7 +1301,8 @@ class ModelDiagnostician:
                 "reliability_diagram": self.generate_reliability_diagram(),
                 "brier_score_decomposition": self.brier_score_decomposition(),
                 "rolling_calibration_error": self.rolling_calibration_error(),
-                "threshold_weighted_ece": self.threshold_weighted_ece()
+                "threshold_weighted_ece": self.threshold_weighted_ece(),
+                "conditional_calibration": self.conditional_calibration_analysis()
             }
 
         def analyze_calibration_curve(self) -> Dict:
@@ -1968,6 +1969,254 @@ class ModelDiagnostician:
                 }
             except Exception as e:
                 return {"error": f"Threshold-weighted ECE calculation failed: {str(e)}"}
+
+        def conditional_calibration_analysis(self) -> Dict:
+            """
+            7.9 Conditional Calibration Analysis - Calibration quality conditional on market features.
+
+            Analyzes calibration errors across different market regimes (volatility, trend, etc.)
+            and applies Lasso regression to create conditional calibration that adapts to market conditions.
+
+            This is critical for trading models where calibration quality varies significantly
+            across different market regimes (trending vs ranging, high vs low volatility).
+            """
+            try:
+                # Step A: Prepare features for conditional analysis
+                # We'll use proxy features based on prediction variance and trends
+
+                n_samples = len(self.p.y_pred)
+
+                # Create synthetic market regime features from available data
+                # These are proxies when real market data isn't available
+
+                # 1. Volatility proxy: rolling std of predictions
+                window = min(50, n_samples // 10)
+                if window < 5:
+                    return {"error": "Insufficient samples for conditional calibration (need at least 50)"}
+
+                pred_series = pd.Series(self.p.y_pred)
+                test_series = pd.Series(self.p.y_test)
+
+                # Volatility: rolling std of actuals
+                volatility = test_series.rolling(window=window, min_periods=5).std().fillna(method='bfill').fillna(method='ffill')
+
+                # Trend: rolling mean of actuals
+                trend = test_series.rolling(window=window, min_periods=5).mean().fillna(method='bfill').fillna(method='ffill')
+
+                # Ensemble disagreement: rolling std of predictions (proxy for model uncertainty)
+                ensemble_std = pred_series.rolling(window=window, min_periods=5).std().fillna(method='bfill').fillna(method='ffill')
+
+                # Relative volume proxy: rolling range of actuals
+                rvol = (test_series.rolling(window=window, min_periods=5).max() -
+                       test_series.rolling(window=window, min_periods=5).min()).fillna(method='bfill').fillna(method='ffill')
+
+                # Create DataFrame with features
+                features_df = pd.DataFrame({
+                    'volatility': volatility.values,
+                    'trend': trend.values,
+                    'ensemble_std': ensemble_std.values,
+                    'rvol': rvol.values
+                })
+
+                # Winsorize and normalize features (RobustScaler simulation)
+                from sklearn.preprocessing import RobustScaler
+
+                winsorize_threshold = 0.95
+                for col in features_df.columns:
+                    # Winsorization
+                    upper = features_df[col].quantile(winsorize_threshold)
+                    lower = features_df[col].quantile(1 - winsorize_threshold)
+                    features_df[col] = features_df[col].clip(lower, upper)
+
+                # Robust scaling
+                scaler = RobustScaler()
+                features_scaled = scaler.fit_transform(features_df)
+                features_df[features_df.columns] = features_scaled
+
+                # Step B: Decile Binning Analysis
+                decile_analysis = {}
+
+                for feat_name in features_df.columns:
+                    feat_values = features_df[feat_name].values
+
+                    # Create 10 decile bins
+                    try:
+                        bins = np.percentile(feat_values, np.linspace(0, 100, 11))
+                        bins[-1] += 1e-8  # Ensure last value is included
+                        bin_indices = np.digitize(feat_values, bins) - 1
+                        bin_indices = np.clip(bin_indices, 0, 9)
+
+                        # Calculate Brier score for each decile
+                        decile_brier = []
+                        decile_counts = []
+                        decile_means = []
+
+                        for i in range(10):
+                            mask = bin_indices == i
+                            if mask.sum() > 0:
+                                decile_pred = self.p.y_pred[mask]
+                                decile_true = self.p.y_test[mask]
+
+                                brier = float(np.mean((decile_pred - decile_true) ** 2))
+                                decile_brier.append(brier)
+                                decile_counts.append(int(mask.sum()))
+                                decile_means.append(float(np.mean(feat_values[mask])))
+                            else:
+                                decile_brier.append(None)
+                                decile_counts.append(0)
+                                decile_means.append(None)
+
+                        # Find worst deciles (top 3)
+                        valid_briers = [(i, b) for i, b in enumerate(decile_brier) if b is not None]
+                        valid_briers.sort(key=lambda x: x[1], reverse=True)
+                        worst_deciles = valid_briers[:3]
+
+                        decile_analysis[feat_name] = {
+                            'decile_brier_scores': decile_brier,
+                            'decile_counts': decile_counts,
+                            'decile_means': decile_means,
+                            'worst_deciles': [{'decile': d, 'brier': b} for d, b in worst_deciles],
+                            'max_brier': max([b for b in decile_brier if b is not None], default=0),
+                            'min_brier': min([b for b in decile_brier if b is not None], default=0),
+                            'brier_range': max([b for b in decile_brier if b is not None], default=0) -
+                                          min([b for b in decile_brier if b is not None], default=0)
+                        }
+                    except Exception as e:
+                        decile_analysis[feat_name] = {'error': str(e)}
+
+                # Identify top 3 offender features
+                feature_offenders = []
+                for feat_name, analysis in decile_analysis.items():
+                    if 'error' not in analysis:
+                        feature_offenders.append((feat_name, analysis['brier_range']))
+
+                feature_offenders.sort(key=lambda x: x[1], reverse=True)
+                top_offenders = [f for f, _ in feature_offenders[:3]]
+
+                # Step C: Lasso Regression Conditional Fix
+                from sklearn.linear_model import LogisticRegressionCV
+                from scipy.special import logit
+
+                # Prepare predictions as probabilities [0, 1]
+                epsilon = 1e-5
+
+                # Normalize predictions to [0, 1] if needed
+                y_pred_min, y_pred_max = self.p.y_pred.min(), self.p.y_pred.max()
+                if y_pred_max - y_pred_min > 0:
+                    y_prob = (self.p.y_pred - y_pred_min) / (y_pred_max - y_pred_min)
+                else:
+                    y_prob = np.ones_like(self.p.y_pred) * 0.5
+
+                # Clip to avoid log(0) or log(1)
+                y_prob_safe = np.clip(y_prob, epsilon, 1 - epsilon)
+
+                # Normalize targets similarly
+                y_test_min, y_test_max = self.p.y_test.min(), self.p.y_test.max()
+                if y_test_max - y_test_min > 0:
+                    y_true = (self.p.y_test - y_test_min) / (y_test_max - y_test_min)
+                else:
+                    y_true = np.ones_like(self.p.y_test) * 0.5
+
+                y_true_safe = np.clip(y_true, epsilon, 1 - epsilon)
+
+                # Build feature matrix X
+                X_cond = pd.DataFrame()
+
+                # Base signal (logit-transformed)
+                X_cond['L'] = logit(y_prob_safe)
+
+                # Add top offender features and their interactions
+                for feat_name in top_offenders:
+                    if feat_name in features_df.columns:
+                        # Pure feature (veto switch)
+                        X_cond[feat_name] = features_df[feat_name].values
+
+                        # Interaction (sizer switch)
+                        X_cond[f'L_x_{feat_name}'] = X_cond['L'] * features_df[feat_name].values
+
+                # Fit Lasso with cross-validation
+                try:
+                    calibrator = LogisticRegressionCV(
+                        Cs=10,
+                        cv=min(5, n_samples // 50),  # Adaptive CV folds
+                        penalty='l1',
+                        solver='liblinear',
+                        scoring='neg_brier_score_loss',
+                        max_iter=1000,
+                        random_state=42
+                    )
+
+                    calibrator.fit(X_cond, (y_true_safe > 0.5).astype(int))
+
+                    # Extract coefficients
+                    coeffs = pd.Series(calibrator.coef_[0], index=X_cond.columns)
+                    survivors = coeffs[abs(coeffs) > 1e-4].sort_values(ascending=False)
+
+                    # Calculate calibrated probabilities
+                    y_calibrated_prob = calibrator.predict_proba(X_cond)[:, 1]
+
+                    # Calculate metrics before and after
+                    raw_brier = float(np.mean((y_prob_safe - y_true_safe) ** 2))
+                    cal_brier = float(np.mean((y_calibrated_prob - y_true_safe) ** 2))
+
+                    # Resolution (sharpness)
+                    base_rate = float(np.mean(y_true_safe))
+                    raw_resolution = float(np.mean((y_prob_safe - base_rate) ** 2))
+                    cal_resolution = float(np.mean((y_calibrated_prob - base_rate) ** 2))
+
+                    # ROC-AUC
+                    from sklearn.metrics import roc_auc_score
+                    raw_auc = float(roc_auc_score((y_true_safe > 0.5).astype(int), y_prob_safe))
+                    cal_auc = float(roc_auc_score((y_true_safe > 0.5).astype(int), y_calibrated_prob))
+
+                    # Check for degradation
+                    resolution_change = (cal_resolution - raw_resolution) / raw_resolution if raw_resolution > 0 else 0
+                    auc_change = (cal_auc - raw_auc) / raw_auc if raw_auc > 0 else 0
+                    brier_change = (cal_brier - raw_brier) / raw_brier if raw_brier > 0 else 0
+
+                    warnings = []
+                    if cal_resolution < (raw_resolution * 0.8):
+                        warnings.append("WARNING: Significant Resolution Loss! Calibrator is over-smoothing.")
+                    if cal_auc < raw_auc:
+                        warnings.append("WARNING: AUC decreased. Calibration may be degrading ranking ability.")
+                    if cal_brier > raw_brier:
+                        warnings.append("WARNING: Brier score increased. Calibration not improving.")
+
+                    lasso_results = {
+                        'best_C': float(calibrator.C_[0]),
+                        'coefficients': {k: float(v) for k, v in survivors.items()},
+                        'n_survivors': len(survivors),
+                        'metrics': {
+                            'raw_brier': raw_brier,
+                            'calibrated_brier': cal_brier,
+                            'brier_improvement': brier_change,
+                            'raw_resolution': raw_resolution,
+                            'calibrated_resolution': cal_resolution,
+                            'resolution_change': resolution_change,
+                            'raw_auc': raw_auc,
+                            'calibrated_auc': cal_auc,
+                            'auc_change': auc_change
+                        },
+                        'warnings': warnings,
+                        'status': 'success' if not warnings else 'warning'
+                    }
+                except Exception as lasso_error:
+                    lasso_results = {'error': f"Lasso fitting failed: {str(lasso_error)}"}
+
+                return {
+                    'top_offender_features': top_offenders,
+                    'decile_analysis': decile_analysis,
+                    'lasso_conditional_fix': lasso_results,
+                    'interpretation': (
+                        f"Conditional calibration analysis identified {len(top_offenders)} key features "
+                        f"affecting calibration quality: {', '.join(top_offenders)}. "
+                        f"{'Lasso regression successfully applied conditional fixes.' if 'error' not in lasso_results else 'Lasso fitting encountered errors.'} "
+                        f"{'No significant degradation detected.' if not lasso_results.get('warnings', []) else 'Warnings detected - review carefully.'}"
+                    )
+                }
+
+            except Exception as e:
+                return {"error": f"Conditional calibration analysis failed: {str(e)}"}
 
 class DiagnosisReporter:
     """

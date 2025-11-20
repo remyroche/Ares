@@ -726,6 +726,72 @@ class AnalystEnsembleTrainingStep(BaseStep):
                             f.write(f"- **RMSCE**: {curve.get('rmsce', 0):.4f}\n")
                             f.write(f"- **Quality**: {curve.get('calibration_quality', 'N/A')}\n\n")
 
+                    # Conditional Calibration Analysis
+                    if 'conditional_calibration' in calibration:
+                        cond_cal = calibration['conditional_calibration']
+                        if 'error' not in cond_cal:
+                            f.write("### Conditional Calibration (Market Regime Adaptation)\n\n")
+                            f.write(f"- **Interpretation**: {cond_cal.get('interpretation', 'N/A')}\n\n")
+
+                            # Top offender features
+                            top_offenders = cond_cal.get('top_offender_features', [])
+                            if top_offenders:
+                                f.write("#### Top Offender Features (Affecting Calibration)\n\n")
+                                for i, feat in enumerate(top_offenders, 1):
+                                    f.write(f"{i}. **{feat}**\n")
+                                f.write("\n")
+
+                            # Decile Analysis
+                            if 'decile_analysis' in cond_cal:
+                                f.write("#### Decile Binning Analysis\n\n")
+                                f.write("| Feature | Min Brier | Max Brier | Brier Range | Worst Deciles |\n")
+                                f.write("|---------|-----------|-----------|-------------|---------------|\n")
+
+                                for feat_name, analysis in cond_cal['decile_analysis'].items():
+                                    if 'error' not in analysis:
+                                        min_b = analysis.get('min_brier', 0)
+                                        max_b = analysis.get('max_brier', 0)
+                                        range_b = analysis.get('brier_range', 0)
+                                        worst = analysis.get('worst_deciles', [])
+                                        worst_str = ', '.join([f"D{w['decile']+1}" for w in worst[:2]])
+
+                                        f.write(f"| {feat_name} | {min_b:.4f} | {max_b:.4f} | {range_b:.4f} | {worst_str} |\n")
+                                f.write("\n")
+
+                            # Lasso Conditional Fix
+                            if 'lasso_conditional_fix' in cond_cal:
+                                lasso = cond_cal['lasso_conditional_fix']
+                                if 'error' not in lasso:
+                                    f.write("#### Lasso Conditional Fix (Before vs After)\n\n")
+
+                                    metrics_l = lasso.get('metrics', {})
+                                    f.write("**Performance Comparison:**\n\n")
+                                    f.write(f"- **Brier Score**: {metrics_l.get('raw_brier', 0):.4f} → {metrics_l.get('calibrated_brier', 0):.4f} "
+                                           f"({metrics_l.get('brier_improvement', 0)*100:.1f}% change)\n")
+                                    f.write(f"- **Resolution (Sharpness)**: {metrics_l.get('raw_resolution', 0):.4f} → {metrics_l.get('calibrated_resolution', 0):.4f} "
+                                           f"({metrics_l.get('resolution_change', 0)*100:.1f}% change)\n")
+                                    f.write(f"- **ROC-AUC**: {metrics_l.get('raw_auc', 0):.4f} → {metrics_l.get('calibrated_auc', 0):.4f} "
+                                           f"({metrics_l.get('auc_change', 0)*100:.1f}% change)\n")
+                                    f.write(f"- **Regularization Strength (C)**: {lasso.get('best_C', 0):.4f}\n")
+                                    f.write(f"- **Status**: {lasso.get('status', 'unknown').upper()}\n\n")
+
+                                    # Coefficients (survivors)
+                                    coeffs = lasso.get('coefficients', {})
+                                    if coeffs:
+                                        f.write("**Lasso Coefficients (Survivors):**\n\n")
+                                        for feat, coeff in sorted(coeffs.items(), key=lambda x: abs(x[1]), reverse=True):
+                                            direction = "reduces" if coeff < 0 else "increases"
+                                            f.write(f"- **{feat}**: {coeff:.4f} ({direction} confidence)\n")
+                                        f.write("\n")
+
+                                    # Warnings
+                                    warnings_l = lasso.get('warnings', [])
+                                    if warnings_l:
+                                        f.write("**⚠️ Warnings:**\n\n")
+                                        for warning in warnings_l:
+                                            f.write(f"- {warning}\n")
+                                        f.write("\n")
+
                 f.write("\n## Detailed Metrics\n\n")
                 f.write("```json\n")
                 f.write(json.dumps(metrics, indent=2, default=str))

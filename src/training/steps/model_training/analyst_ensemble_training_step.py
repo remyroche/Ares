@@ -103,19 +103,47 @@ class AnalystEnsembleTrainingStep(BaseStep):
 
             # 2a. Try HMM Alpha regime features first (preferred)
             try:
+                # Try loading from ML Risk Regime step first (newer), then fall back to HMM Alpha step
+                alpha_training = None
+                source_type = None
+
+                # Try ML Risk Regime first
                 self.set_context(
                     symbol=symbol,
                     exchange=exchange,
                     timeframe=regime_timeframe,
                     direction=direction,
-                    model='regime_alpha'
+                    model='regime_risk'
                 )
 
                 alpha_training = self._get_artifact(
-                    'hmm_alpha_training_data_1h',
+                    'ml_risk_training_data_1h',
                     artifact_type='data',
                     data_category='features'
                 )
+
+                if alpha_training is not None and not alpha_training.empty:
+                    source_type = 'ml_risk'
+                    tprint(f"✅ Retrieved ml_risk_training_data_1h for regimes: {alpha_training.shape}", "SUCCESS")
+                else:
+                    # Fall back to HMM Alpha
+                    self.set_context(
+                        symbol=symbol,
+                        exchange=exchange,
+                        timeframe=regime_timeframe,
+                        direction=direction,
+                        model='regime_alpha'
+                    )
+
+                    alpha_training = self._get_artifact(
+                        'hmm_alpha_training_data_1h',
+                        artifact_type='data',
+                        data_category='features'
+                    )
+
+                    if alpha_training is not None and not alpha_training.empty:
+                        source_type = 'hmm_alpha'
+                        tprint(f"✅ Retrieved hmm_alpha_training_data_1h for regimes: {alpha_training.shape}", "SUCCESS")
 
                 if alpha_training is not None:
                     if not isinstance(alpha_training, pd.DataFrame):
@@ -127,16 +155,17 @@ class AnalystEnsembleTrainingStep(BaseStep):
                         alpha_training['timestamp'] = pd.to_datetime(alpha_training['timestamp'])
                         alpha_training.set_index('timestamp', inplace=True)
                     elif not isinstance(alpha_training.index, pd.DatetimeIndex):
-                        tprint("⚠️ HMM Alpha training data has no DatetimeIndex; skipping alpha regime features", "WARNING")
+                        tprint(f"⚠️ {source_type} training data has no DatetimeIndex; skipping regime features", "WARNING")
                         alpha_training = None
 
                 if alpha_training is not None and not alpha_training.empty:
-                    tprint(f"✅ Retrieved hmm_alpha_training_data_1h for regimes: {alpha_training.shape}", "SUCCESS")
 
-                    # Select safe alpha regime feature columns
+                    # Select regime feature columns (supports both alpha and risk regimes)
                     alpha_cols = [
                         c for c in alpha_training.columns
-                        if c.startswith('alpha_regime_bucket_') or c.startswith('alpha_pred_')
+                        if (c.startswith('alpha_regime_bucket_') or c.startswith('alpha_pred_') or
+                            c.startswith('risk_regime') or c.startswith('risk_pred_') or
+                            c.startswith('risk_score'))
                     ]
 
                     if alpha_cols:

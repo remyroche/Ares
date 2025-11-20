@@ -69,7 +69,7 @@ except Exception:  # pragma: no cover - defensive guard for optional dependency
 
 # Import the volatility-aware multi-horizon labeler
 try:
-    from src.training.steps.pre_training.profit_labeling.volatility_aware_labeler import (
+    from src.training.steps.labeling.profit_labeling.volatility_aware_labeler import (
         VolatilityAwareMultiHorizonLabeler,
         VolatilityAwareConfig,
         LabelingResult,
@@ -151,7 +151,7 @@ from src.training.steps.pre_training.column_naming import (
 
 # Import the label balancing system
 try:
-    from src.training.steps.pre_training.profit_labeling.label_balancing import (
+    from src.training.steps.labeling.profit_labeling.label_balancing import (
         ComprehensiveBalancingSystem,
         BalancingConfig,
         WeightingConfig,
@@ -2578,7 +2578,7 @@ class MultiHorizonProfitLabeler:
         """Generate comprehensive labeling report with regime-aware analysis."""
         try:
             # Import the profit labeling report generator
-            from src.training.steps.pre_training.profit_labeling.profit_labeling_report_generator import (
+            from src.training.steps.labeling.profit_labeling.profit_labeling_report_generator import (
                 ProfitLabelingReportGenerator, ProfitLabelingReport
             )
 

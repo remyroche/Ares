@@ -41,7 +41,7 @@ The label smoothing pipeline implements a three-stage process to create robust, 
 ### Basic Usage
 
 ```python
-from src.training.steps.pre_training.profit_labeling.volatility_aware_labeler import (
+from src.training.steps.labeling.profit_labeling.volatility_aware_labeler import (
     VolatilityAwareConfig, VolatilityAwareMultiHorizonLabeler
 )
 
@@ -64,7 +64,7 @@ smoothing_metadata = result.metadata['label_smoothing']
 ### Advanced Configuration
 
 ```python
-from src.training.steps.pre_training.profit_labeling.label_smoother import LabelSmoothingConfig
+from src.training.steps.labeling.profit_labeling.label_smoother import LabelSmoothingConfig
 
 config.label_smoothing = LabelSmoothingConfig(
     enabled=True,
@@ -100,7 +100,7 @@ config.label_smoothing = LabelSmoothingConfig(
 To determine which components help and tune hyperparameters:
 
 ```python
-from src.training.steps.pre_training.profit_labeling.ablation_test_label_smoothing import (
+from src.training.steps.labeling.profit_labeling.ablation_test_label_smoothing import (
     run_full_ablation_suite
 )
 
@@ -121,7 +121,7 @@ results = run_full_ablation_suite(
 
 Command-line interface:
 ```bash
-python src/training/steps/pre_training/profit_labeling/ablation_test_label_smoothing.py \
+python src/training/steps/labeling/profit_labeling/ablation_test_label_smoothing.py \
     --data_path data/market_data.parquet \
     --output_dir ablation_results \
     --future_returns_col forward_return_5d
@@ -287,9 +287,9 @@ Smoothing effects are automatically reported in the comprehensive outcome report
 
 ## Files Modified
 
-- `src/training/steps/pre_training/profit_labeling/label_smoother.py` - **NEW:** Core smoothing implementation
-- `src/training/steps/pre_training/profit_labeling/volatility_aware_labeler.py` - **MODIFIED:** Integration into labeler
-- `src/training/steps/pre_training/profit_labeling/ablation_test_label_smoothing.py` - **NEW:** Ablation testing utilities
+- `src/training/steps/labeling/profit_labeling/label_smoother.py` - **NEW:** Core smoothing implementation
+- `src/training/steps/labeling/profit_labeling/volatility_aware_labeler.py` - **MODIFIED:** Integration into labeler
+- `src/training/steps/labeling/profit_labeling/ablation_test_label_smoothing.py` - **NEW:** Ablation testing utilities
 
 ## Changelog
 

@@ -96,6 +96,8 @@ R_MULTIPLE_POS_THRESHOLD = 0.7
 R_MULTIPLE_NEG_THRESHOLD = -0.25
 ECON_MIN_RETURN_MULTIPLE = 2.0
 TARGET_POWER = 1.5
+# Hard floor for profit targets to ensure viability after transaction costs
+PROFIT_TARGET_FLOOR_BPS = 50  # 0.5% = 50 basis points (must exceed slippage + fees)
 
 
 def purge_training_idxs(
@@ -1710,11 +1712,21 @@ def build_meta_features_for_model(
                             event_start_times[event_mask_sw]
                             + durations_bars[event_mask_sw] * bar_delta
                         )
+                    # Extract volatility series for inverse volatility weighting
+                    volatility_series = None
+                    if 'volatility_1h' in market_data.columns:
+                        volatility_series = market_data['volatility_1h']
+
+                    # Time decay halflife (default: 180 days = ~6 months)
+                    time_decay_halflife = float(meta_feature_cfg.get('time_decay_halflife', 180.0))
+
                     sample_weights = compute_sample_weights_with_uniqueness(
                         event_start_times=event_start_times,
                         event_end_times=event_end_times,
                         y=binary_labels,
                         class_weight_mult=float(meta_feature_cfg.get('class_weight_mult', 5.0)),
+                        volatility_series=volatility_series,
+                        time_decay_halflife=time_decay_halflife,
                     )
 
                     # Optional cost- and R-multiple-aware reweighting
@@ -1850,18 +1862,33 @@ def fit_probability_to_return_mapping(
         # Isotonic regression: monotonic mapping
         iso = IsotonicRegression(out_of_bounds='clip')
 
-        # Cost-aware weighting: emphasize large absolute returns
+        # Enhanced weighting: emphasize both large absolute returns AND high confidence
         try:
-            weights = np.abs(r_clean)
+            # Component 1: Cost-aware weighting (large absolute returns)
+            return_weights = np.abs(r_clean)
+
+            # Component 2: Confidence weighting (distance from 0.5 probability)
+            # High confidence predictions (near 0 or 1) get more weight
+            confidence_weights = np.abs(p_clean - 0.5) * 2.0  # Range [0, 1]
+            confidence_weights = confidence_weights ** 1.5  # Emphasize extreme confidence more
+
+            # Combined weighting
+            weights = return_weights * (1.0 + confidence_weights)
+
             if np.isfinite(weights).any() and weights.mean() > 0:
                 weights = weights / weights.mean()
-            else:
-                weights = None
-
-            if weights is not None:
                 iso.fit(p_clean, r_clean, sample_weight=weights)
             else:
                 iso.fit(p_clean, r_clean)
+
+            # Log weighting diagnostics
+            if len(p_clean) > 10:
+                high_conf_mask = confidence_weights > 0.75
+                low_conf_mask = confidence_weights < 0.25
+                if high_conf_mask.any():
+                    avg_weight_high_conf = weights[high_conf_mask].mean()
+                    avg_weight_low_conf = weights[low_conf_mask].mean() if low_conf_mask.any() else 0
+                    tprint(f"  ✓ Calibration confidence weighting: high_conf={avg_weight_high_conf:.2f}, low_conf={avg_weight_low_conf:.2f}", "INFO")
         except TypeError:
             # Older sklearn versions may not support sample_weight here
             iso.fit(p_clean, r_clean)
@@ -2950,6 +2977,46 @@ def generate_diagnostics_report(
                 report_lines.append(f"- **AUC:** {auc_global:.3f}")
                 report_lines.append(f"- **Brier score:** {brier:.4f}")
                 report_lines.append(f"- **Average precision (PR-AUC):** {ap:.3f}")
+
+                # Add regime-wise breakdown
+                try:
+                    regime_metrics = compute_regime_wise_metrics(
+                        X=meta_features,
+                        y=binary_labels,
+                        y_pred=probabilities,
+                        realized_returns=realized_returns
+                    )
+
+                    if 'volatility_regimes' in regime_metrics:
+                        report_lines.append("\n### Volatility Regime Breakdown\n")
+                        report_lines.append("| Regime | Samples | Pos Rate | AUC | Mean Ret | Sharpe |")
+                        report_lines.append("|--------|---------|----------|-----|----------|--------|")
+
+                        for regime in ['low', 'medium', 'high']:
+                            if regime in regime_metrics['volatility_regimes']:
+                                r = regime_metrics['volatility_regimes'][regime]
+                                auc_str = f"{r['auc']:.3f}" if 'auc' in r else "N/A"
+                                ret_str = f"{r['mean_return']:.2%}" if 'mean_return' in r else "N/A"
+                                sharpe_str = f"{r['sharpe']:.2f}" if 'sharpe' in r else "N/A"
+                                report_lines.append(
+                                    f"| {regime.capitalize()} | {r['n_samples']} | {r['pos_rate']:.1%} | "
+                                    f"{auc_str} | {ret_str} | {sharpe_str} |"
+                                )
+
+                        # Analyze regime dependencies
+                        vol_regimes = regime_metrics['volatility_regimes']
+                        if 'low' in vol_regimes and 'high' in vol_regimes:
+                            low_pos_rate = vol_regimes['low']['pos_rate']
+                            high_pos_rate = vol_regimes['high']['pos_rate']
+                            if abs(high_pos_rate - low_pos_rate) > 0.3:
+                                report_lines.append(
+                                    f"\n⚠️ **Warning:** Large win-rate disparity between regimes "
+                                    f"(low: {low_pos_rate:.1%}, high: {high_pos_rate:.1%}). "
+                                    "Performance is highly regime-dependent."
+                                )
+                except Exception as e_regime:
+                    report_lines.append(f"\n⚠️ Could not compute regime breakdown: {e_regime}")
+
             except Exception as e_metrics:
                 report_lines.append(f"\n⚠️ Could not compute cost-aware metrics: {e_metrics}")
 
@@ -3290,22 +3357,35 @@ def compute_sample_weights_with_uniqueness(
     event_start_times: pd.Series,
     event_end_times: pd.Series,
     y: pd.Series,
-    class_weight_mult: float = 5.0
+    class_weight_mult: float = 5.0,
+    volatility_series: Optional[pd.Series] = None,
+    time_decay_halflife: Optional[float] = None
 ) -> np.ndarray:
     """
-    Compute sample weights combining class weighting and sequential bootstrapping.
+    Compute sample weights combining class weighting, sequential bootstrapping,
+    inverse volatility weighting, and time decay.
 
     Sequential Bootstrapping (de Prado): Down-weight samples that overlap heavily
     with others to prevent overfitting to clustered events (e.g., 10 trades during
     a single volatility spike).
 
+    Inverse Volatility Weighting: Make a 0.5% move in low volatility as "important"
+    to the loss function as a 2% move in high volatility. Counteracts model bias
+    towards high-volatility patterns.
+
+    Time Decay: Apply exponential decay to make recent data more important than
+    older data, addressing regime drift and AUC instability across folds.
+
     NEW (2025-11-18): Critical for handling increased signal count from loosened filters.
+    NEW (2025-11-20): Added inverse volatility weighting and time decay for regime stability.
 
     Args:
         event_start_times: Start timestamps for each event
         event_end_times: End timestamps for each event
         y: Binary labels
         class_weight_mult: Multiplier for positive class (5.0 = 5x more important)
+        volatility_series: Optional volatility series for inverse weighting
+        time_decay_halflife: Optional halflife (in days) for exponential time decay
 
     Returns:
         Sample weights array
@@ -3370,7 +3450,65 @@ def compute_sample_weights_with_uniqueness(
     # Combined weights
     final_weights = class_weights * uniqueness_weights
 
-    # Normalize
+    # ===== INVERSE VOLATILITY WEIGHTING =====
+    # Makes a 0.5% move in low vol as important as a 2% move in high vol
+    # Counteracts model bias towards high-volatility patterns
+    if volatility_series is not None:
+        try:
+            vol_array = volatility_series.values
+            vol_clean = vol_array[~np.isnan(vol_array)]
+
+            if len(vol_clean) > 10:
+                # Normalize volatility to [0, 1] using percentiles
+                vol_min = np.percentile(vol_clean, 10)
+                vol_max = np.percentile(vol_clean, 90)
+                normalized_vol = np.clip((vol_array - vol_min) / (vol_max - vol_min + 1e-8), 0.1, 1.0)
+
+                # Inverse weighting: low vol gets higher weight
+                # Range: [1.0, 10.0] where low vol = 10x weight, high vol = 1x weight
+                inv_vol_weights = 1.0 / normalized_vol
+
+                # Normalize to have mean = 1.0
+                inv_vol_weights = inv_vol_weights / inv_vol_weights.mean()
+
+                final_weights = final_weights * inv_vol_weights
+
+                avg_weight_low = inv_vol_weights[normalized_vol < 0.33].mean() if (normalized_vol < 0.33).any() else 0
+                avg_weight_high = inv_vol_weights[normalized_vol > 0.67].mean() if (normalized_vol > 0.67).any() else 0
+                tprint(f"  ✓ Inverse volatility weighting: low_vol_weight={avg_weight_low:.2f}, high_vol_weight={avg_weight_high:.2f}", "INFO")
+        except Exception as e:
+            tprint(f"  ⚠️ Inverse volatility weighting failed: {e}, skipping", "WARNING")
+
+    # ===== LINEAR TIME DECAY =====
+    # Recent data more important than older data (addresses regime drift)
+    if time_decay_halflife is not None and time_decay_halflife > 0:
+        try:
+            # Use event start times for decay calculation
+            if event_start_times is not None and len(event_start_times) > 0:
+                start_times = event_start_times[labeled_mask]
+
+                if len(start_times) > 0 and pd.notna(start_times).any():
+                    # Get time range in days
+                    latest_time = start_times.max()
+                    time_diffs = (latest_time - start_times).dt.total_seconds() / (24 * 3600)  # Convert to days
+
+                    # Exponential decay: weight = exp(-ln(2) * time_diff / halflife)
+                    # This ensures weight halves every 'halflife' days
+                    decay_weights = np.ones(len(y))
+                    decay_weights[labeled_mask] = np.exp(-np.log(2) * time_diffs / time_decay_halflife)
+
+                    # Normalize to mean = 1.0
+                    decay_weights = decay_weights / decay_weights[labeled_mask].mean()
+
+                    final_weights = final_weights * decay_weights
+
+                    tprint(f"  ✓ Time decay (halflife={time_decay_halflife:.0f}d): "
+                           f"oldest_weight={decay_weights[labeled_mask].min():.3f}, "
+                           f"newest_weight={decay_weights[labeled_mask].max():.3f}", "INFO")
+        except Exception as e:
+            tprint(f"  ⚠️ Time decay weighting failed: {e}, skipping", "WARNING")
+
+    # Normalize final weights
     if final_weights.sum() > 0:
         final_weights = final_weights / final_weights.mean()
 
@@ -3728,6 +3866,72 @@ def select_top_k_signals(
 # ========================================================================================
 # HPO SYSTEM FOR LABEL QUALITY DISCOVERY
 # ========================================================================================
+
+def compute_regime_wise_metrics(
+    X: pd.DataFrame,
+    y: pd.Series,
+    y_pred: Optional[np.ndarray] = None,
+    realized_returns: Optional[pd.Series] = None
+) -> Dict[str, Any]:
+    """
+    Compute performance metrics broken down by volatility and trend regimes.
+
+    This helps diagnose regime-dependent performance and addresses AUC instability.
+
+    Args:
+        X: Feature matrix (must include 'volatility_regime' column)
+        y: Binary labels
+        y_pred: Optional predicted probabilities
+        realized_returns: Optional realized returns for additional metrics
+
+    Returns:
+        Dictionary with regime-wise metrics
+    """
+    metrics = {}
+
+    # Ensure we have valid data
+    valid_mask = ~y.isna()
+    if valid_mask.sum() < 10:
+        return {'error': 'Insufficient valid samples'}
+
+    # Check for volatility regime
+    if 'volatility_regime' in X.columns:
+        vol_regime = X['volatility_regime'][valid_mask]
+        y_valid = y[valid_mask]
+
+        vol_metrics = {}
+        for regime in ['low', 'medium', 'high']:
+            regime_mask = vol_regime == regime
+            if regime_mask.sum() < 10:
+                continue
+
+            y_regime = y_valid[regime_mask]
+            pos_rate = (y_regime == 1.0).mean()
+            vol_metrics[regime] = {
+                'n_samples': int(regime_mask.sum()),
+                'pos_rate': float(pos_rate),
+            }
+
+            # Add AUC if predictions available
+            if y_pred is not None and len(y_pred) > 0:
+                y_pred_regime = y_pred[valid_mask.values][regime_mask.values]
+                if len(np.unique(y_regime)) > 1:
+                    try:
+                        auc = roc_auc_score(y_regime, y_pred_regime)
+                        vol_metrics[regime]['auc'] = float(auc)
+                    except:
+                        pass
+
+            # Add return metrics if available
+            if realized_returns is not None:
+                ret_regime = realized_returns[valid_mask][regime_mask]
+                vol_metrics[regime]['mean_return'] = float(ret_regime.mean())
+                vol_metrics[regime]['sharpe'] = float(ret_regime.mean() / (ret_regime.std() + 1e-8))
+
+        metrics['volatility_regimes'] = vol_metrics
+
+    return metrics
+
 
 def compute_learnability_score(
     X: pd.DataFrame,
@@ -4296,8 +4500,12 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             adaptive_profit_threshold = profit_threshold * vol_factor
             adaptive_stop_threshold = stop_threshold * vol_factor
 
+            # Enforce hard floor based on transaction costs (0.5% = 50 bps)
+            # This ensures profit targets remain viable after slippage + fees
+            profit_floor = PROFIT_TARGET_FLOOR_BPS / 10000.0  # Convert basis points to decimal (0.005)
+
             adaptive_profit_threshold = adaptive_profit_threshold.clip(
-                lower=profit_threshold * profit_mult_min,
+                lower=max(profit_threshold * profit_mult_min, profit_floor),
                 upper=profit_threshold * profit_mult_max,
             )
             adaptive_stop_threshold = adaptive_stop_threshold.clip(
@@ -4305,7 +4513,12 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                 upper=stop_threshold * stop_mult_max,
             )
 
-            tprint(f"📊 Adaptive thresholds: Profit {adaptive_profit_threshold.mean():.2%} ± {adaptive_profit_threshold.std():.2%}", "INFO")
+            # Log if any targets were floored
+            n_floored = (adaptive_profit_threshold <= profit_floor * 1.001).sum()
+            if n_floored > 0:
+                tprint(f"  ⚠️ Enforced profit floor (0.5%) on {n_floored}/{len(adaptive_profit_threshold)} bars", "WARNING")
+
+            tprint(f"📊 Adaptive thresholds: Profit {adaptive_profit_threshold.mean():.2%} ± {adaptive_profit_threshold.std():.2%} (floor: {profit_floor:.2%})", "INFO")
             tprint(f"📊 Adaptive thresholds: Stop {adaptive_stop_threshold.mean():.2%} ± {adaptive_stop_threshold.std():.2%}", "INFO")
 
             # STEP 3: Compute realized returns (continuous) and binary labels with adaptive thresholds

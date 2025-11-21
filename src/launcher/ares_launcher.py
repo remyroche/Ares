@@ -355,6 +355,13 @@ Examples:
         help='Enable hierarchical HPO for alpha model training (e.g., in hmm_ml_alpha_step)'
     )
 
+    # Global HPO toggle (used by ml_risk_regime_step and unified model training)
+    parser.add_argument(
+        '--enable-hpo',
+        action='store_true',
+        help='Enable hyperparameter optimization for compatible steps (e.g., ml_risk_regime_step, unified model training)'
+    )
+
     # Labeling HPO integration (used by feature_generation_meta_labeling_step)
     parser.add_argument(
         '--enable-labeling-hpo-params',
@@ -628,6 +635,11 @@ async def main():
     # Optional labeling HPO configuration (used by feature_generation_meta_labeling_step)
     if getattr(args, 'enable_labeling_hpo_params', False) or getattr(args, 'labeling_hpo_use_best_params', False):
         config['enable_labeling_hpo_params'] = True
+    
+    # Optional global HPO configuration (used by ml_risk_regime_step and unified training)
+    if getattr(args, 'enable_hpo', False):
+        config['enable_hpo'] = True
+        config['risk_enable_hpo'] = True
     
     # Import tprint for troubleshooting output
     try:

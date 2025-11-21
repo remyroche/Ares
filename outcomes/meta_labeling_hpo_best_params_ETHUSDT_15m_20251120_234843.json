@@ -1,0 +1,58 @@
+{
+  "symbol": "ETHUSDT",
+  "exchange": "binance",
+  "timeframe": "15m",
+  "best_score": 0.0065797623959054155,
+  "best_edge": 0.0065797623959054155,
+  "best_params": {
+    "profit_thr_base": 0.01921355953313817,
+    "stop_to_profit_ratio": 0.34919103055927564,
+    "min_event_spacing": 3,
+    "iso_min_prob": 0.09707245604739435,
+    "target_clip_high_q": 0.9486259797634907,
+    "kalman_Q": 1.1055318319745503e-05,
+    "kalman_R": 0.027726265918888132,
+    "vol_baseline_window": 139,
+    "profit_mult_min": 0.950604791341038,
+    "profit_mult_max": 1.377520602900033,
+    "stop_mult_min": 0.7014254552307111,
+    "stop_mult_max": 1.1565129103451839
+  },
+  "knee_params": {
+    "profit_thr_base": 0.01921355953313817,
+    "stop_to_profit_ratio": 0.34919103055927564,
+    "min_event_spacing": 3,
+    "iso_min_prob": 0.09707245604739435,
+    "target_clip_high_q": 0.9486259797634907,
+    "kalman_Q": 1.1055318319745503e-05,
+    "kalman_R": 0.027726265918888132,
+    "vol_baseline_window": 139,
+    "profit_mult_min": 0.950604791341038,
+    "profit_mult_max": 1.377520602900033,
+    "stop_mult_min": 0.7014254552307111,
+    "stop_mult_max": 1.1565129103451839,
+    "horizon_bars": 32
+  },
+  "pareto_front_size": 1,
+  "total_trials": 170,
+  "stage_results": [
+    {
+      "stage": "Stage 1 (Screening)",
+      "complexity": "fast",
+      "best_score": 0.0,
+      "trials": 100
+    },
+    {
+      "stage": "Stage 2 (Refinement)",
+      "complexity": "medium",
+      "best_score": 0.0017603982212502018,
+      "trials": 50
+    },
+    {
+      "stage": "Stage 3 (Production Proxy)",
+      "complexity": "strong",
+      "best_score": 0.0065797623959054155,
+      "trials": 20
+    }
+  ]
+}

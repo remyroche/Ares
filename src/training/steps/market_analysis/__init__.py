@@ -40,6 +40,9 @@ from .hmm_ml_alpha_step import HMMMLAlphaStep
 # Import ML Risk Regime step (risk-based regime classification)
 from .ml_risk_regime_step import MLRiskRegimeStep
 
+# Import ML Liquidity Regime step (liquidity-based regime classification)
+from .ml_liquidity_regime_step import MLLiquidityRegimeStep
+
 # Import Feature Generation Meta-Labeling Step (now in labeling module)
 from src.training.steps.labeling import FeatureGenerationMetaLabelingStep
 
@@ -65,5 +68,6 @@ step_registry.register("sticky_finite_hmm_regime_discovery", StickyFiniteHMMRegi
 step_registry.register("rolling_hmm_regime_discovery", RollingHMMRegimeDiscoveryStep)
 step_registry.register("hmm_ml_alpha_step", HMMMLAlphaStep)
 step_registry.register("ml_risk_regime_step", MLRiskRegimeStep)
+step_registry.register("ml_liquidity_regime_step", MLLiquidityRegimeStep)
 step_registry.register("feature_generation_meta_labeling_step", FeatureGenerationMetaLabelingStep)
 step_registry.register("meta_labeling_hpo_experiment", MetaLabelingHPOExperimentStep)

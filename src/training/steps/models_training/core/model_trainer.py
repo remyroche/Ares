@@ -1181,18 +1181,22 @@ class ModelTrainer(BaseTrainer):
             tprint_info(f"   Feature columns (last 10): {list(data.columns[-10:])}")
             tprint_info("=" * 80)
             
-            # Create model
+            # Create model (TabR-backed DepthwiseSeparableCNNRegressor)
             cnn_model = DepthwiseSeparableCNNRegressor(
-                filters=filters,
-                kernel_size=kernel_size,
-                dropout=dropout,
+                # Map legacy DepthwiseCNN-style config to TabR parameters
+                k_neighbors=model_params.get('k_neighbors', 96),
+                use_embeddings=model_params.get('use_embeddings', False),
+                n_encoder_layers=model_params.get('n_encoder_layers', 0),
+                n_predictor_layers=model_params.get('n_predictor_layers', 1),
+                d_embedding=filters,
                 learning_rate=learning_rate,
+                weight_decay=model_params.get('weight_decay', 1e-6),
                 batch_size=batch_size,
-                epochs=epochs,
-                validation_split=validation_split,
+                max_epochs=epochs,
                 early_stopping_patience=early_stopping_patience,
-                reduce_lr_patience=reduce_lr_patience,
-                use_batch_norm=use_batch_norm,
+                lr_scheduler_patience=reduce_lr_patience,
+                dropout=dropout,
+                random_state=model_params.get('random_state', 42),
                 verbose=verbose
             )
             

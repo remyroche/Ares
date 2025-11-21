@@ -3,7 +3,8 @@ import pandas as pd
 from sklearn.base import clone
 from sklearn.metrics import r2_score, mean_squared_error, mutual_info_score
 from sklearn.model_selection import KFold, TimeSeriesSplit
-from sklearn.linear_model import LinearRegression, IsotonicRegression
+from sklearn.linear_model import LinearRegression
+from sklearn.isotonic import IsotonicRegression
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.preprocessing import StandardScaler, PolynomialFeatures
 from sklearn.feature_selection import mutual_info_regression
@@ -11,7 +12,6 @@ from sklearn.decomposition import PCA
 from sklearn.neighbors import KernelDensity
 from scipy.stats import pearsonr, spearmanr, kstest, entropy
 from scipy.cluster.hierarchy import linkage, fcluster
-import shap
 import warnings
 from typing import Dict, List, Tuple, Any, Optional
 import plotly.graph_objects as go
@@ -22,6 +22,7 @@ import os
 import glob
 import pickle
 from pathlib import Path
+import argparse
 
 # Suppress warnings for cleaner output in production
 warnings.filterwarnings("ignore")
@@ -2642,3 +2643,59 @@ class DiagnosisReporter:
         </body>
         </html>
         """
+
+
+def main():
+    """CLI entrypoint: run diagnostics on latest analyst model/predictions and write HTML report."""
+    parser = argparse.ArgumentParser(description="Trading model diagnostics runner")
+    parser.add_argument("--symbol", default="ETHUSDT", help="Trading symbol, e.g. ETHUSDT")
+    parser.add_argument("--exchange", default="binance", help="Exchange name, e.g. binance")
+    parser.add_argument("--timeframe", default="15m", help="Timeframe, e.g. 15m")
+    parser.add_argument("--direction", default="long", help="Direction: long, short, both")
+    parser.add_argument(
+        "--model-type",
+        default="ensemble",
+        choices=["ensemble", "base"],
+        help="Model type to diagnose (ensemble or base)",
+    )
+    parser.add_argument(
+        "--output-dir",
+        default="outcomes",
+        help="Directory to write the HTML diagnosis report to",
+    )
+    parser.add_argument(
+        "--output-filename",
+        default=None,
+        help="Optional explicit output filename (otherwise timestamped)",
+    )
+
+    args = parser.parse_args()
+
+    diagnostician = ModelLoader.auto_initialize_diagnostician(
+        symbol=args.symbol,
+        exchange=args.exchange,
+        timeframe=args.timeframe,
+        direction=args.direction,
+        model_type=args.model_type,
+    )
+
+    results = diagnostician.run_full_diagnosis()
+
+    os.makedirs(args.output_dir, exist_ok=True)
+
+    if args.output_filename:
+        output_filename = args.output_filename
+    else:
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_filename = (
+            f"trading_model_diagnosis_{args.symbol}_{args.timeframe}_"
+            f"{args.model_type}_{ts}.html"
+        )
+
+    output_path = os.path.join(args.output_dir, output_filename)
+    diagnostician.generate_report(results, output_path)
+    print(f"Diagnosis report saved to {output_path}")
+
+
+if __name__ == "__main__":
+    main()

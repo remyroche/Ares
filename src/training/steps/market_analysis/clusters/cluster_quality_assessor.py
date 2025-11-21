@@ -1375,50 +1375,60 @@ class ClusterQualityAssessor:
         """Calculate global and per-cluster silhouette scores."""
         features_clean = features.iloc[non_noise_mask]
         labels_clean = regime_labels[non_noise_mask]
-        
-        if len(set(labels_clean)) < 2:
+
+        # Drop rows with any NaNs to satisfy sklearn requirements
+        mask_valid = ~features_clean.isna().any(axis=1)
+        features_valid = features_clean.loc[mask_valid]
+        labels_valid = labels_clean[mask_valid.to_numpy()]
+
+        # Need at least 2 samples and 2 distinct labels
+        if len(features_valid) < 2 or len(set(labels_valid)) < 2:
             return 0.0, {}
-        
+
         # Optional stratified subsampling for scalability
         MAX_SAMPLES = 10000
-        if len(labels_clean) > MAX_SAMPLES:
+        if len(labels_valid) > MAX_SAMPLES:
             # Sample up to max per cluster to keep class balance
-            unique_labels, counts = np.unique(labels_clean, return_counts=True)
+            unique_labels, counts = np.unique(labels_valid, return_counts=True)
             per_cluster_cap = max(50, int(MAX_SAMPLES / max(1, len(unique_labels))))
             sample_indices = []
             for lab in unique_labels:
-                idx = np.where(labels_clean == lab)[0]
+                idx = np.where(labels_valid == lab)[0]
                 if len(idx) > per_cluster_cap:
                     chosen = self.rng.choice(idx, size=per_cluster_cap, replace=False)
                 else:
                     chosen = idx
                 sample_indices.append(chosen)
             sample_indices = np.concatenate(sample_indices)
-            features_sub = features_clean.iloc[sample_indices]
-            labels_sub = labels_clean[sample_indices]
+            features_sub = features_valid.iloc[sample_indices]
+            labels_sub = labels_valid[sample_indices]
         else:
-            features_sub = features_clean
-            labels_sub = labels_clean
-        
-        # Global silhouette score
-        global_silhouette = silhouette_score(features_sub, labels_sub)
-        
-        # Per-cluster silhouette scores
-        silhouette_samples_scores = silhouette_samples(features_sub, labels_sub)
-        per_cluster_silhouette = {}
-        
-        for cluster_id in set(labels_sub):
-            cluster_mask = labels_sub == cluster_id
-            cluster_scores = silhouette_samples_scores[cluster_mask]
-            
-            per_cluster_silhouette[int(cluster_id)] = {
-                'mean': float(np.mean(cluster_scores)),
-                'std': float(np.std(cluster_scores)),
-                'min': float(np.min(cluster_scores)),
-                'max': float(np.max(cluster_scores))
-            }
-        
-        return global_silhouette, per_cluster_silhouette
+            features_sub = features_valid
+            labels_sub = labels_valid
+
+        try:
+            # Global silhouette score
+            global_silhouette = silhouette_score(features_sub, labels_sub)
+
+            # Per-cluster silhouette scores
+            silhouette_samples_scores = silhouette_samples(features_sub, labels_sub)
+            per_cluster_silhouette: Dict[int, Dict[str, float]] = {}
+
+            for cluster_id in set(labels_sub):
+                cluster_mask = labels_sub == cluster_id
+                cluster_scores = silhouette_samples_scores[cluster_mask]
+
+                per_cluster_silhouette[int(cluster_id)] = {
+                    'mean': float(np.mean(cluster_scores)),
+                    'std': float(np.std(cluster_scores)),
+                    'min': float(np.min(cluster_scores)),
+                    'max': float(np.max(cluster_scores)),
+                }
+
+            return global_silhouette, per_cluster_silhouette
+        except Exception as exc:
+            tprint_warning(f"Silhouette calculation skipped due to error: {exc}")
+            return 0.0, {}
     
     def _calculate_dbi(self,
                          regime_labels: np.ndarray,
@@ -1427,11 +1437,21 @@ class ClusterQualityAssessor:
         """Calculate Davies-Bouldin Index (lower is better)."""
         features_clean = features.iloc[non_noise_mask]
         labels_clean = regime_labels[non_noise_mask]
-        
-        if len(set(labels_clean)) < 2:
-            return float('inf')
-        
-        return davies_bouldin_score(features_clean, labels_clean)
+
+        # Drop rows with any NaNs to satisfy sklearn requirements
+        mask_valid = ~features_clean.isna().any(axis=1)
+        features_valid = features_clean.loc[mask_valid]
+        labels_valid = labels_clean[mask_valid.to_numpy()]  # align with filtered features
+
+        # Need at least 2 samples and 2 distinct labels for a meaningful DBI
+        if len(features_valid) < 2 or len(set(labels_valid)) < 2:
+            return float("inf")
+
+        try:
+            return davies_bouldin_score(features_valid, labels_valid)
+        except Exception as exc:
+            tprint_warning(f"DBI calculation skipped due to error: {exc}")
+            return float("inf")
     
     def _calculate_ch(self,
                         regime_labels: np.ndarray,
@@ -1440,11 +1460,21 @@ class ClusterQualityAssessor:
         """Calculate Calinski-Harabasz Index (higher is better)."""
         features_clean = features.iloc[non_noise_mask]
         labels_clean = regime_labels[non_noise_mask]
-        
-        if len(set(labels_clean)) < 2:
+
+        # Drop rows with any NaNs to satisfy sklearn requirements
+        mask_valid = ~features_clean.isna().any(axis=1)
+        features_valid = features_clean.loc[mask_valid]
+        labels_valid = labels_clean[mask_valid.to_numpy()]
+
+        # Need at least 2 samples and 2 distinct labels for a meaningful CH score
+        if len(features_valid) < 2 or len(set(labels_valid)) < 2:
             return 0.0
-        
-        return calinski_harabasz_score(features_clean, labels_clean)
+
+        try:
+            return calinski_harabasz_score(features_valid, labels_valid)
+        except Exception as exc:
+            tprint_warning(f"CH calculation skipped due to error: {exc}")
+            return 0.0
 
     # *** NEW: Helper function for safe CV calculation ***
     def _calculate_cv(self, x: np.ndarray) -> float:

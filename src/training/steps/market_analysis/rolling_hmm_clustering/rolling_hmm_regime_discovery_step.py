@@ -863,6 +863,33 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
                         ml_labels[start:end] = -1
                     start = end
 
+                # 3) Apply hysteresis on regime switches using per-regime probabilities
+                try:
+                    hysteresis_factor = float(config.get("regime_hysteresis_factor", 1.05))
+                except Exception:
+                    hysteresis_factor = 1.05
+
+                if hysteresis_factor > 1.0:
+                    n_samples, n_regimes = probs_array.shape
+                    for i in range(1, n_samples):
+                        prev_label = ml_labels[i - 1]
+                        curr_label = ml_labels[i]
+
+                        # Only apply hysteresis between valid non-noise regimes
+                        if prev_label < 0 or curr_label < 0 or prev_label == curr_label:
+                            continue
+                        if prev_label >= n_regimes or curr_label >= n_regimes:
+                            continue
+
+                        prev_prob = probs_array[i, prev_label]
+                        curr_prob = probs_array[i, curr_label]
+                        if not np.isfinite(prev_prob) or not np.isfinite(curr_prob):
+                            continue
+
+                        # Require extra confidence to switch regimes
+                        if curr_prob < hysteresis_factor * prev_prob:
+                            ml_labels[i] = prev_label
+
                 labels_df['regime_label_ml'] = ml_labels
             except Exception:
                 # Fall back gracefully if anything goes wrong

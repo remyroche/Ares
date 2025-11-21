@@ -130,6 +130,11 @@ class HMMMLAlphaStep(BaseStep):
                 "alpha_hpo_cv_folds": 3,
                 "alpha_hpo_final_trials": 20,
                 "alpha_enable_regression_calibration": True,
+                "alpha_enable_expectation_calibration": True,
+                "alpha_expectation_positive_threshold": 0.0,
+                "alpha_expectation_min_samples": 200,
+                "alpha_expectation_ema_period": 4,
+                "alpha_expectation_ema_weight_recent": None,
             }
             for k, v in alpha_defaults.items():
                 config.setdefault(k, v)
@@ -165,11 +170,18 @@ class HMMMLAlphaStep(BaseStep):
             # ------------------------------------------------------------------
             # 2) Load 1h OHLCV market data
             # ------------------------------------------------------------------
+            # For alignment we always load the full 1h series (execution_mode='full')
+            # to avoid light-mode tailing pushing the window beyond the coverage
+            # of HMM artifacts. Light-mode filtering is applied *after* alignment.
+            market_data_config = {
+                **config,
+                "timeframe": regime_timeframe,
+            }
+            market_data_load_config = dict(market_data_config)
+            market_data_load_config["execution_mode"] = "full"
+
             market_data, market_source = self.load_market_data_or_fail(
-                {
-                    **config,
-                    "timeframe": regime_timeframe,
-                },
+                market_data_load_config,
                 pipeline_state={},
                 allow_config_override=True,
             )
@@ -209,6 +221,22 @@ class HMMMLAlphaStep(BaseStep):
             if aligned_df.empty:
                 raise ValueError("Aligned dataset is empty after merging inputs")
 
+            # Optional light-mode filtering applied on the *aligned* dataset so
+            # that we always operate on the overlap between market data and HMM
+            # artifacts.
+            execution_mode = str(config.get("execution_mode", "full")).lower()
+            if execution_mode == "light":
+                aligned_df = self._apply_light_mode_filter(
+                    aligned_df,
+                    config,
+                    timeframe=regime_timeframe,
+                )
+
+                if aligned_df.empty:
+                    raise ValueError(
+                        "Aligned dataset became empty after light-mode filtering; check HMM and market data coverage"
+                    )
+
             # ------------------------------------------------------------------
             # 4) Compute alpha labels
             # ------------------------------------------------------------------
@@ -240,6 +268,152 @@ class HMMMLAlphaStep(BaseStep):
                 if alpha_scores is not None:
                     alpha_df[pred_col_name] = alpha_scores
                     alpha_df["alpha_score_continuous"] = alpha_scores
+
+                    # Derive calibrated 0–1 expectation score from alpha predictions
+                    try:
+                        target_type_local = str(config.get("alpha_target_type", "regression")).lower()
+                        expectation_series = None
+
+                        if target_type_local == "classification":
+                            # Classification branch already produces calibrated probabilities
+                            expectation_series = alpha_scores.clip(0.0, 1.0)
+                        else:
+                            expectation_calibration_enabled = bool(
+                                config.get("alpha_enable_expectation_calibration", True)
+                            )
+                            positive_threshold = float(
+                                config.get("alpha_expectation_positive_threshold", 0.0)
+                            )
+                            min_samples = int(
+                                config.get("alpha_expectation_min_samples", 200)
+                            )
+
+                            if expectation_calibration_enabled:
+                                try:
+                                    from sklearn.isotonic import IsotonicRegression
+
+                                    y_target = alpha_df["alpha_target"].reindex(alpha_scores.index)
+                                    mask = (
+                                        alpha_scores.notna()
+                                        & y_target.notna()
+                                        & np.isfinite(alpha_scores)
+                                        & np.isfinite(y_target)
+                                    )
+
+                                    if mask.sum() >= max(min_samples, 50):
+                                        y_bin = (y_target[mask] > positive_threshold).astype(float)
+
+                                        iso = IsotonicRegression(
+                                            out_of_bounds="clip",
+                                            y_min=0.0,
+                                            y_max=1.0,
+                                        )
+                                        iso.fit(
+                                            alpha_scores[mask].to_numpy(
+                                                dtype=float,
+                                                copy=False,
+                                            ),
+                                            y_bin.to_numpy(
+                                                dtype=float,
+                                                copy=False,
+                                            ),
+                                        )
+
+                                        calibrated_vals = iso.predict(
+                                            alpha_scores.to_numpy(
+                                                dtype=float,
+                                                copy=False,
+                                            )
+                                        )
+                                        expectation_series = pd.Series(
+                                            calibrated_vals,
+                                            index=alpha_scores.index,
+                                            name="alpha_expectation_raw_01",
+                                        ).clip(0.0, 1.0)
+
+                                        training_metrics["alpha_expectation_calibration_used"] = True
+                                        training_metrics[
+                                            "alpha_expectation_positive_threshold"
+                                        ] = positive_threshold
+                                        training_metrics[
+                                            "alpha_expectation_calibration_method"
+                                        ] = "isotonic_regression_binary"
+                                except ImportError:
+                                    training_metrics["alpha_expectation_calibration_used"] = False
+                                except Exception as exp_calib_exc:
+                                    training_metrics["alpha_expectation_calibration_used"] = False
+                                    training_metrics["alpha_expectation_calibration_error"] = str(
+                                        exp_calib_exc
+                                    )
+
+                            if expectation_series is None:
+                                # Monotonic fallback: logistic mapping of centered alpha_scores
+                                try:
+                                    scores_clean = alpha_scores.replace(
+                                        [np.inf, -np.inf], np.nan
+                                    ).dropna()
+                                    if not scores_clean.empty:
+                                        median_val = float(scores_clean.median())
+                                        iqr = float(
+                                            scores_clean.quantile(0.75)
+                                            - scores_clean.quantile(0.25)
+                                        )
+                                        scale = iqr if iqr > 1e-8 else max(
+                                            float(scores_clean.std()), 1e-8
+                                        )
+                                        z = (alpha_scores - median_val) / scale
+                                        expectation_series = 1.0 / (1.0 + np.exp(-z))
+                                        expectation_series = expectation_series.clip(
+                                            0.0, 1.0
+                                        )
+                                except Exception:
+                                    expectation_series = None
+
+                            if expectation_series is not None:
+                                alpha_df["alpha_expectation_raw_01"] = expectation_series
+
+                                # EMA smoothing on expectation score
+                                try:
+                                    ema_weight_raw = config.get(
+                                        "alpha_expectation_ema_weight_recent",
+                                        None,
+                                    )
+                                    ema_period = int(
+                                        config.get(
+                                            "alpha_expectation_ema_period",
+                                            4,
+                                        )
+                                    )
+                                    if ema_weight_raw is None:
+                                        period_eff = max(ema_period, 1)
+                                        ema_weight = 2.0 / float(period_eff + 1.0)
+                                    else:
+                                        ema_weight = float(ema_weight_raw)
+
+                                    ema_weight = min(max(ema_weight, 0.01), 1.0)
+                                    expectation_ema = expectation_series.ewm(
+                                        alpha=ema_weight,
+                                        adjust=False,
+                                    ).mean()
+                                    alpha_df[
+                                        "alpha_expectation_ema_01"
+                                    ] = expectation_ema
+                                    training_metrics[
+                                        "alpha_expectation_ema_weight_recent"
+                                    ] = ema_weight
+                                    training_metrics[
+                                        "alpha_expectation_ema_period"
+                                    ] = ema_period
+                                except Exception as ema_exc:
+                                    training_metrics["alpha_expectation_ema_error"] = str(
+                                        ema_exc
+                                    )
+
+                    except Exception as expectation_exc:
+                        training_metrics["alpha_expectation_error"] = str(
+                            expectation_exc
+                        )
+
                     alpha_df, regime_stats_df, regime_col_name = self._assign_alpha_regimes(
                         alpha_df,
                         alpha_scores,
@@ -808,6 +982,51 @@ class HMMMLAlphaStep(BaseStep):
         market_data = _prepare(market_data)
         labels_df = _prepare(labels_df)
 
+        # Some historical HMM artifacts have lost their original datetime index
+        # and appear as epoch-like timestamps around 1970 with sub-second
+        # spacing. When that happens there is no intersection with real market
+        # data (2021+), and an inner join would produce an empty DataFrame.
+        #
+        # To make the alpha step robust, we detect clearly unrealistic
+        # timestamp ranges and re-anchor those artifacts onto the tail of the
+        # market_data index by position, preserving their internal ordering.
+        def _maybe_reanchor_to_market(
+            df: pd.DataFrame,
+            name: str,
+        ) -> pd.DataFrame:
+            if not isinstance(df.index, pd.DatetimeIndex):
+                return df
+
+            try:
+                idx_min = df.index.min()
+                idx_max = df.index.max()
+            except Exception:
+                return df
+
+            # Treat anything strictly before year 2000 as clearly invalid for
+            # crypto markets; those are almost certainly misinterpreted epoch
+            # timestamps from HDF5 reloads.
+            cutoff = pd.Timestamp("2000-01-01")
+            if idx_max < cutoff:
+                if len(df) <= len(market_data):
+                    new_index = market_data.index[-len(df) :]
+                    df = df.copy()
+                    df.index = new_index
+                    tprint_warning(
+                        f"Detected unrealistic {name} timestamp range {idx_min} → {idx_max}; "
+                        f"re-anchoring to last {len(df)} bars of market_data for alignment"
+                    )
+                else:
+                    tprint_warning(
+                        f"Detected unrealistic {name} timestamp range {idx_min} → {idx_max} "
+                        f"with more rows ({len(df)}) than market_data ({len(market_data)}); "
+                        "skipping re-anchoring"
+                    )
+
+            return df
+
+        labels_df = _maybe_reanchor_to_market(labels_df, "HMM labels")
+
         frames = [
             market_data[[col for col in market_data.columns if col.lower() in {"open", "high", "low", "close", "volume"}]].rename(
                 columns=lambda c: c.lower()
@@ -817,10 +1036,12 @@ class HMMMLAlphaStep(BaseStep):
 
         if probs_df is not None and not probs_df.empty:
             probs_df = _prepare(probs_df)
+            probs_df = _maybe_reanchor_to_market(probs_df, "HMM probabilities")
             frames.append(probs_df)
 
         if economic_df is not None and not economic_df.empty:
             economic_df = _prepare(economic_df)
+            economic_df = _maybe_reanchor_to_market(economic_df, "HMM economic features")
             frames.append(economic_df)
 
         # Inner join on time to ensure all required information is present
@@ -2520,6 +2741,90 @@ class HMMMLAlphaStep(BaseStep):
                     tprint_info(f"✅ SHAP importance calculated for {len(feature_names)} features")
                 except Exception as shap_err:
                     tprint_warning(f"SHAP analysis failed (SHAP may have issues with this data): {shap_err}")
+
+            # 7. Soft feature-pruning recommendations (non-destructive)
+            #
+            # Use permutation importance stability and mRMR relevance to
+            # recommend a pruned feature set, but do NOT alter the training
+            # feature matrix for this run. Downstream consumers can choose to
+            # use this recommended set.
+            try:
+                enable_pruning = bool(config.get("alpha_enable_feature_pruning", True))
+                if enable_pruning and feature_names:
+                    selected_feature_names = list(feature_names)
+
+                    perm_info = feature_analysis_results.get("permutation_importance", {})
+                    mrmr_selected = feature_analysis_results.get("mrmr_selected_features", [])
+
+                    if isinstance(perm_info, dict) and perm_info:
+                        # Build importance and stability series
+                        imp_values = []
+                        stability_flags = []
+                        for name in feature_names:
+                            info = perm_info.get(name, {})
+                            imp_values.append(float(info.get("importance_mean", 0.0)))
+                            stability_flags.append(bool(info.get("stability", True)))
+
+                        imp_series = pd.Series(imp_values, index=feature_names)
+                        stable_series = pd.Series(stability_flags, index=feature_names)
+
+                        # Focus on strictly positive importance values
+                        positive_imp = imp_series[imp_series > 0.0]
+                        if not positive_imp.empty:
+                            # Gentle floor: near the bottom tail of positive importances
+                            q_low = float(config.get("alpha_feature_pruning_importance_q_low", 0.05))
+                            q_low = min(max(q_low, 0.0), 0.25)
+                            floor_val = positive_imp.quantile(q_low)
+
+                            # Candidate drop: low importance AND unstable across repeats
+                            drop_mask = (imp_series <= floor_val) & (~stable_series)
+
+                            # Protect mRMR-selected features from being dropped
+                            if isinstance(mrmr_selected, list) and mrmr_selected:
+                                protect = imp_series.index.isin(mrmr_selected)
+                                drop_mask = drop_mask & (~protect)
+
+                            drop_candidates = [
+                                name for name, flag in drop_mask.items() if bool(flag)
+                            ]
+
+                            if drop_candidates:
+                                # Do not be harsh: keep at least a minimum fraction
+                                min_fraction = float(
+                                    config.get("alpha_feature_pruning_min_fraction", 0.6)
+                                )
+                                min_fraction = min(max(min_fraction, 0.2), 0.9)
+                                min_keep = int(
+                                    max(
+                                        len(feature_names) * min_fraction,
+                                        float(config.get("alpha_feature_pruning_min_absolute", 40)),
+                                    )
+                                )
+
+                                max_drop = max(len(feature_names) - min_keep, 0)
+                                if max_drop > 0:
+                                    # Rank drop candidates by importance (ascending)
+                                    drop_candidates_sorted = sorted(
+                                        drop_candidates,
+                                        key=lambda n: imp_series.get(n, 0.0),
+                                    )
+                                    final_drop = drop_candidates_sorted[:max_drop]
+                                    selected_feature_names = [
+                                        n for n in feature_names if n not in final_drop
+                                    ]
+
+                    # Record recommendations
+                    feature_analysis_results[
+                        "alpha_selected_features_for_pruning"
+                    ] = selected_feature_names
+                    feature_analysis_results[
+                        "alpha_n_selected_for_pruning"
+                    ] = len(selected_feature_names)
+                    feature_analysis_results[
+                        "alpha_n_original_features"
+                    ] = len(feature_names)
+            except Exception as pruning_err:
+                tprint_warning(f"Feature pruning recommendation step failed (non-fatal): {pruning_err}")
 
             feature_analysis_results["feature_analysis_completed"] = True
 

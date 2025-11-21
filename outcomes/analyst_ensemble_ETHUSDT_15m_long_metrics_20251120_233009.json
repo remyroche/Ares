@@ -1,0 +1,84 @@
+{
+  "report_version": "3.0",
+  "metadata": {
+    "training_type": "analyst_ensemble",
+    "symbol": "ETHUSDT",
+    "exchange": "binance",
+    "timeframe": "15m",
+    "direction": "long",
+    "execution_mode": "blank",
+    "timestamp": "20251120_233009",
+    "generated_at": "2025-11-20T23:30:09.006371",
+    "report_type": "comprehensive_training_metrics"
+  },
+  "configuration": {
+    "symbol": "ETHUSDT",
+    "exchange": "binance",
+    "timeframe": "15m",
+    "direction": "long",
+    "execution_mode": "blank",
+    "enable_hpo": true,
+    "train_percentage": 0.7,
+    "validation_percentage": 0.15,
+    "test_percentage": 0.15,
+    "walkforward_config": "WalkForwardSplitConfig(folds=[WalkForwardFold(fold_num=1, training=TemporalPeriod(start=Timestamp('2025-10-01 23:30:00'), end=Timestamp('2025-10-17 23:30:00'), embargo_days=1, name='training_fold_1'), validation=TemporalPeriod(start=Timestamp('2025-10-18 23:30:00'), end=Timestamp('2025-10-21 23:30:00'), embargo_days=1, name='validation_fold_1')), WalkForwardFold(fold_num=2, training=TemporalPeriod(start=Timestamp('2025-10-01 23:30:00'), end=Timestamp('2025-10-20 23:30:00'), embargo_days=1, name='training_fold_2'), validation=TemporalPeriod(start=Timestamp('2025-10-21 23:30:00'), end=Timestamp('2025-10-24 23:30:00'), embargo_days=1, name='validation_fold_2')), WalkForwardFold(fold_num=3, training=TemporalPeriod(start=Timestamp('2025-10-01 23:30:00'), end=Timestamp('2025-10-23 23:30:00'), embargo_days=1, name='training_fold_3'), validation=TemporalPeriod(start=Timestamp('2025-10-24 23:30:00'), end=Timestamp('2025-10-27 23:30:00'), embargo_days=1, name='validation_fold_3'))], test=TemporalPeriod(start=Timestamp('2025-10-27 23:30:00'), end=Timestamp('2025-10-31 23:30:00'), embargo_days=0, name='test'), strategy='expanding')"
+  },
+  "execution_summary": {
+    "success": true,
+    "execution_time_seconds": 0.0,
+    "training_type": "analyst_ensemble",
+    "models_trained_count": 0,
+    "model_names": [],
+    "error": null,
+    "warnings": []
+  },
+  "overall_performance": {},
+  "per_model_metrics": {},
+  "training_metrics": {},
+  "validation_metrics": {},
+  "test_metrics": {},
+  "hpo_results": {},
+  "walkforward_results": {
+    "n_folds": 3,
+    "strategy": "expanding",
+    "embargo_days": 0,
+    "per_fold_metrics": {}
+  },
+  "feature_importance": {},
+  "data_quality": {},
+  "model_complexity": {},
+  "prediction_statistics": {},
+  "error_analysis": {},
+  "data_drift_checks": {},
+  "uncertainty_calibration": {},
+  "shap_explanations": {},
+  "threshold_optimization": {},
+  "ensemble_specific": {},
+  "raw_metrics": {
+    "meta_mse": 8.170344389139053e-07,
+    "meta_mae": 0.0001628412058951337,
+    "meta_r2": 0.17120258014425527,
+    "meta_rmse": 0.0009038995734670447,
+    "base_avg_r2": 0.3477058092766496,
+    "base_avg_mse": 6.430362901192595e-07,
+    "improvement_over_avg": -0.17650322913239436,
+    "avg_correlation": -3.556484809974859e-17,
+    "min_correlation": -3.556484809974859e-17,
+    "max_correlation": -3.556484809974859e-17,
+    "correlation_std": 0.0
+  },
+  "artifacts": {
+    "analyst_ensemble_model": "artifacts/analyst_ensemble_model.pkl",
+    "analyst_ensemble_metrics": "artifacts/analyst_ensemble_metrics.pkl",
+    "analyst_ensemble_metrics_report": "outcomes/analyst_ensemble_ETHUSDT_15m_long_report_20251120_233008.md",
+    "analyst_ensemble_config": "artifacts/analyst_ensemble_config.json",
+    "training_report_markdown": "outcomes/analyst_ensemble_ETHUSDT_15m_long_report_20251120_233008.md",
+    "training_report_json": "outcomes/analyst_ensemble_ETHUSDT_15m_long_metrics_20251120_233008.json",
+    "ml_scored_historical_data_oos": "ml_scored_historical_data_analyst_long_oos"
+  },
+  "models": {
+    "count": 0,
+    "names": [],
+    "details": {}
+  }
+}

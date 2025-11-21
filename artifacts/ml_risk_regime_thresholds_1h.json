@@ -1,0 +1,21 @@
+{
+  "data": {
+    "breakpoints_df": "   breakpoint_idx  breakpoint_value\n0               0          0.000000\n1               1          0.957958\n2               2          1.000000",
+    "metadata": {
+      "extraction_timestamp": "2025-11-21T00:41:22.976987",
+      "symbol": "ETHUSDT",
+      "regime_col_name": "risk_regime",
+      "total_samples": 1000,
+      "n_regimes": 2,
+      "sigma": 0.05,
+      "kde_bandwidth": 0.05
+    }
+  },
+  "metadata": {
+    "symbol": "ETHUSDT",
+    "exchange": "binance",
+    "timeframe": "1h",
+    "n_regimes": 2
+  },
+  "saved_at": "2025-11-21T00:41:22.977723"
+}

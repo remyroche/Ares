@@ -870,7 +870,7 @@ def compute_vol_scaled_returns_for_events(
 
         # Drop economically trivial events from the vol-scaled series so that
         # quantile-based labels focus on meaningful moves.
-        econ_floor = ECON_MIN_RETURN_MULTIPLE * DEFAULT_TRANSACTION_COST
+        econ_floor = 0.0
         small_mask = realized_returns.abs() < econ_floor
         vol_scaled[small_mask] = np.nan
 
@@ -902,7 +902,7 @@ def create_quantile_labels_from_vol_scaled_returns(
 
     try:
         v = vol_scaled.dropna()
-        if len(v) < 100:
+        if len(v) < 50:
             return labels
 
         low_val = float(v.quantile(low_q))
@@ -924,7 +924,7 @@ def create_regime_aware_quantile_labels_from_vol_scaled_returns(
     regimes: Optional[pd.Series] = None,
     low_q: float = 0.3,
     high_q: float = 0.7,
-    min_samples_per_regime: int = 100,
+    min_samples_per_regime: int = 50,
 ) -> pd.Series:
     """Regime-aware wrapper around quantile-based label generation.
 
@@ -1076,6 +1076,12 @@ def create_meta_features(
         ]
         for col in regime_prob_cols:
             features[col] = df[col]
+
+        # HMM Alpha expectation features (1h) attached upstream
+        if 'hmm_alpha_expectation_raw_1h' in df.columns:
+            features['hmm_alpha_expectation_raw_1h'] = df['hmm_alpha_expectation_raw_1h']
+        if 'hmm_alpha_expectation_ema_1h' in df.columns:
+            features['hmm_alpha_expectation_ema_1h'] = df['hmm_alpha_expectation_ema_1h']
     except Exception as e_reg:
         tprint(f"⚠️ Warning: Could not attach external regime features: {e_reg}", "WARNING")
 
@@ -4261,6 +4267,106 @@ def attach_rolling_hmm_regimes_to_market_data(
                         md[col] = probs_aligned[col]
     except Exception as e_prob:
         tprint(f"⚠️ Failed to align rolling HMM regime probabilities: {e_prob}", "WARNING")
+
+    # Attach HMM Alpha expectation (1h) from hmm_ml_alpha_step if available.
+    # This uses the regime_alpha namespace and the hmm_alpha_training_data_1h
+    # artifact produced by HMMMLAlphaStep and aligns it to the base timeframe.
+    try:
+        alpha_context = {
+            "symbol": symbol,
+            "exchange": exchange,
+            "timeframe": regime_timeframe,
+            "direction": direction,
+            "model": "regime_alpha",
+            "step_name": "hmm_ml_alpha_step",
+        }
+
+        alpha_training = None
+        try:
+            alpha_training = step.artifact_router.load(  # type: ignore[attr-defined]
+                artifact_name="hmm_alpha_training_data_1h",
+                artifact_type="data",
+                data_category="features",
+                context=alpha_context,
+            )
+        except Exception as e_alpha_load:
+            tprint(f"⚠️ Failed to load hmm_alpha_training_data_1h for regime_alpha context: {e_alpha_load}", "WARNING")
+            alpha_training = None
+
+        if isinstance(alpha_training, pd.DataFrame) and not alpha_training.empty:
+            at = alpha_training.copy()
+            if "timestamp" in at.columns:
+                at["timestamp"] = pd.to_datetime(at["timestamp"])
+                at.set_index("timestamp", inplace=True)
+            if isinstance(at.index, pd.DatetimeIndex):
+                exp_cols = [
+                    c
+                    for c in at.columns
+                    if c.startswith("alpha_expectation_")
+                ]
+                if exp_cols:
+                    at_sub = at[exp_cols].sort_index()
+                    at_aligned = at_sub.reindex(md.index, method="ffill")
+                    # Rename to 1h context to avoid confusion with 15m features
+                    rename_map = {}
+                    for c in exp_cols:
+                        if c == "alpha_expectation_raw_01":
+                            rename_map[c] = "hmm_alpha_expectation_raw_1h"
+                        elif c == "alpha_expectation_ema_01":
+                            rename_map[c] = "hmm_alpha_expectation_ema_1h"
+                        else:
+                            rename_map[c] = f"hmm_alpha_{c}"
+                    at_aligned = at_aligned.rename(columns=rename_map)
+                    for c in at_aligned.columns:
+                        md[c] = at_aligned[c]
+    except Exception as e_alpha:
+        tprint(f"⚠️ Failed to attach HMM Alpha expectation features: {e_alpha}", "WARNING")
+
+    try:
+        symbol_rr = symbol
+        exchange_rr = exchange
+        regime_timeframe_rr = regime_timeframe
+        direction_rr = direction
+
+        risk_context = {
+            "symbol": symbol_rr,
+            "exchange": exchange_rr,
+            "timeframe": regime_timeframe_rr,
+            "direction": direction_rr,
+            "model": "regime_risk",
+            "step_name": "ml_risk_regime_step",
+        }
+
+        risk_training = None
+        try:
+            risk_training = step.artifact_router.load(  # type: ignore[attr-defined]
+                artifact_name="ml_risk_training_data_1h",
+                artifact_type="data",
+                data_category="features",
+                context=risk_context,
+            )
+        except Exception as e_load:
+            tprint(f"⚠️ Failed to load ml_risk_training_data_1h for regime_risk context: {e_load}", "WARNING")
+            risk_training = None
+
+        if isinstance(risk_training, pd.DataFrame) and not risk_training.empty:
+            rt = risk_training.copy()
+            if "timestamp" in rt.columns:
+                rt["timestamp"] = pd.to_datetime(rt["timestamp"])
+                rt.set_index("timestamp", inplace=True)
+            if isinstance(rt.index, pd.DatetimeIndex):
+                risk_cols = [
+                    c
+                    for c in rt.columns
+                    if c.startswith("risk_regime") or c.startswith("risk_score")
+                ]
+                if risk_cols:
+                    rt_sub = rt[risk_cols].sort_index()
+                    rt_aligned = rt_sub.reindex(md.index, method="ffill")
+                    for col in risk_cols:
+                        md[col] = rt_aligned[col]
+    except Exception as e_risk:
+        tprint(f"⚠️ Failed to attach ML Risk regime probabilities: {e_risk}", "WARNING")
 
     return md
 

@@ -161,12 +161,23 @@ class AnalystEnsembleTrainingStep(BaseStep):
                 if alpha_training is not None and not alpha_training.empty:
 
                     # Select regime feature columns (supports both alpha and risk regimes)
-                    alpha_cols = [
+                    expectation_cols = [
                         c for c in alpha_training.columns
-                        if (c.startswith('alpha_regime_bucket_') or c.startswith('alpha_pred_') or
-                            c.startswith('risk_regime') or c.startswith('risk_pred_') or
-                            c.startswith('risk_score'))
+                        if c.startswith('alpha_expectation_')
                     ]
+                    risk_cols = [
+                        c for c in alpha_training.columns
+                        if (c.startswith('risk_regime') or c.startswith('risk_pred_') or c.startswith('risk_score'))
+                    ]
+                    if expectation_cols:
+                        alpha_cols = expectation_cols + risk_cols
+                    else:
+                        alpha_cols = [
+                            c for c in alpha_training.columns
+                            if (c.startswith('alpha_regime_bucket_') or c.startswith('alpha_pred_') or
+                                c.startswith('risk_regime') or c.startswith('risk_pred_') or
+                                c.startswith('risk_score'))
+                        ]
 
                     if alpha_cols:
                         alpha_features = alpha_training[alpha_cols].copy()

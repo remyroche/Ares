@@ -244,6 +244,8 @@ class UnifiedModelsTrainingStep(BaseStep):
                 from src.utils.versioned_artifacts.temporal_splits import (
                     create_walkforward_split_config_for_pipeline,
                     create_temporal_split_config_for_pipeline,
+                    WalkForwardSplitConfig,
+                    TemporalSplitConfig,
                 )
 
                 # Parameters can be overridden via config
@@ -252,26 +254,53 @@ class UnifiedModelsTrainingStep(BaseStep):
                 final_test_pct = float(config.get('wf_final_test_pct', 0.15))
                 embargo_days = int(config.get('wf_embargo_days', 1))
 
-                walkforward_config = create_walkforward_split_config_for_pipeline(
-                    symbol=symbol,
-                    exchange=config.get('exchange', 'binance'),
-                    timeframe=timeframe,
-                    data_start=data_start,
-                    data_end=data_end,
-                    n_folds=n_folds,
-                    val_pct_per_fold=val_pct_per_fold,
-                    final_test_pct=final_test_pct,
-                    min_train_pct=float(config.get('wf_min_train_pct', 0.55)),
-                    embargo_days=embargo_days,
-                )
+                execution_mode_local = str(config.get('execution_mode', 'full')).lower()
 
-                temporal_config = create_temporal_split_config_for_pipeline(
-                    symbol=symbol,
-                    exchange=config.get('exchange', 'binance'),
-                    timeframe=timeframe,
-                    data_start=data_start,
-                    data_end=data_end,
-                )
+                if execution_mode_local == 'blank':
+                    # In BLANK mode, always regenerate temporal splits from the current
+                    # data window so we effectively use the full lookback range instead
+                    # of any previously cached JSON created on a shorter sample.
+
+                    walkforward_config = WalkForwardSplitConfig.create_expanding_window(
+                        data_start=data_start,
+                        data_end=data_end,
+                        n_folds=n_folds,
+                        val_pct_per_fold=val_pct_per_fold,
+                        final_test_pct=final_test_pct,
+                        min_train_pct=float(config.get('wf_min_train_pct', 0.55)),
+                        embargo_days=embargo_days,
+                    )
+
+                    temporal_config = TemporalSplitConfig.create_from_data(
+                        data_start=data_start,
+                        data_end=data_end,
+                        train_pct=0.6,
+                        val_pct=0.2,
+                        test_pct=0.2,
+                        embargo_days=1,
+                    )
+                else:
+                    # For non-BLANK modes, reuse cached configs when available.
+                    walkforward_config = create_walkforward_split_config_for_pipeline(
+                        symbol=symbol,
+                        exchange=config.get('exchange', 'binance'),
+                        timeframe=timeframe,
+                        data_start=data_start,
+                        data_end=data_end,
+                        n_folds=n_folds,
+                        val_pct_per_fold=val_pct_per_fold,
+                        final_test_pct=final_test_pct,
+                        min_train_pct=float(config.get('wf_min_train_pct', 0.55)),
+                        embargo_days=embargo_days,
+                    )
+
+                    temporal_config = create_temporal_split_config_for_pipeline(
+                        symbol=symbol,
+                        exchange=config.get('exchange', 'binance'),
+                        timeframe=timeframe,
+                        data_start=data_start,
+                        data_end=data_end,
+                    )
 
                 # Store configs for downstream consumers (HPO, pipeline, reports)
                 self._walkforward_config = walkforward_config
@@ -3078,12 +3107,23 @@ class UnifiedModelsTrainingStep(BaseStep):
                     tprint_info(f"   ↪ Retrieved {source_type} training data: shape={alpha_training.shape}, columns={len(alpha_training.columns)}")
 
                     # Select regime feature columns (supports both alpha and risk regimes)
-                    alpha_cols = [
+                    expectation_cols = [
                         c for c in alpha_training.columns
-                        if (c.startswith('alpha_regime_bucket_') or c.startswith('alpha_pred_') or
-                            c.startswith('risk_regime') or c.startswith('risk_pred_') or
-                            c.startswith('risk_score'))
+                        if c.startswith('alpha_expectation_')
                     ]
+                    risk_cols = [
+                        c for c in alpha_training.columns
+                        if (c.startswith('risk_regime') or c.startswith('risk_pred_') or c.startswith('risk_score'))
+                    ]
+                    if expectation_cols:
+                        alpha_cols = expectation_cols + risk_cols
+                    else:
+                        alpha_cols = [
+                            c for c in alpha_training.columns
+                            if (c.startswith('alpha_regime_bucket_') or c.startswith('alpha_pred_') or
+                                c.startswith('risk_regime') or c.startswith('risk_pred_') or
+                                c.startswith('risk_score'))
+                        ]
 
                     if alpha_cols:
                         alpha_features = alpha_training[alpha_cols].copy()

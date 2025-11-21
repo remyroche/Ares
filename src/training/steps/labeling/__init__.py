@@ -33,9 +33,15 @@ from .feature_generation_meta_labeling_step import (
     DEFAULT_TRANSACTION_COST,
 )
 
-from .meta_labeling_hpo_experiment_step import (
-    MetaLabelingHPOExperimentStep,
-)
+try:
+    from .meta_labeling_hpo_experiment_step import (
+        MetaLabelingHPOExperimentStep,
+    )
+except Exception:
+    # If the optional meta-labeling HPO step fails to import (e.g. due to
+    # environment-specific issues), degrade gracefully so that core labeling
+    # and training steps continue to function.
+    MetaLabelingHPOExperimentStep = None
 
 from .triple_barrier_validator import (
     TripleBarrierValidator,

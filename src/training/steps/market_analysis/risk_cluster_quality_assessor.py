@@ -247,46 +247,130 @@ class RiskClusterQualityAssessor:
 
         return vol_cluster_coeff, within_vol_cv, between_vol_cv, vol_sep_ratio
 
+    def _calculate_transition_matrix_and_stability(
+        self,
+        labels: pd.Series,
+    ) -> Dict[str, Any]:
+        """Calculate transition matrix and stability metrics (entropy + stickiness)."""
+        labels_clean = labels.dropna()
+        if len(labels_clean) < 2:
+            return {
+                "transition_matrix": np.array([[1.0]]),
+                "transition_entropy": 0.0,
+                "regime_stickiness": 1.0,
+                "transition_stability_score": 1.0,
+            }
+
+        unique_regimes = np.sort(labels_clean.unique())
+        n_regimes = len(unique_regimes)
+        if n_regimes <= 1:
+            return {
+                "transition_matrix": np.array([[1.0]]),
+                "transition_entropy": 0.0,
+                "regime_stickiness": 1.0,
+                "transition_stability_score": 1.0,
+            }
+
+        # Create transition count matrix
+        transition_matrix = np.zeros((n_regimes, n_regimes))
+        label_values = labels_clean.values
+        for i in range(len(label_values) - 1):
+            from_regime = label_values[i]
+            to_regime = label_values[i + 1]
+            from_idx = np.where(unique_regimes == from_regime)[0][0]
+            to_idx = np.where(unique_regimes == to_regime)[0][0]
+            transition_matrix[from_idx, to_idx] += 1.0
+
+        # Convert counts to probabilities
+        row_sums = transition_matrix.sum(axis=1, keepdims=True)
+        row_sums = np.where(row_sums == 0, 1.0, row_sums)
+        transition_matrix = transition_matrix / row_sums
+
+        # Transition entropy per row
+        transition_entropies: List[float] = []
+        for i in range(n_regimes):
+            row_probs = transition_matrix[i, :]
+            if np.sum(row_probs) > 0:
+                row_probs = row_probs / np.sum(row_probs)
+                entropy = -np.sum(row_probs * np.log(row_probs + 1e-10))
+                transition_entropies.append(float(entropy))
+
+        avg_transition_entropy = float(np.mean(transition_entropies)) if transition_entropies else 0.0
+        max_entropy = float(np.log(n_regimes)) if n_regimes > 0 else 1.0
+
+        # Regime stickiness: average probability of staying in same regime
+        diagonal_sum = float(np.trace(transition_matrix))
+        regime_stickiness = float(diagonal_sum / n_regimes)
+
+        if max_entropy <= 0:
+            entropy_score = 1.0
+        else:
+            entropy_score = 1.0 - (avg_transition_entropy / max_entropy)
+
+        transition_stability_score = float((entropy_score + regime_stickiness) / 2.0)
+
+        return {
+            "transition_matrix": transition_matrix,
+            "transition_entropy": avg_transition_entropy,
+            "regime_stickiness": regime_stickiness,
+            "transition_stability_score": transition_stability_score,
+        }
+
     def _assess_transition_stability(
         self,
         labels: pd.Series,
         n_regimes: int
     ) -> Tuple[float, float, float]:
         """Assess transition stability (calm->crash vs calm->turbulent->crash)."""
-        # Assume lowest regime = calm, highest = crash, middle = turbulent/volatile
-        if n_regimes < 3:
+        labels_clean = labels.dropna()
+        if len(labels_clean) < 2:
             return 0.0, 0.0, 1.0
 
-        calm_regime = labels.min()
-        crash_regime = labels.max()
+        # Always compute matrix-based transition stability
+        tm_data = self._calculate_transition_matrix_and_stability(labels_clean)
+        trans_stability = float(tm_data.get("transition_stability_score", 0.0))
+
+        # Calm/crash path metrics require at least 3 ordered regimes
+        n_unique = int(labels_clean.nunique())
+        if n_unique < 3:
+            return 0.0, 0.0, trans_stability
+
+        calm_regime = labels_clean.min()
+        crash_regime = labels_clean.max()
 
         # Count transitions
         transitions = pd.DataFrame({
-            'from': labels.iloc[:-1].values,
-            'to': labels.iloc[1:].values
+            'from': labels_clean.iloc[:-1].values,
+            'to': labels_clean.iloc[1:].values
         })
 
         # Direct calm -> crash
-        calm_to_crash_direct = len(transitions[(transitions['from'] == calm_regime) & (transitions['to'] == crash_regime)])
+        calm_to_crash_direct = len(
+            transitions[
+                (transitions['from'] == calm_regime)
+                & (transitions['to'] == crash_regime)
+            ]
+        )
 
         # Calm -> middle -> crash (any middle state)
-        calm_to_middle = transitions[(transitions['from'] == calm_regime) & (transitions['to'] > calm_regime) & (transitions['to'] < crash_regime)]
-        middle_to_crash = transitions[(transitions['from'] > calm_regime) & (transitions['from'] < crash_regime) & (transitions['to'] == crash_regime)]
+        calm_to_middle = transitions[
+            (transitions['from'] == calm_regime)
+            & (transitions['to'] > calm_regime)
+            & (transitions['to'] < crash_regime)
+        ]
+        middle_to_crash = transitions[
+            (transitions['from'] > calm_regime)
+            & (transitions['from'] < crash_regime)
+            & (transitions['to'] == crash_regime)
+        ]
         calm_to_middle_to_crash = min(len(calm_to_middle), len(middle_to_crash))
 
         total_calm_transitions = len(transitions[transitions['from'] == calm_regime])
-
         if total_calm_transitions == 0:
-            return 0.0, 0.0, 1.0
+            return 0.0, 0.0, trans_stability
 
         calm_crash_direct_prob = float(calm_to_crash_direct / total_calm_transitions)
         calm_crash_via_turb_prob = float(calm_to_middle_to_crash / total_calm_transitions)
-
-        # Stability score: prefer gradual transitions (high via_turb, low direct)
-        if calm_crash_direct_prob + calm_crash_via_turb_prob == 0:
-            trans_stability = 1.0
-        else:
-            trans_stability = float(calm_crash_via_turb_prob / (calm_crash_direct_prob + calm_crash_via_turb_prob + 1e-9))
 
         return calm_crash_direct_prob, calm_crash_via_turb_prob, trans_stability
 
@@ -393,6 +477,8 @@ class RiskClusterQualityAssessor:
             f.write(f"Risk Cluster Quality Assessment Report\n")
             f.write(f"Symbol: {symbol}\n")
             f.write(f"Timestamp: {metrics.assessment_timestamp}\n")
+            f.write(f"Number of Regimes: {metrics.n_regimes}\n")
+            f.write(f"Total Samples: {metrics.n_samples}\n")
             f.write("=" * 80 + "\n\n")
 
             f.write(f"Overall Quality Score: {metrics.overall_quality_score:.4f}\n\n")

@@ -10,21 +10,23 @@ analyst_config:
       model_type: LGBMRegressor
       params:
         n_estimators: 200
-        learning_rate: 0.2536999076681772
+        learning_rate: 0.13125830316209655
         max_depth: 5
         num_leaves: 32
-        subsample: 0.9802857225639665
-        colsample_bytree: 0.9802857225639665
+        subsample: 0.9852142919229748
+        colsample_bytree: 0.9852142919229748
         random_state: 42
         verbosity: -1
         n_jobs: -1
-        reg_lambda: 1.8727005942368125
-        sampling_rate: 0.9802857225639665
-        min_child_samples: 76
+        reg_lambda: 1.1236203565420875
+        sampling_rate: 0.9852142919229748
+        min_child_samples: 64
         objective: regression
         metric: rmse
+        early_stopping_rounds: 100
+        min_boost_rounds: 200
       hpo:
-        enabled: false
+        enabled: true
         n_rounds: 2
         enable_final_refinement: true
         final_refinement_trials: 50
@@ -66,13 +68,21 @@ analyst_config:
             type: float
             low: 0.1
             high: 1.0
-        optimal_params: {}
+        optimal_params:
+          max_depth: 5
+          learning_rate: 0.13125830316209655
+          reg_lambda: 1.1236203565420875
+          sampling_rate: 0.9852142919229748
+          min_child_samples: 64
+          num_leaves: 32
+          subsample: 0.9852142919229748
+          colsample_bytree: 0.9852142919229748
         last_optimization:
-          timestamp: '2025-11-16T22:49:17.028926'
+          timestamp: '2025-11-21T00:42:07.546435'
           best_score: -.inf
-          total_trials: 0
-          total_time_seconds: 0.0002300739288330078
-          n_rounds: 0
+          total_trials: 350
+          total_time_seconds: 0.45926570892333984
+          n_rounds: 2
     depthwise_cnn:
       model_type: DepthwiseSeparableCNNRegressor
       params:
@@ -141,12 +151,12 @@ analyst_config:
     catboost:
       model_type: CatBoostRegressor
       params:
-        iterations: 400
-        learning_rate: 0.05
+        iterations: 639
+        learning_rate: 0.1358198535217987
         depth: 5
-        l2_leaf_reg: 8.0
-        subsample: 0.8
-        colsample_bylevel: 0.8
+        l2_leaf_reg: 4.2472407130841745
+        subsample: 0.9852142919229748
+        colsample_bylevel: 0.9852142919229748
         border_count: 128
         max_ctr_complexity: 2
         random_seed: 42
@@ -156,7 +166,7 @@ analyst_config:
         loss_function: RMSE
         eval_metric: RMSE
       hpo:
-        enabled: false
+        enabled: true
         n_rounds: 2
         enable_final_refinement: true
         final_refinement_trials: 50
@@ -194,13 +204,20 @@ analyst_config:
             type: int
             low: 1
             high: 4
-        optimal_params: {}
+        optimal_params:
+          depth: 5
+          learning_rate: 0.1358198535217987
+          iterations: 639
+          l2_leaf_reg: 4.2472407130841745
+          bootstrap_type: Bernoulli
+          subsample: 0.9852142919229748
+          colsample_bylevel: 0.9852142919229748
         last_optimization:
-          timestamp: '2025-11-16T22:49:17.318875'
+          timestamp: '2025-11-21T00:42:09.257645'
           best_score: -.inf
-          total_trials: 0
-          total_time_seconds: 0.0002129077911376953
-          n_rounds: 0
+          total_trials: 350
+          total_time_seconds: 0.3459467887878418
+          n_rounds: 2
   training:
     training_samples: 50000
     validation_samples: 15000

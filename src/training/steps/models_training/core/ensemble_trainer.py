@@ -519,12 +519,19 @@ class EnsembleTrainer(BaseTrainer):
         try:
             diversity_metrics = {}
             
-            if base_predictions is None or base_predictions.empty or base_predictions.shape[1] < 2:
+            if base_predictions is None or base_predictions.empty:
+                return diversity_metrics
+            
+            n_models = base_predictions.shape[1]
+            diversity_metrics['n_base_models'] = n_models
+            
+            if n_models < 2:
                 return diversity_metrics
             
             # Calculate pairwise correlations between base model predictions
+            model_cols = list(base_predictions.columns)
             correlations = []
-            n_models = base_predictions.shape[1]
+            pair_correlations = []
             
             for i in range(n_models):
                 for j in range(i + 1, n_models):
@@ -532,12 +539,29 @@ class EnsembleTrainer(BaseTrainer):
                     pred_j = base_predictions.iloc[:, j].values
                     corr = np.corrcoef(pred_i, pred_j)[0, 1]
                     correlations.append(corr)
+                    pair_correlations.append((model_cols[i], model_cols[j], corr))
             
             if correlations:
                 diversity_metrics['avg_correlation'] = np.mean(correlations)
                 diversity_metrics['min_correlation'] = np.min(correlations)
                 diversity_metrics['max_correlation'] = np.max(correlations)
                 diversity_metrics['correlation_std'] = np.std(correlations)
+                
+                # Track top correlation pairs (by absolute correlation) for diagnostics
+                pair_info = [
+                    {
+                        'model_i': a,
+                        'model_j': b,
+                        'correlation': float(c)
+                    }
+                    for (a, b, c) in pair_correlations
+                ]
+                pair_info_sorted = sorted(
+                    pair_info,
+                    key=lambda x: abs(x['correlation']),
+                    reverse=True
+                )
+                diversity_metrics['top_correlation_pairs'] = pair_info_sorted[:5]
             
             return diversity_metrics
             

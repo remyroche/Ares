@@ -419,6 +419,8 @@ def compute_underfit_diagnostics(
         "learning_curve_fractions": {},
         "learning_curve_depths": {},
         "feature_importance_concentration": None,
+        "feature_group_importance": None,
+        "top_feature_importances": [],
         "probe_vs_deep_auc_diff": None,
         "is_underfit": False,
         "underfit_indicators": [],
@@ -524,10 +526,31 @@ def compute_underfit_diagnostics(
             importances = final_model.feature_importances_
             sorted_imp = np.sort(importances)[::-1]
             total_imp = importances.sum()
+            feature_names = list(X_clean.columns) if isinstance(X_clean, pd.DataFrame) else None
 
             if total_imp > 0:
                 top_5_concentration = sorted_imp[:5].sum() / total_imp
                 diagnostics["feature_importance_concentration"] = float(top_5_concentration)
+
+                if feature_names is not None and len(feature_names) == len(importances):
+                    group_totals = {"volatility": 0.0, "signal": 0.0, "other": 0.0}
+                    top_features: list[dict[str, Any]] = []
+                    idx_sorted = np.argsort(importances)[::-1]
+                    top_k = min(20, len(idx_sorted))
+                    for idx in idx_sorted[:top_k]:
+                        name = str(feature_names[idx])
+                        share = float(importances[idx]) / float(total_imp)
+                        lname = name.lower()
+                        if any(tok in lname for tok in ("vol", "atr", "std", "var", "range")):
+                            group = "volatility"
+                        elif any(tok in lname for tok in ("signal", "alpha", "entry", "meta", "prob")):
+                            group = "signal"
+                        else:
+                            group = "other"
+                        group_totals[group] += share
+                        top_features.append({"name": name, "importance": share})
+                    diagnostics["feature_group_importance"] = group_totals
+                    diagnostics["top_feature_importances"] = top_features
 
                 # If top 5 features dominate 80%+, model is only scratching surface
                 if top_5_concentration > 0.8:
@@ -783,7 +806,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     "profit_thr_base": {
                         "type": "float",
                         "low": 0.008,
-                        "high": 0.03,
+                        "high": 0.022,
                     },
                     "stop_to_profit_ratio": {
                         "type": "float",
@@ -854,7 +877,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     },
                     "profit_mult_min": {
                         "type": "float",
-                        "low": 0.5,
+                        "low": 0.7,
                         "high": 1.0,
                     },
                     "profit_mult_max": {
@@ -870,7 +893,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     "stop_mult_max": {
                         "type": "float",
                         "low": 1.0,
-                        "high": 2.0,
+                        "high": 1.5,
                     },
                 },
                 priority=4,
@@ -1152,15 +1175,15 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     )
                 binary_labels = quantile_labels
 
-                # Guard: extremely sparse configurations (< 0.5 events/day) are rejected
-                # outright; all others are allowed through and handled via softer
-                # density penalties further down.
+                # Guard: configurations that produce no labeled events at all are
+                # rejected outright; sparse but non-zero densities are handled via
+                # softer density penalties further down.
                 labeled_mask = ~binary_labels.isna()
                 n_events = int(labeled_mask.sum())
                 events_per_day = n_events / max(days_span, 1)
-                if events_per_day < 0.5:
+                if n_events == 0:
                     tprint_warning(
-                        f"⚠️ HPO config produced extremely sparse events (n={n_events}, {events_per_day:.3f} events/day), rejecting",
+                        f"⚠️ HPO config produced zero labeled events (n={n_events}, {events_per_day:.3f} events/day), rejecting",
                     )
                     return -1e9
 
@@ -2096,6 +2119,48 @@ class MetaLabelingHPOExperimentStep(BaseStep):
         knee_solution = None
         knee_params = best_params
 
+        try:
+            if candidate_pool:
+                auc_values = [float(c.get("mean_auc", np.nan)) for c in candidate_pool]
+                auc_values_clean = [v for v in auc_values if np.isfinite(v)]
+                auc_median = float(np.median(auc_values_clean)) if auc_values_clean else 0.6
+
+                k_auc = 10.0
+
+                for cand in candidate_pool:
+                    edge_val = float(cand.get("edge", 0.0))
+                    mean_auc_raw = float(cand.get("mean_auc", 0.0))
+                    auc_centered = mean_auc_raw - auc_median
+                    if np.isfinite(auc_centered):
+                        smooth_auc = float(1.0 / (1.0 + np.exp(-k_auc * auc_centered)))
+                    else:
+                        smooth_auc = 0.5
+
+                    metrics = {
+                        "edge": edge_val,
+                        "mean_auc_smooth": smooth_auc,
+                        "mean_auc_raw": mean_auc_raw,
+                        "learnability": float(cand.get("learnability", 0.0)),
+                        "profitability": float(cand.get("profitability", 0.0)),
+                        "sharpe_pos": float(cand.get("sharpe_pos", 0.0)),
+                    }
+                    params_for_sol = cand.get("params") or {}
+                    pareto_solutions.append(Solution(metrics=metrics, params=params_for_sol))
+
+                objectives = {"edge": "max", "mean_auc_smooth": "max"}
+                pareto_front = compute_pareto_front(pareto_solutions, objectives, use_gpu=True, use_vectorbt=True)
+                knee_solution = select_knee_point(pareto_front, objectives)
+                if knee_solution and knee_solution.params:
+                    tmp_params = best_params.copy()
+                    tmp_params.update(knee_solution.params)
+                    knee_params = tmp_params
+        except Exception as pareto_exc:
+            tprint_warning(f"⚠️ Pareto frontier construction failed: {pareto_exc}")
+            pareto_solutions = []
+            pareto_front = []
+            knee_solution = None
+            knee_params = best_params
+
         # Compact run summary for quick log scanning
         try:
             round_results = getattr(optimizer, "round_results", [])
@@ -2514,7 +2579,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     f.write(f"Balanced trade-off between learnability and profitability:\n\n")
                     f.write(f"- **Learnability:** {knee_solution.metrics['learnability']:.4f}\n")
                     f.write(f"- **Profitability:** {knee_solution.metrics['profitability']:.4f}\n")
-                    f.write(f"- **Mean AUC:** {knee_solution.metrics.get('mean_auc', 0):.4f}\n")
+                    f.write(f"- **Mean AUC:** {knee_solution.metrics.get('mean_auc_raw', knee_solution.metrics.get('mean_auc_smooth', 0)):.4f}\n")
                     f.write(f"- **Sharpe (Winners):** {knee_solution.metrics.get('sharpe_pos', 0):.4f}\n\n")
                     f.write(f"```json\n")
                     f.write(json.dumps(knee_params, indent=2))
@@ -2562,6 +2627,24 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     # Feature importance concentration
                     if diag.get('feature_importance_concentration') is not None:
                         f.write(f"**Feature Importance Concentration (Top 5):** {diag['feature_importance_concentration']:.1%}\n\n")
+
+                    if diag.get('feature_group_importance'):
+                        groups = diag['feature_group_importance']
+                        f.write("**Feature Group Importance:**\n\n")
+                        for g, share in groups.items():
+                            f.write(f"- {g}: {share:.1%}\n")
+                        f.write("\n")
+
+                    if diag.get('top_feature_importances'):
+                        f.write("**Top Features by Importance:**\n\n")
+                        for item in diag['top_feature_importances'][:10]:
+                            try:
+                                name = item.get('name', '')
+                                imp = float(item.get('importance', 0.0))
+                                f.write(f"- {name}: {imp:.2%}\n")
+                            except Exception:
+                                continue
+                        f.write("\n")
 
                     # Probe vs deep AUC diff
                     if diag.get('probe_vs_deep_auc_diff') is not None:

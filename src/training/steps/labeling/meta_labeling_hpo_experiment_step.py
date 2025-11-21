@@ -2111,6 +2111,27 @@ class MetaLabelingHPOExperimentStep(BaseStep):
         tprint_success(f"✅ Labeling HPO completed. Best edge={best_score:.6f}")
         tprint_info(f"Best parameters: {best_params}")
 
+        # Extract best candidate's detailed metrics for summary
+        best_candidate_metrics = {}
+        try:
+            if candidate_pool:
+                for cand in candidate_pool:
+                    cand_params = cand.get("params", {})
+                    if cand_params == best_params:
+                        best_candidate_metrics = {
+                            "mean_auc": float(cand.get("mean_auc", 0.5)),
+                            "trades_per_day": float(cand.get("trades_per_day", 0.0)),
+                            "learnability": float(cand.get("learnability", 0.0)),
+                            "profitability": float(cand.get("profitability", 0.0)),
+                            "sharpe_pos": float(cand.get("sharpe_pos", 0.0)),
+                            "balance_score": float(cand.get("balance_score", 0.0)),
+                            "n_events": int(cand.get("n_events", 0)),
+                        }
+                        break
+        except Exception as metric_exc:
+            tprint_warning(f"⚠️ Failed to extract best candidate metrics: {metric_exc}")
+            best_candidate_metrics = {}
+
         # ------------------------------------------------------------------
         # 7) (Disabled) Pareto frontier and knee-point logic
         # ------------------------------------------------------------------
@@ -2170,12 +2191,25 @@ class MetaLabelingHPOExperimentStep(BaseStep):
             n_rounds = None
             total_trials = None
 
+        # Build comprehensive summary with key quality metrics
+        mean_auc = best_candidate_metrics.get("mean_auc", 0.5)
+        trades_per_day = best_candidate_metrics.get("trades_per_day", 0.0)
+        learnability = best_candidate_metrics.get("learnability", 0.0)
+        profitability = best_candidate_metrics.get("profitability", 0.0)
+        sharpe_pos = best_candidate_metrics.get("sharpe_pos", 0.0)
+        n_events = best_candidate_metrics.get("n_events", 0)
+
         tprint_info(
             "HPO summary → "
             f"symbol={symbol}, timeframe={timeframe}, "
-            f"best_score={best_score:.6f}, "
-            f"rounds={n_rounds}, trials={total_trials}, "
-            f"params={best_params}",
+            f"best_score(edge)={best_score:.6f}, "
+            f"mean_auc={mean_auc:.4f}, "
+            f"trades_per_day={trades_per_day:.3f}, "
+            f"learnability={learnability:.4f}, "
+            f"profitability={profitability:.4f}, "
+            f"sharpe_pos={sharpe_pos:.4f}, "
+            f"n_events={n_events}, "
+            f"rounds={n_rounds}, trials={total_trials}",
         )
 
         # Persist best parameters and candidate pool to outcomes/

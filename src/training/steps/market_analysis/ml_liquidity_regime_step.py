@@ -151,9 +151,9 @@ class MLLiquidityRegimeStep(BaseStep):
 
                 # Top discriminative features for distance calculation
                 refinement_features = [
-                    "rvol_24_scaled", "vol_z_24",
+                    "rvol_24_scaled", "vol_z_24", "rvol_20",
                     "delta_regime_signal_scaled", "volume_direction_conviction",
-                    "amihud_spike_ratio_scaled",
+                    "amihud_spike_ratio_scaled", "volume_efficiency_ratio",
                     "consecutive_direction_ratio_6h", "trend_confirmation_6h",
                     "whipsaw_count", "reversal_intensity",
                     "volume_range_interaction", "trend_strength", "trap_indicator",
@@ -466,6 +466,15 @@ class MLLiquidityRegimeStep(BaseStep):
         df["vol_sma_168"] = df["volume"].rolling(vol_window_weekly, min_periods=20).mean()
         df["rvol_24"] = df["volume"] / (df["vol_sma_24"] + eps)
         df["rvol_168"] = df["volume"] / (df["vol_sma_168"] + eps)
+
+        # RVOL: Relative Volume (rolling 20-bar lookback for regime classification)
+        df["vol_sma_20"] = df["volume"].rolling(20, min_periods=5).mean()
+        df["rvol_20"] = df["volume"] / (df["vol_sma_20"] + eps)
+
+        # VER: Volume-Efficiency Ratio (Volume / Range)
+        # High VER = High volume, small range (Absorption)
+        # Low VER = Low volume, large range (Ghost)
+        df["volume_efficiency_ratio"] = df["volume"] / (df["range"] + eps)
 
         vol_mean_24 = df["volume"].rolling(vol_window_daily, min_periods=5).mean()
         vol_std_24 = df["volume"].rolling(vol_window_daily, min_periods=5).std()

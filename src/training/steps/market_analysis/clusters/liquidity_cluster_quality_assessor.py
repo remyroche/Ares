@@ -375,6 +375,8 @@ class LiquidityClusterQualityAssessor:
         ghost_ratio = df.get("ghost_ratio")
         absorption_ratio = df.get("absorption_ratio")
         rvol_24 = df.get("rvol_24")
+        rvol_20 = df.get("rvol_20")
+        volume_efficiency_ratio = df.get("volume_efficiency_ratio")
         intraday_close_ratio = df.get("intraday_close_ratio")
 
         # CATEGORY 1: Directional orderflow metrics
@@ -469,6 +471,8 @@ class LiquidityClusterQualityAssessor:
             gr_mean, gr_std, gr_cov = _mean_std_cov(ghost_ratio)
             ar_mean, ar_std, ar_cov = _mean_std_cov(absorption_ratio)
             rv_mean, rv_std, rv_cov = _mean_std_cov(rvol_24)
+            rv20_mean, rv20_std, rv20_cov = _mean_std_cov(rvol_20)
+            ver_mean, ver_std, ver_cov = _mean_std_cov(volume_efficiency_ratio)
             ic_mean, ic_std, ic_cov = _mean_std_cov(intraday_close_ratio)
 
             # CATEGORY 1: Directional orderflow
@@ -523,6 +527,12 @@ class LiquidityClusterQualityAssessor:
                     "rvol_24_mean": rv_mean,
                     "rvol_24_std": rv_std,
                     "rvol_24_cov": rv_cov,
+                    "rvol_20_mean": rv20_mean,
+                    "rvol_20_std": rv20_std,
+                    "rvol_20_cov": rv20_cov,
+                    "volume_efficiency_ratio_mean": ver_mean,
+                    "volume_efficiency_ratio_std": ver_std,
+                    "volume_efficiency_ratio_cov": ver_cov,
                     "intraday_close_ratio_mean": ic_mean,
                     "intraday_close_ratio_std": ic_std,
                     "intraday_close_ratio_cov": ic_cov,
@@ -615,6 +625,8 @@ class LiquidityClusterQualityAssessor:
                 "ghost_ratio_cov",
                 "absorption_ratio_cov",
                 "rvol_24_cov",
+                "rvol_20_cov",
+                "volume_efficiency_ratio_cov",
                 "intraday_close_ratio_cov",
             ]:
                 val = metrics.get(key)
@@ -760,6 +772,36 @@ class LiquidityClusterQualityAssessor:
             f.write(f"## Overall Quality\n\n")
             f.write(f"- Overall quality score: **{metrics.overall_quality_score:.4f}**\n\n")
 
+            # Add Regime Separation Algorithm explanation section
+            f.write("## Regime Separation Algorithm\n\n")
+            f.write("The regime classification uses a hierarchical decision tree based on two key metrics:\n\n")
+            f.write("**Key Metrics:**\n")
+            f.write("- **RVOL (Relative Volume):** Volume / Average Volume (20-bar lookback)\n")
+            f.write("- **VER (Volume-Efficiency Ratio):** Volume / Candle Range (High - Low)\n\n")
+
+            f.write("### Phase 1: The \"Energy\" Filter (Volume)\n\n")
+            f.write("First, check if the market is awake using RVOL:\n\n")
+            f.write("**If RVOL < 0.8 (Low Energy):**\n")
+            f.write("- Check Price Range:\n")
+            f.write("  - **Small Range** → **Apathy** (Dead Zone)\n")
+            f.write("  - **Large Range** → **Ghost** (Liquidity Gap / Trap)\n\n")
+
+            f.write("### Phase 2: The \"Conflict\" Filter (High Volume)\n\n")
+            f.write("**If RVOL > 1.2 (High Energy):** Big players are active. Check Efficiency (VER):\n\n")
+            f.write("- **Is Range Small relative to Volume? (Low VER)**\n")
+            f.write("  - → **Absorption** (The harder they push, the less it moves)\n")
+            f.write("- **Is Range Large relative to Volume? (High VER)**\n")
+            f.write("  - → **Valid Trend** (Efficient price discovery)\n\n")
+
+            f.write("### Phase 3: The \"Anomaly\" Filter (The Steamroller)\n\n")
+            f.write("This is the outlier regime:\n\n")
+            f.write("**If RVOL > 3.0 AND Range > 3x ATR (Average True Range):**\n")
+            f.write("- → **Steamroller**\n")
+            f.write("- Even though liquidity is thick, buying pressure is so immense it clears the book instantly\n")
+            f.write("- Represents initiative momentum with low liquidity risk\n\n")
+
+            f.write("---\n\n")
+
             f.write("## CoV-based Separation\n\n")
             f.write(f"- Effort/Result CoV separation score: {metrics.effort_result_cov_separation_score:.4f}\n")
             f.write(f"- Returns CoV separation score: {metrics.returns_cov_separation_score:.4f}\n\n")
@@ -816,7 +858,7 @@ class LiquidityClusterQualityAssessor:
         df = liquidity_df.loc[common_idx].copy()
         labels = regime_labels.loc[common_idx].astype(int)
 
-        # Get all numeric features (60 liquidity regime features)
+        # Get all numeric features (60+ liquidity regime features)
         liquidity_features = [
             col for col in df.columns
             if any(x in col for x in [
@@ -826,7 +868,7 @@ class LiquidityClusterQualityAssessor:
                 'reversal', 'whipsaw', 'volume_concentration', 'pressure_ratio',
                 'kyle_lambda', 'intra_bar_vol', 'wick_vol', 'session_vol',
                 'vol_clustering', 'vol_regime', 'efficiency_ratio', 'volume_price',
-                'price_impact', 'momentum_volume'
+                'price_impact', 'momentum_volume', 'rvol_20', 'volume_efficiency_ratio'
             ])
         ]
 

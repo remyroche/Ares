@@ -965,6 +965,7 @@ class LiquidityClusterQualityAssessor:
                 1: "Valid Trend",
                 2: "Absorption",
                 3: "Ghost",
+                4: "Steamroller",
             }
 
         lines = []
@@ -1079,6 +1080,7 @@ class LiquidityClusterQualityAssessor:
                 1: "Valid Trend",
                 2: "Absorption",
                 3: "Ghost",
+                4: "Steamroller",
             }
         )
 

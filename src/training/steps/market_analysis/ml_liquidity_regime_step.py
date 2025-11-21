@@ -86,7 +86,11 @@ class MLLiquidityRegimeStep(BaseStep):
                 "liquidity_use_ewm_features": True,
                 "liquidity_enable_prob_calibration": True,
                 "liquidity_enable_hpo": False,
-                "liquidity_n_regimes": 4,
+                "liquidity_n_regimes": 5,  # 0=Apathy, 1=Valid Trend, 2=Absorption, 3=Ghost, 4=Steamroller
+                # Centroid refinement settings
+                "liquidity_enable_centroid_refinement": True,
+                "liquidity_centroid_iterations": 3,
+                "liquidity_centroid_min_improvement": 0.05,
             }
             for k, v in liquidity_defaults.items():
                 config.setdefault(k, v)
@@ -134,9 +138,52 @@ class MLLiquidityRegimeStep(BaseStep):
             liquidity_df = self._generate_liquidity_features(market_data_1h, config)
 
             # ------------------------------------------------------------------
-            # 3) Construct semantic liquidity regimes (0–3)
+            # 3) Construct semantic liquidity regimes using hierarchical assignment (0–4)
             # ------------------------------------------------------------------
-            liquidity_df = self._assign_liquidity_regimes(liquidity_df, config)
+            liquidity_df = self._hierarchical_regime_assignment(liquidity_df, config)
+
+            # ------------------------------------------------------------------
+            # 3b) Refine regimes with centroid-based clustering
+            # ------------------------------------------------------------------
+            refine_enabled = bool(config.get("liquidity_enable_centroid_refinement", True))
+            if refine_enabled:
+                tprint_info("🔄 Refining regime assignments using centroid clustering...")
+
+                # Top discriminative features for distance calculation
+                refinement_features = [
+                    "rvol_24_scaled", "vol_z_24",
+                    "delta_regime_signal_scaled", "volume_direction_conviction",
+                    "amihud_spike_ratio_scaled",
+                    "consecutive_direction_ratio_6h", "trend_confirmation_6h",
+                    "whipsaw_count", "reversal_intensity",
+                    "volume_range_interaction", "trend_strength", "trap_indicator",
+                ]
+
+                refined_labels = self._refine_regimes_with_centroids(
+                    df=liquidity_df,
+                    regime_labels=liquidity_df["liquidity_regime"],
+                    feature_cols=refinement_features,
+                    n_iterations=int(config.get("liquidity_centroid_iterations", 3)),
+                    min_distance_improvement=float(config.get("liquidity_centroid_min_improvement", 0.05)),
+                )
+
+                liquidity_df["liquidity_regime"] = refined_labels
+
+                # Print refined regime distribution
+                refined_counts = liquidity_df["liquidity_regime"].value_counts().sort_index()
+                tprint_info(f"Refined regime distribution:\n{refined_counts}")
+
+                # Compute regime confidence scores
+                regime_confidence = self._compute_regime_confidence(
+                    df=liquidity_df,
+                    regime_labels=liquidity_df["liquidity_regime"],
+                    feature_cols=refinement_features,
+                )
+                liquidity_df["regime_confidence"] = regime_confidence
+                tprint_info(
+                    f"Regime confidence: mean={regime_confidence.mean():.3f}, "
+                    f"median={regime_confidence.median():.3f}"
+                )
 
             # ------------------------------------------------------------------
             # 4) Train XGBClassifier on liquidity regimes
@@ -453,6 +500,10 @@ class MLLiquidityRegimeStep(BaseStep):
         df["amihud_validity"] = df["abs_return_1h"] / (df["dollar_volume"] + eps)
         df["amivest_efficiency"] = df["dollar_volume"] / (df["abs_return_1h"] + eps)
 
+        # Amihud spike ratio: normalize by rolling baseline to detect illiquidity spikes
+        df["amihud_baseline"] = df["amihud_validity"].rolling(24, min_periods=6).median()
+        df["amihud_spike_ratio"] = df["amihud_validity"] / (df["amihud_baseline"] + eps)
+
         # Ease of Movement (EMV)
         mid_price = (df["high"] + df["low"]) / 2.0
         mid_price_prev = mid_price.shift(1)
@@ -504,7 +555,7 @@ class MLLiquidityRegimeStep(BaseStep):
         # regime pair (Valid Trend, Apathy, Absorption, Ghost)
         # ============================================================================
 
-        # CATEGORY 1: DIRECTIONAL ORDERFLOW (8 features)
+        # CATEGORY 1: DIRECTIONAL ORDERFLOW (10 features)
         # Distinguish Trend (high conviction) vs Apathy (balanced flow)
 
         df["close_position_range"] = (df["close"] - df["low"]) / (df["range"] + eps)
@@ -528,11 +579,20 @@ class MLLiquidityRegimeStep(BaseStep):
             df["volume_direction_imbalance"] * df["direction_change"]
         )
 
-        df["volume_direction_imbalance_ewm6"] = (
-            df["volume_direction_imbalance"].ewm(span=6, adjust=False).mean()
-        )
-        df["volume_direction_conviction_ewm6"] = (
-            df["volume_direction_conviction"].ewm(span=6, adjust=False).mean()
+        # Delta alignment: does orderflow direction match price direction?
+        price_direction = np.sign(df["close"] - df["open"])  # bar direction
+        delta_direction = np.sign(df["volume_direction_imbalance"])  # volume direction
+
+        # Alignment score: +1 (aligned), -1 (diverged), 0 (neutral)
+        df["delta_alignment"] = price_direction * delta_direction
+
+        # Rolling alignment strength over 3h window (3 bars)
+        df["delta_alignment_3h"] = df["delta_alignment"].rolling(window=3, min_periods=1).mean()
+
+        # For Valid Trend: high conviction + high alignment
+        # For Absorption: high conviction + LOW/negative alignment
+        df["delta_regime_signal"] = (
+            df["volume_direction_conviction"] * df["delta_alignment_3h"]
         )
 
         # CATEGORY 2: TREND PERSISTENCE (10 features)
@@ -734,7 +794,490 @@ class MLLiquidityRegimeStep(BaseStep):
             np.sign(df["return_1h"]) * df["volume_direction_conviction"]
         )
 
+        # ============================================================================
+        # INTERACTION FEATURES: Composite signals for regime distinction
+        # ============================================================================
+
+        # Effort × Result interaction (captures regime essence)
+        df["volume_range_interaction"] = df["rvol_24"] * df["normalized_range"]
+
+        # Trend strength composite (Valid Trend signal)
+        df["trend_strength"] = (
+            df["volume_direction_conviction"] * df["consecutive_direction_ratio_6h"]
+        )
+
+        # Trap indicator (Ghost regime signal)
+        df["trap_indicator"] = df["ghost_ratio"] * df["whipsaw_count"]
+
+        # Absorption signal (high volume + diverged delta)
+        df["absorption_signal"] = (
+            df["absorption_ratio"] * (1.0 - df["delta_alignment_3h"].abs())
+        )
+
+        # ============================================================================
+        # WINSORIZED Z-SCORE SCALING: Core dimensions for regime assignment
+        # ============================================================================
+        from src.features_common.transforms.scaling_normalization import winsorized_zscore_normalize
+
+        # Volume dimension
+        df["rvol_24_scaled"] = winsorized_zscore_normalize(
+            df["rvol_24"], ddof=0, lower_quantile=0.01, upper_quantile=0.99
+        )
+        df["vol_z_24_scaled"] = winsorized_zscore_normalize(
+            df["vol_z_24"], ddof=0, lower_quantile=0.01, upper_quantile=0.99
+        )
+
+        # Delta dimension (order flow alignment)
+        df["delta_regime_signal_scaled"] = winsorized_zscore_normalize(
+            df["delta_regime_signal"], ddof=0, lower_quantile=0.01, upper_quantile=0.99
+        )
+
+        # Amihud dimension (illiquidity/price impact)
+        df["amihud_spike_ratio_scaled"] = winsorized_zscore_normalize(
+            df["amihud_spike_ratio"], ddof=0, lower_quantile=0.01, upper_quantile=0.99
+        )
+
         return df
+
+    def _compute_winsorized_cov_ratio(
+        self,
+        feature_df: pd.DataFrame,
+        regime_labels: pd.Series,
+        feature_cols: Optional[List[str]] = None,
+    ) -> float:
+        """
+        Compute winsorized coefficient of variation ratio (between/within regimes).
+
+        Higher ratio = better regime separation.
+
+        Args:
+            feature_df: DataFrame with features
+            regime_labels: Series with regime assignments
+            feature_cols: List of feature columns to use (if None, use all numeric)
+
+        Returns:
+            WCV ratio score (between-regime CoV / within-regime CoV)
+        """
+        if feature_cols is None:
+            feature_cols = feature_df.select_dtypes(include=[np.number]).columns.tolist()
+
+        feature_data = feature_df[feature_cols].copy()
+        eps = 1e-9
+
+        # Winsorize features (1st-99th percentile)
+        for col in feature_cols:
+            if col in feature_data.columns:
+                series = feature_data[col].dropna()
+                if len(series) > 0:
+                    q01 = series.quantile(0.01)
+                    q99 = series.quantile(0.99)
+                    feature_data[col] = feature_data[col].clip(lower=q01, upper=q99)
+
+        regime_ids = sorted(regime_labels.unique())
+        if len(regime_ids) < 2:
+            return 0.0
+
+        # Compute between-regime CoV
+        regime_means = []
+        for regime_id in regime_ids:
+            mask = regime_labels == regime_id
+            if mask.sum() < 3:
+                continue
+            regime_mean = feature_data[mask].mean().mean()  # mean across features, then across samples
+            regime_means.append(regime_mean)
+
+        if len(regime_means) < 2:
+            return 0.0
+
+        between_mean = float(np.mean(regime_means))
+        between_std = float(np.std(regime_means))
+        between_cov = between_std / (abs(between_mean) + eps)
+
+        # Compute within-regime CoV (average across regimes)
+        within_covs = []
+        for regime_id in regime_ids:
+            mask = regime_labels == regime_id
+            if mask.sum() < 3:
+                continue
+            regime_data = feature_data[mask]
+            regime_mean = regime_data.mean().mean()
+            regime_std = regime_data.std().mean()
+            regime_cov = regime_std / (abs(regime_mean) + eps)
+            within_covs.append(regime_cov)
+
+        if len(within_covs) == 0:
+            return 0.0
+
+        within_cov = float(np.mean(within_covs))
+
+        # WCV ratio: between / within (higher is better)
+        wcv_ratio = between_cov / (within_cov + eps)
+
+        return float(wcv_ratio)
+
+    def _find_optimal_split(
+        self,
+        feature_series: pd.Series,
+        other_features_df: pd.DataFrame,
+        candidate_percentiles: Optional[np.ndarray] = None,
+        min_regime_fraction: float = 0.03,
+    ) -> Tuple[float, float]:
+        """
+        Find optimal threshold for a feature split that maximizes WCV ratio.
+
+        Args:
+            feature_series: Feature to split on
+            other_features_df: Features to compute WCV on (Volume, Delta, Amihud)
+            candidate_percentiles: Percentiles to test (default: 20th to 80th by 5)
+            min_regime_fraction: Minimum fraction of samples per regime
+
+        Returns:
+            (optimal_threshold, best_wcv_score)
+        """
+        if candidate_percentiles is None:
+            candidate_percentiles = np.arange(0.20, 0.85, 0.05)
+
+        feature_vals = feature_series.dropna()
+        if len(feature_vals) < 100:
+            # Not enough samples, return median
+            return float(feature_vals.median()), 0.0
+
+        min_samples = int(len(feature_vals) * min_regime_fraction)
+
+        best_threshold = float(feature_vals.median())
+        best_score = 0.0
+
+        for pct in candidate_percentiles:
+            threshold = float(feature_vals.quantile(pct))
+
+            # Create binary split
+            high_mask = feature_series >= threshold
+            low_mask = feature_series < threshold
+
+            # Check minimum size constraint
+            if high_mask.sum() < min_samples or low_mask.sum() < min_samples:
+                continue
+
+            # Create temporary regime labels (0=low, 1=high)
+            temp_labels = pd.Series(0, index=feature_series.index)
+            temp_labels[high_mask] = 1
+
+            # Compute WCV ratio
+            wcv_score = self._compute_winsorized_cov_ratio(
+                other_features_df,
+                temp_labels,
+                feature_cols=other_features_df.columns.tolist(),
+            )
+
+            # Penalize very imbalanced splits
+            balance = min(high_mask.sum(), low_mask.sum()) / max(high_mask.sum(), low_mask.sum())
+            balance_penalty = 0.5 + 0.5 * balance  # ranges from 0.5 to 1.0
+
+            adjusted_score = wcv_score * balance_penalty
+
+            if adjusted_score > best_score:
+                best_score = adjusted_score
+                best_threshold = threshold
+
+        tprint_info(
+            f"Optimal split for {feature_series.name}: threshold={best_threshold:.4f}, "
+            f"WCV score={best_score:.4f}"
+        )
+
+        return best_threshold, best_score
+
+    def _hierarchical_regime_assignment(
+        self,
+        df: pd.DataFrame,
+        config: Dict[str, Any],
+    ) -> pd.DataFrame:
+        """
+        Assign regimes using hierarchical decision tree optimized for WCV.
+
+        Decision tree structure:
+        Level 1: Volume Split (High vs Low)
+        ├─ Low Volume Branch
+        │  ├─ Level 2: Range Split
+        │  │  ├─ Flat Range → Apathy (0)
+        │  │  └─ Large Range → Level 3: Amihud Split
+        │  │     ├─ High Amihud Spike → Ghost (3) [trap/low liquidity]
+        │  │     └─ Low Amihud → Steamroller (4) [initiative momentum]
+        │  │
+        └─ High Volume Branch
+           └─ Level 2: Delta Alignment
+              ├─ Delta Aligned with Price → Valid Trend (1)
+              └─ Delta Diverged from Price → Absorption (2)
+
+        Args:
+            df: DataFrame with all liquidity features
+            config: Configuration dict
+
+        Returns:
+            DataFrame with 'liquidity_regime' column added
+        """
+        work_df = df.copy()
+
+        # Core features for WCV computation
+        core_feature_cols = ["rvol_24_scaled", "delta_regime_signal_scaled", "amihud_spike_ratio_scaled"]
+
+        # Ensure all required features exist
+        required_features = ["rvol_24_scaled", "normalized_range", "amihud_spike_ratio_scaled", "delta_regime_signal_scaled"]
+        missing = [f for f in required_features if f not in work_df.columns]
+        if missing:
+            raise ValueError(f"Missing required features for hierarchical regime assignment: {missing}")
+
+        core_features_df = work_df[core_feature_cols].copy()
+
+        # Initialize regime labels (will be overwritten)
+        regimes = np.full(len(work_df), -1, dtype=int)
+
+        # ========================================================================
+        # LEVEL 1: VOLUME SPLIT (High vs Low Volume)
+        # ========================================================================
+        volume_threshold, _ = self._find_optimal_split(
+            work_df["rvol_24_scaled"],
+            core_features_df,
+            candidate_percentiles=np.arange(0.30, 0.70, 0.05),
+        )
+
+        high_volume_mask = work_df["rvol_24_scaled"] >= volume_threshold
+        low_volume_mask = ~high_volume_mask
+
+        tprint_info(
+            f"Level 1 Volume Split: {high_volume_mask.sum()} high-vol samples, "
+            f"{low_volume_mask.sum()} low-vol samples"
+        )
+
+        # ========================================================================
+        # HIGH VOLUME BRANCH: LEVEL 2 - Delta Alignment Split
+        # ========================================================================
+        high_vol_indices = work_df.index[high_volume_mask]
+        if len(high_vol_indices) > 0:
+            # Find optimal delta alignment threshold
+            delta_threshold, _ = self._find_optimal_split(
+                work_df.loc[high_vol_indices, "delta_regime_signal_scaled"],
+                core_features_df.loc[high_vol_indices],
+                candidate_percentiles=np.arange(0.35, 0.65, 0.05),
+            )
+
+            # Delta aligned (positive) → Valid Trend (1)
+            # Delta diverged (negative) → Absorption (2)
+            delta_aligned_mask = work_df["delta_regime_signal_scaled"] >= delta_threshold
+
+            valid_trend_mask = high_volume_mask & delta_aligned_mask
+            absorption_mask = high_volume_mask & ~delta_aligned_mask
+
+            regimes[valid_trend_mask.values] = 1
+            regimes[absorption_mask.values] = 2
+
+            tprint_info(
+                f"  High-vol branch: {valid_trend_mask.sum()} Valid Trend, "
+                f"{absorption_mask.sum()} Absorption"
+            )
+
+        # ========================================================================
+        # LOW VOLUME BRANCH: LEVEL 2 - Range Split
+        # ========================================================================
+        low_vol_indices = work_df.index[low_volume_mask]
+        if len(low_vol_indices) > 0:
+            # Find optimal range threshold
+            range_threshold, _ = self._find_optimal_split(
+                work_df.loc[low_vol_indices, "normalized_range"],
+                core_features_df.loc[low_vol_indices],
+                candidate_percentiles=np.arange(0.30, 0.70, 0.05),
+            )
+
+            flat_range_mask = work_df["normalized_range"] < range_threshold
+            large_range_mask = work_df["normalized_range"] >= range_threshold
+
+            # Flat range → Apathy (0)
+            apathy_mask = low_volume_mask & flat_range_mask
+            regimes[apathy_mask.values] = 0
+
+            tprint_info(
+                f"  Low-vol flat-range: {apathy_mask.sum()} Apathy samples"
+            )
+
+            # ====================================================================
+            # LOW VOLUME + LARGE RANGE: LEVEL 3 - Amihud Split
+            # ====================================================================
+            large_range_indices = work_df.index[low_volume_mask & large_range_mask]
+            if len(large_range_indices) > 20:
+                # Find optimal Amihud threshold
+                amihud_threshold, _ = self._find_optimal_split(
+                    work_df.loc[large_range_indices, "amihud_spike_ratio_scaled"],
+                    core_features_df.loc[large_range_indices],
+                    candidate_percentiles=np.arange(0.40, 0.75, 0.05),
+                )
+
+                high_amihud_mask = work_df["amihud_spike_ratio_scaled"] >= amihud_threshold
+
+                # High Amihud spike → Ghost (3) [trap/illiquidity]
+                # Low Amihud → Steamroller (4) [initiative momentum]
+                ghost_mask = low_volume_mask & large_range_mask & high_amihud_mask
+                steamroller_mask = low_volume_mask & large_range_mask & ~high_amihud_mask
+
+                regimes[ghost_mask.values] = 3
+                regimes[steamroller_mask.values] = 4
+
+                tprint_info(
+                    f"  Low-vol large-range: {ghost_mask.sum()} Ghost, "
+                    f"{steamroller_mask.sum()} Steamroller"
+                )
+            else:
+                # Not enough samples for Amihud split, assign all to Ghost (conservative)
+                ghost_mask = low_volume_mask & large_range_mask
+                regimes[ghost_mask.values] = 3
+                tprint_info(
+                    f"  Low-vol large-range: {ghost_mask.sum()} Ghost (insufficient samples for Amihud split)"
+                )
+
+        # ========================================================================
+        # FINALIZE
+        # ========================================================================
+        work_df["liquidity_regime"] = regimes
+
+        # Sanity check: ensure all samples are assigned
+        unassigned = (regimes == -1).sum()
+        if unassigned > 0:
+            tprint_warning(
+                f"Warning: {unassigned} samples unassigned in hierarchical regime assignment, "
+                f"assigning to Apathy (0)"
+            )
+            work_df.loc[work_df["liquidity_regime"] == -1, "liquidity_regime"] = 0
+
+        # Print regime distribution
+        regime_counts = work_df["liquidity_regime"].value_counts().sort_index()
+        tprint_info(f"Hierarchical regime distribution:\n{regime_counts}")
+
+        return work_df
+
+    def _refine_regimes_with_centroids(
+        self,
+        df: pd.DataFrame,
+        regime_labels: pd.Series,
+        feature_cols: List[str],
+        n_iterations: int = 3,
+        min_distance_improvement: float = 0.05,
+    ) -> pd.Series:
+        """
+        Iteratively refine regime assignments using K-means-style centroid updates.
+
+        Args:
+            df: Feature dataframe
+            regime_labels: Initial regime assignments
+            feature_cols: Features to use for distance calculation (top discriminative features)
+            n_iterations: Max iterations
+            min_distance_improvement: Stop if improvement < this threshold
+
+        Returns:
+            Refined regime labels
+        """
+        refined_labels = regime_labels.copy()
+
+        # Select only available features
+        available_features = [f for f in feature_cols if f in df.columns]
+        if not available_features:
+            tprint_warning("No features available for centroid refinement, skipping")
+            return refined_labels
+
+        feature_data = df[available_features].fillna(0).values
+
+        for iteration in range(n_iterations):
+            # 1. Compute regime centroids
+            regime_ids = np.unique(refined_labels)
+            centroids = {}
+            for regime_id in regime_ids:
+                mask = refined_labels == regime_id
+                if mask.sum() < 3:
+                    # Skip regimes with too few samples
+                    continue
+                centroids[regime_id] = feature_data[mask].mean(axis=0)
+
+            if len(centroids) < 2:
+                tprint_warning("Not enough regimes for centroid refinement")
+                break
+
+            # 2. Reassign each sample to nearest centroid
+            distances = np.zeros((len(feature_data), len(centroids)))
+            centroid_ids = list(centroids.keys())
+
+            for i, regime_id in enumerate(centroid_ids):
+                distances[:, i] = np.linalg.norm(
+                    feature_data - centroids[regime_id], axis=1
+                )
+
+            new_labels = np.array([centroid_ids[i] for i in np.argmin(distances, axis=1)])
+
+            # 3. Check convergence
+            n_changed = (new_labels != refined_labels.values).sum()
+            pct_changed = n_changed / len(refined_labels)
+
+            tprint_info(
+                f"Centroid refinement iteration {iteration+1}: {pct_changed:.2%} samples reassigned"
+            )
+
+            if pct_changed < min_distance_improvement:
+                tprint_info(f"Converged after {iteration+1} iterations")
+                break
+
+            refined_labels = pd.Series(new_labels, index=refined_labels.index)
+
+        return refined_labels
+
+    def _compute_regime_confidence(
+        self,
+        df: pd.DataFrame,
+        regime_labels: pd.Series,
+        feature_cols: List[str],
+    ) -> pd.Series:
+        """
+        Compute confidence score for each regime assignment.
+
+        Confidence = 1 / (1 + distance_to_assigned_centroid)
+
+        Args:
+            df: Feature dataframe
+            regime_labels: Regime assignments
+            feature_cols: Features to use for distance calculation
+
+        Returns:
+            Series with confidence scores [0, 1]
+        """
+        confidence = pd.Series(0.0, index=df.index, dtype=float)
+
+        # Select only available features
+        available_features = [f for f in feature_cols if f in df.columns]
+        if not available_features:
+            tprint_warning("No features available for confidence computation, returning zeros")
+            return confidence
+
+        feature_data = df[available_features].fillna(0).values
+
+        # Compute centroids
+        regime_ids = np.unique(regime_labels)
+        centroids = {}
+        for regime_id in regime_ids:
+            mask = regime_labels == regime_id
+            if mask.sum() < 3:
+                continue
+            centroids[regime_id] = feature_data[mask].mean(axis=0)
+
+        # Compute confidence for each sample
+        for regime_id, centroid in centroids.items():
+            mask = regime_labels == regime_id
+            if mask.sum() == 0:
+                continue
+
+            regime_samples = feature_data[mask]
+            # Euclidean distance to centroid
+            distances = np.linalg.norm(regime_samples - centroid, axis=1)
+
+            # Confidence: 1 / (1 + distance)
+            confidences = 1.0 / (1.0 + distances)
+            confidence[mask] = confidences
+
+        return confidence
 
     def _compute_kde_threshold(self, series: pd.Series, config: Dict[str, Any], prefix: str) -> float:
         vals = series.dropna().astype(float)

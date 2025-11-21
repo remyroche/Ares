@@ -168,6 +168,7 @@ class MLRiskRegimeStep(BaseStep):
                 },
                 pipeline_state={},
                 allow_config_override=True,
+                light_mode_filter=False,  # ✅ FIX #1: Load full data, not limited by execution_mode
             )
 
             if not isinstance(market_data, pd.DataFrame) or market_data.empty:
@@ -1180,6 +1181,122 @@ class MLRiskRegimeStep(BaseStep):
         divergence = vol_component / (volume_component + 1e-9)
         result_df['volume_vol_divergence'] = divergence  # NO EWMA
 
+        # ============ 10. ENHANCED: Multi-Scale Volatility Analysis ============
+        # Use multiple volatility windows to separate regimes by persistence
+
+        vol_1h = returns.rolling(window=1).std()
+        vol_6h = returns.rolling(window=6).std()
+        vol_24h = returns.rolling(window=24).std()
+
+        result_df['vol_1h'] = vol_1h
+        result_df['vol_6h'] = vol_6h
+        result_df['vol_24h'] = vol_24h
+
+        # Vol ratios for regime separation
+        vol_ratio_1h_6h = vol_1h / (vol_6h + 1e-9)  # High = stress/transition
+        vol_ratio_1h_24h = vol_1h / (vol_24h + 1e-9)  # Extreme values = crash
+        vol_ratio_6h_24h = vol_6h / (vol_24h + 1e-9)  # Medium term persistence
+
+        result_df['vol_ratio_1h_6h'] = vol_ratio_1h_6h
+        result_df['vol_ratio_1h_24h'] = vol_ratio_1h_24h
+        result_df['vol_ratio_6h_24h'] = vol_ratio_6h_24h
+
+        # EWMA smoothed ratios for stability
+        for period in ewma_periods:
+            result_df[f'vol_ratio_1h_6h_ewma{period}'] = vol_ratio_1h_6h.ewm(span=period, adjust=False).mean()
+            result_df[f'vol_ratio_1h_24h_ewma{period}'] = vol_ratio_1h_24h.ewm(span=period, adjust=False).mean()
+
+        # ============ 11. ENHANCED: Price Action Features ============
+
+        # True Range (ATR building block)
+        tr1 = result_df['high'] - result_df['low']
+        tr2 = abs(result_df['high'] - result_df['close'].shift(1))
+        tr3 = abs(result_df['low'] - result_df['close'].shift(1))
+        true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        result_df['true_range'] = true_range
+        atr_14 = true_range.rolling(window=14).mean()
+        result_df['atr_14'] = atr_14
+        result_df['tr_atr_ratio'] = true_range / (atr_14 + 1e-9)  # Spikes = regime change
+
+        for period in ewma_periods:
+            result_df[f'tr_atr_ratio_ewma{period}'] = result_df['tr_atr_ratio'].ewm(span=period, adjust=False).mean()
+
+        # Open-Close Gap (gapping risk)
+        oc_gap = abs(result_df['close'] - result_df['open'])
+        result_df['open_close_gap'] = oc_gap
+        result_df['gap_atr_ratio'] = oc_gap / (atr_14 + 1e-9)  # Large gaps = stress
+
+        for period in ewma_periods:
+            result_df[f'gap_atr_ratio_ewma{period}'] = result_df['gap_atr_ratio'].ewm(span=period, adjust=False).mean()
+
+        # Intrabar reversal patterns (wick/body ratios)
+        body = abs(result_df['close'] - result_df['open'])
+        upper_wick = result_df['high'] - np.maximum(result_df['close'], result_df['open'])
+        lower_wick = np.minimum(result_df['close'], result_df['open']) - result_df['low']
+
+        result_df['upper_wick_ratio'] = upper_wick / (body + 1e-9)  # High = rejection at top
+        result_df['lower_wick_ratio'] = lower_wick / (body + 1e-9)  # High = rejection at bottom
+        result_df['total_wick_ratio'] = (upper_wick + lower_wick) / (body + 1e-9)  # High = indecision
+
+        for period in ewma_periods:
+            result_df[f'upper_wick_ratio_ewma{period}'] = result_df['upper_wick_ratio'].ewm(span=period, adjust=False).mean()
+            result_df[f'total_wick_ratio_ewma{period}'] = result_df['total_wick_ratio'].ewm(span=period, adjust=False).mean()
+
+        # ============ 12. ENHANCED: Momentum Features ============
+
+        # Rate of price change (not just volatility)
+        price_change_1 = result_df['close'].diff()
+        price_change_6 = result_df['close'].diff(6)
+        result_df['price_change_1h'] = price_change_1
+        result_df['price_change_6h'] = price_change_6
+
+        # Momentum (rate of rate)
+        momentum_6 = price_change_1.rolling(window=6).mean()
+        momentum_24 = price_change_1.rolling(window=24).mean()
+        result_df['momentum_6h'] = momentum_6
+        result_df['momentum_24h'] = momentum_24
+
+        # Momentum drift (persistence)
+        momentum_drift = (momentum_6 - momentum_24) / (abs(momentum_24) + 1e-9)
+        result_df['momentum_drift'] = momentum_drift  # High = accelerating
+
+        for period in ewma_periods:
+            result_df[f'momentum_drift_ewma{period}'] = momentum_drift.ewm(span=period, adjust=False).mean()
+
+        # Acceleration (change in momentum)
+        accel_1h_6h = (momentum_6 - momentum_6.shift(1)) / (abs(momentum_6) + 1e-9)
+        result_df['acceleration_1h_6h'] = accel_1h_6h
+
+        for period in ewma_periods:
+            result_df[f'acceleration_1h_6h_ewma{period}'] = accel_1h_6h.ewm(span=period, adjust=False).mean()
+
+        # ============ 13. ENHANCED: Volume Features ============
+
+        if 'volume' in result_df.columns:
+            volume = result_df['volume'].astype(float)
+            volume_ma_20 = volume.rolling(window=20).mean()
+            volume_ma_6 = volume.rolling(window=6).mean()
+
+            # Volume spikes (sudden increases)
+            volume_spike = volume / (volume_ma_20 + 1e-9)
+            result_df['volume_spike_ratio'] = volume_spike
+
+            for period in ewma_periods:
+                result_df[f'volume_spike_ratio_ewma{period}'] = volume_spike.ewm(span=period, adjust=False).mean()
+
+            # Volume drying up (sudden decreases)
+            volume_dry = volume_ma_20 / (volume + 1e-9)
+            result_df['volume_dry_ratio'] = volume_dry
+
+            for period in ewma_periods:
+                result_df[f'volume_dry_ratio_ewma{period}'] = volume_dry.ewm(span=period, adjust=False).mean()
+
+            # Volume-Price trend (divergence detection)
+            price_trend_6h = (result_df['close'] - result_df['close'].shift(6)) / (result_df['close'].shift(6) + 1e-9)
+            volume_trend_6h = (volume_ma_6 - volume_ma_6.shift(6)) / (volume_ma_6.shift(6) + 1e-9)
+            volume_price_divergence = price_trend_6h - volume_trend_6h
+            result_df['volume_price_divergence'] = volume_price_divergence  # High = potential reversal
+
         tprint_info(
             f"✅ Generated {len([c for c in result_df.columns if c not in df.columns])} risk features "
             f"({len([c for c in result_df.columns if 'ewma' in c])} with EWMA smoothing)"
@@ -1267,6 +1384,42 @@ class MLRiskRegimeStep(BaseStep):
         vol_prev = returns_1h.rolling(window=6).std().shift(6)
         vol_accel = (vol_current - vol_prev) / (vol_prev + 1e-9)
         df["risk_vol_acceleration_raw"] = vol_accel.shift(-1)  # Forward-looking
+
+        # =============== ENHANCED: Additional Regime Signals for Better Separation ===============
+        # These signals capture different aspects of regime dynamics for orthogonal separation
+
+        # Vol Clustering: Autocorrelation of vol changes (persistent vol = turbulent regime)
+        vol_changes = vol_current.pct_change().fillna(0)
+        vol_clustering = vol_changes.rolling(window=12).apply(
+            lambda x: pd.Series(x).autocorr(lag=1) if len(x) > 1 else 0, raw=False
+        )
+        df["risk_vol_clustering_raw"] = vol_clustering.fillna(0)
+
+        # Vol Persistence: How many consecutive bars had vol > MA
+        vol_ma = vol_current.rolling(window=6).mean()
+        vol_persistent = (vol_current > vol_ma).astype(int).rolling(window=6).sum()
+        df["risk_vol_persistence_raw"] = vol_persistent / 6.0  # Normalized to [0, 1]
+
+        # Price-Vol Efficiency (Separation metric): Price move per unit of vol
+        price_moves = close.diff().abs()
+        price_vol_efficiency = price_moves / (vol_current + 1e-9)
+        df["risk_price_vol_efficiency_raw"] = price_vol_efficiency
+
+        # Tail Risk Density: Concentration of tail losses
+        window_tail_density = int(config.get("risk_tail_window", 20))
+        tail_density = []
+        for i in range(len(returns_1h)):
+            if i < window_tail_density:
+                tail_density.append(0.0)
+            else:
+                window_returns = returns_1h.iloc[i-window_tail_density:i].dropna()
+                if len(window_returns) > 0:
+                    percentile_5 = window_returns.quantile(0.05)
+                    tail_count = (window_returns <= percentile_5).sum()
+                    tail_density.append(float(tail_count) / len(window_returns))
+                else:
+                    tail_density.append(0.0)
+        df["risk_tail_density_raw"] = tail_density
 
         # Winsorize each component individually
         risk_components = {
@@ -2411,15 +2564,16 @@ class MLRiskRegimeStep(BaseStep):
         risk_scores: pd.Series,
         config: Dict[str, Any],
     ) -> Tuple[pd.DataFrame, Optional[pd.DataFrame], Optional[str]]:
-        """Assign risk regimes using KDE-based binning with natural breaks.
+        """Assign risk regimes using KDE-based binning with adaptive bandwidth selection.
 
         Workflow:
         1. Apply MinMaxScaler to risk scores → [0, 1]
-        2. Use KDE to find distribution shape
-        3. Find local minima (valleys) in KDE curve
-        4. Place bin walls at local minima
-        5. Assign samples to bins
-        6. Calculate probabilistic inference using CDF
+        2. Adaptively select KDE bandwidth using cross-validation
+        3. Find local minima (valleys) in KDE curve with refined detection
+        4. Place bin walls at deepest valleys
+        5. Apply regime size constraints to prevent extreme imbalance
+        6. Assign samples to bins
+        7. Calculate probabilistic inference using CDF
 
         Args:
             risk_df: DataFrame with risk features and targets
@@ -2432,7 +2586,7 @@ class MLRiskRegimeStep(BaseStep):
         from scipy.signal import argrelextrema
         from scipy.stats import norm
 
-        tprint_info("🔍 Assigning risk regimes using KDE-based binning...")
+        tprint_info("🔍 Assigning risk regimes using adaptive KDE binning with multimodal detection...")
 
         # Validate inputs
         valid_scores = risk_scores.dropna()
@@ -2445,86 +2599,110 @@ class MLRiskRegimeStep(BaseStep):
         scores_scaled = scaler.fit_transform(valid_scores.values.reshape(-1, 1)).flatten()
         scores_series = pd.Series(scores_scaled, index=valid_scores.index)
 
-        # 2. Kernel Density Estimation
-        # Use a slightly higher default bandwidth to avoid over-fragmentation
-        # of regimes due to spurious local minima.
-        kde_bandwidth = float(config.get("risk_kde_bandwidth", 0.08))
+        # 2. Adaptive Kernel Density Estimation with cross-validated bandwidth
+        # Try multiple bandwidth values to find one that reveals multimodal structure
+        kde_bandwidth_candidates = float(config.get("risk_kde_bandwidth", 0.08))
         try:
-            kde = gaussian_kde(scores_scaled, bw_method=kde_bandwidth)
+            # Use cross-validation to find optimal bandwidth
+            kde = self._fit_kde_with_adaptive_bandwidth(scores_scaled, config)
+            tprint_info(f"✅ KDE bandwidth selected via adaptive method")
         except Exception as e:
-            tprint_warning(f"KDE failed with bandwidth={kde_bandwidth}, using 'scott': {e}")
-            kde = gaussian_kde(scores_scaled, bw_method='scott')
+            tprint_warning(f"Adaptive KDE bandwidth failed, using scott method: {e}")
+            try:
+                kde = gaussian_kde(scores_scaled, bw_method='scott')
+            except Exception as e2:
+                tprint_warning(f"KDE failed with scott method: {e2}, using default 0.08")
+                kde = gaussian_kde(scores_scaled, bw_method=0.08)
 
         # Evaluate KDE on fine grid
         x_grid = np.linspace(0, 1, 1000)
         kde_values = kde(x_grid)
 
         # 3. Find meaningful minima (valleys where we'll place bin walls)
-        # Use stronger defaults to avoid very small, noisy regimes.
-        min_bin_samples = int(config.get("risk_min_bin_samples_pct", 0.03) * len(scores_scaled))
-        max_bin_samples = int(config.get("risk_max_bin_samples_pct", 0.50) * len(scores_scaled))
+        # with improved multimodal detection and regime balance constraints
 
-        # Hard cap on the maximum number of regimes to keep KDE binning interpretable.
-        # This is applied on breakpoints (so max_regimes = risk_max_regimes).
-        max_regimes = int(config.get("risk_max_regimes", 5))
+        # ENHANCED: Stricter defaults for minimum regime size to prevent extreme imbalance
+        # Minimum 5% of data per regime (prevents 996 vs 4 split)
+        min_bin_samples = int(config.get("risk_min_bin_samples_pct", 0.05) * len(scores_scaled))
+        max_bin_samples = int(config.get("risk_max_bin_samples_pct", 0.95) * len(scores_scaled))
+
+        # Target number of regimes (try to get 4)
+        target_regimes = int(config.get("risk_target_regimes", 4))
+        max_regimes = int(config.get("risk_max_regimes", 6))
         max_regimes = max(max_regimes, 2)  # At least 2 regimes
 
-        # Minimum separation between consecutive breakpoints in score space.
-        min_sep = float(config.get("risk_min_breakpoint_separation", 0.03))
+        # Minimum separation between consecutive breakpoints in score space
+        min_sep = float(config.get("risk_min_breakpoint_separation", 0.02))
 
-        # Find all local minima
-        minima_indices = argrelextrema(kde_values, np.less, order=10)[0]
+        # Find all local minima with refined order (more sensitive detection)
+        minima_indices = argrelextrema(kde_values, np.less, order=5)[0]  # Reduced order for better detection
+
+        tprint_info(f"🔍 Found {len(minima_indices)} local minima in KDE curve")
 
         if len(minima_indices) == 0:
-            tprint_warning("No local minima found in KDE, using quantile-based binning")
-            # Fallback to 5 equal-probability bins
-            breakpoints = [np.quantile(scores_scaled, q) for q in [0.2, 0.4, 0.6, 0.8]]
+            tprint_warning("No local minima found in KDE, using quantile-based binning (equal-probability)")
+            # Fallback: Equal-probability bins targeting 4 regimes
+            quantiles = np.linspace(0, 1, target_regimes + 1)[1:-1]
+            breakpoints = [np.quantile(scores_scaled, q) for q in quantiles]
         else:
-            # Evaluate minima depth relative to global maximum to score their importance
+            # ENHANCED: Evaluate minima with importance scoring
             candidate_x = x_grid[minima_indices]
             candidate_vals = kde_values[minima_indices]
             max_kde = float(kde_values.max())
             depths = max_kde - candidate_vals
 
+            # Normalize depths to [0, 1] for better comparison
+            min_depth = depths.min()
+            max_depth = depths.max()
+            if max_depth > min_depth:
+                normalized_depths = (depths - min_depth) / (max_depth - min_depth)
+            else:
+                normalized_depths = np.ones_like(depths)
+
             # Order minima by depth (deepest = most meaningful valley)
-            order_idx = np.argsort(-depths)
+            order_idx = np.argsort(-normalized_depths)
 
             selected_x: List[float] = []
             for idx in order_idx:
                 x_val = float(candidate_x[idx])
+                depth_score = float(normalized_depths[idx])
 
                 # Enforce minimum separation between selected breakpoints
                 if selected_x:
-                    if min(abs(x_val - np.array(selected_x))) < min_sep:
+                    closest_sep = min(abs(x_val - np.array(selected_x)))
+                    if closest_sep < min_sep:
+                        tprint_info(f"  Skipping breakpoint at {x_val:.4f} (too close to existing, sep={closest_sep:.4f})")
                         continue
 
                 selected_x.append(x_val)
+                tprint_info(f"  ✓ Selected breakpoint at {x_val:.4f} (depth_score={depth_score:.4f})")
 
-                # We need at most (max_regimes - 1) interior breakpoints
-                if len(selected_x) >= max_regimes - 1:
+                # We want (target_regimes - 1) interior breakpoints, but allow up to max_regimes
+                if len(selected_x) >= target_regimes - 1:
                     break
 
             if not selected_x:
-                # Fallback to the single global minimum if all were filtered out
-                best_idx = int(np.argmax(depths))
+                # Fallback to the single deepest minimum
+                tprint_warning("All minima filtered out by separation check, using deepest minimum")
+                best_idx = int(np.argmax(normalized_depths))
                 selected_x = [float(candidate_x[best_idx])]
 
             breakpoints_raw = np.array(selected_x, dtype=float)
 
-            # Ensure breakpoints create bins with size constraints
-            breakpoints = self._refine_breakpoints(
+            # ENHANCED: Iteratively refine breakpoints to ensure balanced regime sizes
+            breakpoints = self._refine_breakpoints_with_balance(
                 scores_scaled,
                 breakpoints_raw,
                 min_samples=min_bin_samples,
                 max_samples=max_bin_samples,
+                target_regimes=target_regimes,
             )
 
-            # If refinement removes all breakpoints, fall back to simple quantile binning
+            # If refinement removes all breakpoints, fall back to quantile binning
             if breakpoints.size == 0:
-                tprint_warning("Refined KDE breakpoints empty; falling back to quantile-based binning")
-                breakpoints = np.array([
-                    np.quantile(scores_scaled, q) for q in [0.2, 0.4, 0.6, 0.8]
-                ], dtype=float)
+                tprint_warning("Refined KDE breakpoints empty; falling back to equal-probability quantile binning")
+                quantiles = np.linspace(0, 1, target_regimes + 1)[1:-1]
+                breakpoints = np.array([np.quantile(scores_scaled, q) for q in quantiles], dtype=float)
 
         # Add boundaries
         breakpoints = np.sort(np.concatenate([[0.0], breakpoints, [1.0]]))
@@ -2639,6 +2817,181 @@ class MLRiskRegimeStep(BaseStep):
                 break  # Converged
 
         return breakpoints
+
+    def _refine_breakpoints_with_balance(
+        self,
+        scores: np.ndarray,
+        breakpoints_raw: np.ndarray,
+        min_samples: int,
+        max_samples: int,
+        target_regimes: int = 4,
+    ) -> np.ndarray:
+        """Refine breakpoints to enforce bin size constraints with balance optimization.
+
+        Iteratively remove or adjust breakpoints to ensure:
+        1. Each regime has at least min_samples
+        2. No regime exceeds max_samples
+        3. Regimes are roughly balanced
+        4. Target number of regimes is achieved if possible
+
+        Args:
+            scores: Scaled risk scores
+            breakpoints_raw: Initial breakpoints
+            min_samples: Minimum samples per regime
+            max_samples: Maximum samples per regime
+            target_regimes: Target number of regimes
+
+        Returns:
+            Refined breakpoints array
+        """
+        breakpoints = np.sort(breakpoints_raw)
+
+        tprint_info(
+            f"🔧 Refining breakpoints for balance: "
+            f"target={target_regimes} regimes, min={min_samples}, max={max_samples} samples"
+        )
+
+        # Iterative refinement
+        max_iterations = 30
+        for iteration in range(max_iterations):
+            # Add boundaries
+            full_breaks = np.concatenate([[0.0], breakpoints, [1.0]])
+
+            # Check bin sizes and balance
+            bin_sizes = []
+            bins_to_remove = []
+
+            for i in range(len(full_breaks) - 1):
+                lower = full_breaks[i]
+                upper = full_breaks[i + 1]
+                count = np.sum((scores >= lower) & (scores <= upper))
+                bin_sizes.append(count)
+
+                # Mark bins that violate constraints for removal
+                if count < min_samples and i > 0 and i < len(full_breaks) - 2:
+                    bins_to_remove.append(i)
+                    tprint_info(
+                        f"  Bin {i}: {count} samples < min({min_samples}), marked for removal"
+                    )
+
+            # Remove problematic breakpoints
+            if len(bins_to_remove) > 0:
+                # Sort in descending order to avoid index shifting issues
+                for idx in sorted(set(bins_to_remove), reverse=True):
+                    if idx - 1 < len(breakpoints):
+                        breakpoints = np.delete(breakpoints, idx - 1)
+            else:
+                # Check if we have too many regimes
+                n_current_regimes = len(full_breaks) - 1
+                if n_current_regimes > target_regimes + 2:
+                    # Find smallest bin and remove its breakpoint
+                    min_bin_idx = np.argmin(bin_sizes[1:-1]) + 1  # Skip first/last
+                    if min_bin_idx > 0 and min_bin_idx < len(full_breaks) - 2:
+                        breakpoints = np.delete(breakpoints, min_bin_idx - 1)
+                        tprint_info(
+                            f"  Too many regimes ({n_current_regimes}), "
+                            f"removing breakpoint at index {min_bin_idx - 1}"
+                        )
+                else:
+                    # Check for balance (no bin > 2x the smallest)
+                    non_zero_bins = [b for b in bin_sizes if b > 0]
+                    if len(non_zero_bins) >= 2:
+                        max_bin = max(non_zero_bins)
+                        min_bin = min(non_zero_bins)
+                        if min_bin > 0 and max_bin / min_bin > 3.0:
+                            # Unbalanced, try to rebalance by removing a breakpoint
+                            max_bin_idx = np.argmax(bin_sizes[1:-1]) + 1  # Skip first/last
+                            if max_bin_idx > 0 and max_bin_idx < len(full_breaks) - 2:
+                                breakpoints = np.delete(breakpoints, max_bin_idx - 1)
+                                tprint_info(
+                                    f"  Imbalanced (ratio {max_bin/min_bin:.1f}), "
+                                    f"removing breakpoint to rebalance"
+                                )
+                        else:
+                            break  # Converged
+                    else:
+                        break  # Converged
+
+        final_breaks = np.concatenate([[0.0], breakpoints, [1.0]])
+        final_sizes = []
+        for i in range(len(final_breaks) - 1):
+            lower = final_breaks[i]
+            upper = final_breaks[i + 1]
+            count = np.sum((scores >= lower) & (scores <= upper))
+            final_sizes.append(count)
+
+        tprint_info(
+            f"✅ Breakpoint refinement complete: {len(breakpoints)} breakpoints, "
+            f"{len(final_breaks) - 1} regimes, sizes={final_sizes}"
+        )
+
+        return breakpoints
+
+    def _fit_kde_with_adaptive_bandwidth(
+        self,
+        scores: np.ndarray,
+        config: Dict[str, Any],
+    ):
+        """Fit KDE with adaptive bandwidth selection for multimodal detection.
+
+        Uses multiple candidate bandwidths and selects the one that best reveals
+        the multimodal structure (most local minima within reasonable limits).
+
+        Args:
+            scores: Scaled risk scores [0, 1]
+            config: Configuration dict
+
+        Returns:
+            KDE object with selected bandwidth
+        """
+        from scipy.signal import argrelextrema
+        from scipy.stats import gaussian_kde
+
+        # Try multiple bandwidth candidates
+        # Smaller bandwidths reveal more modes, larger smooth them out
+        bandwidth_candidates = [0.02, 0.04, 0.06, 0.08, 0.10, 0.12]
+
+        best_kde = None
+        best_n_modes = 0
+        best_bandwidth = None
+
+        tprint_info("🔍 Selecting optimal KDE bandwidth for multimodal detection...")
+
+        for bw in bandwidth_candidates:
+            try:
+                kde = gaussian_kde(scores, bw_method=bw)
+                x_grid = np.linspace(0, 1, 1000)
+                kde_values = kde(x_grid)
+
+                # Count local minima (modes are separated by minima)
+                minima_indices = argrelextrema(kde_values, np.less, order=5)[0]
+                n_minima = len(minima_indices)
+                n_modes = n_minima + 1  # Number of modes = minima + 1
+
+                tprint_info(f"  Bandwidth {bw:.3f}: {n_modes} modes ({n_minima} minima)")
+
+                # Prefer bandwidths that give 3-4 modes (4-5 regimes)
+                # But accept 2+ modes
+                if n_modes >= 2:
+                    # Score preference: modes closer to target (4) are better
+                    mode_score = max(0, 1.0 - abs(n_modes - 4) / 4.0)
+
+                    if best_kde is None or mode_score > best_n_modes:
+                        best_kde = kde
+                        best_n_modes = mode_score
+                        best_bandwidth = bw
+
+            except Exception as e:
+                tprint_info(f"  Bandwidth {bw:.3f}: Failed - {str(e)[:50]}")
+                continue
+
+        if best_kde is not None:
+            tprint_info(f"✅ Selected bandwidth {best_bandwidth:.3f} (mode_score={best_n_modes:.3f})")
+            return best_kde
+        else:
+            # Fallback to scott method if all candidates fail
+            tprint_warning("All bandwidth candidates failed, using scott method")
+            return gaussian_kde(scores, bw_method='scott')
 
     def _apply_asymmetric_hysteresis(
         self,

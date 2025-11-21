@@ -215,6 +215,11 @@ class MLLiquidityRegimeStep(BaseStep):
                     symbol=symbol,
                     output_dir="outcomes",
                 )
+                feature_distinctiveness_path = assessor.save_feature_distinctiveness_report(
+                    metrics=liquidity_cluster_metrics,
+                    symbol=symbol,
+                    output_dir="outcomes",
+                )
 
                 # Persist metrics as versioned artifact
                 try:

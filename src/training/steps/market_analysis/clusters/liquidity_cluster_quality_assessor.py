@@ -70,6 +70,9 @@ class LiquidityClusterQualityMetrics:
     # Per-regime detailed metrics
     per_regime_metrics: Dict[int, Dict[str, float]] = field(default_factory=dict)
 
+    # Feature distinctiveness analysis (winsorized CoV ratios)
+    distinctiveness_analysis: Dict[str, Any] = field(default_factory=dict)
+
     # Overall quality score
     overall_quality_score: float = 0.0
 
@@ -163,6 +166,14 @@ class LiquidityClusterQualityAssessor:
         # 6b. CoV-based separation diagnostics (feature and returns patterns)
         cov_effort_sep, cov_returns_sep = self._compute_cov_based_scores(per_regime_metrics)
 
+        # 6c. Feature distinctiveness analysis (winsorized CoV ratios)
+        distinctiveness_analysis = self._compute_feature_distinctiveness(
+            df,
+            labels,
+            per_regime_metrics,
+            top_n=10,
+        )
+
         # 7. Overall quality score (weighted combination)
         overall_quality_score = self._calculate_overall_quality_score(
             effort_sep,
@@ -195,6 +206,7 @@ class LiquidityClusterQualityAssessor:
             n_regimes=n_regimes,
             n_samples=n_samples,
             per_regime_metrics=per_regime_metrics,
+            distinctiveness_analysis=distinctiveness_analysis,
             overall_quality_score=overall_quality_score,
             assessment_timestamp=datetime.now().isoformat(),
         )
@@ -784,6 +796,212 @@ class LiquidityClusterQualityAssessor:
         tprint_info(f"📄 Liquidity cluster quality markdown report saved to: {filepath}")
         return str(filepath)
 
+    def _compute_feature_distinctiveness(
+        self,
+        liquidity_df: pd.DataFrame,
+        regime_labels: pd.Series,
+        per_regime_metrics: Dict[int, Dict[str, float]],
+        top_n: int = 10,
+    ) -> Dict[str, Any]:
+        """Compute feature distinctiveness scores using winsorized CV ratios.
+
+        For each feature, compute:
+        - Between-regime CoV: variance of feature means across regimes
+        - Within-regime CoV: average of feature CoVs within each regime
+        - Distinctiveness = Between / Within (higher = better separation)
+
+        Returns dict with top N features for overall distinctiveness and per-regime-pair.
+        """
+        common_idx = liquidity_df.index.intersection(regime_labels.index)
+        df = liquidity_df.loc[common_idx].copy()
+        labels = regime_labels.loc[common_idx].astype(int)
+
+        # Get all numeric features (60 liquidity regime features)
+        liquidity_features = [
+            col for col in df.columns
+            if any(x in col for x in [
+                'volume_direction', 'consecutive_direction', 'return_autocorr',
+                'momentum_persistence', 'trend_confirmation', 'realized_vol',
+                'vol_ratio', 'vol_momentum', 'range_momentum', 'momentum_vol',
+                'reversal', 'whipsaw', 'volume_concentration', 'pressure_ratio',
+                'kyle_lambda', 'intra_bar_vol', 'wick_vol', 'session_vol',
+                'vol_clustering', 'vol_regime', 'efficiency_ratio', 'volume_price',
+                'price_impact', 'momentum_volume'
+            ])
+        ]
+
+        eps = 1e-9
+        regime_ids = sorted(labels.unique())
+        n_regimes = len(regime_ids)
+
+        distinctiveness_scores = {}
+
+        for feature in liquidity_features:
+            if feature not in df.columns:
+                continue
+
+            feature_data = df[feature].dropna()
+            if len(feature_data) < 3:
+                continue
+
+            # Between-regime variance: how much does mean differ across regimes?
+            regime_means = []
+            within_covs = []
+
+            for regime_id in regime_ids:
+                mask = labels == regime_id
+                regime_vals = feature_data[mask]
+
+                if len(regime_vals) >= 2:
+                    regime_means.append(float(regime_vals.mean()))
+                    # Compute CoV within this regime
+                    mean_val = float(regime_vals.mean())
+                    std_val = float(regime_vals.std())
+                    cov_val = float(std_val / (abs(mean_val) + eps)) if mean_val != 0.0 else 0.0
+                    within_covs.append(cov_val)
+
+            if len(regime_means) < 2:
+                continue
+
+            # Winsorize between-regime means (cap extreme outliers at 1st/99th percentile)
+            regime_means_arr = np.array(regime_means)
+            q01 = np.percentile(regime_means_arr, 1)
+            q99 = np.percentile(regime_means_arr, 99)
+            regime_means_winsorized = np.clip(regime_means_arr, q01, q99)
+
+            # Between-regime CoV: std of regime means / mean of regime means
+            between_mean = float(np.mean(regime_means_winsorized))
+            between_std = float(np.std(regime_means_winsorized))
+            between_cov = float(between_std / (abs(between_mean) + eps)) if between_mean != 0.0 else 0.0
+
+            # Within-regime CoV: average of per-regime CoVs
+            within_cov = float(np.mean(within_covs)) if within_covs else 0.0
+
+            # Distinctiveness = between / within (higher = better)
+            distinctiveness = float(between_cov / (within_cov + eps))
+
+            distinctiveness_scores[feature] = {
+                'between_cov': between_cov,
+                'within_cov': within_cov,
+                'distinctiveness': distinctiveness,
+                'regime_means': regime_means,
+            }
+
+        # Sort by distinctiveness
+        sorted_features = sorted(
+            distinctiveness_scores.items(),
+            key=lambda x: x[1]['distinctiveness'],
+            reverse=True
+        )
+
+        # Top overall features
+        top_overall = sorted_features[:top_n]
+
+        # Compute top features for each regime pair
+        regime_pair_features = {}
+
+        for i, regime_a in enumerate(regime_ids):
+            for regime_b in regime_ids[i+1:]:
+                pair_key = f"Regime{regime_a}_vs_Regime{regime_b}"
+
+                # For this pair, compute which features best separate them
+                pair_distinctiveness = {}
+
+                for feature in liquidity_features:
+                    if feature not in df.columns:
+                        continue
+
+                    feature_data = df[feature].dropna()
+
+                    mask_a = labels == regime_a
+                    mask_b = labels == regime_b
+
+                    vals_a = feature_data[mask_a]
+                    vals_b = feature_data[mask_b]
+
+                    if len(vals_a) < 2 or len(vals_b) < 2:
+                        continue
+
+                    mean_a = float(vals_a.mean())
+                    mean_b = float(vals_b.mean())
+
+                    # Mean difference
+                    mean_diff = abs(mean_a - mean_b)
+
+                    # Pooled std
+                    std_a = float(vals_a.std())
+                    std_b = float(vals_b.std())
+                    pooled_std = float(np.sqrt((std_a**2 + std_b**2) / 2.0))
+
+                    # Cohen's d-like separation
+                    separation = mean_diff / (pooled_std + eps)
+
+                    pair_distinctiveness[feature] = separation
+
+                # Sort by separation
+                sorted_pair = sorted(
+                    pair_distinctiveness.items(),
+                    key=lambda x: x[1],
+                    reverse=True
+                )[:top_n]
+
+                regime_pair_features[pair_key] = sorted_pair
+
+        return {
+            'top_overall_features': top_overall,
+            'regime_pair_features': regime_pair_features,
+            'all_distinctiveness_scores': distinctiveness_scores,
+        }
+
+    def _format_feature_distinctiveness_report(
+        self,
+        distinctiveness_analysis: Dict[str, Any],
+        regime_names: Dict[int, str] = None,
+    ) -> str:
+        """Format feature distinctiveness analysis as readable text."""
+        if regime_names is None:
+            regime_names = {
+                0: "Apathy",
+                1: "Valid Trend",
+                2: "Absorption",
+                3: "Ghost",
+            }
+
+        lines = []
+        lines.append("\n" + "=" * 100)
+        lines.append("FEATURE DISTINCTIVENESS ANALYSIS (Winsorized CoV Ratios)")
+        lines.append("=" * 100)
+
+        lines.append("\n## Top Overall Features for Regime Distinction (Between/Within CoV)\n")
+        lines.append(f"{'Rank':<6} {'Feature':<40} {'Between-CoV':<15} {'Within-CoV':<15} {'Distinctiveness':<15}")
+        lines.append("-" * 95)
+
+        for rank, (feature, scores) in enumerate(distinctiveness_analysis['top_overall_features'], 1):
+            lines.append(
+                f"{rank:<6} {feature:<40} {scores['between_cov']:<15.4f} "
+                f"{scores['within_cov']:<15.4f} {scores['distinctiveness']:<15.4f}"
+            )
+
+        # Per-regime pair analysis
+        lines.append("\n\n## Best Features for Each Regime Pair (Separation Score)\n")
+
+        for pair_key, features in distinctiveness_analysis['regime_pair_features'].items():
+            # Parse pair key: "Regime0_vs_Regime1"
+            parts = pair_key.replace("Regime", "").split("_vs_")
+            regime_a = int(parts[0])
+            regime_b = int(parts[1])
+            regime_a_name = regime_names.get(regime_a, f"Regime {regime_a}")
+            regime_b_name = regime_names.get(regime_b, f"Regime {regime_b}")
+
+            lines.append(f"\n### {regime_a_name} vs {regime_b_name}\n")
+            lines.append(f"{'Rank':<6} {'Feature':<40} {'Separation Score':<15}")
+            lines.append("-" * 65)
+
+            for rank, (feature, separation) in enumerate(features, 1):
+                lines.append(f"{rank:<6} {feature:<40} {separation:<15.4f}")
+
+        return "\n".join(lines)
+
     def save_csv_report(
         self,
         metrics: LiquidityClusterQualityMetrics,
@@ -831,4 +1049,46 @@ class LiquidityClusterQualityAssessor:
         df.to_csv(filepath, index=False)
 
         tprint_info(f"📊 Liquidity cluster quality CSV report saved to: {filepath}")
+        return str(filepath)
+
+    def save_feature_distinctiveness_report(
+        self,
+        metrics: LiquidityClusterQualityMetrics,
+        symbol: str,
+        output_dir: Optional[str] = None,
+    ) -> str:
+        """Save feature distinctiveness analysis report as markdown.
+
+        Shows which features best distinguish between regimes using winsorized CV ratios.
+        """
+        if output_dir is None:
+            output_dir = "outcomes"
+
+        output_path = Path(output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"liquidity_feature_distinctiveness_{symbol}_{timestamp}.md"
+        filepath = output_path / filename
+
+        # Generate the distinctiveness report
+        distinctiveness_report = self._format_feature_distinctiveness_report(
+            metrics.distinctiveness_analysis,
+            regime_names={
+                0: "Apathy",
+                1: "Valid Trend",
+                2: "Absorption",
+                3: "Ghost",
+            }
+        )
+
+        with open(filepath, "w") as f:
+            f.write(f"# Feature Distinctiveness Report\n\n")
+            f.write(f"**Symbol:** {symbol}\n")
+            f.write(f"**Assessment time:** {metrics.assessment_timestamp}\n")
+            f.write(f"**Number of regimes:** {metrics.n_regimes}\n")
+            f.write(f"**Number of samples:** {metrics.n_samples}\n\n")
+            f.write(distinctiveness_report)
+
+        tprint_info(f"📊 Feature distinctiveness report saved to: {filepath}")
         return str(filepath)

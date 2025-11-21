@@ -2660,16 +2660,33 @@ class MLRiskRegimeStep(BaseStep):
         gmm.fit(risk_features_clean)
         initial_labels = gmm.predict(risk_features_clean)
 
-        # Rank regimes by average risk level (0 = lowest, n-1 = highest)
-        regime_means = []
+        # DO NOT rank/reorder regimes - let GMM find distinct profiles
+        # Each regime represents a different risk PROFILE, not a continuum
+        # Characterize each regime by its feature profile
+        regime_profiles = {}
         for regime_id in range(n_regimes):
             regime_mask = initial_labels == regime_id
-            regime_mean = risk_features_clean[regime_mask].mean().mean()
-            regime_means.append(regime_mean)
+            regime_data = risk_features_clean[regime_mask]
 
-        regime_ranking = np.argsort(regime_means)
-        label_mapping = {old: new for new, old in enumerate(regime_ranking)}
-        initial_labels = np.array([label_mapping[lbl] for lbl in initial_labels])
+            if len(regime_data) > 0:
+                # Calculate regime characteristics
+                profile = {
+                    'regime_id': regime_id,
+                    'size': len(regime_data),
+                    'mean_vol_1h': regime_data.get('risk_fwd_vol_1h_raw_scaled', pd.Series([0])).mean(),
+                    'mean_vol_4h': regime_data.get('risk_fwd_vol_4h_raw_scaled', pd.Series([0])).mean(),
+                    'mean_tail_risk': regime_data.get('risk_tail_cvar_raw_scaled', pd.Series([0])).mean(),
+                    'mean_vol_accel': regime_data.get('risk_vol_acceleration_raw_scaled', pd.Series([0])).mean(),
+                    'mean_features': regime_data.mean().mean(),
+                    'std_features': regime_data.std().mean(),
+                }
+                regime_profiles[regime_id] = profile
+
+                tprint_info(
+                    f"  Regime {regime_id}: n={profile['size']}, "
+                    f"vol_1h={profile['mean_vol_1h']:.3f}, "
+                    f"tail_risk={profile['mean_tail_risk']:.3f}"
+                )
 
         initial_score = self._calculate_regime_quality_score(
             initial_labels, risk_features_clean, None

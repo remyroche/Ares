@@ -489,36 +489,32 @@ class MLLiquidityRegimeStep(BaseStep):
                 df[col] = df[col].clip(lower=lo, upper=hi)
 
         # ============================================================================
-        # LIQUIDITY REGIME FEATURES: Comprehensive Multi-Category Implementation
+        # LIQUIDITY REGIME FEATURES: 60 FOCUSED FEATURES FOR REGIME DISTINCTIVENESS
         # Timeframes aligned to 30m-3h trading duration:
         # - 1h: Immediate price action (current bar context)
         # - 3h: Trade-matched window (max 3h trade duration)
         # - 6h: Structural context (2× longest trade, intermediate regime)
         # ============================================================================
-
+        # Each feature directly maximizes between-regime variance for at least one
+        # regime pair (Valid Trend, Apathy, Absorption, Ghost)
         # ============================================================================
-        # CATEGORY 1: Directional Orderflow Features (OHLCV-only approximation)
-        # ============================================================================
-        # Approximate bid-ask imbalance using close position in range
 
-        # Close Location in Range: 0 = closed at low, 1 = closed at high
+        # CATEGORY 1: DIRECTIONAL ORDERFLOW (8 features)
+        # Distinguish Trend (high conviction) vs Apathy (balanced flow)
+
         df["close_position_range"] = (df["close"] - df["low"]) / (df["range"] + eps)
         df["close_position_range"] = df["close_position_range"].clip(0, 1)
 
-        # Volume-weighted directional intensity
         df["volume_buyer_intensity"] = df["volume"] * df["close_position_range"]
         df["volume_seller_intensity"] = df["volume"] * (1.0 - df["close_position_range"])
 
-        # Directional volume imbalance: [-1, 1] where 1 = all buying, -1 = all selling
         total_dir_volume = df["volume_buyer_intensity"] + df["volume_seller_intensity"]
         df["volume_direction_imbalance"] = (
             (df["volume_buyer_intensity"] - df["volume_seller_intensity"]) / (total_dir_volume + eps)
         )
 
-        # Directional conviction: strength of one-sided flow (higher = trend, lower = apathy)
         df["volume_direction_conviction"] = df["volume_direction_imbalance"].abs()
 
-        # Order flow persistence: does direction persist across bars?
         df["direction_change"] = (
             (df["close"] > df["close"].shift(1)).astype(float) -
             (df["close"] < df["close"].shift(1)).astype(float)
@@ -527,37 +523,31 @@ class MLLiquidityRegimeStep(BaseStep):
             df["volume_direction_imbalance"] * df["direction_change"]
         )
 
-        # Smooth orderflow metrics with 3-bar and 6-bar EWMA
-        if config.get("liquidity_use_ewm_features", True):
-            df["volume_direction_imbalance_ewm3"] = (
-                df["volume_direction_imbalance"].ewm(span=3, adjust=False).mean()
-            )
-            df["volume_direction_imbalance_ewm6"] = (
-                df["volume_direction_imbalance"].ewm(span=6, adjust=False).mean()
-            )
-            df["volume_direction_conviction_ewm3"] = (
-                df["volume_direction_conviction"].ewm(span=3, adjust=False).mean()
-            )
-            df["volume_direction_conviction_ewm6"] = (
-                df["volume_direction_conviction"].ewm(span=6, adjust=False).mean()
-            )
+        df["volume_direction_imbalance_ewm6"] = (
+            df["volume_direction_imbalance"].ewm(span=6, adjust=False).mean()
+        )
+        df["volume_direction_conviction_ewm6"] = (
+            df["volume_direction_conviction"].ewm(span=6, adjust=False).mean()
+        )
 
-        # ============================================================================
-        # CATEGORY 2: Trend Persistence Metrics (Directional Autocorrelation & Momentum)
-        # ============================================================================
-        # Consecutive bars in same direction (3-bar and 6-bar windows)
+        # CATEGORY 2: TREND PERSISTENCE (10 features)
+        # Distinguish Trend (high persistence) vs Apathy (random) vs Absorption (reversals)
+
         direction_sign = np.sign(df["return_1h"])
         direction_sign = direction_sign.replace(0, np.nan)
 
         same_direction_3 = (direction_sign == direction_sign.shift(1)).astype(float)
-        df["consecutive_direction_bars_3h"] = same_direction_3.rolling(window=3, min_periods=1).sum()
-        df["consecutive_direction_ratio_3h"] = df["consecutive_direction_bars_3h"] / 3.0
+        df["consecutive_direction_ratio_3h"] = same_direction_3.rolling(window=3, min_periods=1).sum() / 3.0
+        df["consecutive_direction_ratio_3h_ewm3"] = (
+            df["consecutive_direction_ratio_3h"].ewm(span=3, adjust=False).mean()
+        )
 
         same_direction_6 = (direction_sign == direction_sign.shift(1)).astype(float)
-        df["consecutive_direction_bars_6h"] = same_direction_6.rolling(window=6, min_periods=1).sum()
-        df["consecutive_direction_ratio_6h"] = df["consecutive_direction_bars_6h"] / 6.0
+        df["consecutive_direction_ratio_6h"] = same_direction_6.rolling(window=6, min_periods=1).sum() / 6.0
+        df["consecutive_direction_ratio_6h_ewm3"] = (
+            df["consecutive_direction_ratio_6h"].ewm(span=3, adjust=False).mean()
+        )
 
-        # Directional autocorrelation (lag-1): do moves persist?
         df["return_autocorr_lag1_3h"] = df["return_1h"].rolling(window=3, min_periods=2).apply(
             lambda x: x.iloc[-1] * x.iloc[-2] if len(x) >= 2 else 0, raw=False
         )
@@ -565,20 +555,13 @@ class MLLiquidityRegimeStep(BaseStep):
             lambda x: x.iloc[-1] * x.iloc[-2] if len(x) >= 2 else 0, raw=False
         )
 
-        # Momentum: price move × volume (directional conviction)
-        df["momentum_1h"] = df["return_1h"] * df["volume"]
-
-        # Momentum persistence: does momentum amplify or decay?
         momentum_ma_3 = df["return_1h"].rolling(window=3, min_periods=2).mean()
         momentum_ma_6 = df["return_1h"].rolling(window=6, min_periods=2).mean()
         df["momentum_persistence_3h"] = (momentum_ma_3 - momentum_ma_6) / (abs(momentum_ma_6) + eps)
-
-        # Momentum direction alignment with volume conviction
-        df["momentum_volume_alignment"] = (
-            np.sign(df["return_1h"]) * df["volume_direction_conviction"]
+        df["momentum_persistence_3h_ewm6"] = (
+            df["momentum_persistence_3h"].ewm(span=6, adjust=False).mean()
         )
 
-        # Trend confirmation: sustained directional move with supporting volume
         df["trend_confirmation_3h"] = (
             df["consecutive_direction_ratio_3h"] * df["volume_direction_conviction"]
         )
@@ -586,26 +569,10 @@ class MLLiquidityRegimeStep(BaseStep):
             df["consecutive_direction_ratio_6h"] * df["volume_direction_conviction"]
         )
 
-        # Smooth persistence metrics
-        if config.get("liquidity_use_ewm_features", True):
-            df["momentum_persistence_3h_ewm3"] = (
-                df["momentum_persistence_3h"].ewm(span=3, adjust=False).mean()
-            )
-            df["momentum_persistence_3h_ewm6"] = (
-                df["momentum_persistence_3h"].ewm(span=6, adjust=False).mean()
-            )
-            df["trend_confirmation_3h_ewm3"] = (
-                df["trend_confirmation_3h"].ewm(span=3, adjust=False).mean()
-            )
-            df["trend_confirmation_6h_ewm3"] = (
-                df["trend_confirmation_6h"].ewm(span=3, adjust=False).mean()
-            )
+        # CATEGORY 3: VOLATILITY-MOMENTUM ALIGNMENT (10 features)
+        # Distinguish Trend (vol + momentum sync) vs Ghost (vol spikes without momentum)
 
-        # ============================================================================
-        # CATEGORY 3: Volatility-Momentum Correlation (Vol Spikes vs Move Direction)
-        # ============================================================================
-        # Realized volatility at 3 aligned timeframes (1h, 3h, 6h)
-        realized_vol_1h = df["abs_return_1h"]  # Current bar volatility
+        realized_vol_1h = df["abs_return_1h"]
         realized_vol_3h = df["return_1h"].rolling(window=3, min_periods=1).std()
         realized_vol_6h = df["return_1h"].rolling(window=6, min_periods=2).std()
 
@@ -613,212 +580,154 @@ class MLLiquidityRegimeStep(BaseStep):
         df["realized_vol_3h"] = realized_vol_3h
         df["realized_vol_6h"] = realized_vol_6h
 
-        # Vol ratio changes: recent vs intermediate vs structural
-        df["vol_ratio_1h_3h"] = realized_vol_1h / (realized_vol_3h + eps)  # immediate stress
-        df["vol_ratio_3h_6h"] = realized_vol_3h / (realized_vol_6h + eps)  # trade duration persistence
-        df["vol_ratio_1h_6h"] = realized_vol_1h / (realized_vol_6h + eps)  # overall urgency
+        df["vol_ratio_1h_3h"] = realized_vol_1h / (realized_vol_3h + eps)
+        df["vol_ratio_3h_6h"] = realized_vol_3h / (realized_vol_6h + eps)
+        df["vol_ratio_1h_6h"] = realized_vol_1h / (realized_vol_6h + eps)
 
-        # Volatility spike detection (vol > rolling mean)
         vol_ma_6 = df["abs_return_1h"].rolling(window=6, min_periods=2).mean()
         df["vol_spike_ratio"] = df["abs_return_1h"] / (vol_ma_6 + eps)
-        df["is_vol_spike"] = (df["vol_spike_ratio"] > 1.5).astype(float)
 
-        # Momentum magnitude vs volatility (conviction magnitude)
-        abs_momentum = df["return_1h"].abs()
-        df["momentum_vol_alignment_1h"] = abs_momentum / (realized_vol_1h + eps)
-        df["momentum_vol_alignment_3h"] = abs_momentum / (realized_vol_3h + eps)
-        df["momentum_vol_alignment_6h"] = abs_momentum / (realized_vol_6h + eps)
-
-        # Volatility-momentum correlation: do vol and momentum move together?
-        df["vol_momentum_corr_3h"] = df["abs_return_1h"].rolling(window=3, min_periods=2).apply(
-            lambda x: x.corr(df["volume"].iloc[x.index] / (df["volume"].iloc[x.index].mean() + eps))
-            if len(x) >= 2 else 0, raw=False
+        df["vol_momentum_sync"] = (
+            (df["vol_spike_ratio"] > 1.5).astype(float) * df["volume_direction_conviction"]
         )
-        df["vol_momentum_corr_6h"] = df["abs_return_1h"].rolling(window=6, min_periods=2).apply(
-            lambda x: x.corr(df["volume"].iloc[x.index] / (df["volume"].iloc[x.index].mean() + eps))
-            if len(x) >= 2 else 0, raw=False
+        df["vol_momentum_sync_ewm3"] = (
+            df["vol_momentum_sync"].ewm(span=3, adjust=False).mean()
         )
 
-        # Vol-momentum divergence: wicks without body (Ghost signature)
         df["range_momentum_divergence"] = (
             df["range"] - df["abs_return_1h"]
-        ) / (df["range"] + eps)  # high = wicks dominate, low = body dominates
+        ) / (df["range"] + eps)
 
-        # Vol-momentum synchronization: are spikes aligned with directional moves?
-        df["vol_momentum_sync"] = (
-            df["is_vol_spike"] * df["volume_direction_conviction"]
+        df["momentum_vol_alignment_3h"] = df["abs_return_1h"] / (realized_vol_3h + eps)
+        df["momentum_vol_alignment_3h_ewm3"] = (
+            df["momentum_vol_alignment_3h"].ewm(span=3, adjust=False).mean()
         )
 
-        # Smooth vol-momentum metrics
-        if config.get("liquidity_use_ewm_features", True):
-            df["vol_spike_ratio_ewm3"] = (
-                df["vol_spike_ratio"].ewm(span=3, adjust=False).mean()
-            )
-            df["vol_spike_ratio_ewm6"] = (
-                df["vol_spike_ratio"].ewm(span=6, adjust=False).mean()
-            )
-            df["momentum_vol_alignment_1h_ewm3"] = (
-                df["momentum_vol_alignment_1h"].ewm(span=3, adjust=False).mean()
-            )
-            df["momentum_vol_alignment_3h_ewm3"] = (
-                df["momentum_vol_alignment_3h"].ewm(span=3, adjust=False).mean()
-            )
-            df["range_momentum_divergence_ewm3"] = (
-                df["range_momentum_divergence"].ewm(span=3, adjust=False).mean()
-            )
-            df["range_momentum_divergence_ewm6"] = (
-                df["range_momentum_divergence"].ewm(span=6, adjust=False).mean()
-            )
+        # CATEGORY 4: REVERSAL & TRAP PATTERNS (10 features)
+        # Distinguish Trend (few reversals) vs Absorption (reversals with substance) vs Ghost (whipsaws)
 
-        # ============================================================================
-        # CATEGORY 4: Orderbook Pressure Proxy (from OHLCV)
-        # ============================================================================
-        # Estimate orderbook depth from volume distribution over range
+        sign_changes = (np.sign(df["return_1h"]) != np.sign(df["return_1h"].shift(1))).astype(float)
+        df["reversal_intensity"] = df["abs_return_1h"] * sign_changes
+        df["reversal_intensity_ewm3"] = (
+            df["reversal_intensity"].ewm(span=3, adjust=False).mean()
+        )
 
-        # Volume concentration: orders stacking vs scattered
+        df["reversal_conviction"] = (
+            (np.sign(df["return_1h"]) == np.sign(df["return_1h"].shift(-1))).astype(float)
+            .rolling(window=6, min_periods=2).sum() / 6.0
+        )
+        df["reversal_conviction_ewm3"] = (
+            df["reversal_conviction"].ewm(span=3, adjust=False).mean()
+        )
+
+        df["whipsaw_count"] = sign_changes.rolling(window=12, min_periods=4).sum()
+        df["whipsaw_count_ewm6"] = (
+            df["whipsaw_count"].ewm(span=6, adjust=False).mean()
+        )
+
+        df["reversal_volume_sync"] = (
+            df["reversal_intensity"] * df["volume_direction_conviction"]
+        )
+        df["reversal_volume_sync_ewm3"] = (
+            df["reversal_volume_sync"].ewm(span=3, adjust=False).mean()
+        )
+
+        df["return_autocorr_lag6"] = df["return_1h"].rolling(window=12, min_periods=6).apply(
+            lambda x: x.iloc[:6].corr(x.iloc[6:]) if len(x) == 12 else 0, raw=False
+        )
+
+        price_change_6h = (df["close"] - df["close"].shift(6)).abs()
+        volatility_6h = df["abs_return_1h"].rolling(window=6, min_periods=2).sum()
+        df["efficiency_ratio"] = price_change_6h / (volatility_6h + eps)
+
+        # CATEGORY 5: ORDERBOOK PRESSURE (6 features)
+        # Distinguish Absorption (stacked orders) from Apathy (scattered)
+
         close_pct_in_range = df["close_position_range"]
         volume_concentration_3h = (
             (close_pct_in_range * df["volume"]).rolling(window=3, min_periods=1).std() /
             (df["volume"].rolling(window=3, min_periods=1).mean() + eps)
         )
         df["volume_concentration_ratio_3h"] = volume_concentration_3h
+        df["volume_concentration_ratio_3h_ewm6"] = (
+            df["volume_concentration_ratio_3h"].ewm(span=6, adjust=False).mean()
+        )
 
-        # Order flow imbalance proxy: seller vs buyer pressure
-        # >1 = seller pressure, <1 = buyer pressure, ~1 = balanced
         high_move = (df["high"] - df["close"]).abs()
         low_move = (df["close"] - df["low"]).abs()
         df["pressure_ratio"] = (
             (high_move * df["volume"]) / ((low_move * df["volume"]) + eps)
         )
+        df["pressure_ratio_ewm6"] = (
+            df["pressure_ratio"].ewm(span=6, adjust=False).mean()
+        )
 
-        # Liquidity fill difficulty: volume needed to move price 1%
-        price_move_pct = df["abs_return_1h"].clip(lower=0.0001)  # Avoid division by near-zero
+        price_move_pct = df["abs_return_1h"].clip(lower=0.0001)
         df["kyle_lambda_proxy"] = (
             df["volume"] / price_move_pct
         ).rolling(window=6, min_periods=2).mean()
-
-        # Smooth pressure metrics
-        if config.get("liquidity_use_ewm_features", True):
-            df["pressure_ratio_ewm3"] = (
-                df["pressure_ratio"].ewm(span=3, adjust=False).mean()
-            )
-            df["pressure_ratio_ewm6"] = (
-                df["pressure_ratio"].ewm(span=6, adjust=False).mean()
-            )
-
-        # ============================================================================
-        # CATEGORY 5: Reversal Patterns (Trap vs Ghost Signature)
-        # ============================================================================
-        # Reversal intensity: how hard does market reverse?
-        sign_changes = (np.sign(df["return_1h"]) != np.sign(df["return_1h"].shift(1))).astype(float)
-        df["reversal_intensity"] = df["abs_return_1h"] * sign_changes
-
-        # Post-reversal momentum: do reversals stick?
-        df["reversal_conviction"] = (
-            (np.sign(df["return_1h"]) == np.sign(df["return_1h"].shift(-1))).astype(float)
-            .rolling(window=6, min_periods=2).sum() / 6.0
+        df["kyle_lambda_proxy_ewm6"] = (
+            df["kyle_lambda_proxy"].ewm(span=6, adjust=False).mean()
         )
 
-        # Consecutive reversal bars (whipsaw signature): Ghost = 8-12 per 12 bars, Trend = 2-4
-        df["whipsaw_count"] = (
-            sign_changes.rolling(window=12, min_periods=4).sum()
-        )
+        # CATEGORY 6: MULTI-TIMEFRAME VOLATILITY ALIGNMENT (8 features)
+        # Context for regime identification via vol profiles
 
-        # Reversal-volume alignment: strong vol during reversal?
-        df["reversal_volume_sync"] = (
-            df["reversal_intensity"] * df["volume_direction_conviction"]
-        )
-
-        # Smooth reversal metrics
-        if config.get("liquidity_use_ewm_features", True):
-            df["reversal_intensity_ewm3"] = (
-                df["reversal_intensity"].ewm(span=3, adjust=False).mean()
-            )
-            df["reversal_conviction_ewm3"] = (
-                df["reversal_conviction"].ewm(span=3, adjust=False).mean()
-            )
-            df["whipsaw_count_ewm6"] = (
-                df["whipsaw_count"].ewm(span=6, adjust=False).mean()
-            )
-
-        # ============================================================================
-        # CATEGORY 6: Multi-Timeframe Volatility Alignment
-        # ============================================================================
-        # Intra-bar volatility: total range as % of close
         df["intra_bar_vol_estimate"] = (df["high"] - df["low"]) / (df["close"] + eps)
 
-        # Wick-to-body ratio: wicks vs body dominance
         upper_wick = df["high"] - df[["open", "close"]].max(axis=1)
         lower_wick = df[["open", "close"]].min(axis=1) - df["low"]
         df["wick_vol_contribution"] = (upper_wick + lower_wick) / (df["range"] + eps)
+        df["wick_vol_contribution_ewm6"] = (
+            df["wick_vol_contribution"].ewm(span=6, adjust=False).mean()
+        )
 
-        # Session-relative volatility: is this 1h vol high/low for the day (24 bars)?
         df["session_vol_percentile"] = (
             df["abs_return_1h"].rolling(window=24, min_periods=4).apply(
                 lambda x: pd.Series(x).rank(pct=True).iloc[-1]
             )
         )
+        df["session_vol_percentile_ewm6"] = (
+            df["session_vol_percentile"].ewm(span=6, adjust=False).mean()
+        )
 
-        # Vol clustering: does vol persist or scatter?
         vol_above_ma = (df["abs_return_1h"] > df["abs_return_1h"].rolling(window=6).mean()).astype(float)
         df["vol_clustering"] = vol_above_ma.rolling(window=6, min_periods=2).sum() / 6.0
+        df["vol_clustering_ewm6"] = (
+            df["vol_clustering"].ewm(span=6, adjust=False).mean()
+        )
 
-        # Vol regime change detection: spiking or dying?
         df["vol_regime_change"] = (
             (realized_vol_3h - realized_vol_6h) / (realized_vol_6h + eps)
         )
 
-        # Smooth multi-TF metrics
-        if config.get("liquidity_use_ewm_features", True):
-            df["session_vol_percentile_ewm6"] = (
-                df["session_vol_percentile"].ewm(span=6, adjust=False).mean()
-            )
-            df["vol_clustering_ewm6"] = (
-                df["vol_clustering"].ewm(span=6, adjust=False).mean()
-            )
-            df["vol_regime_change_ewm6"] = (
-                df["vol_regime_change"].ewm(span=6, adjust=False).mean()
-            )
+        # CATEGORY 7: INFORMATION EFFICIENCY (8 features)
+        # Market quality and discovery efficiency
 
-        # ============================================================================
-        # CATEGORY 7: Information Efficiency Metrics (Price Discovery Quality)
-        # ============================================================================
-        # Efficiency ratio (Kaufman): directional move vs total volatility
-        price_change_6h = (df["close"] - df["close"].shift(6)).abs()
-        volatility_6h = df["abs_return_1h"].rolling(window=6, min_periods=2).sum()
-        df["efficiency_ratio"] = (
-            price_change_6h / (volatility_6h + eps)
+        df["efficiency_ratio_ewm6"] = (
+            df["efficiency_ratio"].ewm(span=6, adjust=False).mean()
         )
 
-        # Return predictability: can today's move predict tomorrow's?
-        df["return_autocorr_lag6"] = df["return_1h"].rolling(window=12, min_periods=6).apply(
-            lambda x: x.iloc[:6].corr(x.iloc[6:]) if len(x) == 12 else 0, raw=False
-        )
-
-        # Volume-price trend synchronization: do volume and price move together?
         price_trend_6h = (df["close"].diff(6) > 0).astype(float)
         volume_trend_6h = (df["volume"] > df["volume"].rolling(window=6).mean()).astype(float)
         df["volume_price_trend_sync"] = (
             price_trend_6h.rolling(window=6, min_periods=2).mean() -
             volume_trend_6h.rolling(window=6, min_periods=2).mean()
         )
+        df["volume_price_trend_sync_ewm6"] = (
+            df["volume_price_trend_sync"].ewm(span=6, adjust=False).mean()
+        )
 
-        # Market microstructure quality: price impact per unit volume
         df["price_impact_ratio"] = (
             df["range"] / (df["volume"] + eps)
         )
+        df["price_impact_ratio_ewm6"] = (
+            df["price_impact_ratio"].ewm(span=6, adjust=False).mean()
+        )
 
-        # Smooth efficiency metrics
-        if config.get("liquidity_use_ewm_features", True):
-            df["efficiency_ratio_ewm6"] = (
-                df["efficiency_ratio"].ewm(span=6, adjust=False).mean()
-            )
-            df["return_autocorr_lag6_ewm6"] = (
-                df["return_autocorr_lag6"].ewm(span=6, adjust=False).mean()
-            )
-            df["price_impact_ratio_ewm6"] = (
-                df["price_impact_ratio"].ewm(span=6, adjust=False).mean()
-            )
+        df["momentum_volume_alignment"] = (
+            np.sign(df["return_1h"]) * df["volume_direction_conviction"]
+        )
 
         return df
 

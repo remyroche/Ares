@@ -25,7 +25,7 @@ Responsibilities:
 
 import logging
 import time
-from typing import Any, Dict, Optional, Tuple, List
+from typing import Any, Dict, Optional, Tuple, List, Union
 from dataclasses import asdict, is_dataclass
 from datetime import datetime
 
@@ -1336,9 +1336,9 @@ class MLRiskRegimeStep(BaseStep):
         high = df["high"].astype(float)
         low = df["low"].astype(float)
 
-        # Winsorization parameters
-        winsorize_lower = float(config.get("risk_winsorize_lower_quantile", 0.01))
-        winsorize_upper = float(config.get("risk_winsorize_upper_quantile", 0.99))
+        # Winsorization parameters (WIDER RANGE: 0.10-0.90 for regime preservation)
+        winsorize_lower = float(config.get("risk_winsorize_lower_quantile", 0.10))
+        winsorize_upper = float(config.get("risk_winsorize_upper_quantile", 0.90))
 
         tprint_info("🎯 Computing 4-component risk target...")
 
@@ -1422,6 +1422,51 @@ class MLRiskRegimeStep(BaseStep):
                 else:
                     tail_density.append(0.0)
         df["risk_tail_density_raw"] = tail_density
+
+        # =============== NEW: Regime-Specific Divergence Features ===============
+        # These features capture regime transitions and regime characteristics
+
+        # Vol-Return Correlation: Rolling correlation between vol and returns
+        # Negative in trending regimes, positive in mean-reverting/crash regimes
+        vol_return_corr = returns_1h.rolling(window=20).corr(vol_current)
+        df["vol_return_correlation_raw"] = vol_return_corr.fillna(0)
+
+        # Cross-Timeframe Vol Ratio: Local vs global volatility
+        # High ratio = locally elevated vol (regime transition)
+        vol_short = returns_1h.rolling(window=6).std()
+        vol_long = returns_1h.rolling(window=24).std()
+        vol_cross_ratio = vol_short / (vol_long + 1e-9)
+        df["vol_cross_timeframe_ratio_raw"] = vol_cross_ratio
+
+        # Drawdown Duration: How long current drawdown has lasted
+        # Long durations indicate persistent distress regimes
+        cumulative_returns = (1 + returns_1h).cumprod()
+        running_max = cumulative_returns.expanding().max()
+        drawdown = (cumulative_returns - running_max) / (running_max + 1e-9)
+
+        # Calculate duration of current drawdown
+        drawdown_duration = pd.Series(0, index=df.index)
+        in_drawdown = drawdown < -0.01  # 1% threshold
+        duration_counter = 0
+        for i in range(len(in_drawdown)):
+            if in_drawdown.iloc[i]:
+                duration_counter += 1
+                drawdown_duration.iloc[i] = duration_counter
+            else:
+                duration_counter = 0
+        df["drawdown_duration_raw"] = drawdown_duration
+
+        # Vol Regime Momentum: Rate of change in vol regime
+        # Captures whether vol is accelerating or decelerating
+        vol_roc = vol_current.pct_change(periods=3).fillna(0)
+        df["vol_regime_momentum_raw"] = vol_roc
+
+        # Return Skewness-Vol Interaction: Captures crash vs euphoria regimes
+        # High vol + negative skew = crash regime
+        # High vol + positive skew = euphoria/recovery regime
+        skew_20 = returns_1h.rolling(window=20).skew().fillna(0)
+        skew_vol_interaction = skew_20 * vol_current
+        df["skew_vol_interaction_raw"] = skew_vol_interaction
 
         # Winsorize each component individually
         risk_components = {
@@ -1859,6 +1904,771 @@ class MLRiskRegimeStep(BaseStep):
         feature_pipeline_artifacts["prediction_scaler"] = pred_scaler
 
         return model, scores, pred_col_name, training_metrics, feature_pipeline_artifacts
+
+    # ========================================================================
+    # NEW: XGBoost Multi-Class Classifier Approach for Regime Detection
+    # ========================================================================
+
+    def _drop_correlated_features(
+        self,
+        features_df: pd.DataFrame,
+        threshold: float = 0.95,
+        keep_priority_patterns: Optional[List[str]] = None
+    ) -> Tuple[pd.DataFrame, List[str]]:
+        """
+        Drop highly correlated features to reduce dimensionality.
+
+        Args:
+            features_df: DataFrame of features
+            threshold: Correlation threshold (default 0.95)
+            keep_priority_patterns: List of regex patterns for features to keep
+
+        Returns:
+            filtered_df: DataFrame with correlated features removed
+            dropped_features: List of dropped feature names
+        """
+        if keep_priority_patterns is None:
+            keep_priority_patterns = [
+                r'.*_raw_scaled$',  # Keep all _raw_scaled features
+                r'^risk_fwd_vol',   # Keep forward vol features
+                r'^risk_tail_cvar', # Keep tail risk features
+            ]
+
+        corr_matrix = features_df.corr().abs()
+
+        # Upper triangle of correlation matrix
+        upper_tri = corr_matrix.where(
+            np.triu(np.ones(corr_matrix.shape), k=1).astype(bool)
+        )
+
+        # Find features with correlation > threshold
+        to_drop = set()
+        for column in upper_tri.columns:
+            correlated_features = upper_tri.index[upper_tri[column] > threshold].tolist()
+
+            if correlated_features:
+                # Among correlated features, keep the one matching priority patterns
+                features_to_compare = [column] + correlated_features
+
+                # Check priority
+                priority_feature = None
+                for feat in features_to_compare:
+                    if any(pd.Series([feat]).str.match(pattern).any() for pattern in keep_priority_patterns):
+                        priority_feature = feat
+                        break
+
+                # Drop all except priority feature
+                for feat in features_to_compare:
+                    if feat != priority_feature:
+                        to_drop.add(feat)
+
+        dropped_features = list(to_drop)
+        kept_features = [col for col in features_df.columns if col not in to_drop]
+
+        tprint_info(f"📉 Dropped {len(dropped_features)} correlated features (>{threshold}): {dropped_features[:10]}...")
+        tprint_info(f"✅ Kept {len(kept_features)} features")
+
+        return features_df[kept_features], dropped_features
+
+    def _select_discriminative_features(
+        self,
+        features_df: pd.DataFrame,
+        regime_labels: np.ndarray,
+        top_k: Optional[int] = None
+    ) -> List[str]:
+        """
+        Select features that maximize between/within regime variance ratio.
+
+        Args:
+            features_df: DataFrame of features
+            regime_labels: Regime assignments
+            top_k: Number of top features to select (None = keep all)
+
+        Returns:
+            selected_features: List of selected feature names
+        """
+        # Calculate variance ratio for each feature
+        feature_scores = []
+
+        for col in features_df.columns:
+            feature_data = features_df[col].values
+
+            # Skip if too many NaNs
+            if np.isnan(feature_data).sum() > len(feature_data) * 0.5:
+                continue
+
+            # Between-regime variance
+            regime_means = []
+            for regime_id in np.unique(regime_labels):
+                if regime_id < 0:  # Skip invalid labels
+                    continue
+                regime_mask = regime_labels == regime_id
+                regime_data = feature_data[regime_mask]
+                regime_data_clean = regime_data[~np.isnan(regime_data)]
+                if len(regime_data_clean) > 0:
+                    regime_means.append(np.mean(regime_data_clean))
+
+            if len(regime_means) < 2:
+                continue
+
+            between_var = np.var(regime_means)
+
+            # Within-regime variance
+            within_vars = []
+            for regime_id in np.unique(regime_labels):
+                if regime_id < 0:
+                    continue
+                regime_mask = regime_labels == regime_id
+                regime_data = feature_data[regime_mask]
+                regime_data_clean = regime_data[~np.isnan(regime_data)]
+                if len(regime_data_clean) > 1:
+                    within_vars.append(np.var(regime_data_clean))
+
+            if not within_vars:
+                continue
+
+            within_var = np.mean(within_vars)
+
+            # Variance ratio
+            var_ratio = between_var / (within_var + 1e-8)
+
+            feature_scores.append({
+                'feature': col,
+                'var_ratio': var_ratio,
+                'between_var': between_var,
+                'within_var': within_var
+            })
+
+        # Sort by variance ratio
+        feature_scores_df = pd.DataFrame(feature_scores).sort_values('var_ratio', ascending=False)
+
+        if top_k is not None and top_k < len(feature_scores_df):
+            selected_df = feature_scores_df.head(top_k)
+            tprint_info(f"🎯 Selected top {top_k} discriminative features (by variance ratio)")
+        else:
+            selected_df = feature_scores_df
+            tprint_info(f"🎯 All {len(feature_scores_df)} features ranked by discriminative power")
+
+        # Log top features
+        for idx, row in selected_df.head(10).iterrows():
+            tprint_info(f"  {row['feature']}: ratio={row['var_ratio']:.3f}")
+
+        return selected_df['feature'].tolist()
+
+    def _apply_umap_reduction(
+        self,
+        features_df: pd.DataFrame,
+        n_components: int = 8,
+        n_neighbors: int = 30,
+        min_dist: float = 0.0,
+        random_state: int = 42
+    ) -> Tuple[pd.DataFrame, Any]:
+        """
+        Apply UMAP dimensionality reduction preserving cluster structure.
+
+        Args:
+            features_df: Input features
+            n_components: Number of UMAP components
+            n_neighbors: Number of neighbors for UMAP
+            min_dist: Minimum distance for UMAP
+            random_state: Random seed
+
+        Returns:
+            reduced_df: DataFrame with UMAP components
+            umap_reducer: Fitted UMAP object
+        """
+        try:
+            import umap
+        except ImportError:
+            tprint_warning("⚠️ UMAP not installed, skipping dimensionality reduction")
+            return features_df, None
+
+        # Remove NaNs
+        features_clean = features_df.dropna()
+
+        if len(features_clean) < 100:
+            tprint_warning("⚠️ Insufficient samples for UMAP, skipping")
+            return features_df, None
+
+        tprint_info(f"🔬 Applying UMAP: {features_df.shape[1]} → {n_components} dimensions")
+
+        reducer = umap.UMAP(
+            n_components=min(n_components, features_df.shape[1] - 2),
+            n_neighbors=n_neighbors,
+            min_dist=min_dist,
+            metric='euclidean',
+            random_state=random_state,
+            verbose=False
+        )
+
+        embedding = reducer.fit_transform(features_clean)
+
+        reduced_df = pd.DataFrame(
+            embedding,
+            index=features_clean.index,
+            columns=[f'umap_{i}' for i in range(embedding.shape[1])]
+        )
+
+        tprint_success(f"✅ UMAP reduction complete: {features_df.shape[1]} → {reduced_df.shape[1]} features")
+
+        return reduced_df, reducer
+
+    def _calculate_winsorized_cv_between(
+        self,
+        regime_labels: np.ndarray,
+        features: Union[pd.DataFrame, pd.Series],
+        lower_pct: float = 0.10,
+        upper_pct: float = 0.90
+    ) -> float:
+        """
+        Calculate between-regime CV using WINSORIZED means.
+        More robust to outliers than standard CV.
+
+        Args:
+            regime_labels: Regime assignments
+            features: Feature data
+            lower_pct: Lower quantile for winsorization
+            upper_pct: Upper quantile for winsorization
+
+        Returns:
+            between_cv: Coefficient of variation between regimes
+        """
+        if isinstance(features, pd.Series):
+            features = features.to_frame()
+
+        regime_means = []
+        for regime_id in np.unique(regime_labels):
+            if regime_id < 0:  # Skip invalid labels
+                continue
+
+            regime_mask = regime_labels == regime_id
+            regime_data = features[regime_mask]
+
+            # Winsorize each feature
+            regime_means_winsorized = []
+            for col in features.columns:
+                col_data = regime_data[col].dropna()
+                if len(col_data) > 0:
+                    lower_bound = col_data.quantile(lower_pct)
+                    upper_bound = col_data.quantile(upper_pct)
+                    col_winsorized = col_data.clip(lower=lower_bound, upper=upper_bound)
+                    regime_means_winsorized.append(col_winsorized.mean())
+
+            if regime_means_winsorized:
+                regime_means.append(np.mean(regime_means_winsorized))
+
+        # CV of regime means
+        if len(regime_means) < 2:
+            return 0.0
+
+        regime_means_array = np.array(regime_means)
+        cv_between = regime_means_array.std() / (np.abs(regime_means_array.mean()) + 1e-8)
+
+        return float(cv_between)
+
+    def _calculate_winsorized_cv_within(
+        self,
+        regime_labels: np.ndarray,
+        features: Union[pd.DataFrame, pd.Series],
+        lower_pct: float = 0.10,
+        upper_pct: float = 0.90
+    ) -> float:
+        """
+        Calculate within-regime CV using WINSORIZED standard deviations.
+        Sample-size weighted average across regimes.
+
+        Args:
+            regime_labels: Regime assignments
+            features: Feature data
+            lower_pct: Lower quantile for winsorization
+            upper_pct: Upper quantile for winsorization
+
+        Returns:
+            within_cv: Weighted average within-regime CV
+        """
+        if isinstance(features, pd.Series):
+            features = features.to_frame()
+
+        within_cvs = []
+        regime_sizes = []
+
+        for regime_id in np.unique(regime_labels):
+            if regime_id < 0:
+                continue
+
+            regime_mask = regime_labels == regime_id
+            regime_data = features[regime_mask]
+            regime_sizes.append(regime_mask.sum())
+
+            # Winsorize each feature
+            feature_cvs = []
+            for col in features.columns:
+                col_data = regime_data[col].dropna()
+                if len(col_data) > 1:
+                    lower_bound = col_data.quantile(lower_pct)
+                    upper_bound = col_data.quantile(upper_pct)
+                    col_winsorized = col_data.clip(lower=lower_bound, upper=upper_bound)
+
+                    cv = col_winsorized.std() / (np.abs(col_winsorized.mean()) + 1e-8)
+                    feature_cvs.append(cv)
+
+            if feature_cvs:
+                within_cvs.append(np.mean(feature_cvs))
+
+        # Sample-size weighted average
+        if not within_cvs:
+            return 1.0  # Prevent division by zero
+
+        within_cvs_array = np.array(within_cvs)
+        regime_sizes_array = np.array(regime_sizes)
+        weighted_cv = np.average(within_cvs_array, weights=regime_sizes_array)
+
+        return float(weighted_cv)
+
+    def _calculate_wasserstein_distance(
+        self,
+        regime_labels: np.ndarray,
+        features: Union[pd.DataFrame, pd.Series]
+    ) -> float:
+        """
+        Calculate average Wasserstein distance between regime distributions.
+
+        Args:
+            regime_labels: Regime assignments
+            features: Feature data
+
+        Returns:
+            avg_wasserstein: Average Wasserstein distance across all regime pairs
+        """
+        from scipy.stats import wasserstein_distance
+
+        if isinstance(features, pd.Series):
+            features = features.to_frame()
+
+        unique_regimes = [r for r in np.unique(regime_labels) if r >= 0]
+
+        if len(unique_regimes) < 2:
+            return 0.0
+
+        wasserstein_distances = []
+
+        # Compare all pairs of regimes
+        for i, regime_i in enumerate(unique_regimes):
+            for regime_j in unique_regimes[i+1:]:
+                mask_i = regime_labels == regime_i
+                mask_j = regime_labels == regime_j
+
+                data_i = features[mask_i].values.flatten()
+                data_j = features[mask_j].values.flatten()
+
+                # Remove NaNs
+                data_i = data_i[~np.isnan(data_i)]
+                data_j = data_j[~np.isnan(data_j)]
+
+                if len(data_i) > 0 and len(data_j) > 0:
+                    wd = wasserstein_distance(data_i, data_j)
+                    wasserstein_distances.append(wd)
+
+        if not wasserstein_distances:
+            return 0.0
+
+        return float(np.mean(wasserstein_distances))
+
+    def _calculate_kl_divergence(
+        self,
+        regime_labels: np.ndarray,
+        features: Union[pd.DataFrame, pd.Series],
+        n_bins: int = 50
+    ) -> float:
+        """
+        Calculate average KL divergence between regime distributions.
+
+        Args:
+            regime_labels: Regime assignments
+            features: Feature data
+            n_bins: Number of bins for histogram estimation
+
+        Returns:
+            avg_kl: Average KL divergence across all regime pairs
+        """
+        from scipy.stats import entropy
+
+        if isinstance(features, pd.Series):
+            features = features.to_frame()
+
+        unique_regimes = [r for r in np.unique(regime_labels) if r >= 0]
+
+        if len(unique_regimes) < 2:
+            return 0.0
+
+        kl_divergences = []
+
+        # Get global range for consistent binning
+        all_data = features.values.flatten()
+        all_data = all_data[~np.isnan(all_data)]
+        data_min, data_max = all_data.min(), all_data.max()
+        bins = np.linspace(data_min, data_max, n_bins + 1)
+
+        # Compare all pairs of regimes
+        for i, regime_i in enumerate(unique_regimes):
+            for regime_j in enumerate(unique_regimes[i+1:]):
+                mask_i = regime_labels == regime_i
+                mask_j = regime_labels == regime_j
+
+                data_i = features[mask_i].values.flatten()
+                data_j = features[mask_j].values.flatten()
+
+                # Remove NaNs
+                data_i = data_i[~np.isnan(data_i)]
+                data_j = data_j[~np.isnan(data_j)]
+
+                if len(data_i) > 10 and len(data_j) > 10:
+                    # Create histograms
+                    hist_i, _ = np.histogram(data_i, bins=bins, density=True)
+                    hist_j, _ = np.histogram(data_j, bins=bins, density=True)
+
+                    # Add small epsilon to avoid log(0)
+                    hist_i = hist_i + 1e-10
+                    hist_j = hist_j + 1e-10
+
+                    # Normalize
+                    hist_i = hist_i / hist_i.sum()
+                    hist_j = hist_j / hist_j.sum()
+
+                    # Calculate KL divergence
+                    kl = entropy(hist_i, hist_j)
+                    if np.isfinite(kl):
+                        kl_divergences.append(kl)
+
+        if not kl_divergences:
+            return 0.0
+
+        return float(np.mean(kl_divergences))
+
+    def _calculate_regime_quality_score(
+        self,
+        regime_labels: np.ndarray,
+        risk_features: pd.DataFrame,
+        forward_returns: Optional[pd.Series] = None
+    ) -> float:
+        """
+        Calculate regime quality score based on 100% RISK CV ratio.
+
+        NO economic component - focuses entirely on risk feature distinctiveness.
+
+        Args:
+            regime_labels: Regime assignments
+            risk_features: Risk feature DataFrame
+            forward_returns: NOT USED (kept for compatibility)
+
+        Returns:
+            quality_score: Pure risk-based quality score
+        """
+        # Component 1: Risk feature CV ratio (WINSORIZED) - 100% weight
+        risk_cv_between = self._calculate_winsorized_cv_between(regime_labels, risk_features)
+        risk_cv_within = self._calculate_winsorized_cv_within(regime_labels, risk_features)
+        risk_cv_ratio = risk_cv_between / (risk_cv_within + 1e-8)
+
+        # Pure risk score (100% weight)
+        score = risk_cv_ratio
+
+        # Penalty for imbalanced regimes (variable-width: 5-45%)
+        label_counts = pd.Series(regime_labels).value_counts()
+        min_pct = label_counts.min() / len(regime_labels)
+        max_pct = label_counts.max() / len(regime_labels)
+
+        if min_pct < 0.05 or max_pct > 0.45:
+            score *= 0.5  # Heavy penalty for extreme imbalance
+
+        return float(score)
+
+    def _calculate_regime_quality_metrics(
+        self,
+        regime_labels: np.ndarray,
+        risk_features: pd.DataFrame,
+        forward_returns: Optional[pd.Series] = None
+    ) -> Dict[str, Any]:
+        """
+        Calculate comprehensive regime quality metrics.
+
+        Args:
+            regime_labels: Regime assignments
+            risk_features: Risk features
+            forward_returns: Optional forward returns
+
+        Returns:
+            metrics: Dictionary of quality metrics
+        """
+        metrics = {}
+
+        # Risk CV ratio (primary metric)
+        risk_cv_between = self._calculate_winsorized_cv_between(regime_labels, risk_features)
+        risk_cv_within = self._calculate_winsorized_cv_within(regime_labels, risk_features)
+        metrics['risk_cv_ratio'] = risk_cv_between / (risk_cv_within + 1e-8)
+        metrics['risk_cv_between'] = risk_cv_between
+        metrics['risk_cv_within'] = risk_cv_within
+
+        # Economic CV ratio (for validation only)
+        if forward_returns is not None:
+            econ_cv_between = self._calculate_winsorized_cv_between(regime_labels, forward_returns)
+            econ_cv_within = self._calculate_winsorized_cv_within(regime_labels, forward_returns)
+            metrics['econ_cv_ratio'] = econ_cv_between / (econ_cv_within + 1e-8)
+            metrics['econ_cv_between'] = econ_cv_between
+            metrics['econ_cv_within'] = econ_cv_within
+        else:
+            metrics['econ_cv_ratio'] = 0.0
+
+        # Wasserstein distance
+        try:
+            metrics['wasserstein_distance'] = self._calculate_wasserstein_distance(regime_labels, risk_features)
+        except Exception:
+            metrics['wasserstein_distance'] = 0.0
+
+        # KL divergence
+        try:
+            metrics['kl_divergence'] = self._calculate_kl_divergence(regime_labels, risk_features)
+        except Exception:
+            metrics['kl_divergence'] = 0.0
+
+        # Regime balance
+        label_counts = pd.Series(regime_labels).value_counts()
+        metrics['min_regime_pct'] = label_counts.min() / len(regime_labels)
+        metrics['max_regime_pct'] = label_counts.max() / len(regime_labels)
+        metrics['regime_distribution'] = label_counts.to_dict()
+
+        # Quality score
+        metrics['quality_score'] = self._calculate_regime_quality_score(
+            regime_labels, risk_features, forward_returns
+        )
+
+        return metrics
+
+    def _apply_temporal_median_filter(
+        self,
+        regime_labels: np.ndarray,
+        window: int = 5
+    ) -> np.ndarray:
+        """
+        Apply rolling median filter to regime labels for temporal smoothing.
+
+        Args:
+            regime_labels: Raw regime labels
+            window: Rolling window size (odd number recommended)
+
+        Returns:
+            smoothed_labels: Temporally smoothed regime labels
+        """
+        from scipy.ndimage import median_filter
+
+        # Median filter works on integer labels directly
+        smoothed = median_filter(
+            regime_labels.astype(float),
+            size=window,
+            mode='nearest'
+        )
+
+        # Round to nearest integer regime
+        smoothed_labels = np.round(smoothed).astype(int)
+
+        # Clip to valid regime range
+        n_regimes = int(regime_labels.max() + 1)
+        smoothed_labels = np.clip(smoothed_labels, 0, n_regimes - 1)
+
+        return smoothed_labels
+
+    def _apply_regime_persistence_filter(
+        self,
+        regime_labels: np.ndarray,
+        min_duration: int = 3
+    ) -> np.ndarray:
+        """
+        Enforce minimum regime duration by merging short-lived regimes.
+
+        Args:
+            regime_labels: Input regime labels
+            min_duration: Minimum number of consecutive bars in a regime
+
+        Returns:
+            filtered_labels: Labels with minimum duration enforced
+        """
+        filtered_labels = regime_labels.copy()
+
+        # Identify regime runs
+        regime_runs = []
+        current_regime = filtered_labels[0]
+        run_start = 0
+
+        for i in range(1, len(filtered_labels)):
+            if filtered_labels[i] != current_regime:
+                regime_runs.append({
+                    'regime': current_regime,
+                    'start': run_start,
+                    'end': i,
+                    'duration': i - run_start
+                })
+                current_regime = filtered_labels[i]
+                run_start = i
+
+        # Add final run
+        regime_runs.append({
+            'regime': current_regime,
+            'start': run_start,
+            'end': len(filtered_labels),
+            'duration': len(filtered_labels) - run_start
+        })
+
+        # Merge short runs
+        i = 0
+        while i < len(regime_runs):
+            run = regime_runs[i]
+
+            if run['duration'] < min_duration:
+                prev_regime = regime_runs[i - 1]['regime'] if i > 0 else None
+                next_regime = regime_runs[i + 1]['regime'] if i < len(regime_runs) - 1 else None
+
+                if prev_regime is not None and next_regime is not None:
+                    # Merge with closer regime
+                    dist_prev = abs(run['regime'] - prev_regime)
+                    dist_next = abs(run['regime'] - next_regime)
+                    merge_regime = prev_regime if dist_prev <= dist_next else next_regime
+                elif prev_regime is not None:
+                    merge_regime = prev_regime
+                elif next_regime is not None:
+                    merge_regime = next_regime
+                else:
+                    i += 1
+                    continue
+
+                # Apply merge
+                filtered_labels[run['start']:run['end']] = merge_regime
+
+                # Rebuild runs
+                regime_runs = []
+                current_regime = filtered_labels[0]
+                run_start = 0
+
+                for j in range(1, len(filtered_labels)):
+                    if filtered_labels[j] != current_regime:
+                        regime_runs.append({
+                            'regime': current_regime,
+                            'start': run_start,
+                            'end': j,
+                            'duration': j - run_start
+                        })
+                        current_regime = filtered_labels[j]
+                        run_start = j
+
+                regime_runs.append({
+                    'regime': current_regime,
+                    'start': run_start,
+                    'end': len(filtered_labels),
+                    'duration': len(filtered_labels) - run_start
+                })
+
+                i = 0
+            else:
+                i += 1
+
+        return filtered_labels
+
+    def _refine_labels_simulated_annealing(
+        self,
+        initial_labels: np.ndarray,
+        risk_features: pd.DataFrame,
+        forward_returns: Optional[pd.Series],
+        n_regimes: int,
+        max_iterations: int = 500,
+        initial_temp: float = 1.0,
+        cooling_rate: float = 0.995
+    ) -> Tuple[np.ndarray, float]:
+        """
+        Refine regime labels using simulated annealing to maximize risk CV ratio.
+
+        Args:
+            initial_labels: Starting regime labels
+            risk_features: Risk feature DataFrame
+            forward_returns: NOT USED (100% risk optimization)
+            n_regimes: Number of regimes
+            max_iterations: Maximum SA iterations
+            initial_temp: Initial temperature
+            cooling_rate: Cooling rate per iteration
+
+        Returns:
+            best_labels: Optimized regime labels
+            best_score: Best quality score achieved
+        """
+        current_labels = initial_labels.copy()
+        current_score = self._calculate_regime_quality_score(
+            current_labels, risk_features, None
+        )
+
+        best_labels = current_labels.copy()
+        best_score = current_score
+
+        temperature = initial_temp
+        accept_count = 0
+
+        tprint_info(f"🔥 Starting Simulated Annealing (100% risk CV): initial_score={current_score:.4f}")
+
+        for iteration in range(max_iterations):
+            # Propose modification: flip 1-2% of samples to neighboring regime
+            candidate_labels = current_labels.copy()
+            n_flips = max(1, int(0.015 * len(candidate_labels)))
+            flip_indices = np.random.choice(len(candidate_labels), size=n_flips, replace=False)
+
+            for idx in flip_indices:
+                current_regime = candidate_labels[idx]
+                # Flip to neighboring regime (maintain ordinality)
+                neighbors = []
+                if current_regime > 0:
+                    neighbors.append(current_regime - 1)
+                if current_regime < n_regimes - 1:
+                    neighbors.append(current_regime + 1)
+
+                if neighbors:
+                    candidate_labels[idx] = np.random.choice(neighbors)
+
+            # Evaluate candidate
+            candidate_score = self._calculate_regime_quality_score(
+                candidate_labels, risk_features, None
+            )
+
+            # Accept or reject (Metropolis criterion)
+            delta = candidate_score - current_score
+            if delta > 0:
+                # Always accept improvements
+                current_labels = candidate_labels
+                current_score = candidate_score
+                accept_count += 1
+
+                if current_score > best_score:
+                    best_labels = current_labels.copy()
+                    best_score = current_score
+            elif np.random.random() < np.exp(delta / temperature):
+                # Sometimes accept worse solutions (escape local optima)
+                current_labels = candidate_labels
+                current_score = candidate_score
+                accept_count += 1
+
+            # Cool down
+            temperature *= cooling_rate
+
+            # Progress logging
+            if iteration % 100 == 0 or iteration == max_iterations - 1:
+                accept_rate = accept_count / (iteration + 1)
+                tprint_info(
+                    f"  SA iter {iteration}/{max_iterations}: "
+                    f"score={current_score:.4f}, best={best_score:.4f}, "
+                    f"temp={temperature:.4f}, accept_rate={accept_rate:.2%}"
+                )
+
+        improvement = best_score - self._calculate_regime_quality_score(initial_labels, risk_features, None)
+        tprint_success(
+            f"✅ SA completed: best_score={best_score:.4f} "
+            f"(improvement: +{improvement:.4f})"
+        )
+
+        return best_labels, best_score
 
     def _calculate_iqr_winsorization_percentiles(
         self, data: pd.Series

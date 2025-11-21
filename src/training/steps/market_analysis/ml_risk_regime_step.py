@@ -263,6 +263,52 @@ class MLRiskRegimeStep(BaseStep):
 
                 training_metrics.update(classifier_metrics)
 
+                # 6b.1) Save feature importance data as artifacts
+                try:
+                    if 'feature_importance_detailed' in classifier_metrics:
+                        importance_data = classifier_metrics['feature_importance_detailed']
+
+                        # Save global importance
+                        global_importance_df = pd.DataFrame(importance_data['global'])
+                        global_importance_path = self._save_artifact(
+                            data={'importance': global_importance_df},
+                            artifact_name="xgboost_feature_importance_global_1h",
+                            artifact_type="model",
+                            data_category="analysis",
+                            metadata={
+                                "symbol": symbol,
+                                "exchange": exchange,
+                                "timeframe": regime_timeframe,
+                                "n_features": len(global_importance_df),
+                                "model_type": "xgboost_multiclass"
+                            }
+                        )
+                        tprint_info(f"💾 Saved global feature importance: {global_importance_path}")
+
+                        # Save per-regime importance
+                        per_regime_dfs = {}
+                        for regime_id, regime_data in importance_data['per_regime'].items():
+                            per_regime_dfs[f'regime_{regime_id}'] = pd.DataFrame(regime_data)
+
+                        if per_regime_dfs:
+                            per_regime_importance_path = self._save_artifact(
+                                data=per_regime_dfs,
+                                artifact_name="xgboost_feature_importance_per_regime_1h",
+                                artifact_type="model",
+                                data_category="analysis",
+                                metadata={
+                                    "symbol": symbol,
+                                    "exchange": exchange,
+                                    "timeframe": regime_timeframe,
+                                    "n_regimes": len(per_regime_dfs),
+                                    "model_type": "xgboost_multiclass"
+                                }
+                            )
+                            tprint_info(f"💾 Saved per-regime feature importance: {per_regime_importance_path}")
+
+                except Exception as save_exc:
+                    tprint_warning(f"Failed to save feature importance artifacts: {save_exc}")
+
                 # 6c) Hard predictions (argmax of probabilities)
                 regime_labels = np.argmax(regime_probs, axis=1)
 
@@ -2736,6 +2782,144 @@ class MLRiskRegimeStep(BaseStep):
 
         return full_labels, metrics
 
+    def _calculate_comprehensive_feature_importance(
+        self,
+        model: Any,
+        X: pd.DataFrame,
+        y: np.ndarray,
+        feature_names: List[str]
+    ) -> Dict[str, Any]:
+        """
+        Calculate comprehensive feature importance metrics from XGBoost model.
+
+        Returns:
+            - Global importance: weight, gain, cover for all features
+            - Per-regime importance: feature distinctiveness for each regime
+
+        Args:
+            model: Trained XGBoost classifier
+            X: Feature matrix (scaled)
+            y: Regime labels
+            feature_names: List of feature names
+
+        Returns:
+            Dict with global and per-regime importance metrics
+        """
+        import xgboost as xgb
+
+        n_regimes = int(y.max() + 1)
+
+        # ========== GLOBAL FEATURE IMPORTANCE ==========
+        booster = model.get_booster()
+
+        # Get all three importance types
+        importance_weight = booster.get_score(importance_type='weight')
+        importance_gain = booster.get_score(importance_type='gain')
+        importance_cover = booster.get_score(importance_type='cover')
+
+        # Create comprehensive global importance dataframe
+        global_importance = []
+        for feat in feature_names:
+            # XGBoost uses f0, f1, f2... internally, map back to feature names
+            feat_idx = feature_names.index(feat)
+            feat_key = f'f{feat_idx}'
+
+            global_importance.append({
+                'feature': feat,
+                'weight': importance_weight.get(feat_key, 0),
+                'gain': importance_gain.get(feat_key, 0.0),
+                'cover': importance_cover.get(feat_key, 0.0),
+            })
+
+        global_df = pd.DataFrame(global_importance)
+
+        # Normalize each metric to sum to 1
+        if global_df['weight'].sum() > 0:
+            global_df['weight_norm'] = global_df['weight'] / global_df['weight'].sum()
+        else:
+            global_df['weight_norm'] = 0.0
+
+        if global_df['gain'].sum() > 0:
+            global_df['gain_norm'] = global_df['gain'] / global_df['gain'].sum()
+        else:
+            global_df['gain_norm'] = 0.0
+
+        if global_df['cover'].sum() > 0:
+            global_df['cover_norm'] = global_df['cover'] / global_df['cover'].sum()
+        else:
+            global_df['cover_norm'] = 0.0
+
+        # Combined score (average of normalized metrics)
+        global_df['combined_score'] = (
+            global_df['weight_norm'] +
+            global_df['gain_norm'] +
+            global_df['cover_norm']
+        ) / 3.0
+
+        global_df = global_df.sort_values('combined_score', ascending=False)
+
+        # ========== PER-REGIME FEATURE IMPORTANCE ==========
+        # Calculate feature distinctiveness for each regime
+        # A feature is important for a regime if its distribution differs significantly from other regimes
+
+        per_regime_importance = {}
+
+        for regime_id in range(n_regimes):
+            regime_mask = (y == regime_id)
+            other_mask = (y != regime_id)
+
+            if regime_mask.sum() == 0 or other_mask.sum() == 0:
+                continue
+
+            regime_features = []
+
+            for feat in feature_names:
+                feat_idx = X.columns.get_loc(feat)
+                feat_values = X.iloc[:, feat_idx]
+
+                # Calculate distinctiveness metrics
+                regime_mean = feat_values[regime_mask].mean()
+                other_mean = feat_values[other_mask].mean()
+                regime_std = feat_values[regime_mask].std()
+                other_std = feat_values[other_mask].std()
+
+                # Mean separation (normalized)
+                mean_separation = abs(regime_mean - other_mean) / (regime_std + other_std + 1e-8)
+
+                # Coefficient of variation ratio (between/within)
+                pooled_mean = feat_values.mean()
+                between_var = (regime_mean - pooled_mean)**2 * regime_mask.sum() + \
+                              (other_mean - pooled_mean)**2 * other_mask.sum()
+                within_var = regime_std**2 * regime_mask.sum() + other_std**2 * other_mask.sum()
+                cv_ratio = between_var / (within_var + 1e-8)
+
+                # Get global importance for this feature
+                global_weight = global_df[global_df['feature'] == feat]['weight_norm'].values[0] if len(global_df[global_df['feature'] == feat]) > 0 else 0
+                global_gain = global_df[global_df['feature'] == feat]['gain_norm'].values[0] if len(global_df[global_df['feature'] == feat]) > 0 else 0
+                global_cover = global_df[global_df['feature'] == feat]['cover_norm'].values[0] if len(global_df[global_df['feature'] == feat]) > 0 else 0
+
+                regime_features.append({
+                    'feature': feat,
+                    'regime_mean': float(regime_mean),
+                    'other_mean': float(other_mean),
+                    'mean_separation': float(mean_separation),
+                    'cv_ratio': float(cv_ratio),
+                    'global_weight': float(global_weight),
+                    'global_gain': float(global_gain),
+                    'global_cover': float(global_cover),
+                    # Combined regime-specific importance
+                    'regime_importance': float(mean_separation * cv_ratio * (global_gain + 0.1))
+                })
+
+            regime_df = pd.DataFrame(regime_features).sort_values('regime_importance', ascending=False)
+            per_regime_importance[regime_id] = regime_df
+
+        return {
+            'global': global_df,
+            'per_regime': per_regime_importance,
+            'n_regimes': n_regimes
+        }
+
     def _train_regime_classifier(
         self,
         risk_df: pd.DataFrame,
@@ -2875,13 +3059,49 @@ class MLRiskRegimeStep(BaseStep):
             'n_features': len(X_full.columns),
         }
 
-        # Feature importance
-        feature_importance = pd.DataFrame({
-            'feature': X_full.columns,
-            'importance': model.feature_importances_
-        }).sort_values('importance', ascending=False)
+        # ========== COMPREHENSIVE FEATURE IMPORTANCE ==========
+        tprint_info("🔍 Calculating comprehensive feature importance (weight, gain, cover)...")
 
-        training_metrics['feature_importance'] = feature_importance.to_dict('records')
+        importance_data = self._calculate_comprehensive_feature_importance(
+            model=model,
+            X=X_full,
+            y=y,
+            feature_names=list(X_full.columns)
+        )
+
+        training_metrics['feature_importance_detailed'] = {
+            'global': importance_data['global'].to_dict('records'),
+            'per_regime': {
+                regime_id: df.to_dict('records')
+                for regime_id, df in importance_data['per_regime'].items()
+            }
+        }
+
+        # Log global importance (top 15 features)
+        global_imp = importance_data['global'].head(15)
+        tprint_success("📊 Top 15 Global Feature Importance:")
+        for idx, row in global_imp.iterrows():
+            tprint_info(
+                f"  {row['feature'][:40]:40s} | "
+                f"Weight: {row['weight_norm']:.3f} | "
+                f"Gain: {row['gain_norm']:.3f} | "
+                f"Cover: {row['cover_norm']:.3f} | "
+                f"Combined: {row['combined_score']:.3f}"
+            )
+
+        # Log per-regime importance (top 10 features per regime)
+        tprint_success("📊 Per-Regime Feature Importance (Top 10 per regime):")
+        for regime_id, regime_df in importance_data['per_regime'].items():
+            tprint_info(f"\n  === Regime {regime_id} ===")
+            top_regime_features = regime_df.head(10)
+            for idx, row in top_regime_features.iterrows():
+                tprint_info(
+                    f"    {row['feature'][:35]:35s} | "
+                    f"MeanSep: {row['mean_separation']:6.2f} | "
+                    f"CVRatio: {row['cv_ratio']:6.2f} | "
+                    f"Gain: {row['global_gain']:.3f} | "
+                    f"RegImp: {row['regime_importance']:7.2f}"
+                )
 
         tprint_success(
             f"✅ XGBoost Classifier trained:\n"

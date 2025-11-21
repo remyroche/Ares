@@ -306,8 +306,31 @@ class MLRiskRegimeStep(BaseStep):
                             )
                             tprint_info(f"💾 Saved per-regime feature importance: {per_regime_importance_path}")
 
+                        # Generate comprehensive markdown report in outcomes/
+                        tprint_info("📊 Generating comprehensive feature importance report...")
+
+                        # Reconstruct importance_data from detailed dict
+                        importance_data_for_report = {
+                            'global': pd.DataFrame(importance_data['global']),
+                            'per_regime': {
+                                regime_id: pd.DataFrame(regime_data)
+                                for regime_id, regime_data in importance_data['per_regime'].items()
+                            },
+                            'n_regimes': len(importance_data['per_regime'])
+                        }
+
+                        report_path = self._generate_feature_importance_report(
+                            importance_data=importance_data_for_report,
+                            symbol=symbol,
+                            exchange=exchange,
+                            timeframe=regime_timeframe,
+                            classifier_metrics=classifier_metrics,
+                            label_metrics=label_metrics
+                        )
+                        tprint_success(f"📄 Feature importance report saved: {report_path}")
+
                 except Exception as save_exc:
-                    tprint_warning(f"Failed to save feature importance artifacts: {save_exc}")
+                    tprint_warning(f"Failed to save feature importance artifacts/report: {save_exc}")
 
                 # 6c) Hard predictions (argmax of probabilities)
                 regime_labels = np.argmax(regime_probs, axis=1)
@@ -2781,6 +2804,172 @@ class MLRiskRegimeStep(BaseStep):
         )
 
         return full_labels, metrics
+
+    def _generate_feature_importance_report(
+        self,
+        importance_data: Dict[str, Any],
+        symbol: str,
+        exchange: str,
+        timeframe: str,
+        classifier_metrics: Dict[str, Any],
+        label_metrics: Dict[str, Any]
+    ) -> str:
+        """
+        Generate comprehensive markdown report for feature importance analysis.
+
+        Args:
+            importance_data: Dict with 'global' and 'per_regime' DataFrames
+            symbol: Trading symbol
+            exchange: Exchange name
+            timeframe: Timeframe
+            classifier_metrics: XGBoost training metrics
+            label_metrics: GMM label creation metrics
+
+        Returns:
+            Path to saved report file
+        """
+        from datetime import datetime
+        import os
+
+        # Ensure outcomes directory exists
+        os.makedirs("outcomes", exist_ok=True)
+
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        report_path = f"outcomes/{symbol}_{exchange}_{timeframe}_XGBoost_Feature_Importance_{timestamp}.md"
+
+        global_df = importance_data['global']
+        per_regime_importance = importance_data['per_regime']
+        n_regimes = importance_data['n_regimes']
+
+        with open(report_path, 'w') as f:
+            # Header
+            f.write(f"# XGBoost Risk Regime Feature Importance Report\n\n")
+            f.write(f"**Symbol**: {symbol} | **Exchange**: {exchange} | **Timeframe**: {timeframe}\n\n")
+            f.write(f"**Generated**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+            f.write(f"---\n\n")
+
+            # Model Performance Summary
+            f.write(f"## Model Performance Summary\n\n")
+            f.write(f"### Classifier Metrics\n")
+            f.write(f"- **Validation Accuracy**: {classifier_metrics.get('val_accuracy', 0):.3f}\n")
+            f.write(f"- **Validation Log Loss**: {classifier_metrics.get('val_log_loss', 0):.4f}\n")
+            f.write(f"- **Number of Regimes**: {n_regimes}\n")
+            f.write(f"- **Number of Features**: {classifier_metrics.get('n_features', 0)}\n\n")
+
+            f.write(f"### Label Quality Metrics\n")
+            f.write(f"- **Risk CV Ratio**: {label_metrics.get('risk_cv_ratio', 0):.3f}\n")
+            f.write(f"- **Wasserstein Distance**: {label_metrics.get('wasserstein_distance', 0):.3f}\n")
+            f.write(f"- **KL Divergence**: {label_metrics.get('kl_divergence', 0):.3f}\n")
+            f.write(f"- **Quality Score**: {label_metrics.get('quality_score', 0):.3f}\n")
+            f.write(f"- **Regime Distribution**: {label_metrics.get('regime_distribution', {})}\n\n")
+
+            f.write(f"---\n\n")
+
+            # Global Feature Importance
+            f.write(f"## Global Feature Importance\n\n")
+            f.write(f"Top features across all regimes, ranked by combined score (average of weight, gain, and cover).\n\n")
+            f.write(f"### Metrics Explanation\n")
+            f.write(f"- **Weight**: Number of times feature is used in tree splits (normalized)\n")
+            f.write(f"- **Gain**: Average improvement in loss when feature is used (normalized)\n")
+            f.write(f"- **Cover**: Average number of samples affected by splits using this feature (normalized)\n")
+            f.write(f"- **Combined**: Average of weight, gain, and cover (normalized)\n\n")
+
+            # Top 30 global features
+            f.write(f"### Top 30 Features (Global)\n\n")
+            f.write(f"| Rank | Feature | Weight | Gain | Cover | Combined |\n")
+            f.write(f"|------|---------|--------|------|-------|----------|\n")
+            for rank, (idx, row) in enumerate(global_df.head(30).iterrows(), start=1):
+                f.write(
+                    f"| {rank:3d} | {row['feature'][:40]:40s} | "
+                    f"{row['weight_norm']:.4f} | {row['gain_norm']:.4f} | "
+                    f"{row['cover_norm']:.4f} | {row['combined_score']:.4f} |\n"
+                )
+
+            f.write(f"\n---\n\n")
+
+            # Per-Regime Feature Importance
+            f.write(f"## Per-Regime Feature Distinctiveness\n\n")
+            f.write(f"Features that best distinguish each regime from others.\n\n")
+            f.write(f"### Metrics Explanation\n")
+            f.write(f"- **Regime Mean**: Average feature value in this regime\n")
+            f.write(f"- **Other Mean**: Average feature value in all other regimes\n")
+            f.write(f"- **Mean Sep**: Normalized separation between regime and others (in std units)\n")
+            f.write(f"- **CV Ratio**: Between-regime variance / within-regime variance\n")
+            f.write(f"- **Global Gain**: Feature's global gain importance (0-1)\n")
+            f.write(f"- **Regime Imp**: Combined regime-specific importance (MeanSep × CVRatio × GlobalGain)\n\n")
+
+            for regime_id in sorted(per_regime_importance.keys()):
+                regime_df = per_regime_importance[regime_id]
+
+                f.write(f"### Regime {regime_id} - Top 20 Distinguishing Features\n\n")
+                f.write(f"| Rank | Feature | Regime Mean | Other Mean | Mean Sep | CV Ratio | Global Gain | Regime Imp |\n")
+                f.write(f"|------|---------|-------------|------------|----------|----------|-------------|------------|\n")
+
+                for rank, (idx, row) in enumerate(regime_df.head(20).iterrows(), start=1):
+                    f.write(
+                        f"| {rank:3d} | {row['feature'][:35]:35s} | "
+                        f"{row['regime_mean']:11.4f} | {row['other_mean']:10.4f} | "
+                        f"{row['mean_separation']:8.2f} | {row['cv_ratio']:8.2f} | "
+                        f"{row['global_gain']:11.4f} | {row['regime_importance']:10.2f} |\n"
+                    )
+
+                f.write(f"\n")
+
+            f.write(f"---\n\n")
+
+            # Per-Regime Classification Performance
+            if 'classification_report' in classifier_metrics:
+                f.write(f"## Per-Regime Classification Performance\n\n")
+                f.write(f"| Regime | Precision | Recall | F1-Score | Support |\n")
+                f.write(f"|--------|-----------|--------|----------|---------|\n")
+
+                report = classifier_metrics['classification_report']
+                for regime_id in range(n_regimes):
+                    regime_key = f'Regime_{regime_id}'
+                    if regime_key in report:
+                        r = report[regime_key]
+                        f.write(
+                            f"| {regime_id} | {r.get('precision', 0):.3f} | "
+                            f"{r.get('recall', 0):.3f} | {r.get('f1-score', 0):.3f} | "
+                            f"{int(r.get('support', 0))} |\n"
+                        )
+
+                f.write(f"\n")
+
+            # Feature Categories Summary
+            f.write(f"---\n\n")
+            f.write(f"## Feature Category Analysis\n\n")
+
+            # Categorize features by type
+            feature_categories = {
+                'Volatility': ['vol', 'parkinson', 'garman_klass'],
+                'Tail Risk': ['cvar', 'drawdown', 'downside'],
+                'Distribution': ['skewness', 'kurtosis'],
+                'Dynamics': ['acceleration', 'expansion', 'jump', 'momentum'],
+                'Cross-Timeframe': ['ratio', 'ewma'],
+                'Hurst/Persistence': ['hurst'],
+                'Divergence': ['correlation', 'divergence', 'fragility', 'shock', 'desperation']
+            }
+
+            for category, keywords in feature_categories.items():
+                category_features = global_df[
+                    global_df['feature'].str.lower().str.contains('|'.join(keywords), na=False)
+                ]
+
+                if len(category_features) > 0:
+                    f.write(f"### {category} Features (Top 10)\n\n")
+                    f.write(f"| Feature | Combined Score |\n")
+                    f.write(f"|---------|----------------|\n")
+
+                    for idx, row in category_features.head(10).iterrows():
+                        f.write(f"| {row['feature'][:50]:50s} | {row['combined_score']:.4f} |\n")
+
+                    f.write(f"\n")
+
+            f.write(f"---\n\n")
+            f.write(f"*Report generated by ml_risk_regime_step with XGBoost multi-class classifier*\n")
+
+        return report_path
 
     def _calculate_comprehensive_feature_importance(
         self,

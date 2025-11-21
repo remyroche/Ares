@@ -25,7 +25,7 @@ Responsibilities:
 
 import logging
 import time
-from typing import Any, Dict, Optional, Tuple, List
+from typing import Any, Dict, Optional, Tuple, List, Union
 from dataclasses import asdict, is_dataclass
 from datetime import datetime
 
@@ -223,10 +223,11 @@ class MLRiskRegimeStep(BaseStep):
                 raise ValueError("Risk dataset is empty after target construction")
 
             # ------------------------------------------------------------------
-            # 6) Train XGBoost risk model and derive risk regimes
+            # 6) NEW: XGBoost Multi-Class Regime Classifier (100% Risk-Driven)
             # ------------------------------------------------------------------
             model = None
-            risk_scores: Optional[pd.Series] = None
+            regime_probs: Optional[np.ndarray] = None
+            regime_labels: Optional[np.ndarray] = None
             training_metrics: Dict[str, Any] = {}
             regime_stats_df: Optional[pd.DataFrame] = None
             model_path: Optional[str] = None
@@ -237,66 +238,150 @@ class MLRiskRegimeStep(BaseStep):
             feature_pipeline_artifacts: Optional[Dict[str, Any]] = None
             feature_pipeline_path: Optional[str] = None
 
-            # 6a) Train XGBoost risk model (if available)
+            tprint_info("=" * 80)
+            tprint_info("🎯 NEW APPROACH: XGBoost Multi-Class Regime Classifier (100% Risk CV)")
+            tprint_info("=" * 80)
+
             try:
-                model, risk_scores, pred_col_name, training_metrics, feature_pipeline_artifacts = self._train_risk_model(
-                    risk_df,
-                    config,
-                )
-                if risk_scores is not None:
-                    risk_df[pred_col_name] = risk_scores
-                    risk_df["risk_score_continuous"] = risk_scores
-
-                    # Pass residual sigma to config for probabilistic inference
-                    if "val_residual_sigma" in training_metrics:
-                        config["val_residual_sigma"] = training_metrics["val_residual_sigma"]
-            except ImportError as xgb_err:
-                tprint_warning(
-                    f"XGBoost not available; skipping risk model training: {xgb_err}"
-                )
-            except Exception as model_exc:
-                tprint_warning(
-                    f"Risk model training failed; continuing with targets only: {model_exc}"
+                # 6a) Create optimal regime labels (GMM + SA, NO temporal smoothing)
+                tprint_info("📊 Step 1/2: Creating optimal regime labels...")
+                regime_labels_optimized, label_metrics = self._create_optimal_regime_labels(
+                    risk_df=risk_df,
+                    config=config
                 )
 
-            # 6b) Ensure we have scores for regime assignment (fallback to risk_target)
-            if risk_scores is None:
+                # Store label quality metrics
+                training_metrics['label_quality'] = label_metrics
+
+                # 6b) Train XGBoost multi-class classifier on optimized labels
+                tprint_info("🤖 Step 2/2: Training XGBoost regime classifier...")
+                model, regime_probs, classifier_metrics = self._train_regime_classifier(
+                    risk_df=risk_df,
+                    regime_labels=regime_labels_optimized,
+                    config=config
+                )
+
+                training_metrics.update(classifier_metrics)
+
+                # 6b.1) Save feature importance data as artifacts
                 try:
-                    if "risk_target" in risk_df.columns:
-                        fallback_series = risk_df["risk_target"].astype(float)
-                        valid_count = fallback_series.notna().sum()
-                        min_regime_samples = int(config.get("risk_min_samples_for_regime", 50))
-                        if valid_count >= max(min_regime_samples, 20):
-                            pred_col_name_fallback = "risk_score_from_target"
-                            risk_scores = fallback_series
-                            risk_df[pred_col_name_fallback] = risk_scores
-                            risk_df["risk_score_continuous"] = risk_scores
-                            training_metrics["risk_fallback_used"] = True
-                            training_metrics["risk_fallback_source"] = "risk_target"
-                        else:
-                            tprint_warning(
-                                f"Not enough samples ({valid_count}) for fallback risk regime assignment from risk_target"
+                    if 'feature_importance_detailed' in classifier_metrics:
+                        importance_data = classifier_metrics['feature_importance_detailed']
+
+                        # Save global importance
+                        global_importance_df = pd.DataFrame(importance_data['global'])
+                        global_importance_path = self._save_artifact(
+                            data={'importance': global_importance_df},
+                            artifact_name="xgboost_feature_importance_global_1h",
+                            artifact_type="model",
+                            data_category="analysis",
+                            metadata={
+                                "symbol": symbol,
+                                "exchange": exchange,
+                                "timeframe": regime_timeframe,
+                                "n_features": len(global_importance_df),
+                                "model_type": "xgboost_multiclass"
+                            }
+                        )
+                        tprint_info(f"💾 Saved global feature importance: {global_importance_path}")
+
+                        # Save per-regime importance
+                        per_regime_dfs = {}
+                        for regime_id, regime_data in importance_data['per_regime'].items():
+                            per_regime_dfs[f'regime_{regime_id}'] = pd.DataFrame(regime_data)
+
+                        if per_regime_dfs:
+                            per_regime_importance_path = self._save_artifact(
+                                data=per_regime_dfs,
+                                artifact_name="xgboost_feature_importance_per_regime_1h",
+                                artifact_type="model",
+                                data_category="analysis",
+                                metadata={
+                                    "symbol": symbol,
+                                    "exchange": exchange,
+                                    "timeframe": regime_timeframe,
+                                    "n_regimes": len(per_regime_dfs),
+                                    "model_type": "xgboost_multiclass"
+                                }
                             )
-                    else:
-                        tprint_warning("risk_target column not available for fallback regime assignment")
-                except Exception as fallback_exc:
-                    tprint_warning(
-                        f"Risk fallback regime assignment failed; proceeding without regimes: {fallback_exc}"
-                    )
+                            tprint_info(f"💾 Saved per-regime feature importance: {per_regime_importance_path}")
 
-            # 6c) Assign KDE-based risk regimes when scores are available
-            if risk_scores is not None:
-                try:
-                    risk_df, regime_stats_df, regime_col_name = self._assign_risk_regimes_with_kde(
-                        risk_df,
-                        risk_scores,
-                        config,
-                    )
-                except Exception as regime_exc:
-                    tprint_warning(
-                        f"Risk regime assignment failed; proceeding without regimes: {regime_exc}"
-                    )
-                    regime_col_name = None
+                        # Generate comprehensive markdown report in outcomes/
+                        tprint_info("📊 Generating comprehensive feature importance report...")
+
+                        # Reconstruct importance_data from detailed dict
+                        importance_data_for_report = {
+                            'global': pd.DataFrame(importance_data['global']),
+                            'per_regime': {
+                                regime_id: pd.DataFrame(regime_data)
+                                for regime_id, regime_data in importance_data['per_regime'].items()
+                            },
+                            'n_regimes': len(importance_data['per_regime'])
+                        }
+
+                        report_path = self._generate_feature_importance_report(
+                            importance_data=importance_data_for_report,
+                            symbol=symbol,
+                            exchange=exchange,
+                            timeframe=regime_timeframe,
+                            classifier_metrics=classifier_metrics,
+                            label_metrics=label_metrics
+                        )
+                        tprint_success(f"📄 Feature importance report saved: {report_path}")
+
+                except Exception as save_exc:
+                    tprint_warning(f"Failed to save feature importance artifacts/report: {save_exc}")
+
+                # 6c) Hard predictions (argmax of probabilities)
+                regime_labels = np.argmax(regime_probs, axis=1)
+
+                # 6d) Add predictions to dataframe
+                risk_df['risk_regime'] = regime_labels
+                regime_col_name = 'risk_regime'
+
+                # Add probabilities
+                n_regimes = regime_probs.shape[1]
+                for i in range(n_regimes):
+                    risk_df[f'risk_regime_{i}_prob'] = regime_probs[:, i]
+
+                # Also store training labels for comparison/analysis
+                risk_df['risk_regime_training_label'] = regime_labels_optimized
+
+                # Store continuous score from max probability for compatibility
+                risk_df['risk_score_continuous'] = np.max(regime_probs, axis=1)
+
+                tprint_success(
+                    f"=" * 80 + "\n"
+                    f"✅ REGIME CLASSIFICATION COMPLETE\n"
+                    f"=" * 80 + "\n"
+                    f"  Classifier Accuracy: {classifier_metrics['val_accuracy']:.3f}\n"
+                    f"  Label Quality Score: {label_metrics.get('quality_score', 0):.3f}\n"
+                    f"  Risk CV Ratio: {label_metrics.get('risk_cv_ratio', 0):.3f}\n"
+                    f"  Wasserstein Distance: {label_metrics.get('wasserstein_distance', 0):.3f}\n"
+                    f"  KL Divergence: {label_metrics.get('kl_divergence', 0):.3f}\n"
+                    f"  Regime Distribution: {label_metrics.get('regime_distribution', {})}\n"
+                    f"=" * 80
+                )
+
+                # Calculate regime statistics
+                regime_stats_df = self._calculate_regime_statistics(risk_df, regime_col_name)
+
+            except Exception as exc:
+                tprint_error(f"❌ XGBoost regime classification failed: {exc}")
+                import traceback
+                traceback.print_exc()
+
+                # Fall back to simple quantile-based regimes
+                tprint_warning("⚠️ Falling back to simple quantile-based regimes")
+                if 'risk_target' in risk_df.columns:
+                    risk_scores = risk_df['risk_target'].dropna()
+                    if len(risk_scores) >= 20:
+                        regime_labels = pd.qcut(risk_scores.rank(method='first'), q=4, labels=False)
+                        risk_df['risk_regime'] = np.nan
+                        risk_df.loc[risk_scores.index, 'risk_regime'] = regime_labels
+                        regime_col_name = 'risk_regime'
+                        risk_df['risk_score_continuous'] = risk_scores
+                        training_metrics['fallback_used'] = True
 
             # Ensure we have a valid regime column name for downstream quality assessment
             if regime_col_name is None and "risk_regime" in risk_df.columns:
@@ -1336,9 +1421,9 @@ class MLRiskRegimeStep(BaseStep):
         high = df["high"].astype(float)
         low = df["low"].astype(float)
 
-        # Winsorization parameters
-        winsorize_lower = float(config.get("risk_winsorize_lower_quantile", 0.01))
-        winsorize_upper = float(config.get("risk_winsorize_upper_quantile", 0.99))
+        # Winsorization parameters (0.05-0.95 for regime preservation)
+        winsorize_lower = float(config.get("risk_winsorize_lower_quantile", 0.05))
+        winsorize_upper = float(config.get("risk_winsorize_upper_quantile", 0.95))
 
         tprint_info("🎯 Computing 4-component risk target...")
 
@@ -1422,6 +1507,51 @@ class MLRiskRegimeStep(BaseStep):
                 else:
                     tail_density.append(0.0)
         df["risk_tail_density_raw"] = tail_density
+
+        # =============== NEW: Regime-Specific Divergence Features ===============
+        # These features capture regime transitions and regime characteristics
+
+        # Vol-Return Correlation: Rolling correlation between vol and returns
+        # Negative in trending regimes, positive in mean-reverting/crash regimes
+        vol_return_corr = returns_1h.rolling(window=20).corr(vol_current)
+        df["vol_return_correlation_raw"] = vol_return_corr.fillna(0)
+
+        # Cross-Timeframe Vol Ratio: Local vs global volatility
+        # High ratio = locally elevated vol (regime transition)
+        vol_short = returns_1h.rolling(window=6).std()
+        vol_long = returns_1h.rolling(window=24).std()
+        vol_cross_ratio = vol_short / (vol_long + 1e-9)
+        df["vol_cross_timeframe_ratio_raw"] = vol_cross_ratio
+
+        # Drawdown Duration: How long current drawdown has lasted
+        # Long durations indicate persistent distress regimes
+        cumulative_returns = (1 + returns_1h).cumprod()
+        running_max = cumulative_returns.expanding().max()
+        drawdown = (cumulative_returns - running_max) / (running_max + 1e-9)
+
+        # Calculate duration of current drawdown
+        drawdown_duration = pd.Series(0, index=df.index)
+        in_drawdown = drawdown < -0.01  # 1% threshold
+        duration_counter = 0
+        for i in range(len(in_drawdown)):
+            if in_drawdown.iloc[i]:
+                duration_counter += 1
+                drawdown_duration.iloc[i] = duration_counter
+            else:
+                duration_counter = 0
+        df["drawdown_duration_raw"] = drawdown_duration
+
+        # Vol Regime Momentum: Rate of change in vol regime
+        # Captures whether vol is accelerating or decelerating
+        vol_roc = vol_current.pct_change(periods=3).fillna(0)
+        df["vol_regime_momentum_raw"] = vol_roc
+
+        # Return Skewness-Vol Interaction: Captures crash vs euphoria regimes
+        # High vol + negative skew = crash regime
+        # High vol + positive skew = euphoria/recovery regime
+        skew_20 = returns_1h.rolling(window=20).skew().fillna(0)
+        skew_vol_interaction = skew_20 * vol_current
+        df["skew_vol_interaction_raw"] = skew_vol_interaction
 
         # Winsorize each component individually
         risk_components = {
@@ -1859,6 +1989,1340 @@ class MLRiskRegimeStep(BaseStep):
         feature_pipeline_artifacts["prediction_scaler"] = pred_scaler
 
         return model, scores, pred_col_name, training_metrics, feature_pipeline_artifacts
+
+    # ========================================================================
+    # NEW: XGBoost Multi-Class Classifier Approach for Regime Detection
+    # ========================================================================
+
+    def _drop_correlated_features(
+        self,
+        features_df: pd.DataFrame,
+        threshold: float = 0.95,
+        keep_priority_patterns: Optional[List[str]] = None
+    ) -> Tuple[pd.DataFrame, List[str]]:
+        """
+        Drop highly correlated features to reduce dimensionality.
+
+        Args:
+            features_df: DataFrame of features
+            threshold: Correlation threshold (default 0.95)
+            keep_priority_patterns: List of regex patterns for features to keep
+
+        Returns:
+            filtered_df: DataFrame with correlated features removed
+            dropped_features: List of dropped feature names
+        """
+        if keep_priority_patterns is None:
+            keep_priority_patterns = [
+                r'.*_raw_scaled$',  # Keep all _raw_scaled features
+                r'^risk_fwd_vol',   # Keep forward vol features
+                r'^risk_tail_cvar', # Keep tail risk features
+            ]
+
+        corr_matrix = features_df.corr().abs()
+
+        # Upper triangle of correlation matrix
+        upper_tri = corr_matrix.where(
+            np.triu(np.ones(corr_matrix.shape), k=1).astype(bool)
+        )
+
+        # Find features with correlation > threshold
+        to_drop = set()
+        for column in upper_tri.columns:
+            correlated_features = upper_tri.index[upper_tri[column] > threshold].tolist()
+
+            if correlated_features:
+                # Among correlated features, keep the one matching priority patterns
+                features_to_compare = [column] + correlated_features
+
+                # Check priority
+                priority_feature = None
+                for feat in features_to_compare:
+                    if any(pd.Series([feat]).str.match(pattern).any() for pattern in keep_priority_patterns):
+                        priority_feature = feat
+                        break
+
+                # Drop all except priority feature
+                for feat in features_to_compare:
+                    if feat != priority_feature:
+                        to_drop.add(feat)
+
+        dropped_features = list(to_drop)
+        kept_features = [col for col in features_df.columns if col not in to_drop]
+
+        tprint_info(f"📉 Dropped {len(dropped_features)} correlated features (>{threshold}): {dropped_features[:10]}...")
+        tprint_info(f"✅ Kept {len(kept_features)} features")
+
+        return features_df[kept_features], dropped_features
+
+    def _select_discriminative_features(
+        self,
+        features_df: pd.DataFrame,
+        regime_labels: np.ndarray,
+        top_k: Optional[int] = None
+    ) -> List[str]:
+        """
+        Select features that maximize between/within regime variance ratio.
+
+        Args:
+            features_df: DataFrame of features
+            regime_labels: Regime assignments
+            top_k: Number of top features to select (None = keep all)
+
+        Returns:
+            selected_features: List of selected feature names
+        """
+        # Calculate variance ratio for each feature
+        feature_scores = []
+
+        for col in features_df.columns:
+            feature_data = features_df[col].values
+
+            # Skip if too many NaNs
+            if np.isnan(feature_data).sum() > len(feature_data) * 0.5:
+                continue
+
+            # Between-regime variance
+            regime_means = []
+            for regime_id in np.unique(regime_labels):
+                if regime_id < 0:  # Skip invalid labels
+                    continue
+                regime_mask = regime_labels == regime_id
+                regime_data = feature_data[regime_mask]
+                regime_data_clean = regime_data[~np.isnan(regime_data)]
+                if len(regime_data_clean) > 0:
+                    regime_means.append(np.mean(regime_data_clean))
+
+            if len(regime_means) < 2:
+                continue
+
+            between_var = np.var(regime_means)
+
+            # Within-regime variance
+            within_vars = []
+            for regime_id in np.unique(regime_labels):
+                if regime_id < 0:
+                    continue
+                regime_mask = regime_labels == regime_id
+                regime_data = feature_data[regime_mask]
+                regime_data_clean = regime_data[~np.isnan(regime_data)]
+                if len(regime_data_clean) > 1:
+                    within_vars.append(np.var(regime_data_clean))
+
+            if not within_vars:
+                continue
+
+            within_var = np.mean(within_vars)
+
+            # Variance ratio
+            var_ratio = between_var / (within_var + 1e-8)
+
+            feature_scores.append({
+                'feature': col,
+                'var_ratio': var_ratio,
+                'between_var': between_var,
+                'within_var': within_var
+            })
+
+        # Sort by variance ratio
+        feature_scores_df = pd.DataFrame(feature_scores).sort_values('var_ratio', ascending=False)
+
+        if top_k is not None and top_k < len(feature_scores_df):
+            selected_df = feature_scores_df.head(top_k)
+            tprint_info(f"🎯 Selected top {top_k} discriminative features (by variance ratio)")
+        else:
+            selected_df = feature_scores_df
+            tprint_info(f"🎯 All {len(feature_scores_df)} features ranked by discriminative power")
+
+        # Log top features
+        for idx, row in selected_df.head(10).iterrows():
+            tprint_info(f"  {row['feature']}: ratio={row['var_ratio']:.3f}")
+
+        return selected_df['feature'].tolist()
+
+    def _apply_umap_reduction(
+        self,
+        features_df: pd.DataFrame,
+        n_components: int = 8,
+        n_neighbors: int = 30,
+        min_dist: float = 0.0,
+        random_state: int = 42
+    ) -> Tuple[pd.DataFrame, Any]:
+        """
+        Apply UMAP dimensionality reduction preserving cluster structure.
+
+        Args:
+            features_df: Input features
+            n_components: Number of UMAP components
+            n_neighbors: Number of neighbors for UMAP
+            min_dist: Minimum distance for UMAP
+            random_state: Random seed
+
+        Returns:
+            reduced_df: DataFrame with UMAP components
+            umap_reducer: Fitted UMAP object
+        """
+        try:
+            import umap
+        except ImportError:
+            tprint_warning("⚠️ UMAP not installed, skipping dimensionality reduction")
+            return features_df, None
+
+        # Remove NaNs
+        features_clean = features_df.dropna()
+
+        if len(features_clean) < 100:
+            tprint_warning("⚠️ Insufficient samples for UMAP, skipping")
+            return features_df, None
+
+        tprint_info(f"🔬 Applying UMAP: {features_df.shape[1]} → {n_components} dimensions")
+
+        reducer = umap.UMAP(
+            n_components=min(n_components, features_df.shape[1] - 2),
+            n_neighbors=n_neighbors,
+            min_dist=min_dist,
+            metric='euclidean',
+            random_state=random_state,
+            verbose=False
+        )
+
+        embedding = reducer.fit_transform(features_clean)
+
+        reduced_df = pd.DataFrame(
+            embedding,
+            index=features_clean.index,
+            columns=[f'umap_{i}' for i in range(embedding.shape[1])]
+        )
+
+        tprint_success(f"✅ UMAP reduction complete: {features_df.shape[1]} → {reduced_df.shape[1]} features")
+
+        return reduced_df, reducer
+
+    def _calculate_winsorized_cv_between(
+        self,
+        regime_labels: np.ndarray,
+        features: Union[pd.DataFrame, pd.Series],
+        lower_pct: float = 0.05,
+        upper_pct: float = 0.95
+    ) -> float:
+        """
+        Calculate between-regime CV using WINSORIZED means.
+        More robust to outliers than standard CV.
+
+        Args:
+            regime_labels: Regime assignments
+            features: Feature data
+            lower_pct: Lower quantile for winsorization
+            upper_pct: Upper quantile for winsorization
+
+        Returns:
+            between_cv: Coefficient of variation between regimes
+        """
+        if isinstance(features, pd.Series):
+            features = features.to_frame()
+
+        regime_means = []
+        for regime_id in np.unique(regime_labels):
+            if regime_id < 0:  # Skip invalid labels
+                continue
+
+            regime_mask = regime_labels == regime_id
+            regime_data = features[regime_mask]
+
+            # Winsorize each feature
+            regime_means_winsorized = []
+            for col in features.columns:
+                col_data = regime_data[col].dropna()
+                if len(col_data) > 0:
+                    lower_bound = col_data.quantile(lower_pct)
+                    upper_bound = col_data.quantile(upper_pct)
+                    col_winsorized = col_data.clip(lower=lower_bound, upper=upper_bound)
+                    regime_means_winsorized.append(col_winsorized.mean())
+
+            if regime_means_winsorized:
+                regime_means.append(np.mean(regime_means_winsorized))
+
+        # CV of regime means
+        if len(regime_means) < 2:
+            return 0.0
+
+        regime_means_array = np.array(regime_means)
+        cv_between = regime_means_array.std() / (np.abs(regime_means_array.mean()) + 1e-8)
+
+        return float(cv_between)
+
+    def _calculate_winsorized_cv_within(
+        self,
+        regime_labels: np.ndarray,
+        features: Union[pd.DataFrame, pd.Series],
+        lower_pct: float = 0.05,
+        upper_pct: float = 0.95
+    ) -> float:
+        """
+        Calculate within-regime CV using WINSORIZED standard deviations.
+        Sample-size weighted average across regimes.
+
+        Args:
+            regime_labels: Regime assignments
+            features: Feature data
+            lower_pct: Lower quantile for winsorization
+            upper_pct: Upper quantile for winsorization
+
+        Returns:
+            within_cv: Weighted average within-regime CV
+        """
+        if isinstance(features, pd.Series):
+            features = features.to_frame()
+
+        within_cvs = []
+        regime_sizes = []
+
+        for regime_id in np.unique(regime_labels):
+            if regime_id < 0:
+                continue
+
+            regime_mask = regime_labels == regime_id
+            regime_data = features[regime_mask]
+            regime_sizes.append(regime_mask.sum())
+
+            # Winsorize each feature
+            feature_cvs = []
+            for col in features.columns:
+                col_data = regime_data[col].dropna()
+                if len(col_data) > 1:
+                    lower_bound = col_data.quantile(lower_pct)
+                    upper_bound = col_data.quantile(upper_pct)
+                    col_winsorized = col_data.clip(lower=lower_bound, upper=upper_bound)
+
+                    cv = col_winsorized.std() / (np.abs(col_winsorized.mean()) + 1e-8)
+                    feature_cvs.append(cv)
+
+            if feature_cvs:
+                within_cvs.append(np.mean(feature_cvs))
+
+        # Sample-size weighted average
+        if not within_cvs:
+            return 1.0  # Prevent division by zero
+
+        within_cvs_array = np.array(within_cvs)
+        regime_sizes_array = np.array(regime_sizes)
+        weighted_cv = np.average(within_cvs_array, weights=regime_sizes_array)
+
+        return float(weighted_cv)
+
+    def _calculate_wasserstein_distance(
+        self,
+        regime_labels: np.ndarray,
+        features: Union[pd.DataFrame, pd.Series]
+    ) -> float:
+        """
+        Calculate average Wasserstein distance between regime distributions.
+
+        Args:
+            regime_labels: Regime assignments
+            features: Feature data
+
+        Returns:
+            avg_wasserstein: Average Wasserstein distance across all regime pairs
+        """
+        from scipy.stats import wasserstein_distance
+
+        if isinstance(features, pd.Series):
+            features = features.to_frame()
+
+        unique_regimes = [r for r in np.unique(regime_labels) if r >= 0]
+
+        if len(unique_regimes) < 2:
+            return 0.0
+
+        wasserstein_distances = []
+
+        # Compare all pairs of regimes
+        for i, regime_i in enumerate(unique_regimes):
+            for regime_j in unique_regimes[i+1:]:
+                mask_i = regime_labels == regime_i
+                mask_j = regime_labels == regime_j
+
+                data_i = features[mask_i].values.flatten()
+                data_j = features[mask_j].values.flatten()
+
+                # Remove NaNs
+                data_i = data_i[~np.isnan(data_i)]
+                data_j = data_j[~np.isnan(data_j)]
+
+                if len(data_i) > 0 and len(data_j) > 0:
+                    wd = wasserstein_distance(data_i, data_j)
+                    wasserstein_distances.append(wd)
+
+        if not wasserstein_distances:
+            return 0.0
+
+        return float(np.mean(wasserstein_distances))
+
+    def _calculate_kl_divergence(
+        self,
+        regime_labels: np.ndarray,
+        features: Union[pd.DataFrame, pd.Series],
+        n_bins: int = 50
+    ) -> float:
+        """
+        Calculate average KL divergence between regime distributions.
+
+        Args:
+            regime_labels: Regime assignments
+            features: Feature data
+            n_bins: Number of bins for histogram estimation
+
+        Returns:
+            avg_kl: Average KL divergence across all regime pairs
+        """
+        from scipy.stats import entropy
+
+        if isinstance(features, pd.Series):
+            features = features.to_frame()
+
+        unique_regimes = [r for r in np.unique(regime_labels) if r >= 0]
+
+        if len(unique_regimes) < 2:
+            return 0.0
+
+        kl_divergences = []
+
+        # Get global range for consistent binning
+        all_data = features.values.flatten()
+        all_data = all_data[~np.isnan(all_data)]
+        data_min, data_max = all_data.min(), all_data.max()
+        bins = np.linspace(data_min, data_max, n_bins + 1)
+
+        # Compare all pairs of regimes
+        for i, regime_i in enumerate(unique_regimes):
+            for regime_j in enumerate(unique_regimes[i+1:]):
+                mask_i = regime_labels == regime_i
+                mask_j = regime_labels == regime_j
+
+                data_i = features[mask_i].values.flatten()
+                data_j = features[mask_j].values.flatten()
+
+                # Remove NaNs
+                data_i = data_i[~np.isnan(data_i)]
+                data_j = data_j[~np.isnan(data_j)]
+
+                if len(data_i) > 10 and len(data_j) > 10:
+                    # Create histograms
+                    hist_i, _ = np.histogram(data_i, bins=bins, density=True)
+                    hist_j, _ = np.histogram(data_j, bins=bins, density=True)
+
+                    # Add small epsilon to avoid log(0)
+                    hist_i = hist_i + 1e-10
+                    hist_j = hist_j + 1e-10
+
+                    # Normalize
+                    hist_i = hist_i / hist_i.sum()
+                    hist_j = hist_j / hist_j.sum()
+
+                    # Calculate KL divergence
+                    kl = entropy(hist_i, hist_j)
+                    if np.isfinite(kl):
+                        kl_divergences.append(kl)
+
+        if not kl_divergences:
+            return 0.0
+
+        return float(np.mean(kl_divergences))
+
+    def _calculate_regime_quality_score(
+        self,
+        regime_labels: np.ndarray,
+        risk_features: pd.DataFrame,
+        forward_returns: Optional[pd.Series] = None
+    ) -> float:
+        """
+        Calculate regime quality score based on 100% RISK CV ratio.
+
+        NO economic component - focuses entirely on risk feature distinctiveness.
+
+        Args:
+            regime_labels: Regime assignments
+            risk_features: Risk feature DataFrame
+            forward_returns: NOT USED (kept for compatibility)
+
+        Returns:
+            quality_score: Pure risk-based quality score
+        """
+        # Component 1: Risk feature CV ratio (WINSORIZED) - 100% weight
+        risk_cv_between = self._calculate_winsorized_cv_between(regime_labels, risk_features)
+        risk_cv_within = self._calculate_winsorized_cv_within(regime_labels, risk_features)
+        risk_cv_ratio = risk_cv_between / (risk_cv_within + 1e-8)
+
+        # Pure risk score (100% weight)
+        score = risk_cv_ratio
+
+        # Penalty for imbalanced regimes (variable-width: 5-45%)
+        label_counts = pd.Series(regime_labels).value_counts()
+        min_pct = label_counts.min() / len(regime_labels)
+        max_pct = label_counts.max() / len(regime_labels)
+
+        if min_pct < 0.05 or max_pct > 0.45:
+            score *= 0.5  # Heavy penalty for extreme imbalance
+
+        return float(score)
+
+    def _calculate_regime_quality_metrics(
+        self,
+        regime_labels: np.ndarray,
+        risk_features: pd.DataFrame,
+        forward_returns: Optional[pd.Series] = None
+    ) -> Dict[str, Any]:
+        """
+        Calculate comprehensive regime quality metrics.
+
+        Args:
+            regime_labels: Regime assignments
+            risk_features: Risk features
+            forward_returns: Optional forward returns
+
+        Returns:
+            metrics: Dictionary of quality metrics
+        """
+        metrics = {}
+
+        # Risk CV ratio (primary metric)
+        risk_cv_between = self._calculate_winsorized_cv_between(regime_labels, risk_features)
+        risk_cv_within = self._calculate_winsorized_cv_within(regime_labels, risk_features)
+        metrics['risk_cv_ratio'] = risk_cv_between / (risk_cv_within + 1e-8)
+        metrics['risk_cv_between'] = risk_cv_between
+        metrics['risk_cv_within'] = risk_cv_within
+
+        # Economic CV ratio (for validation only)
+        if forward_returns is not None:
+            econ_cv_between = self._calculate_winsorized_cv_between(regime_labels, forward_returns)
+            econ_cv_within = self._calculate_winsorized_cv_within(regime_labels, forward_returns)
+            metrics['econ_cv_ratio'] = econ_cv_between / (econ_cv_within + 1e-8)
+            metrics['econ_cv_between'] = econ_cv_between
+            metrics['econ_cv_within'] = econ_cv_within
+        else:
+            metrics['econ_cv_ratio'] = 0.0
+
+        # Wasserstein distance
+        try:
+            metrics['wasserstein_distance'] = self._calculate_wasserstein_distance(regime_labels, risk_features)
+        except Exception:
+            metrics['wasserstein_distance'] = 0.0
+
+        # KL divergence
+        try:
+            metrics['kl_divergence'] = self._calculate_kl_divergence(regime_labels, risk_features)
+        except Exception:
+            metrics['kl_divergence'] = 0.0
+
+        # Regime balance
+        label_counts = pd.Series(regime_labels).value_counts()
+        metrics['min_regime_pct'] = label_counts.min() / len(regime_labels)
+        metrics['max_regime_pct'] = label_counts.max() / len(regime_labels)
+        metrics['regime_distribution'] = label_counts.to_dict()
+
+        # Quality score
+        metrics['quality_score'] = self._calculate_regime_quality_score(
+            regime_labels, risk_features, forward_returns
+        )
+
+        return metrics
+
+    # REMOVED: Temporal smoothing methods (per user request)
+    # Temporal smoothing is no longer applied to labels before training
+    # Labels are used directly from GMM + SA optimization
+
+    def _refine_labels_simulated_annealing(
+        self,
+        initial_labels: np.ndarray,
+        risk_features: pd.DataFrame,
+        forward_returns: Optional[pd.Series],
+        n_regimes: int,
+        max_iterations: int = 500,
+        initial_temp: float = 1.0,
+        cooling_rate: float = 0.995
+    ) -> Tuple[np.ndarray, float]:
+        """
+        Refine regime labels using simulated annealing to maximize risk CV ratio.
+
+        Args:
+            initial_labels: Starting regime labels
+            risk_features: Risk feature DataFrame
+            forward_returns: NOT USED (100% risk optimization)
+            n_regimes: Number of regimes
+            max_iterations: Maximum SA iterations
+            initial_temp: Initial temperature
+            cooling_rate: Cooling rate per iteration
+
+        Returns:
+            best_labels: Optimized regime labels
+            best_score: Best quality score achieved
+        """
+        current_labels = initial_labels.copy()
+        current_score = self._calculate_regime_quality_score(
+            current_labels, risk_features, None
+        )
+
+        best_labels = current_labels.copy()
+        best_score = current_score
+
+        temperature = initial_temp
+        accept_count = 0
+
+        tprint_info(f"🔥 Starting Simulated Annealing (100% risk CV): initial_score={current_score:.4f}")
+
+        for iteration in range(max_iterations):
+            # Propose modification: flip 1-2% of samples to neighboring regime
+            candidate_labels = current_labels.copy()
+            n_flips = max(1, int(0.015 * len(candidate_labels)))
+            flip_indices = np.random.choice(len(candidate_labels), size=n_flips, replace=False)
+
+            for idx in flip_indices:
+                current_regime = candidate_labels[idx]
+                # Flip to neighboring regime (maintain ordinality)
+                neighbors = []
+                if current_regime > 0:
+                    neighbors.append(current_regime - 1)
+                if current_regime < n_regimes - 1:
+                    neighbors.append(current_regime + 1)
+
+                if neighbors:
+                    candidate_labels[idx] = np.random.choice(neighbors)
+
+            # Evaluate candidate
+            candidate_score = self._calculate_regime_quality_score(
+                candidate_labels, risk_features, None
+            )
+
+            # Accept or reject (Metropolis criterion)
+            delta = candidate_score - current_score
+            if delta > 0:
+                # Always accept improvements
+                current_labels = candidate_labels
+                current_score = candidate_score
+                accept_count += 1
+
+                if current_score > best_score:
+                    best_labels = current_labels.copy()
+                    best_score = current_score
+            elif np.random.random() < np.exp(delta / temperature):
+                # Sometimes accept worse solutions (escape local optima)
+                current_labels = candidate_labels
+                current_score = candidate_score
+                accept_count += 1
+
+            # Cool down
+            temperature *= cooling_rate
+
+            # Progress logging
+            if iteration % 100 == 0 or iteration == max_iterations - 1:
+                accept_rate = accept_count / (iteration + 1)
+                tprint_info(
+                    f"  SA iter {iteration}/{max_iterations}: "
+                    f"score={current_score:.4f}, best={best_score:.4f}, "
+                    f"temp={temperature:.4f}, accept_rate={accept_rate:.2%}"
+                )
+
+        improvement = best_score - self._calculate_regime_quality_score(initial_labels, risk_features, None)
+        tprint_success(
+            f"✅ SA completed: best_score={best_score:.4f} "
+            f"(improvement: +{improvement:.4f})"
+        )
+
+        return best_labels, best_score
+
+    def _create_optimal_regime_labels(
+        self,
+        risk_df: pd.DataFrame,
+        config: Dict[str, Any]
+    ) -> Tuple[np.ndarray, Dict[str, Any]]:
+        """
+        Create 4 regime labels optimized for risk feature distinctiveness.
+        NO temporal smoothing (removed per user request).
+
+        Flow:
+            1. Select RAW risk features (no EWMA)
+            2. Drop correlated features (>0.95)
+            3. Optional: Select discriminative features
+            4. Optional: UMAP reduction
+            5. GMM initialization
+            6. Simulated annealing (100% risk CV)
+
+        Returns:
+            regime_labels: Regime assignments (0-3, -1 for invalid)
+            metrics: Quality metrics
+        """
+        n_regimes = int(config.get("risk_n_regimes", 4))
+
+        # ========== STEP 1: Select RAW Risk Features ONLY ==========
+        risk_features_cols = [
+            'risk_fwd_vol_1h_raw_scaled',
+            'risk_fwd_vol_4h_raw_scaled',
+            'risk_tail_cvar_raw_scaled',
+            'risk_vol_acceleration_raw_scaled',
+            'vol_clustering_raw',
+            'vol_persistence_raw',
+            'tail_density_raw',
+            'vol_return_correlation_raw',
+            'vol_cross_timeframe_ratio_raw',
+            'drawdown_duration_raw',
+            'price_vol_efficiency_raw',
+            'vol_regime_momentum_raw',
+            'skew_vol_interaction_raw',
+        ]
+
+        # Filter to available columns
+        available_risk_cols = [c for c in risk_features_cols if c in risk_df.columns]
+        risk_features = risk_df[available_risk_cols].copy()
+
+        tprint_info(f"📊 Using {len(available_risk_cols)} RAW features (no smoothing)")
+
+        # Remove NaNs
+        valid_mask = risk_features.notna().all(axis=1)
+        risk_features_clean = risk_features[valid_mask]
+
+        tprint_info(f"  Valid samples: {len(risk_features_clean)}/{len(risk_df)}")
+
+        # ========== STEP 2: Drop Correlated Features ==========
+        use_corr_filter = bool(config.get("risk_use_corr_filter", True))
+        if use_corr_filter:
+            risk_features_clean, dropped = self._drop_correlated_features(
+                risk_features_clean,
+                threshold=0.95
+            )
+
+        # ========== STEP 3: Feature Selection (Optional) ==========
+        use_feature_selection = bool(config.get("risk_use_feature_selection", False))
+        if use_feature_selection:
+            # Do preliminary GMM to get labels for feature selection
+            from sklearn.mixture import GaussianMixture
+            gmm_temp = GaussianMixture(n_components=n_regimes, random_state=42)
+            temp_labels = gmm_temp.fit_predict(risk_features_clean)
+
+            top_k = int(config.get("risk_top_k_features", 20))
+            selected_features = self._select_discriminative_features(
+                risk_features_clean, temp_labels, top_k=top_k
+            )
+            risk_features_clean = risk_features_clean[selected_features]
+
+        # ========== STEP 4: UMAP Reduction (Optional) ==========
+        use_umap = bool(config.get("risk_use_umap", False))
+        umap_reducer = None
+        if use_umap and len(risk_features_clean.columns) > 10:
+            risk_features_clean, umap_reducer = self._apply_umap_reduction(
+                risk_features_clean,
+                n_components=int(config.get("risk_umap_components", 8))
+            )
+
+        # ========== STEP 5: GMM Initialization ==========
+        from sklearn.mixture import GaussianMixture
+
+        tprint_info(f"🎯 Initializing {n_regimes} regimes with GMM...")
+
+        gmm = GaussianMixture(
+            n_components=n_regimes,
+            covariance_type='full',
+            n_init=20,
+            max_iter=200,
+            random_state=42
+        )
+        gmm.fit(risk_features_clean)
+        initial_labels = gmm.predict(risk_features_clean)
+
+        # DO NOT rank/reorder regimes - let GMM find distinct profiles
+        # Each regime represents a different risk PROFILE, not a continuum
+        # Characterize each regime by its feature profile
+        regime_profiles = {}
+        for regime_id in range(n_regimes):
+            regime_mask = initial_labels == regime_id
+            regime_data = risk_features_clean[regime_mask]
+
+            if len(regime_data) > 0:
+                # Calculate regime characteristics
+                profile = {
+                    'regime_id': regime_id,
+                    'size': len(regime_data),
+                    'mean_vol_1h': regime_data.get('risk_fwd_vol_1h_raw_scaled', pd.Series([0])).mean(),
+                    'mean_vol_4h': regime_data.get('risk_fwd_vol_4h_raw_scaled', pd.Series([0])).mean(),
+                    'mean_tail_risk': regime_data.get('risk_tail_cvar_raw_scaled', pd.Series([0])).mean(),
+                    'mean_vol_accel': regime_data.get('risk_vol_acceleration_raw_scaled', pd.Series([0])).mean(),
+                    'mean_features': regime_data.mean().mean(),
+                    'std_features': regime_data.std().mean(),
+                }
+                regime_profiles[regime_id] = profile
+
+                tprint_info(
+                    f"  Regime {regime_id}: n={profile['size']}, "
+                    f"vol_1h={profile['mean_vol_1h']:.3f}, "
+                    f"tail_risk={profile['mean_tail_risk']:.3f}"
+                )
+
+        initial_score = self._calculate_regime_quality_score(
+            initial_labels, risk_features_clean, None
+        )
+        tprint_info(f"  GMM initialization: score={initial_score:.4f}")
+
+        # ========== STEP 6: Simulated Annealing Refinement ==========
+        use_sa_refinement = bool(config.get("risk_use_sa_refinement", True))
+
+        if use_sa_refinement:
+            refined_labels, refined_score = self._refine_labels_simulated_annealing(
+                initial_labels=initial_labels,
+                risk_features=risk_features_clean,
+                forward_returns=None,  # NOT USED - 100% risk optimization
+                n_regimes=n_regimes,
+                max_iterations=int(config.get("risk_sa_iterations", 500)),
+                initial_temp=float(config.get("risk_sa_initial_temp", 1.0)),
+                cooling_rate=float(config.get("risk_sa_cooling_rate", 0.995))
+            )
+            final_labels = refined_labels
+            final_score = refined_score
+        else:
+            final_labels = initial_labels
+            final_score = initial_score
+
+        # ========== STEP 7: Calculate Final Metrics ==========
+        metrics = self._calculate_regime_quality_metrics(
+            final_labels, risk_features_clean, None
+        )
+
+        # Expand labels back to full dataframe
+        full_labels = np.full(len(risk_df), -1, dtype=int)
+        full_labels[valid_mask] = final_labels
+
+        # Store feature selection artifacts
+        metrics['selected_features'] = list(risk_features_clean.columns)
+        metrics['umap_reducer'] = umap_reducer
+        metrics['n_features_used'] = len(risk_features_clean.columns)
+
+        tprint_success(
+            f"✅ Created {n_regimes} regime labels (NO temporal smoothing):\n"
+            f"   Risk CV Ratio={metrics['risk_cv_ratio']:.3f}, "
+            f"Wasserstein={metrics['wasserstein_distance']:.3f}, "
+            f"KL Divergence={metrics['kl_divergence']:.3f}\n"
+            f"   Regime Distribution: {metrics['regime_distribution']}"
+        )
+
+        return full_labels, metrics
+
+    def _generate_feature_importance_report(
+        self,
+        importance_data: Dict[str, Any],
+        symbol: str,
+        exchange: str,
+        timeframe: str,
+        classifier_metrics: Dict[str, Any],
+        label_metrics: Dict[str, Any]
+    ) -> str:
+        """
+        Generate comprehensive markdown report for feature importance analysis.
+
+        Args:
+            importance_data: Dict with 'global' and 'per_regime' DataFrames
+            symbol: Trading symbol
+            exchange: Exchange name
+            timeframe: Timeframe
+            classifier_metrics: XGBoost training metrics
+            label_metrics: GMM label creation metrics
+
+        Returns:
+            Path to saved report file
+        """
+        from datetime import datetime
+        import os
+
+        # Ensure outcomes directory exists
+        os.makedirs("outcomes", exist_ok=True)
+
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        report_path = f"outcomes/{symbol}_{exchange}_{timeframe}_XGBoost_Feature_Importance_{timestamp}.md"
+
+        global_df = importance_data['global']
+        per_regime_importance = importance_data['per_regime']
+        n_regimes = importance_data['n_regimes']
+
+        with open(report_path, 'w') as f:
+            # Header
+            f.write(f"# XGBoost Risk Regime Feature Importance Report\n\n")
+            f.write(f"**Symbol**: {symbol} | **Exchange**: {exchange} | **Timeframe**: {timeframe}\n\n")
+            f.write(f"**Generated**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+            f.write(f"---\n\n")
+
+            # Model Performance Summary
+            f.write(f"## Model Performance Summary\n\n")
+            f.write(f"### Classifier Metrics\n")
+            f.write(f"- **Validation Accuracy**: {classifier_metrics.get('val_accuracy', 0):.3f}\n")
+            f.write(f"- **Validation Log Loss**: {classifier_metrics.get('val_log_loss', 0):.4f}\n")
+            f.write(f"- **Number of Regimes**: {n_regimes}\n")
+            f.write(f"- **Number of Features**: {classifier_metrics.get('n_features', 0)}\n\n")
+
+            f.write(f"### Label Quality Metrics\n")
+            f.write(f"- **Risk CV Ratio**: {label_metrics.get('risk_cv_ratio', 0):.3f}\n")
+            f.write(f"- **Wasserstein Distance**: {label_metrics.get('wasserstein_distance', 0):.3f}\n")
+            f.write(f"- **KL Divergence**: {label_metrics.get('kl_divergence', 0):.3f}\n")
+            f.write(f"- **Quality Score**: {label_metrics.get('quality_score', 0):.3f}\n")
+            f.write(f"- **Regime Distribution**: {label_metrics.get('regime_distribution', {})}\n\n")
+
+            f.write(f"---\n\n")
+
+            # Global Feature Importance
+            f.write(f"## Global Feature Importance\n\n")
+            f.write(f"Top features across all regimes, ranked by combined score (average of weight, gain, and cover).\n\n")
+            f.write(f"### Metrics Explanation\n")
+            f.write(f"- **Weight**: Number of times feature is used in tree splits (normalized)\n")
+            f.write(f"- **Gain**: Average improvement in loss when feature is used (normalized)\n")
+            f.write(f"- **Cover**: Average number of samples affected by splits using this feature (normalized)\n")
+            f.write(f"- **Combined**: Average of weight, gain, and cover (normalized)\n\n")
+
+            # Top 30 global features
+            f.write(f"### Top 30 Features (Global)\n\n")
+            f.write(f"| Rank | Feature | Weight | Gain | Cover | Combined |\n")
+            f.write(f"|------|---------|--------|------|-------|----------|\n")
+            for rank, (idx, row) in enumerate(global_df.head(30).iterrows(), start=1):
+                f.write(
+                    f"| {rank:3d} | {row['feature'][:40]:40s} | "
+                    f"{row['weight_norm']:.4f} | {row['gain_norm']:.4f} | "
+                    f"{row['cover_norm']:.4f} | {row['combined_score']:.4f} |\n"
+                )
+
+            f.write(f"\n---\n\n")
+
+            # Per-Regime Feature Importance
+            f.write(f"## Per-Regime Feature Distinctiveness\n\n")
+            f.write(f"Features that best distinguish each regime from others.\n\n")
+            f.write(f"### Metrics Explanation\n")
+            f.write(f"- **Regime Mean**: Average feature value in this regime\n")
+            f.write(f"- **Other Mean**: Average feature value in all other regimes\n")
+            f.write(f"- **Mean Sep**: Normalized separation between regime and others (in std units)\n")
+            f.write(f"- **CV Ratio**: Between-regime variance / within-regime variance\n")
+            f.write(f"- **Global Gain**: Feature's global gain importance (0-1)\n")
+            f.write(f"- **Regime Imp**: Combined regime-specific importance (MeanSep × CVRatio × GlobalGain)\n\n")
+
+            for regime_id in sorted(per_regime_importance.keys()):
+                regime_df = per_regime_importance[regime_id]
+
+                f.write(f"### Regime {regime_id} - Top 20 Distinguishing Features\n\n")
+                f.write(f"| Rank | Feature | Regime Mean | Other Mean | Mean Sep | CV Ratio | Global Gain | Regime Imp |\n")
+                f.write(f"|------|---------|-------------|------------|----------|----------|-------------|------------|\n")
+
+                for rank, (idx, row) in enumerate(regime_df.head(20).iterrows(), start=1):
+                    f.write(
+                        f"| {rank:3d} | {row['feature'][:35]:35s} | "
+                        f"{row['regime_mean']:11.4f} | {row['other_mean']:10.4f} | "
+                        f"{row['mean_separation']:8.2f} | {row['cv_ratio']:8.2f} | "
+                        f"{row['global_gain']:11.4f} | {row['regime_importance']:10.2f} |\n"
+                    )
+
+                f.write(f"\n")
+
+            f.write(f"---\n\n")
+
+            # Per-Regime Classification Performance
+            if 'classification_report' in classifier_metrics:
+                f.write(f"## Per-Regime Classification Performance\n\n")
+                f.write(f"| Regime | Precision | Recall | F1-Score | Support |\n")
+                f.write(f"|--------|-----------|--------|----------|---------|\n")
+
+                report = classifier_metrics['classification_report']
+                for regime_id in range(n_regimes):
+                    regime_key = f'Regime_{regime_id}'
+                    if regime_key in report:
+                        r = report[regime_key]
+                        f.write(
+                            f"| {regime_id} | {r.get('precision', 0):.3f} | "
+                            f"{r.get('recall', 0):.3f} | {r.get('f1-score', 0):.3f} | "
+                            f"{int(r.get('support', 0))} |\n"
+                        )
+
+                f.write(f"\n")
+
+            # Feature Categories Summary
+            f.write(f"---\n\n")
+            f.write(f"## Feature Category Analysis\n\n")
+
+            # Categorize features by type
+            feature_categories = {
+                'Volatility': ['vol', 'parkinson', 'garman_klass'],
+                'Tail Risk': ['cvar', 'drawdown', 'downside'],
+                'Distribution': ['skewness', 'kurtosis'],
+                'Dynamics': ['acceleration', 'expansion', 'jump', 'momentum'],
+                'Cross-Timeframe': ['ratio', 'ewma'],
+                'Hurst/Persistence': ['hurst'],
+                'Divergence': ['correlation', 'divergence', 'fragility', 'shock', 'desperation']
+            }
+
+            for category, keywords in feature_categories.items():
+                category_features = global_df[
+                    global_df['feature'].str.lower().str.contains('|'.join(keywords), na=False)
+                ]
+
+                if len(category_features) > 0:
+                    f.write(f"### {category} Features (Top 10)\n\n")
+                    f.write(f"| Feature | Combined Score |\n")
+                    f.write(f"|---------|----------------|\n")
+
+                    for idx, row in category_features.head(10).iterrows():
+                        f.write(f"| {row['feature'][:50]:50s} | {row['combined_score']:.4f} |\n")
+
+                    f.write(f"\n")
+
+            f.write(f"---\n\n")
+            f.write(f"*Report generated by ml_risk_regime_step with XGBoost multi-class classifier*\n")
+
+        return report_path
+
+    def _calculate_comprehensive_feature_importance(
+        self,
+        model: Any,
+        X: pd.DataFrame,
+        y: np.ndarray,
+        feature_names: List[str]
+    ) -> Dict[str, Any]:
+        """
+        Calculate comprehensive feature importance metrics from XGBoost model.
+
+        Returns:
+            - Global importance: weight, gain, cover for all features
+            - Per-regime importance: feature distinctiveness for each regime
+
+        Args:
+            model: Trained XGBoost classifier
+            X: Feature matrix (scaled)
+            y: Regime labels
+            feature_names: List of feature names
+
+        Returns:
+            Dict with global and per-regime importance metrics
+        """
+        import xgboost as xgb
+
+        n_regimes = int(y.max() + 1)
+
+        # ========== GLOBAL FEATURE IMPORTANCE ==========
+        booster = model.get_booster()
+
+        # Get all three importance types
+        importance_weight = booster.get_score(importance_type='weight')
+        importance_gain = booster.get_score(importance_type='gain')
+        importance_cover = booster.get_score(importance_type='cover')
+
+        # Create comprehensive global importance dataframe
+        global_importance = []
+        for feat in feature_names:
+            # XGBoost uses f0, f1, f2... internally, map back to feature names
+            feat_idx = feature_names.index(feat)
+            feat_key = f'f{feat_idx}'
+
+            global_importance.append({
+                'feature': feat,
+                'weight': importance_weight.get(feat_key, 0),
+                'gain': importance_gain.get(feat_key, 0.0),
+                'cover': importance_cover.get(feat_key, 0.0),
+            })
+
+        global_df = pd.DataFrame(global_importance)
+
+        # Normalize each metric to sum to 1
+        if global_df['weight'].sum() > 0:
+            global_df['weight_norm'] = global_df['weight'] / global_df['weight'].sum()
+        else:
+            global_df['weight_norm'] = 0.0
+
+        if global_df['gain'].sum() > 0:
+            global_df['gain_norm'] = global_df['gain'] / global_df['gain'].sum()
+        else:
+            global_df['gain_norm'] = 0.0
+
+        if global_df['cover'].sum() > 0:
+            global_df['cover_norm'] = global_df['cover'] / global_df['cover'].sum()
+        else:
+            global_df['cover_norm'] = 0.0
+
+        # Combined score (average of normalized metrics)
+        global_df['combined_score'] = (
+            global_df['weight_norm'] +
+            global_df['gain_norm'] +
+            global_df['cover_norm']
+        ) / 3.0
+
+        global_df = global_df.sort_values('combined_score', ascending=False)
+
+        # ========== PER-REGIME FEATURE IMPORTANCE ==========
+        # Calculate feature distinctiveness for each regime
+        # A feature is important for a regime if its distribution differs significantly from other regimes
+
+        per_regime_importance = {}
+
+        for regime_id in range(n_regimes):
+            regime_mask = (y == regime_id)
+            other_mask = (y != regime_id)
+
+            if regime_mask.sum() == 0 or other_mask.sum() == 0:
+                continue
+
+            regime_features = []
+
+            for feat in feature_names:
+                feat_idx = X.columns.get_loc(feat)
+                feat_values = X.iloc[:, feat_idx]
+
+                # Calculate distinctiveness metrics
+                regime_mean = feat_values[regime_mask].mean()
+                other_mean = feat_values[other_mask].mean()
+                regime_std = feat_values[regime_mask].std()
+                other_std = feat_values[other_mask].std()
+
+                # Mean separation (normalized)
+                mean_separation = abs(regime_mean - other_mean) / (regime_std + other_std + 1e-8)
+
+                # Coefficient of variation ratio (between/within)
+                pooled_mean = feat_values.mean()
+                between_var = (regime_mean - pooled_mean)**2 * regime_mask.sum() + \
+                              (other_mean - pooled_mean)**2 * other_mask.sum()
+                within_var = regime_std**2 * regime_mask.sum() + other_std**2 * other_mask.sum()
+                cv_ratio = between_var / (within_var + 1e-8)
+
+                # Get global importance for this feature
+                global_weight = global_df[global_df['feature'] == feat]['weight_norm'].values[0] if len(global_df[global_df['feature'] == feat]) > 0 else 0
+                global_gain = global_df[global_df['feature'] == feat]['gain_norm'].values[0] if len(global_df[global_df['feature'] == feat]) > 0 else 0
+                global_cover = global_df[global_df['feature'] == feat]['cover_norm'].values[0] if len(global_df[global_df['feature'] == feat]) > 0 else 0
+
+                regime_features.append({
+                    'feature': feat,
+                    'regime_mean': float(regime_mean),
+                    'other_mean': float(other_mean),
+                    'mean_separation': float(mean_separation),
+                    'cv_ratio': float(cv_ratio),
+                    'global_weight': float(global_weight),
+                    'global_gain': float(global_gain),
+                    'global_cover': float(global_cover),
+                    # Combined regime-specific importance
+                    'regime_importance': float(mean_separation * cv_ratio * (global_gain + 0.1))
+                })
+
+            regime_df = pd.DataFrame(regime_features).sort_values('regime_importance', ascending=False)
+            per_regime_importance[regime_id] = regime_df
+
+        return {
+            'global': global_df,
+            'per_regime': per_regime_importance,
+            'n_regimes': n_regimes
+        }
+
+    def _train_regime_classifier(
+        self,
+        risk_df: pd.DataFrame,
+        regime_labels: np.ndarray,
+        config: Dict[str, Any]
+    ) -> Tuple[Any, np.ndarray, Dict[str, Any]]:
+        """
+        Train XGBoost multi-class classifier to predict regimes with probabilities.
+        Uses RAW features (no EWMA smoothing).
+
+        Args:
+            risk_df: Feature dataframe
+            regime_labels: Target regime labels (0-3, -1 for invalid)
+            config: Configuration dict
+
+        Returns:
+            model: Trained XGBoost classifier
+            regime_probs: Predicted probabilities (n_samples x 4)
+            training_metrics: Performance metrics
+        """
+        import xgboost as xgb
+        from sklearn.metrics import classification_report, log_loss, accuracy_score
+
+        # Filter valid samples
+        valid_mask = regime_labels >= 0
+        df_clean = risk_df[valid_mask].copy()
+        y = regime_labels[valid_mask]
+
+        # Select features (exclude risk targets and intermediate components)
+        numeric_df = df_clean.select_dtypes(include=[np.number])
+        feature_cols = [
+            col for col in numeric_df.columns
+            if not col.startswith("risk_target")
+            and not col.startswith("risk_regime")
+            and not col.startswith("alpha_")
+        ]
+
+        X = numeric_df[feature_cols]
+
+        tprint_info(f"🤖 Training XGBoost classifier on {len(feature_cols)} RAW features")
+
+        # Chronological split
+        train_frac = float(config.get("risk_train_fraction", 0.8))
+        split_idx = int(len(X) * train_frac)
+
+        X_train_raw, y_train = X.iloc[:split_idx], y[:split_idx]
+        X_val_raw, y_val = X.iloc[split_idx:], y[split_idx:]
+
+        # Robust scaling ONLY (no EWMA smoothing)
+        from src.features_common.transforms.scaling_normalization import ScalingNormalizer
+
+        normalizer_config = {
+            "default_strategy": "robust",
+            "auto_select": False,
+            "handle_outliers": True,
+            "outlier_threshold": 3.0,
+            "use_vectorbt": False,
+        }
+        scaler = ScalingNormalizer(normalizer_config)
+
+        X_train = scaler.fit_transform(X_train_raw, strategy="robust")
+        X_val = scaler.transform(X_val_raw)
+        X_full = scaler.transform(X)
+
+        # Define monotonic constraints for risk features
+        monotone_constraints = []
+        for feat in X_full.columns:
+            feat_lower = feat.lower()
+            if any(kw in feat_lower for kw in [
+                'vol', 'cvar', 'drawdown', 'jump', 'acceleration',
+                'fragility', 'shock', 'tail', 'kurtosis', 'correlation'
+            ]):
+                monotone_constraints.append(1)  # Risk-increasing
+            else:
+                monotone_constraints.append(0)  # No constraint
+
+        # XGBoost Classifier Parameters
+        n_regimes = int(regime_labels.max() + 1)
+
+        params = {
+            'objective': 'multi:softprob',
+            'num_class': n_regimes,
+            'tree_method': 'hist',
+            'n_jobs': -1,
+
+            # Structure (shallower trees for classification)
+            'max_depth': int(config.get("risk_classifier_max_depth", 5)),
+            'min_child_weight': int(config.get("risk_classifier_min_child_weight", 30)),
+
+            # Learning dynamics
+            'learning_rate': float(config.get("risk_classifier_learning_rate", 0.05)),
+            'n_estimators': int(config.get("risk_classifier_n_estimators", 800)),
+
+            # Regularization (stronger for classification)
+            'subsample': float(config.get("risk_classifier_subsample", 0.7)),
+            'colsample_bytree': float(config.get("risk_classifier_colsample_bytree", 0.8)),
+            'gamma': float(config.get("risk_classifier_gamma", 2.0)),
+            'reg_alpha': float(config.get("risk_classifier_reg_alpha", 1.0)),
+            'reg_lambda': float(config.get("risk_classifier_reg_lambda", 2.0)),
+
+            # Monotonic constraints
+            'monotone_constraints': monotone_constraints,
+
+            # Evaluation
+            'eval_metric': 'mlogloss',
+            'early_stopping_rounds': 50,
+
+            'random_state': 42,
+        }
+
+        # Train classifier
+        model = xgb.XGBClassifier(**params)
+
+        model.fit(
+            X_train, y_train,
+            eval_set=[(X_val, y_val)],
+            verbose=False
+        )
+
+        # Predict probabilities on full dataset
+        regime_probs = model.predict_proba(X_full)
+
+        # Calculate training metrics
+        y_val_pred = model.predict(X_val)
+        y_val_probs = model.predict_proba(X_val)
+
+        val_accuracy = accuracy_score(y_val, y_val_pred)
+        val_log_loss = log_loss(y_val, y_val_probs)
+
+        training_metrics = {
+            'val_accuracy': float(val_accuracy),
+            'val_log_loss': float(val_log_loss),
+            'n_regimes': n_regimes,
+            'feature_names': list(X_full.columns),
+            'scaler': scaler,
+            'monotone_constraints': monotone_constraints,
+            'n_features': len(X_full.columns),
+        }
+
+        # ========== COMPREHENSIVE FEATURE IMPORTANCE ==========
+        tprint_info("🔍 Calculating comprehensive feature importance (weight, gain, cover)...")
+
+        importance_data = self._calculate_comprehensive_feature_importance(
+            model=model,
+            X=X_full,
+            y=y,
+            feature_names=list(X_full.columns)
+        )
+
+        training_metrics['feature_importance_detailed'] = {
+            'global': importance_data['global'].to_dict('records'),
+            'per_regime': {
+                regime_id: df.to_dict('records')
+                for regime_id, df in importance_data['per_regime'].items()
+            }
+        }
+
+        # Log global importance (top 15 features)
+        global_imp = importance_data['global'].head(15)
+        tprint_success("📊 Top 15 Global Feature Importance:")
+        for idx, row in global_imp.iterrows():
+            tprint_info(
+                f"  {row['feature'][:40]:40s} | "
+                f"Weight: {row['weight_norm']:.3f} | "
+                f"Gain: {row['gain_norm']:.3f} | "
+                f"Cover: {row['cover_norm']:.3f} | "
+                f"Combined: {row['combined_score']:.3f}"
+            )
+
+        # Log per-regime importance (top 10 features per regime)
+        tprint_success("📊 Per-Regime Feature Importance (Top 10 per regime):")
+        for regime_id, regime_df in importance_data['per_regime'].items():
+            tprint_info(f"\n  === Regime {regime_id} ===")
+            top_regime_features = regime_df.head(10)
+            for idx, row in top_regime_features.iterrows():
+                tprint_info(
+                    f"    {row['feature'][:35]:35s} | "
+                    f"MeanSep: {row['mean_separation']:6.2f} | "
+                    f"CVRatio: {row['cv_ratio']:6.2f} | "
+                    f"Gain: {row['global_gain']:.3f} | "
+                    f"RegImp: {row['regime_importance']:7.2f}"
+                )
+
+        tprint_success(
+            f"✅ XGBoost Classifier trained:\n"
+            f"   Val Accuracy={val_accuracy:.3f}, Val LogLoss={val_log_loss:.4f}\n"
+            f"   Best Iteration={model.best_iteration}, Features={len(X_full.columns)}"
+        )
+
+        # Classification report
+        report = classification_report(
+            y_val, y_val_pred,
+            target_names=[f'Regime_{i}' for i in range(n_regimes)],
+            output_dict=True,
+            zero_division=0
+        )
+        training_metrics['classification_report'] = report
+
+        # Log per-regime accuracy
+        for regime_id in range(n_regimes):
+            regime_report = report.get(f'Regime_{regime_id}', {})
+            precision = regime_report.get('precision', 0)
+            recall = regime_report.get('recall', 0)
+            f1 = regime_report.get('f1-score', 0)
+            tprint_info(
+                f"  Regime {regime_id}: Precision={precision:.3f}, "
+                f"Recall={recall:.3f}, F1={f1:.3f}"
+            )
+
+        # Expand probabilities to full dataframe
+        full_probs = np.full((len(risk_df), n_regimes), np.nan)
+        full_probs[valid_mask] = regime_probs
+
+        return model, full_probs, training_metrics
 
     def _calculate_iqr_winsorization_percentiles(
         self, data: pd.Series

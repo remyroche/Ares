@@ -858,17 +858,24 @@ class LiquidityClusterQualityAssessor:
         df = liquidity_df.loc[common_idx].copy()
         labels = regime_labels.loc[common_idx].astype(int)
 
-        # Get all numeric features (60+ liquidity regime features)
+        # Get all numeric features (70+ liquidity regime features including Tier 1 & 2)
         liquidity_features = [
             col for col in df.columns
             if any(x in col for x in [
+                # Original features
                 'volume_direction', 'consecutive_direction', 'return_autocorr',
                 'momentum_persistence', 'trend_confirmation', 'realized_vol',
                 'vol_ratio', 'vol_momentum', 'range_momentum', 'momentum_vol',
                 'reversal', 'whipsaw', 'volume_concentration', 'pressure_ratio',
                 'kyle_lambda', 'intra_bar_vol', 'wick_vol', 'session_vol',
                 'vol_clustering', 'vol_regime', 'efficiency_ratio', 'volume_price',
-                'price_impact', 'momentum_volume', 'rvol_20', 'volume_efficiency_ratio'
+                'price_impact', 'momentum_volume', 'rvol_20', 'volume_efficiency_ratio',
+                # Tier 1 features
+                'rolls_spread', 'breakout_failure_rate', 'cumulative_delta_divergence',
+                'order_flow_persistence', 'volume_depth_ratio',
+                # Tier 2 features
+                'parkinsons_volatility', 'vwap_distance', 'kyles_lambda_enhanced',
+                'trap_score', 'vol_of_vol'
             ])
         ]
 

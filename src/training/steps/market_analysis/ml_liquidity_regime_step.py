@@ -151,12 +151,22 @@ class MLLiquidityRegimeStep(BaseStep):
 
                 # Top discriminative features for distance calculation
                 refinement_features = [
+                    # Core dimensions
                     "rvol_24_scaled", "vol_z_24", "rvol_20",
                     "delta_regime_signal_scaled", "volume_direction_conviction",
                     "amihud_spike_ratio_scaled", "volume_efficiency_ratio",
+                    # Trend persistence
                     "consecutive_direction_ratio_6h", "trend_confirmation_6h",
+                    # Reversal patterns
                     "whipsaw_count", "reversal_intensity",
+                    # Interaction features
                     "volume_range_interaction", "trend_strength", "trap_indicator",
+                    # Tier 1 features
+                    "rolls_spread", "breakout_failure_rate", "cumulative_delta_divergence",
+                    "order_flow_persistence", "volume_depth_ratio",
+                    # Tier 2 features
+                    "parkinsons_volatility", "vwap_distance", "kyles_lambda_enhanced",
+                    "trap_score", "vol_of_vol",
                 ]
 
                 refined_labels = self._refine_regimes_with_centroids(
@@ -821,6 +831,80 @@ class MLLiquidityRegimeStep(BaseStep):
         # Absorption signal (high volume + diverged delta)
         df["absorption_signal"] = (
             df["absorption_ratio"] * (1.0 - df["delta_alignment_3h"].abs())
+        )
+
+        # ============================================================================
+        # TIER 1 FEATURES: High-impact regime discriminators
+        # ============================================================================
+
+        # 1. Roll's Spread Estimator - Measures bid-ask spread from return covariance
+        # High spread = Poor liquidity (Ghost), Low spread = Good liquidity (Valid Trend)
+        return_autocov = -df["return_1h"].rolling(2).apply(
+            lambda x: x.iloc[0] * x.iloc[1] if len(x) == 2 else 0, raw=False
+        )
+        df["rolls_spread"] = 2 * np.sqrt(return_autocov.clip(lower=0))
+
+        # 2. Breakout Failure Rate - Detects Ghost regime (large move followed by reversal)
+        high_range_mask = df["normalized_range"] > df["normalized_range"].rolling(20).quantile(0.8)
+        reversal_next_bar = (np.sign(df["return_1h"]) != np.sign(df["return_1h"].shift(-1)))
+        df["breakout_failure_rate"] = (high_range_mask & reversal_next_bar).rolling(12, min_periods=4).mean()
+
+        # 3. Cumulative Delta Divergence - Absorption identifier
+        # High CDD = sustained volume/price divergence = Absorption
+        cumulative_volume_imbalance = df["volume_direction_imbalance"].rolling(6).sum()
+        cumulative_price_change = (df["close"].diff(6) / df["close"].shift(6)).abs()
+        df["cumulative_delta_divergence"] = (
+            cumulative_volume_imbalance.abs() - cumulative_price_change
+        )
+
+        # 4. Order Flow Persistence - Trend reliability
+        # High persistence = Valid Trend, Low persistence (flips) = Ghost/Apathy
+        df["order_flow_persistence"] = df["volume_direction_imbalance"].rolling(3).apply(
+            lambda x: x.autocorr(lag=1) if len(x) > 1 else 0, raw=False
+        )
+
+        # 5. Volume Depth Ratio - Liquidity depth proxy
+        # Low VDR = Shallow liquidity (Ghost/Steamroller), High VDR = Deep liquidity (Absorption/Valid Trend)
+        price_move_1pct = df["close"] * 0.01
+        df["volume_depth_ratio"] = df["volume"] / (price_move_1pct + eps)
+
+        # ============================================================================
+        # TIER 2 FEATURES: High value-add discriminators
+        # ============================================================================
+
+        # 6. Parkinson's Range-Based Volatility - More efficient estimator
+        df["parkinsons_volatility"] = np.sqrt(
+            (1 / (4 * np.log(2))) * (np.log(df["high"] / df["low"]) ** 2)
+        ).rolling(6, min_periods=2).mean()
+
+        # 7. VWAP Distance - Value area context
+        # Near VWAP = fair value (Apathy/Absorption), Far = trending (Valid Trend/Ghost)
+        typical_price = (df["high"] + df["low"] + df["close"]) / 3
+        vwap = (typical_price * df["volume"]).rolling(20, min_periods=5).sum() / (
+            df["volume"].rolling(20, min_periods=5).sum() + eps
+        )
+        df["vwap_distance"] = (df["close"] - vwap) / (vwap + eps)
+
+        # 8. Kyle's Lambda (enhanced) - Measures permanent price impact
+        signed_volume = df["volume"] * np.sign(df["return_1h"])
+        cumulative_signed_volume = signed_volume.rolling(6, min_periods=2).sum()
+        price_change_6h = df["close"] - df["close"].shift(6)
+        df["kyles_lambda_enhanced"] = price_change_6h / (cumulative_signed_volume + eps)
+
+        # 9. Trap Score - Ghost composite signal
+        # Large range + low volume + subsequent reversal = Ghost
+        df["trap_score"] = (
+            df["normalized_range"] *
+            (1 / (df["rvol_20"] + eps)) *
+            df["reversal_intensity"]
+        )
+
+        # 10. Vol-of-Vol - Regime stability
+        # Stable vol = Valid Trend or Apathy, Unstable vol = Ghost or Absorption
+        realized_vol_6h_rolling = df["return_1h"].rolling(6, min_periods=2).std()
+        df["vol_of_vol"] = (
+            realized_vol_6h_rolling.rolling(12, min_periods=4).std() /
+            (realized_vol_6h_rolling.rolling(12, min_periods=4).mean() + eps)
         )
 
         # ============================================================================
@@ -1551,6 +1635,85 @@ class MLLiquidityRegimeStep(BaseStep):
 
         model = XGBClassifier(**base_params)
         model.fit(X_train, y_train_mapped, sample_weight=sw_train)
+
+        # ========================================================================
+        # Extract and report comprehensive feature importance
+        # ========================================================================
+        try:
+            # Get feature importance from XGBoost (gain-based)
+            feature_importance_gain = model.feature_importances_
+            feature_names = extended_feature_names
+
+            # Create DataFrame with all importance metrics
+            importance_df = pd.DataFrame({
+                'feature': feature_names,
+                'importance_gain': feature_importance_gain,
+            })
+
+            # Add other importance types if available
+            if hasattr(model, 'get_booster'):
+                booster = model.get_booster()
+
+                # Weight-based importance (number of times feature is used)
+                weight_importance = booster.get_score(importance_type='weight')
+                importance_df['importance_weight'] = importance_df['feature'].map(
+                    lambda x: weight_importance.get(f'f{feature_names.index(x)}', 0)
+                )
+
+                # Cover importance (sum of second order gradient)
+                cover_importance = booster.get_score(importance_type='cover')
+                importance_df['importance_cover'] = importance_df['feature'].map(
+                    lambda x: cover_importance.get(f'f{feature_names.index(x)}', 0)
+                )
+
+                # Total gain importance
+                total_gain_importance = booster.get_score(importance_type='total_gain')
+                importance_df['importance_total_gain'] = importance_df['feature'].map(
+                    lambda x: total_gain_importance.get(f'f{feature_names.index(x)}', 0)
+                )
+
+            # Normalize importance metrics to [0, 1]
+            for col in ['importance_gain', 'importance_weight', 'importance_cover', 'importance_total_gain']:
+                if col in importance_df.columns:
+                    col_sum = importance_df[col].sum()
+                    if col_sum > 0:
+                        importance_df[f'{col}_normalized'] = importance_df[col] / col_sum
+
+            # Sort by gain importance (default XGBoost metric)
+            importance_df = importance_df.sort_values('importance_gain', ascending=False).reset_index(drop=True)
+
+            # Store in training metrics
+            training_metrics['feature_importance_df'] = importance_df
+            training_metrics['n_features'] = len(feature_names)
+
+            # Log top 20 most important features
+            tprint_info("🎯 Top 20 Most Important Features (by gain):")
+            for idx, row in importance_df.head(20).iterrows():
+                tprint_info(
+                    f"  {idx+1:2d}. {row['feature']:50s} "
+                    f"gain={row['importance_gain']:.4f}"
+                )
+
+            # Save full feature importance report to outcomes/
+            try:
+                from pathlib import Path
+                import datetime
+
+                outcomes_dir = Path("outcomes")
+                outcomes_dir.mkdir(parents=True, exist_ok=True)
+
+                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                symbol = config.get("symbol", "ETHUSDT")
+                importance_path = outcomes_dir / f"liquidity_feature_importance_{symbol}_{timestamp}.csv"
+
+                importance_df.to_csv(importance_path, index=False)
+                tprint_info(f"📊 Feature importance saved to: {importance_path}")
+                training_metrics['feature_importance_path'] = str(importance_path)
+            except Exception as save_exc:
+                tprint_warning(f"Failed to save feature importance report: {save_exc}")
+
+        except Exception as importance_exc:
+            tprint_warning(f"Feature importance extraction failed: {importance_exc}")
 
         # Evaluate on validation set
         proba_val = model.predict_proba(X_val) if len(X_val) > 0 else None

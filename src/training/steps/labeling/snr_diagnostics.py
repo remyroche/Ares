@@ -70,6 +70,9 @@ try:
     from sklearn.metrics import roc_auc_score, brier_score_loss, average_precision_score
     from sklearn.linear_model import LogisticRegression
     from sklearn.calibration import calibration_curve
+    import matplotlib.pyplot as plt  # type: ignore
+    import matplotlib  # type: ignore
+    matplotlib.use('Agg')  # Use non-interactive backend
 except ImportError as exc:  # pragma: no cover - environment dependent
     raise ImportError(
         "snr_diagnostics requires lightgbm and scikit-learn to be installed. "
@@ -264,6 +267,247 @@ def _build_feature_matrix_from_labeled(labeled_df: pd.DataFrame) -> Tuple[pd.Dat
         logger.warning("Only %d valid samples after cleaning; diagnostics may be noisy", len(y_clean))
 
     return X_clean, y_clean
+
+
+# --------------------------------------------------------------------------------------
+# New Diagnostic Helper Functions
+# --------------------------------------------------------------------------------------
+
+def _compute_regime_auc_breakdown(
+    labeled_df: pd.DataFrame,
+    y_proba: np.ndarray,
+    y_true: np.ndarray,
+) -> dict:
+    """Compute AUC breakdown by volatility and HMM regimes if available.
+
+    Returns:
+        Dict with per-regime AUC values and summary statistics.
+    """
+    regime_aucs = {}
+
+    # Volatility regime breakdown
+    if "volatility_regime" in labeled_df.columns:
+        try:
+            vol_regimes = labeled_df["volatility_regime"].dropna().unique()
+            for regime in vol_regimes:
+                regime_mask = (labeled_df["volatility_regime"] == regime).values
+                if regime_mask.sum() >= 20 and len(np.unique(y_true[regime_mask])) >= 2:
+                    auc = roc_auc_score(y_true[regime_mask], y_proba[regime_mask])
+                    regime_aucs[f"vol_{regime}"] = float(auc)
+        except Exception:
+            pass
+
+    # HMM regime breakdown if available
+    if "hmm_regime_label_1h" in labeled_df.columns:
+        try:
+            hmm_regimes = labeled_df["hmm_regime_label_1h"].dropna().unique()
+            for regime in hmm_regimes:
+                regime_mask = (labeled_df["hmm_regime_label_1h"] == regime).values
+                if regime_mask.sum() >= 20 and len(np.unique(y_true[regime_mask])) >= 2:
+                    auc = roc_auc_score(y_true[regime_mask], y_proba[regime_mask])
+                    regime_aucs[f"hmm_{regime}"] = float(auc)
+        except Exception:
+            pass
+
+    return regime_aucs
+
+
+def _compute_temporal_auc(
+    y_true: np.ndarray,
+    y_proba: np.ndarray,
+    window_size: int = 50,
+) -> dict:
+    """Compute rolling AUC across time with specified window size.
+
+    Returns:
+        Dict with temporal_aucs (list of AUC values) and corresponding indices.
+    """
+    temporal_aucs = []
+    temporal_indices = []
+
+    for i in range(0, len(y_true) - window_size, max(1, window_size // 4)):
+        window_end = min(i + window_size, len(y_true))
+        window_true = y_true[i:window_end]
+        window_proba = y_proba[i:window_end]
+
+        if len(np.unique(window_true)) >= 2:
+            try:
+                auc = roc_auc_score(window_true, window_proba)
+                temporal_aucs.append(float(auc))
+                temporal_indices.append(i + window_size // 2)
+            except Exception:
+                pass
+
+    return {
+        "temporal_aucs": temporal_aucs,
+        "temporal_indices": temporal_indices,
+    }
+
+
+def _compute_feature_importance_stability(
+    labeled_df: pd.DataFrame,
+    cv_splits: int = 5,
+    n_features_top: int = 20,
+) -> dict:
+    """Compute feature importance variance across CV folds.
+
+    Returns:
+        Dict with feature_importance_std, mean_importance, and concentration metrics.
+    """
+    X, y = _build_feature_matrix_from_labeled(labeled_df)
+    X_array = X.values.astype(float)
+    y_array = y.values.astype(float)
+
+    tscv = TimeSeriesSplit(n_splits=cv_splits)
+    fold_importances = []
+
+    for tr_idx, te_idx in tscv.split(X_array):
+        X_tr = X_array[tr_idx]
+        y_tr = y_array[tr_idx]
+
+        # Clean NaNs
+        mask = ~np.isnan(y_tr)
+        X_tr_clean = X_tr[mask]
+        y_tr_clean = y_tr[mask]
+
+        if len(y_tr_clean) < 50 or len(np.unique(y_tr_clean)) < 2:
+            continue
+
+        try:
+            clf = lgb.LGBMClassifier(
+                boosting_type="gbdt",
+                objective="binary",
+                max_depth=3,
+                n_estimators=50,
+                learning_rate=0.1,
+                verbose=-1,
+                random_state=42,
+            )
+            clf.fit(X_tr_clean, y_tr_clean)
+
+            # Get feature importance
+            importances = clf.feature_importances_
+            fold_importances.append(importances)
+        except Exception:
+            continue
+
+    if not fold_importances:
+        return {
+            "feature_importance_std": 0.0,
+            "importance_concentration": 0.0,
+            "top_features": [],
+        }
+
+    # Compute stats across folds
+    importances_array = np.array(fold_importances)
+    mean_importance = importances_array.mean(axis=0)
+    std_importance = importances_array.std(axis=0)
+
+    # Concentration: fraction of importance in top N features
+    top_k_importance = np.sum(np.sort(mean_importance)[-n_features_top:])
+    total_importance = np.sum(mean_importance)
+    concentration = float(top_k_importance / (total_importance + 1e-9))
+
+    # Top features
+    top_indices = np.argsort(mean_importance)[-n_features_top:][::-1]
+    top_features = [
+        {
+            "feature_idx": int(idx),
+            "mean_importance": float(mean_importance[idx]),
+            "std_importance": float(std_importance[idx]),
+        }
+        for idx in top_indices if mean_importance[idx] > 0
+    ]
+
+    return {
+        "feature_importance_std": float(np.mean(std_importance)),
+        "importance_concentration": concentration,
+        "top_features": top_features,
+    }
+
+
+def _estimate_label_noise_confident_learning(
+    y_true: np.ndarray,
+    y_proba: np.ndarray,
+    threshold_confident: float = 0.9,
+) -> dict:
+    """Implement confident learning to estimate label noise.
+
+    Finds samples where model is highly confident but label disagrees with
+    predicted class, indicating potential mislabeling.
+
+    Returns:
+        Dict with noise metrics and indices of potentially mislabeled samples.
+    """
+    # Predicted class and confidence
+    y_pred = (y_proba >= 0.5).astype(int)
+    confidence = np.abs(y_proba - 0.5) * 2  # 0-1 scale
+
+    # Find confident predictions (high confidence in one direction)
+    confident_mask = confidence >= threshold_confident
+
+    # Find disagreements: where confident prediction differs from true label
+    disagreement_mask = (y_pred != y_true) & confident_mask
+
+    # Potential mislabeled indices
+    mislabeled_indices = np.where(disagreement_mask)[0]
+
+    # Statistics
+    n_confident = int(np.sum(confident_mask))
+    n_disagreements = int(np.sum(disagreement_mask))
+    noise_rate = n_disagreements / max(n_confident, 1)
+
+    # Per-class analysis
+    pos_mask = y_true == 1
+    neg_mask = y_true == 0
+
+    false_neg_rate = np.sum((y_pred[pos_mask] != y_true[pos_mask]) & confident_mask[pos_mask]) / max(np.sum(pos_mask), 1)
+    false_pos_rate = np.sum((y_pred[neg_mask] != y_true[neg_mask]) & confident_mask[neg_mask]) / max(np.sum(neg_mask), 1)
+
+    return {
+        "n_confident_predictions": int(n_confident),
+        "n_mislabeled_candidates": int(n_disagreements),
+        "estimated_noise_rate": float(noise_rate),
+        "false_neg_rate_confident": float(false_neg_rate),
+        "false_pos_rate_confident": float(false_pos_rate),
+        "mislabeled_indices": mislabeled_indices.tolist()[:100],  # Limit to first 100
+    }
+
+
+def _plot_temporal_auc(
+    temporal_indices: list,
+    temporal_aucs: list,
+    symbol: str,
+    timeframe: str,
+) -> Path:
+    """Generate and save temporal AUC plot."""
+    try:
+        fig, ax = plt.subplots(figsize=(12, 6))
+
+        if temporal_indices and temporal_aucs:
+            ax.plot(temporal_indices, temporal_aucs, marker='o', linewidth=2, markersize=6, label='Rolling AUC')
+            ax.axhline(y=0.5, color='r', linestyle='--', label='Random (0.5)')
+            ax.axhline(y=np.mean(temporal_aucs), color='g', linestyle='--', label=f'Mean ({np.mean(temporal_aucs):.3f})')
+
+            ax.set_xlabel('Sample Index')
+            ax.set_ylabel('AUC')
+            ax.set_title(f'Temporal AUC Evolution: {symbol} {timeframe}')
+            ax.set_ylim([0.4, 0.8])
+            ax.grid(True, alpha=0.3)
+            ax.legend()
+
+        out_dir = _ensure_outcomes_dir()
+        ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        plot_path = out_dir / f"temporal_auc_{symbol}_{timeframe}_{ts}.png"
+
+        fig.savefig(plot_path, dpi=100, bbox_inches='tight')
+        plt.close(fig)
+
+        logger.info(f"Saved temporal AUC plot to {plot_path}")
+        return plot_path
+    except Exception as e:
+        logger.warning(f"Failed to generate temporal AUC plot: {e}")
+        return Path()
 
 
 # --------------------------------------------------------------------------------------
@@ -1268,6 +1512,56 @@ def run_model_robustness(
                 pseudo_r2_ci_low = float(np.percentile(boot_arr, 2.5))
                 pseudo_r2_ci_high = float(np.percentile(boot_arr, 97.5))
 
+    # NEW: Compute enhanced diagnostics
+    regime_aucs = {}
+    temporal_auc_data = {"temporal_aucs": [], "temporal_indices": []}
+    feature_importance_data = {
+        "feature_importance_std": 0.0,
+        "importance_concentration": 0.0,
+        "top_features": [],
+    }
+    label_noise_data = {
+        "n_confident_predictions": 0,
+        "n_mislabeled_candidates": 0,
+        "estimated_noise_rate": 0.0,
+        "false_neg_rate_confident": 0.0,
+        "false_pos_rate_confident": 0.0,
+        "mislabeled_indices": [],
+    }
+    temporal_auc_plot_path = None
+
+    try:
+        if y_all.size > 0:
+            # Regime-specific AUC breakdown
+            regime_aucs = _compute_regime_auc_breakdown(df, p_all, y_all.astype(int))
+
+            # Temporal AUC evolution
+            temporal_auc_data = _compute_temporal_auc(y_all, p_all, window_size=min(50, len(y_all) // 5))
+
+            # Plot temporal AUC
+            if temporal_auc_data["temporal_aucs"]:
+                temporal_auc_plot_path = _plot_temporal_auc(
+                    temporal_auc_data["temporal_indices"],
+                    temporal_auc_data["temporal_aucs"],
+                    symbol,
+                    timeframe,
+                )
+    except Exception as e:
+        logger.warning(f"Failed to compute regime AUC breakdown: {e}")
+
+    try:
+        # Feature importance stability analysis
+        feature_importance_data = _compute_feature_importance_stability(df, cv_splits=cv_splits, n_features_top=20)
+    except Exception as e:
+        logger.warning(f"Failed to compute feature importance stability: {e}")
+
+    try:
+        if y_all.size > 0:
+            # Label noise estimation via confident learning
+            label_noise_data = _estimate_label_noise_confident_learning(y_all.astype(int), p_all, threshold_confident=0.9)
+    except Exception as e:
+        logger.warning(f"Failed to estimate label noise: {e}")
+
     # Model family comparison comment (LightGBM vs LogisticRegression)
     model_family_comment = "N/A"
     if np.isfinite(mean_auc) and np.isfinite(mean_auc_log):
@@ -1410,6 +1704,50 @@ def run_model_robustness(
     )
     print(f"Model-family comment: {model_family_comment}")
 
+    print()
+    print("-- Regime-Specific AUC Breakdown --")
+    if regime_aucs:
+        for regime_name, auc_val in regime_aucs.items():
+            print(f"  {regime_name}: {auc_val:.4f}")
+    else:
+        print("  (No regime-specific breakdown available)")
+
+    print()
+    print("-- Temporal AUC Evolution --")
+    if temporal_auc_data["temporal_aucs"]:
+        print(f"  Mean rolling AUC: {np.mean(temporal_auc_data['temporal_aucs']):.4f}")
+        print(f"  Min rolling AUC: {np.min(temporal_auc_data['temporal_aucs']):.4f}")
+        print(f"  Max rolling AUC: {np.max(temporal_auc_data['temporal_aucs']):.4f}")
+        if temporal_auc_plot_path:
+            print(f"  Plot saved: {temporal_auc_plot_path}")
+    else:
+        print("  (Insufficient data for temporal AUC analysis)")
+
+    print()
+    print("-- Feature Importance Stability Analysis --")
+    if feature_importance_data.get("top_features"):
+        print(f"  Feature importance std: {feature_importance_data['feature_importance_std']:.4f}")
+        print(f"  Importance concentration: {feature_importance_data['importance_concentration']:.1%}")
+        print("  Top 5 features:")
+        for feat in feature_importance_data["top_features"][:5]:
+            feat_idx = feat.get("feature_idx", "?")
+            mean_imp = feat.get("mean_importance", 0.0)
+            std_imp = feat.get("std_importance", 0.0)
+            print(f"    Feature {feat_idx}: mean={mean_imp:.4f}, std={std_imp:.4f}")
+    else:
+        print("  (No feature importance data available)")
+
+    print()
+    print("-- Label Noise Estimation (Confident Learning) --")
+    if label_noise_data.get("n_confident_predictions", 0) > 0:
+        print(f"  N confident predictions: {label_noise_data['n_confident_predictions']}")
+        print(f"  N mislabeled candidates: {label_noise_data['n_mislabeled_candidates']}")
+        print(f"  Estimated noise rate: {label_noise_data['estimated_noise_rate']:.1%}")
+        print(f"  False neg rate (confident): {label_noise_data['false_neg_rate_confident']:.1%}")
+        print(f"  False pos rate (confident): {label_noise_data['false_pos_rate_confident']:.1%}")
+    else:
+        print("  (Insufficient data for label noise analysis)")
+
     # Export payload
     payload = {
         "section": "model_robustness",
@@ -1452,6 +1790,13 @@ def run_model_robustness(
                 "delta_ap": float(delta_ap) if np.isfinite(delta_ap) else None,
             },
         },
+        "regime_analysis": {
+            "regime_aucs": regime_aucs,
+            "temporal_auc": temporal_auc_data,
+            "temporal_auc_plot": str(temporal_auc_plot_path) if temporal_auc_plot_path else None,
+        },
+        "feature_importance_stability": feature_importance_data,
+        "label_noise_estimation": label_noise_data,
         "summary_score": {
             "score": float(robustness_score),
             "rating": robustness_rating,
@@ -1509,6 +1854,79 @@ def run_model_robustness(
             "## Model Family Comparison (LightGBM vs LogisticRegression)",
             f"- Mean AUC LightGBM: {_fmt(mean_auc)} | LogisticRegression: {_fmt(mean_auc_log)}",
             f"- Comment: {model_family_comment}",
+            "",
+            "## Regime-Specific AUC Breakdown",
+        ]
+    )
+
+    # Add regime AUC data
+    if regime_aucs:
+        for regime_name, auc_val in regime_aucs.items():
+            md_lines.append(f"- {regime_name}: {auc_val:.4f}")
+    else:
+        md_lines.append("- No regime-specific breakdown available (volatility or HMM regimes not found)")
+
+    md_lines.extend(
+        [
+            "",
+            "## Temporal AUC Evolution",
+        ]
+    )
+
+    # Add temporal AUC data
+    if temporal_auc_data["temporal_aucs"]:
+        md_lines.append(f"- Mean rolling AUC: {np.mean(temporal_auc_data['temporal_aucs']):.4f}")
+        md_lines.append(f"- Min rolling AUC: {np.min(temporal_auc_data['temporal_aucs']):.4f}")
+        md_lines.append(f"- Max rolling AUC: {np.max(temporal_auc_data['temporal_aucs']):.4f}")
+        md_lines.append(f"- AUC at start: {temporal_auc_data['temporal_aucs'][0]:.4f}")
+        md_lines.append(f"- AUC at end: {temporal_auc_data['temporal_aucs'][-1]:.4f}")
+        if temporal_auc_plot_path:
+            md_lines.append(f"- Plot saved: `{temporal_auc_plot_path}`")
+        md_lines.append("**Interpretation**: If rolling AUC declines over time, model performance degrades on recent data.")
+    else:
+        md_lines.append("- Insufficient data for temporal AUC analysis")
+
+    md_lines.extend(
+        [
+            "",
+            "## Feature Importance Stability Analysis",
+        ]
+    )
+
+    # Add feature importance stability
+    if feature_importance_data.get("top_features"):
+        md_lines.append(f"- Feature importance std (across CV folds): {feature_importance_data['feature_importance_std']:.4f}")
+        md_lines.append(f"- Importance concentration (top 20 features): {feature_importance_data['importance_concentration']:.3%}")
+        md_lines.append("- Top features (with stability):")
+        for feat in feature_importance_data["top_features"][:10]:
+            feat_idx = feat.get("feature_idx", "?")
+            mean_imp = feat.get("mean_importance", 0.0)
+            std_imp = feat.get("std_importance", 0.0)
+            md_lines.append(f"  - Feature {feat_idx}: mean={mean_imp:.4f}, std={std_imp:.4f}")
+        md_lines.append("**Interpretation**: High std_importance across folds suggests unstable features (overfitting risk).")
+    else:
+        md_lines.append("- No feature importance data available")
+
+    md_lines.extend(
+        [
+            "",
+            "## Label Noise Estimation (Confident Learning)",
+        ]
+    )
+
+    # Add label noise data
+    if label_noise_data.get("n_confident_predictions", 0) > 0:
+        md_lines.append(f"- N confident predictions (confidence ≥ 0.9): {label_noise_data['n_confident_predictions']}")
+        md_lines.append(f"- N mislabeled candidates (confident but wrong): {label_noise_data['n_mislabeled_candidates']}")
+        md_lines.append(f"- Estimated label noise rate: {label_noise_data['estimated_noise_rate']:.3%}")
+        md_lines.append(f"- False negative rate (confident): {label_noise_data['false_neg_rate_confident']:.3%}")
+        md_lines.append(f"- False positive rate (confident): {label_noise_data['false_pos_rate_confident']:.3%}")
+        md_lines.append("**Interpretation**: High noise rate (>5%) suggests labels may be mislabeled; consider tightening TPSL geometry.")
+    else:
+        md_lines.append("- Insufficient data for label noise analysis")
+
+    md_lines.extend(
+        [
             "",
             "## Overall Model-Robustness Score",
             f"- Score (0-1): {robustness_score:.3f}",

@@ -365,19 +365,41 @@ class LiquidityClusterQualityAssessor:
         rvol_24 = df.get("rvol_24")
         intraday_close_ratio = df.get("intraday_close_ratio")
 
-        # NEW: Directional orderflow metrics
+        # CATEGORY 1: Directional orderflow metrics
         volume_direction_conviction = df.get("volume_direction_conviction")
         volume_direction_imbalance = df.get("volume_direction_imbalance")
 
-        # NEW: Trend persistence metrics
-        consecutive_direction_ratio = df.get("consecutive_direction_ratio")
-        trend_confirmation = df.get("trend_confirmation")
-        momentum_persistence = df.get("momentum_persistence")
+        # CATEGORY 2: Trend persistence metrics (3h and 6h windows)
+        trend_confirmation_6h = df.get("trend_confirmation_6h")
+        momentum_persistence_3h = df.get("momentum_persistence_3h")
+        consecutive_direction_ratio_6h = df.get("consecutive_direction_ratio_6h")
 
-        # NEW: Volatility-momentum correlation metrics
+        # CATEGORY 3: Volatility-momentum correlation metrics
         vol_momentum_sync = df.get("vol_momentum_sync")
         range_momentum_divergence = df.get("range_momentum_divergence")
         realized_vol_6h = df.get("realized_vol_6h")
+
+        # CATEGORY 4: Orderbook Pressure Proxy
+        volume_concentration_ratio_3h = df.get("volume_concentration_ratio_3h")
+        pressure_ratio = df.get("pressure_ratio")
+        kyle_lambda_proxy = df.get("kyle_lambda_proxy")
+
+        # CATEGORY 5: Reversal Patterns
+        reversal_intensity = df.get("reversal_intensity")
+        whipsaw_count = df.get("whipsaw_count")
+        reversal_conviction = df.get("reversal_conviction")
+
+        # CATEGORY 6: Multi-Timeframe Volatility Alignment
+        vol_clustering = df.get("vol_clustering")
+        vol_regime_change = df.get("vol_regime_change")
+        session_vol_percentile = df.get("session_vol_percentile")
+        intra_bar_vol_estimate = df.get("intra_bar_vol_estimate")
+
+        # CATEGORY 7: Information Efficiency Metrics
+        efficiency_ratio = df.get("efficiency_ratio")
+        return_autocorr_lag6 = df.get("return_autocorr_lag6")
+        volume_price_trend_sync = df.get("volume_price_trend_sync")
+        price_impact_ratio = df.get("price_impact_ratio")
 
         eps = 1e-9
 
@@ -431,15 +453,46 @@ class LiquidityClusterQualityAssessor:
                 cov_val = float(std_val / (abs(mean_val) + eps)) if mean_val != 0.0 else 0.0
                 return mean_val, std_val, cov_val
 
+            # Original effort metrics
             gr_mean, gr_std, gr_cov = _mean_std_cov(ghost_ratio)
             ar_mean, ar_std, ar_cov = _mean_std_cov(absorption_ratio)
             rv_mean, rv_std, rv_cov = _mean_std_cov(rvol_24)
             ic_mean, ic_std, ic_cov = _mean_std_cov(intraday_close_ratio)
 
-            # NEW metrics
+            # CATEGORY 1: Directional orderflow
             vdc_mean, vdc_std, vdc_cov = _mean_std_cov(volume_direction_conviction)
-            tc_mean, tc_std, tc_cov = _mean_std_cov(trend_confirmation)
+            vdi_mean, vdi_std, vdi_cov = _mean_std_cov(volume_direction_imbalance)
+
+            # CATEGORY 2: Trend persistence (6h window primary)
+            tc6_mean, tc6_std, tc6_cov = _mean_std_cov(trend_confirmation_6h)
+            mp3_mean, mp3_std, mp3_cov = _mean_std_cov(momentum_persistence_3h)
+            cdr6_mean, cdr6_std, cdr6_cov = _mean_std_cov(consecutive_direction_ratio_6h)
+
+            # CATEGORY 3: Volatility-momentum correlation
+            vms_mean, vms_std, vms_cov = _mean_std_cov(vol_momentum_sync)
             rmd_mean, rmd_std, rmd_cov = _mean_std_cov(range_momentum_divergence)
+
+            # CATEGORY 4: Orderbook Pressure Proxy
+            vcr_mean, vcr_std, vcr_cov = _mean_std_cov(volume_concentration_ratio_3h)
+            pr_mean, pr_std, pr_cov = _mean_std_cov(pressure_ratio)
+            kl_mean, kl_std, kl_cov = _mean_std_cov(kyle_lambda_proxy)
+
+            # CATEGORY 5: Reversal Patterns
+            ri_mean, ri_std, ri_cov = _mean_std_cov(reversal_intensity)
+            wc_mean, wc_std, wc_cov = _mean_std_cov(whipsaw_count)
+            rc_mean, rc_std, rc_cov = _mean_std_cov(reversal_conviction)
+
+            # CATEGORY 6: Multi-Timeframe Volatility
+            vol_c_mean, vol_c_std, vol_c_cov = _mean_std_cov(vol_clustering)
+            vol_r_mean, vol_r_std, vol_r_cov = _mean_std_cov(vol_regime_change)
+            svp_mean, svp_std, svp_cov = _mean_std_cov(session_vol_percentile)
+            ibv_mean, ibv_std, ibv_cov = _mean_std_cov(intra_bar_vol_estimate)
+
+            # CATEGORY 7: Information Efficiency
+            er_mean, er_std, er_cov = _mean_std_cov(efficiency_ratio)
+            ral_mean, ral_std, ral_cov = _mean_std_cov(return_autocorr_lag6)
+            vpts_mean, vpts_std, vpts_cov = _mean_std_cov(volume_price_trend_sync)
+            pir_mean, pir_std, pir_cov = _mean_std_cov(price_impact_ratio)
 
             if forward_returns is not None:
                 fr_mean, fr_std, fr_cov = _mean_std_cov(forward_returns)
@@ -448,6 +501,7 @@ class LiquidityClusterQualityAssessor:
 
             regime_metrics.update(
                 {
+                    # Original metrics
                     "ghost_ratio_mean": gr_mean,
                     "ghost_ratio_std": gr_std,
                     "ghost_ratio_cov": gr_cov,
@@ -460,15 +514,59 @@ class LiquidityClusterQualityAssessor:
                     "intraday_close_ratio_mean": ic_mean,
                     "intraday_close_ratio_std": ic_std,
                     "intraday_close_ratio_cov": ic_cov,
+                    # CATEGORY 1: Directional orderflow
                     "volume_direction_conviction_mean": vdc_mean,
                     "volume_direction_conviction_std": vdc_std,
                     "volume_direction_conviction_cov": vdc_cov,
-                    "trend_confirmation_mean": tc_mean,
-                    "trend_confirmation_std": tc_std,
-                    "trend_confirmation_cov": tc_cov,
+                    "volume_direction_imbalance_mean": vdi_mean,
+                    "volume_direction_imbalance_std": vdi_std,
+                    "volume_direction_imbalance_cov": vdi_cov,
+                    # CATEGORY 2: Trend persistence
+                    "trend_confirmation_6h_mean": tc6_mean,
+                    "trend_confirmation_6h_std": tc6_std,
+                    "trend_confirmation_6h_cov": tc6_cov,
+                    "momentum_persistence_3h_mean": mp3_mean,
+                    "momentum_persistence_3h_std": mp3_std,
+                    "momentum_persistence_3h_cov": mp3_cov,
+                    # CATEGORY 3: Volatility-momentum correlation
+                    "vol_momentum_sync_mean": vms_mean,
+                    "vol_momentum_sync_std": vms_std,
+                    "vol_momentum_sync_cov": vms_cov,
                     "range_momentum_divergence_mean": rmd_mean,
                     "range_momentum_divergence_std": rmd_std,
                     "range_momentum_divergence_cov": rmd_cov,
+                    # CATEGORY 4: Orderbook Pressure Proxy
+                    "volume_concentration_ratio_3h_mean": vcr_mean,
+                    "volume_concentration_ratio_3h_std": vcr_std,
+                    "volume_concentration_ratio_3h_cov": vcr_cov,
+                    "pressure_ratio_mean": pr_mean,
+                    "pressure_ratio_std": pr_std,
+                    "pressure_ratio_cov": pr_cov,
+                    "kyle_lambda_proxy_mean": kl_mean,
+                    "kyle_lambda_proxy_std": kl_std,
+                    "kyle_lambda_proxy_cov": kl_cov,
+                    # CATEGORY 5: Reversal Patterns
+                    "reversal_intensity_mean": ri_mean,
+                    "reversal_intensity_std": ri_std,
+                    "reversal_intensity_cov": ri_cov,
+                    "whipsaw_count_mean": wc_mean,
+                    "whipsaw_count_std": wc_std,
+                    "whipsaw_count_cov": wc_cov,
+                    # CATEGORY 6: Multi-Timeframe Volatility
+                    "vol_clustering_mean": vol_c_mean,
+                    "vol_clustering_std": vol_c_std,
+                    "vol_clustering_cov": vol_c_cov,
+                    "vol_regime_change_mean": vol_r_mean,
+                    "vol_regime_change_std": vol_r_std,
+                    "vol_regime_change_cov": vol_r_cov,
+                    # CATEGORY 7: Information Efficiency
+                    "efficiency_ratio_mean": er_mean,
+                    "efficiency_ratio_std": er_std,
+                    "efficiency_ratio_cov": er_cov,
+                    "return_autocorr_lag6_mean": ral_mean,
+                    "return_autocorr_lag6_std": ral_std,
+                    "return_autocorr_lag6_cov": ral_cov,
+                    # Forward returns
                     "forward_return_mean": fr_mean,
                     "forward_return_std": fr_std,
                     "forward_return_cov": fr_cov,
@@ -485,13 +583,21 @@ class LiquidityClusterQualityAssessor:
     ) -> Tuple[float, float]:
         """Compute CoV-based separation scores across regimes.
 
-        Now includes volume/orderflow metrics alongside effort (absorption, rvol, etc.)
+        Now includes all 7 liquidity feature categories:
+        1. Directional orderflow
+        2. Trend persistence
+        3. Volatility-momentum correlation
+        4. Orderbook pressure proxy
+        5. Reversal patterns
+        6. Multi-timeframe volatility alignment
+        7. Information efficiency metrics
         """
         effort_covs: List[float] = []
         returns_covs: List[float] = []
 
         for regime_id, metrics in per_regime_metrics.items():
             eff_components: List[float] = []
+
             # Original effort metrics (absorption, volume, price range)
             for key in [
                 "ghost_ratio_cov",
@@ -503,12 +609,45 @@ class LiquidityClusterQualityAssessor:
                 if isinstance(val, (int, float)):
                     eff_components.append(float(val))
 
-            # NEW: Volume and orderflow metrics
-            for key in [
-                "volume_direction_conviction_cov",
-                "trend_confirmation_cov",
-                "range_momentum_divergence_cov",
-            ]:
+            # CATEGORY 1: Directional orderflow
+            # Skip if not available yet; will be populated on next run
+            for key in ["volume_direction_conviction_cov", "volume_direction_imbalance_cov"]:
+                val = metrics.get(key)
+                if isinstance(val, (int, float)):
+                    eff_components.append(float(val))
+
+            # CATEGORY 2: Trend persistence (use 6h window as primary)
+            for key in ["trend_confirmation_6h_cov", "momentum_persistence_3h_cov"]:
+                val = metrics.get(key)
+                if isinstance(val, (int, float)):
+                    eff_components.append(float(val))
+
+            # CATEGORY 3: Volatility-momentum correlation
+            for key in ["vol_momentum_sync_cov", "range_momentum_divergence_cov"]:
+                val = metrics.get(key)
+                if isinstance(val, (int, float)):
+                    eff_components.append(float(val))
+
+            # CATEGORY 4: Orderbook pressure proxy
+            for key in ["pressure_ratio_cov", "kyle_lambda_proxy_cov"]:
+                val = metrics.get(key)
+                if isinstance(val, (int, float)):
+                    eff_components.append(float(val))
+
+            # CATEGORY 5: Reversal patterns (key indicator of Ghost vs Absorption)
+            for key in ["whipsaw_count_cov", "reversal_intensity_cov"]:
+                val = metrics.get(key)
+                if isinstance(val, (int, float)):
+                    eff_components.append(float(val))
+
+            # CATEGORY 6: Multi-timeframe volatility alignment
+            for key in ["vol_clustering_cov", "vol_regime_change_cov"]:
+                val = metrics.get(key)
+                if isinstance(val, (int, float)):
+                    eff_components.append(float(val))
+
+            # CATEGORY 7: Information efficiency metrics
+            for key in ["efficiency_ratio_cov", "return_autocorr_lag6_cov"]:
                 val = metrics.get(key)
                 if isinstance(val, (int, float)):
                     eff_components.append(float(val))

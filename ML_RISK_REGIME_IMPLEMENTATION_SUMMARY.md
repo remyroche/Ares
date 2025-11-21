@@ -1,5 +1,9 @@
 # ML Risk Regime Step - Implementation Summary
 
+## ✅ IMPLEMENTATION COMPLETE
+
+All improvements have been implemented and integrated into `ml_risk_regime_step.py`.
+
 ## Completed Implementations
 
 ### ✅ 1. Divergence Features Added (lines 1426-1469)
@@ -10,7 +14,10 @@
 - Skewness-Vol Interaction
 
 ### ✅ 2. Adaptive Scaling (line 1339-1341)
-- Changed from 0.01-0.99 to 0.10-0.90 quantiles
+- Changed from 0.01-0.99 to **0.05-0.95** quantiles (final adjustment)
+- Also updated in:
+  - `_calculate_winsorized_cv_between()` (line 2120-2121)
+  - `_calculate_winsorized_cv_within()` (line 2173-2174)
 
 ### ✅ 3. Helper Methods Implemented (lines 1908-2671)
 - `_drop_correlated_features()` - Remove features with >0.95 correlation
@@ -28,11 +35,9 @@
 
 ---
 
-## Remaining Implementations
+## ✅ 4. Core Orchestration Methods (IMPLEMENTED)
 
-### 📝 4. Add Two Core Orchestration Methods
-
-Add these methods after line 2671 (`_refine_labels_simulated_annealing`), before `_calculate_iqr_winsorization_percentiles`:
+### `_create_optimal_regime_labels()` (lines 2549-2704)
 
 ```python
     def _create_optimal_regime_labels(

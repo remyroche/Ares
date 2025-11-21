@@ -356,11 +356,28 @@ class LiquidityClusterQualityAssessor:
         labels: pd.Series,
         forward_returns: Optional[pd.Series] = None,
     ) -> Dict[int, Dict[str, float]]:
-        """Calculate per-regime liquidity metrics including std and CoV."""
+        """Calculate per-regime liquidity metrics including std and CoV.
+
+        Now includes directional orderflow, trend persistence, and vol-momentum metrics.
+        """
         ghost_ratio = df.get("ghost_ratio")
         absorption_ratio = df.get("absorption_ratio")
         rvol_24 = df.get("rvol_24")
         intraday_close_ratio = df.get("intraday_close_ratio")
+
+        # NEW: Directional orderflow metrics
+        volume_direction_conviction = df.get("volume_direction_conviction")
+        volume_direction_imbalance = df.get("volume_direction_imbalance")
+
+        # NEW: Trend persistence metrics
+        consecutive_direction_ratio = df.get("consecutive_direction_ratio")
+        trend_confirmation = df.get("trend_confirmation")
+        momentum_persistence = df.get("momentum_persistence")
+
+        # NEW: Volatility-momentum correlation metrics
+        vol_momentum_sync = df.get("vol_momentum_sync")
+        range_momentum_divergence = df.get("range_momentum_divergence")
+        realized_vol_6h = df.get("realized_vol_6h")
 
         eps = 1e-9
 
@@ -386,6 +403,15 @@ class LiquidityClusterQualityAssessor:
                         "intraday_close_ratio_mean": 0.0,
                         "intraday_close_ratio_std": 0.0,
                         "intraday_close_ratio_cov": 0.0,
+                        "volume_direction_conviction_mean": 0.0,
+                        "volume_direction_conviction_std": 0.0,
+                        "volume_direction_conviction_cov": 0.0,
+                        "trend_confirmation_mean": 0.0,
+                        "trend_confirmation_std": 0.0,
+                        "trend_confirmation_cov": 0.0,
+                        "range_momentum_divergence_mean": 0.0,
+                        "range_momentum_divergence_std": 0.0,
+                        "range_momentum_divergence_cov": 0.0,
                         "forward_return_mean": 0.0,
                         "forward_return_std": 0.0,
                         "forward_return_cov": 0.0,
@@ -410,6 +436,11 @@ class LiquidityClusterQualityAssessor:
             rv_mean, rv_std, rv_cov = _mean_std_cov(rvol_24)
             ic_mean, ic_std, ic_cov = _mean_std_cov(intraday_close_ratio)
 
+            # NEW metrics
+            vdc_mean, vdc_std, vdc_cov = _mean_std_cov(volume_direction_conviction)
+            tc_mean, tc_std, tc_cov = _mean_std_cov(trend_confirmation)
+            rmd_mean, rmd_std, rmd_cov = _mean_std_cov(range_momentum_divergence)
+
             if forward_returns is not None:
                 fr_mean, fr_std, fr_cov = _mean_std_cov(forward_returns)
             else:
@@ -429,6 +460,15 @@ class LiquidityClusterQualityAssessor:
                     "intraday_close_ratio_mean": ic_mean,
                     "intraday_close_ratio_std": ic_std,
                     "intraday_close_ratio_cov": ic_cov,
+                    "volume_direction_conviction_mean": vdc_mean,
+                    "volume_direction_conviction_std": vdc_std,
+                    "volume_direction_conviction_cov": vdc_cov,
+                    "trend_confirmation_mean": tc_mean,
+                    "trend_confirmation_std": tc_std,
+                    "trend_confirmation_cov": tc_cov,
+                    "range_momentum_divergence_mean": rmd_mean,
+                    "range_momentum_divergence_std": rmd_std,
+                    "range_momentum_divergence_cov": rmd_cov,
                     "forward_return_mean": fr_mean,
                     "forward_return_std": fr_std,
                     "forward_return_cov": fr_cov,
@@ -443,17 +483,31 @@ class LiquidityClusterQualityAssessor:
         self,
         per_regime_metrics: Dict[int, Dict[str, float]],
     ) -> Tuple[float, float]:
-        """Compute CoV-based separation scores across regimes."""
+        """Compute CoV-based separation scores across regimes.
+
+        Now includes volume/orderflow metrics alongside effort (absorption, rvol, etc.)
+        """
         effort_covs: List[float] = []
         returns_covs: List[float] = []
 
         for regime_id, metrics in per_regime_metrics.items():
             eff_components: List[float] = []
+            # Original effort metrics (absorption, volume, price range)
             for key in [
                 "ghost_ratio_cov",
                 "absorption_ratio_cov",
                 "rvol_24_cov",
                 "intraday_close_ratio_cov",
+            ]:
+                val = metrics.get(key)
+                if isinstance(val, (int, float)):
+                    eff_components.append(float(val))
+
+            # NEW: Volume and orderflow metrics
+            for key in [
+                "volume_direction_conviction_cov",
+                "trend_confirmation_cov",
+                "range_momentum_divergence_cov",
             ]:
                 val = metrics.get(key)
                 if isinstance(val, (int, float)):

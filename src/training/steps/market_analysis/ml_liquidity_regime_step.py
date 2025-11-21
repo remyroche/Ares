@@ -488,6 +488,159 @@ class MLLiquidityRegimeStep(BaseStep):
                 hi = series.quantile(winsor_upper)
                 df[col] = df[col].clip(lower=lo, upper=hi)
 
+        # ============================================================================
+        # ENHANCEMENT 1: Directional Orderflow Features (OHLCV-only approximation)
+        # ============================================================================
+        # Approximate bid-ask imbalance using close position in range and volume distribution
+
+        # Close Location in Range: 0 = closed at low, 1 = closed at high
+        df["close_position_range"] = (df["close"] - df["low"]) / (df["range"] + eps)
+        df["close_position_range"] = df["close_position_range"].clip(0, 1)
+
+        # Volume-weighted directional intensity
+        # If close near high = strong buying, if close near low = strong selling
+        df["volume_buyer_intensity"] = df["volume"] * df["close_position_range"]
+        df["volume_seller_intensity"] = df["volume"] * (1.0 - df["close_position_range"])
+
+        # Directional volume imbalance (approximate bid-ask)
+        # Range: [-1, 1] where 1 = all buying, -1 = all selling
+        total_dir_volume = df["volume_buyer_intensity"] + df["volume_seller_intensity"]
+        df["volume_direction_imbalance"] = (
+            (df["volume_buyer_intensity"] - df["volume_seller_intensity"]) / (total_dir_volume + eps)
+        )
+
+        # Directional conviction: strength of one-sided flow
+        # Higher = more one-sided (Trend), lower = balanced (Apathy)
+        df["volume_direction_conviction"] = df["volume_direction_imbalance"].abs()
+
+        # Order flow persistence: does direction persist across bars?
+        df["direction_change"] = (
+            (df["close"] > df["close"].shift(1)).astype(float) -
+            (df["close"] < df["close"].shift(1)).astype(float)
+        )
+        df["volume_direction_consistency"] = (
+            df["volume_direction_imbalance"] * df["direction_change"]
+        )
+
+        # Smooth orderflow metrics
+        if config.get("liquidity_use_ewm_features", True):
+            df["volume_direction_imbalance_ewm6"] = (
+                df["volume_direction_imbalance"].ewm(span=6, adjust=False).mean()
+            )
+            df["volume_direction_conviction_ewm6"] = (
+                df["volume_direction_conviction"].ewm(span=6, adjust=False).mean()
+            )
+
+        # ============================================================================
+        # ENHANCEMENT 2: Trend Persistence Metrics (Directional Autocorrelation & Momentum)
+        # ============================================================================
+        # Consecutive bars in same direction (trend persistence)
+        direction_sign = np.sign(df["return_1h"])
+        direction_sign = direction_sign.replace(0, np.nan)  # exclude flat bars
+
+        # Count consecutive bars with same direction
+        same_direction = (direction_sign == direction_sign.shift(1)).astype(float)
+        df["consecutive_direction_bars"] = same_direction.rolling(window=6, min_periods=1).sum()
+        df["consecutive_direction_ratio"] = df["consecutive_direction_bars"] / 6.0  # 0-1 scale
+
+        # Directional autocorrelation (lag-1): do moves persist?
+        df["return_autocorr_lag1"] = df["return_1h"].rolling(window=6, min_periods=2).apply(
+            lambda x: x.iloc[-1] * x.iloc[-2] if len(x) >= 2 else 0, raw=False
+        )
+        df["abs_return_autocorr_lag1"] = df["abs_return_1h"].rolling(window=6, min_periods=2).apply(
+            lambda x: (x.iloc[-1] * x.iloc[-2]) if len(x) >= 2 else 0, raw=False
+        )
+
+        # Momentum alignment: price move aligned with volume direction?
+        df["momentum"] = df["return_1h"] * df["volume"]  # directional momentum
+        df["momentum_normalized"] = df["momentum"] / (df["momentum"].abs().rolling(window=24).mean() + eps)
+
+        # Momentum persistence: does momentum amplify or decay?
+        momentum_ma_6 = df["return_1h"].rolling(window=6, min_periods=2).mean()
+        momentum_ma_12 = df["return_1h"].rolling(window=12, min_periods=4).mean()
+        df["momentum_persistence"] = (momentum_ma_6 - momentum_ma_12) / (abs(momentum_ma_12) + eps)
+
+        # Momentum direction alignment with volume conviction
+        df["momentum_volume_alignment"] = (
+            np.sign(df["return_1h"]) * df["volume_direction_conviction"]
+        )
+
+        # Trend confirmation: sustained directional move with supporting volume
+        df["trend_confirmation"] = (
+            df["consecutive_direction_ratio"] * df["volume_direction_conviction"]
+        )
+
+        # Smooth persistence metrics
+        if config.get("liquidity_use_ewm_features", True):
+            df["consecutive_direction_ratio_ewm6"] = (
+                df["consecutive_direction_ratio"].ewm(span=6, adjust=False).mean()
+            )
+            df["momentum_persistence_ewm6"] = (
+                df["momentum_persistence"].ewm(span=6, adjust=False).mean()
+            )
+            df["trend_confirmation_ewm6"] = (
+                df["trend_confirmation"].ewm(span=6, adjust=False).mean()
+            )
+
+        # ============================================================================
+        # ENHANCEMENT 3: Volatility-Momentum Correlation (Vol Spikes vs Move Direction)
+        # ============================================================================
+        # Realized volatility (std of returns over windows)
+        realized_vol_6h = df["return_1h"].rolling(window=6, min_periods=2).std()
+        realized_vol_12h = df["return_1h"].rolling(window=12, min_periods=4).std()
+        realized_vol_24h = df["return_1h"].rolling(window=24, min_periods=8).std()
+
+        df["realized_vol_6h"] = realized_vol_6h
+        df["realized_vol_12h"] = realized_vol_12h
+        df["realized_vol_24h"] = realized_vol_24h
+
+        # Vol ratio changes (increasing or decreasing vol)
+        df["vol_ratio_6h_12h"] = realized_vol_6h / (realized_vol_12h + eps)  # recent vs intermediate
+        df["vol_ratio_12h_24h"] = realized_vol_12h / (realized_vol_24h + eps)  # intermediate vs structural
+
+        # Volatility spike detection (vol > rolling mean)
+        vol_ma_12 = df["abs_return_1h"].rolling(window=12, min_periods=4).mean()
+        df["vol_spike_ratio"] = df["abs_return_1h"] / (vol_ma_12 + eps)
+        df["is_vol_spike"] = (df["vol_spike_ratio"] > 1.5).astype(float)  # spike threshold
+
+        # Momentum magnitude vs volatility (conviction)
+        abs_momentum = df["return_1h"].abs()
+        df["momentum_vol_alignment"] = abs_momentum / (realized_vol_6h + eps)  # 0-1 scale when normalized
+
+        # Volatility-momentum correlation: do vol and momentum move together?
+        # 6-bar rolling correlation
+        df["vol_momentum_corr_6"] = df["abs_return_1h"].rolling(window=6, min_periods=2).apply(
+            lambda x: x.corr(df["volume"].iloc[x.index] / (df["volume"].iloc[x.index].mean() + eps))
+            if len(x) >= 2 else 0, raw=False
+        )
+
+        # Vol-momentum divergence: wicks without body (Ghost signature)
+        df["range_momentum_divergence"] = (
+            df["range"] - df["abs_return_1h"]
+        ) / (df["range"] + eps)  # high = lots of wicks, low = body-dominated
+
+        # Momentum-range efficiency (similar to emv but momentum-focused)
+        df["momentum_efficiency"] = (
+            df["momentum"] / (df["range"] * df["volume"] + eps)
+        )
+
+        # Vol-momentum synchronization: are spikes aligned with directional moves?
+        df["vol_momentum_sync"] = (
+            df["is_vol_spike"] * df["volume_direction_conviction"]
+        )  # 1 = vol spike with conviction, 0 = vol spike but no direction
+
+        # Smooth vol-momentum metrics
+        if config.get("liquidity_use_ewm_features", True):
+            df["vol_spike_ratio_ewm6"] = (
+                df["vol_spike_ratio"].ewm(span=6, adjust=False).mean()
+            )
+            df["momentum_vol_alignment_ewm6"] = (
+                df["momentum_vol_alignment"].ewm(span=6, adjust=False).mean()
+            )
+            df["range_momentum_divergence_ewm6"] = (
+                df["range_momentum_divergence"].ewm(span=6, adjust=False).mean()
+            )
+
         return df
 
     def _compute_kde_threshold(self, series: pd.Series, config: Dict[str, Any], prefix: str) -> float:

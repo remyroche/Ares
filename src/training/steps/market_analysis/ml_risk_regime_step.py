@@ -1183,28 +1183,30 @@ class MLRiskRegimeStep(BaseStep):
 
         # ============ 10. ENHANCED: Multi-Scale Volatility Analysis ============
         # Use multiple volatility windows to separate regimes by persistence
+        # Windows aligned to trading duration: 1h (immediate), 3h (trade-matched), 6h (structural context)
 
         vol_1h = returns.rolling(window=1).std()
+        vol_3h = returns.rolling(window=3).std()
         vol_6h = returns.rolling(window=6).std()
-        vol_24h = returns.rolling(window=24).std()
 
         result_df['vol_1h'] = vol_1h
+        result_df['vol_3h'] = vol_3h
         result_df['vol_6h'] = vol_6h
-        result_df['vol_24h'] = vol_24h
 
         # Vol ratios for regime separation
-        vol_ratio_1h_6h = vol_1h / (vol_6h + 1e-9)  # High = stress/transition
-        vol_ratio_1h_24h = vol_1h / (vol_24h + 1e-9)  # Extreme values = crash
-        vol_ratio_6h_24h = vol_6h / (vol_24h + 1e-9)  # Medium term persistence
+        vol_ratio_1h_3h = vol_1h / (vol_3h + 1e-9)  # Stress detection - immediate vs trade-matched
+        vol_ratio_3h_6h = vol_3h / (vol_6h + 1e-9)  # Persistence detection - trade-matched vs structural
+        vol_ratio_1h_6h = vol_1h / (vol_6h + 1e-9)  # Overall urgency - immediate vs structural
 
+        result_df['vol_ratio_1h_3h'] = vol_ratio_1h_3h
+        result_df['vol_ratio_3h_6h'] = vol_ratio_3h_6h
         result_df['vol_ratio_1h_6h'] = vol_ratio_1h_6h
-        result_df['vol_ratio_1h_24h'] = vol_ratio_1h_24h
-        result_df['vol_ratio_6h_24h'] = vol_ratio_6h_24h
 
         # EWMA smoothed ratios for stability
         for period in ewma_periods:
+            result_df[f'vol_ratio_1h_3h_ewma{period}'] = vol_ratio_1h_3h.ewm(span=period, adjust=False).mean()
+            result_df[f'vol_ratio_3h_6h_ewma{period}'] = vol_ratio_3h_6h.ewm(span=period, adjust=False).mean()
             result_df[f'vol_ratio_1h_6h_ewma{period}'] = vol_ratio_1h_6h.ewm(span=period, adjust=False).mean()
-            result_df[f'vol_ratio_1h_24h_ewma{period}'] = vol_ratio_1h_24h.ewm(span=period, adjust=False).mean()
 
         # ============ 11. ENHANCED: Price Action Features ============
 

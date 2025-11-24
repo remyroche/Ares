@@ -1,4 +1,4 @@
-# Path Geometry Regime Detection Architecture
+# Path Geometry Regime Detection Architecture (GMM-Direct)
 
 **Date**: 2025-11-24
 **Status**: Production Ready
@@ -8,13 +8,14 @@
 
 ## Executive Summary
 
-The previous **Teacher-Student** architecture (GMM → XGBoost) suffered from catastrophic class collapse:
-- **Teacher (GMM/SA)**: Created excellent 4-regime structure (22-27% each, clear geometry)
-- **Student (XGBoost)**: Collapsed to 87.5% → regime 0, 12.5% → regime 2, 0% → regimes 1,3
+This system uses **GMM-Direct** architecture with **7 core geometry features** for robust regime detection:
 
-**Root Cause**: XGBoost cannot replicate GMM's soft, high-dimensional probabilistic boundaries.
-
-**Solution**: Eliminate the XGBoost student entirely and use the GMM model directly for live trading inference.
+- **No XGBoost student** (removed entirely to eliminate class collapse risk)
+- **Direct GMM inference** using teacher model only
+- **7 focused features**: hurst_exponent_path, path_trend_r2, path_efficiency_return_3h, quadratic_fit_curvature, linear_reg_slope, path_center_of_gravity, body_range_ratio
+- **Zero information loss** - no student compression
+- **Fast inference** (<1ms GMM.predict_proba)
+- **Balanced regime distribution** (no collapse)
 
 ---
 
@@ -52,11 +53,9 @@ Live Trading Phase:
 
 ---
 
-## Feature Updates: Geometry-Focused
+## Feature Set: 7 Core Path Geometry Features ONLY
 
-The updated feature set prioritizes **Price Path Geometry** over PnL metrics:
-
-### Core Geometry Features (for HPO tuning):
+The system uses **exactly 7 features** - no more, no less:
 
 | Concept       | Feature                      | Description                           |
 |---------------|------------------------------|---------------------------------------|
@@ -68,15 +67,13 @@ The updated feature set prioritizes **Price Path Geometry** over PnL metrics:
 | **Timing**     | `path_center_of_gravity`     | Temporal center of path               |
 | **Morphology** | `body_range_ratio`           | Candle body vs range ratio            |
 
-### Supporting Structural Features (assist detection, not for HPO):
+**No supporting features.** These 7 are used for GMM training, WCoV analysis, and feature impact reports.
 
-- `path_fractal_dimension`: Complexity measure
-- `traffic_overlap_3h`: Path overlap characteristic
-- `path_efficiency_dropping`: Efficiency drop pattern
-- `path_alpha_state`: Alpha state indicator
-- `path_directional_eff_3h`: Directional efficiency
-
-**Key Change**: PnL metrics (returns_1h, returns_3h, sharpe_like_3h) are **de-emphasized** in quadrant WCoV analysis. The goal is to identify **geometry structure**, not chase returns.
+**Key Changes from Previous Version**:
+- Removed all supporting/secondary features
+- Removed PnL metrics entirely (returns_1h, returns_3h, sharpe_like_3h)
+- Removed path_fractal_dimension, traffic_overlap_3h, path_efficiency_dropping, path_alpha_state
+- Focus exclusively on geometry structure, not returns
 
 ---
 
@@ -339,7 +336,7 @@ ml_path_quadrant_quality_ETHUSDT_15m_20251124_010320.csv
 
 ---
 
-## Advantages Over Previous Architecture
+## Advantages of GMM-Direct Architecture
 
 | Aspect                | Old (GMM → XGBoost)       | New (GMM-Direct)          |
 |-----------------------|---------------------------|---------------------------|
@@ -347,9 +344,48 @@ ml_path_quadrant_quality_ETHUSDT_15m_20251124_010320.csv
 | **Information Loss**  | High (student compression)| Zero (no compression)     |
 | **Inference Speed**   | ~5ms (XGBoost)            | <1ms (GMM.predict_proba)  |
 | **Confidence Scores** | Binary (yes/no)           | Probabilistic (0-1)       |
-| **Model Complexity**  | 2 models + HPO            | 1 model (GMM only)        |
-| **Risk of Collapse**  | High (student fails)      | Zero (uses teacher)       |
-| **Interpretability**  | Low (XGBoost black box)   | High (distance to centers)|
+| **Model Complexity**  | 2 models + XGBoost HPO    | 1 model (GMM only)        |
+| **Risk of Collapse**  | High (student fails)      | Zero (teacher only)       |
+| **Interpretability**  | Low (XGBoost black box)   | High (Gaussian clusters)  |
+| **Feature Count**     | 9-20 features             | Exactly 7 features        |
+| **Code Complexity**   | ~5000 lines XGBoost code  | Removed (simpler)         |
+
+---
+
+## GMM Feature Impact Analysis
+
+The new architecture includes comprehensive feature impact reporting that analyzes how each of the 7 features contributes to regime separation:
+
+### Metrics Computed:
+
+1. **Between-Regime Variance**: How much each feature varies across different regimes (higher = more separation)
+2. **Within-Regime Variance**: How stable each feature is within each regime (lower = more cohesion)
+3. **Separation Ratio**: Between/Within (higher = stronger discriminator)
+4. **CV Between**: Coefficient of variation of regime means
+
+### Report Output:
+
+After training, a markdown report is generated:
+```
+outcomes/{symbol}_{exchange}_{timeframe}_GMM_Feature_Impact_{timestamp}.md
+```
+
+**Example Output**:
+```markdown
+| Rank | Feature | Separation Ratio | Between Var | Within Var |
+|------|---------|------------------|-------------|------------|
+| 1 | body_range_ratio | 15.23 | 0.0847 | 0.0056 |
+| 2 | hurst_exponent_path | 8.91 | 0.0421 | 0.0047 |
+| 3 | path_trend_r2 | 6.45 | 0.0892 | 0.0138 |
+...
+```
+
+**Interpretation**:
+- **Separation Ratio > 10**: Dominant regime driver
+- **Separation Ratio > 5**: Strong discriminator
+- **Separation Ratio > 1**: Contributes to separation
+
+This replaces XGBoost feature importance and directly measures GMM cluster quality.
 
 ---
 

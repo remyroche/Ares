@@ -1,20 +1,33 @@
 """
-ML Risk Regime Step
+ML Path Regime Step (GMM-Direct Architecture)
 
-This step consumes 1h OHLCV data to construct risk-based regime labels using
-forward volatility and tail risk metrics with GMM + Simulated Annealing optimization.
+This step constructs Price Path Geometry regime labels using GMM + Simulated Annealing
+optimization with 7 core geometry features.
 
-Primary Goal: Distinguish between turbulent, calm, crash-prone, volatile but trending,
-and recovering markets using unsupervised learning on risk features.
+Primary Goal: Distinguish between different price path structures (roughness, linearity,
+directness, shape, steepness, timing, morphology) using unsupervised GMM clustering.
+
+Key Features:
+- Uses ONLY 7 path geometry features (no PnL chase)
+- GMM-Direct inference (NO XGBoost student classifier)
+- Zero risk of class collapse
+- Probabilistic regime assignments
+- Fast inference suitable for live trading
 
 Responsibilities:
-- Load 1h OHLCV market data.
-- Align all series on a common DatetimeIndex.
-- Generate comprehensive risk features (volatility, tail risk, acceleration).
-- Create optimal regime labels using GMM + Simulated Annealing (100% risk CV optimization).
-- Train XGBoost multi-class classifier on optimized labels.
-- Apply asymmetric hysteresis (instant danger detection, delayed safety confirmation).
-- Save risk regime outputs to versioned_artifacts for downstream consumption.
+- Load 15m OHLCV market data
+- Generate 7 core path geometry features:
+  * hurst_exponent_path (Roughness)
+  * path_trend_r2 (Linearity)
+  * path_efficiency_return_3h (Directness)
+  * quadratic_fit_curvature (Shape/Bend)
+  * linear_reg_slope (Steepness)
+  * path_center_of_gravity (Timing)
+  * body_range_ratio (Morphology)
+- Create optimal regime labels using GMM + Simulated Annealing
+- Persist GMM model for direct live trading inference
+- Generate feature impact analysis reports
+- Save regime outputs to versioned_artifacts
 """
 
 import logging
@@ -271,28 +284,23 @@ class MLPathRegimeStep(BaseStep):
                 raise ValueError("Risk dataset is empty after feature generation")
 
             # ------------------------------------------------------------------
-            # 6) NEW: XGBoost Multi-Class Regime Classifier (100% Risk-Driven)
+            # 6) GMM-Direct Regime Detection (No XGBoost Student)
             # ------------------------------------------------------------------
-            model = None
-            regime_probs: Optional[np.ndarray] = None
             regime_labels: Optional[np.ndarray] = None
             training_metrics: Dict[str, Any] = {}
             regime_stats_df: Optional[pd.DataFrame] = None
-            model_path: Optional[str] = None
             regime_stats_path: Optional[str] = None
             regime_col_name: Optional[str] = None
             risk_quality_metrics: Optional[ClusterQualityMetrics] = None
             risk_quality_path: Optional[str] = None
-            feature_pipeline_artifacts: Optional[Dict[str, Any]] = None
-            feature_pipeline_path: Optional[str] = None
 
             tprint_info("=" * 80)
-            tprint_info("🎯 NEW APPROACH: XGBoost Multi-Class Regime Classifier (100% Risk CV)")
+            tprint_info("🎯 GMM-DIRECT REGIME DETECTION (No Student Classifier)")
             tprint_info("=" * 80)
 
             try:
-                # 6a) Create optimal regime labels (GMM + SA, NO temporal smoothing)
-                tprint_info("📊 Step 1/2: Creating optimal regime labels...")
+                # 6a) Create optimal regime labels using GMM + SA (NO XGBoost student)
+                tprint_info("📊 Creating optimal regime labels via GMM + SA...")
                 regime_labels_optimized, label_metrics = self._create_optimal_regime_labels(
                     risk_df=risk_df,
                     config=config
@@ -300,94 +308,31 @@ class MLPathRegimeStep(BaseStep):
 
                 # Store label quality metrics
                 training_metrics['label_quality'] = label_metrics
+                regime_labels = regime_labels_optimized
 
-                # 6b) Train XGBoost multi-class classifier on optimized labels
-                tprint_info("🤖 Step 2/2: Training XGBoost regime classifier...")
-                model, regime_probs, classifier_metrics = self._train_regime_classifier(
-                    risk_df=risk_df,
-                    regime_labels=regime_labels_optimized,
-                    config=config,
-                    label_metrics=label_metrics,
-                )
-
-                training_metrics.update(classifier_metrics)
-
-                # 6b.1) Save feature importance data as artifacts
+                # 6b) Generate GMM-based feature impact analysis
                 try:
-                    if 'feature_importance_detailed' in classifier_metrics:
-                        importance_data = classifier_metrics['feature_importance_detailed']
+                    tprint_info("📊 Analyzing GMM feature impact on regime separation...")
+                    gmm_feature_impact = self._analyze_gmm_feature_impact(
+                        risk_df=risk_df,
+                        regime_labels=regime_labels_optimized,
+                        label_metrics=label_metrics,
+                        config=config,
+                    )
+                    training_metrics['gmm_feature_impact'] = gmm_feature_impact
 
-                        # Save global importance
-                        global_importance_df = pd.DataFrame(importance_data['global'])
-                        global_importance_path = self._save_artifact(
-                            data={'importance': global_importance_df},
-                            artifact_name="xgboost_feature_importance_global_15m",
-                            artifact_type="model",
-                            data_category="analysis",
-                            metadata={
-                                "symbol": symbol,
-                                "exchange": exchange,
-                                "timeframe": regime_timeframe,
-                                "n_features": len(global_importance_df),
-                                "model_type": "xgboost_multiclass"
-                            }
-                        )
-                        tprint_info(f"💾 Saved global feature importance: {global_importance_path}")
+                    # Save feature impact report
+                    impact_report_path = self._generate_gmm_feature_impact_report(
+                        gmm_feature_impact=gmm_feature_impact,
+                        label_metrics=label_metrics,
+                        symbol=symbol,
+                        exchange=exchange,
+                        timeframe=regime_timeframe,
+                    )
+                    tprint_success(f"📄 GMM feature impact report saved: {impact_report_path}")
 
-                        # Save per-regime importance
-                        per_regime_dfs = {}
-                        for regime_id, regime_data in importance_data['per_regime'].items():
-                            per_regime_dfs[f'regime_{regime_id}'] = pd.DataFrame(regime_data)
-
-                        if per_regime_dfs:
-                            per_regime_importance_path = self._save_artifact(
-                                data=per_regime_dfs,
-                                artifact_name="xgboost_feature_importance_per_regime_15m",
-                                artifact_type="model",
-                                data_category="analysis",
-                                metadata={
-                                    "symbol": symbol,
-                                    "exchange": exchange,
-                                    "timeframe": regime_timeframe,
-                                    "n_regimes": len(per_regime_dfs),
-                                    "model_type": "xgboost_multiclass"
-                                }
-                            )
-                            tprint_info(f"💾 Saved per-regime feature importance: {per_regime_importance_path}")
-
-                        # Generate comprehensive markdown report in outcomes/
-                        tprint_info("📊 Generating comprehensive feature importance report...")
-
-                        # Reconstruct importance_data from detailed dict
-                        importance_data_for_report = {
-                            'global': pd.DataFrame(importance_data['global']),
-                            'per_regime': {
-                                regime_id: pd.DataFrame(regime_data)
-                                for regime_id, regime_data in importance_data['per_regime'].items()
-                            },
-                            'n_regimes': len(importance_data['per_regime'])
-                        }
-
-                        report_path = self._generate_feature_importance_report(
-                            importance_data=importance_data_for_report,
-                            symbol=symbol,
-                            exchange=exchange,
-                            timeframe=regime_timeframe,
-                            classifier_metrics=classifier_metrics,
-                            label_metrics=label_metrics
-                        )
-                        tprint_success(f"📄 Feature importance report saved: {report_path}")
-
-                        # Update main diagnostics markdown with feature importance from THIS run
-                        self._update_risk_diagnostics_feature_importance(
-                            symbol=symbol,
-                            exchange=exchange,
-                            regime_timeframe=regime_timeframe,
-                            classifier_metrics=classifier_metrics,
-                        )
-
-                except Exception as save_exc:
-                    tprint_warning(f"Failed to save feature importance artifacts/report: {save_exc}")
+                except Exception as impact_exc:
+                    tprint_warning(f"Failed to generate GMM feature impact analysis (non-fatal): {impact_exc}")
 
                 try:
                     tprint_info("📊 Generating detailed WCoV regime quality report...")
@@ -395,7 +340,7 @@ class MLPathRegimeStep(BaseStep):
                         df=risk_df,
                         regime_labels=regime_labels_optimized,
                         config=config,
-                        classifier_metrics=classifier_metrics,
+                        classifier_metrics=None,  # No XGBoost classifier
                     )
                     if wcov_md_path:
                         tprint_success(
@@ -410,26 +355,14 @@ class MLPathRegimeStep(BaseStep):
                         f"Failed to generate WCoV regime quality report (non-fatal): {wcov_exc}"
                     )
 
-                # 6c) Hard predictions (argmax of probabilities)
-                regime_labels = np.argmax(regime_probs, axis=1)
-
-                # 6d) Add predictions to dataframe
-                risk_df['risk_regime'] = regime_labels
+                # 6c) Add GMM labels to dataframe
+                risk_df['risk_regime'] = regime_labels_optimized
                 regime_col_name = 'risk_regime'
-
-                # Add probabilities
-                n_regimes = regime_probs.shape[1]
-                for i in range(n_regimes):
-                    risk_df[f'risk_regime_{i}_prob'] = regime_probs[:, i]
-
-                # Also store training labels for comparison/analysis
-                risk_df['risk_regime_training_label'] = regime_labels_optimized
 
                 tprint_success(
                     f"=" * 80 + "\n"
-                    f"✅ REGIME CLASSIFICATION COMPLETE\n"
+                    f"✅ GMM-DIRECT REGIME DETECTION COMPLETE\n"
                     f"=" * 80 + "\n"
-                    f"  Classifier Accuracy: {classifier_metrics['val_accuracy']:.3f}\n"
                     f"  Label Quality Score: {label_metrics.get('quality_score', 0):.3f}\n"
                     f"  Risk CV Ratio: {label_metrics.get('risk_cv_ratio', 0):.3f}\n"
                     f"  Wasserstein Distance: {label_metrics.get('wasserstein_distance', 0):.3f}\n"
@@ -460,11 +393,10 @@ class MLPathRegimeStep(BaseStep):
                 )
 
             except Exception as exc:
-                tprint_error(f"❌ XGBoost regime classification failed: {exc}")
+                tprint_error(f"❌ GMM-Direct regime detection failed: {exc}")
                 import traceback
                 traceback.print_exc()
-                # Fast-fail: do not fall back to heuristic volatility-based regimes
-                # to avoid producing inconsistent artifacts without proper probabilities.
+                # Fast-fail: raise exception to avoid producing inconsistent artifacts
                 raise
 
             # Ensure we have a valid regime column name for downstream quality assessment
@@ -659,23 +591,8 @@ class MLPathRegimeStep(BaseStep):
                     f"Failed to save ML path regimes on timeframe {regime_timeframe}: {probs_exc}"
                 )
 
-            # Save trained model if available
-            if model is not None:
-                try:
-                    tprint_info("💾 Saving XGBoost path model via artifact router")
-                    model_path = self._save_artifact(
-                        data=model,
-                        artifact_name="ml_risk_model_15m",
-                        artifact_type="model",
-                        metadata={
-                            "symbol": symbol,
-                            "exchange": exchange,
-                            "timeframe": regime_timeframe,
-                            "model_type": "xgboost",
-                        },
-                    )
-                except Exception as save_model_exc:
-                    tprint_warning(f"Failed to save path model artifact: {save_model_exc}")
+            # Note: GMM model is already saved in _create_optimal_regime_labels
+            # No XGBoost model to save in GMM-Direct architecture
 
             # Persist feature pipeline (feature list + scaler state) for live usage
             if feature_pipeline_artifacts is not None:
@@ -2140,15 +2057,16 @@ class MLPathRegimeStep(BaseStep):
         """
         n_regimes = int(config.get("risk_n_regimes", 4))
 
+        # Core 7 Path Geometry Features (user-specified)
+        # These are the ONLY features used for GMM regime detection
         primary_risk_cols = [
-            "path_ker_3h",
-            "path_ker_6h",
-            "body_range_ratio",
-            "traffic_overlap_3h",
-            "path_fractal_dimension",
-            "hurst_exponent_path",
-            "path_efficiency_return_3h",
-            "path_directional_eff_3h",
+            "hurst_exponent_path",         # Roughness
+            "path_trend_r2",               # Linearity
+            "path_efficiency_return_3h",   # Directness
+            "quadratic_fit_curvature",     # Shape/Bend
+            "linear_reg_slope",            # Steepness
+            "path_center_of_gravity",      # Timing
+            "body_range_ratio",            # Morphology
         ]
 
         # Filter to available primary risk columns
@@ -2753,6 +2671,267 @@ class MLPathRegimeStep(BaseStep):
         )
 
         return full_labels, metrics
+
+    def _analyze_gmm_feature_impact(
+        self,
+        risk_df: pd.DataFrame,
+        regime_labels: np.ndarray,
+        label_metrics: Dict[str, Any],
+        config: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        Analyze how each feature impacts GMM regime separation.
+
+        This method computes:
+        1. Between-regime variance (how much each feature varies across regimes)
+        2. Within-regime variance (how stable each feature is within regimes)
+        3. Separation ratio (between/within)
+        4. Feature contribution to regime definition
+
+        Args:
+            risk_df: DataFrame with features
+            regime_labels: GMM-assigned regime labels
+            label_metrics: Metrics from GMM label creation
+            config: Configuration dict
+
+        Returns:
+            Dict with feature impact metrics
+        """
+        # Get the features used in GMM
+        primary_features = [
+            "hurst_exponent_path",
+            "path_trend_r2",
+            "path_efficiency_return_3h",
+            "quadratic_fit_curvature",
+            "linear_reg_slope",
+            "path_center_of_gravity",
+            "body_range_ratio",
+        ]
+
+        available_features = [f for f in primary_features if f in risk_df.columns]
+
+        if not available_features:
+            tprint_warning("No primary features found for GMM impact analysis")
+            return {}
+
+        feature_impact_list = []
+
+        # Filter to valid regimes
+        valid_mask = regime_labels >= 0
+        labels_valid = regime_labels[valid_mask]
+
+        for feature in available_features:
+            try:
+                feature_data = risk_df[feature].iloc[valid_mask].values
+
+                # Skip if all NaN
+                if np.all(np.isnan(feature_data)):
+                    continue
+
+                # Remove NaN values
+                feat_mask = ~np.isnan(feature_data)
+                feat_clean = feature_data[feat_mask]
+                labels_clean = labels_valid[feat_mask]
+
+                if len(feat_clean) == 0:
+                    continue
+
+                # Compute between-regime variance
+                regime_means = []
+                regime_counts = []
+                for regime_id in np.unique(labels_clean):
+                    regime_data = feat_clean[labels_clean == regime_id]
+                    if len(regime_data) > 0:
+                        regime_means.append(np.mean(regime_data))
+                        regime_counts.append(len(regime_data))
+
+                if len(regime_means) < 2:
+                    continue
+
+                # Weighted mean of means
+                global_mean = np.sum(np.array(regime_means) * np.array(regime_counts)) / np.sum(regime_counts)
+
+                # Between-regime variance (variance of regime means)
+                between_var = np.sum(
+                    np.array(regime_counts) * (np.array(regime_means) - global_mean) ** 2
+                ) / np.sum(regime_counts)
+
+                # Within-regime variance (average variance within each regime)
+                within_vars = []
+                for regime_id in np.unique(labels_clean):
+                    regime_data = feat_clean[labels_clean == regime_id]
+                    if len(regime_data) > 1:
+                        within_vars.append(np.var(regime_data, ddof=1))
+
+                within_var = np.mean(within_vars) if within_vars else 0.0
+
+                # Separation ratio (higher is better)
+                if within_var > 0:
+                    separation_ratio = between_var / within_var
+                else:
+                    separation_ratio = np.inf if between_var > 0 else 0.0
+
+                # Coefficient of variation for between-regime means
+                cv_between = np.std(regime_means) / np.abs(global_mean) if global_mean != 0 else 0.0
+
+                # Store feature impact
+                feature_impact_list.append({
+                    "feature": feature,
+                    "between_var": float(between_var),
+                    "within_var": float(within_var),
+                    "separation_ratio": float(separation_ratio),
+                    "cv_between": float(cv_between),
+                    "global_mean": float(global_mean),
+                    "global_std": float(np.std(feat_clean)),
+                    "regime_means": {int(i): float(m) for i, m in enumerate(regime_means)},
+                    "n_samples": int(len(feat_clean)),
+                })
+
+            except Exception as feat_exc:
+                tprint_warning(f"Failed to analyze feature {feature}: {feat_exc}")
+                continue
+
+        # Sort by separation ratio (descending)
+        feature_impact_list = sorted(
+            feature_impact_list,
+            key=lambda x: x["separation_ratio"],
+            reverse=True
+        )
+
+        return {
+            "feature_impact": feature_impact_list,
+            "n_features_analyzed": len(feature_impact_list),
+            "label_metrics": label_metrics,
+        }
+
+    def _generate_gmm_feature_impact_report(
+        self,
+        gmm_feature_impact: Dict[str, Any],
+        label_metrics: Dict[str, Any],
+        symbol: str,
+        exchange: str,
+        timeframe: str,
+    ) -> str:
+        """
+        Generate markdown report for GMM feature impact analysis.
+
+        Args:
+            gmm_feature_impact: Output from _analyze_gmm_feature_impact
+            label_metrics: GMM label quality metrics
+            symbol: Trading symbol
+            exchange: Exchange name
+            timeframe: Timeframe
+
+        Returns:
+            Path to saved report file
+        """
+        import os
+        from datetime import datetime
+
+        # Ensure outcomes directory exists
+        os.makedirs("outcomes", exist_ok=True)
+
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        report_path = f"outcomes/{symbol}_{exchange}_{timeframe}_GMM_Feature_Impact_{timestamp}.md"
+
+        feature_impact_list = gmm_feature_impact.get("feature_impact", [])
+
+        with open(report_path, 'w') as f:
+            # Header
+            f.write(f"# GMM-Direct Path Geometry Feature Impact Report\n\n")
+            f.write(f"**Symbol:** {symbol} | **Exchange:** {exchange} | **Timeframe:** {timeframe}\n\n")
+            f.write(f"**Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+            f.write("---\n\n")
+
+            # Overview
+            f.write("## Overview\n\n")
+            f.write("This report analyzes how each of the 7 core path geometry features impacts\n")
+            f.write("GMM regime separation. Features are ranked by their **separation ratio**\n")
+            f.write("(between-regime variance / within-regime variance).\n\n")
+
+            # Label quality metrics
+            f.write("## GMM Label Quality\n\n")
+            f.write(f"- **Risk CV Ratio**: {label_metrics.get('risk_cv_ratio', 0):.4f}\n")
+            f.write(f"- **Between-Regime CV**: {label_metrics.get('risk_cv_between', 0):.4f}\n")
+            f.write(f"- **Within-Regime CV**: {label_metrics.get('risk_cv_within', 0):.4f}\n")
+            f.write(f"- **Wasserstein Distance**: {label_metrics.get('wasserstein_distance', 0):.4f}\n")
+            f.write(f"- **KL Divergence**: {label_metrics.get('kl_divergence', 0):.4f}\n")
+            f.write(f"- **Quality Score**: {label_metrics.get('quality_score', 0):.4f}\n\n")
+
+            regime_dist = label_metrics.get('regime_distribution', {})
+            if regime_dist:
+                f.write("**Regime Distribution:**\n")
+                for regime_id, count in sorted(regime_dist.items()):
+                    f.write(f"- Regime {regime_id}: {count} samples\n")
+                f.write("\n")
+
+            # Feature impact table
+            f.write("## Feature Impact on Regime Separation\n\n")
+            f.write("Features ranked by separation ratio (higher = better regime discrimination):\n\n")
+
+            f.write("| Rank | Feature | Separation Ratio | Between Var | Within Var | CV Between |\n")
+            f.write("|------|---------|------------------|-------------|------------|------------|\n")
+
+            for rank, feat_info in enumerate(feature_impact_list, 1):
+                feature = feat_info["feature"]
+                sep_ratio = feat_info["separation_ratio"]
+                between_var = feat_info["between_var"]
+                within_var = feat_info["within_var"]
+                cv_between = feat_info["cv_between"]
+
+                # Format separation ratio
+                if sep_ratio == np.inf:
+                    sep_str = "∞"
+                elif sep_ratio > 1000:
+                    sep_str = f"{sep_ratio:.2e}"
+                else:
+                    sep_str = f"{sep_ratio:.2f}"
+
+                f.write(
+                    f"| {rank} | `{feature}` | {sep_str} | "
+                    f"{between_var:.4f} | {within_var:.4f} | {cv_between:.4f} |\n"
+                )
+
+            f.write("\n")
+
+            # Detailed per-feature analysis
+            f.write("## Detailed Feature Analysis\n\n")
+
+            for feat_info in feature_impact_list:
+                feature = feat_info["feature"]
+                f.write(f"### {feature}\n\n")
+
+                f.write(f"- **Global Mean**: {feat_info['global_mean']:.4f}\n")
+                f.write(f"- **Global Std**: {feat_info['global_std']:.4f}\n")
+                f.write(f"- **Separation Ratio**: {feat_info['separation_ratio']:.4f}\n")
+                f.write(f"- **Between-Regime Variance**: {feat_info['between_var']:.4f}\n")
+                f.write(f"- **Within-Regime Variance**: {feat_info['within_var']:.4f}\n")
+                f.write(f"- **CV Between Regimes**: {feat_info['cv_between']:.4f}\n\n")
+
+                # Regime means
+                regime_means = feat_info.get("regime_means", {})
+                if regime_means:
+                    f.write("**Mean Value by Regime:**\n")
+                    for regime_id, mean_val in sorted(regime_means.items()):
+                        f.write(f"- Regime {regime_id}: {mean_val:.4f}\n")
+                    f.write("\n")
+
+            # Interpretation
+            f.write("## Interpretation Guide\n\n")
+            f.write("**Separation Ratio**: Higher values indicate the feature strongly separates regimes.\n")
+            f.write("- **> 1.0**: Feature contributes to regime separation\n")
+            f.write("- **> 5.0**: Strong regime discriminator\n")
+            f.write("- **> 10.0**: Dominant regime driver\n\n")
+
+            f.write("**Between-Regime Variance**: Variance of regime means (higher = more separation).\n\n")
+            f.write("**Within-Regime Variance**: Average variance within each regime (lower = more stability).\n\n")
+            f.write("**CV Between**: Coefficient of variation of regime means (higher = relative separation).\n\n")
+
+            # Footer
+            f.write("---\n\n")
+            f.write(f"*Report generated by ml_path_regime_step with GMM-Direct architecture*\n")
+
+        return report_path
 
     def _generate_feature_importance_report(
         self,
@@ -3608,8 +3787,12 @@ class MLPathRegimeStep(BaseStep):
         label_metrics: Optional[Dict[str, Any]] = None,
     ) -> Tuple[Any, np.ndarray, Dict[str, Any]]:
         """
-        Train XGBoost multi-class classifier to predict regimes with probabilities.
-        Uses RAW features (no EWMA smoothing).
+        DEPRECATED: This method is no longer used in GMM-Direct architecture.
+
+        Previously trained XGBoost multi-class classifier to predict regimes.
+        Now replaced with direct GMM inference (no student classifier).
+
+        Kept for reference only. Remove in future cleanup.
 
         Args:
             risk_df: Feature dataframe
@@ -3621,6 +3804,10 @@ class MLPathRegimeStep(BaseStep):
             regime_probs: Predicted probabilities (n_samples x 4)
             training_metrics: Performance metrics
         """
+        raise NotImplementedError(
+            "XGBoost student classifier has been removed. "
+            "Use GMM-Direct architecture instead (_create_optimal_regime_labels)."
+        )
         import xgboost as xgb
         from sklearn.metrics import classification_report, log_loss, accuracy_score
 
@@ -3814,19 +4001,9 @@ class MLPathRegimeStep(BaseStep):
             min_window = int(config.get("risk_quadrant_min_window_bars", default_min))
             max_window = int(config.get("risk_quadrant_max_window_bars", default_max))
 
-            # Updated path geometry features based on conceptual framework:
-            # - Roughness: hurst_exponent_path
-            # - Linearity: path_trend_r2
-            # - Directness: path_efficiency_return_3h
-            # - Shape/Bend: quadratic_fit_curvature
-            # - Steepness: linear_reg_slope
-            # - Timing: path_center_of_gravity
-            # - Morphology: body_range_ratio
-            #
-            # Additional structural features may be included to assist regime detection,
-            # but HPO tuning should focus on the 7 core geometry features above.
+            # Core 7 Path Geometry Features (user-specified)
+            # These are the ONLY features used for GMM regime detection
             path_priority = [
-                # Core geometry features for HPO
                 "hurst_exponent_path",         # Roughness
                 "path_trend_r2",               # Linearity
                 "path_efficiency_return_3h",   # Directness
@@ -3834,12 +4011,6 @@ class MLPathRegimeStep(BaseStep):
                 "linear_reg_slope",            # Steepness
                 "path_center_of_gravity",      # Timing
                 "body_range_ratio",            # Morphology
-                # Supporting structural features (not for HPO tuning)
-                "path_fractal_dimension",      # Complexity
-                "traffic_overlap_3h",          # Overlap
-                "path_efficiency_dropping",    # Efficiency pattern
-                "path_alpha_state",            # Alpha indicator
-                "path_directional_eff_3h",     # Directional efficiency
             ]
 
             path_candidates: List[str] = [

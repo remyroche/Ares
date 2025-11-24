@@ -1,18 +1,27 @@
 """
-ML Path Regime Step (GMM-Direct Architecture)
+ML Path Regime Step (HMM Architecture with Temporal Dynamics)
 
-This step constructs Price Path Geometry regime labels using GMM + Simulated Annealing
-optimization with 7 core geometry features.
+This step constructs Price Path Geometry regime labels using Hidden Markov Models (HMM)
+with computational optimizations and temporal structure learning.
 
 Primary Goal: Distinguish between different price path structures (roughness, linearity,
-directness, shape, steepness, timing, morphology) using unsupervised GMM clustering.
+directness, shape, steepness, timing, morphology) using HMM with learned regime transitions.
 
 Key Features:
 - Uses ONLY 7 path geometry features (no PnL chase)
-- GMM-Direct inference (NO XGBoost student classifier)
+- HMM-Direct inference with full covariance (NO XGBoost student classifier)
+- Temporal structure learning via transition matrix
+- Strided training for computational efficiency (every 10th point)
+- GMM warm-start initialization for faster convergence
+- LiveHMM wrapper for O(1) production updates
 - Zero risk of class collapse
-- Probabilistic regime assignments
-- Fast inference suitable for live trading
+- Probabilistic regime assignments with temporal consistency
+
+Computational Optimizations:
+1. Strided Training: Train on every 10th data point to reduce training time
+2. GMM Injection: Pre-compute cluster centers with fast GMM, inject into HMM
+3. Warm Start Retraining: Use GMM means to initialize HMM parameters
+4. O(1) Live Updates: LiveHMM class for production with pre-extracted matrices
 
 Responsibilities:
 - Load 15m OHLCV market data
@@ -24,9 +33,11 @@ Responsibilities:
   * linear_reg_slope (Steepness)
   * path_center_of_gravity (Timing)
   * body_range_ratio (Morphology)
-- Create optimal regime labels using GMM + Simulated Annealing
-- Persist GMM model for direct live trading inference
-- Generate feature impact analysis reports
+- Create optimal regime labels using HMM with temporal structure
+- Calculate temporal metrics (transition matrix, flip-flop rate, duration)
+- Calculate forward returns and Sharpe ratios per regime (15m, 1h, 3h)
+- Persist HMM model and LiveHMM wrapper for live trading
+- Generate comprehensive regime quality and temporal reports
 - Save regime outputs to versioned_artifacts
 """
 
@@ -40,8 +51,9 @@ from datetime import datetime
 
 import numpy as np
 import pandas as pd
-from scipy.stats import spearmanr, pearsonr, gaussian_kde
+from scipy.stats import spearmanr, pearsonr, gaussian_kde, multivariate_normal
 from sklearn.preprocessing import MinMaxScaler
+from hmmlearn.hmm import GaussianHMM
 
 from src.training.steps.base_step import BaseStep
 from src.utils.tprint import (
@@ -98,6 +110,113 @@ except ImportError:
 
 
 logger = logging.getLogger(__name__)
+
+
+class LiveHMM:
+    """
+    Production-grade O(1) HMM state update for live trading.
+
+    Extracts transition matrix, means, and covariances from a trained HMM model
+    and provides efficient forward algorithm updates without retraining.
+
+    Usage:
+        # After training your HMM
+        live_hmm = LiveHMM(trained_hmm_model)
+
+        # In live trading loop
+        new_observation = np.array([...])  # Single observation vector
+        regime_probs = live_hmm.update(new_observation)
+        current_regime = np.argmax(regime_probs)
+    """
+
+    def __init__(self, trained_model: GaussianHMM):
+        """
+        Initialize LiveHMM from a trained hmmlearn GaussianHMM model.
+
+        Args:
+            trained_model: Fitted GaussianHMM instance
+        """
+        # Extract parameters from trained model
+        self.n_components = trained_model.n_components
+        self.startprob = trained_model.startprob_
+        self.transmat = trained_model.transmat_
+        self.means = trained_model.means_
+        self.covars = trained_model.covars_
+        self.covariance_type = trained_model.covariance_type
+
+        # Initialize state probabilities (uniform or use startprob)
+        self.state_probs = self.startprob.copy()
+
+        # Pre-compute multivariate normal distributions for each state
+        self._setup_distributions()
+
+    def _setup_distributions(self):
+        """Pre-compute scipy multivariate normal distributions for each state."""
+        self.distributions = []
+        for i in range(self.n_components):
+            mean = self.means[i]
+            if self.covariance_type == 'full':
+                cov = self.covars[i]
+            elif self.covariance_type == 'diag':
+                cov = np.diag(self.covars[i])
+            elif self.covariance_type == 'tied':
+                cov = self.covars
+            elif self.covariance_type == 'spherical':
+                cov = np.eye(len(mean)) * self.covars[i]
+            else:
+                raise ValueError(f"Unknown covariance type: {self.covariance_type}")
+
+            self.distributions.append(multivariate_normal(mean=mean, cov=cov))
+
+    def update(self, observation: np.ndarray) -> np.ndarray:
+        """
+        O(1) forward algorithm update for a single new observation.
+
+        Args:
+            observation: 1D array of shape (n_features,) representing the new observation
+
+        Returns:
+            Updated state probabilities: array of shape (n_components,)
+        """
+        observation = np.asarray(observation).flatten()
+
+        # Compute emission probabilities for this observation
+        emission_probs = np.array([
+            dist.pdf(observation) for dist in self.distributions
+        ])
+
+        # Prevent numerical underflow
+        emission_probs = np.maximum(emission_probs, 1e-300)
+
+        # Forward step: P(S_t | obs_1:t) = P(obs_t | S_t) * sum_i P(S_t | S_{t-1}=i) * P(S_{t-1}=i | obs_1:t-1)
+        self.state_probs = emission_probs * (self.transmat.T @ self.state_probs)
+
+        # Normalize to get probabilities
+        prob_sum = self.state_probs.sum()
+        if prob_sum > 0:
+            self.state_probs /= prob_sum
+        else:
+            # Fallback to uniform if underflow
+            self.state_probs = np.ones(self.n_components) / self.n_components
+
+        return self.state_probs.copy()
+
+    def predict(self, observation: np.ndarray) -> int:
+        """
+        Update and return the most likely regime.
+
+        Args:
+            observation: 1D array of shape (n_features,)
+
+        Returns:
+            Integer regime index (0 to n_components-1)
+        """
+        probs = self.update(observation)
+        return int(np.argmax(probs))
+
+    def reset(self):
+        """Reset state probabilities to initial distribution."""
+        self.state_probs = self.startprob.copy()
 
 
 class MLPathRegimeStep(BaseStep):
@@ -295,12 +414,12 @@ class MLPathRegimeStep(BaseStep):
             risk_quality_path: Optional[str] = None
 
             tprint_info("=" * 80)
-            tprint_info("🎯 GMM-DIRECT REGIME DETECTION (No Student Classifier)")
+            tprint_info("🎯 HMM REGIME DETECTION (Temporal Structure Learning)")
             tprint_info("=" * 80)
 
             try:
-                # 6a) Create optimal regime labels using GMM + SA (NO XGBoost student)
-                tprint_info("📊 Creating optimal regime labels via GMM + SA...")
+                # 6a) Create optimal regime labels using HMM with GMM warm-start
+                tprint_info("📊 Creating optimal regime labels via HMM...")
                 regime_labels_optimized, label_metrics = self._create_optimal_regime_labels(
                     risk_df=risk_df,
                     config=config
@@ -310,9 +429,39 @@ class MLPathRegimeStep(BaseStep):
                 training_metrics['label_quality'] = label_metrics
                 regime_labels = regime_labels_optimized
 
-                # 6b) Generate GMM-based feature impact analysis
+                # 6b) Calculate forward returns and Sharpe ratios per regime
                 try:
-                    tprint_info("📊 Analyzing GMM feature impact on regime separation...")
+                    tprint_info("📊 Calculating forward returns and Sharpe ratios per regime...")
+                    forward_returns_sharpe = self._calculate_forward_returns_and_sharpe(
+                        df=risk_df,
+                        regime_labels=regime_labels_optimized,
+                        horizons=[1, 4, 12]  # 15m, 1h, 3h
+                    )
+                    training_metrics['forward_returns_sharpe'] = forward_returns_sharpe
+
+                    # Log forward returns and Sharpe ratios
+                    tprint_info("=" * 80)
+                    tprint_info("📈 FORWARD RETURNS & SHARPE RATIOS PER REGIME:")
+                    tprint_info("=" * 80)
+                    for horizon_label, regime_stats in forward_returns_sharpe.items():
+                        tprint_info(f"\n  Horizon: {horizon_label}")
+                        for regime_id, stats in regime_stats.items():
+                            tprint_info(
+                                f"    Regime {regime_id}: "
+                                f"Return={stats['mean_return']:.6f}, "
+                                f"Sharpe={stats['sharpe_ratio']:.4f} "
+                                f"(Ann: {stats['sharpe_annualized']:.4f}), "
+                                f"n={stats['count']}"
+                            )
+                    tprint_info("=" * 80)
+
+                except Exception as fwd_exc:
+                    tprint_warning(f"Failed to calculate forward returns/Sharpe (non-fatal): {fwd_exc}")
+                    training_metrics['forward_returns_sharpe'] = {}
+
+                # 6c) Generate HMM-based feature impact analysis
+                try:
+                    tprint_info("📊 Analyzing HMM feature impact on regime separation...")
                     gmm_feature_impact = self._analyze_gmm_feature_impact(
                         risk_df=risk_df,
                         regime_labels=regime_labels_optimized,
@@ -329,10 +478,10 @@ class MLPathRegimeStep(BaseStep):
                         exchange=exchange,
                         timeframe=regime_timeframe,
                     )
-                    tprint_success(f"📄 GMM feature impact report saved: {impact_report_path}")
+                    tprint_success(f"📄 HMM feature impact report saved: {impact_report_path}")
 
                 except Exception as impact_exc:
-                    tprint_warning(f"Failed to generate GMM feature impact analysis (non-fatal): {impact_exc}")
+                    tprint_warning(f"Failed to generate HMM feature impact analysis (non-fatal): {impact_exc}")
 
                 try:
                     tprint_info("📊 Generating detailed WCoV regime quality report...")
@@ -340,7 +489,7 @@ class MLPathRegimeStep(BaseStep):
                         df=risk_df,
                         regime_labels=regime_labels_optimized,
                         config=config,
-                        classifier_metrics=None,  # No XGBoost classifier
+                        classifier_metrics=training_metrics,  # Pass training metrics with forward returns
                     )
                     if wcov_md_path:
                         tprint_success(
@@ -355,18 +504,23 @@ class MLPathRegimeStep(BaseStep):
                         f"Failed to generate WCoV regime quality report (non-fatal): {wcov_exc}"
                     )
 
-                # 6c) Add GMM labels to dataframe
+                # 6d) Add HMM labels to dataframe
                 risk_df['risk_regime'] = regime_labels_optimized
                 regime_col_name = 'risk_regime'
 
+                # Extract temporal metrics from label_metrics
+                temporal_metrics = label_metrics.get('temporal_metrics', {})
+
                 tprint_success(
                     f"=" * 80 + "\n"
-                    f"✅ GMM-DIRECT REGIME DETECTION COMPLETE\n"
+                    f"✅ HMM REGIME DETECTION COMPLETE (Temporal Structure Learned)\n"
                     f"=" * 80 + "\n"
                     f"  Label Quality Score: {label_metrics.get('quality_score', 0):.3f}\n"
                     f"  Risk CV Ratio: {label_metrics.get('risk_cv_ratio', 0):.3f}\n"
                     f"  Wasserstein Distance: {label_metrics.get('wasserstein_distance', 0):.3f}\n"
                     f"  KL Divergence: {label_metrics.get('kl_divergence', 0):.3f}\n"
+                    f"  Avg Duration: {temporal_metrics.get('avg_duration_bars', 0):.2f} bars\n"
+                    f"  Flip-Flop Rate: {temporal_metrics.get('flip_flop_rate', 0):.4f}\n"
                     f"  Regime Distribution: {label_metrics.get('regime_distribution', {})}\n"
                     f"=" * 80
                 )
@@ -393,7 +547,7 @@ class MLPathRegimeStep(BaseStep):
                 )
 
             except Exception as exc:
-                tprint_error(f"❌ GMM-Direct regime detection failed: {exc}")
+                tprint_error(f"❌ HMM regime detection failed: {exc}")
                 import traceback
                 traceback.print_exc()
                 # Fast-fail: raise exception to avoid producing inconsistent artifacts
@@ -2187,144 +2341,157 @@ class MLPathRegimeStep(BaseStep):
         else:
             gmm_sa_features = risk_features_clean
 
-        # ========== STEP 5: GMM Initialization ==========
+        # ========== STEP 5: HMM Initialization with GMM Warm Start ==========
         # Validate that we still have a non-empty, numeric feature matrix
         if gmm_sa_features.empty or gmm_sa_features.shape[1] == 0:
             raise ValueError(
-                "Risk feature matrix for GMM is empty after cleaning/correlation "
+                "Risk feature matrix for HMM is empty after cleaning/correlation "
                 "filtering; reduce filtering or check feature generation."
             )
 
         from sklearn.mixture import GaussianMixture
 
-        # Optional subsampling for GMM fitting and initial quality scoring
-        gmm_features_for_fit = gmm_sa_features
-        gmm_subset_indices: Optional[np.ndarray] = None
+        exec_mode_hmm = str(config.get("execution_mode", "")).lower()
 
-        gmm_enable_subsampling = bool(config.get("risk_gmm_enable_subsampling", True))
-        exec_mode_gmm = str(config.get("execution_mode", "")).lower()
+        # ===== OPTIMIZATION 1: Strided Training (Downsample every 10th point) =====
+        hmm_stride = int(config.get("hmm_stride", 10))
+        tprint_info(f"🔄 Applying strided training: Using every {hmm_stride}th data point")
 
-        # Use a stricter subsampling cap in blank mode to prevent very heavy GMM fits
-        if exec_mode_gmm == "blank":
-            gmm_default_max_samples = 5000
-        else:
-            gmm_default_max_samples = 8000
-
-        gmm_max_samples = int(config.get("risk_gmm_max_samples", gmm_default_max_samples))
-        if gmm_enable_subsampling and len(gmm_sa_features) > gmm_max_samples:
-            try:
-                rng_gmm = np.random.RandomState(
-                    int(config.get("risk_gmm_subsample_random_state", 1234))
-                )
-            except Exception:
-                rng_gmm = np.random.RandomState(1234)
-
-            gmm_subset_indices = rng_gmm.choice(
-                len(gmm_sa_features), size=gmm_max_samples, replace=False
-            )
-            gmm_features_for_fit = gmm_sa_features.iloc[gmm_subset_indices]
-
-            tprint_info(
-                f"  GMM subsampling enabled: using {len(gmm_features_for_fit)} samples "
-                f"out of {len(gmm_sa_features)} for initialization"
-            )
-
-        tprint_info(f"Initializing {n_regimes} regimes with GMM using "
-                    f"{gmm_sa_features.shape[1]} features and "
-                    f"{len(gmm_features_for_fit)} samples...")
-
-        # Use stronger defaults in blank mode now that we use diag covariance,
-        # while still preventing extreme settings via hard caps.
-        default_n_init = 10
-        default_max_iter = 150
-
-        raw_n_init = int(config.get("risk_gmm_n_init", default_n_init))
-        raw_max_iter = int(config.get("risk_gmm_max_iter", default_max_iter))
-
-        if exec_mode_gmm == "blank":
-            # Hard caps in blank mode so config cannot accidentally request
-            # extremely heavy GMM runs.
-            n_init = min(raw_n_init, 5)
-            max_iter = min(raw_max_iter, 100)
-        else:
-            n_init = raw_n_init
-            max_iter = raw_max_iter
-
-        # Use diagonal covariance by default in all modes, but allow override
-        # via risk_gmm_covariance_type.
-        default_covariance_type = "diag"
-        covariance_type = str(config.get("risk_gmm_covariance_type", default_covariance_type))
-
-        # Regularization on the covariance to guard against ill-conditioned
-        # components; use a slightly stronger default in blank mode where the
-        # feature space and sample size are typically larger.
-        default_reg_covar = 1e-6
-        if exec_mode_gmm == "blank":
-            default_reg_covar = 1e-3
-        reg_covar = float(config.get("risk_gmm_reg_covar", default_reg_covar))
+        strided_indices = np.arange(0, len(gmm_sa_features), hmm_stride)
+        hmm_features_strided = gmm_sa_features.iloc[strided_indices].copy()
 
         tprint_info(
-            "  GMM configuration: "
-            f"covariance_type={covariance_type}, n_init={n_init}, max_iter={max_iter}, "
-            f"reg_covar={reg_covar}"
+            f"  Strided data: {len(hmm_features_strided)} samples "
+            f"(down from {len(gmm_sa_features)})"
         )
 
-        gmm = GaussianMixture(
+        # ===== OPTIMIZATION 2: GMM Pre-computation for HMM Initialization =====
+        tprint_info(
+            f"🚀 Step 1: Fast GMM pre-computation for HMM warm-start "
+            f"(features: {hmm_features_strided.shape[1]})"
+        )
+
+        # Fast GMM with minimal iterations for initialization only
+        gmm_for_init = GaussianMixture(
             n_components=n_regimes,
-            covariance_type=covariance_type,
-            n_init=n_init,
-            max_iter=max_iter,
-            reg_covar=reg_covar,
+            covariance_type="diag",  # Fast diagonal for initialization
+            n_init=5,
+            max_iter=50,
+            reg_covar=1e-3,
             random_state=42
         )
 
-        # Explicitly log the effective sample sizes and dtype used for GMM,
-        # since this stage can be relatively heavy in blank mode.
-        try:
-            fit_dtype = str(getattr(gmm_features_for_fit, "dtypes", "unknown"))
-        except Exception:
-            fit_dtype = "unknown"
-
-        tprint_info(
-            f"  Starting GMM fit on {len(gmm_features_for_fit)} samples "
-            f"(full={len(gmm_sa_features)}, dtype={fit_dtype})"
-        )
-
         gmm_start = time.time()
-        try:
-            gmm.fit(gmm_features_for_fit)
-            initial_labels = gmm.predict(gmm_sa_features)
-        except ValueError as gmm_exc:
-            msg = str(gmm_exc)
-            if "ill-defined empirical covariance" not in msg:
-                raise
-
-            tprint_warning(
-                "GMM fit failed due to ill-defined covariance; retrying with "
-                "increased reg_covar and float64 inputs for additional stability."
-            )
-
-            safe_reg_covar = max(reg_covar * 10.0, 1e-4)
-            gmm = GaussianMixture(
-                n_components=n_regimes,
-                covariance_type=covariance_type,
-                n_init=n_init,
-                max_iter=max_iter,
-                reg_covar=safe_reg_covar,
-                random_state=42,
-            )
-
-            gmm_features_for_fit_retry = gmm_features_for_fit.astype("float64")
-            gmm_sa_features_retry = gmm_sa_features.astype("float64")
-
-            gmm.fit(gmm_features_for_fit_retry)
-            initial_labels = gmm.predict(gmm_sa_features_retry)
-            gmm_sa_features = gmm_sa_features_retry
+        gmm_for_init.fit(hmm_features_strided)
         gmm_duration = time.time() - gmm_start
-        tprint_info(
-            f"  GMM fit completed in {gmm_duration:.2f}s; proceeding to regime profiling "
-            f"and simulated annealing (if enabled)..."
+
+        # Extract GMM means for HMM initialization
+        gmm_means = gmm_for_init.means_
+        gmm_labels_init = gmm_for_init.predict(hmm_features_strided)
+
+        tprint_success(
+            f"  ✅ GMM pre-computation completed in {gmm_duration:.2f}s "
+            f"(warm-start initialization ready)"
         )
+
+        # ===== OPTIMIZATION 3: HMM Training with GMM Injection =====
+        tprint_info(
+            f"🧠 Step 2: Training HMM with {n_regimes} regimes "
+            f"(full covariance for geometric features)"
+        )
+
+        # HMM configuration optimized for 30m-3h trading timeframes
+        hmm_n_iter = int(config.get("hmm_n_iter", 200))
+        hmm_tol = float(config.get("hmm_tol", 1e-3))
+        hmm_min_covar = float(config.get("hmm_min_covar", 0.001))
+
+        # Initialize HMM with user-specified "Magic Number" geometry regimes
+        hmm = GaussianHMM(
+            n_components=n_regimes,          # The "Magic Number" for Geometry
+            covariance_type="full",          # MANDATORY for geometric features
+            n_iter=hmm_n_iter,               # High iteration count for convergence
+            tol=hmm_tol,                     # Stricter tolerance
+            init_params='stmc',              # Initialize all params (Start, Trans, Means, Covs)
+            min_covar=hmm_min_covar,         # Floor to prevent instability
+            random_state=42
+        )
+
+        # Inject GMM means into HMM (warm start)
+        hmm.means_ = gmm_means.copy()
+        hmm.init_params = 'stc'  # Only init start, trans, covars (means already set)
+
+        tprint_info(
+            f"  HMM configuration: n_components={n_regimes}, "
+            f"covariance_type='full', n_iter={hmm_n_iter}, "
+            f"tol={hmm_tol}, min_covar={hmm_min_covar}"
+        )
+        tprint_info(
+            f"  🔥 GMM means injected into HMM for warm-start initialization"
+        )
+
+        # Convert to numpy array for HMM (requires shape: [n_samples, n_features])
+        hmm_features_strided_array = hmm_features_strided.values
+
+        # Reshape for HMM: needs [n_samples, n_features] and lengths array
+        hmm_start = time.time()
+        try:
+            hmm.fit(
+                hmm_features_strided_array,
+                lengths=[len(hmm_features_strided_array)]  # Single sequence
+            )
+
+            # Get initial labels using trained HMM on full data
+            hmm_full_array = gmm_sa_features.values
+            initial_labels = hmm.predict(
+                hmm_full_array,
+                lengths=[len(hmm_full_array)]
+            )
+        except ValueError as hmm_exc:
+            msg = str(hmm_exc)
+            tprint_warning(
+                f"HMM fit failed: {msg}. Retrying with increased min_covar "
+                f"and float64 inputs for additional stability."
+            )
+
+            # Retry with more stable parameters
+            hmm = GaussianHMM(
+                n_components=n_regimes,
+                covariance_type="full",
+                n_iter=hmm_n_iter,
+                tol=hmm_tol,
+                init_params='stmc',
+                min_covar=hmm_min_covar * 10.0,
+                random_state=42
+            )
+
+            hmm_features_strided_retry = hmm_features_strided.astype("float64").values
+            hmm_full_retry = gmm_sa_features.astype("float64").values
+
+            hmm.fit(
+                hmm_features_strided_retry,
+                lengths=[len(hmm_features_strided_retry)]
+            )
+            initial_labels = hmm.predict(
+                hmm_full_retry,
+                lengths=[len(hmm_full_retry)]
+            )
+            gmm_sa_features = gmm_sa_features.astype("float64")
+
+        hmm_duration = time.time() - hmm_start
+        tprint_success(
+            f"  ✅ HMM training completed in {hmm_duration:.2f}s"
+        )
+
+        # Extract transition matrix for reporting
+        transition_matrix = hmm.transmat_
+
+        tprint_info("=" * 80)
+        tprint_info("📊 HMM TRANSITION MATRIX (Regime Dynamics):")
+        tprint_info("=" * 80)
+        for i in range(n_regimes):
+            trans_probs = " ".join([f"{p:.3f}" for p in transition_matrix[i]])
+            tprint_info(f"  Regime {i} → [{trans_probs}]")
+        tprint_info("=" * 80)
 
         # DO NOT rank/reorder regimes - let GMM find distinct profiles
         # Each regime represents a different risk PROFILE, not a continuum
@@ -2355,24 +2522,22 @@ class MLPathRegimeStep(BaseStep):
                 )
 
         score_start = time.time()
-        if gmm_subset_indices is not None:
-            labels_for_score = initial_labels[gmm_subset_indices]
-            features_for_score = gmm_sa_features.iloc[gmm_subset_indices]
-        else:
-            labels_for_score = initial_labels
-            features_for_score = gmm_sa_features
+        labels_for_score = initial_labels
+        features_for_score = gmm_sa_features
 
         initial_score = self._calculate_regime_quality_score(
             labels_for_score, features_for_score, None
         )
         score_duration = time.time() - score_start
         tprint_info(
-            f"  GMM initialization: score={initial_score:.4f} "
+            f"  HMM initialization: score={initial_score:.4f} "
             f"(quality score computed in {score_duration:.2f}s)"
         )
 
-        # ========== STEP 6: Simulated Annealing Refinement ==========
-        use_sa_refinement = bool(config.get("risk_use_sa_refinement", True))
+        # ========== STEP 6: Simulated Annealing Refinement (Optional for HMM) ==========
+        # Note: HMM already learns temporal structure through transition matrix,
+        # so SA is less critical. Disabled by default for HMM.
+        use_sa_refinement = bool(config.get("risk_use_sa_refinement", False))
 
         if use_sa_refinement:
             sa_flip_fraction = float(config.get("risk_sa_flip_fraction", 0.10))
@@ -2546,12 +2711,17 @@ class MLPathRegimeStep(BaseStep):
         teacher_probs_full: Optional[np.ndarray]
         teacher_probs_full = None
         try:
-            responsibilities = gmm.predict_proba(risk_features_clean)
-            if responsibilities.shape[0] == valid_mask.sum():
+            # Use HMM score_samples to get log likelihood, then compute posteriors
+            hmm_full_array = risk_features_clean.values
+            posteriors = hmm.predict_proba(
+                hmm_full_array,
+                lengths=[len(hmm_full_array)]
+            )
+            if posteriors.shape[0] == valid_mask.sum():
                 teacher_probs_full = np.zeros((len(risk_df), n_regimes), dtype=float)
-                teacher_probs_full[valid_mask] = responsibilities
+                teacher_probs_full[valid_mask] = posteriors
         except Exception as resp_exc:
-            tprint_warning(f"Teacher probability extraction from GMM failed; skipping distillation helpers: {resp_exc}")
+            tprint_warning(f"Teacher probability extraction from HMM failed; skipping distillation helpers: {resp_exc}")
 
         # Store feature selection artifacts
         metrics['selected_features'] = list(risk_features_clean.columns)
@@ -2560,16 +2730,32 @@ class MLPathRegimeStep(BaseStep):
         if teacher_probs_full is not None:
             metrics['teacher_probs'] = teacher_probs_full
 
-        # ========== STEP 8: Persist GMM Model for Direct Inference ==========
-        # Save the optimized GMM model and create both GMM-direct and centroid-based
-        # detectors for live trading inference (no XGBoost student needed).
+        # ========== STEP 7: Calculate Temporal Metrics ==========
+        temporal_metrics = self._calculate_temporal_metrics(
+            labels=final_labels,
+            transition_matrix=transition_matrix,
+            n_regimes=n_regimes
+        )
+        metrics['temporal_metrics'] = temporal_metrics
+
+        # Log temporal metrics
+        tprint_info("=" * 80)
+        tprint_info("📊 TEMPORAL METRICS:")
+        tprint_info("=" * 80)
+        tprint_info(f"  Average Duration per Regime: {temporal_metrics['avg_duration_bars']:.2f} bars")
+        tprint_info(f"  Flip-Flop Rate: {temporal_metrics['flip_flop_rate']:.4f}")
+        tprint_info(f"  Regime Stability Score: {temporal_metrics['stability_score']:.4f}")
+        tprint_info("=" * 80)
+
+        # ========== STEP 8: Persist HMM Model for Direct Inference ==========
+        # Save the optimized HMM model and LiveHMM wrapper for production O(1) updates
         try:
             import joblib
             from pathlib import Path
 
-            symbol_gmm = str(config.get("symbol", "UNKNOWN"))
-            timeframe_gmm = str(config.get("regime_timeframe", config.get("timeframe", "15m")))
-            ts_gmm = datetime.now().strftime("%Y%m%d_%H%M%S")
+            symbol_hmm = str(config.get("symbol", "UNKNOWN"))
+            timeframe_hmm = str(config.get("regime_timeframe", config.get("timeframe", "15m")))
+            ts_hmm = datetime.now().strftime("%Y%m%d_%H%M%S")
 
             # Create regime metadata from final labels and features
             regime_metadata = {}
@@ -2591,31 +2777,43 @@ class MLPathRegimeStep(BaseStep):
 
             # Prepare model metadata
             model_metadata = {
-                "symbol": symbol_gmm,
+                "symbol": symbol_hmm,
                 "exchange": str(config.get("exchange", "UNKNOWN")),
-                "timeframe": timeframe_gmm,
-                "trained_at": ts_gmm,
+                "timeframe": timeframe_hmm,
+                "trained_at": ts_hmm,
+                "model_type": "HMM",
                 "n_regimes": n_regimes,
                 "n_features": len(risk_features_clean.columns),
                 "n_samples": len(final_labels),
                 "risk_cv_ratio": float(metrics.get("risk_cv_ratio", 0.0)),
                 "wasserstein_distance": float(metrics.get("wasserstein_distance", 0.0)),
-                "covariance_type": covariance_type,
+                "covariance_type": "full",
+                "hmm_n_iter": hmm_n_iter,
+                "hmm_stride": hmm_stride,
+                "transition_matrix": transition_matrix.tolist(),
+                "temporal_metrics": temporal_metrics,
             }
 
-            # 1. Save GMM-Direct detector (recommended for production)
-            gmm_detector_path = f"versioned_artifacts/regime_models/path_gmm_{symbol_gmm}_{timeframe_gmm}_{ts_gmm}.pkl"
-            Path(gmm_detector_path).parent.mkdir(parents=True, exist_ok=True)
+            # 1. Save HMM-Direct detector (recommended for production)
+            hmm_detector_path = f"versioned_artifacts/regime_models/path_hmm_{symbol_hmm}_{timeframe_hmm}_{ts_hmm}.pkl"
+            Path(hmm_detector_path).parent.mkdir(parents=True, exist_ok=True)
 
-            gmm_model_data = {
-                "gmm_model": gmm,
+            hmm_model_data = {
+                "hmm_model": hmm,
                 "feature_names": list(risk_features_clean.columns),
                 "scaler": None,  # No scaling used in current implementation
                 "regime_metadata": regime_metadata,
                 "model_metadata": model_metadata,
+                "transition_matrix": transition_matrix,
             }
-            joblib.dump(gmm_model_data, gmm_detector_path)
-            tprint_success(f"💾 Saved GMM-Direct detector: {gmm_detector_path}")
+            joblib.dump(hmm_model_data, hmm_detector_path)
+            tprint_success(f"💾 Saved HMM-Direct detector: {hmm_detector_path}")
+
+            # 2. Create and save LiveHMM wrapper for O(1) production updates
+            live_hmm = LiveHMM(hmm)
+            live_hmm_path = f"versioned_artifacts/regime_models/path_live_hmm_{symbol_hmm}_{timeframe_hmm}_{ts_hmm}.pkl"
+            joblib.dump(live_hmm, live_hmm_path)
+            tprint_success(f"💾 Saved LiveHMM wrapper (O(1) updates): {live_hmm_path}")
 
             # 2. Save Centroid-Based detector (simpler backup option)
             try:
@@ -2649,28 +2847,216 @@ class MLPathRegimeStep(BaseStep):
                 joblib.dump(centroid_model_data, centroid_detector_path)
                 tprint_info(f"💾 Saved Centroid detector (backup): {centroid_detector_path}")
 
-                metrics['gmm_detector_path'] = gmm_detector_path
+                metrics['hmm_detector_path'] = hmm_detector_path
+                metrics['live_hmm_path'] = live_hmm_path
                 metrics['centroid_detector_path'] = centroid_detector_path
 
             except Exception as centroid_exc:
                 tprint_warning(f"Failed to create centroid detector (non-fatal): {centroid_exc}")
-                metrics['gmm_detector_path'] = gmm_detector_path
+                metrics['hmm_detector_path'] = hmm_detector_path
+                metrics['live_hmm_path'] = live_hmm_path
                 metrics['centroid_detector_path'] = None
 
         except Exception as persist_exc:
-            tprint_warning(f"Failed to persist GMM detectors (non-fatal): {persist_exc}")
-            metrics['gmm_detector_path'] = None
+            tprint_warning(f"Failed to persist HMM detectors (non-fatal): {persist_exc}")
+            metrics['hmm_detector_path'] = None
+            metrics['live_hmm_path'] = None
             metrics['centroid_detector_path'] = None
 
         tprint_success(
-            f"✅ Created {n_regimes} regime labels (NO temporal smoothing):\n"
+            f"✅ Created {n_regimes} HMM regime labels with temporal structure:\n"
             f"   Risk CV Ratio={metrics['risk_cv_ratio']:.3f}, "
             f"Wasserstein={metrics['wasserstein_distance']:.3f}, "
             f"KL Divergence={metrics['kl_divergence']:.3f}\n"
+            f"   Avg Duration={temporal_metrics['avg_duration_bars']:.2f} bars, "
+            f"Flip-Flop Rate={temporal_metrics['flip_flop_rate']:.4f}\n"
             f"   Regime Distribution: {metrics['regime_distribution']}"
         )
 
         return full_labels, metrics
+
+    def _calculate_temporal_metrics(
+        self,
+        labels: np.ndarray,
+        transition_matrix: np.ndarray,
+        n_regimes: int
+    ) -> Dict[str, Any]:
+        """
+        Calculate temporal metrics for regime analysis.
+
+        Metrics calculated:
+        - Average duration per regime (in bars)
+        - Flip-flop rate (frequent regime changes)
+        - Regime stability score (derived from transition matrix diagonals)
+        - Transition probabilities summary
+
+        Args:
+            labels: Regime labels array
+            transition_matrix: HMM transition matrix (n_regimes x n_regimes)
+            n_regimes: Number of regimes
+
+        Returns:
+            Dictionary with temporal metrics
+        """
+        # Calculate regime durations
+        regime_durations = []
+        current_regime = labels[0]
+        current_duration = 1
+
+        for i in range(1, len(labels)):
+            if labels[i] == current_regime:
+                current_duration += 1
+            else:
+                regime_durations.append(current_duration)
+                current_regime = labels[i]
+                current_duration = 1
+
+        # Add last duration
+        regime_durations.append(current_duration)
+
+        avg_duration_bars = np.mean(regime_durations) if regime_durations else 0.0
+
+        # Calculate flip-flop rate (regime changes / total samples)
+        regime_changes = np.sum(labels[1:] != labels[:-1])
+        flip_flop_rate = regime_changes / len(labels) if len(labels) > 0 else 0.0
+
+        # Calculate stability score from transition matrix diagonal
+        # Higher diagonal values = more likely to stay in same regime = more stable
+        diagonal_probs = np.diag(transition_matrix)
+        stability_score = np.mean(diagonal_probs)
+
+        # Per-regime self-transition probabilities
+        regime_stability = {}
+        for regime_id in range(n_regimes):
+            regime_stability[regime_id] = float(transition_matrix[regime_id, regime_id])
+
+        # Duration statistics per regime
+        regime_duration_stats = {}
+        for regime_id in range(n_regimes):
+            regime_mask = (labels == regime_id)
+            regime_indices = np.where(regime_mask)[0]
+
+            if len(regime_indices) == 0:
+                regime_duration_stats[regime_id] = {
+                    'mean_duration': 0.0,
+                    'median_duration': 0.0,
+                    'max_duration': 0,
+                    'min_duration': 0,
+                    'count': 0
+                }
+                continue
+
+            # Calculate durations for this specific regime
+            regime_durations_specific = []
+            i = 0
+            while i < len(regime_indices):
+                start = regime_indices[i]
+                duration = 1
+                while (i + 1 < len(regime_indices) and
+                       regime_indices[i + 1] == regime_indices[i] + 1):
+                    duration += 1
+                    i += 1
+                regime_durations_specific.append(duration)
+                i += 1
+
+            regime_duration_stats[regime_id] = {
+                'mean_duration': float(np.mean(regime_durations_specific)),
+                'median_duration': float(np.median(regime_durations_specific)),
+                'max_duration': int(np.max(regime_durations_specific)),
+                'min_duration': int(np.min(regime_durations_specific)),
+                'count': len(regime_durations_specific)
+            }
+
+        return {
+            'avg_duration_bars': float(avg_duration_bars),
+            'flip_flop_rate': float(flip_flop_rate),
+            'stability_score': float(stability_score),
+            'regime_changes': int(regime_changes),
+            'total_samples': int(len(labels)),
+            'regime_stability': regime_stability,
+            'regime_duration_stats': regime_duration_stats,
+            'transition_matrix': transition_matrix.tolist(),
+        }
+
+    def _calculate_forward_returns_and_sharpe(
+        self,
+        df: pd.DataFrame,
+        regime_labels: np.ndarray,
+        horizons: List[int] = [1, 4, 12]  # 15m, 1h, 3h for 15m data
+    ) -> Dict[str, Any]:
+        """
+        Calculate forward returns and Sharpe ratios per regime at multiple horizons.
+
+        Args:
+            df: DataFrame with 'close' prices
+            regime_labels: Regime labels aligned with df
+            horizons: List of forward horizons in bars (default: [1, 4, 12] for 15m, 1h, 3h)
+
+        Returns:
+            Dictionary with forward returns and Sharpe ratios per regime
+        """
+        if 'close' not in df.columns:
+            tprint_warning("No 'close' column found; skipping forward returns calculation")
+            return {}
+
+        close_prices = df['close'].values
+        results = {}
+
+        for horizon in horizons:
+            horizon_name = f"{horizon}bar"
+            if horizon == 1:
+                horizon_label = "15m"
+            elif horizon == 4:
+                horizon_label = "1h"
+            elif horizon == 12:
+                horizon_label = "3h"
+            else:
+                horizon_label = f"{horizon}bars"
+
+            # Calculate forward returns
+            forward_returns = np.full(len(close_prices), np.nan)
+            for i in range(len(close_prices) - horizon):
+                forward_returns[i] = np.log(close_prices[i + horizon] / close_prices[i])
+
+            # Calculate per-regime statistics
+            regime_stats = {}
+            for regime_id in np.unique(regime_labels):
+                if regime_id < 0:
+                    continue
+
+                regime_mask = (regime_labels == regime_id) & np.isfinite(forward_returns)
+                regime_returns = forward_returns[regime_mask]
+
+                if len(regime_returns) < 2:
+                    regime_stats[int(regime_id)] = {
+                        'mean_return': 0.0,
+                        'std_return': 0.0,
+                        'sharpe_ratio': 0.0,
+                        'count': 0
+                    }
+                    continue
+
+                mean_return = np.mean(regime_returns)
+                std_return = np.std(regime_returns)
+                sharpe_ratio = mean_return / (std_return + 1e-8)
+
+                # Annualize Sharpe ratio (assuming 15m bars)
+                # 15m = 4 bars/hour, 96 bars/day, ~35040 bars/year
+                bars_per_year = 35040
+                annualization_factor = np.sqrt(bars_per_year / horizon)
+                sharpe_annualized = sharpe_ratio * annualization_factor
+
+                regime_stats[int(regime_id)] = {
+                    'mean_return': float(mean_return),
+                    'std_return': float(std_return),
+                    'sharpe_ratio': float(sharpe_ratio),
+                    'sharpe_annualized': float(sharpe_annualized),
+                    'count': int(len(regime_returns))
+                }
+
+            results[horizon_label] = regime_stats
+
+        return results
 
     def _analyze_gmm_feature_impact(
         self,
@@ -3518,6 +3904,71 @@ class MLPathRegimeStep(BaseStep):
                         )
 
                     f.write("\n")
+
+                # Add Temporal Metrics section
+                temporal_metrics = classifier_metrics.get('temporal_metrics') if classifier_metrics else None
+                if temporal_metrics:
+                    f.write("---\n\n")
+                    f.write("## Temporal Metrics (HMM Transition Dynamics)\n\n")
+                    f.write(f"**Average Duration**: {temporal_metrics.get('avg_duration_bars', 0):.2f} bars\n\n")
+                    f.write(f"**Flip-Flop Rate**: {temporal_metrics.get('flip_flop_rate', 0):.4f}\n\n")
+                    f.write(f"**Stability Score**: {temporal_metrics.get('stability_score', 0):.4f}\n\n")
+                    f.write(f"**Regime Changes**: {temporal_metrics.get('regime_changes', 0)}\n\n")
+                    f.write(f"**Total Samples**: {temporal_metrics.get('total_samples', 0)}\n\n")
+
+                    # Transition Matrix
+                    trans_matrix = temporal_metrics.get('transition_matrix', [])
+                    if trans_matrix:
+                        f.write("### Transition Matrix\n\n")
+                        f.write("Probability of transitioning from regime i (row) to regime j (column):\n\n")
+                        f.write("| From → To | " + " | ".join([f"Regime {i}" for i in range(len(trans_matrix))]) + " |\n")
+                        f.write("|" + "|".join(["-----------"] * (len(trans_matrix) + 1)) + "|\n")
+                        for i, row in enumerate(trans_matrix):
+                            f.write(f"| **Regime {i}** | " + " | ".join([f"{p:.4f}" for p in row]) + " |\n")
+                        f.write("\n")
+
+                    # Per-regime duration stats
+                    duration_stats = temporal_metrics.get('regime_duration_stats', {})
+                    if duration_stats:
+                        f.write("### Regime Duration Statistics\n\n")
+                        f.write("| Regime | Mean Duration (bars) | Median | Min | Max | Occurrences |\n")
+                        f.write("|--------|---------------------|--------|-----|-----|-------------|\n")
+                        for regime_id in sorted(duration_stats.keys()):
+                            stats = duration_stats[regime_id]
+                            f.write(
+                                f"| {regime_id} | {stats['mean_duration']:.2f} | "
+                                f"{stats['median_duration']:.1f} | {stats['min_duration']} | "
+                                f"{stats['max_duration']} | {stats['count']} |\n"
+                            )
+                        f.write("\n")
+
+                # Add Forward Returns and Sharpe Ratios section
+                forward_returns_sharpe = classifier_metrics.get('forward_returns_sharpe') if classifier_metrics else None
+                if forward_returns_sharpe:
+                    f.write("---\n\n")
+                    f.write("## Forward Returns & Sharpe Ratios Per Regime\n\n")
+
+                    for horizon_label in ['15m', '1h', '3h']:
+                        if horizon_label not in forward_returns_sharpe:
+                            continue
+
+                        regime_stats = forward_returns_sharpe[horizon_label]
+                        f.write(f"### {horizon_label} Horizon\n\n")
+                        f.write("| Regime | Mean Return | Std Return | Sharpe | Sharpe (Ann.) | Samples |\n")
+                        f.write("|--------|-------------|------------|--------|---------------|-------|\n")
+
+                        for regime_id in sorted(regime_stats.keys()):
+                            stats = regime_stats[regime_id]
+                            f.write(
+                                f"| {regime_id} | {stats['mean_return']:.6f} | "
+                                f"{stats['std_return']:.6f} | {stats['sharpe_ratio']:.4f} | "
+                                f"{stats['sharpe_annualized']:.4f} | {stats['count']} |\n"
+                            )
+                        f.write("\n")
+
+                f.write("---\n\n")
+                f.write("*Report generated by ml_path_regime_step with HMM architecture*\n")
+
         except Exception:
             md_path = ""
 

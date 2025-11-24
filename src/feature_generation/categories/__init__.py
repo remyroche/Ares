@@ -37,6 +37,7 @@ from .returns import (
     ReturnsKurtosisGenerator,
     ReturnGenerator,
     SharpeRatioGenerator,
+    AmihudIlliquidityRatioGenerator,
     # NEW FEATURES - Advanced Returns Analysis
     AdvancedCumulativeReturnsGenerator,
     RollingZScoreReturnsGenerator,

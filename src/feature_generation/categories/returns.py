@@ -357,6 +357,8 @@ class ReturnsFeatureGenerator(VectorizedFeatureGenerator):
                     generator = ReturnsKurtosisGenerator(window)
                 elif feature_type == 'sharpe_ratio':
                     generator = SharpeRatioGenerator(window)
+                elif feature_type == 'amihud_illiquidity':
+                    generator = AmihudIlliquidityRatioGenerator(window)
                 else:
                     continue
 
@@ -1088,6 +1090,116 @@ class SharpeRatioGenerator(VectorizedFeatureGenerator):
 
         return pd.Series(sharpe_ratio, index=data.index)
 
+class AmihudIlliquidityRatioGenerator(VectorizedFeatureGenerator):
+    """Generator for Amihud Illiquidity Ratio - measures price impact per unit of trading volume - VECTORIZED."""
+
+    def __init__(self,
+                 window: int = 20,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
+                 **base_kwargs):
+        """
+        Initialize Amihud Illiquidity Ratio generator.
+
+        The Amihud Illiquidity Ratio measures the price impact of trading by calculating
+        the ratio of absolute returns to trading volume. Higher values indicate lower
+        liquidity (more illiquid markets).
+
+        Formula: Mean(|Return_t| / Volume_t) over rolling window
+
+        Args:
+            window: Rolling window for illiquidity calculation
+            base_calculation: Base calculation type (price_levels, returns_vwap, etc.)
+            **base_kwargs: Additional parameters for base calculation
+        """
+        if isinstance(base_calculation, str):
+            base_calculation = BaseCalculationType(base_calculation)
+
+        # Create base calculator
+        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
+
+        # Update required columns based on base calculation
+        required_columns = self.base_calculator.get_required_columns()
+        # Add volume as required column
+        if "volume" not in required_columns:
+            required_columns = required_columns + ["volume"]
+
+        config = FeatureConfig(
+            name=f"amihud_illiquidity_{window}_{base_calculation.value}",
+            category=FeatureCategory.RETURNS,
+            description=f"Amihud illiquidity ratio over {window} periods based on {base_calculation.value}",
+            required_columns=required_columns,
+            default_lookback=window,
+            min_lookback=window,
+            max_lookback=window,
+            parameters={
+                'window': window,
+                'base_calculation': base_calculation.value,
+                **base_kwargs
+            },
+            matrix_optimized=True,
+            gpu_accelerated=False
+        )
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        self.window = window
+        self.base_calculation = base_calculation
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
+        """Generate Amihud illiquidity ratio based on the specified base calculation - VECTORIZED."""
+        # Check if volume column exists
+        if 'volume' not in data.columns:
+            self.logger.warning("Volume column not found. Amihud illiquidity requires volume data.")
+            return pd.Series(np.full(len(data), np.nan), index=data.index)
+
+        # Calculate base values
+        base_values = self.base_calculator.calculate(data)
+
+        # Convert to numpy array for vectorized operations
+        values = base_values.values
+        volumes = data['volume'].values
+
+        # Vectorized Amihud illiquidity calculation
+        if len(values) < self.window + 1:
+            return pd.Series(np.full(len(values), np.nan), index=data.index)
+
+        # Calculate returns using vectorized operations - use safe division
+        returns = np.diff(values) / pd.Series(values[:-1]).replace(0, np.nan)
+        returns = np.concatenate([[np.nan], returns])  # Add NaN for first value
+
+        # Calculate absolute returns
+        abs_returns = np.abs(returns)
+
+        # Vectorized rolling Amihud illiquidity calculation
+        amihud_illiquidity = np.full(len(values), np.nan)
+
+        for i in range(self.window, len(values)):
+            window_abs_returns = abs_returns[i-self.window+1:i+1]
+            window_volumes = volumes[i-self.window+1:i+1]
+
+            # Filter out NaN values and zero/negative volumes
+            valid_mask = np.isfinite(window_abs_returns) & np.isfinite(window_volumes) & (window_volumes > 0)
+            valid_abs_returns = window_abs_returns[valid_mask]
+            valid_volumes = window_volumes[valid_mask]
+
+            if len(valid_abs_returns) > 1:  # Need at least 2 values
+                # Calculate price impact per unit volume
+                # Use safe division - avoid division by very small volumes
+                price_impacts = valid_abs_returns / valid_volumes
+
+                # Filter out extreme values (e.g., due to very small volumes)
+                # Use winsorization at 99th percentile to handle outliers
+                if len(price_impacts) > 3:
+                    upper_bound = np.percentile(price_impacts, 99)
+                    price_impacts = np.clip(price_impacts, 0, upper_bound)
+
+                # Mean of price impacts
+                amihud_illiquidity[i] = np.mean(price_impacts)
+
+        return pd.Series(amihud_illiquidity, index=data.index)
+
 # NEW FEATURES - Advanced Returns Analysis
 
 class AdvancedCumulativeReturnsGenerator(VectorizedFeatureGenerator):
@@ -1306,7 +1418,8 @@ def create_returns_generators(periods: Dict[str, List[int]] = None) -> List[Feat
             'volatility': [20],
             'skewness': [20],
             'kurtosis': [20],
-            'sharpe_ratio': [20]
+            'sharpe_ratio': [20],
+            'amihud_illiquidity': [20]
         }
 
     generators = []
@@ -1342,6 +1455,10 @@ def create_returns_generators(periods: Dict[str, List[int]] = None) -> List[Feat
     # Sharpe ratio generators
     for window in periods.get('sharpe_ratio', [20]):
         generators.append(SharpeRatioGenerator(window))
+
+    # Amihud illiquidity generators
+    for window in periods.get('amihud_illiquidity', [20]):
+        generators.append(AmihudIlliquidityRatioGenerator(window))
 
     # NEW FEATURES - Advanced Returns Analysis
     # Advanced cumulative returns generators
@@ -1555,6 +1672,14 @@ class VectorBTOptimizedReturnsGenerator(VectorizedFeatureGenerator):
                 'base_calculation': 'price_returns'
             })
 
+        # Amihud illiquidity
+        for window in [20]:
+            configs.append({
+                'type': 'amihud_illiquidity',
+                'window': window,
+                'base_calculation': 'price_returns'
+            })
+
         return configs
 
     def _fallback_comprehensive_features(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -1578,7 +1703,8 @@ class VectorBTOptimizedReturnsGenerator(VectorizedFeatureGenerator):
             ReturnsVolatilityGenerator(window=20),
             ReturnsSkewnessGenerator(window=20),
             ReturnsKurtosisGenerator(window=20),
-            SharpeRatioGenerator(window=20)
+            SharpeRatioGenerator(window=20),
+            AmihudIlliquidityRatioGenerator(window=20)
         ]
 
         for generator in generators:
@@ -1644,7 +1770,8 @@ def create_vectorbt_optimized_returns_generators() -> List[FeatureGenerator]:
         ReturnsVolatilityGenerator(window=20),
         ReturnsSkewnessGenerator(window=20),
         ReturnsKurtosisGenerator(window=20),
-        SharpeRatioGenerator(window=20)
+        SharpeRatioGenerator(window=20),
+        AmihudIlliquidityRatioGenerator(window=20)
     ])
 
     return generators

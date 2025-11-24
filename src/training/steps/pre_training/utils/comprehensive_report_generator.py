@@ -541,6 +541,75 @@ tail -f logs/{step_name}.log
                     content += f"- *{interp}*\n"
                 content += "\n"
 
+        # Returns Variability Distribution at 4h
+        if 'returns_variability_4h' in metrics:
+            content += f"\n### Returns Variability Distribution (4h Timeframe)\n"
+            rv = metrics['returns_variability_4h']
+
+            # Basic statistics
+            if 'mean' in rv:
+                content += f"- **Mean**: {rv['mean']:.6f}\n"
+            if 'std' in rv:
+                content += f"- **Std Deviation**: {rv['std']:.6f}\n"
+            if 'median' in rv:
+                content += f"- **Median**: {rv['median']:.6f}\n"
+            if 'min' in rv:
+                content += f"- **Min**: {rv['min']:.6f}\n"
+            if 'max' in rv:
+                content += f"- **Max**: {rv['max']:.6f}\n"
+
+            # Distribution percentiles
+            if 'percentiles' in rv:
+                perc = rv['percentiles']
+                content += f"\n**Distribution Percentiles:**\n"
+                if 'p5' in perc:
+                    content += f"- **5th Percentile**: {perc['p5']:.6f}\n"
+                if 'p25' in perc:
+                    content += f"- **25th Percentile (Q1)**: {perc['p25']:.6f}\n"
+                if 'p50' in perc:
+                    content += f"- **50th Percentile (Median)**: {perc['p50']:.6f}\n"
+                if 'p75' in perc:
+                    content += f"- **75th Percentile (Q3)**: {perc['p75']:.6f}\n"
+                if 'p95' in perc:
+                    content += f"- **95th Percentile**: {perc['p95']:.6f}\n"
+
+            # Distribution shape
+            if 'skewness' in rv:
+                content += f"\n**Distribution Shape:**\n"
+                content += f"- **Skewness**: {rv['skewness']:.4f}\n"
+            if 'kurtosis' in rv:
+                content += f"- **Kurtosis**: {rv['kurtosis']:.4f}\n"
+
+            # Range and spread metrics
+            if 'iqr' in rv:
+                content += f"\n**Range & Spread:**\n"
+                content += f"- **IQR (Interquartile Range)**: {rv['iqr']:.6f}\n"
+            if 'range' in rv:
+                content += f"- **Range (Max - Min)**: {rv['range']:.6f}\n"
+            if 'coefficient_of_variation' in rv:
+                cv = rv['coefficient_of_variation']
+                if cv != 'inf' and cv != 'N/A':
+                    content += f"- **Coefficient of Variation**: {cv:.4f}\n"
+                else:
+                    content += f"- **Coefficient of Variation**: {cv}\n"
+
+            # Volatility regime indicator
+            if 'volatility_regime' in rv:
+                regime = rv['volatility_regime']
+                regime_icon = {
+                    'LOW': '🟢',
+                    'NORMAL': '🟡',
+                    'HIGH': '🟠',
+                    'EXTREME': '🔴'
+                }.get(regime, '⚪')
+                content += f"\n**Volatility Regime:** {regime_icon} {regime}\n"
+
+            # Interpretation
+            if 'interpretation' in rv:
+                content += f"\n*{rv['interpretation']}*\n"
+
+            content += "\n"
+
         return content + "\n"
 
     def _format_technical_metrics(self, metrics: Dict[str, Any]) -> str:

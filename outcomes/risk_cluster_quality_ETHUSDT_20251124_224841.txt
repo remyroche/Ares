@@ -1,0 +1,50 @@
+================================================================================
+Risk Cluster Quality Assessment Report
+Symbol: ETHUSDT
+Timestamp: 2025-11-24T22:48:41.226221
+Number of Regimes: 4
+Total Samples: 105087
+================================================================================
+
+Overall Quality Score: 0.4386
+
+VaR/CVaR Stratification:
+  VaR Stratification: 0.3745
+  CVaR Stratification: 0.4267
+  VaR Monotonicity: False
+  CVaR Monotonicity: False
+
+Volatility Clustering:
+  Clustering Coefficient: 0.2629
+  Within-Regime Vol CV: 0.5544
+  Between-Regime Vol CV: 0.2985
+  Separation Ratio: 0.5385
+
+Transition Stability:
+  Calm->Crash Direct Prob: 0.0209
+  Calm->Turbulent->Crash Prob: 0.0209
+  Transition Stability Score: 0.8478
+
+Per-Regime Risk Metrics:
+  Regime 0 (n=31986):
+    Avg MDD: -0.2115
+    Avg MRU: 0.6959
+    Skewness: -0.4185
+    Tail Ratio: 0.9929
+  Regime 1 (n=28707):
+    Avg MDD: -0.2669
+    Avg MRU: 0.7794
+    Skewness: 0.1392
+    Tail Ratio: 0.9816
+  Regime 2 (n=16106):
+    Avg MDD: -0.8432
+    Avg MRU: 1.7794
+    Skewness: -0.6316
+    Tail Ratio: 0.9977
+  Regime 3 (n=28288):
+    Avg MDD: -0.1997
+    Avg MRU: 0.5249
+    Skewness: -0.1677
+    Tail Ratio: 1.0065
+
+================================================================================

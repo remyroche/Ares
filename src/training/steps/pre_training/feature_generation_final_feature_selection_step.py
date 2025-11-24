@@ -1786,7 +1786,7 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
     ) -> Dict[str, Any]:
         """Perform feature selection for multiple feature set sizes with CMI-aware Tactician mode support."""
         # Define feature set sizes
-        feature_set_sizes = config.get('feature_set_sizes', [60, 50, 40])
+        feature_set_sizes = config.get('feature_set_sizes', [60, 50, 40, 30])
 
         feature_sets = {}
 
@@ -2800,7 +2800,7 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         selection_metadata = {
             'total_features_available': len([col for col in combined_features_df.columns
                                            if col not in TARGET_COLUMN_NAMES + ['timestamp']]),
-            'feature_set_sizes': config.get('feature_set_sizes', [60, 50, 40]),
+            'feature_set_sizes': config.get('feature_set_sizes', [60, 50, 40, 30]),
             'selection_method': config.get('selection_method', 'permutation'),
             'scoring_threshold': config.get('scoring_threshold', 0.01),
             'use_tree_based': config.get('use_tree_based', True),

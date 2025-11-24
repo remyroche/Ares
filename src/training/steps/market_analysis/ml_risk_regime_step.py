@@ -67,7 +67,10 @@ from src.utils.tprint import (
     tprint_error,
     tprint_success,
 )
-from src.features_common.transforms.scaling_normalization import ScalingNormalizer
+from src.features_common.transforms.scaling_normalization import (
+    ScalingNormalizer,
+    winsorized_zscore_normalize,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -319,7 +322,11 @@ class MLRiskRegimeStepHMM(BaseStep):
             duration = time.time() - start_time
             tprint_success(f"✅ {self.step_name} completed in {duration:.2f}s")
 
+            # BaseStep.run expects a boolean 'success' flag to determine
+            # whether the step completed successfully. Without it, the step
+            # is treated as a failure even if all work was done correctly.
             return {
+                "success": True,
                 "status": "success",
                 "duration": duration,
                 "regime_labels": regime_labels,
@@ -377,8 +384,7 @@ class MLRiskRegimeStepHMM(BaseStep):
         return market_data
 
     def _generate_risk_features(self, df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
-        """
-        Generate 5 core risk features with appropriate windows for 30m-3h trades.
+        """Generate the 5 core risk features and apply robust scaling.
 
         Features (all windows in bars on 1h data):
         - parkinson_volatility (window: 48 bars = 48h = 2 days)
@@ -386,95 +392,111 @@ class MLRiskRegimeStepHMM(BaseStep):
         - rolling_kurtosis (window: 36 bars = 36h = 1.5 days)
         - rolling_skewness (window: 36 bars)
         - volatility_of_volatility (window: 30 bars = 30h = 1.25 days)
-
-        All features are scaled using winsorized_zscore_normalize.
         """
         tprint_info("📊 Generating 5 core risk features...")
 
         risk_df = df.copy()
 
-        # Extract OHLC
+        # Extract OHLC as Series so rolling windows preserve the original index
         if 'high' not in risk_df.columns or 'low' not in risk_df.columns or 'close' not in risk_df.columns:
             raise ValueError("Market data must contain 'high', 'low', and 'close' columns")
 
-        high = risk_df['high'].values
-        low = risk_df['low'].values
-        close = risk_df['close'].values
+        high = risk_df['high'].astype(float)
+        low = risk_df['low'].astype(float)
+        close = risk_df['close'].astype(float)
 
         # 1. Parkinson Volatility (window: 48 bars)
         parkinson_window = int(config.get("risk_parkinson_window", 48))
-        log_hl = np.log(high / low)
-        parkinson_vol = pd.Series(log_hl).rolling(window=parkinson_window).std() * np.sqrt(1 / (4 * np.log(2)))
-        risk_df['parkinson_volatility'] = parkinson_vol
+        low_safe = low.replace(0, np.nan)
+        log_hl = np.log(high / low_safe)
+        parkinson_vol = log_hl.rolling(
+            window=parkinson_window,
+            min_periods=parkinson_window,
+        ).std() * np.sqrt(1.0 / (4.0 * np.log(2.0)))
 
         # 2. Hurst Exponent (window: 48 bars)
         hurst_window = int(config.get("risk_hurst_window", 48))
-        risk_df['hurst_exponent'] = self._calculate_hurst_exponent(close, hurst_window)
+        hurst_series = self._calculate_hurst_exponent(close, hurst_window)
 
         # 3. Rolling Kurtosis (window: 36 bars)
         kurtosis_window = int(config.get("risk_kurtosis_window", 36))
-        log_returns = np.log(close[1:] / close[:-1])
-        log_returns = np.concatenate([[np.nan], log_returns])
-        risk_df['rolling_kurtosis'] = pd.Series(log_returns).rolling(window=kurtosis_window).kurt()
+        log_returns = np.log(close / close.shift(1))
+        rolling_kurtosis = log_returns.rolling(
+            window=kurtosis_window,
+            min_periods=kurtosis_window,
+        ).kurt()
 
         # 4. Rolling Skewness (window: 36 bars)
         skewness_window = int(config.get("risk_skewness_window", 36))
-        risk_df['rolling_skewness'] = pd.Series(log_returns).rolling(window=skewness_window).skew()
+        rolling_skewness = log_returns.rolling(
+            window=skewness_window,
+            min_periods=skewness_window,
+        ).skew()
 
         # 5. Volatility of Volatility (window: 30 bars)
         vol_of_vol_window = int(config.get("risk_vol_of_vol_window", 30))
-        volatility = pd.Series(log_returns).rolling(window=20).std()
-        risk_df['volatility_of_volatility'] = volatility.rolling(window=vol_of_vol_window).std()
+        volatility = log_returns.rolling(window=20, min_periods=20).std()
+        vol_of_vol = volatility.rolling(
+            window=vol_of_vol_window,
+            min_periods=vol_of_vol_window,
+        ).std()
 
-        # Apply winsorized zscore normalization to all features
         feature_cols = [
             'parkinson_volatility',
             'hurst_exponent',
             'rolling_kurtosis',
             'rolling_skewness',
-            'volatility_of_volatility'
+            'volatility_of_volatility',
         ]
 
+        feature_frame = pd.DataFrame(
+            {
+                'parkinson_volatility': parkinson_vol,
+                'hurst_exponent': hurst_series,
+                'rolling_kurtosis': rolling_kurtosis,
+                'rolling_skewness': rolling_skewness,
+                'volatility_of_volatility': vol_of_vol,
+            },
+            index=risk_df.index,
+        )
+
         tprint_info("🔧 Applying winsorized zscore normalization...")
-        normalizer = ScalingNormalizer()
-
-        for col in feature_cols:
-            if col in risk_df.columns:
-                # Winsorized zscore: clip outliers at 5th and 95th percentiles, then zscore
-                values = risk_df[col].values
-                valid_mask = np.isfinite(values)
-
-                if valid_mask.sum() > 0:
-                    valid_values = values[valid_mask]
-                    lower = np.percentile(valid_values, 5)
-                    upper = np.percentile(valid_values, 95)
-
-                    # Winsorize
-                    values_winsorized = np.clip(values, lower, upper)
-
-                    # Z-score normalize
-                    mean_val = np.nanmean(values_winsorized)
-                    std_val = np.nanstd(values_winsorized)
-
-                    if std_val > 0:
-                        risk_df[col] = (values_winsorized - mean_val) / std_val
-                    else:
-                        risk_df[col] = 0.0
+        try:
+            scaled = winsorized_zscore_normalize(
+                feature_frame,
+                lower_quantile=0.05,
+                upper_quantile=0.95,
+            )
+            # Ensure index matches risk_df for safe assignment
+            if isinstance(scaled, pd.DataFrame) and len(scaled) == len(risk_df):
+                scaled = scaled.reindex(risk_df.index)
+            for col in feature_cols:
+                if col in scaled.columns:
+                    # Assign by position to avoid any residual index alignment issues
+                    risk_df[col] = scaled[col].values
+        except Exception as exc:
+            tprint_warning(
+                f"winsorized zscore normalization failed; keeping raw risk features: {exc}"
+            )
+            for col in feature_cols:
+                if col in feature_frame.columns:
+                    risk_df[col] = feature_frame[col].values
 
         tprint_success(f"✅ Generated {len(feature_cols)} risk features with windows 30-50 bars")
 
         return risk_df
 
-    def _calculate_hurst_exponent(self, series: np.ndarray, window: int) -> pd.Series:
-        """Calculate rolling Hurst exponent using R/S analysis."""
-        hurst_values = []
+    def _calculate_hurst_exponent(self, series: pd.Series, window: int) -> pd.Series:
+        """Calculate rolling Hurst exponent using R/S analysis on a price series."""
+        values = series.astype(float).values
+        hurst_values: List[float] = []
 
-        for i in range(len(series)):
+        for i in range(len(values)):
             if i < window:
                 hurst_values.append(np.nan)
                 continue
 
-            window_data = series[i - window:i]
+            window_data = values[i - window:i]
 
             try:
                 # R/S analysis
@@ -490,10 +512,10 @@ class MLRiskRegimeStepHMM(BaseStep):
                     hurst_values.append(hurst)
                 else:
                     hurst_values.append(0.5)
-            except:
+            except Exception:
                 hurst_values.append(0.5)
 
-        return pd.Series(hurst_values, index=range(len(series)))
+        return pd.Series(hurst_values, index=series.index)
 
     def _train_hmm_regimes(
         self,
@@ -514,10 +536,9 @@ class MLRiskRegimeStepHMM(BaseStep):
         # Select risk features
         feature_cols = [
             'parkinson_volatility',
-            'hurst_exponent',
             'rolling_kurtosis',
             'rolling_skewness',
-            'volatility_of_volatility'
+            'volatility_of_volatility',
         ]
 
         # Filter to available features
@@ -717,10 +738,9 @@ class MLRiskRegimeStepHMM(BaseStep):
 
         feature_cols = [
             'parkinson_volatility',
-            'hurst_exponent',
             'rolling_kurtosis',
             'rolling_skewness',
-            'volatility_of_volatility'
+            'volatility_of_volatility',
         ]
 
         available_features = [c for c in feature_cols if c in risk_df.columns]
@@ -1029,11 +1049,10 @@ class MLRiskRegimeStepHMM(BaseStep):
         # Feature columns for WCoV analysis
         feature_cols = [
             'parkinson_volatility',
-            'hurst_exponent',
             'rolling_kurtosis',
             'rolling_skewness',
             'volatility_of_volatility',
-            'mahal_distance_log'
+            'mahal_distance_log',
         ]
 
         available_features = [c for c in feature_cols if c in risk_df.columns]

@@ -102,17 +102,65 @@ def _export_report(
 
     # Optional CSV export when feature_metrics are provided in the payload
     feature_metrics = payload.get("feature_metrics")
+    model_reliability = payload.get("model_reliability")
+    model_pairwise = payload.get("model_pairwise")
+
     if isinstance(feature_metrics, dict) and feature_metrics:
         try:
-            df = pd.DataFrame.from_dict(feature_metrics, orient="index")
-            df.index.name = "feature"
-            df.to_csv(csv_path)
-            logger.info(
-                "Saved %s diagnostics to %s and %s",
-                prefix,
-                md_path,
-                csv_path,
-            )
+            frames: list[pd.DataFrame] = []
+
+            # Base per-feature metrics
+            df_features = pd.DataFrame.from_dict(feature_metrics, orient="index")
+            df_features.index.name = "feature"
+            df_features.insert(0, "row_type", "feature")
+            frames.append(df_features)
+
+            # Optional per-model reliability metrics
+            if isinstance(model_reliability, dict):
+                per_model = model_reliability.get("per_model")
+                if isinstance(per_model, dict) and per_model:
+                    df_models = pd.DataFrame.from_dict(per_model, orient="index")
+                    df_models.index.name = "feature"
+                    df_models.insert(0, "row_type", "model_reliability")
+                    frames.append(df_models)
+
+            # Optional pairwise relationships between specialist models
+            if isinstance(model_pairwise, dict):
+                pairs = model_pairwise.get("pairs")
+                if isinstance(pairs, list) and pairs:
+                    df_pairs = pd.DataFrame(pairs)
+                    if not df_pairs.empty:
+                        df_pairs = df_pairs.copy()
+                        pair_index = (
+                            df_pairs["model_i"].astype(str)
+                            + "|"
+                            + df_pairs["model_j"].astype(str)
+                        )
+                        df_pairs.index = pair_index
+                        df_pairs.index.name = "feature"
+                        df_pairs.insert(0, "row_type", "model_pairwise")
+                        frames.append(df_pairs)
+
+            if frames:
+                df_all = pd.concat(frames, axis=0, sort=False)
+                df_all.to_csv(csv_path)
+                logger.info(
+                    "Saved %s diagnostics to %s and %s",
+                    prefix,
+                    md_path,
+                    csv_path,
+                )
+            else:
+                # Fallback: feature metrics only (should not normally trigger)
+                df = pd.DataFrame.from_dict(feature_metrics, orient="index")
+                df.index.name = "feature"
+                df.to_csv(csv_path)
+                logger.info(
+                    "Saved %s diagnostics to %s and %s",
+                    prefix,
+                    md_path,
+                    csv_path,
+                )
         except Exception as csv_exc:  # pragma: no cover - best-effort CSV export
             logger.warning("Failed to export CSV diagnostics table: %s", csv_exc)
     else:
@@ -357,6 +405,207 @@ def _compute_feature_metrics(
         }
 
     return metrics
+
+
+def _infer_model_group(feature_name: str) -> str:
+    name = feature_name.lower()
+    if name.startswith("risk_regime") or name.startswith("risk_pred") or "risk_regime" in name:
+        return "risk"
+    if "alpha" in name:
+        return "alpha"
+    if name.startswith("liquidity_regime") or "liquidity" in name:
+        return "liquidity"
+    if name.startswith("breakout_") or name in {"is_resistance", "is_support"}:
+        return "breakout_bounce"
+    return "other"
+
+
+def _compute_model_reliability(
+    feature_metrics: Dict[str, Dict[str, float]],
+) -> Dict[str, Any]:
+    groups: Dict[str, Dict[str, Any]] = {}
+    for feat, met in feature_metrics.items():
+        group = _infer_model_group(feat)
+        if group == "other":
+            continue
+        g = groups.setdefault(
+            group,
+            {
+                "features": [],
+                "mi_values": [],
+                "r2_values": [],
+            },
+        )
+        mi_val = float(met.get("mi_mean_cv", 0.0))
+        r2_val = float(met.get("r2", 0.0))
+        g["features"].append(feat)
+        if np.isfinite(mi_val):
+            g["mi_values"].append(mi_val)
+        if np.isfinite(r2_val):
+            g["r2_values"].append(r2_val)
+
+    per_model: Dict[str, Dict[str, float]] = {}
+    for group, data in groups.items():
+        mi_arr = np.array(data["mi_values"], dtype=float)
+        r2_arr = np.array(data["r2_values"], dtype=float)
+        n_features = len(data["features"])
+        model_summary: Dict[str, float] = {
+            "n_features": int(n_features),
+            "mi_mean_avg": float(mi_arr.mean()) if mi_arr.size else 0.0,
+            "mi_mean_median": float(np.median(mi_arr)) if mi_arr.size else 0.0,
+            "r2_mean": float(r2_arr.mean()) if r2_arr.size else 0.0,
+            "r2_median": float(np.median(r2_arr)) if r2_arr.size else 0.0,
+            "n_high_mi": int(np.sum(mi_arr > 0.1)) if mi_arr.size else 0,
+            "n_high_r2": int(np.sum(r2_arr > 0.05)) if r2_arr.size else 0,
+        }
+
+        best_mi: Optional[float] = None
+        best_mi_feat: Optional[str] = None
+        best_r2: Optional[float] = None
+        best_r2_feat: Optional[str] = None
+
+        for feat in data["features"]:
+            met = feature_metrics.get(feat, {})
+            mi_val = float(met.get("mi_mean_cv", 0.0))
+            r2_val = float(met.get("r2", 0.0))
+            if np.isfinite(mi_val) and (best_mi is None or mi_val > best_mi):
+                best_mi = mi_val
+                best_mi_feat = feat
+            if np.isfinite(r2_val) and (best_r2 is None or r2_val > best_r2):
+                best_r2 = r2_val
+                best_r2_feat = feat
+
+        if best_mi is not None:
+            model_summary["best_mi_feature_value"] = float(best_mi)
+        if best_mi_feat is not None:
+            model_summary["best_mi_feature"] = best_mi_feat
+        if best_r2 is not None:
+            model_summary["best_r2_feature_value"] = float(best_r2)
+        if best_r2_feat is not None:
+            model_summary["best_r2_feature"] = best_r2_feat
+
+        per_model[group] = model_summary
+
+    ranked_by_mi = sorted(
+        per_model.items(), key=lambda kv: kv[1].get("mi_mean_avg", 0.0), reverse=True
+    )
+    ranked_by_r2 = sorted(
+        per_model.items(), key=lambda kv: kv[1].get("r2_mean", 0.0), reverse=True
+    )
+
+    return {
+        "per_model": per_model,
+        "ranked_by_mi": [g for g, _ in ranked_by_mi],
+        "ranked_by_r2": [g for g, _ in ranked_by_r2],
+    }
+
+
+def _compute_model_pairwise_relationships(
+    X: pd.DataFrame,
+    feature_metrics: Dict[str, Dict[str, float]],
+) -> Dict[str, Any]:
+    group_to_best: Dict[str, str] = {}
+    group_to_best_score: Dict[str, float] = {}
+
+    for feat, met in feature_metrics.items():
+        group = _infer_model_group(feat)
+        if group == "other":
+            continue
+        score = float(met.get("mi_mean_cv", 0.0))
+        prev = group_to_best_score.get(group)
+        if prev is None or score > prev:
+            group_to_best_score[group] = score
+            group_to_best[group] = feat
+
+    if len(group_to_best) < 2:
+        return {"error": "Not enough specialist model groups for pairwise analysis"}
+
+    reps: Dict[str, pd.Series] = {}
+    for group, feat in group_to_best.items():
+        if feat not in X.columns:
+            continue
+        s = X[feat].astype(float).replace([np.inf, -np.inf], np.nan)
+        reps[group] = s
+
+    if len(reps) < 2:
+        return {"error": "Representative features missing in X for pairwise analysis"}
+
+    common_index: Optional[pd.DatetimeIndex] = None
+    for s in reps.values():
+        if common_index is None:
+            common_index = s.index
+        else:
+            common_index = common_index.intersection(s.index)
+
+    if common_index is None or len(common_index) == 0:
+        return {"error": "No overlapping samples for pairwise analysis"}
+
+    matrix = pd.DataFrame(
+        {g: s.loc[common_index] for g, s in reps.items()},
+        index=common_index,
+    )
+    matrix = matrix.replace([np.inf, -np.inf], np.nan).fillna(0.0)
+
+    config = FinalFeatureSelectionConfig()
+    component = FinalFeatureSelectionComponent(config=config)
+
+    groups = sorted(matrix.columns)
+    pairwise: list[Dict[str, Any]] = []
+
+    for i in range(len(groups)):
+        for j in range(i + 1, len(groups)):
+            gi = groups[i]
+            gj = groups[j]
+
+            xi = matrix[gi].to_numpy(dtype=float)
+            xj = matrix[gj].to_numpy(dtype=float)
+
+            try:
+                corr = float(np.corrcoef(xi, xj)[0, 1])
+            except Exception:
+                corr = float("nan")
+
+            if np.isfinite(corr):
+                r2_val = float(corr ** 2)
+            else:
+                r2_val = float("nan")
+
+            df_i = pd.DataFrame({gi: matrix[gi]})
+            df_j = pd.DataFrame({gj: matrix[gj]})
+
+            try:
+                mi_forward_scores = component._event_aware_feature_scores(df_i, matrix[gj])
+                mi_forward = float(mi_forward_scores.get(gi, 0.0))
+            except Exception:
+                mi_forward = 0.0
+
+            try:
+                mi_backward_scores = component._event_aware_feature_scores(df_j, matrix[gi])
+                mi_backward = float(mi_backward_scores.get(gj, 0.0))
+            except Exception:
+                mi_backward = 0.0
+
+            mi_sym = 0.5 * (mi_forward + mi_backward)
+
+            pairwise.append(
+                {
+                    "model_i": gi,
+                    "model_j": gj,
+                    "rep_feature_i": group_to_best.get(gi),
+                    "rep_feature_j": group_to_best.get(gj),
+                    "mi_proxy": float(mi_sym),
+                    "mi_forward": float(mi_forward),
+                    "mi_backward": float(mi_backward),
+                    "r2": r2_val,
+                }
+            )
+
+    pairwise.sort(key=lambda d: d["mi_proxy"], reverse=True)
+
+    return {
+        "representatives": group_to_best,
+        "pairs": pairwise,
+    }
 
 
 def _compute_probe_models(
@@ -737,6 +986,9 @@ def run_diagnostics(
     if not feature_metrics:
         raise ValueError("No feature metrics computed; check inputs and artifacts")
 
+    model_reliability = _compute_model_reliability(feature_metrics=feature_metrics)
+    model_relationships = _compute_model_pairwise_relationships(X=X, feature_metrics=feature_metrics)
+
     # 4) Probe models (LogReg / LGBM), leakage, stability, interactions
     probe_models = _compute_probe_models(X=X, y=y, n_splits=cv_folds)
 
@@ -822,6 +1074,59 @@ def run_diagnostics(
             _fmt_probe("LightGBM", lgbm_summary),
         ]
     )
+
+    md_lines.extend(
+        [
+            "",
+            "### Per-specialist model reliability vs target (MI / R^2)",
+        ]
+    )
+
+    per_model = model_reliability.get("per_model", {}) if isinstance(model_reliability, dict) else {}
+    if per_model:
+        for group_name, stats in per_model.items():
+            md_lines.append(
+                "- "
+                + f"{group_name}: "
+                + f"n_features={int(stats.get('n_features', 0))}, "
+                + f"MI_mean={float(stats.get('mi_mean_avg', 0.0)):.4f}, "
+                + f"R^2_mean={float(stats.get('r2_mean', 0.0)):.4f}, "
+                + f"high_MI={int(stats.get('n_high_mi', 0))}, "
+                + f"high_R^2={int(stats.get('n_high_r2', 0))}"
+            )
+    else:
+        md_lines.append("- Per-model reliability metrics unavailable")
+
+    md_lines.extend(
+        [
+            "",
+            "### Pairwise relationships between specialist models (MI / R^2)",
+        ]
+    )
+
+    pairwise_info = model_relationships if isinstance(model_relationships, dict) else {}
+    pair_list = pairwise_info.get("pairs", []) if isinstance(pairwise_info, dict) else []
+
+    if not pair_list:
+        error_msg = pairwise_info.get("error") if isinstance(pairwise_info, dict) else None
+        if error_msg:
+            md_lines.append(f"- Pairwise model analysis unavailable: {error_msg}")
+        else:
+            md_lines.append("- Pairwise model analysis unavailable")
+    else:
+        md_lines.append("")
+        md_lines.append("| Model i | Model j | Rep feature i | Rep feature j | MI_proxy | R^2 |")
+        md_lines.append("|---------|---------|---------------|---------------|---------:|----:|")
+        for entry in pair_list:
+            md_lines.append(
+                "| "
+                + f"{entry.get('model_i', '')} | "
+                + f"{entry.get('model_j', '')} | "
+                + f"{entry.get('rep_feature_i', '')} | "
+                + f"{entry.get('rep_feature_j', '')} | "
+                + f"{float(entry.get('mi_proxy', 0.0)):.4f} | "
+                + f"{float(entry.get('r2', 0.0)):.4f} |"
+            )
 
     md_lines.extend(
         [
@@ -922,6 +1227,8 @@ def run_diagnostics(
         "leakage_diagnostics": leakage_diagnostics,
         "stability_metrics": global_stability,
         "interactions": interactions,
+        "model_reliability": model_reliability,
+        "model_pairwise": model_relationships,
     }
 
     return _export_report(

@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 
 def _bars_per_year_from_timeframe(timeframe: str) -> float:
@@ -136,8 +136,10 @@ def run_simple_long_grid_backtest(
     ml_df: pd.DataFrame,
     timeframe: str,
     fee_rate: float = 0.0015,
-    regime_col: str | None = None,
+    regime_col: Optional[str] = None,
     max_holding_bars: int = 6,
+    tp_values: Optional[List[float]] = None,
+    sl_values: Optional[List[float]] = None,
 ) -> pd.DataFrame:
     index = close.index
     close = close.reindex(index).astype(float)
@@ -149,7 +151,7 @@ def run_simple_long_grid_backtest(
     ml_df = ml_df.reindex(index)
 
     regimes = None
-    unique_regimes: List[Any] | None = None
+    unique_regimes: Optional[List[Any]] = None
     if regime_col is not None and regime_col in ml_df.columns:
         regimes = ml_df[regime_col]
         try:
@@ -161,8 +163,14 @@ def run_simple_long_grid_backtest(
             regimes = None
             unique_regimes = None
 
-    tp_values = [v / 10000.0 for v in range(70, 130, 10)]
-    sl_values = [v / 10000.0 for v in range(30, 70, 10)]
+    # Profit-take grid: 0.7%–2.2% in 0.1% steps. This extends the previous
+    # 0.7%–1.2% range so that grid backtests can cover the higher profit
+    # levels explored by meta_labeling_hpo_experiment (profit_thr_base
+    # search space ~0.8%–2.2%).
+    if tp_values is None:
+        tp_values = [v / 10000.0 for v in range(70, 230, 10)]
+    if sl_values is None:
+        sl_values = [v / 10000.0 for v in range(30, 70, 10)]
     # Use quantile-based confidence thresholds so that we always work with the
     # top X% of analyst confidence rather than fixed absolute cutoffs. We map:
     #   0.5 -> top 50%, 0.6 -> top 40%, 0.7 -> top 30%, 0.8 -> top 20%,
@@ -338,7 +346,7 @@ def run_simple_long_grid_backtest(
                 trade_returns_wo: List[float] = []
                 trade_returns_with: List[float] = []
 
-                entry_idx: int | None = None
+                entry_idx: Optional[int] = None
                 for idx in range(len(in_position)):
                     if entries.iloc[idx]:
                         entry_idx = idx

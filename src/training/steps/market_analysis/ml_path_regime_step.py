@@ -52,7 +52,7 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 from scipy.stats import spearmanr, pearsonr, gaussian_kde, multivariate_normal
-from sklearn.preprocessing import MinMaxScaler
+from sklearn.preprocessing import MinMaxScaler, RobustScaler
 from hmmlearn.hmm import GaussianHMM
 
 from src.training.steps.base_step import BaseStep
@@ -252,9 +252,9 @@ class MLPathRegimeStep(BaseStep):
         try:
             symbol = str(config.get("symbol", "ETHUSDT"))
             exchange = str(config.get("exchange", "binance"))
-            regime_timeframe = str(
-                config.get("regime_timeframe", config.get("timeframe", "15m"))
-            )
+            base_timeframe = str(config.get("timeframe", "15m"))
+            regime_timeframe = base_timeframe
+            config["regime_timeframe"] = regime_timeframe
             direction = str(config.get("direction", "long"))
 
             # Set default alpha-specific configuration if not provided
@@ -412,6 +412,13 @@ class MLPathRegimeStep(BaseStep):
             regime_col_name: Optional[str] = None
             risk_quality_metrics: Optional[ClusterQualityMetrics] = None
             risk_quality_path: Optional[str] = None
+            feature_pipeline_artifacts: Optional[Dict[str, Any]] = None
+            feature_pipeline_path: Optional[str] = None
+            model_path: Optional[str] = None
+            wcov_csv_path: Optional[str] = None
+            wcov_md_path: Optional[str] = None
+            feature_wcov_diag_csv_path: Optional[str] = None
+            xgb_stats_csv_path: Optional[str] = None
 
             tprint_info("=" * 80)
             tprint_info("🎯 HMM REGIME DETECTION (Temporal Structure Learning)")
@@ -673,6 +680,7 @@ class MLPathRegimeStep(BaseStep):
                         f"{symbol_d or 'UNKNOWN'}_{exchange_d or 'UNKNOWN'}_{regime_tf_d}_{ts_diag}.csv"
                     )
                     wcov_diag_df.to_csv(diag_path, index=False)
+                    feature_wcov_diag_csv_path = diag_path
                     tprint_info(
                         f"💾 Saved Path feature WCoV diagnostics (teacher vs predicted regimes): {diag_path}"
                     )
@@ -698,6 +706,78 @@ class MLPathRegimeStep(BaseStep):
                     "source_market_data": market_source,
                 },
             )
+
+            try:
+                # Prefer label_quality from training_metrics but fall back to local label_metrics
+                label_quality = training_metrics.get("label_quality") or {}
+                if not label_quality:
+                    lm = locals().get("label_metrics")
+                    if isinstance(lm, dict):
+                        label_quality = lm
+
+                teacher_probs = None
+                if isinstance(label_quality, dict):
+                    teacher_probs = label_quality.get("teacher_probs")
+
+                if teacher_probs is not None:
+                    teacher_probs_arr = np.asarray(teacher_probs)
+
+                    if teacher_probs_arr.shape[0] == len(risk_df):
+                        n_regimes_tp = teacher_probs_arr.shape[1]
+
+                        teacher_probs_df = pd.DataFrame(
+                            teacher_probs_arr,
+                            index=risk_df.index,
+                            columns=[f"path_regime_{i}_prob" for i in range(n_regimes_tp)],
+                        )
+
+                        teacher_probs_save = teacher_probs_df.reset_index().rename(
+                            columns={teacher_probs_df.index.name or "index": "timestamp"}
+                        )
+
+                        regime_tf_tp = str(
+                            config.get("regime_timeframe", config.get("timeframe", "15m"))
+                        )
+
+                        self._save_artifact(
+                            data=teacher_probs_save,
+                            artifact_name=f"ml_path_regime_probabilities_{regime_tf_tp}",
+                            artifact_type="data",
+                            metadata={
+                                "symbol": symbol,
+                                "exchange": exchange,
+                                "timeframe": regime_tf_tp,
+                                "source_regime_timeframe": regime_tf_tp,
+                                "n_regimes": n_regimes_tp,
+                            },
+                        )
+
+                        if regime_tf_tp == "15m":
+                            self._save_artifact(
+                                data=teacher_probs_save,
+                                artifact_name="ml_path_regime_probs_15m",
+                                artifact_type="data",
+                                metadata={
+                                    "symbol": symbol,
+                                    "exchange": exchange,
+                                    "timeframe": regime_tf_tp,
+                                    "source_regime_timeframe": regime_tf_tp,
+                                    "n_regimes": n_regimes_tp,
+                                },
+                            )
+                    else:
+                        tprint_warning(
+                            f"Teacher probabilities shape mismatch: expected {len(risk_df)} rows, "
+                            f"got {teacher_probs_arr.shape[0]}"
+                        )
+                else:
+                    tprint_warning(
+                        "HMM teacher_probs not found in label_quality; skipping path regime probabilities artifact."
+                    )
+            except Exception as probs_art_exc:
+                tprint_warning(
+                    f"Failed to save HMM path regime probabilities artifact: {probs_art_exc}"
+                )
 
             # Save path regimes on the native regime timeframe (expected to be 15m)
             try:
@@ -2210,6 +2290,7 @@ class MLPathRegimeStep(BaseStep):
             metrics: Quality metrics
         """
         n_regimes = int(config.get("risk_n_regimes", 4))
+        scaler: Optional[RobustScaler] = None
 
         # Core 7 Path Geometry Features (user-specified)
         # These are the ONLY features used for GMM regime detection
@@ -2276,12 +2357,22 @@ class MLPathRegimeStep(BaseStep):
         if exec_mode_dtype != "blank":
             risk_features_clean = risk_features_clean.astype("float32")
         else:
-            # In blank mode keep higher precision to improve numerical stability for GMM
             risk_features_clean = risk_features_clean.astype("float32")
 
         tprint_info(
             f"  Valid samples after imputation: {len(risk_features_clean)}/{len(risk_df)}"
         )
+
+        geometry_cols = [c for c in risk_features_clean.columns if c in primary_risk_cols]
+        if geometry_cols:
+            try:
+                scaler = RobustScaler()
+                risk_features_clean[geometry_cols] = scaler.fit_transform(
+                    risk_features_clean[geometry_cols]
+                )
+            except Exception as scale_exc:
+                tprint_warning(f"Robust scaling of geometry features failed; using raw features: {scale_exc}")
+                scaler = None
 
         # ========== STEP 2: Drop Correlated Features ==========
         use_corr_filter = bool(config.get("risk_use_corr_filter", True))
@@ -2664,6 +2755,7 @@ class MLPathRegimeStep(BaseStep):
         metrics = self._calculate_regime_quality_metrics(
             metrics_labels, metrics_features, None
         )
+        metrics["feature_scaler"] = scaler
 
         # Persist a compact, human-readable summary of label quality metrics so
         # WCoV and separation diagnostics are easy to inspect across runs.
@@ -2700,13 +2792,10 @@ class MLPathRegimeStep(BaseStep):
                 f"{symbol_q or 'UNKNOWN'}_{regime_tf_q}_{ts_q}.csv"
             )
             quality_df.to_csv(quality_path, index=False)
+            metrics["label_quality_csv_path"] = quality_path
             tprint_info(f"💾 Saved Path label quality summary: {quality_path}")
         except Exception as quality_exc:  # pragma: no cover - defensive
             tprint_warning(f"Failed to persist risk label quality summary (non-fatal): {quality_exc}")
-
-        # Expand labels back to full dataframe
-        full_labels = np.full(len(risk_df), -1, dtype=int)
-        full_labels[valid_mask] = final_labels
 
         teacher_probs_full: Optional[np.ndarray]
         teacher_probs_full = None
@@ -2801,7 +2890,7 @@ class MLPathRegimeStep(BaseStep):
             hmm_model_data = {
                 "hmm_model": hmm,
                 "feature_names": list(risk_features_clean.columns),
-                "scaler": None,  # No scaling used in current implementation
+                "scaler": scaler,
                 "regime_metadata": regime_metadata,
                 "model_metadata": model_metadata,
                 "transition_matrix": transition_matrix,
@@ -2840,7 +2929,7 @@ class MLPathRegimeStep(BaseStep):
                     "regime_centroids": centroids_df,
                     "regime_covariances": regime_covariances_dict,
                     "feature_names": list(risk_features_clean.columns),
-                    "scaler": None,
+                    "scaler": scaler,
                     "regime_metadata": regime_metadata,
                     "distance_metric": "mahalanobis",
                 }

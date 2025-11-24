@@ -1,10 +1,11 @@
-"""
-Shared Evaluation Metrics Utilities
+"""Shared Evaluation Metrics Utilities.
 
 This module provides common evaluation metrics that can be used by both
 NAS and TAS systems. It includes financial metrics, statistical metrics,
 and regime-aware evaluation capabilities.
 """
+
+from __future__ import annotations
 
 import numpy as np
 import pandas as pd
@@ -848,9 +849,9 @@ class UnifiedEvaluator:
         financial_metrics,
         statistical_metrics,
         *,
-        weights: dict | None = None,
-        norm_config: dict | None = None,
-        sample_count: int | None = None,
+        weights: Optional[Dict[str, Any]] = None,
+        norm_config: Optional[Dict[str, Any]] = None,
+        sample_count: Optional[int] = None,
         sample_count_min: int = 30,
         apply_sample_penalty: bool = True,
         return_components: bool = False,

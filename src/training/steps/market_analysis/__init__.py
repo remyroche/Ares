@@ -28,23 +28,32 @@ from .regime_feature_selector import EnhancedRegimeFeatureSelector
 # Import statsmodel clustering pipeline step
 # from .statsmodel_clustering_pipeline_step import StatsmodelClusteringPipelineStep  # Module has missing dependencies
 
-# Import Sticky Finite HMM regime discovery step
-from .sticky_finite_hmm_clustering.sticky_finite_hmm_regime_discovery_step import StickyFiniteHMMRegimeDiscoveryStep
+# Import Sticky Finite HMM regime discovery step (optional; depends on torch)
+try:
+    from .sticky_finite_hmm_clustering.sticky_finite_hmm_regime_discovery_step import StickyFiniteHMMRegimeDiscoveryStep
+except Exception:  # pragma: no cover - optional dependency (e.g. torch)
+    StickyFiniteHMMRegimeDiscoveryStep = None
 
-# Import Rolling HMM regime discovery step
-from .rolling_hmm_clustering.rolling_hmm_regime_discovery_step import RollingHMMRegimeDiscoveryStep
+# Import Rolling HMM regime discovery step (optional; depends on hmmlearn)
+# Disabled here to avoid hard dependency on hmmlearn when importing MARKET_ANALYSIS.
+RollingHMMRegimeDiscoveryStep = None
 
 # Import HMM ML alpha step (derives alpha labels and regimes from 1h HMM outputs)
 from .hmm_ml_alpha_step import HMMMLAlphaStep
 
-# Import ML Risk Regime step (risk-based regime classification)
-from .ml_risk_regime_step import MLRiskRegimeStep
+# Import ML Risk Regime HMM step (risk-based regime classification)
+from .ml_risk_regime_step import MLRiskRegimeStepHMM
+from .ml_smc_regime_step import MLSMCRegimeStep
 
 # Import ML Path Regime step (efficiency/entropy-based path analysis)
 from .ml_path_regime_step import MLPathRegimeStep
+from .ml_reversion_regime_step import MLMeanReversionRegimeStep
 
 # Import ML Breakout/Bounce Regime step (Relative-State breakout/bounce classifier)
-from .ml_breakout_bounce_regime_step import MLBreakoutBounceRegimeStep
+try:
+    from .ml_breakout_bounce_regime_step import MLBreakoutBounceRegimeStep
+except Exception:  # pragma: no cover - defensive import guard
+    MLBreakoutBounceRegimeStep = None
 
 # Import ML Liquidity Regime step (liquidity-based regime classification)
 from .ml_liquidity_regime_step import MLLiquidityRegimeStep
@@ -71,12 +80,17 @@ step_registry.register("sr_detection", SRDetectionComponent)
 # Use EnhancedRegimeFeatureSelector which has proper unsupervised mode for pre-clustering selection
 step_registry.register("regime_feature_selection", EnhancedRegimeFeatureSelector)
 # step_registry.register("statsmodel_clustering_pipeline", StatsmodelClusteringPipelineStep)  # Module has missing dependencies
-step_registry.register("sticky_finite_hmm_regime_discovery", StickyFiniteHMMRegimeDiscoveryStep)
-step_registry.register("rolling_hmm_regime_discovery", RollingHMMRegimeDiscoveryStep)
+if StickyFiniteHMMRegimeDiscoveryStep is not None:
+    step_registry.register("sticky_finite_hmm_regime_discovery", StickyFiniteHMMRegimeDiscoveryStep)
+if RollingHMMRegimeDiscoveryStep is not None:
+    step_registry.register("rolling_hmm_regime_discovery", RollingHMMRegimeDiscoveryStep)
 step_registry.register("hmm_ml_alpha_step", HMMMLAlphaStep)
-step_registry.register("ml_risk_regime_step", MLRiskRegimeStep)
+step_registry.register("ml_risk_regime_step", MLRiskRegimeStepHMM)
+step_registry.register("ml_smc_regime_step", MLSMCRegimeStep)
 step_registry.register("ml_path_regime_step", MLPathRegimeStep)
-step_registry.register("ml_breakout_bounce_regime_step", MLBreakoutBounceRegimeStep)
+step_registry.register("ml_mean_reversion_step", MLMeanReversionRegimeStep)
+if MLBreakoutBounceRegimeStep is not None:
+    step_registry.register("ml_breakout_bounce_regime_step", MLBreakoutBounceRegimeStep)
 step_registry.register("ml_map_regime_step", MLMapRegimeStep)
 step_registry.register("ml_liquidity_regime_step", MLLiquidityRegimeStep)
 step_registry.register("feature_generation_meta_labeling_step", FeatureGenerationMetaLabelingStep)

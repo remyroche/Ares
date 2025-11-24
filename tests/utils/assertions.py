@@ -5,7 +5,13 @@ Ce module fournit des fonctions d'assertion standardisées pour garantir
 la cohérence et la fiabilité des tests unitaires.
 """
 
-import pytest
+try:
+    import pytest  # type: ignore[import]
+    PYTEST_AVAILABLE = True
+except Exception:  # pragma: no cover - optional dependency
+    pytest = None  # type: ignore[assignment]
+    PYTEST_AVAILABLE = False
+
 import numpy as np
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Union

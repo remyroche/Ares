@@ -188,6 +188,7 @@ class LiquidityClusterQualityAssessor:
             class_balance_score,
             cov_effort_sep,
             cov_returns_sep,
+            cfg,
         )
 
         metrics = LiquidityClusterQualityMetrics(
@@ -739,6 +740,7 @@ class LiquidityClusterQualityAssessor:
         class_balance: float,
         cov_effort_sep: float,
         cov_returns_sep: float,
+        cfg: Dict[str, Any],
     ) -> float:
         """Aggregate component metrics into a single quality score."""
         # Normalize components roughly to [0, 1]
@@ -752,14 +754,39 @@ class LiquidityClusterQualityAssessor:
         cov_returns_good = float(cov_returns_sep)
 
         # Weights (sum to 1.0)
-        w_effort = 0.20
-        w_ghost = 0.15
-        w_absorption = 0.10
-        w_valid = 0.10
-        w_apathy = 0.10
-        w_balance = 0.15
-        w_cov_effort = 0.10
-        w_cov_returns = 0.10
+        w_effort = float(cfg.get("liquidity_quality_weight_effort_sep", 0.20))
+        w_ghost = float(cfg.get("liquidity_quality_weight_ghost", 0.15))
+        w_absorption = float(cfg.get("liquidity_quality_weight_absorption", 0.10))
+        w_valid = float(cfg.get("liquidity_quality_weight_valid", 0.10))
+        w_apathy = float(cfg.get("liquidity_quality_weight_apathy", 0.10))
+        w_balance = float(cfg.get("liquidity_quality_weight_class_balance", 0.15))
+        w_cov_effort = float(cfg.get("liquidity_quality_weight_cov_effort", 0.10))
+        # Slightly increase default weight on returns-based separation while
+        # keeping microstructure metrics primary.
+        w_cov_returns = float(cfg.get("liquidity_quality_weight_cov_returns", 0.15))
+
+        weight_sum = (
+            w_effort
+            + w_ghost
+            + w_absorption
+            + w_valid
+            + w_apathy
+            + w_balance
+            + w_cov_effort
+            + w_cov_returns
+        )
+
+        if weight_sum <= 0.0:
+            weight_sum = 1.0
+
+        w_effort /= weight_sum
+        w_ghost /= weight_sum
+        w_absorption /= weight_sum
+        w_valid /= weight_sum
+        w_apathy /= weight_sum
+        w_balance /= weight_sum
+        w_cov_effort /= weight_sum
+        w_cov_returns /= weight_sum
 
         overall = (
             w_effort * eff

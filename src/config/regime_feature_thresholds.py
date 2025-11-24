@@ -7,7 +7,10 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-import yaml
+try:
+    import yaml  # type: ignore
+except Exception:  # pragma: no cover - optional dependency
+    yaml = None  # type: ignore
 
 _DEFAULTS: Dict[str, Any] = {
     "quality_thresholds": {
@@ -65,7 +68,7 @@ def get_regime_feature_thresholds(config_path: Optional[str] = None) -> Dict[str
     path = _config_path(Path(config_path) if config_path else None)
     data: Dict[str, Any] = copy.deepcopy(_DEFAULTS)
 
-    if path.is_file():
+    if path.is_file() and yaml is not None:
         try:
             with path.open("r", encoding="utf-8") as handle:
                 loaded = yaml.safe_load(handle) or {}

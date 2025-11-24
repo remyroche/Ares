@@ -14,9 +14,8 @@ Features:
 
 import numpy as np
 import pandas as pd
-import time
-from typing import Any, Dict, List, Optional, Tuple, Union
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Dict, List, Any, Tuple, Optional, Union
 from sklearn.cluster import KMeans
 from contextlib import nullcontext
 from concurrent.futures import ThreadPoolExecutor
@@ -75,7 +74,29 @@ def rand_choice(rng, a, size=None, replace=True, p=None):
 from enum import Enum
 from sklearn.metrics import silhouette_score, davies_bouldin_score
 from sklearn.neighbors import NearestNeighbors
-from numba import jit, prange
+
+try:
+    from numba import jit, prange  # type: ignore[import]
+    NUMBA_AVAILABLE = True
+except Exception:  # pragma: no cover - optional dependency
+    NUMBA_AVAILABLE = False
+
+    def jit(*args, **kwargs):  # type: ignore[no-redef]
+        """Fallback no-op jit decorator when numba is not installed."""
+
+        # Support both @jit and @jit(...)
+        if args and callable(args[0]) and len(args) == 1 and not kwargs:
+            return args[0]
+
+        def decorator(func):
+            return func
+
+        return decorator
+
+    def prange(*args, **kwargs):  # type: ignore[no-redef]
+        """Fallback prange implementation using built-in range."""
+        return range(*args, **kwargs)
+
 import warnings
 import math
 
@@ -2621,7 +2642,7 @@ class OptConfig:
 class IterativeOptimization:
     """Advanced 3-step iterative clustering optimization."""
 
-    def __init__(self, verbose: bool = True, k: int | None = None):
+    def __init__(self, verbose: bool = True, k: Optional[int] = None):
         """Initialize the iterative optimization with advanced parameters."""
         self.verbose = verbose
         self.logger = get_logger('IterativeOptimization')
@@ -3071,7 +3092,7 @@ class IterativeOptimization:
             f"(<{self.MIN_SIZE}: {under}/{K}) | Sil={sil:.3f}, DBI={dbi if dbi==dbi else 'nan'}"
         )
 
-    def _sanity_check_and_log(self, label: str, stats: ClusteringStats | None = None) -> None:
+    def _sanity_check_and_log(self, label: str, stats: Optional[ClusteringStats] = None) -> None:
         """Lightweight guard to log current clustering state without raising."""
         try:
             labels = None
@@ -7946,9 +7967,9 @@ class IterativeOptimization:
 
     def accept_move(self, deltaJ_std: float, from_c: int, to_c: int,
                     sizes: np.ndarray,
-                    soft_cap: int | None = None,
-                    min_size: int | None = None,
-                    rescue: bool | None = None) -> Tuple[bool, float]:
+                    soft_cap: Optional[int] = None,
+                    min_size: Optional[int] = None,
+                    rescue: Optional[bool] = None) -> Tuple[bool, float]:
         """
         Single gate used by Step 1 and Step 2. Always accept strict improvements unless they break min-size/cap.
         Allow small uphill moves if they relieve cap or min-size pressure.

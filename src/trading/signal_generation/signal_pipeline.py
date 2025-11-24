@@ -263,13 +263,35 @@ class SignalGenerationPipeline:
             return False
 
     async def _initialize_regime_detector(self):
-        """Initialize regime detector (loads models from market_analysis training)."""
+        """Initialize regime detector using specialist regime outputs."""
         try:
-            # Regime detector will be initialized by Strategist
-            # The Strategist handles loading models from market_analysis/regime_models_training
-            # and regime_ensemble_training, and provides regime predictions
-            self.regime_detector = None
-            self.logger.info("ℹ️ Regime detector will be provided by Strategist")
+            # Use the HybridRegimeDetector, which consumes specialist regime
+            # outputs via live_regime_outputs and exposes a predict_regime
+            # interface compatible with this pipeline.
+            from src.trading.integration.regime_detector import HybridRegimeDetector
+
+            symbol = getattr(self.config, 'symbol', 'ETHUSDT')
+            exchange = getattr(self.config, 'exchange', 'binance')
+            direction = getattr(self.config, 'direction', 'long')
+            base_timeframe = getattr(
+                self.config,
+                'timeframe',
+                getattr(self.config, 'analyst_timeframe', '15m'),
+            )
+            regime_timeframe = getattr(self.config, 'regime_timeframe', base_timeframe)
+
+            self.regime_detector = HybridRegimeDetector(
+                symbol=symbol,
+                exchange=exchange,
+                direction=direction,
+                base_timeframe=base_timeframe,
+                regime_timeframe=regime_timeframe,
+            )
+
+            self.logger.info(
+                "✅ Regime detector initialized using specialist regime outputs "
+                f"for {symbol}/{exchange} [{regime_timeframe}] {direction}"
+            )
 
         except Exception as e:
             self.logger.error(f"❌ Failed to initialize regime detector: {e}")

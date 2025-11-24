@@ -17,7 +17,7 @@ References:
 """
 
 from dataclasses import dataclass
-from typing import Dict, Optional, Tuple, Literal
+from typing import Dict, Optional, Tuple, Literal, Union
 import numpy as np
 import pandas as pd
 import warnings
@@ -206,12 +206,12 @@ class LabelSmoother:
 
     def smooth(
         self,
-        labels: pd.Series | pd.DataFrame,
+        labels: Union[pd.Series, pd.DataFrame],
         quality_scores: Optional[pd.Series] = None,
         volatility: Optional[pd.Series] = None,
         custom_uncertainty: Optional[pd.Series] = None,
         group_by_data: Optional[pd.DataFrame] = None,
-    ) -> Dict[str, pd.Series | pd.DataFrame]:
+    ) -> Dict[str, Union[pd.Series, pd.DataFrame]]:
         """Apply label smoothing pipeline.
 
         Args:
@@ -289,8 +289,8 @@ class LabelSmoother:
 
     def _apply_preprocessing(
         self,
-        labels: pd.Series | pd.DataFrame
-    ) -> pd.Series | pd.DataFrame:
+        labels: Union[pd.Series, pd.DataFrame]
+    ) -> Union[pd.Series, pd.DataFrame]:
         """Apply pre-processing: clipping and log transform.
 
         Args:
@@ -361,8 +361,8 @@ class LabelSmoother:
 
     def _classification_smooth(
         self,
-        labels: pd.Series | pd.DataFrame
-    ) -> pd.Series | pd.DataFrame:
+        labels: Union[pd.Series, pd.DataFrame]
+    ) -> Union[pd.Series, pd.DataFrame]:
         """Apply classification/probability smoothing.
 
         For binary labels/probabilities:
@@ -440,9 +440,9 @@ class LabelSmoother:
 
     def _uncertainty_shrink(
         self,
-        labels: pd.Series | pd.DataFrame,
+        labels: Union[pd.Series, pd.DataFrame],
         sigma: pd.Series
-    ) -> pd.Series | pd.DataFrame:
+    ) -> Union[pd.Series, pd.DataFrame]:
         """Apply uncertainty-weighted shrinkage.
 
         alpha = 1 / (1 + gamma * sigma)
@@ -480,9 +480,9 @@ class LabelSmoother:
 
     def _causal_ema(
         self,
-        labels: pd.Series | pd.DataFrame,
+        labels: Union[pd.Series, pd.DataFrame],
         group_by_data: Optional[pd.DataFrame]
-    ) -> pd.Series | pd.DataFrame:
+    ) -> Union[pd.Series, pd.DataFrame]:
         """Apply causal exponential moving average per group.
 
         EMA formula:
@@ -723,7 +723,7 @@ class LabelSmoother:
 # Utility functions for ablation testing
 
 def run_ablation_test(
-    labels: pd.Series | pd.DataFrame,
+    labels: Union[pd.Series, pd.DataFrame],
     quality_scores: Optional[pd.Series] = None,
     volatility: Optional[pd.Series] = None,
     group_by_data: Optional[pd.DataFrame] = None,

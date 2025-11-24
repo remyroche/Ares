@@ -1,5 +1,4 @@
-
-from typing import Any
+from typing import Any, Optional
 
 from .environment import get_environment_settings
 
@@ -207,7 +206,7 @@ def get_trading_config() -> dict[str, Any]:
         },
     }
 
-def _get_config_section(section_path: str, default: dict[str, Any] | None = None) -> dict[str, Any]:
+def _get_config_section(section_path: str, default: Optional[dict[str, Any]] = None) -> dict[str, Any]:
     """Generic function to get a configuration section by path.
 
     Args:

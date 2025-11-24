@@ -81,7 +81,7 @@ class LabelGuidedInteractionConfig:
     operations: List[str] = None  # Operations to test
 
     # Category controls
-    max_interactions_per_category_pair: int = 3  # Max interactions per (cat1, cat2) pair
+    max_interactions_per_category_pair: int = 7  # Max interactions per (cat1, cat2) pair
     banned_category_pairs: Set[Tuple[str, str]] = None  # Pairs to exclude
 
     # Performance
@@ -258,6 +258,28 @@ class LabelGuidedInteractionDiscovery:
         finite_mask = np.isfinite(target_aligned) & np.all(np.isfinite(features_aligned), axis=1)
         features_clean = features_aligned[finite_mask]
         target_clean = target_aligned[finite_mask]
+
+        if features_clean.empty:
+            self.logger.warning(
+                "  \u26a0\ufe0f After NaN/inf filtering, no samples remain; applying fallback alignment."
+            )
+
+            fallback_mask = np.isfinite(target_aligned)
+            features_fallback = features_aligned[fallback_mask].copy()
+            target_fallback = target_aligned[fallback_mask].copy()
+
+            if len(features_fallback) == 0:
+                return features_aligned.iloc[0:0].copy(), target_aligned.iloc[0:0].copy()
+
+            features_fallback = features_fallback.replace([np.inf, -np.inf], np.nan).fillna(0.0)
+            target_fallback = pd.Series(
+                np.nan_to_num(target_fallback.values, nan=0.0, posinf=0.0, neginf=0.0),
+                index=target_fallback.index,
+                name=target_fallback.name,
+            )
+
+            features_clean = features_fallback
+            target_clean = target_fallback
 
         return features_clean, target_clean
 

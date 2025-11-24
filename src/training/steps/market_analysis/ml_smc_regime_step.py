@@ -27,6 +27,8 @@ from src.utils.tprint import (
 from src.features_common.transforms.scaling_normalization import (
     winsorized_zscore_normalize,
 )
+from src.feature_generation.categories.cross_timeframe import CrossTimeframeFeatureGenerator
+from sklearn.isotonic import IsotonicRegression
 
 logger = logging.getLogger(__name__)
 
@@ -49,9 +51,19 @@ class MLSMCRegimeStep(BaseStep):
             symbol = str(config.get("symbol", "ETHUSDT"))
             exchange = str(config.get("exchange", "binance"))
             regime_timeframe = str(config.get("regime_timeframe", config.get("timeframe", "15m")))
+            direction = str(config.get("direction", "long"))
 
             if not symbol or not exchange:
                 raise ValueError("Config must include 'symbol' and 'exchange'")
+
+            # Route all SMC artifacts into a dedicated SMC regime namespace
+            self.set_context(
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=regime_timeframe,
+                direction=direction,
+                model="smc_regime",
+            )
 
             tprint_info(
                 f"🚀 Starting {self.step_name} (SMC Regime) for {symbol} on {exchange} "
@@ -243,6 +255,11 @@ class MLSMCRegimeStep(BaseStep):
         # 8. Time Categories
         tprint_info("Generating time category features...")
         result = self._add_time_categories(result, config)
+
+        # 9. Optional cross-timeframe features from feature_generation categories
+        if bool(config.get("smc_enable_cross_timeframe_features", True)):
+            tprint_info("Generating cross-timeframe features...")
+            result = self._add_cross_timeframe_features(result, config)
 
         # Apply normalization to features (except categorical/binary features)
         tprint_info("Normalizing SMC features...")
@@ -526,6 +543,35 @@ class MLSMCRegimeStep(BaseStep):
 
         return df
 
+    def _add_cross_timeframe_features(self, df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
+        """Optionally augment with cross-timeframe features from the shared generator."""
+        try:
+            generator = CrossTimeframeFeatureGenerator()
+        except Exception as e:
+            tprint_warning(f"SMC cross-timeframe feature generator init failed: {e}")
+            return df
+
+        base_cols = [c for c in ["open", "high", "low", "close", "volume"] if c in df.columns]
+        if not base_cols:
+            return df
+
+        try:
+            data = df[base_cols].copy()
+            features = generator.generate_enhanced_cross_timeframe_features(data)
+            if not features:
+                return df
+
+            for name, series in features.items():
+                col_name = f"smc_ctf_{name}"
+                ser = pd.Series(series)
+                ser.index = data.index
+                df[col_name] = ser.reindex(df.index).astype(float)
+
+        except Exception as e:
+            tprint_warning(f"SMC cross-timeframe feature generation failed: {e}")
+
+        return df
+
     def _add_volume_profile_features(self, df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
         """Add volume profile features."""
         c = df["close"].astype(float)
@@ -687,7 +733,7 @@ class MLSMCRegimeStep(BaseStep):
             for feat in continuous_features:
                 try:
                     normalized = winsorized_zscore_normalize(
-                        df[feat].values,
+                        df[feat],
                         lower_quantile=0.05,
                         upper_quantile=0.95
                     )
@@ -714,7 +760,7 @@ class MLSMCRegimeStep(BaseStep):
         exchange: str,
         regime_timeframe: str,
     ) -> Tuple[Dict[str, Any], List[str]]:
-        """Train XGBoost regression model with HPO and conformal prediction calibration."""
+        """Train XGBoost classifier with HPO and conformal prediction calibration."""
         metrics: Dict[str, Any] = {}
         artifacts: List[str] = []
 
@@ -745,12 +791,43 @@ class MLSMCRegimeStep(BaseStep):
 
         df_with_target = df_with_target.dropna(subset=["target_ratio", "forward_return"])
 
-        tprint_info(f"SMC XGB: target ratio stats - mean: {target_ratio.mean():.3f}, std: {target_ratio.std():.3f}")
+        tprint_info(
+            f"SMC XGB: target ratio stats - mean: {df_with_target['target_ratio'].mean():.3f}, "
+            f"std: {df_with_target['target_ratio'].std():.3f}"
+        )
+
+        # Derive 3-class labels: 0=breakdown, 1=neutral, 2=breakout
+        # More conservative defaults: require stronger moves for breakout/breakdown.
+        breakout_threshold = float(config.get("smc_breakout_threshold", 1.50))
+        breakdown_threshold = float(config.get("smc_breakdown_threshold", -0.50))
+
+        ratio_clean = df_with_target["target_ratio"]
+        target_class = np.where(
+            ratio_clean > breakout_threshold,
+            2,
+            np.where(ratio_clean < breakdown_threshold, 0, 1),
+        ).astype(np.int32)
+        df_with_target["target_class"] = target_class
+
+        class_counts = {
+            "breakdown": int((target_class == 0).sum()),
+            "neutral": int((target_class == 1).sum()),
+            "breakout": int((target_class == 2).sum()),
+        }
+        tprint_info(
+            "SMC XGB: class distribution (0=breakdown,1=neutral,2=breakout): "
+            f"{class_counts}"
+        )
 
         # Select features
         exclude_cols = [
-            "target_ratio", "forward_return",
-            "smc_pdh", "smc_pdl", "smc_day_open", "smc_week_open"
+            "target_ratio",
+            "forward_return",
+            "target_class",
+            "smc_pdh",
+            "smc_pdl",
+            "smc_day_open",
+            "smc_week_open",
         ]
         numeric_df = df_with_target.select_dtypes(include=[np.number])
         feature_cols = [col for col in numeric_df.columns if col not in exclude_cols and col.startswith("smc_")]
@@ -760,8 +837,29 @@ class MLSMCRegimeStep(BaseStep):
             metrics["smc_xgb_early_exit_reason"] = f"insufficient_features_{len(feature_cols)}"
             return metrics, artifacts
 
+        max_features = int(config.get("smc_xgb_max_features", 48))
+        if len(feature_cols) > max_features:
+            ratio_for_corr = df_with_target["target_ratio"]
+            corr_scores: List[Tuple[str, float]] = []
+            for col in feature_cols:
+                try:
+                    corr_val = numeric_df[col].corr(ratio_for_corr)
+                except Exception:
+                    corr_val = 0.0
+                if corr_val is None or not np.isfinite(corr_val):
+                    corr_val = 0.0
+                corr_scores.append((col, float(abs(corr_val))))
+            corr_scores.sort(key=lambda x: x[1], reverse=True)
+            selected = [name for name, _ in corr_scores[:max_features]]
+            tprint_info(
+                "SMC XGB: reducing feature set from "
+                f"{len(feature_cols)} to {len(selected)} based on correlation with target_ratio"
+            )
+            feature_cols = selected
+
         X = numeric_df[feature_cols].astype(np.float32)
-        y = df_with_target["target_ratio"].astype(np.float32)
+        y_ratio = df_with_target["target_ratio"].astype(np.float32)
+        y_class = df_with_target["target_class"].astype(np.int32)
         forward_returns = df_with_target["forward_return"].astype(np.float32)
 
         # Handle infinities and NaNs
@@ -774,127 +872,327 @@ class MLSMCRegimeStep(BaseStep):
             metrics["smc_xgb_early_exit_reason"] = f"insufficient_samples_{len(X)}"
             return metrics, artifacts
 
-        # Time-series split
+        # Time-series split into train / validation / test
+        n_samples = len(X)
         train_frac = float(config.get("smc_xgb_train_fraction", 0.80))
-        split_idx = int(len(X) * train_frac)
+        train_frac = max(0.5, min(train_frac, 0.9))
+        val_rel_frac = float(config.get("smc_xgb_val_relative_fraction", 0.20))
+        val_rel_frac = max(0.05, min(val_rel_frac, 0.4))
 
-        X_train = X.iloc[:split_idx]
-        y_train = y.iloc[:split_idx]
-        X_test = X.iloc[split_idx:]
-        y_test = y.iloc[split_idx:]
-        forward_returns_train = forward_returns.iloc[:split_idx]
-        forward_returns_test = forward_returns.iloc[split_idx:]
+        train_val_end = int(n_samples * train_frac)
+        if train_val_end >= n_samples - 50:
+            train_val_end = max(n_samples - 50, int(n_samples * 0.75))
 
-        tprint_info(f"SMC XGB: train={len(X_train)}, test={len(X_test)}, features={len(feature_cols)}")
+        n_train_val = train_val_end
+        n_val = int(n_train_val * val_rel_frac)
+        n_val = max(min(n_val, n_train_val // 2), 50)
+        if n_train_val - n_val < 100:
+            n_val = max(0, n_train_val - 100)
 
-        # HPO using Bayesian TPE optimizer
-        enable_hpo = bool(config.get("smc_xgb_enable_hpo", True))
+        train_end = n_train_val - n_val
+        if train_end <= 0:
+            train_end = max(1, n_train_val // 2)
+            n_val = n_train_val - train_end
 
-        if enable_hpo:
-            tprint_info("Starting Bayesian TPE hyperparameter optimization...")
-            best_params = self._run_hpo(X_train, y_train, config)
-        else:
-            # Default params
-            best_params = {
-                'objective': 'reg:squarederror',
-                'n_estimators': 500,
-                'learning_rate': 0.05,
-                'max_depth': 6,
-                'subsample': 0.8,
-                'colsample_bytree': 0.8,
-                'gamma': 0.1,
-                'reg_alpha': 0.1,
-                'reg_lambda': 1.0,
-                'random_state': 42,
-                'n_jobs': -1,
-            }
+        X_train = X.iloc[:train_end]
+        X_val = X.iloc[train_end:train_val_end]
+        X_test = X.iloc[train_val_end:]
 
-        # Train final model
-        tprint_info("Training final XGBoost model with best params...")
-        model = xgb.XGBRegressor(**best_params)
+        y_train_ratio = y_ratio.iloc[:train_end]
+        y_val_ratio = y_ratio.iloc[train_end:train_val_end]
+        y_test_ratio = y_ratio.iloc[train_val_end:]
+
+        y_train_cls = y_class.iloc[:train_end]
+        y_val_cls = y_class.iloc[train_end:train_val_end]
+        y_test_cls = y_class.iloc[train_val_end:]
+
+        forward_returns_train = forward_returns.iloc[:train_end]
+        forward_returns_val = forward_returns.iloc[train_end:train_val_end]
+        forward_returns_test = forward_returns.iloc[train_val_end:]
+
+        tprint_info(
+            f"SMC XGB: train={len(X_train)}, val={len(X_val)}, test={len(X_test)}, features={len(feature_cols)}"
+        )
+
+        # HPO using Bayesian TPE optimizer (classification). Always enabled; the
+        # _run_hpo helper handles falling back to sensible defaults if Optuna
+        # is unavailable.
+        tprint_info("Starting Bayesian TPE hyperparameter optimization (classification)...")
+        best_params = self._run_hpo(X_train, y_train_cls, config)
+
+        # Ensure core classification params
+        best_params.setdefault("objective", "multi:softprob")
+        best_params.setdefault("num_class", 3)
+        best_params.setdefault("random_state", 42)
+        best_params.setdefault("n_jobs", -1)
+
+        # Train final classifier
+        tprint_info("Training final XGBoost classifier with best params...")
+        model = xgb.XGBClassifier(**best_params)
 
         model.fit(
             X_train,
-            y_train,
-            eval_set=[(X_test, y_test)],
+            y_train_cls,
+            eval_set=[(X_val, y_val_cls)] if len(X_val) > 0 else [(X_train, y_train_cls)],
             verbose=False,
         )
 
-        # Predictions
-        y_train_pred = model.predict(X_train)
-        y_test_pred = model.predict(X_test)
+        # Predictions and probabilities
+        from sklearn.metrics import (
+            mean_squared_error,
+            mean_absolute_error,
+            r2_score,
+            accuracy_score,
+            f1_score,
+            log_loss,
+            brier_score_loss,
+        )
 
-        # Calculate metrics
-        from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+        proba_train = model.predict_proba(X_train)
+        proba_val = model.predict_proba(X_val) if len(X_val) > 0 else np.empty((0, 3), dtype=np.float32)
+        proba_test = model.predict_proba(X_test) if len(X_test) > 0 else np.empty((0, 3), dtype=np.float32)
 
-        train_rmse = np.sqrt(mean_squared_error(y_train, y_train_pred))
-        test_rmse = np.sqrt(mean_squared_error(y_test, y_test_pred))
-        train_mae = mean_absolute_error(y_train, y_train_pred)
-        test_mae = mean_absolute_error(y_test, y_test_pred)
-        train_r2 = r2_score(y_train, y_train_pred)
-        test_r2 = r2_score(y_test, y_test_pred)
+        class_to_scalar = np.array([0.0, 0.5, 1.0], dtype=np.float32)
 
-        # Brier score (calibration metric)
-        # For regression, we can compute Brier for "will price go up?" binary event
-        binary_target_train = (y_train > 0.5).astype(int)
-        binary_target_test = (y_test > 0.5).astype(int)
-        binary_pred_train = y_train_pred.clip(0, 1)
-        binary_pred_test = y_test_pred.clip(0, 1)
+        y_train_pred = proba_train.dot(class_to_scalar)
+        y_val_pred = proba_val.dot(class_to_scalar) if len(X_val) > 0 else np.array([], dtype=np.float32)
+        y_test_pred = proba_test.dot(class_to_scalar) if len(X_test) > 0 else np.array([], dtype=np.float32)
 
-        from sklearn.metrics import brier_score_loss
+        y_train_pred_cls = np.argmax(proba_train, axis=1)
+        y_val_pred_cls = np.argmax(proba_val, axis=1) if len(X_val) > 0 else np.array([], dtype=np.int32)
+        y_test_pred_cls = np.argmax(proba_test, axis=1) if len(X_test) > 0 else np.array([], dtype=np.int32)
+
+        # Regression-style metrics vs continuous target_ratio for continuity
+        train_rmse = np.sqrt(mean_squared_error(y_train_ratio, y_train_pred))
+        train_mae = mean_absolute_error(y_train_ratio, y_train_pred)
+        train_r2 = r2_score(y_train_ratio, y_train_pred)
+
+        if len(X_val) > 0:
+            val_rmse = np.sqrt(mean_squared_error(y_val_ratio, y_val_pred))
+            val_mae = mean_absolute_error(y_val_ratio, y_val_pred)
+            val_r2 = r2_score(y_val_ratio, y_val_pred)
+        else:
+            val_rmse = float("nan")
+            val_mae = float("nan")
+            val_r2 = float("nan")
+
+        if len(X_test) > 0:
+            test_rmse = np.sqrt(mean_squared_error(y_test_ratio, y_test_pred))
+            test_mae = mean_absolute_error(y_test_ratio, y_test_pred)
+            test_r2 = r2_score(y_test_ratio, y_test_pred)
+        else:
+            test_rmse = float("nan")
+            test_mae = float("nan")
+            test_r2 = float("nan")
+
+        # Classification metrics
+        train_accuracy = accuracy_score(y_train_cls, y_train_pred_cls)
+        train_f1 = f1_score(y_train_cls, y_train_pred_cls, average="macro")
+        train_logloss = log_loss(y_train_cls, proba_train, labels=[0, 1, 2])
+
+        if len(X_val) > 0:
+            val_accuracy = accuracy_score(y_val_cls, y_val_pred_cls)
+            val_f1 = f1_score(y_val_cls, y_val_pred_cls, average="macro")
+            val_logloss = log_loss(y_val_cls, proba_val, labels=[0, 1, 2])
+        else:
+            val_accuracy = float("nan")
+            val_f1 = float("nan")
+            val_logloss = float("nan")
+
+        if len(X_test) > 0:
+            test_accuracy = accuracy_score(y_test_cls, y_test_pred_cls)
+            test_f1 = f1_score(y_test_cls, y_test_pred_cls, average="macro")
+            test_logloss = log_loss(y_test_cls, proba_test, labels=[0, 1, 2])
+        else:
+            test_accuracy = float("nan")
+            test_f1 = float("nan")
+            test_logloss = float("nan")
+
+        # Brier score for breakout event (class 2)
         try:
-            train_brier = brier_score_loss(binary_target_train, binary_pred_train)
-            test_brier = brier_score_loss(binary_target_test, binary_pred_test)
+            event_train = (y_train_cls == 2).astype(int)
+            train_brier = brier_score_loss(event_train, proba_train[:, 2])
         except Exception:
-            train_brier = test_brier = np.nan
+            train_brier = float("nan")
 
-        # Mean returns (based on predictions)
-        # If model predicts > 1.0, we'd go long; if < 0.0, we'd go short
-        long_mask_train = y_train_pred > 1.0
-        long_mask_test = y_test_pred > 1.0
-        mean_return_long_train = forward_returns_train[long_mask_train].mean() if long_mask_train.sum() > 0 else 0.0
-        mean_return_long_test = forward_returns_test[long_mask_test].mean() if long_mask_test.sum() > 0 else 0.0
+        if len(X_val) > 0:
+            try:
+                event_val = (y_val_cls == 2).astype(int)
+                val_brier = brier_score_loss(event_val, proba_val[:, 2])
+            except Exception:
+                val_brier = float("nan")
+        else:
+            val_brier = float("nan")
 
-        short_mask_train = y_train_pred < 0.0
-        short_mask_test = y_test_pred < 0.0
-        mean_return_short_train = forward_returns_train[short_mask_train].mean() if short_mask_train.sum() > 0 else 0.0
-        mean_return_short_test = forward_returns_test[short_mask_test].mean() if short_mask_test.sum() > 0 else 0.0
+        if len(X_test) > 0:
+            try:
+                event_test = (y_test_cls == 2).astype(int)
+                test_brier = brier_score_loss(event_test, proba_test[:, 2])
+            except Exception:
+                test_brier = float("nan")
+        else:
+            test_brier = float("nan")
+
+        # Directional IC vs forward returns
+        def _safe_ic(pred, ret):
+            arr_pred = np.asarray(pred, dtype=float)
+            arr_ret = np.asarray(ret, dtype=float)
+            mask = np.isfinite(arr_pred) & np.isfinite(arr_ret)
+            if mask.sum() < 50:
+                return float("nan")
+            try:
+                return float(np.corrcoef(arr_pred[mask], arr_ret[mask])[0, 1])
+            except Exception:
+                return float("nan")
+
+        train_ic = _safe_ic(y_train_pred, forward_returns_train)
+        val_ic = _safe_ic(y_val_pred, forward_returns_val) if len(X_val) > 0 else float("nan")
+        test_ic = _safe_ic(y_test_pred, forward_returns_test) if len(X_test) > 0 else float("nan")
 
         metrics.update({
             "smc_xgb_train_rmse": float(train_rmse),
+            "smc_xgb_val_rmse": float(val_rmse) if np.isfinite(val_rmse) else float("nan"),
             "smc_xgb_test_rmse": float(test_rmse),
             "smc_xgb_train_mae": float(train_mae),
+            "smc_xgb_val_mae": float(val_mae) if np.isfinite(val_mae) else float("nan"),
             "smc_xgb_test_mae": float(test_mae),
             "smc_xgb_train_r2": float(train_r2),
+            "smc_xgb_val_r2": float(val_r2) if np.isfinite(val_r2) else float("nan"),
             "smc_xgb_test_r2": float(test_r2),
             "smc_xgb_train_brier": float(train_brier) if not np.isnan(train_brier) else 0.0,
+            "smc_xgb_val_brier": float(val_brier) if not np.isnan(val_brier) else 0.0,
             "smc_xgb_test_brier": float(test_brier) if not np.isnan(test_brier) else 0.0,
-            "smc_xgb_mean_return_long_train": float(mean_return_long_train),
-            "smc_xgb_mean_return_long_test": float(mean_return_long_test),
-            "smc_xgb_mean_return_short_train": float(mean_return_short_train),
-            "smc_xgb_mean_return_short_test": float(mean_return_short_test),
+            "smc_xgb_train_accuracy": float(train_accuracy),
+            "smc_xgb_val_accuracy": float(val_accuracy) if np.isfinite(val_accuracy) else float("nan"),
+            "smc_xgb_test_accuracy": float(test_accuracy) if np.isfinite(test_accuracy) else float("nan"),
+            "smc_xgb_train_f1": float(train_f1),
+            "smc_xgb_val_f1": float(val_f1) if np.isfinite(val_f1) else float("nan"),
+            "smc_xgb_test_f1": float(test_f1) if np.isfinite(test_f1) else float("nan"),
+            "smc_xgb_train_logloss": float(train_logloss) if np.isfinite(train_logloss) else float("nan"),
+            "smc_xgb_val_logloss": float(val_logloss) if np.isfinite(val_logloss) else float("nan"),
+            "smc_xgb_test_logloss": float(test_logloss) if np.isfinite(test_logloss) else float("nan"),
+            "smc_xgb_train_ic": float(train_ic) if not np.isnan(train_ic) else 0.0,
+            "smc_xgb_val_ic": float(val_ic) if not np.isnan(val_ic) else 0.0,
+            "smc_xgb_test_ic": float(test_ic) if not np.isnan(test_ic) else 0.0,
         })
 
-        # Directional accuracy
-        breakout_mask_test = y_test_pred > 1.0
-        if breakout_mask_test.sum() > 0:
-            breakout_accuracy = (y_test[breakout_mask_test] > 1.0).mean()
-            metrics["smc_xgb_breakout_accuracy"] = float(breakout_accuracy)
+        # Model acceptance based on validation R² or directional IC
+        min_val_r2 = float(config.get("smc_min_val_r2", 0.03))
+        min_val_ic = float(config.get("smc_min_val_directional_ic", 0.05))
 
-        breakdown_mask_test = y_test_pred < 0.0
-        if breakdown_mask_test.sum() > 0:
-            breakdown_accuracy = (y_test[breakdown_mask_test] < 0.0).mean()
-            metrics["smc_xgb_breakdown_accuracy"] = float(breakdown_accuracy)
+        accept_by_r2 = np.isfinite(val_r2) and val_r2 >= min_val_r2
+        accept_by_ic = not np.isnan(val_ic) and abs(val_ic) >= min_val_ic
+        model_accepted = bool(accept_by_r2 or accept_by_ic)
+        metrics["smc_xgb_model_accepted"] = model_accepted
+
+        if not model_accepted:
+            tprint_warning(
+                "SMC XGB model rejected based on validation metrics: "
+                f"val_r2={val_r2:.4f}, val_directional_ic={val_ic:.4f}"
+            )
 
         tprint_success(
-            f"✅ XGBoost trained: test_rmse={test_rmse:.4f}, test_r2={test_r2:.4f}, "
-            f"test_brier={test_brier:.4f}, mean_return_long_test={mean_return_long_test:.4f}"
+            "✅ XGBoost classifier trained: "
+            f"test_rmse={test_rmse:.4f}, test_r2={test_r2:.4f}, "
+            f"test_accuracy={test_accuracy:.4f}, test_brier={test_brier:.4f}, "
+            f"val_directional_ic={val_ic:.4f}"
         )
 
-        # Conformal prediction calibration
+        if model_accepted and bool(config.get("smc_enable_isotonic_calibration", True)):
+            try:
+                scalar_train = y_train_pred
+                scalar_val = y_val_pred if len(X_val) > 0 else np.array([], dtype=np.float32)
+                returns_train = forward_returns_train.to_numpy()
+                returns_val = (
+                    forward_returns_val.to_numpy() if len(X_val) > 0 else np.array([], dtype=np.float32)
+                )
+
+                scalar_all = np.concatenate([scalar_train, scalar_val])
+                returns_all = np.concatenate([returns_train, returns_val])
+
+                mask_iso = np.isfinite(scalar_all) & np.isfinite(returns_all)
+                min_samples_iso = int(config.get("smc_iso_min_samples", 500))
+
+                if mask_iso.sum() >= min_samples_iso:
+                    ret_clip = float(config.get("smc_iso_return_clip", 0.10))
+                    if ret_clip > 0.0:
+                        target_iso = np.clip(returns_all[mask_iso], -ret_clip, ret_clip)
+                    else:
+                        target_iso = returns_all[mask_iso]
+
+                    iso_model = IsotonicRegression(out_of_bounds="clip")
+                    iso_model.fit(scalar_all[mask_iso], target_iso)
+                    # Store the return clip on the model for use at runtime.
+                    iso_model.return_clip_ = ret_clip
+
+                    iso_rmse = float("nan")
+                    iso_r2 = float("nan")
+
+                    if len(y_test_pred) > 0:
+                        scalar_test = y_test_pred
+                        returns_test = forward_returns_test.to_numpy()
+                        mask_test_iso = np.isfinite(scalar_test) & np.isfinite(returns_test)
+                        if mask_test_iso.sum() >= 50:
+                            pred_test_iso = iso_model.predict(scalar_test[mask_test_iso])
+                            iso_rmse = float(
+                                np.sqrt(mean_squared_error(returns_test[mask_test_iso], pred_test_iso))
+                            )
+                            try:
+                                iso_r2 = float(r2_score(returns_test[mask_test_iso], pred_test_iso))
+                            except Exception:
+                                iso_r2 = float("nan")
+
+                    metrics["smc_iso_test_rmse"] = iso_rmse
+                    metrics["smc_iso_test_r2"] = iso_r2
+
+                    iso_path = self._save_artifact(
+                        data=iso_model,
+                        artifact_name="smc_scalar_isotonic_calibrator",
+                        artifact_type="model",
+                        data_category="models",
+                        metadata={
+                            "symbol": symbol,
+                            "exchange": exchange,
+                            "timeframe": regime_timeframe,
+                            "return_clip": ret_clip,
+                            "n_calibration_samples": int(mask_iso.sum()),
+                        },
+                    )
+                    artifacts.append(iso_path)
+            except Exception as e:
+                tprint_warning(f"Isotonic regression calibration failed: {e}")
+
+        # Conformal prediction calibration on breakout probability
         tprint_info("Performing conformal prediction calibration...")
+        non_test_X = X_train
+        train_bin = (y_train_cls == 2).astype(int)
+        if len(X_val) > 0:
+            non_test_X = pd.concat([X_train, X_val])
+            non_test_y = pd.concat([
+                pd.Series(train_bin, index=X_train.index),
+                pd.Series((y_val_cls == 2).astype(int), index=X_val.index),
+            ])
+        else:
+            non_test_y = pd.Series(train_bin, index=X_train.index)
+
+        y_test_bin = pd.Series((y_test_cls == 2).astype(int), index=X_test.index)
+
+        class _ProbaWrapper:
+            def __init__(self, base_model):
+                self._base_model = base_model
+
+            def predict(self, X_input):
+                proba = self._base_model.predict_proba(X_input)
+                if proba.shape[1] == 0:
+                    return np.zeros(len(X_input), dtype=float)
+                return proba[:, -1]
+
         calibration_results = self._calibrate_conformal_prediction(
-            model, X_train, y_train, X_test, y_test
+            _ProbaWrapper(model),
+            non_test_X,
+            non_test_y,
+            X_test,
+            y_test_bin,
         )
 
         if calibration_results:
@@ -906,7 +1204,7 @@ class MLSMCRegimeStep(BaseStep):
             df_with_target,
             model,
             X,
-            y,
+            y_ratio,
             forward_returns,
             feature_cols,
             calibration_results,
@@ -914,11 +1212,17 @@ class MLSMCRegimeStep(BaseStep):
             exchange,
             regime_timeframe,
             train_rmse,
+            val_rmse,
             test_rmse,
             train_r2,
+            val_r2,
             test_r2,
             train_brier,
+            val_brier,
             test_brier,
+            len(X_train),
+            len(X_val),
+            len(X_test),
         )
         artifacts.extend(report_artifacts)
 
@@ -955,18 +1259,45 @@ class MLSMCRegimeStep(BaseStep):
             )
             artifacts.append(calibration_path)
 
-        # Save predictions with confidence scores using BaseStep
-        predictions_df = pd.DataFrame({
-            "timestamp": df_with_target.index,
-            "actual": y.values,
-            "predicted": np.concatenate([y_train_pred, y_test_pred]),
-            "forward_return": forward_returns.values,
-            "is_test": [False] * len(y_train) + [True] * len(y_test),
-        })
+        # Save predictions using BaseStep. The artifact is shaped to mirror what
+        # the live model will expose: a single scalar score in [0,1] per bar.
+        predictions_list = []
+        index_array = df_with_target.index
 
-        if calibration_results:
-            for level in ["50%", "60%", "70%", "80%", "90%", "95%", "99%"]:
-                predictions_df[f"confidence_{level}"] = calibration_results["confidence_scores"][level]
+        n_train_samples = len(y_train_ratio)
+        n_val_samples = len(y_val_ratio)
+        n_test_samples = len(y_test_ratio)
+
+        for i in range(n_train_samples):
+            idx = i
+            predictions_list.append(
+                {
+                    "timestamp": index_array[idx],
+                    "predicted": float(y_train_pred[i]),
+                }
+            )
+
+        offset_val = n_train_samples
+        for i in range(n_val_samples):
+            idx = offset_val + i
+            predictions_list.append(
+                {
+                    "timestamp": index_array[idx],
+                    "predicted": float(y_val_pred[i]),
+                }
+            )
+
+        offset_test = n_train_samples + n_val_samples
+        for i in range(n_test_samples):
+            idx = offset_test + i
+            predictions_list.append(
+                {
+                    "timestamp": index_array[idx],
+                    "predicted": float(y_test_pred[i]),
+                }
+            )
+
+        predictions_df = pd.DataFrame(predictions_list)
 
         predictions_path = self._save_artifact(
             data=predictions_df,
@@ -981,7 +1312,116 @@ class MLSMCRegimeStep(BaseStep):
         )
         artifacts.append(predictions_path)
 
+        # Optional lightweight walk-forward validation for stability diagnostics
+        try:
+            wf_metrics = self._run_smc_walkforward_validation(
+                X,
+                y_ratio,
+                best_params,
+                config,
+            )
+            if wf_metrics:
+                metrics["smc_xgb_walkforward"] = wf_metrics
+        except Exception as e:
+            tprint_warning(f"SMC XGB walk-forward validation failed: {e}")
+
         return metrics, artifacts
+
+    def _run_smc_walkforward_validation(
+        self,
+        X: pd.DataFrame,
+        y: pd.Series,
+        base_params: Dict[str, Any],
+        config: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Simple expanding-window walk-forward validation for stability diagnostics.
+
+        Trains lightweight models on expanding prefixes of the data and evaluates
+        on forward test windows, returning per-fold and aggregate metrics.
+        """
+        try:
+            import xgboost as xgb
+        except Exception:
+            return {}
+
+        n = int(len(X))
+        if n < 1200:
+            return {}
+
+        n_folds = int(config.get("smc_xgb_walkforward_folds", 3))
+        n_folds = max(2, min(n_folds, 6))
+
+        min_train = int(config.get("smc_xgb_walkforward_min_train", 800))
+        min_test = int(config.get("smc_xgb_walkforward_min_test", 200))
+
+        if n < min_train + min_test:
+            return {}
+
+        fold_metrics: List[Dict[str, float]] = []
+
+        from sklearn.metrics import mean_squared_error, r2_score
+
+        # Determine step size for expanding window
+        remaining = n - (min_train + min_test)
+        step = remaining // max(n_folds - 1, 1) if remaining > 0 else 0
+
+        for k in range(n_folds):
+            train_end = min_train + k * step
+            test_end = train_end + min_test
+
+            if test_end > n:
+                break
+
+            X_train = X.iloc[:train_end]
+            y_train = y.iloc[:train_end]
+            X_test_fold = X.iloc[train_end:test_end]
+            y_test_fold = y.iloc[train_end:test_end]
+
+            if len(X_test_fold) < max(50, min_test // 2):
+                continue
+
+            try:
+                wf_params = dict(base_params)
+                wf_params.pop("num_class", None)
+                wf_params["objective"] = "reg:squarederror"
+
+                model = xgb.XGBRegressor(**wf_params)
+                model.fit(X_train, y_train, verbose=False)
+                y_pred_fold = model.predict(X_test_fold)
+
+                rmse_fold = float(np.sqrt(mean_squared_error(y_test_fold, y_pred_fold)))
+                r2_fold = float(r2_score(y_test_fold, y_pred_fold)) if len(y_test_fold) > 1 else float("nan")
+
+                fold_metrics.append(
+                    {
+                        "fold": k,
+                        "train_end_index": int(train_end),
+                        "test_start_index": int(train_end),
+                        "test_end_index": int(test_end),
+                        "test_rmse": rmse_fold,
+                        "test_r2": r2_fold,
+                    }
+                )
+            except Exception as e:
+                tprint_warning(f"SMC XGB walk-forward fold {k} failed: {e}")
+                continue
+
+        if not fold_metrics:
+            return {}
+
+        test_rmses = np.array([m["test_rmse"] for m in fold_metrics], dtype=float)
+        test_r2s = np.array([m["test_r2"] for m in fold_metrics], dtype=float)
+
+        summary = {
+            "n_folds": len(fold_metrics),
+            "mean_test_rmse": float(np.nanmean(test_rmses)),
+            "std_test_rmse": float(np.nanstd(test_rmses)),
+            "mean_test_r2": float(np.nanmean(test_r2s)),
+            "std_test_r2": float(np.nanstd(test_r2s)),
+            "folds": fold_metrics,
+        }
+
+        return summary
 
     def _run_hpo(
         self,
@@ -989,24 +1429,26 @@ class MLSMCRegimeStep(BaseStep):
         y_train: pd.Series,
         config: Dict[str, Any],
     ) -> Dict[str, Any]:
-        """Run Bayesian TPE hyperparameter optimization."""
+        """Run Bayesian TPE hyperparameter optimization for multi-class classification."""
         try:
             import optuna
             from optuna.samplers import TPESampler
         except ImportError:
             tprint_warning("Optuna not available, using default params")
             return {
-                'objective': 'reg:squarederror',
-                'n_estimators': 500,
-                'learning_rate': 0.05,
-                'max_depth': 6,
-                'subsample': 0.8,
-                'colsample_bytree': 0.8,
-                'gamma': 0.1,
-                'reg_alpha': 0.1,
-                'reg_lambda': 1.0,
-                'random_state': 42,
-                'n_jobs': -1,
+                "objective": "multi:softprob",
+                "num_class": 3,
+                "n_estimators": 500,
+                "learning_rate": 0.03,
+                "max_depth": 4,
+                "subsample": 0.6,
+                "colsample_bytree": 0.6,
+                "gamma": 0.5,
+                "reg_alpha": 1.0,
+                "reg_lambda": 2.0,
+                "min_child_weight": 15,
+                "random_state": 42,
+                "n_jobs": -1,
             }
 
         # Split for validation
@@ -1019,36 +1461,60 @@ class MLSMCRegimeStep(BaseStep):
 
         def objective(trial):
             import xgboost as xgb
+            from sklearn.metrics import log_loss, f1_score
+
+            # Emphasize directional IC more strongly by default.
+            ic_weight = float(config.get("smc_hpo_ic_weight", 0.9))
 
             params = {
-                'objective': 'reg:squarederror',
-                'n_estimators': trial.suggest_int('n_estimators', 200, 1000),
-                'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.2, log=True),
-                'max_depth': trial.suggest_int('max_depth', 3, 10),
-                'subsample': trial.suggest_float('subsample', 0.6, 1.0),
-                'colsample_bytree': trial.suggest_float('colsample_bytree', 0.6, 1.0),
-                'gamma': trial.suggest_float('gamma', 0.0, 1.0),
-                'reg_alpha': trial.suggest_float('reg_alpha', 0.0, 2.0),
-                'reg_lambda': trial.suggest_float('reg_lambda', 0.0, 2.0),
-                'min_child_weight': trial.suggest_int('min_child_weight', 1, 20),
-                'random_state': 42,
-                'n_jobs': -1,
+                "objective": "multi:softprob",
+                "num_class": 3,
+                "n_estimators": trial.suggest_int("n_estimators", 300, 900),
+                "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.08, log=True),
+                "max_depth": trial.suggest_int("max_depth", 3, 7),
+                "subsample": trial.suggest_float("subsample", 0.5, 0.9),
+                "colsample_bytree": trial.suggest_float("colsample_bytree", 0.5, 0.9),
+                "gamma": trial.suggest_float("gamma", 0.1, 1.0),
+                "reg_alpha": trial.suggest_float("reg_alpha", 0.1, 3.0),
+                "reg_lambda": trial.suggest_float("reg_lambda", 0.5, 3.0),
+                "min_child_weight": trial.suggest_int("min_child_weight", 5, 30),
+                "random_state": 42,
+                "n_jobs": -1,
             }
 
             try:
-                model = xgb.XGBRegressor(**params)
+                model = xgb.XGBClassifier(**params)
                 model.fit(X_tr, y_tr, eval_set=[(X_val, y_val)], verbose=False)
-                y_pred = model.predict(X_val)
+                proba_val = model.predict_proba(X_val)
 
-                # Objective: minimize RMSE
-                from sklearn.metrics import mean_squared_error
-                rmse = np.sqrt(mean_squared_error(y_val, y_pred))
+                # Base objective: minimize log loss (multi-class)
+                loss = log_loss(y_val, proba_val, labels=[0, 1, 2])
 
-                return rmse
+                # Lightly regularize against low F1 by adding a penalty
+                y_pred_cls = np.argmax(proba_val, axis=1)
+                f1 = f1_score(y_val, y_pred_cls, average="macro")
+                penalty = max(0.0, 0.6 - f1)
+
+                # Directional IC-like term on scalarized predictions vs label direction
+                class_to_scalar = np.array([0.0, 0.5, 1.0], dtype=np.float32)
+                pred_scalar = proba_val.dot(class_to_scalar)
+                y_dir = np.where(y_val == 2, 1.0, np.where(y_val == 0, -1.0, 0.0)).astype(np.float32)
+
+                mask = np.isfinite(pred_scalar) & np.isfinite(y_dir)
+                if mask.sum() > 50:
+                    try:
+                        ic = float(np.corrcoef(pred_scalar[mask], y_dir[mask])[0, 1])
+                    except Exception:
+                        ic = 0.0
+                else:
+                    ic = 0.0
+
+                # Minimize logloss + F1 penalty - directional IC term
+                return loss + penalty - ic_weight * ic
 
             except Exception as e:
                 tprint_warning(f"HPO trial failed: {e}")
-                return float('inf')
+                return float("inf")
 
         # Create and run study
         n_trials = int(config.get("smc_xgb_hpo_trials", 30))
@@ -1057,14 +1523,17 @@ class MLSMCRegimeStep(BaseStep):
 
         study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
 
-        tprint_info(f"HPO completed: best RMSE={study.best_value:.4f}")
+        tprint_info(f"HPO completed: best objective value={study.best_value:.4f}")
 
         best_params = study.best_params
-        best_params.update({
-            'objective': 'reg:squarederror',
-            'random_state': 42,
-            'n_jobs': -1,
-        })
+        best_params.update(
+            {
+                "objective": "multi:softprob",
+                "num_class": 3,
+                "random_state": 42,
+                "n_jobs": -1,
+            }
+        )
 
         return best_params
 
@@ -1078,41 +1547,45 @@ class MLSMCRegimeStep(BaseStep):
     ) -> Optional[Dict[str, Any]]:
         """Perform conformal prediction calibration with extended confidence levels."""
         try:
-            # Split training data
             cal_frac = 0.2
             split_idx = int(len(X_train) * (1 - cal_frac))
 
-            X_proper_train = X_train.iloc[:split_idx]
-            y_proper_train = y_train.iloc[:split_idx]
             X_cal = X_train.iloc[split_idx:]
             y_cal = y_train.iloc[split_idx:]
 
-            # Retrain on proper training set
-            model.fit(X_proper_train, y_proper_train, verbose=False)
+            if len(X_cal) == 0:
+                return None
 
-            # Calculate non-conformity scores
             y_cal_pred = model.predict(X_cal)
             nonconformity_scores = np.abs(y_cal - y_cal_pred)
 
-            # Extended confidence levels: 50, 60, 70, 80, 90, 95, 99
             confidence_levels = [0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99]
             quantiles = {}
+            coverage_metrics = {}
 
             for alpha in confidence_levels:
                 q = np.percentile(nonconformity_scores, alpha * 100)
-                quantiles[f"{int(alpha*100)}%"] = float(q)
+                key = f"{int(alpha * 100)}%"
+                quantiles[key] = float(q)
+                coverage = float((nonconformity_scores <= q).mean())
+                coverage_metrics[f"conformal_coverage_{key}"] = coverage
 
             tprint_info(f"Conformal prediction quantiles: {quantiles}")
 
-            # Calculate confidence scores for all data
             all_X = pd.concat([X_train, X_test])
             all_preds = model.predict(all_X)
 
             confidence_scores = {}
             for level, q in quantiles.items():
-                # Normalized confidence score
                 conf_score = q / (np.abs(all_preds - 0.5) + q + 1e-9)
                 confidence_scores[level] = conf_score.clip(0.0, 1.0)
+
+            metrics_dict = {
+                "conformal_quantile_50": quantiles.get("50%", float("nan")),
+                "conformal_quantile_70": quantiles.get("70%", float("nan")),
+                "conformal_quantile_90": quantiles.get("90%", float("nan")),
+            }
+            metrics_dict.update(coverage_metrics)
 
             return {
                 "calibration": {
@@ -1120,11 +1593,7 @@ class MLSMCRegimeStep(BaseStep):
                     "nonconformity_scores": nonconformity_scores.tolist(),
                 },
                 "confidence_scores": confidence_scores,
-                "metrics": {
-                    "conformal_quantile_50": quantiles["50%"],
-                    "conformal_quantile_70": quantiles["70%"],
-                    "conformal_quantile_90": quantiles["90%"],
-                },
+                "metrics": metrics_dict,
             }
 
         except Exception as e:
@@ -1144,11 +1613,17 @@ class MLSMCRegimeStep(BaseStep):
         exchange: str,
         regime_timeframe: str,
         train_rmse: float,
+        val_rmse: float,
         test_rmse: float,
         train_r2: float,
+        val_r2: float,
         test_r2: float,
         train_brier: float,
+        val_brier: float,
         test_brier: float,
+        n_train: int,
+        n_val: int,
+        n_test: int,
     ) -> List[str]:
         """Generate consolidated comprehensive reports."""
         artifacts = []
@@ -1157,8 +1632,19 @@ class MLSMCRegimeStep(BaseStep):
         out_dir.mkdir(exist_ok=True)
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-        # Predictions
-        y_pred = model.predict(X)
+        # Predictions (scalarized classifier output 0.0/0.5/1.0 where possible)
+        try:
+            proba_all = model.predict_proba(X)
+            if proba_all.shape[1] >= 3:
+                class_to_scalar = np.array([0.0, 0.5, 1.0], dtype=np.float32)
+                y_pred_scalar = proba_all.dot(class_to_scalar)
+                y_pred_class = np.argmax(proba_all, axis=1)
+            else:
+                y_pred_scalar = model.predict(X)
+                y_pred_class = None
+        except Exception:
+            y_pred_scalar = model.predict(X)
+            y_pred_class = None
 
         # 1. CONSOLIDATED CSV: Feature importance + correlations
         feature_importance = model.feature_importances_
@@ -1191,18 +1677,30 @@ class MLSMCRegimeStep(BaseStep):
         # Model Performance
         md_lines.append("## Model Performance")
         md_lines.append("")
-        md_lines.append("| Metric | Train | Test |")
-        md_lines.append("| --- | --- | --- |")
-        md_lines.append(f"| RMSE | {train_rmse:.4f} | {test_rmse:.4f} |")
-        md_lines.append(f"| R² Score | {train_r2:.4f} | {test_r2:.4f} |")
-        md_lines.append(f"| Brier Score | {train_brier:.4f} | {test_brier:.4f} |")
-        md_lines.append(f"| Samples | {int(len(y) * 0.8)} | {int(len(y) * 0.2)} |")
-        md_lines.append(f"| Features | {len(feature_cols)} | {len(feature_cols)} |")
+        md_lines.append("| Metric | Train | Val | Test |")
+        md_lines.append("| --- | --- | --- | --- |")
+        md_lines.append(
+            f"| RMSE | {train_rmse:.4f} | {val_rmse:.4f} | {test_rmse:.4f} |"
+        )
+        md_lines.append(
+            f"| R² Score | {train_r2:.4f} | {val_r2:.4f} | {test_r2:.4f} |"
+        )
+        md_lines.append(
+            f"| Brier Score | {train_brier:.4f} | {val_brier:.4f} | {test_brier:.4f} |"
+        )
+        md_lines.append(
+            f"| Samples | {n_train} | {n_val} | {n_test} |"
+        )
+        md_lines.append(f"| Features | {len(feature_cols)} | {len(feature_cols)} | {len(feature_cols)} |")
         md_lines.append("")
 
         # Mean returns by signal
-        breakout_pred = y_pred > 1.0
-        breakdown_pred = y_pred < 0.0
+        if y_pred_class is not None:
+            breakout_pred = y_pred_class == 2
+            breakdown_pred = y_pred_class == 0
+        else:
+            breakout_pred = y_pred_scalar > 0.75
+            breakdown_pred = y_pred_scalar < 0.25
         if breakout_pred.sum() > 0:
             mean_ret_breakout = forward_returns[breakout_pred].mean()
             md_lines.append(f"**Mean Return (Breakout Signals)**: {mean_ret_breakout:.4f} ({breakout_pred.sum()} signals)")
@@ -1237,14 +1735,70 @@ class MLSMCRegimeStep(BaseStep):
         md_lines.append("")
         md_lines.append("| Statistic | Predicted | Actual |")
         md_lines.append("| --- | --- | --- |")
-        md_lines.append(f"| Mean | {y_pred.mean():.4f} | {y.mean():.4f} |")
-        md_lines.append(f"| Std | {y_pred.std():.4f} | {y.std():.4f} |")
-        md_lines.append(f"| Min | {y_pred.min():.4f} | {y.min():.4f} |")
-        md_lines.append(f"| 25th Percentile | {np.percentile(y_pred, 25):.4f} | {np.percentile(y, 25):.4f} |")
-        md_lines.append(f"| Median | {np.median(y_pred):.4f} | {np.median(y):.4f} |")
-        md_lines.append(f"| 75th Percentile | {np.percentile(y_pred, 75):.4f} | {np.percentile(y, 75):.4f} |")
-        md_lines.append(f"| Max | {y_pred.max():.4f} | {y.max():.4f} |")
+        md_lines.append(f"| Mean | {y_pred_scalar.mean():.4f} | {y.mean():.4f} |")
+        md_lines.append(f"| Std | {y_pred_scalar.std():.4f} | {y.std():.4f} |")
+        md_lines.append(f"| Min | {y_pred_scalar.min():.4f} | {y.min():.4f} |")
+        md_lines.append(
+            f"| 25th Percentile | {np.percentile(y_pred_scalar, 25):.4f} | {np.percentile(y, 25):.4f} |"
+        )
+        md_lines.append(f"| Median | {np.median(y_pred_scalar):.4f} | {np.median(y):.4f} |")
+        md_lines.append(
+            f"| 75th Percentile | {np.percentile(y_pred_scalar, 75):.4f} | {np.percentile(y, 75):.4f} |"
+        )
+        md_lines.append(f"| Max | {y_pred_scalar.max():.4f} | {y.max():.4f} |")
         md_lines.append("")
+
+        # Scalar band performance (deciles of scalar prediction)
+        md_lines.append("## Scalar Band Performance (Deciles)")
+        md_lines.append("")
+        try:
+            arr_pred = np.asarray(y_pred_scalar, dtype=float)
+            arr_ret = np.asarray(forward_returns.to_numpy(), dtype=float)
+            mask = np.isfinite(arr_pred) & np.isfinite(arr_ret)
+            if mask.sum() >= 100:
+                band_df = pd.DataFrame({"pred": arr_pred[mask], "ret": arr_ret[mask]})
+                band_df["band"] = pd.qcut(band_df["pred"], q=10, duplicates="drop")
+
+                def _band_stats(g: pd.DataFrame) -> pd.Series:
+                    pred_vals = g["pred"].to_numpy()
+                    ret_vals = g["ret"].to_numpy()
+                    direction = np.sign(pred_vals - 0.5)
+                    ret_sign = np.sign(ret_vals)
+                    dir_mask = direction != 0
+                    if dir_mask.any():
+                        hit_rate = float(
+                            (direction[dir_mask] * ret_sign[dir_mask] > 0).mean()
+                        )
+                    else:
+                        hit_rate = float("nan")
+                    return pd.Series(
+                        {
+                            "count": int(len(g)),
+                            "pred_mean": float(pred_vals.mean()),
+                            "ret_mean": float(ret_vals.mean()),
+                            "hit_rate": hit_rate,
+                        }
+                    )
+
+                stats = band_df.groupby("band").apply(_band_stats)
+
+                md_lines.append(
+                    "| Band | Count | Mean Scalar | Mean Forward Return | Directional Hit Rate |"
+                )
+                md_lines.append("| --- | --- | --- | --- | --- |")
+                for band_label, row in stats.iterrows():
+                    md_lines.append(
+                        f"| {band_label} | {int(row['count'])} | "
+                        f"{row['pred_mean']:.4f} | {row['ret_mean']:.4f} | "
+                        f"{row['hit_rate']:.2%} |"
+                    )
+                md_lines.append("")
+            else:
+                md_lines.append("_Not enough samples for scalar band analysis._")
+                md_lines.append("")
+        except Exception:
+            md_lines.append("_Scalar band performance analysis failed; see logs for details._")
+            md_lines.append("")
 
         # Directional accuracy
         breakout_actual = y > 1.0

@@ -5,14 +5,17 @@ This step constructs liquidity-based regimes from 15m OHLCV data, focused on
 Effort vs Result of price moves and participation (volume context).
 
 Primary goals:
-- Detect Valid Trend, Absorption, Ghost/Drift, and Apathy regimes.
-- Train an XGBClassifier to predict regimes from liquidity and microstructure features.
-- Calibrate probabilities and expose per-regime liquidity probabilities as
+- Detect Valid Trend, Absorption, Ghost/Drift, Steamroller, and Apathy regimes.
+- Assign regimes via a hierarchical rule-based decision tree optimized for
+  winsorized CoV (WCV) separation across core liquidity axes.
+- Optionally refine regimes using centroid-based clustering in a discriminative
+  liquidity feature space.
+- Compute distance-based soft probabilities for each regime and expose them as
   standardized downstream features.
-- Save 15m training artifacts (model, feature pipeline, regime stats, thresholds,
-  quality metrics).
-- Save native 15m regime probabilities as a dedicated
-  artifact for downstream consumers.
+- Save 15m training artifacts (feature frame, regime labels, tree thresholds,
+  and quality metrics).
+- Save native 15m regime probabilities as a dedicated artifact for downstream
+  consumers.
 """
 
 import logging
@@ -61,30 +64,6 @@ from src.training.steps.market_analysis.clusters.liquidity_cluster_quality_asses
 from src.utils.ml_common.feature_engineering.feature_smoothing import apply_ewm_smoothing
 
 logger = logging.getLogger(__name__)
-
-
-class TemperatureScaledModel:
-    def __init__(self, base_model, temperature: float):
-        self.base_model = base_model
-        self.temperature = float(temperature)
-
-    def predict_proba(self, X):
-        proba = self.base_model.predict_proba(X)
-        return self._apply_temperature(proba, self.temperature)
-
-    def predict(self, X):
-        proba = self.predict_proba(X)
-        return np.argmax(proba, axis=1)
-
-    @staticmethod
-    def _apply_temperature(proba: np.ndarray, temperature: float) -> np.ndarray:
-        eps = 1e-12
-        p = np.clip(proba, eps, 1.0)
-        t = float(max(temperature, eps))
-        scaled = p ** (1.0 / t)
-        scaled_sum = scaled.sum(axis=1, keepdims=True)
-        scaled_sum = np.where(scaled_sum == 0.0, 1.0, scaled_sum)
-        return scaled / scaled_sum
 
 
 class MLLiquidityRegimeStep(BaseStep):
@@ -244,13 +223,6 @@ class MLLiquidityRegimeStep(BaseStep):
                     "effort_result_cov_separation_score": metrics.get("liquidity_effort_result_cov_separation_score", 0.0),
                     "returns_cov_separation_score": metrics.get("liquidity_returns_cov_separation_score", 0.0),
                     "class_balance_score": metrics.get("class_balance_score", 0.0),
-                    # Classification quality (uncalibrated XGBoost)
-                    "val_accuracy_uncalibrated": metrics.get("val_accuracy_uncalibrated", None),
-                    "val_f1_macro_uncalibrated": metrics.get("val_f1_macro_uncalibrated", None),
-                    # Calibration quality diagnostics
-                    "val_brier_uncalibrated": metrics.get("val_brier_uncalibrated", None),
-                    "val_brier_calibrated": metrics.get("val_brier_calibrated", None),
-                    "xgb_liquidity_overall_quality_score": metrics.get("xgb_liquidity_overall_quality_score", None),
                     # Forward 1h return diagnostics (teacher regimes)
                     "forward_return_mean_1h_weighted": metrics.get("forward_return_mean_1h_weighted", None),
                     "forward_return_mean_1h_best_regime": metrics.get("forward_return_mean_1h_best_regime", None),
@@ -271,7 +243,6 @@ class MLLiquidityRegimeStep(BaseStep):
                 # Detailed per-trial HPO logging for diagnostics
                 try:
                     overall_score = float(quality_metrics.get("overall_quality_score", 0.0) or 0.0)
-                    xgb_score_raw = quality_metrics.get("xgb_liquidity_overall_quality_score")
                     effort_cov = float(quality_metrics.get("effort_result_cov_separation_score", 0.0) or 0.0)
                     returns_cov = float(quality_metrics.get("returns_cov_separation_score", 0.0) or 0.0)
                     class_balance = float(quality_metrics.get("class_balance_score", 0.0) or 0.0)
@@ -297,13 +268,6 @@ class MLLiquidityRegimeStep(BaseStep):
                         f"n_regimes={n_regimes}",
                         f"n_samples={n_samples}",
                     ]
-
-                    if xgb_score_raw is not None:
-                        try:
-                            xgb_score = float(xgb_score_raw)
-                            parts.insert(2, f"xgb_score={xgb_score:.3f}")
-                        except Exception:
-                            pass
 
                     tprint_info("📊 HPO trial summary: " + ", ".join(parts))
                 except Exception as log_exc:
@@ -367,72 +331,8 @@ class MLLiquidityRegimeStep(BaseStep):
             tprint_warning("⚠️ No successful configurations to analyze")
             return df, {"best_config": None, "analysis": "no_successful_runs"}
         
-        # Compute composite score.
-        # Prefer XGB-implied liquidity regime quality when available, so that
-        # HPO focuses on economically clean regimes induced by the classifier
-        # itself. Fallback to original overall_quality_score if needed.
-        if "xgb_liquidity_overall_quality_score" in successful.columns and successful["xgb_liquidity_overall_quality_score"].notna().any():
-            def _compute_composite(row: pd.Series) -> float:
-                try:
-                    qx = row.get("xgb_liquidity_overall_quality_score")
-                    if pd.isna(qx):
-                        qx = row.get("overall_quality_score", 0.0)
-                    qx_val = float(max(min(float(qx or 0.0), 1.0), 0.0))
-
-                    risk = row.get("xgb_risk_profile_score", 0.0)
-                    struct_sep = row.get("xgb_structural_separation_score", 0.0)
-                    bal = row.get("xgb_class_balance_score", row.get("class_balance_score", 0.0))
-
-                    try:
-                        risk_val = float(risk or 0.0)
-                    except Exception:
-                        risk_val = 0.0
-                    try:
-                        struct_val = float(struct_sep or 0.0)
-                    except Exception:
-                        struct_val = 0.0
-                    try:
-                        bal_val = float(bal or 0.0)
-                    except Exception:
-                        bal_val = 0.0
-
-                    k_raw = row.get("xgb_n_regimes", row.get("n_regimes", 0.0))
-                    try:
-                        k_val = float(k_raw or 0.0)
-                    except Exception:
-                        k_val = 0.0
-                    k_target = 5.0
-                    if k_val > 0.0:
-                        k_score = max(0.0, 1.0 - abs(k_val - k_target) / k_target)
-                    else:
-                        k_score = 0.0
-
-                    if (
-                        risk_val == 0.0
-                        and struct_val == 0.0
-                        and bal_val == 0.0
-                        and k_score == 0.0
-                    ):
-                        return qx_val
-
-                    score = (
-                        0.30 * qx_val
-                        + 0.25 * struct_val
-                        + 0.25 * risk_val
-                        + 0.15 * bal_val
-                        + 0.05 * k_score
-                    )
-                    return float(score)
-                except Exception:
-                    try:
-                        fallback = row.get("xgb_liquidity_overall_quality_score", row.get("overall_quality_score", 0.0))
-                        return float(fallback or 0.0)
-                    except Exception:
-                        return 0.0
-
-            successful["composite_score"] = successful.apply(_compute_composite, axis=1)
-        else:
-            successful["composite_score"] = successful["overall_quality_score"].astype(float)
+        # Compute composite score based purely on overall liquidity regime quality.
+        successful["composite_score"] = successful["overall_quality_score"].astype(float)
         
         # Sort by composite score
         successful = successful.sort_values("composite_score", ascending=False)
@@ -965,6 +865,46 @@ class MLLiquidityRegimeStep(BaseStep):
             for col in proba_df.columns:
                 liquidity_df[col] = proba_df[col]
 
+            # Map 1h probabilities to the 15m grid and persist a dedicated
+            # ml_liquidity_regime_probs_15m artifact for downstream
+            # consumers (get_specialist_models_outputs,
+            # specialist_feature_diagnostics, unified models). This keeps the
+            # training dataset as-is while exposing a compact probabilities
+            # view aligned to the base timeframe.
+            try:
+                mapped_probs = self._map_probabilities_to_15m(
+                    proba_df=proba_df,
+                    market_data_1h=market_data_1h,
+                    symbol=symbol,
+                    exchange=exchange,
+                    direction=direction,
+                    config=config,
+                )
+
+                if mapped_probs is not None and not mapped_probs.empty:
+                    to_save_probs = mapped_probs.reset_index().rename(
+                        columns={mapped_probs.index.name or "index": "timestamp"}
+                    )
+
+                    probs_15m_path = self._save_artifact(
+                        data=to_save_probs,
+                        artifact_name="ml_liquidity_regime_probs_15m",
+                        artifact_type="data",
+                        data_category="features",
+                        metadata={
+                            "symbol": symbol,
+                            "exchange": exchange,
+                            "timeframe": str(
+                                config.get("liquidity_output_timeframe", "15m")
+                            ),
+                            "source_regime_timeframe": regime_timeframe,
+                        },
+                    )
+            except Exception as map_exc:
+                tprint_warning(
+                    f"Liquidity 1h→15m probability mapping/save failed (non-fatal): {map_exc}"
+                )
+
             # ------------------------------------------------------------------
             # 5) Assess regime quality
             #   a) Generic cluster quality via ClusterQualityAssessor (original labels)
@@ -982,22 +922,6 @@ class MLLiquidityRegimeStep(BaseStep):
                 )
             except Exception as quality_exc:
                 tprint_warning(f"Liquidity regime quality assessment failed: {quality_exc}")
-
-            # Also assess quality of XGBoost-implied regimes if available
-            liquidity_quality_metrics_xgb: Optional[ClusterQualityMetrics] = None
-            liquidity_quality_xgb_path: Optional[str] = None
-            if "liquidity_regime_xgb" in liquidity_df.columns:
-                try:
-                    cfg_xgb_quality = {**config, "liquidity_quality_artifact_suffix": "_xgb"}
-                    liquidity_quality_metrics_xgb, liquidity_quality_xgb_path = self._assess_liquidity_regime_quality(
-                        liquidity_df=liquidity_df,
-                        regime_col="liquidity_regime_xgb",
-                        config=cfg_xgb_quality,
-                    )
-                except Exception as quality_exc_xgb:
-                    tprint_warning(
-                        f"XGB-implied liquidity regime quality assessment failed: {quality_exc_xgb}"
-                    )
 
             # Liquidity-specific quality assessment & reports
             liquidity_cluster_metrics: Optional[LiquidityClusterQualityMetrics] = None
@@ -1066,56 +990,6 @@ class MLLiquidityRegimeStep(BaseStep):
                 except Exception:
                     pass
 
-                # (b) Liquidity-specific quality on XGB-implied regimes, if available
-                if "liquidity_regime_xgb" in liquidity_df.columns:
-                    try:
-                        # Drop NaNs from XGB labels before assessment to avoid
-                        # conversion errors while still aligning on the common
-                        # index inside the assessor.
-                        xgb_labels = liquidity_df["liquidity_regime_xgb"].dropna().astype(int)
-
-                        liquidity_cluster_metrics_xgb = assessor.assess_liquidity_clusters(
-                            liquidity_df=liquidity_df,
-                            regime_labels=xgb_labels,
-                            forward_returns_1h=forward_returns_1h,
-                            config={**config, "liquidity_quality_artifact_suffix": "_xgb"},
-                        )
-
-                        training_metrics["xgb_liquidity_effort_result_cov_separation_score"] = float(
-                            liquidity_cluster_metrics_xgb.effort_result_cov_separation_score
-                        )
-                        training_metrics["xgb_liquidity_returns_cov_separation_score"] = float(
-                            liquidity_cluster_metrics_xgb.returns_cov_separation_score
-                        )
-                        training_metrics["xgb_liquidity_overall_quality_score"] = float(
-                            liquidity_cluster_metrics_xgb.overall_quality_score
-                        )
-                        training_metrics["xgb_class_balance_score"] = float(
-                            liquidity_cluster_metrics_xgb.class_balance_score
-                        )
-                        try:
-                            training_metrics["xgb_n_regimes"] = int(
-                                liquidity_cluster_metrics_xgb.n_regimes
-                            )
-                        except Exception:
-                            pass
-
-                        try:
-                            self._compute_xgb_hpo_objective_components(
-                                liquidity_df=liquidity_df,
-                                xgb_labels=xgb_labels,
-                                forward_returns_1h=forward_returns_1h,
-                                training_metrics=training_metrics,
-                            )
-                        except Exception as hpo_exc:
-                            tprint_warning(
-                                f"Failed to compute XGB HPO objective components: {hpo_exc}"
-                            )
-                    except Exception as xgb_liq_exc:
-                        tprint_warning(
-                            f"Liquidity-specific cluster quality assessment for XGB-implied regimes failed: {xgb_liq_exc}"
-                        )
-
                 # Generate human-readable reports in outcomes/
                 liquidity_cluster_md_path = assessor.save_markdown_report(
                     metrics=liquidity_cluster_metrics,
@@ -1132,32 +1006,6 @@ class MLLiquidityRegimeStep(BaseStep):
                     symbol=symbol,
                     output_dir="outcomes",
                 )
-
-                # If XGB-implied liquidity regimes were assessed, also emit
-                # dedicated quality and distinctiveness reports with an _xgb
-                # suffix so they can be inspected separately.
-                if liquidity_cluster_metrics_xgb is not None:
-                    try:
-                        liquidity_cluster_md_path_xgb = assessor.save_markdown_report(
-                            metrics=liquidity_cluster_metrics_xgb,
-                            symbol=symbol,
-                            output_dir="outcomes",
-                            suffix="_xgb",
-                        )
-                        liquidity_cluster_csv_path_xgb = assessor.save_csv_report(
-                            metrics=liquidity_cluster_metrics_xgb,
-                            symbol=symbol,
-                            output_dir="outcomes",
-                            suffix="_xgb",
-                        )
-                        feature_distinctiveness_path_xgb = assessor.save_feature_distinctiveness_report(
-                            metrics=liquidity_cluster_metrics_xgb,
-                            symbol=symbol,
-                            output_dir="outcomes",
-                            suffix="_xgb",
-                        )
-                    except Exception:
-                        pass
 
                 # Persist metrics as versioned artifact
                 try:
@@ -1286,194 +1134,6 @@ class MLLiquidityRegimeStep(BaseStep):
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
-    def _compute_xgb_hpo_objective_components(
-        self,
-        *,
-        liquidity_df: pd.DataFrame,
-        xgb_labels: pd.Series,
-        forward_returns_1h: Optional[pd.Series],
-        training_metrics: Dict[str, Any],
-    ) -> None:
-        eps = 1e-9
-
-        if forward_returns_1h is None:
-            training_metrics.setdefault("xgb_risk_profile_score", 0.0)
-            training_metrics.setdefault("xgb_structural_separation_score", 0.0)
-            return
-
-        common_idx = liquidity_df.index.intersection(xgb_labels.index)
-        if len(common_idx) == 0:
-            training_metrics.setdefault("xgb_risk_profile_score", 0.0)
-            training_metrics.setdefault("xgb_structural_separation_score", 0.0)
-            return
-
-        labels = xgb_labels.loc[common_idx]
-        fr_all = forward_returns_1h.reindex(common_idx)
-        amihud_all = liquidity_df.get("amihud_spike_ratio_scaled")
-        rvol24_all = liquidity_df.get("rvol_24_scaled")
-        rvol168_all = liquidity_df.get("rvol_168_scaled")
-
-        if amihud_all is not None:
-            amihud_all = amihud_all.reindex(common_idx)
-        if rvol24_all is not None:
-            rvol24_all = rvol24_all.reindex(common_idx)
-        if rvol168_all is not None:
-            rvol168_all = rvol168_all.reindex(common_idx)
-
-        valid_mask = labels.notna()
-        labels = labels[valid_mask]
-        fr_all = fr_all[valid_mask]
-        if amihud_all is not None:
-            amihud_all = amihud_all[valid_mask]
-        if rvol24_all is not None:
-            rvol24_all = rvol24_all[valid_mask]
-        if rvol168_all is not None:
-            rvol168_all = rvol168_all[valid_mask]
-
-        if fr_all is None or fr_all.dropna().shape[0] < 5:
-            training_metrics.setdefault("xgb_risk_profile_score", 0.0)
-            training_metrics.setdefault("xgb_structural_separation_score", 0.0)
-            return
-
-        abs_fr_all = fr_all.abs().dropna()
-        if abs_fr_all.shape[0] < 5:
-            training_metrics.setdefault("xgb_risk_profile_score", 0.0)
-            training_metrics.setdefault("xgb_structural_separation_score", 0.0)
-            return
-
-        try:
-            q95 = float(abs_fr_all.quantile(0.95))
-        except Exception:
-            q95 = 0.0
-
-        sigma_all = float(fr_all.std()) if fr_all.notna().any() else 0.0
-        if q95 > 0.0:
-            tail_ref = float((abs_fr_all > q95).mean())
-        else:
-            tail_ref = 0.0
-
-        if amihud_all is not None and amihud_all.notna().any():
-            amihud_nonnull = amihud_all.dropna()
-            amihud_mean_global = float(amihud_nonnull.mean())
-            amihud_std_global = float(amihud_nonnull.std())
-        else:
-            amihud_mean_global = 0.0
-            amihud_std_global = 0.0
-
-        if rvol24_all is not None and rvol24_all.notna().any():
-            rvol24_nonnull = rvol24_all.dropna()
-            rvol24_std_global = float(rvol24_nonnull.std())
-        else:
-            rvol24_std_global = 0.0
-
-        if rvol168_all is not None and rvol168_all.notna().any():
-            rvol168_nonnull = rvol168_all.dropna()
-            rvol168_std_global = float(rvol168_nonnull.std())
-        else:
-            rvol168_std_global = 0.0
-
-        regime_ids = sorted(labels.unique())
-        sigma_vals: List[float] = []
-        tail_vals: List[float] = []
-        amihud_vals: List[float] = []
-        rvol24_vals: List[float] = []
-        rvol168_vals: List[float] = []
-
-        for regime_id in regime_ids:
-            mask_regime = labels == regime_id
-            if mask_regime.sum() < 5:
-                continue
-
-            fr_reg = fr_all[mask_regime].dropna()
-            if fr_reg.shape[0] == 0:
-                continue
-            sigma_vals.append(float(fr_reg.std()))
-
-            if q95 > 0.0:
-                tail_vals.append(float((fr_reg.abs() > q95).mean()))
-            else:
-                tail_vals.append(0.0)
-
-            if amihud_all is not None:
-                ami_reg = amihud_all[mask_regime].dropna()
-                if ami_reg.shape[0] > 0:
-                    amihud_vals.append(float(ami_reg.mean()))
-
-            if rvol24_all is not None:
-                r24_reg = rvol24_all[mask_regime].dropna()
-                if r24_reg.shape[0] > 0:
-                    rvol24_vals.append(float(r24_reg.mean()))
-
-            if rvol168_all is not None:
-                r168_reg = rvol168_all[mask_regime].dropna()
-                if r168_reg.shape[0] > 0:
-                    rvol168_vals.append(float(r168_reg.mean()))
-
-        def _norm_range(values: List[float], denom: float) -> float:
-            if len(values) < 2 or denom <= 0.0:
-                return 0.0
-            v_min = min(values)
-            v_max = max(values)
-            return float(min((v_max - v_min) / (denom + eps), 1.0))
-
-        vol_sep = _norm_range(sigma_vals, sigma_all) if sigma_all > 0.0 else 0.0
-        tail_sep = _norm_range(tail_vals, tail_ref) if tail_ref > 0.0 else 0.0
-        liq_sep = _norm_range(amihud_vals, abs(amihud_mean_global)) if abs(amihud_mean_global) > 0.0 else 0.0
-
-        risk_profile_score = (vol_sep + tail_sep + liq_sep) / 3.0 if any(
-            v > 0.0 for v in (vol_sep, tail_sep, liq_sep)
-        ) else 0.0
-
-        sep_amihud = _norm_range(amihud_vals, amihud_std_global) if amihud_std_global > 0.0 else 0.0
-        sep_rvol24 = _norm_range(rvol24_vals, rvol24_std_global) if rvol24_std_global > 0.0 else 0.0
-        sep_rvol168 = _norm_range(rvol168_vals, rvol168_std_global) if rvol168_std_global > 0.0 else 0.0
-        rvol_sep = 0.5 * (sep_rvol24 + sep_rvol168)
-
-        effort_cov = training_metrics.get(
-            "xgb_liquidity_effort_result_cov_separation_score",
-            training_metrics.get("effort_result_cov_separation_score", 0.0),
-        )
-        try:
-            effort_cov_val = float(effort_cov or 0.0)
-        except Exception:
-            effort_cov_val = 0.0
-        if effort_cov_val < 0.0:
-            effort_cov_val = 0.0
-        if effort_cov_val > 1.0:
-            effort_cov_val = 1.0
-
-        structural_sep = (
-            0.4 * effort_cov_val
-            + 0.3 * sep_amihud
-            + 0.3 * rvol_sep
-        )
-
-        training_metrics["xgb_risk_profile_score"] = float(risk_profile_score)
-        training_metrics["xgb_structural_separation_score"] = float(structural_sep)
-
-    def _fit_temperature(self, proba_val: np.ndarray, y_val_mapped: pd.Series) -> float:
-        eps = 1e-12
-        if proba_val is None or proba_val.size == 0:
-            return 1.0
-        y_arr = np.asarray(y_val_mapped, dtype=int)
-        if y_arr.size == 0 or proba_val.shape[0] != y_arr.shape[0]:
-            return 1.0
-        n_classes = proba_val.shape[1]
-        y_onehot = np.eye(n_classes, dtype=float)[y_arr]
-        temps = np.linspace(0.5, 5.0, 46)
-        best_T = 1.0
-        best_nll = np.inf
-        for T in temps:
-            p_scaled = TemperatureScaledModel._apply_temperature(proba_val, T)
-            p_clipped = np.clip(p_scaled, eps, 1.0)
-            nll = -np.mean(np.sum(y_onehot * np.log(p_clipped), axis=1))
-            if np.isfinite(nll) and nll < best_nll:
-                best_nll = nll
-                best_T = float(T)
-        if not np.isfinite(best_T) or best_T <= 0.0:
-            return 1.0
-        return best_T
-
     def _generate_liquidity_features_vectorized(self, market_data: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
         """Vectorized feature generation with hardware acceleration."""
         df = market_data.copy()
@@ -2747,11 +2407,29 @@ class MLLiquidityRegimeStep(BaseStep):
         # ========================================================================
         # LEVEL 1: VOLUME SPLIT (High vs Low Volume)
         # ========================================================================
-        volume_threshold, _ = self._find_optimal_split(
-            work_df["rvol_24_scaled"],
-            core_features_df,
-            candidate_percentiles=np.arange(0.30, 0.70, 0.05),
-        )
+        volume_override = config.get("liquidity_tree_volume_threshold_override")
+        if volume_override is not None:
+            volume_threshold = float(volume_override)
+            tprint_info(
+                f"Using override volume threshold for liquidity tree: {volume_threshold:.4f}"
+            )
+        else:
+            vol_pct_low = float(config.get("liquidity_tree_volume_pct_low", 0.30))
+            vol_pct_high = float(config.get("liquidity_tree_volume_pct_high", 0.70))
+            vol_pct_step = float(config.get("liquidity_tree_volume_pct_step", 0.05))
+
+            if vol_pct_step <= 0.0:
+                vol_pct_step = 0.05
+            if vol_pct_high <= vol_pct_low:
+                vol_pct_low, vol_pct_high = 0.30, 0.70
+
+            volume_percentiles = np.arange(vol_pct_low, vol_pct_high, vol_pct_step)
+
+            volume_threshold, _ = self._find_optimal_split(
+                work_df["rvol_24_scaled"],
+                core_features_df,
+                candidate_percentiles=volume_percentiles,
+            )
 
         config["liquidity_tree_volume_threshold"] = float(volume_threshold)
 
@@ -2768,12 +2446,30 @@ class MLLiquidityRegimeStep(BaseStep):
         # ========================================================================
         high_vol_indices = work_df.index[high_volume_mask]
         if len(high_vol_indices) > 0:
-            # Find optimal delta alignment threshold
-            delta_threshold, _ = self._find_optimal_split(
-                work_df.loc[high_vol_indices, "delta_regime_signal_scaled"],
-                core_features_df.loc[high_vol_indices],
-                candidate_percentiles=np.arange(0.35, 0.65, 0.05),
-            )
+            # Find optimal delta alignment threshold (or use override)
+            delta_override = config.get("liquidity_tree_delta_threshold_override")
+            if delta_override is not None:
+                delta_threshold = float(delta_override)
+                tprint_info(
+                    f"Using override delta threshold for liquidity tree: {delta_threshold:.4f}"
+                )
+            else:
+                delta_pct_low = float(config.get("liquidity_tree_delta_pct_low", 0.35))
+                delta_pct_high = float(config.get("liquidity_tree_delta_pct_high", 0.65))
+                delta_pct_step = float(config.get("liquidity_tree_delta_pct_step", 0.05))
+
+                if delta_pct_step <= 0.0:
+                    delta_pct_step = 0.05
+                if delta_pct_high <= delta_pct_low:
+                    delta_pct_low, delta_pct_high = 0.35, 0.65
+
+                delta_percentiles = np.arange(delta_pct_low, delta_pct_high, delta_pct_step)
+
+                delta_threshold, _ = self._find_optimal_split(
+                    work_df.loc[high_vol_indices, "delta_regime_signal_scaled"],
+                    core_features_df.loc[high_vol_indices],
+                    candidate_percentiles=delta_percentiles,
+                )
 
             config["liquidity_tree_delta_threshold"] = float(delta_threshold)
 
@@ -2797,12 +2493,30 @@ class MLLiquidityRegimeStep(BaseStep):
         # ========================================================================
         low_vol_indices = work_df.index[low_volume_mask]
         if len(low_vol_indices) > 0:
-            # Find optimal range threshold
-            range_threshold, _ = self._find_optimal_split(
-                work_df.loc[low_vol_indices, "normalized_range"],
-                core_features_df.loc[low_vol_indices],
-                candidate_percentiles=np.arange(0.30, 0.70, 0.05),
-            )
+            # Find optimal range threshold (or use override)
+            range_override = config.get("liquidity_tree_range_threshold_override")
+            if range_override is not None:
+                range_threshold = float(range_override)
+                tprint_info(
+                    f"Using override range threshold for liquidity tree: {range_threshold:.4f}"
+                )
+            else:
+                range_pct_low = float(config.get("liquidity_tree_range_pct_low", 0.30))
+                range_pct_high = float(config.get("liquidity_tree_range_pct_high", 0.70))
+                range_pct_step = float(config.get("liquidity_tree_range_pct_step", 0.05))
+
+                if range_pct_step <= 0.0:
+                    range_pct_step = 0.05
+                if range_pct_high <= range_pct_low:
+                    range_pct_low, range_pct_high = 0.30, 0.70
+
+                range_percentiles = np.arange(range_pct_low, range_pct_high, range_pct_step)
+
+                range_threshold, _ = self._find_optimal_split(
+                    work_df.loc[low_vol_indices, "normalized_range"],
+                    core_features_df.loc[low_vol_indices],
+                    candidate_percentiles=range_percentiles,
+                )
 
             config["liquidity_tree_range_threshold"] = float(range_threshold)
 
@@ -2822,12 +2536,34 @@ class MLLiquidityRegimeStep(BaseStep):
             # ====================================================================
             large_range_indices = work_df.index[low_volume_mask & large_range_mask]
             if len(large_range_indices) > 20:
-                # Find optimal Amihud threshold
-                amihud_threshold, _ = self._find_optimal_split(
-                    work_df.loc[large_range_indices, "amihud_spike_ratio_scaled"],
-                    core_features_df.loc[large_range_indices],
-                    candidate_percentiles=np.arange(0.40, 0.75, 0.05),
-                )
+                # Find optimal Amihud threshold (or use override)
+                amihud_override = config.get("liquidity_tree_amihud_threshold_override")
+                if amihud_override is not None:
+                    amihud_threshold = float(amihud_override)
+                    tprint_info(
+                        f"Using override Amihud threshold for liquidity tree: {amihud_threshold:.4f}"
+                    )
+                else:
+                    amihud_pct_low = float(config.get("liquidity_tree_amihud_pct_low", 0.40))
+                    amihud_pct_high = float(config.get("liquidity_tree_amihud_pct_high", 0.75))
+                    amihud_pct_step = float(config.get("liquidity_tree_amihud_pct_step", 0.05))
+
+                    if amihud_pct_step <= 0.0:
+                        amihud_pct_step = 0.05
+                    if amihud_pct_high <= amihud_pct_low:
+                        amihud_pct_low, amihud_pct_high = 0.40, 0.75
+
+                    amihud_percentiles = np.arange(
+                        amihud_pct_low,
+                        amihud_pct_high,
+                        amihud_pct_step,
+                    )
+
+                    amihud_threshold, _ = self._find_optimal_split(
+                        work_df.loc[large_range_indices, "amihud_spike_ratio_scaled"],
+                        core_features_df.loc[large_range_indices],
+                        candidate_percentiles=amihud_percentiles,
+                    )
 
                 config["liquidity_tree_amihud_threshold"] = float(amihud_threshold)
 
@@ -3171,688 +2907,6 @@ class MLLiquidityRegimeStep(BaseStep):
         work_df["liquidity_sample_weight"] = sample_weight.astype(float)
 
         return work_df
-
-    def _train_liquidity_model(
-        self,
-        liquidity_df: pd.DataFrame,
-        config: Dict[str, Any],
-    ) -> Tuple[Any, Optional[pd.DataFrame], pd.Series, Dict[str, Any], Dict[str, Any]]:
-        """Train an XGBClassifier to predict liquidity regimes (0–3)."""
-        try:
-            from xgboost import XGBClassifier
-        except ImportError as e:
-            raise ImportError("xgboost is required for liquidity regime model training") from e
-
-        try:
-            from sklearn.metrics import (
-                accuracy_score,
-                f1_score,
-                confusion_matrix,
-            )
-            from sklearn.calibration import CalibratedClassifierCV
-        except ImportError:
-            accuracy_score = None  # type: ignore[assignment]
-            f1_score = None  # type: ignore[assignment]
-            confusion_matrix = None  # type: ignore[assignment]
-            CalibratedClassifierCV = None  # type: ignore[assignment]
-
-        df = liquidity_df.copy()
-        if "liquidity_regime" not in df.columns:
-            raise ValueError("liquidity_regime column not found in dataset")
-
-        # Drop samples without regime labels
-        df = df.dropna(subset=["liquidity_regime"])
-        if df.empty:
-            raise ValueError("No valid samples for liquidity model training after dropping NaNs")
-
-        # Optionally restrict training to high-confidence regime assignments to
-        # avoid training on highly ambiguous boundary samples.
-        conf_series = df.get("regime_confidence")
-        if conf_series is not None:
-            conf_threshold = float(config.get("liquidity_min_regime_confidence", 0.5))
-            conf_threshold = max(0.0, min(1.0, conf_threshold))
-            n_before_conf = len(df)
-            high_conf_mask = conf_series >= conf_threshold
-            df = df.loc[high_conf_mask].copy()
-            if df.empty:
-                raise ValueError(
-                    f"No samples above regime_confidence threshold {conf_threshold:.2f} "
-                    f"for liquidity model training (n_before={n_before_conf})"
-                )
-
-        # Keep a copy of the full labeled frame (before confidence filtering)
-        df_full = liquidity_df.dropna(subset=["liquidity_regime"]).copy()
-
-        # ------------------------------------------------------------------
-        # Rule-based teacher: derive core features per regime and soft labels
-        # ------------------------------------------------------------------
-        teacher_metrics: Dict[str, Any] = {}
-        teacher_core_features_per_regime: Dict[int, List[str]] = {}
-        teacher_feature_stats: Dict[str, Dict[str, Any]] = {}
-        teacher_label_full: Optional[pd.Series] = None
-        teacher_conf_full: Optional[pd.Series] = None
-
-        if bool(config.get("liquidity_enable_teacher", True)):
-            try:
-                numeric_full = df_full.select_dtypes(include=[np.number])
-                if "liquidity_regime" in numeric_full.columns:
-                    numeric_full = numeric_full.drop(columns=["liquidity_regime"])
-
-                # Focus on established liquidity / microstructure dimensions first
-                candidate_features: List[str] = [
-                    c
-                    for c in numeric_full.columns
-                    if any(x in c for x in [
-                        # Volume / range
-                        "rvol_", "range_", "normalized_range",
-                        # Delta / orderflow
-                        "delta_", "volume_direction", "order_flow", "whipsaw", "reversal",
-                        # Illiquidity / effort
-                        "amihud_spike_ratio", "volume_efficiency_ratio", "volume_depth_ratio",
-                        # Vol clustering / efficiency
-                        "vol_clustering", "efficiency_ratio", "trap_",
-                    ])
-                ]
-
-                # If no obvious liquidity axes matched (e.g. due to naming), fall
-                # back to using all numeric features except labels/probabilities.
-                if not candidate_features:
-                    excluded_cols = {
-                        "liquidity_sample_weight",
-                        "regime_confidence",
-                        "teacher_regime",
-                        "teacher_regime_confidence",
-                    }
-                    excluded_prefixes = ("p_regime_", "liquidity_regime_")
-                    candidate_features = [
-                        c
-                        for c in numeric_full.columns
-                        if c not in excluded_cols
-                        and not any(c.startswith(p) for p in excluded_prefixes)
-                    ]
-
-                if candidate_features:
-                    eps = 1e-9
-                    regimes_all = sorted(int(r) for r in df_full["liquidity_regime"].dropna().unique())
-
-                    # (1) Per-feature distinctiveness and regime stats
-                    for feature in candidate_features:
-                        series = df_full[feature].dropna()
-                        if len(series) < 10:
-                            continue
-
-                        regime_stats: Dict[int, Dict[str, float]] = {}
-                        regime_means: List[float] = []
-                        within_covs: List[float] = []
-
-                        for reg in regimes_all:
-                            mask_reg = df_full["liquidity_regime"] == reg
-                            vals_reg = series.loc[mask_reg.index[mask_reg.astype(bool)]]
-                            if len(vals_reg) < 5:
-                                continue
-                            mean_val = float(vals_reg.mean())
-                            std_val = float(vals_reg.std())
-                            cov_val = float(std_val / (abs(mean_val) + eps)) if mean_val != 0.0 else 0.0
-                            regime_stats[int(reg)] = {"mean": mean_val, "std": std_val, "cov": cov_val}
-                            regime_means.append(mean_val)
-                            within_covs.append(cov_val)
-
-                        if len(regime_stats) < 2:
-                            continue
-
-                        regime_means_arr = np.asarray(regime_means, dtype=float)
-                        between_mean = float(np.mean(regime_means_arr))
-                        between_std = float(np.std(regime_means_arr))
-                        between_cov = (
-                            float(between_std / (abs(between_mean) + eps))
-                            if between_mean != 0.0
-                            else 0.0
-                        )
-                        within_cov = float(np.mean(within_covs)) if within_covs else 0.0
-                        distinctiveness = float(between_cov / (within_cov + eps))
-
-                        global_mean = float(series.mean())
-                        teacher_feature_stats[feature] = {
-                            "distinctiveness": distinctiveness,
-                            "global_mean": global_mean,
-                            "per_regime": regime_stats,
-                        }
-
-                    # (2) Score features per regime and select core axes (top 3)
-                    for reg in regimes_all:
-                        scored_feats: List[Tuple[str, float]] = []
-                        for feature, stats in teacher_feature_stats.items():
-                            per_regime = stats.get("per_regime", {})
-                            if reg not in per_regime:
-                                continue
-                            mean_k = float(per_regime[reg].get("mean", 0.0))
-                            global_mean = float(stats.get("global_mean", 0.0))
-                            delta_mean = abs(mean_k - global_mean)
-                            score = float(stats.get("distinctiveness", 0.0)) * delta_mean
-                            if score > 0.0:
-                                scored_feats.append((feature, score))
-                        if scored_feats:
-                            scored_feats.sort(key=lambda x: x[1], reverse=True)
-                            teacher_core_features_per_regime[reg] = [f for f, _ in scored_feats[:3]]
-
-                    if teacher_core_features_per_regime:
-                        teacher_metrics["teacher_core_features_per_regime"] = {
-                            int(k): list(v) for k, v in teacher_core_features_per_regime.items()
-                        }
-
-                        # (3) Compute soft teacher labels & confidences on full frame
-                        teacher_label_full = pd.Series(index=df_full.index, dtype=float)
-                        teacher_conf_full = pd.Series(0.0, index=df_full.index, dtype=float)
-
-                        for idx, row in df_full.iterrows():
-                            regime_scores: Dict[int, float] = {}
-                            for reg, feats in teacher_core_features_per_regime.items():
-                                total = 0.0
-                                count = 0
-                                for feature in feats:
-                                    stats = teacher_feature_stats.get(feature)
-                                    if not stats:
-                                        continue
-                                    per_regime = stats.get("per_regime", {})
-                                    reg_stats = per_regime.get(reg)
-                                    if not reg_stats:
-                                        continue
-                                    x_val = row.get(feature)
-                                    if pd.isna(x_val):
-                                        continue
-                                    mean_k = float(reg_stats.get("mean", 0.0))
-                                    std_k = float(reg_stats.get("std", 0.0))
-                                    denom = abs(std_k) + 1e-9
-                                    z = abs(float(x_val) - mean_k) / denom
-                                    align = 1.0 / (1.0 + z)
-                                    total += align * float(stats.get("distinctiveness", 0.0))
-                                    count += 1
-                                if count > 0:
-                                    regime_scores[reg] = total / float(count)
-
-                            if regime_scores:
-                                raw_vals = np.asarray(list(regime_scores.values()), dtype=float)
-                                raw_vals = np.maximum(raw_vals, 0.0)
-                                s = float(raw_vals.sum())
-                                if s > 0.0:
-                                    probs = raw_vals / s
-                                    regimes_arr = np.asarray(list(regime_scores.keys()), dtype=int)
-                                    best_idx = int(probs.argmax())
-                                    teacher_label_full.at[idx] = float(regimes_arr[best_idx])
-                                    teacher_conf_full.at[idx] = float(probs[best_idx])
-
-                        # Attach teacher signals to the filtered df used for training
-                        df["teacher_regime"] = teacher_label_full.reindex(df.index)
-                        df["teacher_regime_confidence"] = teacher_conf_full.reindex(df.index)
-
-            except Exception as teacher_exc:
-                tprint_warning(
-                    f"Rule-based teacher derivation failed; proceeding without teacher: {teacher_exc}"
-                )
-
-        y = df["liquidity_regime"].astype(int)
-
-        # Map observed labels to contiguous indices for XGBoost compatibility
-        unique_labels = sorted(y.unique())
-        if not unique_labels:
-            raise ValueError("No unique liquidity_regime labels available for model training")
-
-        label_to_new: Dict[int, int] = {int(lbl): idx for idx, lbl in enumerate(unique_labels)}
-        new_to_label: Dict[int, int] = {idx: int(lbl) for lbl, idx in label_to_new.items()}
-
-        numeric_df = df.select_dtypes(include=[np.number])
-        drop_cols = ["liquidity_regime"]
-
-        # Allow explicit feature exclusion from config (used by auto-pruning logic)
-        excluded_features_cfg = config.get("liquidity_excluded_features", [])
-        if isinstance(excluded_features_cfg, (list, tuple, set)):
-            excluded_features = {str(f) for f in excluded_features_cfg}
-        else:
-            excluded_features = set()
-
-        feature_cols = [
-            c for c in numeric_df.columns
-            if c not in drop_cols and c not in excluded_features
-        ]
-        if not feature_cols:
-            raise ValueError("No numeric features available for liquidity model training")
-
-        X = numeric_df[feature_cols]
-
-        min_samples = int(config.get("liquidity_min_samples", 200))
-        if len(X) < max(min_samples, 50):
-            raise ValueError(
-                f"Insufficient samples for liquidity model training: {len(X)} < {min_samples}"
-            )
-
-        train_frac = float(config.get("liquidity_train_fraction", 0.8))
-        train_frac = min(max(train_frac, 0.5), 0.95)
-        split_idx = int(len(X) * train_frac)
-        split_idx = max(min(split_idx, len(X) - 1), 1)
-
-        X_train_raw, y_train = X.iloc[:split_idx].copy(), y.iloc[:split_idx]
-        X_val_raw, y_val = X.iloc[split_idx:].copy(), y.iloc[split_idx:]
-
-        # Use mapped labels for training/calibration
-        y_train_mapped = y_train.map(label_to_new).astype(int)
-        y_val_mapped = y_val.map(label_to_new).astype(int)
-
-        # Scaling
-        normalizer_config: Dict[str, Any] = {
-            "default_strategy": "robust",
-            "auto_select": False,
-            "handle_outliers": True,
-            "outlier_threshold": float(config.get("liquidity_outlier_threshold", 3.0)),
-            "use_vectorbt": False,
-        }
-        scaler = ScalingNormalizer(normalizer_config)
-        X_train_scaled = scaler.fit_transform(X_train_raw, strategy="robust")
-        X_val_scaled = scaler.transform(X_val_raw)
-        X_scaled_full = scaler.transform(X)
-
-        # Optional EWM smoothing with memory optimization
-        use_ewm_features = bool(config.get("liquidity_use_ewm_features", True))
-        ewma_periods_cfg = config.get("liquidity_ewm_periods", [2, 6, 10])
-        try:
-            ewma_periods = [int(p) for p in ewma_periods_cfg if int(p) > 0]
-        except Exception:
-            ewma_periods = [2, 6, 10]
-
-        if use_ewm_features and ewma_periods:
-            # Memory-optimized EWMA processing
-            if self.hardware_manager:
-                self.hardware_manager.monitor_memory_usage("ewma_start")
-            
-            base_df = X_scaled_full.copy()
-            feature_names_seq: List[str] = list(base_df.columns)
-            aggregated_ewm: Optional[np.ndarray] = None
-            n_features = base_df.shape[1]
-            
-            # Process EWMA in chunks to reduce memory pressure
-            chunk_size = min(len(base_df), 5000)  # Optimized chunk size
-            n_chunks = (len(base_df) + chunk_size - 1) // chunk_size
-            
-            for period in ewma_periods:
-                alpha_val = 2.0 / float(period + 1)
-                try:
-                    # Use vectorized operations if available
-                    if self.vectorized_ops:
-                        smoothed_array, _ = apply_ewm_smoothing(
-                            base_df.values,
-                            alpha=alpha_val,
-                            feature_names=feature_names_seq,
-                            use_vectorization_optimization=True,
-                            chunk_size=chunk_size
-                        )
-                    else:
-                        smoothed_array, _ = apply_ewm_smoothing(
-                            base_df.values,
-                            alpha=alpha_val,
-                            feature_names=feature_names_seq,
-                            use_vectorization_optimization=False,
-                        )
-                    
-                    if smoothed_array.shape[1] < 2 * n_features:
-                        raise ValueError(
-                            f"Unexpected smoothed_array shape {smoothed_array.shape} for n_features={n_features}"
-                        )
-                    
-                    # Memory-efficient aggregation
-                    ewm_block = smoothed_array[:, n_features:].astype(np.float32)  # Use float32 to save memory
-                    
-                    if aggregated_ewm is None:
-                        aggregated_ewm = ewm_block.copy()
-                    else:
-                        # In-place addition to reduce memory allocation
-                        aggregated_ewm += ewm_block
-                        
-                    # Memory cleanup
-                    del ewm_block
-                    
-                    # Memory checkpoint
-                    if self.hardware_manager and n_chunks > 1:
-                        self.hardware_manager.monitor_memory_usage(f"ewma_period_{period}")
-                        
-                except Exception as e:
-                    tprint_warning(
-                        f"EWMA temporal smoothing failed for period={period} (using unsmoothed features): {e}"
-                    )
-                    aggregated_ewm = None
-                    break
-
-            if aggregated_ewm is not None:
-                # Final aggregation and memory cleanup
-                aggregated_ewm = aggregated_ewm / float(len(ewma_periods))
-                
-                # Convert to DataFrame with memory optimization
-                features_df = pd.DataFrame(
-                    aggregated_ewm,
-                    index=base_df.index,
-                    columns=pd.Index(feature_names_seq),
-                    dtype=np.float32  # Use float32 throughout
-                )
-                
-                X_features_full = features_df
-                X_train = X_features_full.iloc[:split_idx].copy()
-                X_val = X_features_full.iloc[split_idx:].copy()
-                X_scaled_full = X_features_full
-                extended_feature_names = feature_names_seq
-                
-                # Cleanup intermediate arrays
-                del aggregated_ewm, features_df
-                
-                if self.hardware_manager:
-                    self.hardware_manager.monitor_memory_usage("ewma_complete")
-            else:
-                X_train = X_train_scaled
-                X_val = X_val_scaled
-                extended_feature_names = list(X_scaled_full.columns)
-        else:
-            X_train = X_train_scaled
-            X_val = X_val_scaled
-            extended_feature_names = list(X_scaled_full.columns)
-
-        # Use sample weights from ambiguity handling if available
-        sample_weight = liquidity_df.get("liquidity_sample_weight")
-        sw_train = None
-        if sample_weight is not None:
-            # Align weights with filtered df index and enforce strict positivity
-            sw = sample_weight.loc[df.index].astype(float)
-            sw = sw.replace([np.inf, -np.inf], np.nan).fillna(1.0)
-            sw = sw.clip(lower=1e-6)
-            sw_train = sw.iloc[:split_idx].values
-
-        # ------------------------------------------------------------------
-        # Optional class balancing and focal-like weighting
-        # ------------------------------------------------------------------
-        class_weight_mode = str(config.get("liquidity_class_weight_mode", "balanced")).lower()
-        if class_weight_mode != "none":
-            # Balance classes by inverse frequency (with optional exponent)
-            y_train_arr = np.asarray(y_train_mapped, dtype=int)
-            class_counts = np.bincount(y_train_arr, minlength=len(unique_labels))
-            total = float(class_counts.sum())
-            n_classes = float(len(unique_labels)) if len(unique_labels) > 0 else 1.0
-            exponent = float(config.get("liquidity_class_weight_exponent", 1.0))
-
-            class_weights: Dict[int, float] = {}
-            for idx, count in enumerate(class_counts):
-                if count > 0:
-                    base_w = (total / (n_classes * float(count))) if total > 0 else 1.0
-                    class_weights[idx] = float(base_w ** exponent)
-                else:
-                    class_weights[idx] = 0.0
-
-            cw = np.array([class_weights[int(lbl)] for lbl in y_train_arr], dtype=float)
-            if sw_train is None:
-                sw_train = cw
-            else:
-                sw_train = sw_train * cw
-
-        # Focal-like reweighting based on regime_confidence (within filtered set)
-        focal_gamma = float(config.get("liquidity_focal_gamma", 0.0))
-        if focal_gamma > 0.0 and "regime_confidence" in df.columns:
-            conf_local = df["regime_confidence"].astype(float).clip(0.0, 1.0)
-            hardness = 1.0 - conf_local
-            focal_weights = (1.0 + hardness) ** focal_gamma
-            focal_train = focal_weights.iloc[:split_idx].values
-            if sw_train is None:
-                sw_train = focal_train
-            else:
-                sw_train = sw_train * focal_train
-
-        # ------------------------------------------------------------------
-        # Teacher-based consistency weighting (rule-based prior)
-        # ------------------------------------------------------------------
-        if "teacher_regime" in df.columns and "teacher_regime_confidence" in df.columns:
-            try:
-                tr = df["teacher_regime"].iloc[:split_idx]
-                tc = df["teacher_regime_confidence"].iloc[:split_idx].astype(float).clip(0.0, 1.0)
-
-                valid_mask = tr.notna() & y_train.notna()
-                if valid_mask.any():
-                    tr_int = tr[valid_mask].astype(int)
-                    y_train_int = y_train[valid_mask].astype(int)
-                    agree_mask = tr_int == y_train_int
-
-                    teacher_agreement_rate = float(agree_mask.mean())
-                    teacher_metrics["teacher_label_agreement_rate"] = teacher_agreement_rate
-                    teacher_metrics["teacher_mean_confidence"] = float(tc[valid_mask].mean())
-
-                    agree_boost = float(config.get("liquidity_teacher_agree_boost", 0.5))
-                    disagree_penalty = float(config.get("liquidity_teacher_disagree_penalty", 0.5))
-
-                    multipliers = pd.Series(1.0, index=tr.index, dtype=float)
-
-                    if agree_boost > 0.0:
-                        idx_agree = tr_int.index[agree_mask]
-                        multipliers.loc[idx_agree] = 1.0 + agree_boost * tc.loc[idx_agree]
-
-                    if disagree_penalty > 0.0:
-                        idx_disagree = tr_int.index[~agree_mask]
-                        multipliers.loc[idx_disagree] = np.maximum(
-                            0.5,
-                            1.0 - disagree_penalty * tc.loc[idx_disagree],
-                        )
-
-                    m_values = multipliers.values
-                    if sw_train is None:
-                        sw_train = m_values
-                    else:
-                        sw_train = sw_train * m_values
-            except Exception as teacher_w_exc:
-                tprint_warning(
-                    f"Teacher-based weighting failed; continuing without it: {teacher_w_exc}"
-                )
-
-        training_metrics: Dict[str, Any] = {}
-        training_metrics["model_type"] = "xgboost_multiclass"
-        if teacher_metrics:
-            training_metrics.update(teacher_metrics)
-
-        feature_pipeline_artifacts: Dict[str, Any] = {
-            "feature_names": extended_feature_names,
-            "scaler": scaler,
-            "normalizer_config": normalizer_config,
-        }
-
-        base_params: Dict[str, Any] = {
-            "objective": "multi:softprob",
-            "num_class": len(unique_labels),
-            "n_estimators": int(config.get("liquidity_n_estimators", 300)),
-            "learning_rate": float(config.get("liquidity_learning_rate", 0.05)),
-            "max_depth": int(config.get("liquidity_max_depth", 5)),
-            "subsample": float(config.get("liquidity_subsample", 0.8)),
-            "colsample_bytree": float(config.get("liquidity_colsample_bytree", 0.8)),
-            "random_state": int(config.get("liquidity_random_state", 42)),
-            "n_jobs": int(config.get("liquidity_n_jobs", -1)),
-        }
-
-        model = XGBClassifier(**base_params)
-        model.fit(X_train, y_train_mapped, sample_weight=sw_train)
-
-        # ========================================================================
-        # Extract and report comprehensive feature importance
-        # ========================================================================
-        try:
-            # Get feature importance from XGBoost (gain-based)
-            feature_importance_gain = model.feature_importances_
-            feature_names = extended_feature_names
-
-            # Create DataFrame with all importance metrics
-            importance_df = pd.DataFrame({
-                'feature': feature_names,
-                'importance_gain': feature_importance_gain,
-            })
-
-            # Add other importance types if available
-            if hasattr(model, 'get_booster'):
-                booster = model.get_booster()
-
-                # Weight-based importance (number of times feature is used)
-                weight_importance = booster.get_score(importance_type='weight')
-                importance_df['importance_weight'] = importance_df['feature'].map(
-                    lambda x: weight_importance.get(f'f{feature_names.index(x)}', 0)
-                )
-
-                # Cover importance (sum of second order gradient)
-                cover_importance = booster.get_score(importance_type='cover')
-                importance_df['importance_cover'] = importance_df['feature'].map(
-                    lambda x: cover_importance.get(f'f{feature_names.index(x)}', 0)
-                )
-
-                # Total gain importance
-                total_gain_importance = booster.get_score(importance_type='total_gain')
-                importance_df['importance_total_gain'] = importance_df['feature'].map(
-                    lambda x: total_gain_importance.get(f'f{feature_names.index(x)}', 0)
-                )
-
-            # Normalize importance metrics to [0, 1]
-            for col in ['importance_gain', 'importance_weight', 'importance_cover', 'importance_total_gain']:
-                if col in importance_df.columns:
-                    col_sum = importance_df[col].sum()
-                    if col_sum > 0:
-                        importance_df[f'{col}_normalized'] = importance_df[col] / col_sum
-
-            # Sort by gain importance (default XGBoost metric)
-            importance_df = importance_df.sort_values('importance_gain', ascending=False).reset_index(drop=True)
-
-            # Store in training metrics
-            training_metrics['feature_importance_df'] = importance_df
-            training_metrics['n_features'] = len(feature_names)
-
-            # Correlation between numeric features and regime_confidence on full labeled frame
-            conf_corr: Dict[str, float] = {}
-            if 'regime_confidence' in df_full.columns:
-                conf_series_full = df_full['regime_confidence']
-                if conf_series_full.notna().sum() > 3:
-                    try:
-                        numeric_full = df_full.select_dtypes(include=[np.number])
-                        corr_series = numeric_full.corrwith(conf_series_full).dropna()
-                        conf_corr = {str(col): float(val) for col, val in corr_series.items()}
-                    except Exception as corr_exc:
-                        tprint_warning(f"Failed to compute regime_confidence correlations: {corr_exc}")
-            if conf_corr:
-                training_metrics['regime_confidence_correlations'] = conf_corr
-
-            # Log top 20 most important features
-            tprint_info("🎯 Top 20 Most Important Features (by gain):")
-            for idx, row in importance_df.head(20).iterrows():
-                tprint_info(
-                    f"  {idx+1:2d}. {row['feature']:50s} "
-                    f"gain={row['importance_gain']:.4f}"
-                )
-
-            # Log bottom 20 least important features
-            if len(importance_df) > 0:
-                bottom_df = importance_df.tail(20).iloc[::-1]
-                tprint_info("🎯 Bottom 20 Least Important Features (by gain):")
-                for rank, (_, row) in enumerate(bottom_df.iterrows(), start=1):
-                    tprint_info(
-                        f"  {rank:2d}. {row['feature']:50s} "
-                        f"gain={row['importance_gain']:.4f}"
-                    )
-
-            # Save full feature importance report to outcomes/
-            try:
-                from pathlib import Path
-                import datetime
-
-                outcomes_dir = Path("outcomes")
-                outcomes_dir.mkdir(parents=True, exist_ok=True)
-
-                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-                symbol = config.get("symbol", "ETHUSDT")
-                importance_path = outcomes_dir / f"liquidity_feature_importance_{symbol}_{timestamp}.csv"
-
-                importance_df.to_csv(importance_path, index=False)
-                tprint_info(f"📊 Feature importance saved to: {importance_path}")
-                training_metrics['feature_importance_path'] = str(importance_path)
-            except Exception as save_exc:
-                tprint_warning(f"Failed to save feature importance report: {save_exc}")
-
-        except Exception as importance_exc:
-            tprint_warning(f"Feature importance extraction failed: {importance_exc}")
-
-        # Evaluate on validation set
-        proba_val = model.predict_proba(X_val) if len(X_val) > 0 else None
-        if proba_val is not None and accuracy_score is not None and f1_score is not None:
-            y_val_pred = np.argmax(proba_val, axis=1)
-            training_metrics["val_accuracy_uncalibrated"] = float(accuracy_score(y_val_mapped, y_val_pred))
-            training_metrics["val_f1_macro_uncalibrated"] = float(
-                f1_score(y_val_mapped, y_val_pred, average="macro")
-            )
-            try:
-                n_classes_uncal = proba_val.shape[1]
-                y_true_uncal = np.eye(n_classes_uncal, dtype=float)[np.asarray(y_val_mapped, dtype=int)]
-                brier_uncal = float(np.mean(np.sum((y_true_uncal - proba_val) ** 2, axis=1)))
-                training_metrics["val_brier_uncalibrated"] = brier_uncal
-            except Exception as brier_exc:
-                tprint_warning(f"Failed to compute uncalibrated Brier score: {brier_exc}")
-
-        # Probability calibration (temperature scaling). During HPO sweeps,
-        # callers can set liquidity_skip_calibration_for_hpo=True so that
-        # calibration cost is paid only for the final winning config.
-        skip_calib_hpo = bool(config.get("liquidity_skip_calibration_for_hpo", False))
-        calibration_enabled = bool(config.get("liquidity_enable_prob_calibration", True)) and not skip_calib_hpo
-        training_metrics["probability_calibration_enabled"] = calibration_enabled
-
-        calibrated_model = model
-        temperature: float = 1.0
-        if calibration_enabled and proba_val is not None and len(X_val) > 0:
-            try:
-                temperature = float(self._fit_temperature(proba_val, y_val_mapped))
-                calibrated_model = TemperatureScaledModel(model, temperature)
-                training_metrics["calibration_method"] = "temperature_scaling"
-                training_metrics["temperature_scaling_T"] = temperature
-            except Exception as calib_err:
-                tprint_warning(f"Liquidity probability calibration (temperature scaling) failed: {calib_err}")
-                calibrated_model = model
-                temperature = 1.0
-
-        # Probabilities on full dataset (model index space)
-        proba_all = calibrated_model.predict_proba(X_scaled_full)
-        if proba_val is not None and len(X_val) > 0:
-            try:
-                # Apply learned temperature to validation probabilities for
-                # calibrated Brier diagnostics.
-                n_classes_cal = proba_val.shape[1]
-                y_true_cal = np.eye(n_classes_cal, dtype=float)[np.asarray(y_val_mapped, dtype=int)]
-                proba_val_cal = TemperatureScaledModel._apply_temperature(proba_val, temperature)
-                brier_cal = float(np.mean(np.sum((y_true_cal - proba_val_cal) ** 2, axis=1)))
-                training_metrics["val_brier_calibrated"] = brier_cal
-
-                # Per-class calibrated Brier scores for diagnostics
-                per_class_brier_cal: Dict[int, float] = {}
-                for k in range(n_classes_cal):
-                    mask_k = (y_val_mapped == k)
-                    if mask_k.sum() >= 5:
-                        y_true_k = y_true_cal[mask_k][:, k]
-                        proba_k = proba_val_cal[mask_k][:, k]
-                        per_class_brier_cal[int(k)] = float(np.mean((y_true_k - proba_k) ** 2))
-                if per_class_brier_cal:
-                    training_metrics["per_class_brier_calibrated"] = per_class_brier_cal
-            except Exception as brier_exc:
-                tprint_warning(f"Failed to compute calibrated Brier score: {brier_exc}")
-
-        # Map model probabilities back to canonical regime ids
-        proba_df = pd.DataFrame(index=df.index)
-        for old_label, new_idx in label_to_new.items():
-            proba_df[f"p_regime_{old_label}"] = proba_all[:, new_idx]
-
-        # Ensure columns exist for all canonical regimes up to configured n_regimes
-        n_regimes_cfg = int(config.get("liquidity_n_regimes", 4))
-        for lbl in range(n_regimes_cfg):
-            p_col = f"p_regime_{lbl}"
-            if p_col not in proba_df.columns:
-                proba_df[p_col] = 0.0
-
-        # Expose standardized per-regime probability features for downstream steps
-        for lbl in range(n_regimes_cfg):
-            src_col = f"p_regime_{lbl}"
-            dst_col = f"liquidity_regime_{lbl}_prob"
-            proba_df[dst_col] = proba_df[src_col]
-
-        return calibrated_model, proba_df, y, training_metrics, feature_pipeline_artifacts
 
     def _assess_liquidity_regime_quality(
         self,

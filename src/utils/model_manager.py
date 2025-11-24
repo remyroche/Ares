@@ -20,7 +20,7 @@ import os
 import pickle
 import shutil
 from datetime import datetime
-from typing import Any
+from typing import Any, Dict, Optional
 
 import h5py
 import joblib
@@ -112,7 +112,14 @@ class ModelManager:
     """
     Enhanced model manager with comprehensive error handling and type safety.
     """
-    def __init__(self, config: dict[str, Any] | None = None, save_path: str | None = None, save_format: str = "joblib", database_manager: Any | None = None, performance_reporter: Any | None = None) -> None:
+    def __init__(
+        self,
+        config: Optional[Dict[str, Any]] = None,
+        save_path: Optional[str] = None,
+        save_format: str = "joblib",
+        database_manager: Optional[Any] = None,
+        performance_reporter: Optional[Any] = None,
+    ) -> None:
         """
         Initialize model manager with flexible configuration.
 
@@ -123,18 +130,18 @@ class ModelManager:
             database_manager: Optional dependency for backward compatibility
             performance_reporter: Optional dependency for backward compatibility
         """
-        self.config: dict[str, Any] = config or {}
+        self.config: Dict[str, Any] = config or {}
         self.logger = system_logger.getChild("ModelManager")
         self.database_manager = database_manager
         self.performance_reporter = performance_reporter
 
         # Model management
-        self.models: dict[str, dict[str, Any]] = {}
-        self.model_metadata: dict[str, Any] = {}
-        self.active_model: str | None = None
+        self.models: Dict[str, Dict[str, Any]] = {}
+        self.model_metadata: Dict[str, Any] = {}
+        self.active_model: Optional[str] = None
 
         # Configuration
-        self.model_config: dict[str, Any] = self.config.get("model_manager", {}) if isinstance(self.config, dict) else {}
+        self.model_config: Dict[str, Any] = self.config.get("model_manager", {}) if isinstance(self.config, dict) else {}
         # Apply defaults immediately so the manager is usable without initialize()
         self.model_config.setdefault("models_directory", "models")
         self.model_config.setdefault("metadata_file", "model_metadata.json")
@@ -325,7 +332,7 @@ class ModelManager:
         self,
         model_name: str,
         model_path: str,
-        metadata: dict[str, Any] | None = None,
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> bool:
         """
         Register a new model.
@@ -386,7 +393,7 @@ class ModelManager:
         default_return=None,
         context="model loading",
     )
-    async def load_model(self, model_name: str) -> Any | None:
+    async def load_model(self, model_name: str) -> Optional[Any]:
         """
         Load a model.
 
@@ -455,7 +462,7 @@ class ModelManager:
             self.logger.error(error(f"Failed to list available models: {e}"))
             return []
 
-    async def get_prediction(self, model: Any, data: Any) -> dict[str, Any]:
+    async def get_prediction(self, model: Any, data: Any) -> Dict[str, Any]:
         """Run prediction on a loaded model with best-effort handling across common types."""
         try:
             # scikit-learn style
@@ -559,12 +566,12 @@ class ModelManager:
 
     def save_models(
         self,
-        models: dict[str, Any],
+        models: Dict[str, Any],
         model_type: str,
-        symbol: str | None = None,
-        exchange: str | None = None,
-        timeframe: str | None = None,
-        regime: int | None = None,
+        symbol: Optional[str] = None,
+        exchange: Optional[str] = None,
+        timeframe: Optional[str] = None,
+        regime: Optional[int] = None,
     ) -> list[str]:
         """Save multiple models under a structured directory layout."""
         base_dir = self._save_base_path
@@ -609,11 +616,11 @@ class ModelManager:
     def load_models(
         self,
         model_type: str,
-        symbol: str | None = None,
-        exchange: str | None = None,
-        timeframe: str | None = None,
-        regime: int | None = None,
-    ) -> dict[str, Any]:
+        symbol: Optional[str] = None,
+        exchange: Optional[str] = None,
+        timeframe: Optional[str] = None,
+        regime: Optional[int] = None,
+    ) -> Dict[str, Any]:
         """Load models for a given type and optional regime."""
         base_dir = self._save_base_path
         model_type = str(model_type)
@@ -645,12 +652,12 @@ class ModelManager:
 
     def save_metadata(
         self,
-        metadata: dict[str, Any],
+        metadata: Dict[str, Any],
         model_type: str,
-        symbol: str | None = None,
-        exchange: str | None = None,
-        timeframe: str | None = None,
-        regime: int | None = None,
+        symbol: Optional[str] = None,
+        exchange: Optional[str] = None,
+        timeframe: Optional[str] = None,
+        regime: Optional[int] = None,
     ) -> str:
         """Save metadata JSON next to models for a given type and regime."""
         base_dir = self._save_base_path
@@ -675,11 +682,11 @@ class ModelManager:
     def load_metadata(
         self,
         model_type: str,
-        symbol: str | None = None,
-        exchange: str | None = None,
-        timeframe: str | None = None,
-        regime: int | None = None,
-    ) -> dict[str, Any] | None:
+        symbol: Optional[str] = None,
+        exchange: Optional[str] = None,
+        timeframe: Optional[str] = None,
+        regime: Optional[int] = None,
+    ) -> Optional[Dict[str, Any]]:
         """Load metadata JSON for a given type and regime if present."""
         base_dir = self._save_base_path
         model_type = str(model_type)
@@ -745,9 +752,9 @@ class ModelManager:
         self,
         model_type: str,
         keep_latest: int = 5,
-        symbol: str | None = None,
-        exchange: str | None = None,
-        timeframe: str | None = None,
+        symbol: Optional[str] = None,
+        exchange: Optional[str] = None,
+        timeframe: Optional[str] = None,
     ) -> int:
         """Delete older model files, keeping only the latest modified ones."""
         base_dir = self._save_base_path
@@ -873,7 +880,7 @@ class ModelManager:
         default_return=None,
         context="active model getting",
     )
-    async def get_active_model(self) -> str | None:
+    async def get_active_model(self) -> Optional[str]:
         """
         Get the active model name.
 
@@ -961,4 +968,4 @@ class ModelManager:
         self.logger.info("✅ Model Manager stopped successfully")
 
 # Global model manager instance
-model_manager: ModelManager | None = None
+model_manager: Optional[ModelManager] = None

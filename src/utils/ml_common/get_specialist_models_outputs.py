@@ -469,6 +469,157 @@ def get_specialist_models_outputs(
     except Exception as e:
         log_warning(f"⚠️ Failed to load Breakout/Bounce specialist outputs: {e}")
 
+    # ------------------------------------------------------------------
+    # 5) Path regimes – HMM Path specialist (optional)
+    # ------------------------------------------------------------------
+    try:
+        log_info("=" * 80)
+        log_info("🧭 LOADING SPECIALIST: PATH REGIME OUTPUTS")
+        log_info("=" * 80)
+
+        path_context = {
+            "symbol": symbol,
+            "exchange": exchange,
+            "timeframe": regime_timeframe,
+            "direction": direction,
+            "model": "regime_path",
+            "step_name": "ml_path_regime_step",
+        }
+
+        # Reuse the standardized training artifact produced by MLPathRegimeStep.
+        path_training = artifact_router.load(
+            artifact_name="ml_risk_training_data_15m",
+            artifact_type="data",
+            data_category="features",
+            context=path_context,
+        )
+
+        if path_training is not None and not getattr(path_training, "empty", True):
+            if not isinstance(path_training, pd.DataFrame):
+                path_training = pd.DataFrame(path_training)
+            path_training = _standardize_index(path_training)
+
+            if isinstance(path_training.index, pd.DatetimeIndex) and len(path_training.index) > 0:
+                log_info(
+                    "📈 Path (ml_risk_training_data_15m under ml_path_regime_step) index range: %s → %s (n=%d)"
+                    % (
+                        path_training.index.min(),
+                        path_training.index.max(),
+                        len(path_training.index),
+                    )
+                )
+
+            # Select path-specific features plus a dedicated path_regime label
+            # derived from the stored risk_regime column.
+            path_cols: List[str] = [
+                c for c in path_training.columns if c.startswith("path_")
+            ]
+
+            if "risk_regime" in path_training.columns:
+                path_training = path_training.copy()
+                path_training["path_regime"] = path_training["risk_regime"]
+                path_cols.append("path_regime")
+
+            if path_cols:
+                before_block = path_training[path_cols].copy()
+                nnz_before = int(before_block.notna().sum().sum())
+                # Align to training_index; use the same shift+ffill convention
+                # as ML Risk so that regimes are lagged by one bar.
+                block = before_block.shift(1).fillna(method="ffill")
+                block = block.reindex(training_index, method="ffill")
+                nnz_after = int(block.notna().sum().sum())
+                blocks.append(block)
+                log_success(
+                    "✅ Added Path specialist block from 'ml_risk_training_data_15m' (ml_path_regime_step): "
+                    f"shape={block.shape}, non_null_before={nnz_before}, "
+                    f"non_null_after={nnz_after}"
+                )
+                if nnz_after == 0:
+                    log_warning(
+                        "⚠️ Path block aligned to training_index is all-NaN. "
+                        "Check path_training timestamps and values."
+                    )
+    except Exception as e:
+        log_warning(f"⚠️ Failed to load Path specialist outputs: {e}")
+
+    # ------------------------------------------------------------------
+    # 6) ML Risk HMM regimes – optional second risk flavor
+    # ------------------------------------------------------------------
+    try:
+        log_info("=" * 80)
+        log_info("📐 LOADING SPECIALIST: ML RISK HMM OUTPUTS")
+        log_info("=" * 80)
+
+        risk_hmm_context = {
+            "symbol": symbol,
+            "exchange": exchange,
+            "timeframe": regime_timeframe,
+            "direction": direction,
+            "model": "regime_risk_hmm",
+            "step_name": "ml_risk_regime_step_hmm",
+        }
+
+        risk_hmm_name = f"ml_risk_hmm_training_data_{regime_timeframe}"
+        risk_hmm_training = artifact_router.load(
+            artifact_name=risk_hmm_name,
+            artifact_type="data",
+            data_category="features",
+            context=risk_hmm_context,
+        )
+
+        if risk_hmm_training is not None and not getattr(risk_hmm_training, "empty", True):
+            if not isinstance(risk_hmm_training, pd.DataFrame):
+                risk_hmm_training = pd.DataFrame(risk_hmm_training)
+            risk_hmm_training = _standardize_index(risk_hmm_training)
+
+            if isinstance(risk_hmm_training.index, pd.DatetimeIndex) and len(risk_hmm_training.index) > 0:
+                log_info(
+                    "📈 ML Risk HMM (%s) index range: %s → %s (n=%d)"
+                    % (
+                        risk_hmm_name,
+                        risk_hmm_training.index.min(),
+                        risk_hmm_training.index.max(),
+                        len(risk_hmm_training.index),
+                    )
+                )
+
+            # Extract HMM-based regimes / distances and give them distinct
+            # column names to avoid collisions with the primary ML Risk block.
+            risk_hmm_cols: List[str] = []
+            for c in risk_hmm_training.columns:
+                if c in ("risk_regime", "mahal_distance_log") or c.startswith("risk_regime_"):
+                    risk_hmm_cols.append(c)
+
+            if risk_hmm_cols:
+                before_block = risk_hmm_training[risk_hmm_cols].copy()
+                rename_map: Dict[str, str] = {}
+                for c in before_block.columns:
+                    if c == "risk_regime":
+                        rename_map[c] = "risk_regime_hmm"
+                    elif c == "mahal_distance_log":
+                        rename_map[c] = "risk_mahal_distance_log_hmm"
+                    else:
+                        rename_map[c] = f"{c}_hmm"
+
+                before_block = before_block.rename(columns=rename_map)
+                nnz_before = int(before_block.notna().sum().sum())
+                block = before_block.shift(1).fillna(method="ffill")
+                block = block.reindex(training_index, method="ffill")
+                nnz_after = int(block.notna().sum().sum())
+                blocks.append(block)
+                log_success(
+                    f"✅ Added ML Risk HMM specialist block from '{risk_hmm_name}': "
+                    f"shape={block.shape}, non_null_before={nnz_before}, "
+                    f"non_null_after={nnz_after}"
+                )
+                if nnz_after == 0:
+                    log_warning(
+                        "⚠️ ML Risk HMM block aligned to training_index is all-NaN. "
+                        "Check risk_hmm_training timestamps and values."
+                    )
+    except Exception as e:
+        log_warning(f"⚠️ Failed to load ML Risk HMM specialist outputs: {e}")
+
     if not blocks:
         msg = (
             "❌ No specialist model outputs found (ML Risk / HMM Alpha / Liquidity / Breakout/Bounce). "

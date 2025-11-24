@@ -99,6 +99,25 @@ def _align_for_label_guided_discovery_helper(
     features_clean = features_aligned[finite_mask]
     target_clean = target_aligned[finite_mask]
 
+    if features_clean.empty:
+        # Fallback: keep rows with finite targets and impute non-finite features
+        fallback_mask = np.isfinite(target_aligned.values)
+        features_fallback = features_aligned[fallback_mask].copy()
+        target_fallback = target_aligned[fallback_mask].copy()
+
+        if len(features_fallback) == 0:
+            return features_aligned.iloc[0:0].copy(), target_aligned.iloc[0:0].copy()
+
+        features_fallback = features_fallback.replace([np.inf, -np.inf], np.nan).fillna(0.0)
+        target_fallback = pd.Series(
+            np.nan_to_num(target_fallback.values, nan=0.0, posinf=0.0, neginf=0.0),
+            index=target_fallback.index,
+            name=target_fallback.name,
+        )
+
+        features_clean = features_fallback
+        target_clean = target_fallback
+
     return features_clean, target_clean
 
 # VectorBT imports
@@ -873,6 +892,9 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
 
         if not isinstance(labeled_data, pd.DataFrame) or labeled_data.empty:
             return None
+
+        if labeled_data.index.duplicated().any():
+            labeled_data = labeled_data[~labeled_data.index.duplicated(keep='first')]
 
         preferred_targets = [
             "smoothed_label",
@@ -2191,10 +2213,10 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
 
             # Lift requirements - CRITICAL for ensuring interactions beat base features
             min_r2_lift=float(config.get('min_interaction_r2_lift', 0.02)),  # 2% R² improvement (tightened from 1%)
-            # Require at least 15% MI improvement: child MI ≥ 1.15 × best parent MI
+            # Require at least 10% MI improvement: child MI ≥ 1.10 × best parent MI
             # This tighter threshold ensures composite scores become more informative
             # now that CT features are no longer being discarded prematurely.
-            min_mi_lift=float(config.get('min_interaction_mi_lift', 0.15)),  # Tightened from 0.10
+            min_mi_lift=float(config.get('min_interaction_mi_lift', 0.10)),  # Tightened from 0.10
             require_r2_lift=False,  # Don't require R² lift (too expensive to compute)
             require_mi_lift=True,   # Require MI lift (fast to compute)
 
@@ -3449,17 +3471,17 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         
         # Use first target for MI calculation
         target_col = targets_df.columns[0]
-        target = targets_df[target_col].dropna()
-        
-        # Align features and target
-        common_index = features_df.index.intersection(target.index)
-        features_aligned = features_df.loc[common_index]
-        target_aligned = target.loc[common_index]
-        
+        target = targets_df[target_col]
+
+        features_aligned, target_aligned = _align_for_label_guided_discovery_helper(
+            features_df,
+            target,
+        )
+
         if features_aligned.empty or target_aligned.empty:
-            tprint_warning("  ⚠️ No overlapping samples between features and targets; using uniform composite scores")
+            tprint_warning("  ⚠️ No valid overlapping samples between features and targets; using uniform composite scores")
             return {col: 0.5 for col in features_df.columns}
-        
+
         # Remove any features with all NaN or constant values
         # Use relaxed validation for ratio features (like cross-timeframe)
         valid_features = []

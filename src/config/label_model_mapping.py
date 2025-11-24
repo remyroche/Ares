@@ -56,7 +56,8 @@ def build_model(model_key: str, params: dict[str, Any]) -> Any:
                         self._fitted = False
 
                     def fit(self, x: Any, y: Any) -> HMMWrapper:
-                        if isinstance(x, pd.DataFrame | pd.Series):
+                        # Accept either a DataFrame or Series and convert to numpy
+                        if isinstance(x, (pd.DataFrame, pd.Series)):
                             x_arr = x.to_numpy()
                         else:
                             x_arr = np.asarray(x)

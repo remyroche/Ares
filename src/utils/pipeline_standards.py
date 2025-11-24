@@ -14,7 +14,7 @@ This module provides standardized utilities for the data pipeline including:
 import logging
 import sys
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 # Optional imports
@@ -35,6 +35,7 @@ import time
 
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
+UTC = timezone.utc
 
 def _check_pandas_available() -> None:
     """Check if pandas is available and raise informative error if not."""
@@ -57,9 +58,9 @@ class ValidationIssue:
     """Represents a validation issue."""
     severity: DataQualityLevel
     message: str
-    details: dict[str, Any] | None = None
-    column: str | None = None
-    row_count: int | None = None
+    details: Optional[dict[str, Any]] = None
+    column: Optional[str] = None
+    row_count: Optional[int] = None
 
 @dataclass
 class ValidationResult:
@@ -94,11 +95,11 @@ class PipelineStandards:
     SCHEMAS = {'klines': {'required_columns': ['timestamp', 'open', 'high', 'low', 'close', 'volume'], 'optional_columns': ['quote_asset_volume', 'number_of_trades', 'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume'], 'data_types': {'timestamp': 'int64', 'open': 'float64', 'high': 'float64', 'low': 'float64', 'close': 'float64', 'volume': 'float64', 'quote_asset_volume': 'float64', 'number_of_trades': 'int64', 'taker_buy_base_asset_volume': 'float64', 'taker_buy_quote_asset_volume': 'float64'}}, 'aggtrades': {'required_columns': ['timestamp', 'price', 'quantity'], 'optional_columns': ['first_trade_id', 'last_trade_id', 'trade_time', 'is_buyer_maker'], 'data_types': {'timestamp': 'int64', 'price': 'float64', 'quantity': 'float64', 'is_buyer_maker': 'bool'}}, 'unified': {'required_columns': ['timestamp', 'open', 'high', 'low', 'close', 'volume', 'exchange', 'symbol', 'timeframe'], 'optional_columns': ['year', 'month', 'day', 'trade_volume', 'trade_count', 'avg_price', 'min_price', 'max_price', 'volume_ratio'], 'data_types': {'timestamp': 'int64', 'open': 'float64', 'high': 'float64', 'low': 'float64', 'close': 'float64', 'volume': 'float64', 'exchange': 'string', 'symbol': 'string', 'timeframe': 'string', 'year': 'int16', 'month': 'int8', 'day': 'int8', 'trade_volume': 'float64', 'trade_count': 'int64', 'avg_price': 'float64', 'min_price': 'float64', 'max_price': 'float64', 'volume_ratio': 'float64'}}, 'validated_data': {'required_columns': ['timestamp', 'open', 'high', 'low', 'close', 'volume', 'exchange', 'symbol', 'timeframe'], 'optional_columns': ['year', 'month', 'day', 'trade_volume', 'trade_count', 'avg_price', 'min_price', 'max_price', 'volume_ratio', 'validation_status', 'quality_score'], 'data_types': {'timestamp': 'int64', 'open': 'float64', 'high': 'float64', 'low': 'float64', 'close': 'float64', 'volume': 'float64', 'exchange': 'string', 'symbol': 'string', 'timeframe': 'string', 'year': 'int16', 'month': 'int8', 'day': 'int8', 'trade_volume': 'float64', 'trade_count': 'int64', 'avg_price': 'float64', 'min_price': 'float64', 'max_price': 'float64', 'volume_ratio': 'float64', 'validation_status': 'string', 'quality_score': 'float64'}}}
     QUALITY_THRESHOLDS = {'min_rows': 100, 'max_null_percentage': 0.1, 'max_duplicate_percentage': 0.05, 'min_quality_score': 0.8, 'max_correlation': 0.95, 'timestamp_consistency_threshold': 0.99}
 
-    def __init__(self, logger: logging.Logger | None = None) -> None:
+    def __init__(self, logger: Optional[logging.Logger] = None) -> None:
         self.logger = logger or logging.getLogger(__name__)
 
     @staticmethod
-    def safe_import(module_name: str, fallback_value: Any = None, logger: logging.Logger | None = None) -> Any:
+    def safe_import(module_name: str, fallback_value: Any = None, logger: Optional[logging.Logger] = None) -> Any:
         """
         Safely import a module with consistent fallback pattern.
 
@@ -118,7 +119,7 @@ class PipelineStandards:
             return fallback_value
 
     @staticmethod
-    def validate_environment_dependencies(required_modules: list[str], logger: logging.Logger | None = None) -> dict[str, bool]:
+    def validate_environment_dependencies(required_modules: list[str], logger: Optional[logging.Logger] = None) -> dict[str, bool]:
         """
         Validate that required dependencies are available.
 
@@ -327,7 +328,7 @@ class PipelineStandards:
         return df
 
     @staticmethod
-    def validate_data_quality(df: 'pd.DataFrame', schema_name: str, quality_thresholds: dict[str, Any] | None = None) -> ValidationResult:
+    def validate_data_quality(df: 'pd.DataFrame', schema_name: str, quality_thresholds: Optional[dict[str, Any]] = None) -> ValidationResult:
         """
         Comprehensive data quality validation.
 

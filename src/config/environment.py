@@ -1,4 +1,4 @@
-from typing import Any, Literal
+from typing import Any, Literal, Optional
 import os
 try:
     from dotenv import load_dotenv
@@ -17,7 +17,7 @@ except Exception:
             for k, v in kwargs.items():
                 setattr(self, k, v)
 
-    def Field(default: Any = None, env: str | None = None, **kwargs) -> Any:
+    def Field(default: Any = None, env: Optional[str] = None, **kwargs) -> Any:
         return default
 from ..utils.logger import system_logger
 import logging
@@ -37,26 +37,26 @@ class EnvironmentSettings(BaseSettings):
     default_symbols: list[str] = Field(default=['ETHUSDT', 'BTCUSDT'], alias='DEFAULT_SYMBOLS')
     exchange_name: str = Field(default='BINANCE', alias='EXCHANGE_NAME')
     timeframe: str = Field(default='15m', alias='TIMEFRAME')
-    gateio_api_key: str | None = Field(default=None, alias='GATEIO_API_KEY')
-    gateio_api_secret: str | None = Field(default=None, alias='GATEIO_API_SECRET')
-    mexc_api_key: str | None = Field(default=None, alias='MEXC_API_KEY')
-    mexc_api_secret: str | None = Field(default=None, alias='MEXC_API_SECRET')
-    okx_api_key: str | None = Field(default=None, alias='OKX_API_KEY')
-    okx_api_secret: str | None = Field(default=None, alias='OKX_API_SECRET')
-    okx_password: str | None = Field(default=None, alias='OKX_PASSWORD')
-    binance_api_key: str | None = Field(default=None, alias='BINANCE_API_KEY')
-    binance_api_secret: str | None = Field(default=None, alias='BINANCE_API_SECRET')
-    google_application_credentials: str | None = Field(default=None, alias='GOOGLE_APPLICATION_CREDENTIALS')
-    firestore_project_id: str | None = Field(default=None, alias='FIRESTORE_PROJECT_ID')
-    influxdb_url: str | None = Field(default='http://localhost:8086', alias='INFLUXDB_URL')
-    influxdb_token: str | None = Field(default='your_influxdb_token', alias='INFLUXDB_TOKEN')
-    influxdb_org: str | None = Field(default='your_org', alias='INFLUXDB_ORG')
-    influxdb_bucket: str | None = Field(default='ares_market_data', alias='INFLUXDB_BUCKET')
-    email_sender_address: str | None = Field(default=None, alias='EMAIL_SENDER_ADDRESS')
-    email_sender_password: str | None = Field(default=None, alias='EMAIL_SENDER_PASSWORD')
-    email_recipient_address: str | None = Field(default=None, alias='EMAIL_RECIPIENT_ADDRESS')
-    mlflow_tracking_uri: str | None = Field(default='file:./mlruns', alias='MLFLOW_TRACKING_URI')
-    mlflow_experiment_name: str | None = Field(default='Ares_Trading_Models', alias='MLFLOW_EXPERIMENT_NAME')
+    gateio_api_key: Optional[str] = Field(default=None, alias='GATEIO_API_KEY')
+    gateio_api_secret: Optional[str] = Field(default=None, alias='GATEIO_API_SECRET')
+    mexc_api_key: Optional[str] = Field(default=None, alias='MEXC_API_KEY')
+    mexc_api_secret: Optional[str] = Field(default=None, alias='MEXC_API_SECRET')
+    okx_api_key: Optional[str] = Field(default=None, alias='OKX_API_KEY')
+    okx_api_secret: Optional[str] = Field(default=None, alias='OKX_API_SECRET')
+    okx_password: Optional[str] = Field(default=None, alias='OKX_PASSWORD')
+    binance_api_key: Optional[str] = Field(default=None, alias='BINANCE_API_KEY')
+    binance_api_secret: Optional[str] = Field(default=None, alias='BINANCE_API_SECRET')
+    google_application_credentials: Optional[str] = Field(default=None, alias='GOOGLE_APPLICATION_CREDENTIALS')
+    firestore_project_id: Optional[str] = Field(default=None, alias='FIRESTORE_PROJECT_ID')
+    influxdb_url: Optional[str] = Field(default='http://localhost:8086', alias='INFLUXDB_URL')
+    influxdb_token: Optional[str] = Field(default='your_influxdb_token', alias='INFLUXDB_TOKEN')
+    influxdb_org: Optional[str] = Field(default='your_org', alias='INFLUXDB_ORG')
+    influxdb_bucket: Optional[str] = Field(default='ares_market_data', alias='INFLUXDB_BUCKET')
+    email_sender_address: Optional[str] = Field(default=None, alias='EMAIL_SENDER_ADDRESS')
+    email_sender_password: Optional[str] = Field(default=None, alias='EMAIL_SENDER_PASSWORD')
+    email_recipient_address: Optional[str] = Field(default=None, alias='EMAIL_RECIPIENT_ADDRESS')
+    mlflow_tracking_uri: Optional[str] = Field(default='file:./mlruns', alias='MLFLOW_TRACKING_URI')
+    mlflow_experiment_name: Optional[str] = Field(default='Ares_Trading_Models', alias='MLFLOW_EXPERIMENT_NAME')
 
     # Enhanced Monitoring Configuration
     enable_enhanced_monitoring: bool = Field(default=True, alias='ENABLE_ENHANCED_MONITORING')
@@ -82,7 +82,7 @@ class EnvironmentSettings(BaseSettings):
         """Check if running in paper mode."""
         return self.trading_environment == 'PAPER'
 
-    def get_exchange_credentials(self, exchange_name: str) -> dict[str, str | None]:
+    def get_exchange_credentials(self, exchange_name: str) -> dict[str, Optional[str]]:
         """Get credentials for a specific exchange.
 
         Args:
@@ -132,7 +132,7 @@ class EnvironmentSettings(BaseSettings):
             return {'url': self.influxdb_url, 'token': self.influxdb_token, 'org': self.influxdb_org, 'bucket': self.influxdb_bucket}
         return {}
 
-    def get_email_config(self) -> dict[str, str | None]:
+    def get_email_config(self) -> dict[str, Optional[str]]:
         """Get email configuration.
 
         Returns:
@@ -141,7 +141,7 @@ class EnvironmentSettings(BaseSettings):
         """
         return {'sender_address': self.email_sender_address, 'sender_password': self.email_sender_password, 'recipient_address': self.email_recipient_address}
 
-    def get_mlflow_config(self) -> dict[str, str | None]:
+    def get_mlflow_config(self) -> dict[str, Optional[str]]:
         """Get MLflow configuration.
 
         Returns:

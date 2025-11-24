@@ -33,6 +33,7 @@ from scipy.signal import find_peaks, peak_prominences
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import classification_report, log_loss, roc_auc_score
 from sklearn.utils.class_weight import compute_sample_weight
+from src.utils.ml_common.labeling.meta_labeling import triple_barrier_labels
 
 from src.training.steps.base_step import BaseStep
 from src.utils.tprint import (
@@ -47,6 +48,11 @@ from src.training.steps.market_analysis.clusters.cluster_quality_assessor import
     ClusterQualityAssessor,
     ClusterQualityMetrics,
 )
+from src.utils.ml_common.validation.regime_walk_forward_validator import (
+    RegimeWalkForwardValidator,
+    RegimeValidationConfig,
+)
+from src.feature_generation.categories.cross_timeframe import CrossTimeframeFeatureGenerator
 from src.utils.ml_common.optimization import (
     HierarchicalParameterOptimizer,
     ParameterGroup,
@@ -6477,6 +6483,7 @@ class MLBreakoutBounceRegimeStep(BaseStep):
                 "breakout_hold_buffer_pct": 0.0020,
                 "breakout_bounce_move_pct": 0.0030,
                 "breakout_trap_revert_pct": 0.0025,
+                "breakout_meta_enable": True,
             }
             for k, v in defaults.items():
                 config.setdefault(k, v)
@@ -6560,7 +6567,7 @@ class MLBreakoutBounceRegimeStep(BaseStep):
 
             aligned_df = market_data.join(levels_df, how="left")
 
-            feat_df, labels = self._build_breakout_dataset(aligned_df, config)
+            feat_df, labels, meta_labels = self._build_breakout_dataset(aligned_df, config)
             if feat_df.empty or labels is None or labels.dropna().empty:
                 raise ValueError("No valid breakout/bounce samples after feature generation")
 
@@ -6594,6 +6601,33 @@ class MLBreakoutBounceRegimeStep(BaseStep):
             output_df = output_df.join(probs_df, how="left")
             output_df["breakout_regime"] = hard_labels
             output_df["breakout_regime_training_label"] = labels
+
+            if meta_labels is not None:
+                meta_aligned = meta_labels.reindex(output_df.index)
+                output_df["meta_breakout_success"] = meta_aligned
+
+            try:
+                high_conf_threshold = float(config.get("breakout_high_conf_threshold", 0.7))
+            except Exception:
+                high_conf_threshold = 0.7
+
+            try:
+                if probs_full.shape[1] >= 3:
+                    success_prob = probs_full[:, 0] + probs_full[:, 1] + probs_full[:, 2]
+                else:
+                    success_prob = np.max(probs_full, axis=1)
+                success_prob = np.clip(success_prob, 0.0, 1.0)
+                success_prob_series = pd.Series(
+                    success_prob,
+                    index=feat_df.index,
+                    name="breakout_success_prob",
+                )
+                output_df["breakout_success_prob"] = success_prob_series.reindex(output_df.index)
+                output_df["breakout_high_conf_signal"] = (
+                    output_df["breakout_success_prob"] >= high_conf_threshold
+                ).astype(int)
+            except Exception:
+                pass
 
             # Add directional edge features (long/short, strength-weighted by default)
             output_df = self._add_directional_edge_features(output_df)
@@ -6710,7 +6744,7 @@ class MLBreakoutBounceRegimeStep(BaseStep):
         self,
         df: pd.DataFrame,
         config: Dict[str, Any],
-    ) -> Tuple[pd.DataFrame, Optional[pd.Series]]:
+    ) -> Tuple[pd.DataFrame, Optional[pd.Series], Optional[pd.Series]]:
         required_cols = {"open", "high", "low", "close", "volume", "primary_level_price"}
         missing = [c for c in required_cols if c not in df.columns]
         if missing:
@@ -6726,7 +6760,7 @@ class MLBreakoutBounceRegimeStep(BaseStep):
         df = df[df["distance_to_level_pct"].abs() < kill_zone]
 
         if df.empty:
-            return pd.DataFrame(index=df.index), None
+            return pd.DataFrame(index=df.index), None, None
 
         df["is_resistance"] = df["close"] < df["primary_level_price"]
         df["is_support"] = ~df["is_resistance"]
@@ -6870,24 +6904,79 @@ class MLBreakoutBounceRegimeStep(BaseStep):
         feat_cols["primary_dist_to_round_pct"] = dist_to_round_pct
         feat_cols["opposing_dist_to_round_pct"] = opp_dist_to_round_pct
 
+        # Lightweight interaction features focused on local structure and level quality
+        feat_cols["int_primary_prom_squeeze"] = prim_prom_z * squeeze
+        feat_cols["int_opposing_prom_squeeze"] = opp_prom_z * squeeze
+        feat_cols["int_approach_rubber"] = pd.Series(approach_velocity, index=df.index) * pd.Series(
+            rubber_band_extension, index=df.index
+        )
+        feat_cols["int_test_prominence"] = prim_touch * prim_prom_z
+        feat_cols["int_dist_opp_trend"] = dist_to_opp_atr * adx14
+
+        # Optional cross-timeframe features (momentum/volatility/volume) for breakout context
+        xtf_enabled = bool(config.get("breakout_enable_cross_timeframe", False))
+        xtf_df = None
+        if xtf_enabled:
+            try:
+                base_cols = [c for c in ["open", "high", "low", "close", "volume"] if c in df.columns]
+                if base_cols:
+                    xtf_generator = CrossTimeframeFeatureGenerator()
+                    xtf_features = xtf_generator.generate_enhanced_cross_timeframe_features(df[base_cols])
+                    if isinstance(xtf_features, dict) and xtf_features:
+                        xtf_full = pd.DataFrame(xtf_features)
+                        # Select only a small, relevant subset for breakout/bounce regimes
+                        desired_cols = [
+                            "vectorbt_momentum_5",
+                            "vectorbt_momentum_15",
+                            "vectorbt_volatility_5",
+                            "vectorbt_volatility_15",
+                            "vectorbt_volume_ma_5",
+                            "vectorbt_volume_ma_15",
+                        ]
+                        present = [c for c in desired_cols if c in xtf_full.columns]
+                        if present:
+                            xtf_df = xtf_full[present]
+            except Exception:
+                xtf_df = None
+
         feat_df = pd.DataFrame(feat_cols, index=df.index)
+
+        if xtf_df is not None:
+            xtf_aligned = xtf_df.reindex(feat_df.index)
+            for col in xtf_aligned.columns:
+                feat_df[col] = xtf_aligned[col]
+
         feat_df = feat_df.replace([np.inf, -np.inf], np.nan)
         feat_df = feat_df.dropna()
 
         labels = self._create_breakout_labels(df.loc[feat_df.index], config)
 
         if labels is None or labels.empty:
-            return pd.DataFrame(index=feat_df.index), None
+            return pd.DataFrame(index=feat_df.index), None, None
 
-        # Ensure features and labels share the same timestamp index
+        meta_labels: Optional[pd.Series] = None
+        if bool(config.get("breakout_meta_enable", False)):
+            try:
+                meta_labels = self._create_meta_breakout_labels(
+                    df=df,
+                    labels=labels,
+                    atr=atr14,
+                    config=config,
+                )
+            except Exception as exc:
+                tprint_warning(f"Failed to create breakout meta-labels: {exc}")
+                meta_labels = None
+
         common_index = feat_df.index.intersection(labels.index)
         if common_index.empty:
-            return pd.DataFrame(index=feat_df.index), None
+            return pd.DataFrame(index=feat_df.index), None, None
 
         feat_df = feat_df.loc[common_index]
         labels = labels.loc[common_index]
+        if meta_labels is not None:
+            meta_labels = meta_labels.reindex(common_index)
 
-        return feat_df, labels
+        return feat_df, labels, meta_labels
 
     def _create_breakout_labels(self, df: pd.DataFrame, config: Dict[str, Any]) -> pd.Series:
         horizon = int(config.get("breakout_horizon_bars", 96))
@@ -6938,6 +7027,66 @@ class MLBreakoutBounceRegimeStep(BaseStep):
         labels = labels.astype(int)
         return labels
 
+    def _create_meta_breakout_labels(
+        self,
+        df: pd.DataFrame,
+        labels: pd.Series,
+        atr: pd.Series,
+        config: Dict[str, Any],
+    ) -> pd.Series:
+        if labels is None or labels.empty:
+            return pd.Series(dtype=int)
+
+        close = df["close"].astype(float)
+        vol_atr = (atr.astype(float) / close.replace(0.0, np.nan)).replace([np.inf, -np.inf], np.nan)
+        vol_atr = vol_atr.fillna(0.0)
+
+        horizon = int(config.get("breakout_meta_horizon_bars", config.get("breakout_horizon_bars", 96)))
+        pt_mult = float(config.get("breakout_meta_pt_mult", 1.0))
+        sl_mult = float(config.get("breakout_meta_sl_mult", 1.0))
+        min_ret = float(config.get("breakout_meta_min_ret", 0.0))
+
+        is_resistance = df["is_resistance"].astype(bool)
+        is_support = df["is_support"].astype(bool)
+
+        labels_full = pd.Series(index=df.index, dtype=float)
+        labels_full.loc[labels.index] = labels.values
+
+        side = pd.Series(index=df.index, dtype=float)
+
+        bounce_mask = labels_full == 0.0
+        break_mask = labels_full == 1.0
+        trap_mask = labels_full == 2.0
+        chop_mask = labels_full == 3.0
+
+        side.loc[break_mask & is_resistance] = 1.0
+        side.loc[break_mask & is_support] = -1.0
+        side.loc[bounce_mask & is_resistance] = -1.0
+        side.loc[bounce_mask & is_support] = 1.0
+        side.loc[trap_mask & is_resistance] = -1.0
+        side.loc[trap_mask & is_support] = 1.0
+        side.loc[chop_mask] = 1.0
+
+        t_events = labels.index
+
+        meta_df = triple_barrier_labels(
+            close=close,
+            t_events=t_events,
+            horizon_bars=horizon,
+            pt_mult=pt_mult,
+            sl_mult=sl_mult,
+            vol=vol_atr,
+            min_ret=min_ret,
+            side=side,
+        )
+
+        if "label" not in meta_df.columns:
+            return pd.Series(dtype=int)
+
+        meta_labels = meta_df["label"].astype(int)
+        meta_labels = meta_labels.reindex(labels.index).dropna().astype(int)
+        return meta_labels
+
     def _train_breakout_classifier(
         self,
         feat_df: pd.DataFrame,
@@ -6947,19 +7096,68 @@ class MLBreakoutBounceRegimeStep(BaseStep):
     ) -> Tuple[Any, Dict[str, Any], np.ndarray, np.ndarray]:
         import xgboost as xgb
 
-        X = feat_df.astype(np.float32)
-        y = labels.loc[X.index].astype(int)
+        # Base feature matrix and labels (chronologically ordered)
+        X_raw = feat_df.astype(np.float32)
+        y = labels.loc[X_raw.index].astype(int)
 
         if y.nunique() < 2:
             raise ValueError("Not enough classes for breakout/bounce classifier")
 
-        n = len(X)
-        split_idx = int(n * 0.8)
-        X_train = X.iloc[:split_idx]
-        y_train = y.iloc[:split_idx]
-        X_val = X.iloc[split_idx:]
-        y_val = y.iloc[split_idx:]
+        n_samples = len(X_raw)
 
+        # ------------------------------------------------------------------
+        # Chronological train / validation / test split
+        # ------------------------------------------------------------------
+        train_frac = float(config.get("breakout_train_fraction", 0.7))
+        val_frac = float(config.get("breakout_val_fraction", 0.15))
+
+        # Clamp to sensible bounds and ensure we leave some test data
+        train_frac = float(np.clip(train_frac, 0.5, 0.9))
+        val_frac = float(np.clip(val_frac, 0.05, 0.4))
+        if train_frac + val_frac >= 0.95:
+            val_frac = max(0.05, 0.95 - train_frac)
+
+        train_end = int(n_samples * train_frac)
+        val_end = int(n_samples * (train_frac + val_frac))
+
+        if train_end <= 0 or val_end <= train_end or val_end >= n_samples:
+            # Fallback to original 80/20 split with no explicit test set
+            split_idx = int(n_samples * 0.8)
+            train_idx = np.arange(0, split_idx)
+            val_idx = np.arange(split_idx, n_samples)
+            test_idx = np.array([], dtype=int)
+        else:
+            train_idx = np.arange(0, train_end)
+            val_idx = np.arange(train_end, val_end)
+            test_idx = np.arange(val_end, n_samples)
+
+        X_train_raw = X_raw.iloc[train_idx]
+        y_train = y.iloc[train_idx]
+        X_val_raw = X_raw.iloc[val_idx]
+        y_val = y.iloc[val_idx]
+        X_test_raw = X_raw.iloc[test_idx] if len(test_idx) > 0 else None
+        y_test = y.iloc[test_idx] if len(test_idx) > 0 else None
+
+        # ------------------------------------------------------------------
+        # Feature normalization (winsorised z-score by default)
+        # ------------------------------------------------------------------
+        scaling_strategy = str(config.get("breakout_scaling_strategy", "winsorized_zscore"))
+        normalizer_config = {
+            "default_strategy": scaling_strategy,
+            "auto_select": False,
+            "handle_outliers": True,
+            "use_vectorbt": False,
+        }
+
+        scaler = ScalingNormalizer(normalizer_config)
+        X_train = scaler.fit_transform(X_train_raw)
+        X_val = scaler.transform(X_val_raw)
+        X_full = scaler.transform(X_raw)
+        X_test = scaler.transform(X_test_raw) if X_test_raw is not None and len(test_idx) > 0 else None
+
+        # ------------------------------------------------------------------
+        # Monotone constraints and XGBoost configuration
+        # ------------------------------------------------------------------
         constraint_map = {
             "approach_velocity": 1,
             "bollinger_squeeze": -1,
@@ -6969,7 +7167,7 @@ class MLBreakoutBounceRegimeStep(BaseStep):
             "volume_at_impact": 1,
         }
 
-        feature_names = list(X.columns)
+        feature_names = list(X_full.columns)
         constraints = [int(constraint_map.get(name, 0)) for name in feature_names]
         monotone_constraints_param = "(" + ",".join(str(c) for c in constraints) + ")"
 
@@ -6993,12 +7191,150 @@ class MLBreakoutBounceRegimeStep(BaseStep):
             "monotone_constraints": monotone_constraints_param,
         }
 
+        # ------------------------------------------------------------------
+        # Optional hierarchical HPO targeting macro F1 over 4 classes
+        # ------------------------------------------------------------------
+        best_params: Dict[str, Any] = dict(xgb_params)
+
+        enable_hpo = bool(config.get("breakout_enable_hpo", False) or config.get("enable_hpo", False))
+        if enable_hpo:
+            try:
+                hpo_param_groups = [
+                    create_param_group(
+                        name="structure",
+                        params={
+                            "max_depth": {"type": "int", "low": 3, "high": 8},
+                            "min_child_weight": {"type": "int", "low": 5, "high": 80},
+                            "n_estimators": {"type": "int", "low": 300, "high": 1600},
+                        },
+                        priority=1,
+                        description="Tree depth, leaf size, and capacity",
+                    ),
+                    create_param_group(
+                        name="learning",
+                        params={
+                            "learning_rate": {"type": "float", "low": 0.01, "high": 0.20},
+                        },
+                        priority=2,
+                        depends_on=["structure"],
+                        description="Learning rate",
+                    ),
+                    create_param_group(
+                        name="regularization",
+                        params={
+                            "gamma": {"type": "float", "low": 0.0, "high": 7.0},
+                            "reg_alpha": {"type": "float", "low": 1e-6, "high": 20.0, "log": True},
+                            "reg_lambda": {"type": "float", "low": 0.05, "high": 20.0},
+                        },
+                        priority=3,
+                        depends_on=["structure"],
+                        description="Regularization strength",
+                    ),
+                    create_param_group(
+                        name="sampling",
+                        params={
+                            "subsample": {"type": "float", "low": 0.6, "high": 0.95},
+                            "colsample_bytree": {"type": "float", "low": 0.6, "high": 0.95},
+                        },
+                        priority=4,
+                        depends_on=["regularization"],
+                        description="Row/feature subsampling ratios",
+                    ),
+                ]
+
+                base_model_for_hpo = xgb.XGBClassifier(**best_params)
+
+                hpo_cv_folds = int(config.get("breakout_hpo_cv_folds", 3))
+                hpo_rounds = int(config.get("breakout_hpo_rounds", 1))
+                hpo_final_trials = int(config.get("breakout_hpo_final_trials", 20))
+                hpo_enable_final = bool(config.get("breakout_hpo_enable_final_refinement", False))
+
+                scoring_metric = "f1_macro"
+
+                def macro_f1_objective(
+                    params: Dict[str, Any],
+                    X_train: np.ndarray,
+                    y_train: np.ndarray,
+                    X_val: Optional[np.ndarray] = None,
+                    y_val: Optional[np.ndarray] = None,
+                    model: Optional[Any] = None,
+                    cv_folds: int = 3,
+                    scoring_metric: str = "f1_macro",
+                    **kwargs: Any,
+                ) -> float:
+                    try:
+                        if X_val is None or y_val is None:
+                            return float("-inf")
+
+                        base_model = model if model is not None else xgb.XGBClassifier(**best_params)
+                        base_model.set_params(**params)
+                        base_model.fit(
+                            X_train,
+                            y_train,
+                            eval_set=[(X_val, y_val)],
+                            verbose=False,
+                        )
+
+                        val_pred_local = base_model.predict(X_val)
+                        report_local = classification_report(
+                            y_val,
+                            val_pred_local,
+                            output_dict=True,
+                            zero_division=0,
+                        )
+                        if "macro avg" in report_local:
+                            return float(report_local["macro avg"].get("f1-score", 0.0))
+                        return 0.0
+                    except Exception as obj_exc:
+                        tprint_warning(
+                            f"Breakout HPO macro-F1 objective failed (non-fatal): {obj_exc}"
+                        )
+                        return float("-inf")
+
+                optimizer = HierarchicalParameterOptimizer(
+                    param_groups=hpo_param_groups,
+                    objective_func=macro_f1_objective,
+                    cv_folds=hpo_cv_folds,
+                    scoring_metric=scoring_metric,
+                    direction="maximize",
+                    n_rounds=hpo_rounds,
+                    enable_final_refinement=hpo_enable_final,
+                    final_refinement_trials=hpo_final_trials,
+                    cache_dir=None,
+                    random_state=42,
+                    verbose=bool(config.get("breakout_hpo_verbose", False)),
+                    use_custom_balanced_score=False,
+                )
+
+                X_train_np = X_train.values if hasattr(X_train, "values") else X_train
+                y_train_np = (
+                    y_train.to_numpy() if hasattr(y_train, "to_numpy") else np.asarray(y_train)
+                )
+                X_val_np = X_val.values if hasattr(X_val, "values") else X_val
+                y_val_np = y_val.to_numpy() if hasattr(y_val, "to_numpy") else np.asarray(y_val)
+
+                hpo_result = optimizer.optimize(
+                    X_train=X_train_np,
+                    y_train=y_train_np,
+                    X_val=X_val_np,
+                    y_val=y_val_np,
+                    model=base_model_for_hpo,
+                    initial_params=best_params,
+                )
+
+                if hpo_result is not None and getattr(hpo_result, "best_params", None):
+                    best_params.update(hpo_result.best_params)
+            except Exception as hpo_exc:
+                tprint_warning(
+                    f"Breakout/bounce classifier HPO failed; proceeding with default params: {hpo_exc}"
+                )
+
         weights = compute_sample_weight(
             class_weight={0: 2.0, 1: 5.0, 2: 5.0, 3: 1.0},
             y=y_train,
         )
 
-        model = xgb.XGBClassifier(**xgb_params)
+        model = xgb.XGBClassifier(**best_params)
         model.fit(
             X_train,
             y_train,
@@ -7007,6 +7343,9 @@ class MLBreakoutBounceRegimeStep(BaseStep):
             verbose=False,
         )
 
+        # ------------------------------------------------------------------
+        # Validation metrics + temperature scaling (calibration)
+        # ------------------------------------------------------------------
         val_probs = model.predict_proba(X_val)
         val_pred = np.argmax(val_probs, axis=1)
 
@@ -7045,18 +7384,19 @@ class MLBreakoutBounceRegimeStep(BaseStep):
                 )
             except Exception:
                 metrics["val_log_loss_calibrated"] = float("nan")
+
         try:
-            report = classification_report(y_val, val_pred, output_dict=True)
-            metrics["classification_report"] = report
-            if "1" in report:
-                metrics["precision_breakout"] = float(report["1"].get("precision", 0.0))
-            if "macro avg" in report:
-                macro_avg = report["macro avg"]
+            val_report = classification_report(y_val, val_pred, output_dict=True)
+            metrics["classification_report"] = val_report
+            if "1" in val_report:
+                metrics["precision_breakout"] = float(val_report["1"].get("precision", 0.0))
+            if "macro avg" in val_report:
+                macro_avg = val_report["macro avg"]
                 metrics["precision_macro"] = float(macro_avg.get("precision", 0.0))
                 metrics["recall_macro"] = float(macro_avg.get("recall", 0.0))
                 metrics["f1_macro"] = float(macro_avg.get("f1-score", 0.0))
-            if "weighted avg" in report:
-                weighted_avg = report["weighted avg"]
+            if "weighted avg" in val_report:
+                weighted_avg = val_report["weighted avg"]
                 metrics["f1_weighted"] = float(weighted_avg.get("f1-score", 0.0))
         except Exception:
             metrics["classification_report"] = {}
@@ -7068,7 +7408,144 @@ class MLBreakoutBounceRegimeStep(BaseStep):
         except Exception:
             metrics["val_auc_macro_ovr"] = float("nan")
 
-        full_probs = model.predict_proba(X)
+        # ------------------------------------------------------------------
+        # Test / out-of-sample metrics on the final holdout segment
+        # ------------------------------------------------------------------
+        if X_test is not None and X_test.shape[0] > 0:
+            try:
+                test_probs = model.predict_proba(X_test)
+                if enable_temp and temperature is not None:
+                    try:
+                        test_probs = self._apply_temperature(test_probs, temperature)
+                    except Exception:
+                        pass
+                test_pred = np.argmax(test_probs, axis=1)
+
+                try:
+                    metrics["test_log_loss"] = float(
+                        log_loss(y_test, test_probs, labels=[0, 1, 2, 3])
+                    )
+                except Exception:
+                    metrics["test_log_loss"] = float("nan")
+
+                try:
+                    test_report = classification_report(y_test, test_pred, output_dict=True)
+                    if "macro avg" in test_report:
+                        macro_avg_test = test_report["macro avg"]
+                        metrics["test_f1_macro"] = float(macro_avg_test.get("f1-score", 0.0))
+                    if "weighted avg" in test_report:
+                        weighted_avg_test = test_report["weighted avg"]
+                        metrics["test_f1_weighted"] = float(weighted_avg_test.get("f1-score", 0.0))
+                except Exception:
+                    metrics.setdefault("test_f1_macro", float("nan"))
+                    metrics.setdefault("test_f1_weighted", float("nan"))
+
+                try:
+                    metrics["test_auc_macro_ovr"] = float(
+                        roc_auc_score(y_test, test_probs, multi_class="ovr", average="macro")
+                    )
+                except Exception:
+                    metrics["test_auc_macro_ovr"] = float("nan")
+            except Exception:
+                metrics.setdefault("test_log_loss", float("nan"))
+                metrics.setdefault("test_f1_macro", float("nan"))
+                metrics.setdefault("test_f1_weighted", float("nan"))
+                metrics.setdefault("test_auc_macro_ovr", float("nan"))
+
+        # Simple generalization diagnostics (validation vs test)
+        if "val_log_loss" in metrics and "test_log_loss" in metrics:
+            try:
+                metrics["generalization_gap_log_loss"] = float(
+                    metrics["test_log_loss"] - metrics["val_log_loss"]
+                )
+            except Exception:
+                metrics["generalization_gap_log_loss"] = float("nan")
+
+        if "f1_macro" in metrics and "test_f1_macro" in metrics:
+            try:
+                metrics["generalization_gap_f1_macro"] = float(
+                    metrics["test_f1_macro"] - metrics["f1_macro"]
+                )
+            except Exception:
+                metrics["generalization_gap_f1_macro"] = float("nan")
+
+        # ------------------------------------------------------------------
+        # Optional multi-fold walk-forward validation for robustness
+        # ------------------------------------------------------------------
+        if bool(config.get("breakout_enable_walkforward_validation", False)):
+            try:
+                wf_config = RegimeValidationConfig(
+                    n_outer_folds=int(config.get("breakout_wf_n_folds", 5)),
+                    n_inner_folds=int(config.get("breakout_wf_inner_folds", 3)),
+                    embargo_pct=float(config.get("breakout_wf_embargo_pct", 0.05)),
+                    min_train_samples=int(config.get("breakout_wf_min_train_samples", 100)),
+                    min_val_samples=int(config.get("breakout_wf_min_val_samples", 30)),
+                    min_regime_samples=int(config.get("breakout_wf_min_regime_samples", 10)),
+                    test_size=float(config.get("breakout_wf_test_size", 0.3)),
+                    gap_size=int(config.get("breakout_wf_gap_size", 1)),
+                )
+                wf_validator = RegimeWalkForwardValidator(wf_config)
+
+                X_np = X_full.to_numpy()
+                y_np = y.to_numpy()
+
+                fold_results: List[Dict[str, float]] = []
+                fold_idx = 0
+
+                for train_idx_f, val_idx_f in wf_validator.outer_cv.split(X_np):
+                    fold_idx += 1
+
+                    embargo_size = int(len(val_idx_f) * wf_config.embargo_pct)
+                    if embargo_size > 0:
+                        val_idx_f = val_idx_f[embargo_size:]
+                    if len(val_idx_f) < wf_config.min_val_samples:
+                        continue
+
+                    X_train_f = X_np[train_idx_f]
+                    X_val_f = X_np[val_idx_f]
+                    y_train_f = y_np[train_idx_f]
+                    y_val_f = y_np[val_idx_f]
+
+                    if not wf_validator._check_regime_distribution(y_train_f, y_val_f):
+                        continue
+
+                    fold_model = xgb.XGBClassifier(**xgb_params)
+                    fold_weights = compute_sample_weight(
+                        class_weight={0: 2.0, 1: 5.0, 2: 5.0, 3: 1.0},
+                        y=y_train_f,
+                    )
+                    fold_model.fit(
+                        X_train_f,
+                        y_train_f,
+                        sample_weight=fold_weights,
+                        eval_set=[(X_val_f, y_val_f)],
+                        verbose=False,
+                    )
+
+                    y_pred_f = fold_model.predict(X_val_f)
+                    try:
+                        y_proba_f = fold_model.predict_proba(X_val_f)
+                    except Exception:
+                        y_proba_f = None
+
+                    fold_metrics = wf_validator._calculate_fold_metrics(
+                        y_true=y_val_f,
+                        y_pred=y_pred_f,
+                        y_pred_proba=y_proba_f,
+                        fold_idx=fold_idx,
+                    )
+                    fold_results.append(fold_metrics)
+
+                if fold_results:
+                    wf_aggregated = wf_validator._aggregate_fold_metrics(fold_results)
+                    metrics["walkforward_validation"] = wf_aggregated
+            except Exception as wf_exc:
+                metrics["walkforward_validation_error"] = str(wf_exc)
+
+        # ------------------------------------------------------------------
+        # Full-sample probabilities for downstream artifacts
+        # ------------------------------------------------------------------
+        full_probs = model.predict_proba(X_full)
 
         if enable_temp and temperature is not None:
             try:
@@ -7080,6 +7557,11 @@ class MLBreakoutBounceRegimeStep(BaseStep):
 
         class_counts = dict(zip(*np.unique(y, return_counts=True)))
         metrics["class_counts"] = {int(k): int(v) for k, v in class_counts.items()}
+
+        metrics["n_samples_total"] = int(n_samples)
+        metrics["n_train_samples"] = int(len(train_idx))
+        metrics["n_val_samples"] = int(len(val_idx))
+        metrics["n_test_samples"] = int(len(test_idx))
 
         if enable_temp and temperature is not None:
             try:
@@ -7318,6 +7800,13 @@ class MLBreakoutBounceRegimeStep(BaseStep):
             analysis_df[f"forward_return_h{horizon}_support"] = forward_ret.where(is_support_mask, np.nan)
 
         regime_series = analysis_df["breakout_regime"].astype(int)
+
+        train_label_series = None
+        if labels is not None and not labels.dropna().empty:
+            try:
+                train_label_series = labels.reindex(analysis_df.index)
+            except Exception:
+                train_label_series = None
 
         # Derive important features from the trained model (top-N by importance)
         top_n = int(config.get("report_top_n_features", 15))
@@ -7661,28 +8150,99 @@ class MLBreakoutBounceRegimeStep(BaseStep):
 
             # HPO-style global metrics
             lines.append("## Global Model Metrics")
-            val_log_loss = metrics.get("val_log_loss", float("nan"))
+
+            # Core validation / test log-loss metrics and gaps
+            val_log_loss = float(metrics.get("val_log_loss", float("nan")))
             lines.append(f"- Validation log loss: **{val_log_loss:.6f}**")
+
+            test_log_loss = metrics.get("test_log_loss")
+            if test_log_loss is not None:
+                test_log_loss_val = float(test_log_loss)
+                lines.append(f"- Test log loss: **{test_log_loss_val:.6f}**")
+
+            gap_ll = metrics.get("generalization_gap_log_loss")
+            if gap_ll is not None:
+                lines.append(
+                    f"- Generalization gap (test - val log loss): **{float(gap_ll):.6f}**"
+                )
+
+            # ROC AUC (validation vs test)
             val_auc_macro = metrics.get("val_auc_macro_ovr")
             if val_auc_macro is not None:
                 lines.append(
-                    f"- Macro ROC AUC (OvR): **{float(val_auc_macro):.4f}**"
+                    f"- Macro ROC AUC (OvR, val): **{float(val_auc_macro):.4f}**"
                 )
+            test_auc_macro = metrics.get("test_auc_macro_ovr")
+            if test_auc_macro is not None:
+                lines.append(
+                    f"- Macro ROC AUC (OvR, test): **{float(test_auc_macro):.4f}**"
+                )
+
+            # Macro F1 (validation vs test) and gap
             f1_macro = metrics.get("f1_macro")
+            test_f1_macro = metrics.get("test_f1_macro")
             if f1_macro is not None:
                 lines.append(
-                    f"- Macro F1-score: **{float(f1_macro):.4f}**"
+                    f"- Macro F1-score (val): **{float(f1_macro):.4f}**"
                 )
+            if test_f1_macro is not None:
+                lines.append(
+                    f"- Macro F1-score (test): **{float(test_f1_macro):.4f}**"
+                )
+            gap_f1 = metrics.get("generalization_gap_f1_macro")
+            if f1_macro is not None and gap_f1 is not None:
+                lines.append(
+                    f"- Generalization gap (Macro F1 test - val): **{float(gap_f1):.4f}**"
+                )
+
+            # Weighted F1 (validation vs test)
             f1_weighted = metrics.get("f1_weighted")
             if f1_weighted is not None:
                 lines.append(
-                    f"- Weighted F1-score: **{float(f1_weighted):.4f}**"
+                    f"- Weighted F1-score (val): **{float(f1_weighted):.4f}**"
                 )
+            test_f1_weighted = metrics.get("test_f1_weighted")
+            if test_f1_weighted is not None:
+                lines.append(
+                    f"- Weighted F1-score (test): **{float(test_f1_weighted):.4f}**"
+                )
+
             precision_breakout = metrics.get("precision_breakout")
             if precision_breakout is not None:
                 lines.append(
-                    f"- Precision (breakout class 1): **{float(precision_breakout):.4f}**"
+                    f"- Precision (breakout class 1, val): **{float(precision_breakout):.4f}**"
                 )
+
+            # Sample split summary
+            n_train = metrics.get("n_train_samples")
+            n_val = metrics.get("n_val_samples")
+            n_test = metrics.get("n_test_samples")
+            if n_train is not None and n_val is not None:
+                lines.append(
+                    f"- Sample split: train={int(n_train)}, val={int(n_val)}, test={int(n_test or 0)}"
+                )
+
+            # Optional walk-forward validation summary
+            wf_metrics = metrics.get("walkforward_validation")
+            if isinstance(wf_metrics, dict):
+                acc = wf_metrics.get("accuracy", {})
+                f1_wf = wf_metrics.get("f1_score", {})
+                n_folds = 0
+                if isinstance(acc, dict) and "n_folds" in acc:
+                    n_folds = int(acc.get("n_folds", 0))
+                elif isinstance(f1_wf, dict) and "n_folds" in f1_wf:
+                    n_folds = int(f1_wf.get("n_folds", 0))
+
+                if isinstance(acc, dict) and "mean" in acc:
+                    lines.append(
+                        f"- Walk-forward accuracy (mean b1 std, {n_folds} folds): "
+                        f"**{float(acc.get('mean', float('nan'))):.4f} b1 {float(acc.get('std', float('nan'))):.4f}**"
+                    )
+                if isinstance(f1_wf, dict) and "mean" in f1_wf:
+                    lines.append(
+                        f"- Walk-forward F1-score (weighted, mean b1 std): "
+                        f"**{float(f1_wf.get('mean', float('nan'))):.4f} b1 {float(f1_wf.get('std', float('nan'))):.4f}**"
+                    )
 
             class_counts = metrics.get("class_counts", {}) or {}
             if class_counts:
@@ -7725,6 +8285,173 @@ class MLBreakoutBounceRegimeStep(BaseStep):
                             lines.append("| " + " | ".join(cells) + " |")
                 except Exception:
                     pass
+
+            # Meta-label success and high-confidence diagnostics
+            try:
+                if "meta_breakout_success" in analysis_df.columns:
+                    lines.append("")
+                    lines.append("## Meta-Label Success Summary")
+
+                    meta_raw = pd.to_numeric(
+                        analysis_df["meta_breakout_success"], errors="coerce"
+                    )
+                    meta_raw = meta_raw.replace([np.inf, -np.inf], np.nan)
+                    meta_series = meta_raw.dropna().astype(int)
+
+                    if meta_series.empty:
+                        lines.append("_No meta-labels were available for this run._")
+                    else:
+                        n_meta = int(len(meta_series))
+                        n_meta_success = int((meta_series == 1).sum())
+                        meta_rate = (
+                            float(n_meta_success) / float(n_meta) if n_meta > 0 else float("nan")
+                        )
+                        lines.append(
+                            f"- Meta-labeled events: **{n_meta}**, success=1: **{n_meta_success}** "
+                            f"({meta_rate:.3%} success rate)"
+                        )
+
+                        # Per-class meta success using training labels when available
+                        base_labels = None
+                        if train_label_series is not None:
+                            base_labels = train_label_series.reindex(meta_series.index)
+                        elif "breakout_regime_training_label" in analysis_df.columns:
+                            base_labels = pd.to_numeric(
+                                analysis_df.loc[meta_series.index, "breakout_regime_training_label"],
+                                errors="coerce",
+                            )
+                        elif "breakout_regime" in analysis_df.columns:
+                            base_labels = pd.to_numeric(
+                                analysis_df.loc[meta_series.index, "breakout_regime"],
+                                errors="coerce",
+                            )
+
+                        if base_labels is not None:
+                            base_labels = base_labels.replace([np.inf, -np.inf], np.nan).dropna().astype(int)
+                            if not base_labels.empty:
+                                lines.append("")
+                                lines.append("| Class | Meta Events | Success Count | Success Rate |")
+                                lines.append("|-------|------------|---------------|--------------|")
+                                for cls_val in sorted(base_labels.unique()):
+                                    cls_index = base_labels[base_labels == cls_val].index
+                                    cls_meta = meta_series.reindex(cls_index).dropna()
+                                    if cls_meta.empty:
+                                        continue
+                                    n_cls = int(len(cls_meta))
+                                    n_cls_success = int((cls_meta == 1).sum())
+                                    cls_rate = (
+                                        float(n_cls_success) / float(n_cls)
+                                        if n_cls > 0
+                                        else float("nan")
+                                    )
+                                    lines.append(
+                                        f"| {int(cls_val)} | {n_cls} | {n_cls_success} | {cls_rate:.3%} |"
+                                    )
+
+                # Success-probability distribution and high-confidence fraction
+                if "breakout_success_prob" in analysis_df.columns:
+                    lines.append("")
+                    lines.append("## Breakout Success Probability & High-Confidence Gating")
+
+                    prob_raw = pd.to_numeric(
+                        analysis_df["breakout_success_prob"], errors="coerce"
+                    )
+                    prob_raw = prob_raw.replace([np.inf, -np.inf], np.nan)
+                    prob_series = prob_raw.dropna()
+
+                    if prob_series.empty:
+                        lines.append("_No breakout_success_prob values were available._")
+                    else:
+                        n_prob = int(len(prob_series))
+                        mean_prob = float(prob_series.mean())
+                        std_prob = float(prob_series.std(ddof=0))
+                        p25 = float(prob_series.quantile(0.25))
+                        p50 = float(prob_series.quantile(0.50))
+                        p75 = float(prob_series.quantile(0.75))
+
+                        lines.append(
+                            f"- Observations with breakout_success_prob: **{n_prob}** | "
+                            f"mean={mean_prob:.3f}, std={std_prob:.3f}, "
+                            f"p25={p25:.3f}, median={p50:.3f}, p75={p75:.3f}"
+                        )
+
+                        hc_series = None
+                        if "breakout_high_conf_signal" in analysis_df.columns:
+                            hc_raw = pd.to_numeric(
+                                analysis_df["breakout_high_conf_signal"], errors="coerce"
+                            )
+                            hc_raw = hc_raw.replace([np.inf, -np.inf], np.nan)
+                            hc_series = hc_raw.dropna().astype(int)
+
+                        if hc_series is not None and not hc_series.empty:
+                            n_hc_total = int(len(hc_series))
+                            n_hc = int((hc_series == 1).sum())
+                            frac_hc = (
+                                float(n_hc) / float(n_hc_total)
+                                if n_hc_total > 0
+                                else float("nan")
+                            )
+                            lines.append(
+                                f"- High-confidence signals (high_conf=1): **{n_hc}** / {n_hc_total} "
+                                f"({frac_hc:.3%})"
+                            )
+
+                        # Sharpe comparison: all vs meta_success==1 vs high_conf==1
+                        ret_col = f"forward_return_h{horizon}"
+                        if ret_col in analysis_df.columns:
+                            ret_raw = pd.to_numeric(analysis_df[ret_col], errors="coerce")
+                            ret_raw = ret_raw.replace([np.inf, -np.inf], np.nan)
+                            all_ret = ret_raw.dropna()
+
+                            if not all_ret.empty:
+                                lines.append("")
+                                lines.append("### Forward Return Sharpe by Meta/High-Confidence Subset")
+                                lines.append(
+                                    "| Subset | Samples | Mean Return | Std Return | Sharpe-like |"
+                                )
+                                lines.append(
+                                    "|--------|---------|-------------|------------|-------------|"
+                                )
+
+                                def _sharpe_row(subset_name: str, mask_series: pd.Series) -> None:
+                                    aligned_mask = mask_series.reindex(all_ret.index).fillna(False)
+                                    sub_ret = all_ret[aligned_mask]
+                                    if sub_ret.empty:
+                                        lines.append(
+                                            f"| {subset_name} | 0 | nan | nan | nan |"
+                                        )
+                                        return
+                                    m_val = float(sub_ret.mean())
+                                    s_val = float(sub_ret.std(ddof=0))
+                                    sharpe_val = (
+                                        m_val / s_val if s_val > 0.0 else float("nan")
+                                    )
+                                    lines.append(
+                                        f"| {subset_name} | {len(sub_ret)} | {m_val:.6f} | {s_val:.6f} | {sharpe_val:.4f} |"
+                                    )
+
+                                # All events
+                                _sharpe_row("all", pd.Series(True, index=all_ret.index))
+
+                                # Meta-success events
+                                if "meta_breakout_success" in analysis_df.columns:
+                                    meta_raw_full = pd.to_numeric(
+                                        analysis_df["meta_breakout_success"], errors="coerce"
+                                    )
+                                    meta_raw_full = meta_raw_full.replace(
+                                        [np.inf, -np.inf], np.nan
+                                    )
+                                    meta_flag = meta_raw_full == 1
+                                    if meta_flag.any():
+                                        _sharpe_row("meta_success==1", meta_flag)
+
+                                # High-confidence events
+                                if hc_series is not None and not hc_series.empty:
+                                    hc_flag = hc_series == 1
+                                    if hc_flag.any():
+                                        _sharpe_row("high_conf==1", hc_flag)
+            except Exception:
+                pass
 
             # Sharpe-like summary with support/resistance breakdown
             lines.append("")

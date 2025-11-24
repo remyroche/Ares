@@ -67,11 +67,47 @@ from src.utils.versioned_artifacts import VersionedArtifactStore
 
 # Import step packages to register them
 import src.training.steps.data_collection  # Registers DATA_COLLECTION steps
-import src.training.steps.market_analysis  # Registers MARKET_ANALYSIS steps
-import src.training.steps.pre_training  # Registers PRE_TRAINING steps
-import src.training.steps.model_training  # Registers MODEL_TRAINING steps
-import src.training.steps.analyst_base_backtest_step  # Registers ANALYST_BASE_BACKTEST step
-import src.training.steps.labeling  # Registers LABELING steps (includes META_GATED_BACKTEST)
+
+try:
+    import src.training.steps.market_analysis  # Registers MARKET_ANALYSIS steps
+except Exception as e:
+    logger.warning(
+        "MARKET_ANALYSIS steps could not be imported and will be unavailable: %s",
+        e,
+    )
+
+try:
+    import src.training.steps.pre_training  # Registers PRE_TRAINING steps
+except Exception as e:
+    logger.warning(
+        "PRE_TRAINING steps could not be imported and will be unavailable: %s",
+        e,
+    )
+
+try:
+    import src.training.steps.model_training  # Registers MODEL_TRAINING steps
+except Exception as e:
+    logger.warning(
+        "MODEL_TRAINING steps could not be imported and will be unavailable: %s",
+        e,
+    )
+
+try:
+    import src.training.steps.analyst_base_backtest_step  # Registers ANALYST_BASE_BACKTEST step
+except Exception as e:
+    logger.warning(
+        "ANALYST_BASE_BACKTEST step could not be imported and will be unavailable: %s",
+        e,
+    )
+
+try:
+    import src.training.steps.labeling  # Registers LABELING steps (includes META_GATED_BACKTEST)
+except Exception as e:
+    logger.warning(
+        "LABELING steps could not be imported and will be unavailable: %s",
+        e,
+    )
+
 # import src.training.steps.backtesting  # Registers BACKTESTING steps - temporarily disabled due to import issues
 
 
@@ -347,6 +383,12 @@ Examples:
     parser.add_argument('--regime-timeframe', type=str, default='1h', help='Timeframe used for regime detection/ensemble (default: 1h)')
     parser.add_argument('--direction', type=str, choices=['long', 'short', 'both'], default='long', help='Trading direction')
     parser.add_argument('--execution-mode', type=str, choices=['full', 'light', 'blank'], default='light', help='Execution mode')
+    parser.add_argument(
+        '--min-interaction-mi-lift',
+        type=float,
+        default=None,
+        help='Minimum MI lift required for interaction selection; overrides default when provided'
+    )
 
     # Alpha/HPO options (used by hmm_ml_alpha_step and other alpha-related steps)
     parser.add_argument(
@@ -655,6 +697,10 @@ async def main():
         # discovery/alpha models unless explicitly overridden on the CLI.
         'regime_timeframe': args.regime_timeframe or '1h',
     }
+
+    # Optional interaction-generation configuration
+    if getattr(args, 'min_interaction_mi_lift', None) is not None:
+        config['min_interaction_mi_lift'] = float(args.min_interaction_mi_lift)
 
     # Optional alpha/HPO configuration (used by hmm_ml_alpha_step and related steps)
     if getattr(args, 'alpha_enable_hpo', False):

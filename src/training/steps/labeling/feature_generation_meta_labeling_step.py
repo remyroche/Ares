@@ -94,6 +94,18 @@ def _load_latest_labeling_hpo_params(
     symbol: str,
     timeframe: str,
 ) -> Tuple[Dict[str, Any], Optional[Path], str]:
+    """Load latest HPO parameters from outcomes directory.
+
+    Args:
+        symbol: Trading symbol (e.g., 'ETHUSDT')
+        timeframe: Timeframe (e.g., '15m')
+
+    Returns:
+        Tuple of (params_dict, file_path, source_key)
+        - params_dict: HPO parameters (knee_params preferred, fallback to best_params)
+        - file_path: Path to JSON file (or None if not found)
+        - source_key: Either 'knee_params' or 'best_params' to indicate source
+    """
     outcomes_dir = Path("outcomes")
     if not outcomes_dir.exists():
         return {}, None, ""
@@ -120,6 +132,125 @@ def _load_latest_labeling_hpo_params(
             source_key = "best_params"
 
     return params, latest, source_key
+
+
+def create_triple_barrier_from_hpo(
+    symbol: str,
+    timeframe: str,
+    fallback_profit_take: float = 0.004,
+    fallback_stop_loss: float = 0.003,
+    fallback_time_barrier: int = 30,
+    fallback_max_lookahead: int = 100,
+    binary_classification: bool = True,
+    transaction_cost: float = 0.0008,
+) -> Tuple[Any, Dict[str, Any], bool]:
+    """
+    Create OptimizedTripleBarrierLabeling instance aligned with HPO results.
+
+    This function provides programmatic alignment between meta_labeling_hpo_experiment
+    results and triple barrier configuration. It loads the best HPO parameters and
+    creates a properly configured triple barrier labeler.
+
+    Args:
+        symbol: Trading symbol
+        timeframe: Timeframe
+        fallback_profit_take: Fallback profit take multiplier if HPO not found (default: 0.4%)
+        fallback_stop_loss: Fallback stop loss multiplier if HPO not found (default: 0.3%)
+        fallback_time_barrier: Fallback time barrier in minutes (default: 30)
+        fallback_max_lookahead: Fallback max lookahead bars (default: 100)
+        binary_classification: Whether to use binary classification (default: True)
+        transaction_cost: Transaction cost as percentage (default: 0.08%)
+
+    Returns:
+        Tuple of (labeler, hpo_params, used_hpo)
+        - labeler: Configured OptimizedTripleBarrierLabeling instance
+        - hpo_params: Dictionary of HPO parameters (or empty dict if not found)
+        - used_hpo: Boolean indicating whether HPO params were found and used
+    """
+    from src.feature_generation.utils.step06_labeling_components.optimized_triple_barrier_labeling import (
+        OptimizedTripleBarrierLabeling,
+    )
+
+    # Try to load HPO parameters
+    hpo_params, latest_path, params_source = _load_latest_labeling_hpo_params(symbol, timeframe)
+
+    used_hpo = False
+    profit_take = fallback_profit_take
+    stop_loss = fallback_stop_loss
+    time_barrier = fallback_time_barrier
+    max_lookahead = fallback_max_lookahead
+
+    if latest_path is not None and hpo_params:
+        tprint(f"🔍 [TripleBarrier] Found HPO params from {latest_path} (source: {params_source})", "INFO")
+        used_hpo = True
+
+        # Extract and convert HPO parameters to triple barrier settings
+        if 'profit_thr_base' in hpo_params:
+            profit_take = float(hpo_params['profit_thr_base'])
+            tprint(f"  ✓ profit_take_multiplier: {profit_take:.4f} ({profit_take*100:.2f}%)", "INFO")
+
+        if 'stop_to_profit_ratio' in hpo_params and 'profit_thr_base' in hpo_params:
+            stop_ratio = float(hpo_params['stop_to_profit_ratio'])
+            stop_loss = profit_take * stop_ratio
+            # Ensure minimum stop loss
+            stop_loss = max(0.0005, stop_loss)
+            tprint(f"  ✓ stop_loss_multiplier: {stop_loss:.4f} ({stop_loss*100:.2f}%) [ratio: {stop_ratio:.2f}]", "INFO")
+
+        if 'horizon_bars' in hpo_params:
+            horizon_bars = int(hpo_params['horizon_bars'])
+            # Convert horizon bars to approximate time barrier in minutes (assuming 15m timeframe)
+            # This is a heuristic - adjust if using different timeframes
+            timeframe_minutes = 15  # Default assumption
+            if timeframe.endswith('m'):
+                try:
+                    timeframe_minutes = int(timeframe[:-1])
+                except:
+                    pass
+            time_barrier = min(horizon_bars * timeframe_minutes, 240)  # Cap at 4 hours
+            tprint(f"  ✓ time_barrier_minutes: {time_barrier} (from horizon_bars={horizon_bars})", "INFO")
+
+        # Use horizon_bars as max_lookahead directly
+        if 'horizon_bars' in hpo_params:
+            max_lookahead = int(hpo_params['horizon_bars'])
+            # Ensure reasonable bounds
+            max_lookahead = max(10, min(max_lookahead, 200))
+            tprint(f"  ✓ max_lookahead: {max_lookahead} bars", "INFO")
+    else:
+        tprint(f"ℹ️ [TripleBarrier] No HPO params found for {symbol}_{timeframe}, using fallback settings", "INFO")
+        tprint(f"  → profit_take: {profit_take:.4f}, stop_loss: {stop_loss:.4f}", "INFO")
+        tprint(f"  → time_barrier: {time_barrier}min, max_lookahead: {max_lookahead}", "INFO")
+
+    # Create the labeler with aligned parameters
+    try:
+        labeler = OptimizedTripleBarrierLabeling(
+            profit_take_multiplier=profit_take,
+            stop_loss_multiplier=stop_loss,
+            time_barrier_minutes=time_barrier,
+            max_lookahead=max_lookahead,
+            binary_classification=binary_classification,
+            transaction_cost=transaction_cost,
+        )
+
+        if used_hpo:
+            tprint(f"✅ [TripleBarrier] Created labeler aligned with HPO parameters", "SUCCESS")
+        else:
+            tprint(f"✅ [TripleBarrier] Created labeler with fallback parameters", "SUCCESS")
+
+        return labeler, hpo_params, used_hpo
+
+    except Exception as e:
+        tprint(f"❌ [TripleBarrier] Failed to create labeler: {e}", "ERROR")
+        tprint(f"   Using very conservative fallback settings", "WARNING")
+        # Emergency fallback with very conservative settings
+        labeler = OptimizedTripleBarrierLabeling(
+            profit_take_multiplier=0.005,
+            stop_loss_multiplier=0.004,
+            time_barrier_minutes=30,
+            max_lookahead=50,
+            binary_classification=binary_classification,
+            transaction_cost=transaction_cost,
+        )
+        return labeler, {}, False
 
 # Production TPSL Parameters (overridable via config)
 DEFAULT_PROFIT_THRESHOLD = 0.01  # 1%

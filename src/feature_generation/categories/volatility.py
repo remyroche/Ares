@@ -36,7 +36,7 @@ try:
     import vectorbt as vbt
     # VectorBT doesn't have rolling functions, use pandas instead
     # from src.utils.vectorbt_compat import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
-    from src.utils.vectorbt_compat import scale, rank, zscore, winsorize, clip, quantile
+    from src.utils.vectorbt_compat import scale, rank, zscore, winsorize, clip, quantile, rolling_std, rolling_var
     VECTORBT_AVAILABLE = True  # VectorBT successfully loaded
     logging.info("✅ VectorBT compatibility layer loaded successfully")
 except ImportError as e:
@@ -275,7 +275,8 @@ class VolatilityFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizatio
         # from exploding volatility for the entire window
         if VECTORBT_AVAILABLE and winsorize is not None and len(returns) > 0:
             try:
-                returns = winsorize(returns, lower_quantile=0.01, upper_quantile=0.99)
+                # vectorbt_compat.winsorize uses 'lower'/'upper' as tail probabilities
+                returns = winsorize(returns, lower=0.01, upper=0.01)
             except Exception as e:
                 self.logger.warning(f"Winsorization failed: {e}, using raw returns")
 
@@ -832,7 +833,11 @@ class VectorBTVolatilityFeatureGenerator(VectorBTFeatureGenerator):
                     noise_component = np.random.normal(0, 1e-6, len(volatility))
                     volatility = volatility + noise_component
 
-                    # Align with original data index
+                    # Align with original data index, handling potential duplicate indices
+                    if not isinstance(volatility, pd.Series):
+                        volatility = pd.Series(volatility, index=returns.index)
+                    if not volatility.index.is_unique:
+                        volatility = volatility[~volatility.index.duplicated(keep="last")]
                     volatility = volatility.reindex(data.index)
                     return volatility
                 except Exception as e:
@@ -847,7 +852,11 @@ class VectorBTVolatilityFeatureGenerator(VectorBTFeatureGenerator):
                     # Combine volatility measures
                     volatility = (volatility_std + volatility_var) / 2
 
-                    # Align with original data index
+                    # Align with original data index, handling potential duplicate indices
+                    if not isinstance(volatility, pd.Series):
+                        volatility = pd.Series(volatility, index=returns.index)
+                    if not volatility.index.is_unique:
+                        volatility = volatility[~volatility.index.duplicated(keep="last")]
                     volatility = volatility.reindex(data.index)
                     return volatility
                 except Exception as e:
@@ -855,6 +864,8 @@ class VectorBTVolatilityFeatureGenerator(VectorBTFeatureGenerator):
 
             # Final fallback to pandas
             volatility = returns.rolling(window=self.period).std()
+            if not volatility.index.is_unique:
+                volatility = volatility[~volatility.index.duplicated(keep="last")]
             return volatility.reindex(data.index)
 
         except Exception as e:
@@ -896,6 +907,13 @@ class VectorBTBollingerBandsGenerator(VectorBTFeatureGenerator):
         bb_result = self._vectorbt_technical_indicator(data, 'bbands_percent',
                                                      window=self.period,
                                                      alpha=self.std_dev)
+        # Ensure output is a Series aligned to data.index before renaming
+        if isinstance(bb_result, pd.DataFrame):
+            bb_result = bb_result.iloc[:, 0] if not bb_result.empty else pd.Series(dtype=float)
+        if not isinstance(bb_result, pd.Series):
+            bb_result = pd.Series(bb_result, index=data.index)
+        else:
+            bb_result = bb_result.reindex(data.index)
 
         return bb_result.rename(f'vectorbt_bbands_{self.period}')
 
@@ -931,6 +949,13 @@ class VectorBTAverageTrueRangeGenerator(VectorBTFeatureGenerator):
 
         # Generate ATR using VectorBT
         atr = self._vectorbt_technical_indicator(data, 'atr', window=self.period)
+        # Ensure output is a Series aligned to data.index before renaming
+        if isinstance(atr, pd.DataFrame):
+            atr = atr.iloc[:, 0] if not atr.empty else pd.Series(dtype=float)
+        if not isinstance(atr, pd.Series):
+            atr = pd.Series(atr, index=data.index)
+        else:
+            atr = atr.reindex(data.index)
 
         return atr.rename(f'vectorbt_atr_{self.period}')
 
@@ -983,6 +1008,11 @@ class VectorBTGarmanKlassVolatilityGenerator(VectorBTFeatureGenerator):
                 try:
                     volatility = self.rolling_optimizer.rolling_mean(gk_volatility, window=self.period)
                     volatility = np.sqrt(volatility)  # Convert variance to volatility
+                    # Ensure output is a Series aligned to data.index before renaming
+                    if not isinstance(volatility, pd.Series):
+                        volatility = pd.Series(volatility, index=data.index)
+                    else:
+                        volatility = volatility.reindex(data.index)
                     return volatility.rename(f'vectorbt_garman_klass_volatility_{self.period}')
                 except Exception as e:
                     self.logger.warning(f"VectorBT rolling optimizer failed: {e}, using fallback")
@@ -992,6 +1022,10 @@ class VectorBTGarmanKlassVolatilityGenerator(VectorBTFeatureGenerator):
                 try:
                     volatility = rolling_mean(gk_volatility, window=self.period)
                     volatility = np.sqrt(volatility)  # Convert variance to volatility
+                    if not isinstance(volatility, pd.Series):
+                        volatility = pd.Series(volatility, index=data.index)
+                    else:
+                        volatility = volatility.reindex(data.index)
                     return volatility.rename(f'vectorbt_garman_klass_volatility_{self.period}')
                 except Exception as e:
                     self.logger.warning(f"VectorBT Garman-Klass calculation failed: {e}, using pandas fallback")
@@ -999,6 +1033,10 @@ class VectorBTGarmanKlassVolatilityGenerator(VectorBTFeatureGenerator):
             # Final fallback to pandas
             volatility = gk_volatility.rolling(window=self.period).mean()
             volatility = np.sqrt(volatility)  # Convert variance to volatility
+            if not isinstance(volatility, pd.Series):
+                volatility = pd.Series(volatility, index=data.index)
+            else:
+                volatility = volatility.reindex(data.index)
             return volatility.rename(f'vectorbt_garman_klass_volatility_{self.period}')
 
         except Exception as e:
@@ -1051,6 +1089,10 @@ class VectorBTParkinsonVolatilityGenerator(VectorBTFeatureGenerator):
                 try:
                     volatility = self.rolling_optimizer.rolling_mean(parkinson_volatility, window=self.period)
                     volatility = np.sqrt(volatility)  # Convert variance to volatility
+                    if not isinstance(volatility, pd.Series):
+                        volatility = pd.Series(volatility, index=data.index)
+                    else:
+                        volatility = volatility.reindex(data.index)
                     return volatility.rename(f'vectorbt_parkinson_volatility_{self.period}')
                 except Exception as e:
                     self.logger.warning(f"VectorBT rolling optimizer failed: {e}, using fallback")
@@ -1060,6 +1102,10 @@ class VectorBTParkinsonVolatilityGenerator(VectorBTFeatureGenerator):
                 try:
                     volatility = rolling_mean(parkinson_volatility, window=self.period)
                     volatility = np.sqrt(volatility)  # Convert variance to volatility
+                    if not isinstance(volatility, pd.Series):
+                        volatility = pd.Series(volatility, index=data.index)
+                    else:
+                        volatility = volatility.reindex(data.index)
                     return volatility.rename(f'vectorbt_parkinson_volatility_{self.period}')
                 except Exception as e:
                     self.logger.warning(f"VectorBT Parkinson calculation failed: {e}, using pandas fallback")
@@ -1067,6 +1113,10 @@ class VectorBTParkinsonVolatilityGenerator(VectorBTFeatureGenerator):
             # Final fallback to pandas
             volatility = parkinson_volatility.rolling(window=self.period).mean()
             volatility = np.sqrt(volatility)  # Convert variance to volatility
+            if not isinstance(volatility, pd.Series):
+                volatility = pd.Series(volatility, index=data.index)
+            else:
+                volatility = volatility.reindex(data.index)
             return volatility.rename(f'vectorbt_parkinson_volatility_{self.period}')
 
         except Exception as e:
@@ -1124,6 +1174,10 @@ class VectorBTRogersSatchellVolatilityGenerator(VectorBTFeatureGenerator):
                 try:
                     volatility = self.rolling_optimizer.rolling_mean(rs_volatility, window=self.period)
                     volatility = np.sqrt(volatility)  # Convert variance to volatility
+                    if not isinstance(volatility, pd.Series):
+                        volatility = pd.Series(volatility, index=data.index)
+                    else:
+                        volatility = volatility.reindex(data.index)
                     return volatility.rename(f'vectorbt_rogers_satchell_volatility_{self.period}')
                 except Exception as e:
                     self.logger.warning(f"VectorBT rolling optimizer failed: {e}, using fallback")
@@ -1133,6 +1187,10 @@ class VectorBTRogersSatchellVolatilityGenerator(VectorBTFeatureGenerator):
                 try:
                     volatility = rolling_mean(rs_volatility, window=self.period)
                     volatility = np.sqrt(volatility)  # Convert variance to volatility
+                    if not isinstance(volatility, pd.Series):
+                        volatility = pd.Series(volatility, index=data.index)
+                    else:
+                        volatility = volatility.reindex(data.index)
                     return volatility.rename(f'vectorbt_rogers_satchell_volatility_{self.period}')
                 except Exception as e:
                     self.logger.warning(f"VectorBT Rogers-Satchell calculation failed: {e}, using pandas fallback")
@@ -1140,6 +1198,10 @@ class VectorBTRogersSatchellVolatilityGenerator(VectorBTFeatureGenerator):
             # Final fallback to pandas
             volatility = rs_volatility.rolling(window=self.period).mean()
             volatility = np.sqrt(volatility)  # Convert variance to volatility
+            if not isinstance(volatility, pd.Series):
+                volatility = pd.Series(volatility, index=data.index)
+            else:
+                volatility = volatility.reindex(data.index)
             return volatility.rename(f'vectorbt_rogers_satchell_volatility_{self.period}')
 
         except Exception as e:
@@ -1207,6 +1269,10 @@ class VectorBTYangZhangVolatilityGenerator(VectorBTFeatureGenerator):
                 try:
                     volatility = self.rolling_optimizer.rolling_mean(yz_volatility, window=self.period)
                     volatility = np.sqrt(volatility)  # Convert variance to volatility
+                    if not isinstance(volatility, pd.Series):
+                        volatility = pd.Series(volatility, index=data.index)
+                    else:
+                        volatility = volatility.reindex(data.index)
                     return volatility.rename(f'vectorbt_yang_zhang_volatility_{self.period}')
                 except Exception as e:
                     self.logger.warning(f"VectorBT rolling optimizer failed: {e}, using fallback")
@@ -1216,6 +1282,10 @@ class VectorBTYangZhangVolatilityGenerator(VectorBTFeatureGenerator):
                 try:
                     volatility = rolling_mean(yz_volatility, window=self.period)
                     volatility = np.sqrt(volatility)  # Convert variance to volatility
+                    if not isinstance(volatility, pd.Series):
+                        volatility = pd.Series(volatility, index=data.index)
+                    else:
+                        volatility = volatility.reindex(data.index)
                     return volatility.rename(f'vectorbt_yang_zhang_volatility_{self.period}')
                 except Exception as e:
                     self.logger.warning(f"VectorBT Yang-Zhang calculation failed: {e}, using pandas fallback")
@@ -1223,6 +1293,10 @@ class VectorBTYangZhangVolatilityGenerator(VectorBTFeatureGenerator):
             # Final fallback to pandas
             volatility = yz_volatility.rolling(window=self.period).mean()
             volatility = np.sqrt(volatility)  # Convert variance to volatility
+            if not isinstance(volatility, pd.Series):
+                volatility = pd.Series(volatility, index=data.index)
+            else:
+                volatility = volatility.reindex(data.index)
             return volatility.rename(f'vectorbt_yang_zhang_volatility_{self.period}')
 
         except Exception as e:
@@ -1297,7 +1371,7 @@ class VectorBTVolatilityExpansionGenerator(VectorBTFeatureGenerator):
             # from exploding the volatility for the entire window
             if VECTORBT_AVAILABLE and winsorize is not None:
                 try:
-                    returns = winsorize(returns, lower_quantile=0.01, upper_quantile=0.99)
+                    returns = winsorize(returns, lower=0.01, upper=0.01)
                 except Exception as e:
                     logger.warning(f"Winsorization failed: {e}, using raw returns")
 
@@ -1315,7 +1389,11 @@ class VectorBTVolatilityExpansionGenerator(VectorBTFeatureGenerator):
             # ROC = (current_vol - previous_vol) / previous_vol
             volatility_expansion = volatility.pct_change(periods=self.expansion_window)
 
-            # Align with original data index
+            # Align with original data index, handling potential duplicate indices
+            if not isinstance(volatility_expansion, pd.Series):
+                volatility_expansion = pd.Series(volatility_expansion, index=returns.index)
+            if not volatility_expansion.index.is_unique:
+                volatility_expansion = volatility_expansion[~volatility_expansion.index.duplicated(keep="last")]
             volatility_expansion = volatility_expansion.reindex(data.index)
 
             return volatility_expansion.rename(f'volatility_expansion_{self.period}_{self.expansion_window}')

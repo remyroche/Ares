@@ -75,6 +75,7 @@ except ImportError:
 from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_warning, tprint_error
+from src.utils.ml_common.get_specialist_models_outputs import get_specialist_models_outputs
 from .labeled_data_schema import (
     LABELED_DATA_SCHEMA_VERSION,
     get_required_labeled_data_columns,
@@ -87,6 +88,38 @@ from .label_config import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _load_latest_labeling_hpo_params(
+    symbol: str,
+    timeframe: str,
+) -> Tuple[Dict[str, Any], Optional[Path], str]:
+    outcomes_dir = Path("outcomes")
+    if not outcomes_dir.exists():
+        return {}, None, ""
+
+    pattern = f"meta_labeling_hpo_best_params_{symbol}_{timeframe}_*.json"
+    candidates = sorted(outcomes_dir.glob(pattern))
+    if not candidates:
+        return {}, None, ""
+
+    latest = candidates[-1]
+    with open(latest, "r") as f:
+        hpo_cfg = json.load(f)
+
+    params: Dict[str, Any] = {}
+    source_key = ""
+    if isinstance(hpo_cfg, dict):
+        knee = hpo_cfg.get("knee_params")
+        best = hpo_cfg.get("best_params")
+        if isinstance(knee, dict) and knee:
+            params = knee
+            source_key = "knee_params"
+        elif isinstance(best, dict) and best:
+            params = best
+            source_key = "best_params"
+
+    return params, latest, source_key
 
 # Production TPSL Parameters (overridable via config)
 DEFAULT_PROFIT_THRESHOLD = 0.01  # 1%
@@ -569,6 +602,32 @@ def generate_primary_signals(
 
     signals['momentum_value'] = df_local['momentum']
 
+    body = df_local['close'] - df_local.get('open', df_local['close'])
+    high_low_range = (df_local['high'] - df_local['low']).replace(0.0, np.nan)
+    upper_wick = df_local['high'] - df_local[['open', 'close']].max(axis=1)
+    lower_wick = df_local[['open', 'close']].min(axis=1) - df_local['low']
+    body_ratio = (body.abs() / (high_low_range + 1e-8)).fillna(0.0)
+
+    signals['trend_regime'] = 0
+    trend_window = 32
+    trend_mean = df_local['close'].rolling(trend_window).mean()
+    trend_slope = trend_mean.pct_change(max(trend_window // 2, 1))
+    atr_lookback = 14
+    atr_series = (df_local['high'] - df_local['low']).rolling(atr_lookback).mean()
+    atr_norm = atr_series / (df_local['close'] + 1e-8)
+    atr_threshold = atr_norm.median()
+    slope_threshold = 0.003
+    signals.loc[(trend_slope > slope_threshold) & (atr_norm > atr_threshold), 'trend_regime'] = 1
+    signals.loc[(trend_slope < -slope_threshold) & (atr_norm > atr_threshold), 'trend_regime'] = -1
+
+    signals['candle_trend'] = 0
+    signals.loc[(body > 0) & (body_ratio > 0.6), 'candle_trend'] = 1
+    signals.loc[(body < 0) & (body_ratio > 0.6), 'candle_trend'] = -1
+
+    signals['candle_reversal'] = 0
+    signals.loc[(body > 0) & (lower_wick > 2.0 * body.abs()) & (body_ratio < 0.4), 'candle_reversal'] = 1
+    signals.loc[(body < 0) & (upper_wick > 2.0 * body.abs()) & (body_ratio < 0.4), 'candle_reversal'] = -1
+
     return signals
 
 
@@ -855,7 +914,23 @@ def compute_realized_returns(
 def compute_vol_scaled_returns_for_events(
     realized_returns: pd.Series,
     volatility: Optional[pd.Series],
+    econ_min_return_multiple: Optional[float] = None,
 ) -> pd.Series:
+    """Compute volatility-scaled returns for events.
+
+    Args:
+        realized_returns: Per-event realized returns (after costs).
+        volatility: Daily volatility series aligned to market data.
+        econ_min_return_multiple: Optional economic floor multiplier expressed
+            in units of transaction cost. When provided, the economic floor is
+            ``econ_min_return_multiple × DEFAULT_TRANSACTION_COST``; otherwise
+            the global ``ECON_MIN_RETURN_MULTIPLE`` constant is used.
+
+    Returns:
+        Series of volatility-scaled returns with economically trivial events
+        masked as NaN and extreme values winsorised.
+    """
+
     vol_scaled = pd.Series(index=realized_returns.index, dtype=float)
     vol_scaled[:] = np.nan
 
@@ -869,8 +944,16 @@ def compute_vol_scaled_returns_for_events(
         vol_scaled = realized_returns.astype(float) / (vol_aligned.abs() + 1e-8)
 
         # Drop economically trivial events from the vol-scaled series so that
-        # quantile-based labels focus on meaningful moves.
-        econ_floor = 0.0
+        # quantile-based labels focus on meaningful moves. Use a low floor tied
+        # to transaction costs rather than an arbitrary fixed threshold. When a
+        # custom ``econ_min_return_multiple`` is provided (e.g. by HPO), honor
+        # it; otherwise fall back to the global ECON_MIN_RETURN_MULTIPLE.
+        econ_mult = (
+            float(econ_min_return_multiple)
+            if econ_min_return_multiple is not None
+            else float(ECON_MIN_RETURN_MULTIPLE)
+        )
+        econ_floor = DEFAULT_TRANSACTION_COST * econ_mult
         small_mask = realized_returns.abs() < econ_floor
         vol_scaled[small_mask] = np.nan
 
@@ -895,7 +978,7 @@ def compute_vol_scaled_returns_for_events(
 def create_quantile_labels_from_vol_scaled_returns(
     vol_scaled: pd.Series,
     low_q: float = 0.3,
-    high_q: float = 0.7,
+    high_q: float = 0.8,
 ) -> pd.Series:
     labels = pd.Series(index=vol_scaled.index, dtype=float)
     labels[:] = np.nan
@@ -923,7 +1006,7 @@ def create_regime_aware_quantile_labels_from_vol_scaled_returns(
     vol_scaled: pd.Series,
     regimes: Optional[pd.Series] = None,
     low_q: float = 0.3,
-    high_q: float = 0.7,
+    high_q: float = 0.8,
     min_samples_per_regime: int = 50,
 ) -> pd.Series:
     """Regime-aware wrapper around quantile-based label generation.
@@ -981,6 +1064,16 @@ def create_regime_aware_quantile_labels_from_vol_scaled_returns(
             high_q=high_q,
         )
 
+    # If no labels were assigned in any regime (e.g. when each regime has too
+    # few samples to satisfy min_samples_per_regime), fall back to global
+    # quantile-based labeling so that we still obtain a usable label set.
+    if labels.dropna().empty:
+        return create_quantile_labels_from_vol_scaled_returns(
+            vol_scaled=vol_scaled,
+            low_q=low_q,
+            high_q=high_q,
+        )
+
     return labels
 
 
@@ -1010,7 +1103,41 @@ def create_meta_features(
     Returns:
         DataFrame of features for meta-model
     """
+    # Hard-align df and signals to a shared tail window to avoid any
+    # length mismatch when assigning signal-based features. We align
+    # positionally (most recent data) and then construct features on
+    # this aligned window.
+    len_df = len(df)
+    len_sig = len(signals)
+
+    if len_df != len_sig:
+        try:
+            target_len = min(len_df, len_sig)
+            if target_len <= 0:
+                raise ValueError("[meta_features] Non-positive target length after alignment")
+
+            tprint(
+                f"⚠️ [meta_features] df length={len_df} != signals length={len_sig}; "
+                f"using shared tail window of length={target_len}",
+                "WARNING",
+            )
+
+            if len_df > target_len:
+                df = df.iloc[-target_len:, :]
+            if len_sig > target_len:
+                signals = signals.iloc[-target_len:, :]
+        except Exception as align_exc:
+            tprint(f"⚠️ [meta_features] Failed to align df/signals by tail: {align_exc}", "WARNING")
+
+    # After alignment, enforce identical index by resetting to a simple
+    # RangeIndex so that downstream operations are purely positional and
+    # not affected by duplicate datetime labels.
+    if (not df.index.equals(signals.index)) or df.index.has_duplicates or signals.index.has_duplicates:
+        df = df.reset_index(drop=True)
+        signals = signals.reset_index(drop=True)
+
     features = pd.DataFrame(index=df.index)
+    n_features = len(features)
 
     # ===== VOLATILITY FEATURES (ENHANCED) =====
 
@@ -1082,6 +1209,17 @@ def create_meta_features(
             features['hmm_alpha_expectation_raw_1h'] = df['hmm_alpha_expectation_raw_1h']
         if 'hmm_alpha_expectation_ema_1h' in df.columns:
             features['hmm_alpha_expectation_ema_1h'] = df['hmm_alpha_expectation_ema_1h']
+
+        if 'hmm_alpha_score_continuous_1h' in df.columns:
+            features['hmm_alpha_score_continuous_1h'] = df['hmm_alpha_score_continuous_1h']
+
+        alpha_ewm_cols = [
+            c
+            for c in df.columns
+            if c.startswith('hmm_alpha_score_continuous_ewm_') and c.endswith('_1h')
+        ]
+        for col in alpha_ewm_cols:
+            features[col] = df[col]
     except Exception as e_reg:
         tprint(f"⚠️ Warning: Could not attach external regime features: {e_reg}", "WARNING")
 
@@ -1095,31 +1233,49 @@ def create_meta_features(
     df_local['momentum'] = df_local['close'].pct_change(10)
 
     if use_kalman:
+        # Helper to align any 1D array/Series to the feature index length
+        def _align_to_features(arr: Any, n: int) -> np.ndarray:
+            values = np.asarray(arr)
+            if len(values) == n:
+                return values
+            if len(values) > n:
+                return values[:n]
+            padded = np.full(n, np.nan, dtype=float)
+            padded[: len(values)] = values
+            return padded
+
+        n_features = len(features)
+
         # Kalman-filtered trend
         kalman_trend, kalman_uncertainty = kalman_smooth_trend(df['close'], Q=1e-5, R=0.01)
-        features['kalman_trend'] = kalman_trend
-        features['kalman_uncertainty'] = kalman_uncertainty
+        kalman_trend_values = _align_to_features(kalman_trend, n_features)
+        kalman_uncertainty_values = _align_to_features(kalman_uncertainty, n_features)
+        features['kalman_trend'] = kalman_trend_values
+        features['kalman_uncertainty'] = kalman_uncertainty_values
 
         # Kalman-filtered RSI
         kf_rsi = KalmanFilter1D(Q=1e-4, R=0.1, initial_value=50.0)
         kalman_rsi, _ = kf_rsi.filter_series(df_local['rsi'])
-        features['rsi_kalman'] = kalman_rsi
+        kalman_rsi_values = _align_to_features(kalman_rsi, n_features)
+        features['rsi_kalman'] = kalman_rsi_values
 
         # Kalman-filtered MA distance
         ma_distance = df_local['sma_fast'] - df_local['sma_slow']
         kf_ma = KalmanFilter1D(Q=1e-5, R=0.01, initial_value=0.0)
         kalman_ma_distance, _ = kf_ma.filter_series(ma_distance)
-        features['ma_distance_kalman'] = kalman_ma_distance
+        kalman_ma_distance_values = _align_to_features(kalman_ma_distance, n_features)
+        features['ma_distance_kalman'] = kalman_ma_distance_values
 
         # Kalman-filtered momentum
         kf_mom = KalmanFilter1D(Q=1e-4, R=0.01, initial_value=0.0)
         kalman_momentum, _ = kf_mom.filter_series(df_local['momentum'])
-        features['momentum_kalman'] = kalman_momentum
+        kalman_momentum_values = _align_to_features(kalman_momentum, n_features)
+        features['momentum_kalman'] = kalman_momentum_values
 
         # Keep raw for reference (diagnostic purposes)
-        features['rsi_raw'] = df_local['rsi']
-        features['ma_distance_raw'] = ma_distance
-        features['momentum_raw'] = df_local['momentum']
+        features['rsi_raw'] = _align_to_features(df_local['rsi'], n_features)
+        features['ma_distance_raw'] = _align_to_features(ma_distance, n_features)
+        features['momentum_raw'] = _align_to_features(df_local['momentum'], n_features)
     else:
         # Use raw indicators
         features['rsi'] = df_local['rsi']
@@ -1129,65 +1285,118 @@ def create_meta_features(
     # ===== VOLATILITY-NORMALIZED FEATURES =====
 
     # Normalize momentum and MA distance by current volatility
-    vol_1h = features['volatility_1h'].replace(0, np.nan)  # Avoid division by zero
+    vol_1h_series = features['volatility_1h'].replace(0, np.nan)  # Avoid division by zero
 
     if use_kalman:
-        features['momentum_per_vol'] = features['momentum_kalman'] / (vol_1h + 1e-8)
-        features['ma_distance_per_vol'] = features['ma_distance_kalman'] / (df['close'] * vol_1h + 1e-8)
+        # Use the existing alignment helper to ensure all arrays match the
+        # feature index length and avoid index-based alignment (which can
+        # trigger tz-aware vs tz-naive issues).
+        vol_1h_arr = _align_to_features(vol_1h_series, n_features)
+        close_arr = _align_to_features(df['close'], n_features)
+
+        features['momentum_per_vol'] = features['momentum_kalman'] / (vol_1h_arr + 1e-8)
+        features['ma_distance_per_vol'] = features['ma_distance_kalman'] / (close_arr * vol_1h_arr + 1e-8)
     else:
+        vol_1h = vol_1h_series
         features['momentum_per_vol'] = features['momentum'] / (vol_1h + 1e-8)
         features['ma_distance_per_vol'] = features['ma_distance'] / (df['close'] * vol_1h + 1e-8)
 
     # ===== TRADITIONAL VOLATILITY FEATURES (BACKWARD COMPATIBLE) =====
 
     returns = df['close'].pct_change()
-    features['volatility_5'] = returns.rolling(5).std()
-    features['volatility_20'] = returns.rolling(20).std()
+    if use_kalman:
+        # Align rolling volatility series to feature index length to avoid
+        # reindex-on-duplicate-index errors when the underlying index has
+        # duplicate timestamps.
+        vol5_series = returns.rolling(5).std()
+        vol20_series = returns.rolling(20).std()
+        vol5 = _align_to_features(vol5_series, n_features)
+        vol20 = _align_to_features(vol20_series, n_features)
+        features['volatility_5'] = vol5
+        features['volatility_20'] = vol20
+    else:
+        vol5_series = returns.rolling(5).std()
+        vol20_series = returns.rolling(20).std()
+        features['volatility_5'] = vol5_series.to_numpy()
+        features['volatility_20'] = vol20_series.to_numpy()
+
     features['volatility_ratio'] = features['volatility_5'] / (features['volatility_20'] + 1e-8)
 
     # Use EMA for smoothing (vectorized - MUCH faster than row-by-row iteration)
-    # EMA of squared returns, then take sqrt
+    # EMA of squared returns, then take sqrt. Use aligned numpy arrays to avoid
+    # triggering pandas reindex on duplicate indices.
     alpha = 0.1  # Same as previous manual calculation
-    features['volatility_ema'] = np.sqrt((returns**2).ewm(alpha=alpha, adjust=False).mean())
+    vol_ema_series = (returns**2).ewm(alpha=alpha, adjust=False).mean()
+    if use_kalman:
+        vol_ema = _align_to_features(vol_ema_series, n_features)
+    else:
+        vol_ema = vol_ema_series.to_numpy()
+    features['volatility_ema'] = np.sqrt(vol_ema)
 
     # ===== TREND STRENGTH =====
 
-    features['sma_slope'] = df['close'].rolling(10).mean().pct_change(5)
-    features['price_vs_sma20'] = (
-        (df['close'] - df['close'].rolling(20).mean()) /
-        (df['close'].rolling(20).mean() + 1e-8)
-    )
+    sma_10 = df['close'].rolling(10).mean()
+    sma_slope_series = sma_10.pct_change(5)
+    if use_kalman:
+        features['sma_slope'] = _align_to_features(sma_slope_series, n_features)
+    else:
+        features['sma_slope'] = sma_slope_series.to_numpy()
+
+    sma20 = df['close'].rolling(20).mean()
+    price_vs_sma20_series = (df['close'] - sma20) / (sma20 + 1e-8)
+    if use_kalman:
+        features['price_vs_sma20'] = _align_to_features(price_vs_sma20_series, n_features)
+    else:
+        features['price_vs_sma20'] = price_vs_sma20_series.to_numpy()
 
     # ADX-like trend strength (simplified)
     high_low = df['high'] - df['low']
-    features['atr_14'] = high_low.rolling(14).mean()
-    features['atr_ratio'] = features['atr_14'] / (df['close'] + 1e-8)
+    atr_14_series = high_low.rolling(14).mean()
+    if use_kalman:
+        atr_14 = _align_to_features(atr_14_series, n_features)
+        close_arr_for_atr = _align_to_features(df['close'], n_features)
+    else:
+        atr_14 = atr_14_series.to_numpy()
+        close_arr_for_atr = df['close'].to_numpy()
+    features['atr_14'] = atr_14
+    features['atr_ratio'] = atr_14 / (close_arr_for_atr + 1e-8)
 
     # ===== VOLUME CONTEXT =====
 
     if volume_available and 'volume' in df.columns:
         vol_sma = df['volume'].rolling(20).mean()
-        features['volume_ratio'] = df['volume'] / (vol_sma + 1e-8)
-        features['volume_trend'] = (
-            df['volume'].rolling(5).mean() / (vol_sma + 1e-8)
-        )
-        # Volume-price divergence
-        features['vol_price_corr'] = returns.rolling(20).corr(
-            df['volume'].pct_change()
-        )
+        volume_ratio_series = df['volume'] / (vol_sma + 1e-8)
+        volume_trend_series = df['volume'].rolling(5).mean() / (vol_sma + 1e-8)
+        vol_price_corr_series = returns.rolling(20).corr(df['volume'].pct_change())
 
-        # Volume z-score (regime measure)
         vol_mean = df['volume'].rolling(96).mean()
         vol_std = df['volume'].rolling(96).std()
-        features['volume_zscore'] = (df['volume'] - vol_mean) / (vol_std + 1e-8)
+        volume_zscore_series = (df['volume'] - vol_mean) / (vol_std + 1e-8)
 
-        # Additional volume/flow proxies
         volume_long_mean = df['volume'].rolling(96).mean()
-        features['volume_spike'] = df['volume'] / (volume_long_mean + 1e-8)
-        features['volume_spike_ema'] = features['volume_spike'].ewm(span=20).mean()
+        volume_spike_series = df['volume'] / (volume_long_mean + 1e-8)
+        volume_spike_ema_series = volume_spike_series.ewm(span=20).mean()
 
-        signed_volume = np.sign(returns.fillna(0.0)) * df['volume']
-        features['signed_volume_ema'] = signed_volume.ewm(span=20).mean()
+        signed_volume_raw = np.sign(returns.fillna(0.0).to_numpy()) * df['volume'].to_numpy()
+        signed_volume_series = pd.Series(signed_volume_raw)
+        signed_volume_ema_series = signed_volume_series.ewm(span=20).mean()
+
+        if use_kalman:
+            features['volume_ratio'] = _align_to_features(volume_ratio_series, n_features)
+            features['volume_trend'] = _align_to_features(volume_trend_series, n_features)
+            features['vol_price_corr'] = _align_to_features(vol_price_corr_series, n_features)
+            features['volume_zscore'] = _align_to_features(volume_zscore_series, n_features)
+            features['volume_spike'] = _align_to_features(volume_spike_series, n_features)
+            features['volume_spike_ema'] = _align_to_features(volume_spike_ema_series, n_features)
+            features['signed_volume_ema'] = _align_to_features(signed_volume_ema_series, n_features)
+        else:
+            features['volume_ratio'] = volume_ratio_series.to_numpy()
+            features['volume_trend'] = volume_trend_series.to_numpy()
+            features['vol_price_corr'] = vol_price_corr_series.to_numpy()
+            features['volume_zscore'] = volume_zscore_series.to_numpy()
+            features['volume_spike'] = volume_spike_series.to_numpy()
+            features['volume_spike_ema'] = volume_spike_ema_series.to_numpy()
+            features['signed_volume_ema'] = signed_volume_ema_series.to_numpy()
     else:
         features['volume_ratio'] = 1.0
         features['volume_trend'] = 1.0
@@ -1199,32 +1408,47 @@ def create_meta_features(
 
     # ===== MARKET MOMENTUM =====
 
-    features['momentum_5'] = df['close'].pct_change(5)
-    features['momentum_10'] = df['close'].pct_change(10)
-    features['momentum_20'] = df['close'].pct_change(20)
+    mom5_series = df['close'].pct_change(5)
+    mom10_series = df['close'].pct_change(10)
+    mom20_series = df['close'].pct_change(20)
 
-    # Smoothed momentum using EMA
-    features['momentum_ema'] = features['momentum_10'].ewm(span=5).mean()
+    if use_kalman:
+        features['momentum_5'] = _align_to_features(mom5_series, n_features)
+        features['momentum_10'] = _align_to_features(mom10_series, n_features)
+        features['momentum_20'] = _align_to_features(mom20_series, n_features)
+        momentum_ema_series = mom10_series.ewm(span=5).mean()
+        features['momentum_ema'] = _align_to_features(momentum_ema_series, n_features)
+    else:
+        features['momentum_5'] = mom5_series.to_numpy()
+        features['momentum_10'] = mom10_series.to_numpy()
+        features['momentum_20'] = mom20_series.to_numpy()
+        features['momentum_ema'] = mom10_series.ewm(span=5).mean().to_numpy()
 
     # ===== RANGE POSITION =====
 
     recent_high = df['high'].rolling(20).max()
     recent_low = df['low'].rolling(20).min()
-    features['range_position'] = (
-        (df['close'] - recent_low) / (recent_high - recent_low + 1e-8)
-    )
+    range_position_series = (df['close'] - recent_low) / (recent_high - recent_low + 1e-8)
+    if use_kalman:
+        features['range_position'] = _align_to_features(range_position_series, n_features)
+    else:
+        features['range_position'] = range_position_series.to_numpy()
 
     # ===== ENTROPY (SIMPLE MEASURE) =====
 
     # Price entropy using returns distribution
     returns_abs = returns.abs().rolling(20).mean()
-    features['returns_entropy'] = -returns_abs * np.log(returns_abs + 1e-8)
+    returns_entropy_series = -returns_abs * np.log(returns_abs + 1e-8)
+    if use_kalman:
+        features['returns_entropy'] = _align_to_features(returns_entropy_series, n_features)
+    else:
+        features['returns_entropy'] = returns_entropy_series.to_numpy()
 
     # ===== TIME-BASED FEATURES =====
 
     if isinstance(df.index, pd.DatetimeIndex):
-        features['hour'] = df.index.hour
-        features['day_of_week'] = df.index.dayofweek
+        features['hour'] = df.index.hour.to_numpy()
+        features['day_of_week'] = df.index.dayofweek.to_numpy()
     else:
         features['hour'] = 0
         features['day_of_week'] = 0
@@ -1239,25 +1463,119 @@ def create_meta_features(
     if 'range_position' in features.columns and 'vol_ratio' in features.columns:
         features['range_position_x_vol_ratio'] = features['range_position'] * features['vol_ratio']
 
-    # Signal-aware diagnostic features (without leaking raw rule logic)
     if 'consensus' in signals.columns:
         signal_consensus = signals['consensus']
         signal_active = (signal_consensus != 0).astype(int)
-        features['signal_active'] = signal_active
+
+        if use_kalman:
+            features['signal_active'] = _align_to_features(signal_active, n_features)
+        else:
+            features['signal_active'] = signal_active.to_numpy()
 
         idx = np.arange(len(df))
-        last_signal_idx = np.where(signal_active == 1, idx, np.nan)
+        last_signal_idx = np.where(signal_active.to_numpy() == 1, idx, np.nan)
         last_signal_idx_series = pd.Series(last_signal_idx, index=df.index).ffill()
 
         signal_age = idx - last_signal_idx_series.values
         signal_age[last_signal_idx_series.isna().values] = np.nan
-        features['bars_since_last_signal'] = signal_age
+        if use_kalman:
+            features['bars_since_last_signal'] = _align_to_features(signal_age, n_features)
+        else:
+            features['bars_since_last_signal'] = signal_age
 
-        features['signal_density_50'] = signal_consensus.abs().rolling(50).sum()
+        density_50 = signal_consensus.abs().rolling(50).sum()
+        if use_kalman:
+            features['signal_density_50'] = _align_to_features(density_50, n_features)
+        else:
+            features['signal_density_50'] = density_50.to_numpy()
     else:
         features['signal_active'] = 0
         features['bars_since_last_signal'] = np.nan
         features['signal_density_50'] = 0.0
+
+    base_signal_cols = [
+        col for col in ['rsi', 'rsi_long', 'macd', 'macd_long', 'ma', 'mom']
+        if col in signals.columns
+    ]
+    if base_signal_cols:
+        abs_signals = signals[base_signal_cols].abs()
+        if use_kalman:
+            strength_series = abs_signals.sum(axis=1)
+            count_series = (abs_signals > 0).sum(axis=1)
+            features['signal_strength_all'] = _align_to_features(strength_series, n_features)
+            features['signal_count_active'] = _align_to_features(count_series, n_features)
+        else:
+            features['signal_strength_all'] = abs_signals.sum(axis=1).to_numpy()
+            features['signal_count_active'] = (abs_signals > 0).sum(axis=1).to_numpy()
+
+        if 'rsi' in signals.columns and 'macd' in signals.columns:
+            align_series = np.sign(signals['rsi'] * signals['macd']).replace(0, 0)
+            if use_kalman:
+                features['signal_rsi_macd_alignment'] = _align_to_features(align_series, n_features)
+            else:
+                features['signal_rsi_macd_alignment'] = align_series.to_numpy()
+
+    if 'rsi_value' in signals.columns:
+        rsi_dist_series = (signals['rsi_value'] - 50.0).abs()
+        if use_kalman:
+            features['signal_rsi_distance_50'] = _align_to_features(rsi_dist_series, n_features)
+        else:
+            features['signal_rsi_distance_50'] = rsi_dist_series.to_numpy()
+    if 'rsi_long_value' in signals.columns:
+        rsi_long_dist_series = (signals['rsi_long_value'] - 50.0).abs()
+        if use_kalman:
+            features['signal_rsi_long_distance_50'] = _align_to_features(rsi_long_dist_series, n_features)
+        else:
+            features['signal_rsi_long_distance_50'] = rsi_long_dist_series.to_numpy()
+    if 'macd_hist_value' in signals.columns:
+        macd_hist_abs_series = signals['macd_hist_value'].abs()
+        if use_kalman:
+            features['signal_macd_hist_abs'] = _align_to_features(macd_hist_abs_series, n_features)
+        else:
+            features['signal_macd_hist_abs'] = macd_hist_abs_series.to_numpy()
+    if 'macd_hist_long_value' in signals.columns:
+        macd_hist_long_abs_series = signals['macd_hist_long_value'].abs()
+        if use_kalman:
+            features['signal_macd_hist_long_abs'] = _align_to_features(macd_hist_long_abs_series, n_features)
+        else:
+            features['signal_macd_hist_long_abs'] = macd_hist_long_abs_series.to_numpy()
+    if 'sma_fast_value' in signals.columns and 'sma_slow_value' in signals.columns:
+        ma_dist_series = (signals['sma_fast_value'] - signals['sma_slow_value']) / (df['close'] + 1e-8)
+        if use_kalman:
+            features['signal_ma_distance_raw'] = _align_to_features(ma_dist_series, n_features)
+        else:
+            features['signal_ma_distance_raw'] = ma_dist_series.to_numpy()
+    if 'momentum_value' in signals.columns:
+        if use_kalman:
+            features['signal_momentum_value'] = _align_to_features(signals['momentum_value'], n_features)
+        else:
+            features['signal_momentum_value'] = signals['momentum_value'].to_numpy()
+
+    if 'trend_regime' in signals.columns:
+        if use_kalman:
+            features['trend_regime'] = _align_to_features(signals['trend_regime'], n_features)
+        else:
+            features['trend_regime'] = signals['trend_regime'].to_numpy()
+    if 'candle_trend' in signals.columns:
+        if use_kalman:
+            features['candle_trend'] = _align_to_features(signals['candle_trend'], n_features)
+        else:
+            features['candle_trend'] = signals['candle_trend'].to_numpy()
+    if 'candle_reversal' in signals.columns:
+        if use_kalman:
+            features['candle_reversal'] = _align_to_features(signals['candle_reversal'], n_features)
+        else:
+            features['candle_reversal'] = signals['candle_reversal'].to_numpy()
+
+    # Targeted trend×signal interaction features
+    if 'trend_regime' in features.columns and 'signal_macd_hist_abs' in features.columns:
+        tr_arr = np.asarray(features['trend_regime'])
+        macd_abs_arr = np.asarray(features['signal_macd_hist_abs'])
+        features['signal_trend_regime_x_macd_hist_abs'] = tr_arr * macd_abs_arr
+    if 'candle_trend' in features.columns and 'signal_rsi_distance_50' in features.columns:
+        ct_arr = np.asarray(features['candle_trend'])
+        rsi_dist_arr = np.asarray(features['signal_rsi_distance_50'])
+        features['signal_candle_trend_x_rsi_distance_50'] = ct_arr * rsi_dist_arr
 
     # ===== CROSS-TIMEFRAME FEATURES (1H, 4H AGGREGATIONS) =====
     # Aggregate 15m data to higher timeframes for multi-horizon analysis
@@ -1267,43 +1585,81 @@ def create_meta_features(
     high_1h = df['high'].rolling(4).max()
     low_1h = df['low'].rolling(4).min()
 
-    features['returns_1h'] = close_1h.pct_change()
-    features['momentum_1h'] = df['close'].pct_change(4)
-    features['volatility_1h_agg'] = features['returns_1h'].rolling(16).std()  # 16h of 1h bars
-    features['range_1h'] = (high_1h - low_1h) / (close_1h + 1e-8)
+    returns_1h_series = close_1h.pct_change()
+    momentum_1h_series = df['close'].pct_change(4)
+    volatility_1h_agg_series = returns_1h_series.rolling(16).std()  # 16h of 1h bars
+    range_1h_series = (high_1h - low_1h) / (close_1h + 1e-8)
+
+    if use_kalman:
+        features['returns_1h'] = _align_to_features(returns_1h_series, n_features)
+        features['momentum_1h'] = _align_to_features(momentum_1h_series, n_features)
+        features['volatility_1h_agg'] = _align_to_features(volatility_1h_agg_series, n_features)
+        features['range_1h'] = _align_to_features(range_1h_series, n_features)
+    else:
+        features['returns_1h'] = returns_1h_series.to_numpy()
+        features['momentum_1h'] = momentum_1h_series.to_numpy()
+        features['volatility_1h_agg'] = volatility_1h_agg_series.to_numpy()
+        features['range_1h'] = range_1h_series.to_numpy()
 
     # 4h aggregation (16 bars of 15m data)
     close_4h = df['close'].rolling(16).mean()
     high_4h = df['high'].rolling(16).max()
     low_4h = df['low'].rolling(16).min()
 
-    features['returns_4h'] = close_4h.pct_change()
-    features['momentum_4h'] = df['close'].pct_change(16)
-    features['volatility_4h_agg'] = features['returns_4h'].rolling(16).std()
-    features['range_4h'] = (high_4h - low_4h) / (close_4h + 1e-8)
+    returns_4h_series = close_4h.pct_change()
+    momentum_4h_series = df['close'].pct_change(16)
+    volatility_4h_agg_series = returns_4h_series.rolling(16).std()
+    range_4h_series = (high_4h - low_4h) / (close_4h + 1e-8)
+
+    if use_kalman:
+        features['returns_4h'] = _align_to_features(returns_4h_series, n_features)
+        features['momentum_4h'] = _align_to_features(momentum_4h_series, n_features)
+        features['volatility_4h_agg'] = _align_to_features(volatility_4h_agg_series, n_features)
+        features['range_4h'] = _align_to_features(range_4h_series, n_features)
+    else:
+        features['returns_4h'] = returns_4h_series.to_numpy()
+        features['momentum_4h'] = momentum_4h_series.to_numpy()
+        features['volatility_4h_agg'] = volatility_4h_agg_series.to_numpy()
+        features['range_4h'] = range_4h_series.to_numpy()
 
     # ===== ROLLING WINDOW FEATURES (FOR TREE MODELS) =====
     # Trees work better with explicitly computed rolling statistics
 
+    close_arr_full = _align_to_features(df['close'], len(features)) if use_kalman else df['close'].to_numpy()
+
     for window in [5, 10, 20, 50]:
         # Rolling returns statistics
-        features[f'returns_mean_{window}'] = returns.rolling(window).mean()
-        features[f'returns_std_{window}'] = returns.rolling(window).std()
+        ret_mean_series = returns.rolling(window).mean()
+        ret_std_series = returns.rolling(window).std()
+
+        if use_kalman:
+            features[f'returns_mean_{window}'] = _align_to_features(ret_mean_series, len(features))
+            features[f'returns_std_{window}'] = _align_to_features(ret_std_series, len(features))
+        else:
+            features[f'returns_mean_{window}'] = ret_mean_series.to_numpy()
+            features[f'returns_std_{window}'] = ret_std_series.to_numpy()
 
         # Rolling price statistics
-        features[f'close_min_{window}'] = df['close'].rolling(window).min()
-        features[f'close_max_{window}'] = df['close'].rolling(window).max()
-        features[f'close_range_{window}'] = (
-            features[f'close_max_{window}'] - features[f'close_min_{window}']
-        ) / (df['close'] + 1e-8)
+        close_min_series = df['close'].rolling(window).min()
+        close_max_series = df['close'].rolling(window).max()
+        if use_kalman:
+            close_min_arr = _align_to_features(close_min_series, len(features))
+            close_max_arr = _align_to_features(close_max_series, len(features))
+        else:
+            close_min_arr = close_min_series.to_numpy()
+            close_max_arr = close_max_series.to_numpy()
+
+        features[f'close_min_{window}'] = close_min_arr
+        features[f'close_max_{window}'] = close_max_arr
+
+        close_range_arr = (close_max_arr - close_min_arr) / (close_arr_full + 1e-8)
+        features[f'close_range_{window}'] = close_range_arr
 
         # Distance from recent high/low
-        features[f'dist_from_recent_high_{window}'] = (
-            df['close'] - features[f'close_max_{window}']
-        ) / (df['close'] + 1e-8)
-        features[f'dist_from_recent_low_{window}'] = (
-            df['close'] - features[f'close_min_{window}']
-        ) / (df['close'] + 1e-8)
+        dist_high_arr = (close_arr_full - close_max_arr) / (close_arr_full + 1e-8)
+        dist_low_arr = (close_arr_full - close_min_arr) / (close_arr_full + 1e-8)
+        features[f'dist_from_recent_high_{window}'] = dist_high_arr
+        features[f'dist_from_recent_low_{window}'] = dist_low_arr
 
     # ===== MORE INTERACTION FEATURES =====
     # Combine features to capture non-linear relationships
@@ -1354,7 +1710,13 @@ def create_meta_features(
 
         bars_since_event = idx_array - last_event_idx_series.values
         bars_since_event[last_event_idx_series.isna().values] = np.nan
-        features['bars_since_last_event'] = bars_since_event
+
+        if use_kalman:
+            # Align to feature index length to avoid length mismatches in
+            # scenarios where df/signals underwent tail alignment.
+            features['bars_since_last_event'] = _align_to_features(bars_since_event, len(features))
+        else:
+            features['bars_since_last_event'] = bars_since_event
 
     # ===== RAW SIGNALS (OPTIONAL, FOR DIAGNOSTICS) =====
 
@@ -1574,15 +1936,17 @@ def build_meta_features_for_model(
     # Label-history (rolling over past events only)
     event_returns = realized_returns[event_mask]
     event_labels = binary_labels[event_mask]
+    event_positions = np.flatnonzero(event_mask.to_numpy())
 
     rolling_win_rate_50 = event_labels.rolling(window=50, min_periods=1).mean()
     rolling_mean_ret_50 = event_returns.rolling(window=50, min_periods=1).mean()
 
     win_rate_50_full = pd.Series(np.nan, index=market_data.index)
-    win_rate_50_full.loc[rolling_win_rate_50.index] = rolling_win_rate_50
-
     mean_ret_50_full = pd.Series(np.nan, index=market_data.index)
-    mean_ret_50_full.loc[rolling_mean_ret_50.index] = rolling_mean_ret_50
+
+    if len(event_positions) == len(rolling_win_rate_50):
+        win_rate_50_full.iloc[event_positions] = rolling_win_rate_50.to_numpy()
+        mean_ret_50_full.iloc[event_positions] = rolling_mean_ret_50.to_numpy()
 
     # Event-mechanics history (R-multiple, TTO, MFE/MAE) based only on past events
     try:
@@ -1608,13 +1972,13 @@ def build_meta_features_for_model(
         rolling_mfe_mae_ratio_50 = mfe_mae_ratio_series.rolling(window=50, min_periods=1).mean()
 
         r_mult_50_full = pd.Series(np.nan, index=market_data.index)
-        r_mult_50_full.loc[rolling_r_multiple_50.index] = rolling_r_multiple_50
-
         tto_50_full = pd.Series(np.nan, index=market_data.index)
-        tto_50_full.loc[rolling_tto_50.index] = rolling_tto_50
-
         mfe_mae_ratio_50_full = pd.Series(np.nan, index=market_data.index)
-        mfe_mae_ratio_50_full.loc[rolling_mfe_mae_ratio_50.index] = rolling_mfe_mae_ratio_50
+
+        if len(event_positions) == len(rolling_r_multiple_50):
+            r_mult_50_full.iloc[event_positions] = rolling_r_multiple_50.to_numpy()
+            tto_50_full.iloc[event_positions] = rolling_tto_50.to_numpy()
+            mfe_mae_ratio_50_full.iloc[event_positions] = rolling_mfe_mae_ratio_50.to_numpy()
     except Exception:
         r_mult_50_full = pd.Series(np.nan, index=market_data.index)
         tto_50_full = pd.Series(np.nan, index=market_data.index)
@@ -1642,8 +2006,34 @@ def build_meta_features_for_model(
     event_meta_features['event_tto_mean_last_50'] = tto_50_full
     event_meta_features['event_mfe_mae_ratio_mean_last_50'] = mfe_mae_ratio_50_full
 
-    # Attach/overwrite event-centric features without creating duplicate columns
-    meta_features[event_meta_features.columns] = event_meta_features
+    # Attach/overwrite event-centric features without triggering index-based
+    # reindexing (which is sensitive to duplicate datetime labels). Reset to a
+    # simple RangeIndex and align positionally to the meta_features length.
+    emf = event_meta_features.reset_index(drop=True)
+    n_meta = len(meta_features)
+    if len(emf) > n_meta:
+        # Align to the most recent window, consistent with tail alignment in
+        # create_meta_features where df/signals are truncated from the tail.
+        emf = emf.iloc[-n_meta:, :].reset_index(drop=True)
+    elif len(emf) < n_meta:
+        pad_rows = n_meta - len(emf)
+        pad = pd.DataFrame(np.nan, index=range(pad_rows), columns=emf.columns)
+        emf = pd.concat([pad, emf], axis=0, ignore_index=True)
+
+    meta_features[event_meta_features.columns] = emf.to_numpy()
+
+    try:
+        if isinstance(horizon, (int, float)) and horizon > 0:
+            horizon_int = int(horizon)
+            close_series = market_data['close']
+            returns_series = close_series.pct_change()
+            meta_features[f'return_{horizon_int}b'] = close_series.pct_change(horizon_int)
+            meta_features[f'return_std_{horizon_int}b'] = returns_series.rolling(horizon_int).std()
+            slope_window = max(horizon_int // 2, 1)
+            rolling_mean = close_series.rolling(horizon_int).mean()
+            meta_features[f'sma_slope_{horizon_int}b'] = rolling_mean.pct_change(slope_window)
+    except Exception:
+        pass
 
     meta_features_model = prepare_feature_matrix(meta_features)
 
@@ -1696,6 +2086,13 @@ def build_meta_features_for_model(
         except Exception as e_fs:
             tprint(f"⚠️ Feature selection failed, using all features: {e_fs}", "WARNING")
             selected_feature_names = list(meta_features_model_processed.columns)
+
+    # Ensure the event-history TTO diagnostic remains available as a model feature
+    critical_tto_feature = 'event_tto_mean_last_50'
+    if critical_tto_feature in meta_features_model.columns and critical_tto_feature not in meta_features_model_processed.columns:
+        meta_features_model_processed[critical_tto_feature] = meta_features_model[critical_tto_feature]
+    if critical_tto_feature in meta_features_model_processed.columns and critical_tto_feature not in selected_feature_names:
+        selected_feature_names.append(critical_tto_feature)
 
     sample_weights: Optional[np.ndarray] = None
     if meta_feature_cfg.get('enable_sample_weighting', False):
@@ -1809,7 +2206,8 @@ def build_meta_features_for_model(
 def fit_probability_to_return_mapping(
     probabilities: np.ndarray,
     realized_returns: np.ndarray,
-    method: str = 'isotonic'
+    method: str = 'isotonic',
+    econ_min_return_multiple: Optional[float] = None,
 ) -> IsotonicRegression:
     """
     Fit mapping from predicted probability to expected return.
@@ -1832,8 +2230,15 @@ def fit_probability_to_return_mapping(
     n_inf_prob = np.isinf(probabilities).sum()
     n_inf_ret = np.isinf(realized_returns).sum()
 
-    # Remove NaN values and ignore economically trivial events (below cost floor)
-    econ_floor = ECON_MIN_RETURN_MULTIPLE * DEFAULT_TRANSACTION_COST
+    # Remove NaN values and ignore economically trivial events (below cost floor).
+    # When a custom econ_min_return_multiple is provided (e.g. by HPO), honor it;
+    # otherwise fall back to the global ECON_MIN_RETURN_MULTIPLE constant.
+    econ_mult = (
+        float(econ_min_return_multiple)
+        if econ_min_return_multiple is not None
+        else float(ECON_MIN_RETURN_MULTIPLE)
+    )
+    econ_floor = econ_mult * DEFAULT_TRANSACTION_COST
     base_mask = ~(np.isnan(probabilities) | np.isnan(realized_returns))
     econ_mask = np.abs(realized_returns) >= econ_floor
     mask = base_mask & econ_mask
@@ -1961,14 +2366,35 @@ def translate_to_targets_with_isotonic(
 
     consensus = signals['consensus'].values
 
+    # Align realized_returns, probabilities and signals on a common
+    # tail-aligned window so that all arrays and masks have consistent
+    # lengths. Use realized_returns as the reference length since it
+    # defines the target index.
+    n_rr = len(realized_returns)
+    if n_rr == 0:
+        empty = pd.Series(0.0, index=realized_returns.index)
+        return empty.copy(), empty.copy()
+
+    n_prob = len(probabilities)
+    n_sig = len(signals)
+    n_common = min(n_rr, n_prob, n_sig)
+    rr_tail = realized_returns.iloc[-n_common:]
+    sig_tail = signals.iloc[-n_common:]
+    prob_tail = np.asarray(probabilities, dtype=float)[-n_common:]
+
+    target_long_tail = pd.Series(0.0, index=rr_tail.index)
+    target_short_tail = pd.Series(0.0, index=rr_tail.index)
+
+    consensus = sig_tail['consensus'].to_numpy()
+
     # VECTORIZED: Predict on entire probability array at once (much faster)
-    expected_returns = iso_regressor.predict(probabilities)
+    expected_returns = iso_regressor.predict(prob_tail)
 
     # DEBUG LOGGING: Check for anomalies in isotonic predictions
     n_nan = np.isnan(expected_returns).sum()
     n_inf = np.isinf(expected_returns).sum()
     if n_nan > 0 or n_inf > 0:
-        tprint(f"⚠️ WARNING: Isotonic predictions contain {n_nan} NaN and {n_inf} Inf values", "WARNING")
+        tprint(f" WARNING: Isotonic predictions contain {n_nan} NaN and {n_inf} Inf values", "WARNING")
         expected_returns = np.nan_to_num(expected_returns, nan=0.0, posinf=0.1, neginf=-0.1)
 
     # Convert to net-of-cost expected returns and suppress negative expectations
@@ -1984,20 +2410,24 @@ def translate_to_targets_with_isotonic(
     n_above_cost = (final_targets > cost_threshold).sum()
     pct_above_cost = n_above_cost / len(final_targets) * 100 if len(final_targets) > 0 else 0
 
-    # Vectorized assignment based on signal direction
-    long_mask = (consensus > 0) & (~realized_returns.isna())
-    short_mask = (consensus < 0) & (~realized_returns.isna())
+    # Vectorized assignment based on signal direction (on aligned tail
+    # window, purely positional to avoid index alignment issues)
+    rr_tail_notna = ~rr_tail.isna().to_numpy()
+    long_mask = (consensus > 0) & rr_tail_notna
+    short_mask = (consensus < 0) & rr_tail_notna
 
-    target_long.iloc[long_mask] = final_targets[long_mask]
-    target_short.iloc[short_mask] = final_targets[short_mask]
+    if len(final_targets) == len(long_mask):
+        target_long_tail.iloc[long_mask] = final_targets[long_mask]
+    if len(final_targets) == len(short_mask):
+        target_short_tail.iloc[short_mask] = final_targets[short_mask]
 
     # DEBUG LOGGING: Verify assignment coverage (compact)
-    n_long_assigned = (target_long > 0).sum()
-    n_short_assigned = (target_short > 0).sum()
+    n_long_assigned = (target_long_tail > 0).sum()
+    n_short_assigned = (target_short_tail > 0).sum()
 
     try:
         tprint(
-            "📊 [META_TARGETS] nonzero="
+            " [META_TARGETS] nonzero="
             f"{n_nonzero}/{len(final_targets)} ({pct_nonzero:.1f}%), "
             f"above_cost={n_above_cost}/{len(final_targets)} ({pct_above_cost:.1f}%), "
             f"mean={final_targets.mean():.6f}, std={final_targets.std():.6f}, max={final_targets.max():.6f}, "
@@ -2006,6 +2436,12 @@ def translate_to_targets_with_isotonic(
         )
     except Exception:
         logger.debug("Target diagnostics logging failed", exc_info=True)
+
+    # Reindex tail targets back to the full realized_returns index, filling
+    # missing entries with zero so that downstream code can safely assign
+    # them to labeled_data without index length mismatches.
+    target_long = target_long_tail.reindex(realized_returns.index).fillna(0.0)
+    target_short = target_short_tail.reindex(realized_returns.index).fillna(0.0)
 
     return target_long, target_short
 
@@ -2065,7 +2501,8 @@ def generate_diagnostics_report(
 
     # Prepare data
     labeled_mask = ~binary_labels.isna()
-    n_labeled = labeled_mask.sum()
+    labeled_mask_arr = labeled_mask.to_numpy(dtype=bool, copy=False)
+    n_labeled = int(labeled_mask_arr.sum())
 
     # Represent probabilities as Series aligned with index for richer diagnostics
     prob_series = pd.Series(probabilities, index=labeled_data.index)
@@ -2146,9 +2583,10 @@ def generate_diagnostics_report(
     report_lines.append("\n## 3. Feature-Label Correlation Analysis (Post-Filter)\n")
 
     # Compute correlations (numeric features only to avoid categorical fill issues)
-    features_clean = meta_features[labeled_mask]
+    # Use positional masking to avoid index-alignment issues.
+    features_clean = meta_features.iloc[labeled_mask_arr]
     features_clean = features_clean.select_dtypes(include=[np.number]).fillna(0)
-    labels_clean = binary_labels[labeled_mask]
+    labels_clean = binary_labels.iloc[labeled_mask_arr]
 
     correlations_post = {}
 
@@ -2188,7 +2626,8 @@ def generate_diagnostics_report(
     try:
         # Pre-filter: all events with realized returns
         pre_mask = ~realized_returns.isna()
-        n_pre_total = int(pre_mask.sum())
+        pre_mask_arr = pre_mask.to_numpy(dtype=bool, copy=False)
+        n_pre_total = int(pre_mask_arr.sum())
 
         if n_pre_total > 0:
             tx_cost_local = config.get('transaction_cost', DEFAULT_TRANSACTION_COST)
@@ -2198,7 +2637,7 @@ def generate_diagnostics_report(
                 tx_cost_local = float(DEFAULT_TRANSACTION_COST)
 
             # Raw pre-filter labels: simple economic sign after costs
-            pre_returns = realized_returns[pre_mask]
+            pre_returns = realized_returns.iloc[pre_mask_arr]
             raw_label_pre = (pre_returns > tx_cost_local).astype(int)
 
             n_pre_pos = int((raw_label_pre == 1).sum())
@@ -2229,7 +2668,7 @@ def generate_diagnostics_report(
             pre_neg_ret = pre_returns[raw_label_pre == 0]
 
             # Post-filter realized returns (only where labels exist)
-            returns_post = realized_returns[labeled_mask]
+            returns_post = realized_returns.iloc[labeled_mask_arr]
 
             def _safe_stats(x: pd.Series) -> Tuple[float, float]:
                 return (float(x.mean()) if len(x) > 0 else 0.0, float(x.std() if len(x) > 1 else 0.0))
@@ -2270,11 +2709,42 @@ def generate_diagnostics_report(
             # Pre- vs post-filter feature correlation shifts
             features_clean_pre = meta_features.select_dtypes(include=[np.number]).fillna(0)
             correlations_pre = {}
-            for col in features_clean_pre.columns:
-                try:
-                    correlations_pre[col] = float(features_clean_pre[col].loc[pre_mask].corr(raw_label_pre))
-                except Exception:
-                    continue
+            try:
+                raw_label_pre_arr = raw_label_pre.to_numpy()
+                for col in features_clean_pre.columns:
+                    feat_vals_full = features_clean_pre[col].to_numpy()
+
+                    # Tail-align lengths if they differ (defensive); operate positionally.
+                    if feat_vals_full.shape[0] != pre_mask_arr.shape[0]:
+                        min_len = min(feat_vals_full.shape[0], pre_mask_arr.shape[0])
+                        if min_len <= 1:
+                            continue
+                        feat_vals = feat_vals_full[-min_len:]
+                        mask_use = pre_mask_arr[-min_len:]
+                    else:
+                        feat_vals = feat_vals_full
+                        mask_use = pre_mask_arr
+
+                    if mask_use.sum() <= 1:
+                        continue
+
+                    feat_vals_pre = feat_vals[mask_use]
+                    labels_arr = raw_label_pre_arr
+                    if labels_arr.shape[0] != feat_vals_pre.shape[0]:
+                        min_len2 = min(labels_arr.shape[0], feat_vals_pre.shape[0])
+                        if min_len2 <= 1:
+                            continue
+                        feat_vals_pre = feat_vals_pre[-min_len2:]
+                        labels_arr = labels_arr[-min_len2:]
+
+                    if labels_arr.size <= 1:
+                        continue
+
+                    corr = np.corrcoef(feat_vals_pre, labels_arr)[0, 1]
+                    if np.isfinite(corr):
+                        correlations_pre[col] = float(corr)
+            except Exception:
+                correlations_pre = {}
 
             common_feats = set(correlations_pre.keys()).intersection(set(correlations_post.keys()))
             delta_corr = []
@@ -2297,8 +2767,8 @@ def generate_diagnostics_report(
     # ===== 4. P&L DISTRIBUTION PER LABEL =====
     report_lines.append("\n## 4. P&L Distribution Per Label\n")
 
-    returns_labeled = realized_returns[labeled_mask]
-    labels_clean = binary_labels[labeled_mask]
+    returns_labeled = realized_returns.iloc[labeled_mask_arr]
+    labels_clean = binary_labels.iloc[labeled_mask_arr]
 
     returns_positive = returns_labeled[labels_clean == 1]
     returns_negative = returns_labeled[labels_clean == 0]
@@ -2430,9 +2900,9 @@ def generate_diagnostics_report(
     report_lines.append("\n## 6. Model Probability Diagnostics\n")
 
     try:
-        # Calibration analysis
-        prob_clean = prob_series[labeled_mask]
-        labels_clean_array = binary_labels[labeled_mask].values
+        # Calibration analysis (use positional masking to avoid index issues)
+        prob_clean = prob_series.iloc[labeled_mask_arr]
+        labels_clean_array = binary_labels.iloc[labeled_mask_arr].to_numpy()
 
         # Bin probabilities
         prob_bins = pd.cut(prob_clean, bins=10, labels=False)
@@ -2441,9 +2911,10 @@ def generate_diagnostics_report(
         for bin_idx in range(10):
             mask = (prob_bins == bin_idx)
             if mask.sum() > 0:
-                mean_prob = prob_clean[mask].mean()
-                mean_label = labels_clean_array[mask].mean()
-                count = mask.sum()
+                mask_arr = mask.to_numpy(dtype=bool, copy=False)
+                mean_prob = float(prob_clean.iloc[mask_arr].mean())
+                mean_label = float(labels_clean_array[mask_arr].mean())
+                count = int(mask_arr.sum())
                 calibration_data.append((mean_prob, mean_label, count))
 
         report_lines.append("\n### Calibration (Predicted Probability vs Actual Success Rate):\n")
@@ -2471,8 +2942,9 @@ def generate_diagnostics_report(
                 mask_bin = (prob_bins == b)
                 if mask_bin.sum() == 0:
                     continue
-                mean_prob_bin = prob_clean[mask_bin].mean()
-                mean_ret_bin = returns_labeled[mask_bin].mean()
+                mask_bin_arr = mask_bin.to_numpy(dtype=bool, copy=False)
+                mean_prob_bin = prob_clean.iloc[mask_bin_arr].mean()
+                mean_ret_bin = returns_labeled.iloc[mask_bin_arr].mean()
                 mean_prob_by_bin.append(float(mean_prob_bin))
                 mean_ret_by_bin.append(float(mean_ret_bin))
 
@@ -2551,18 +3023,19 @@ def generate_diagnostics_report(
     report_lines.append("\n## 8. Kalman Smoothed Labels Analysis\n")
 
     if smoothed_labels is not None and not smoothed_labels.isna().all():
-        smoothed_labeled = smoothed_labels[labeled_mask]
+        # Use positional mask to avoid index alignment issues
+        smoothed_labeled = smoothed_labels.iloc[labeled_mask_arr]
 
         report_lines.append(f"- **Mean smoothed label:** {smoothed_labeled.mean():.3f}")
         report_lines.append(f"- **Median smoothed label:** {smoothed_labeled.median():.3f}")
         report_lines.append(f"- **Std smoothed label:** {smoothed_labeled.std():.3f}")
 
-        # Correlation with binary labels
-        corr_smoothed_binary = smoothed_labeled.corr(binary_labels[labeled_mask])
+        # Correlation with binary labels (already aligned labeled subset)
+        corr_smoothed_binary = smoothed_labeled.corr(labels_clean)
         report_lines.append(f"- **Correlation with binary labels:** {corr_smoothed_binary:.3f}")
 
-        # Correlation with realized returns
-        corr_smoothed_returns = smoothed_labeled.corr(realized_returns[labeled_mask])
+        # Correlation with realized returns (labeled subset)
+        corr_smoothed_returns = smoothed_labeled.corr(returns_labeled)
         report_lines.append(f"- **Correlation with realized returns:** {corr_smoothed_returns:.3f}")
 
         if corr_smoothed_binary < 0.5:
@@ -2588,7 +3061,8 @@ def generate_diagnostics_report(
         stop_threshold_series = labeled_data.get('adaptive_stop_threshold')
 
         if exit_reasons_series is not None:
-            exit_labeled = exit_reasons_series[labeled_mask].dropna()
+            # Positional mask to avoid index alignment issues
+            exit_labeled = exit_reasons_series.iloc[labeled_mask_arr].dropna()
             total_events = len(exit_labeled)
             if total_events > 0:
                 value_counts = exit_labeled.value_counts(normalize=True)
@@ -2597,7 +3071,9 @@ def generate_diagnostics_report(
                     report_lines.append(f"- **{reason}:** {frac:.1%}")
 
         if durations_series is not None:
-            dur_clean = durations_series[labeled_mask].dropna()
+            # Coerce to numeric to avoid mixed int/Timestamp comparisons in quantiles
+            dur_numeric = pd.to_numeric(durations_series, errors="coerce")
+            dur_clean = dur_numeric.iloc[labeled_mask_arr].dropna()
             if len(dur_clean) > 0:
                 report_lines.append("\n### Event Duration Distribution (Bars)\n")
                 report_lines.append(f"- **Mean duration:** {dur_clean.mean():.2f}")
@@ -2605,9 +3081,20 @@ def generate_diagnostics_report(
                 report_lines.append(f"- **90th percentile:** {dur_clean.quantile(0.9):.2f}")
 
         if stop_threshold_series is not None:
-            stop_labeled = stop_threshold_series[labeled_mask]
-            # Avoid division by zero
-            r_multiple = returns_labeled / (stop_labeled.replace(0, np.nan) + 1e-8)
+            # Coerce to numeric and compute R-multiples using numpy arrays to avoid
+            # any dtype surprises from extension arrays.
+            stop_numeric = pd.to_numeric(stop_threshold_series, errors="coerce")
+            stop_labeled = stop_numeric.iloc[labeled_mask_arr]
+
+            ret_arr = returns_labeled.to_numpy(dtype=float, copy=False)
+            stop_arr = stop_labeled.to_numpy(dtype=float, copy=False)
+
+            with np.errstate(divide='ignore', invalid='ignore'):
+                denom = np.where(np.isnan(stop_arr) | (stop_arr == 0.0), np.nan, stop_arr) + 1e-8
+                r_multiple_arr = ret_arr / denom
+
+            r_multiple = pd.Series(r_multiple_arr, index=returns_labeled.index)
+            r_multiple = r_multiple.replace([np.inf, -np.inf], np.nan)
             r_multiple_pos = r_multiple[labels_clean == 1]
             r_multiple_neg = r_multiple[labels_clean == 0]
 
@@ -2631,28 +3118,66 @@ def generate_diagnostics_report(
     )
 
     try:
-        # Path Efficiency Ratio (PER)
-        if event_durations is not None and mfe_series is not None:
-            labeled_durations = event_durations[labeled_mask].dropna()
-            labeled_returns = returns_labeled
-            labeled_mfe = mfe_series[labeled_mask].dropna() if mfe_series is not None else None
+        # Path Efficiency Ratio (PER) and Time-to-Outcome Ratio (TTO)
+        if event_durations is not None:
+            labeled_durations = event_durations.iloc[labeled_mask_arr].dropna()
 
-            # PER: Net price change / sum of absolute moves (approximation)
-            # Higher PER = more direct path to profit
-            if labeled_mfe is not None and len(labeled_mfe) > 0:
-                # Approx: PER = abs(return) / MFE
-                per_values = np.abs(labeled_returns) / (labeled_mfe + 1e-6)
-                per_values = per_values.replace([np.inf, -np.inf], np.nan).dropna()
+            # Path Efficiency Ratio (PER)
+            # - Restrict to profitable events only (net return > 0)
+            # - Use denominator that includes both favorable and adverse excursions (|MFE| + |MAE|)
+            # - Report robust statistics (median, quantiles, clipped mean) and outlier counts
+            if mfe_series is not None and mae_series is not None:
+                per_df = pd.DataFrame(
+                    {
+                        "ret": returns_labeled,
+                        "mfe": mfe_series.iloc[labeled_mask_arr],
+                        "mae": mae_series.iloc[labeled_mask_arr],
+                    }
+                ).dropna()
 
-                if len(per_values) > 0:
-                    report_lines.append("\n### Path Efficiency Ratio (PER)\n")
-                    report_lines.append(f"- **Mean PER:** {per_values.mean():.3f}")
-                    report_lines.append(f"- **Median PER:** {per_values.median():.3f}")
+                # Restrict to genuinely profitable events
+                per_df = per_df[per_df["ret"] > 0]
 
-                    if per_values.mean() < 0.3:
-                        report_lines.append(f"\n⚠️ **Alert:** Mean PER < 0.3 indicates excessive random walk / drift")
-                    else:
-                        report_lines.append(f"\n✅ **OK:** Reasonable path efficiency")
+                if len(per_df) > 0:
+                    denom = np.abs(per_df["mfe"]) + np.abs(per_df["mae"]) + 1e-6
+                    per_values = (per_df["ret"].abs() / denom).replace([np.inf, -np.inf], np.nan).dropna()
+
+                    if len(per_values) > 0:
+                        report_lines.append("\n### Path Efficiency Ratio (PER)\n")
+
+                        # Robust summary statistics
+                        if len(per_values) > 10:
+                            clip_threshold = float(per_values.quantile(0.995))
+                            per_clipped = per_values.clip(upper=clip_threshold)
+                            mean_per = float(per_clipped.mean())
+                        else:
+                            mean_per = float(per_values.mean())
+
+                        median_per = float(per_values.median())
+                        p90_per = float(per_values.quantile(0.90)) if len(per_values) > 1 else median_per
+                        p99_per = float(per_values.quantile(0.99)) if len(per_values) > 1 else median_per
+
+                        report_lines.append(f"- **Mean PER (clipped 99.5%):** {mean_per:.3f}")
+                        report_lines.append(f"- **Median PER:** {median_per:.3f}")
+                        report_lines.append(f"- **90th percentile PER:** {p90_per:.3f}")
+                        report_lines.append(f"- **99th percentile PER:** {p99_per:.3f}")
+
+                        # Outlier count for very high PER values
+                        high_per_count = int((per_values > 5.0).sum())
+                        if high_per_count > 0:
+                            report_lines.append(f"- **Trades with PER > 5.0:** {high_per_count}")
+
+                        # Health check based on median PER (typical winner path quality)
+                        if median_per < 0.3:
+                            report_lines.append(
+                                "\n⚠️ **Alert:** Median PER < 0.3 indicates highly noisy / random-walk paths even for winners"
+                            )
+                        elif median_per < 0.5:
+                            report_lines.append(
+                                "\n⚠️ **Warning:** Median PER in [0.3, 0.5] – many winners meander significantly before paying off"
+                            )
+                        else:
+                            report_lines.append("\n✅ **OK:** Good path efficiency on profitable events")
 
             # Time-to-Outcome Ratio (TTO)
             horizon_config = config.get('horizon', 16)
@@ -2669,24 +3194,24 @@ def generate_diagnostics_report(
                 else:
                     report_lines.append(f"\n✅ **OK:** TTO in healthy range [0.4, 0.6]")
 
-            # MFE/MAE Ratio
-            if mfe_series is not None and mae_series is not None:
-                labeled_mfe = mfe_series[labeled_mask].dropna()
-                labeled_mae = mae_series[labeled_mask].dropna()
+        # MFE/MAE Ratio
+        if mfe_series is not None and mae_series is not None:
+            labeled_mfe = mfe_series.iloc[labeled_mask_arr].dropna()
+            labeled_mae = mae_series.iloc[labeled_mask_arr].dropna()
+            
+            if len(labeled_mfe) > 0 and len(labeled_mae) > 0:
+                mfe_mae_ratio = labeled_mfe / (labeled_mae + 1e-6)
+                mfe_mae_ratio = mfe_mae_ratio.replace([np.inf, -np.inf], np.nan).dropna()
 
-                if len(labeled_mfe) > 0 and len(labeled_mae) > 0:
-                    mfe_mae_ratio = labeled_mfe / (labeled_mae + 1e-6)
-                    mfe_mae_ratio = mfe_mae_ratio.replace([np.inf, -np.inf], np.nan).dropna()
+                if len(mfe_mae_ratio) > 0:
+                    report_lines.append("\n### MFE/MAE Ratio (Maximum Favorable vs Adverse Excursion)\n")
+                    report_lines.append(f"- **Mean MFE/MAE:** {mfe_mae_ratio.mean():.3f}")
+                    report_lines.append(f"- **Median MFE/MAE:** {mfe_mae_ratio.median():.3f}")
 
-                    if len(mfe_mae_ratio) > 0:
-                        report_lines.append("\n### MFE/MAE Ratio (Maximum Favorable vs Adverse Excursion)\n")
-                        report_lines.append(f"- **Mean MFE/MAE:** {mfe_mae_ratio.mean():.3f}")
-                        report_lines.append(f"- **Median MFE/MAE:** {mfe_mae_ratio.median():.3f}")
-
-                        if mfe_mae_ratio.mean() < 1.0:
-                            report_lines.append(f"\n⚠️ **Alert:** Average MFE/MAE < 1.0 indicates poor entry timing or fundamentally random signals")
-                        else:
-                            report_lines.append(f"\n✅ **OK:** Favorable excursions exceed adverse excursions")
+                    if mfe_mae_ratio.mean() < 1.0:
+                        report_lines.append(f"\n⚠️ **Alert:** Average MFE/MAE < 1.0 indicates poor entry timing or fundamentally random signals")
+                    else:
+                        report_lines.append(f"\n✅ **OK:** Favorable excursions exceed adverse excursions")
 
     except Exception as e:
         report_lines.append(f"\n⚠️ Could not compute enhanced event diagnostics: {e}")
@@ -2699,16 +3224,29 @@ def generate_diagnostics_report(
     )
 
     try:
-        # Combine long and short targets
-        combined_targets = pd.Series(0.0, index=labeled_data.index)
-        if target_long is not None:
-            combined_targets = combined_targets + target_long.fillna(0)
-        if target_short is not None:
-            combined_targets = combined_targets + target_short.fillna(0)
+        # Combine long and short targets using purely positional, numeric arrays.
+        n = len(labeled_data)
+        combined_arr = np.zeros(n, dtype=float)
+
+        def _tail_align_numeric(series: Optional[pd.Series], n: int) -> np.ndarray:
+            if series is None or len(series) == 0:
+                return np.zeros(n, dtype=float)
+            num = pd.to_numeric(series, errors="coerce")
+            arr = num.to_numpy(dtype=float, copy=False)
+            if arr.size >= n:
+                return arr[-n:]
+            # Left-pad with zeros if shorter than labeled_data
+            pad = np.zeros(n - arr.size, dtype=float)
+            return np.concatenate([pad, arr])
+
+        combined_arr += _tail_align_numeric(target_long, n)
+        combined_arr += _tail_align_numeric(target_short, n)
+
+        combined_targets = pd.Series(combined_arr, index=labeled_data.index)
 
         target_nonzero = combined_targets[combined_targets > 1e-6]
-        target_std = combined_targets.std()
-        target_mean = combined_targets.mean()
+        target_std = float(combined_targets.std())
+        target_mean = float(combined_targets.mean())
         pct_nonzero = len(target_nonzero) / len(combined_targets) * 100 if len(combined_targets) > 0 else 0
 
         report_lines.append(f"- **Target mean:** {target_mean:.6f}")
@@ -2735,8 +3273,9 @@ def generate_diagnostics_report(
     try:
         from scipy.stats import spearmanr
 
-        prob_labeled = probabilities[labeled_mask]
-        ret_labeled = returns_labeled
+        # Use positional mask and numeric arrays for IC computation
+        prob_labeled = prob_series.iloc[labeled_mask_arr].to_numpy(dtype=float, copy=False)
+        ret_labeled = returns_labeled.to_numpy(dtype=float, copy=False)
 
         # Remove NaN values
         valid_mask = ~(np.isnan(prob_labeled) | np.isnan(ret_labeled))
@@ -2785,14 +3324,19 @@ def generate_diagnostics_report(
             regime_series = pd.Series(regime_labels, index=meta_features.index)
 
         if regime_series is not None:
-            regime_labeled = regime_series[labeled_mask]
+            # Work on labeled subset positionally to avoid index misalignment
+            regime_labeled = regime_series.iloc[labeled_mask_arr]
             report_lines.append("\n### Label Base-Rate by Volatility Regime\n")
+
+            labels_arr = labels_clean.to_numpy(dtype=float, copy=False)
+            returns_arr = returns_labeled.to_numpy(dtype=float, copy=False)
+
             for regime in sorted(regime_labeled.dropna().unique()):
-                mask_reg = labeled_mask & (regime_series == regime)
+                mask_reg = (regime_labeled == regime).to_numpy(dtype=bool, copy=False)
                 if mask_reg.sum() < 10:
                     continue
-                pos_rate_reg = binary_labels[mask_reg].mean()
-                mean_ret_reg = realized_returns[mask_reg].mean()
+                pos_rate_reg = float(labels_arr[mask_reg].mean())
+                mean_ret_reg = float(returns_arr[mask_reg].mean())
                 report_lines.append(
                     f"- **Regime {regime}:** positive={pos_rate_reg:.1%}, mean_return={mean_ret_reg:.2%}"
                 )
@@ -2800,30 +3344,36 @@ def generate_diagnostics_report(
         # Trend-conditional checks using price_vs_sma20 if available
         if 'price_vs_sma20' in meta_features.columns:
             trend_measure = meta_features['price_vs_sma20']
-            trend_labeled = trend_measure[labeled_mask]
+            trend_labeled = trend_measure.iloc[labeled_mask_arr]
             high_trend = trend_labeled.quantile(0.75)
             low_trend = trend_labeled.quantile(0.25)
 
-            strong_up = labeled_mask & (trend_measure >= high_trend)
-            strong_down = labeled_mask & (trend_measure <= low_trend)
+            strong_up = trend_labeled >= high_trend
+            strong_down = trend_labeled <= low_trend
+
+            labels_arr = labels_clean.to_numpy(dtype=float, copy=False)
+            returns_arr = returns_labeled.to_numpy(dtype=float, copy=False)
 
             if strong_up.sum() >= 10:
                 report_lines.append("\n### Trend-Conditional (Price vs SMA20)\n")
-                pos_up = binary_labels[strong_up].mean()
-                mean_ret_up = realized_returns[strong_up].mean()
+                mask_up = strong_up.to_numpy(dtype=bool, copy=False)
+                pos_up = float(labels_arr[mask_up].mean())
+                mean_ret_up = float(returns_arr[mask_up].mean())
                 report_lines.append(
                     f"- **Strong uptrend:** positive={pos_up:.1%}, mean_return={mean_ret_up:.2%}"
                 )
             if strong_down.sum() >= 10:
-                pos_down = binary_labels[strong_down].mean()
-                mean_ret_down = realized_returns[strong_down].mean()
+                mask_down = strong_down.to_numpy(dtype=bool, copy=False)
+                pos_down = float(labels_arr[mask_down].mean())
+                mean_ret_down = float(returns_arr[mask_down].mean())
                 report_lines.append(
                     f"- **Strong downtrend:** positive={pos_down:.1%}, mean_return={mean_ret_down:.2%}"
                 )
 
         # Time-of-day / weekday conditional
         if 'hour' in meta_features.columns:
-            hour_labeled = meta_features['hour'][labeled_mask]
+            hour_series = meta_features['hour']
+            hour_labeled = hour_series.iloc[labeled_mask_arr]
             pos_by_hour = labels_clean.groupby(hour_labeled).mean()
             if len(pos_by_hour) > 0:
                 top_hours = pos_by_hour.sort_values(ascending=False).head(3)
@@ -2837,7 +3387,8 @@ def generate_diagnostics_report(
                     report_lines.append(f"  - Hour {int(h)}: {v:.1%}")
 
         if 'day_of_week' in meta_features.columns:
-            dow_labeled = meta_features['day_of_week'][labeled_mask]
+            dow_series = meta_features['day_of_week']
+            dow_labeled = dow_series.iloc[labeled_mask_arr]
             pos_by_dow = labels_clean.groupby(dow_labeled).mean()
             if len(pos_by_dow) > 0:
                 report_lines.append("\n### Day-of-Week Positive Rates\n")
@@ -2915,23 +3466,35 @@ def generate_diagnostics_report(
     )
 
     try:
-        # Build unified target magnitude series
+        # Build unified target magnitude series (force numeric and positional alignment)
         target_long = labeled_data.get('target_long')
         target_short = labeled_data.get('target_short')
-        if target_long is not None and target_short is not None:
-            target_mag = pd.Series(0.0, index=labeled_data.index)
-            long_mask_target = target_long > 0
-            short_mask_target = target_short > 0
-            target_mag[long_mask_target] = target_long[long_mask_target]
-            target_mag[short_mask_target] = target_short[short_mask_target]
+        n = len(labeled_data)
+
+        def _tail_align_numeric(series: Optional[pd.Series], n: int) -> np.ndarray:
+            if series is None or len(series) == 0:
+                return np.zeros(n, dtype=float)
+            num = pd.to_numeric(series, errors="coerce")
+            arr = num.to_numpy(dtype=float, copy=False)
+            if arr.size >= n:
+                return arr[-n:]
+            pad = np.zeros(n - arr.size, dtype=float)
+            return np.concatenate([pad, arr])
+
+        if target_long is not None or target_short is not None:
+            long_arr = _tail_align_numeric(target_long, n)
+            short_arr = _tail_align_numeric(target_short, n)
+            target_vals = long_arr + short_arr
+
+            target_mag = pd.Series(target_vals, index=labeled_data.index, dtype=float)
 
             trade_mask = labeled_mask & (target_mag > 0) & ~realized_returns.isna()
             target_trades = target_mag[trade_mask]
             returns_trades = realized_returns[trade_mask]
 
             if len(target_trades) > 0:
-                corr_tr = target_trades.corr(returns_trades)
-                mse_tr = float(np.mean((target_trades - returns_trades) ** 2))
+                corr_tr = float(target_trades.corr(returns_trades))
+                mse_tr = float(np.mean((target_trades.to_numpy(dtype=float) - returns_trades.to_numpy(dtype=float)) ** 2))
                 report_lines.append("\n### Target vs Realized Return\n")
                 report_lines.append(f"- **Correlation (target, realized):** {corr_tr:.3f}")
                 report_lines.append(f"- **MSE (target vs realized):** {mse_tr:.6f}")
@@ -2957,7 +3520,7 @@ def generate_diagnostics_report(
                 report_lines.append(f"- **Mean non-zero target:** {target_nz.mean():.4f}")
                 report_lines.append(f"- **Median non-zero target:** {target_nz.median():.4f}")
                 tx_cost = float(config.get('transaction_cost', DEFAULT_TRANSACTION_COST))
-                frac_below_cost = (target_nz < tx_cost).mean()
+                frac_below_cost = float((target_nz < tx_cost).mean())
                 report_lines.append(f"- **Fraction of targets below transaction cost ({tx_cost:.3%}):** {frac_below_cost:.1%}")
 
     except Exception as e:
@@ -3026,23 +3589,28 @@ def generate_diagnostics_report(
             except Exception as e_metrics:
                 report_lines.append(f"\n⚠️ Could not compute cost-aware metrics: {e_metrics}")
 
-        # Threshold sweep P&L curves
+        # Threshold sweep P&L curves (purely positional masks)
         report_lines.append("\n### Threshold-Sweep P&L (Using Meta Probability)\n")
         report_lines.append("\n| Threshold | Trades | Mean Return | Cum Return | Sharpe (per trade) |")
         report_lines.append("|----------|--------|-------------|------------|---------------------|")
 
+        prob_values = prob_series.to_numpy(dtype=float, copy=False)
+        ret_values = realized_returns.to_numpy(dtype=float, copy=False)
+        mask_labeled_arr = labeled_mask_arr
+        mask_ret_not_nan = ~np.isnan(ret_values)
+
         # Evaluate a dense grid of thresholds in the operational region [0.50, 0.65]
         thresholds = [round(x, 2) for x in np.arange(0.5, 0.651, 0.01)]
         for thr in thresholds:
-            mask_thr = (prob_series >= thr) & labeled_mask & ~realized_returns.isna()
-            n_trades_thr = int(mask_thr.sum())
+            mask_thr_arr = (prob_values >= thr) & mask_labeled_arr & mask_ret_not_nan
+            n_trades_thr = int(mask_thr_arr.sum())
             if n_trades_thr == 0:
                 report_lines.append(f"| {thr:.2f} | 0 | N/A | N/A | N/A |")
                 continue
-            ret_thr = realized_returns[mask_thr]
-            mean_ret_thr = ret_thr.mean()
-            std_ret_thr = ret_thr.std()
-            cum_ret_thr = ret_thr.sum()
+            ret_thr = ret_values[mask_thr_arr]
+            mean_ret_thr = float(np.mean(ret_thr))
+            std_ret_thr = float(np.std(ret_thr, ddof=1)) if n_trades_thr > 1 else 0.0
+            cum_ret_thr = float(np.sum(ret_thr))
             sharpe_thr = (
                 mean_ret_thr / (std_ret_thr + 1e-8) * np.sqrt(n_trades_thr)
                 if std_ret_thr > 0
@@ -3069,15 +3637,23 @@ def generate_diagnostics_report(
         # Per-year stability (if datetime index)
         if isinstance(labeled_data.index, pd.DatetimeIndex):
             years = labeled_data.index.year
+            years_arr = np.asarray(years, dtype=int)
+            years_labeled = years_arr[labeled_mask_arr]
+
+            prob_labeled_series = prob_series.iloc[labeled_mask_arr]
+
             report_lines.append("\n### Per-Year Label and Return Stability\n")
-            for year in sorted(np.unique(years)):
-                year_mask = labeled_mask & (years == year)
-                if year_mask.sum() < 20:
+            for year in sorted(np.unique(years_labeled)):
+                year_mask_arr = years_labeled == year
+                if year_mask_arr.sum() < 20:
                     continue
-                pos_rate_y = binary_labels[year_mask].mean()
-                mean_ret_y = realized_returns[year_mask].mean()
+                pos_rate_y = labels_clean.iloc[year_mask_arr].mean()
+                mean_ret_y = returns_labeled.iloc[year_mask_arr].mean()
                 try:
-                    auc_y = roc_auc_score(binary_labels[year_mask], prob_series[year_mask])
+                    auc_y = roc_auc_score(
+                        labels_clean.iloc[year_mask_arr],
+                        prob_labeled_series.iloc[year_mask_arr],
+                    )
                 except Exception:
                     auc_y = float('nan')
                 report_lines.append(
@@ -3090,15 +3666,18 @@ def generate_diagnostics_report(
             indices = np.arange(len(labeled_data))
             report_lines.append("\n### Time-Series Fold Stability (Approximate)\n")
             for fold_idx, (_, test_idx) in enumerate(tscv_diag.split(indices)):
-                fold_mask = pd.Series(False, index=labeled_data.index)
-                fold_mask.iloc[test_idx] = True
-                fold_mask &= labeled_mask
-                if fold_mask.sum() < 20:
+                fold_mask_arr = np.zeros(len(labeled_data), dtype=bool)
+                fold_mask_arr[test_idx] = True
+                fold_mask_arr &= labeled_mask_arr
+                if fold_mask_arr.sum() < 20:
                     continue
-                pos_rate_f = binary_labels[fold_mask].mean()
-                mean_ret_f = realized_returns[fold_mask].mean()
+                pos_rate_f = binary_labels.iloc[fold_mask_arr].mean()
+                mean_ret_f = realized_returns.iloc[fold_mask_arr].mean()
                 try:
-                    auc_f = roc_auc_score(binary_labels[fold_mask], prob_series[fold_mask])
+                    auc_f = roc_auc_score(
+                        binary_labels.iloc[fold_mask_arr],
+                        prob_series.iloc[fold_mask_arr],
+                    )
                 except Exception:
                     auc_f = float('nan')
                 report_lines.append(
@@ -3170,7 +3749,7 @@ def generate_diagnostics_report(
     return str(report_path)
 
 
-def focal_loss_lgb(y_true, y_pred, alpha=0.25, gamma=2.0):
+def focal_loss_lgb(y_pred, dtrain, alpha=0.25, gamma=2.0):
     """
     Focal Loss for LightGBM (custom objective function).
 
@@ -3188,6 +3767,26 @@ def focal_loss_lgb(y_true, y_pred, alpha=0.25, gamma=2.0):
     Returns:
         Tuple of (gradient, hessian)
     """
+
+    # LightGBM Python API expects a custom objective with signature
+    #   func(y_pred, dtrain[, alpha, gamma])
+    # where y_pred are raw scores and dtrain is a Dataset providing labels.
+
+    # Extract labels from Dataset if available
+    if hasattr(dtrain, "get_label"):
+        y_true = dtrain.get_label()
+    else:
+        y_true = dtrain
+
+    # Ensure numeric arrays
+    y_true = np.asarray(y_true, dtype=float).ravel()
+    y_pred = np.asarray(y_pred, dtype=float).ravel()
+
+    # Guard against unexpected alpha/gamma values
+    if not np.isscalar(alpha) or alpha is None:
+        alpha = 0.25
+    if not np.isscalar(gamma) or gamma is None:
+        gamma = 2.0
 
     # Sigmoid to get probabilities
     p = 1.0 / (1.0 + np.exp(-y_pred))
@@ -3396,6 +3995,21 @@ def compute_sample_weights_with_uniqueness(
     Returns:
         Sample weights array
     """
+    def _to_utc_naive(series: pd.Series) -> pd.Series:
+        if not isinstance(series, pd.Series):
+            return series
+        try:
+            dt = pd.to_datetime(series, utc=True, errors="coerce")
+            try:
+                dt = dt.dt.tz_convert("UTC").dt.tz_localize(None)
+            except Exception:
+                dt = dt.dt.tz_localize(None)
+            return dt
+        except Exception:
+            return series
+
+    event_start_times = _to_utc_naive(event_start_times)
+    event_end_times = _to_utc_naive(event_end_times)
     labeled_mask = ~y.isna()
     n_labeled = labeled_mask.sum()
 
@@ -3548,19 +4162,56 @@ def train_ensemble_with_kfold(
     Returns:
         Tuple of (trained_models_dict, out_of_fold_predictions_series)
     """
+    # Hard-align labels (and optional weights) to the feature matrix so that
+    # TimeSeriesSplit indices are always valid and purely positional.
+    if not isinstance(X, pd.DataFrame):
+        X = pd.DataFrame(X)
+
+    n_samples = len(X)
+
+    if not isinstance(y, pd.Series):
+        y = pd.Series(y, index=X.index)
+    else:
+        # If indices or lengths differ, reindex on X.index; this is safe even
+        # with duplicate datetime labels as long as no fill method is used.
+        if len(y) != n_samples or not y.index.equals(X.index):
+            try:
+                y = y.reindex(X.index)
+            except ValueError:
+                # Fallback: align positionally on the most recent window.
+                y_arr = y.to_numpy()
+                if len(y_arr) > n_samples:
+                    y_arr = y_arr[-n_samples:]
+                elif len(y_arr) < n_samples:
+                    pad = np.full(n_samples - len(y_arr), np.nan, dtype=float)
+                    y_arr = np.concatenate([pad, y_arr])
+                y = pd.Series(y_arr, index=X.index, name=y.name)
+
+    # Align sample_weights length to X if provided (positionally, tail-aligned).
+    if sample_weights is not None:
+        try:
+            sw = np.asarray(sample_weights, dtype=float)
+            if sw.shape[0] != n_samples:
+                if sw.shape[0] > n_samples:
+                    sw = sw[-n_samples:]
+                else:
+                    pad = np.ones(n_samples - sw.shape[0], dtype=float)
+                    sw = np.concatenate([pad, sw])
+            sample_weights = sw
+        except Exception:
+            sample_weights = None
+
     # Initialize storage
-    trained_models = {'lgbm': [], 'xgb': [], 'rf': [], 'logreg': []}
+    trained_models = {'lgbm': [], 'xgb': [], 'rf': []}
     oof_predictions = {
         'lgbm': pd.Series(np.nan, index=X.index),
         'xgb': pd.Series(np.nan, index=X.index),
         'rf': pd.Series(np.nan, index=X.index),
-        'logreg': pd.Series(np.nan, index=X.index),
     }
     oof_aucs = {
         'lgbm': [],
         'xgb': [],
         'rf': [],
-        'logreg': [],
     }
 
     # Time-series CV
@@ -3583,13 +4234,14 @@ def train_ensemble_with_kfold(
                 tprint(f"    ⚠️ All training samples purged, skipping fold", "WARNING")
             continue
 
-        # Get train/test splits
+        # Get train/test splits (positional indices from TimeSeriesSplit)
         X_train = X.iloc[train_idx_purged]
         y_train = y.iloc[train_idx_purged]
         X_test = X.iloc[test_idx]
         y_test = y.iloc[test_idx]
 
-        # Filter NaN labels
+        # Filter NaN labels using positional boolean masks to avoid any
+        # index-alignment quirks with pandas Series.
         train_mask = ~y_train.isna()
         test_mask = ~y_test.isna()
 
@@ -3598,10 +4250,13 @@ def train_ensemble_with_kfold(
                 tprint(f"    ⚠️ Too few samples, skipping fold", "WARNING")
             continue
 
-        X_train_clean = X_train[train_mask].fillna(0)
-        y_train_clean = y_train[train_mask]
-        X_test_clean = X_test[test_mask].fillna(0)
-        y_test_clean = y_test[test_mask]
+        train_mask_arr = train_mask.to_numpy(dtype=bool, copy=False)
+        test_mask_arr = test_mask.to_numpy(dtype=bool, copy=False)
+
+        X_train_clean = X_train.iloc[train_mask_arr].fillna(0)
+        y_train_clean = y_train.iloc[train_mask_arr]
+        X_test_clean = X_test.iloc[test_mask_arr].fillna(0)
+        y_test_clean = y_test.iloc[test_mask_arr]
 
         # Extract sample weights for this fold (if provided)
         if sample_weights is not None:
@@ -3609,12 +4264,57 @@ def train_ensemble_with_kfold(
         else:
             weights_train_clean = None
 
+        try:
+            fold_start = X.index[test_idx[0]]
+            fold_end = X.index[test_idx[-1]]
+
+            y_train_arr = y_train_clean.to_numpy()
+            y_test_arr = y_test_clean.to_numpy()
+
+            n_train = y_train_arr.shape[0]
+            n_test = y_test_arr.shape[0]
+
+            pos_train = int((y_train_arr == 1.0).sum())
+            pos_test = int((y_test_arr == 1.0).sum())
+
+            neg_train = n_train - pos_train
+            neg_test = n_test - pos_test
+
+            vol_cols = [c for c in X_train_clean.columns if "vol" in c.lower()]
+            if vol_cols:
+                train_vol_proxy = float(np.nanmedian(X_train_clean[vol_cols].to_numpy()))
+                test_vol_proxy = float(np.nanmedian(X_test_clean[vol_cols].to_numpy()))
+            else:
+                train_vol_proxy = float("nan")
+                test_vol_proxy = float("nan")
+
+            if verbose:
+                tprint(
+                    (
+                        f"    Fold {fold_idx + 1}: test_range=[{fold_start} -> {fold_end}], "
+                        f"train_n={n_train}, test_n={n_test}, "
+                        f"train_pos={pos_train} ({pos_train / n_train:.1%}), "
+                        f"test_pos={pos_test} ({pos_test / n_test:.1%}), "
+                        f"vol_proxy_train={train_vol_proxy:.4g}, "
+                        f"vol_proxy_test={test_vol_proxy:.4g}"
+                    ),
+                    "INFO",
+                )
+        except Exception as diag_exc:
+            if verbose:
+                tprint(
+                    f"    Fold {fold_idx + 1}: diagnostics failed: {diag_exc}",
+                    "WARNING",
+                )
+
         # Train each base model
         # NOTE: use_focal_loss=False for now (standard objectives work better with predict_proba)
         # Set to True to enable focal loss (focuses on hard examples, good for noise)
         base_models = create_base_models({}, use_focal_loss=False)
+        cv_model_names = ['lgbm', 'xgb', 'rf']
 
-        for model_name, model in base_models.items():
+        for model_name in cv_model_names:
+            model = base_models[model_name]
             try:
                 # Train with sample weights
                 if weights_train_clean is not None:
@@ -3646,7 +4346,7 @@ def train_ensemble_with_kfold(
                     tprint(f"    ❌ {model_name} failed: {e}", "ERROR")
 
     # EARLY STOPPING CHECK: Compute mean OOF AUC across folds
-    for model_name in ['lgbm', 'xgb', 'rf', 'logreg']:
+    for model_name in trained_models.keys():
         valid_aucs = [a for a in oof_aucs[model_name] if not np.isnan(a)]
         if valid_aucs:
             mean_auc = np.mean(valid_aucs)
@@ -3691,17 +4391,76 @@ def calibrate_ensemble(
     """
     platt_calibrators = {}
 
-    # Valid data mask
-    valid_mask = ~y_true.isna()
-    for col in oof_predictions.columns:
-        valid_mask &= ~oof_predictions[col].isna()
+    # Normalize indices to UTC-naive DatetimeIndex where applicable to avoid
+    # tz-naive vs tz-aware alignment issues when combining masks and slicing.
+    def _normalize_index(obj: Any) -> Any:
+        if isinstance(obj, (pd.Series, pd.DataFrame)):
+            idx = obj.index
+            if isinstance(idx, pd.DatetimeIndex) and idx.tz is not None:
+                try:
+                    obj = obj.copy()
+                    obj.index = idx.tz_convert("UTC").tz_localize(None)
+                except Exception:
+                    obj = obj.copy()
+                    obj.index = idx.tz_localize(None)
+        return obj
 
-    if valid_mask.sum() < 20:
+    oof_predictions = _normalize_index(oof_predictions)
+    y_true = _normalize_index(y_true)
+    realized_returns = _normalize_index(realized_returns)
+    meta_features = _normalize_index(meta_features)
+
+    def _align_to_common_index(
+        preds: pd.DataFrame,
+        y: pd.Series,
+        rets: pd.Series,
+        feats: pd.DataFrame,
+    ) -> Tuple[pd.DataFrame, pd.Series, pd.Series, pd.DataFrame]:
+        lengths = [len(preds), len(y), len(rets)]
+        if isinstance(feats, pd.DataFrame):
+            lengths.append(len(feats))
+        min_len = min(lengths) if lengths else 0
+        if min_len <= 0:
+            return (
+                preds.iloc[0:0],
+                y.iloc[0:0],
+                rets.iloc[0:0],
+                feats.iloc[0:0] if isinstance(feats, pd.DataFrame) else feats,
+            )
+        preds = preds.iloc[-min_len:]
+        y = y.iloc[-min_len:]
+        rets = rets.iloc[-min_len:]
+        if isinstance(feats, pd.DataFrame):
+            feats = feats.iloc[-min_len:]
+        common_index = pd.RangeIndex(min_len)
+        preds.index = common_index
+        y.index = common_index
+        rets.index = common_index
+        if isinstance(feats, pd.DataFrame):
+            feats.index = common_index
+        return preds, y, rets, feats
+
+    oof_predictions, y_true, realized_returns, meta_features = _align_to_common_index(
+        oof_predictions,
+        y_true,
+        realized_returns,
+        meta_features,
+    )
+
+    # Valid data mask (purely positional to avoid any index alignment issues)
+    y_arr = y_true.to_numpy()
+    valid_mask = ~pd.isna(y_arr)
+    for col in oof_predictions.columns:
+        col_arr = oof_predictions[col].to_numpy()
+        valid_mask &= ~pd.isna(col_arr)
+
+    n_valid = int(valid_mask.sum())
+    if n_valid < 20:
         tprint("⚠️ Warning: Too few samples for calibration", "WARNING")
         return {}, None
 
-    y_valid = y_true[valid_mask]
-    returns_valid = realized_returns[valid_mask]
+    y_valid = y_true.iloc[valid_mask]
+    returns_valid = realized_returns.iloc[valid_mask]
 
     # STAGE 1: Platt scaling per model
     calibrated_predictions = pd.DataFrame(index=oof_predictions.index)
@@ -3742,7 +4501,7 @@ def calibrate_ensemble(
     # STAGE 3: Isotonic regression on ensemble output
     tprint("  📈 Stage 3: Applying isotonic regression to ensemble...", "INFO")
 
-    ensemble_valid = ensemble_probs[valid_mask].values
+    ensemble_valid = ensemble_probs.iloc[valid_mask].values
 
     calibration_input = ensemble_valid
 
@@ -3752,6 +4511,7 @@ def calibrate_ensemble(
         iso_regressor.fit(calibration_input, returns_valid.values)
 
         tprint(f"    ✓ Isotonic regression fitted on {len(calibration_input)} samples", "SUCCESS")
+        tprint("    ℹ️ iso_regressor.fit completed", "INFO")
 
     except Exception as e:
         tprint(f"    ❌ Isotonic regression failed: {e}", "ERROR")
@@ -3879,61 +4639,106 @@ def compute_regime_wise_metrics(
     y_pred: Optional[np.ndarray] = None,
     realized_returns: Optional[pd.Series] = None
 ) -> Dict[str, Any]:
-    """
-    Compute performance metrics broken down by volatility and trend regimes.
+    """Compute performance metrics broken down by volatility regimes.
 
-    This helps diagnose regime-dependent performance and addresses AUC instability.
+    Implementation is fully positional/array-based to avoid any pandas boolean
+    index alignment issues. All inputs are tail-aligned to a common window
+    before applying masks.
 
     Args:
-        X: Feature matrix (must include 'volatility_regime' column)
+        X: Feature matrix (should include 'volatility_regime' column)
         y: Binary labels
-        y_pred: Optional predicted probabilities
-        realized_returns: Optional realized returns for additional metrics
+        y_pred: Optional predicted probabilities (same length as y)
+        realized_returns: Optional realized returns (same length as y)
 
     Returns:
         Dictionary with regime-wise metrics
     """
-    metrics = {}
+    metrics: Dict[str, Any] = {}
 
-    # Ensure we have valid data
-    valid_mask = ~y.isna()
-    if valid_mask.sum() < 10:
-        return {'error': 'Insufficient valid samples'}
+    # Basic sanity checks
+    if not isinstance(X, pd.DataFrame) or len(X) == 0 or len(y) == 0:
+        return {"error": "Insufficient samples"}
 
-    # Check for volatility regime
-    if 'volatility_regime' in X.columns:
-        vol_regime = X['volatility_regime'][valid_mask]
-        y_valid = y[valid_mask]
+    lengths = [len(X), len(y)]
+    if y_pred is not None:
+        lengths.append(len(y_pred))
+    if realized_returns is not None:
+        lengths.append(len(realized_returns))
 
-        vol_metrics = {}
-        for regime in ['low', 'medium', 'high']:
-            regime_mask = vol_regime == regime
-            if regime_mask.sum() < 10:
-                continue
+    n_common = min(lengths) if lengths else 0
+    if n_common < 10:
+        return {"error": "Insufficient valid samples"}
 
-            y_regime = y_valid[regime_mask]
-            pos_rate = (y_regime == 1.0).mean()
-            vol_metrics[regime] = {
-                'n_samples': int(regime_mask.sum()),
-                'pos_rate': float(pos_rate),
-            }
+    # Tail-align all inputs on a common window
+    X_tail = X.iloc[-n_common:]
+    y_tail = y.iloc[-n_common:]
+    rr_tail = realized_returns.iloc[-n_common:] if realized_returns is not None else None
+    y_pred_tail = np.asarray(y_pred, dtype=float)[-n_common:] if y_pred is not None else None
 
-            # Add AUC if predictions available
-            if y_pred is not None and len(y_pred) > 0:
-                y_pred_regime = y_pred[valid_mask.values][regime_mask.values]
-                if len(np.unique(y_regime)) > 1:
-                    try:
-                        auc = roc_auc_score(y_regime, y_pred_regime)
-                        vol_metrics[regime]['auc'] = float(auc)
-                    except:
-                        pass
+    # Volatility regime must be present to compute metrics
+    if 'volatility_regime' not in X_tail.columns:
+        return metrics
 
-            # Add return metrics if available
-            if realized_returns is not None:
-                ret_regime = realized_returns[valid_mask][regime_mask]
-                vol_metrics[regime]['mean_return'] = float(ret_regime.mean())
-                vol_metrics[regime]['sharpe'] = float(ret_regime.mean() / (ret_regime.std() + 1e-8))
+    vol_regime = X_tail['volatility_regime']
 
+    # Convert labels and optional returns to numpy for robust masking
+    y_arr = y_tail.to_numpy(dtype=float, copy=False)
+    valid_mask_arr = ~np.isnan(y_arr)
+    if valid_mask_arr.sum() < 10:
+        return {"error": "Insufficient valid samples"}
+
+    vol_arr = vol_regime.to_numpy()
+    y_valid = y_arr[valid_mask_arr]
+    vol_valid = vol_arr[valid_mask_arr]
+
+    if y_pred_tail is not None:
+        y_pred_valid = y_pred_tail[valid_mask_arr]
+    else:
+        y_pred_valid = None
+
+    if rr_tail is not None:
+        rr_arr = rr_tail.to_numpy(dtype=float, copy=False)
+        rr_valid = rr_arr[valid_mask_arr]
+    else:
+        rr_valid = None
+
+    vol_metrics: Dict[str, Any] = {}
+    for regime in ['low', 'medium', 'high']:
+        regime_mask = vol_valid == regime
+        n_regime = int(regime_mask.sum())
+        if n_regime < 10:
+            continue
+
+        y_regime = y_valid[regime_mask]
+        pos_rate = float((y_regime == 1.0).mean())
+        reg_dict: Dict[str, Any] = {
+            'n_samples': n_regime,
+            'pos_rate': pos_rate,
+        }
+
+        # AUC by regime if predictions available
+        if y_pred_valid is not None and len(y_pred_valid) == len(y_valid):
+            y_pred_regime = y_pred_valid[regime_mask]
+            if np.unique(y_regime).size > 1:
+                try:
+                    auc = roc_auc_score(y_regime, y_pred_regime)
+                    reg_dict['auc'] = float(auc)
+                except Exception:
+                    pass
+
+        # Return-based metrics by regime if available
+        if rr_valid is not None and len(rr_valid) == len(y_valid):
+            ret_regime = rr_valid[regime_mask]
+            if ret_regime.size > 0:
+                mean_ret = float(ret_regime.mean())
+                std_ret = float(ret_regime.std())
+                reg_dict['mean_return'] = mean_ret
+                reg_dict['sharpe'] = float(mean_ret / (std_ret + 1e-8))
+
+        vol_metrics[regime] = reg_dict
+
+    if vol_metrics:
         metrics['volatility_regimes'] = vol_metrics
 
     return metrics
@@ -4232,9 +5037,19 @@ def attach_rolling_hmm_regimes_to_market_data(
         if isinstance(labels, pd.DataFrame) and not labels.empty:
             labels_df = labels.copy()
             if "timestamp" in labels_df.columns:
-                labels_df["timestamp"] = pd.to_datetime(labels_df["timestamp"])
+                ts = pd.to_datetime(labels_df["timestamp"], utc=True, errors="coerce")
+                try:
+                    ts = ts.dt.tz_convert("UTC").dt.tz_localize(None)
+                except Exception:
+                    ts = ts.dt.tz_localize(None)
+                labels_df["timestamp"] = ts
                 labels_df.set_index("timestamp", inplace=True)
             if isinstance(labels_df.index, pd.DatetimeIndex):
+                if labels_df.index.tz is not None:
+                    try:
+                        labels_df.index = labels_df.index.tz_convert("UTC").tz_localize(None)
+                    except Exception:
+                        labels_df.index = labels_df.index.tz_localize(None)
                 if "regime_label_ml" in labels_df.columns:
                     regime_col = "regime_label_ml"
                 elif "regime_label" in labels_df.columns:
@@ -4253,9 +5068,19 @@ def attach_rolling_hmm_regimes_to_market_data(
         if isinstance(probs, pd.DataFrame) and not probs.empty:
             probs_df = probs.copy()
             if "timestamp" in probs_df.columns:
-                probs_df["timestamp"] = pd.to_datetime(probs_df["timestamp"])
+                ts = pd.to_datetime(probs_df["timestamp"], utc=True, errors="coerce")
+                try:
+                    ts = ts.dt.tz_convert("UTC").dt.tz_localize(None)
+                except Exception:
+                    ts = ts.dt.tz_localize(None)
+                probs_df["timestamp"] = ts
                 probs_df.set_index("timestamp", inplace=True)
             if isinstance(probs_df.index, pd.DatetimeIndex):
+                if probs_df.index.tz is not None:
+                    try:
+                        probs_df.index = probs_df.index.tz_convert("UTC").tz_localize(None)
+                    except Exception:
+                        probs_df.index = probs_df.index.tz_localize(None)
                 prob_cols = [
                     c for c in probs_df.columns
                     if c.startswith("regime_") and c.endswith("_prob")
@@ -4272,101 +5097,135 @@ def attach_rolling_hmm_regimes_to_market_data(
     # This uses the regime_alpha namespace and the hmm_alpha_training_data_1h
     # artifact produced by HMMMLAlphaStep and aligns it to the base timeframe.
     try:
-        alpha_context = {
+        # Use shared specialist loader (HMM Alpha + ML Risk) and then map
+        # columns back to the schema expected by the meta-labeling pipeline.
+        specialist_config = {
             "symbol": symbol,
             "exchange": exchange,
-            "timeframe": regime_timeframe,
+            "timeframe": base_timeframe,
+            "regime_timeframe": regime_timeframe,
             "direction": direction,
-            "model": "regime_alpha",
-            "step_name": "hmm_ml_alpha_step",
         }
 
-        alpha_training = None
-        try:
-            alpha_training = step.artifact_router.load(  # type: ignore[attr-defined]
-                artifact_name="hmm_alpha_training_data_1h",
-                artifact_type="data",
-                data_category="features",
-                context=alpha_context,
-            )
-        except Exception as e_alpha_load:
-            tprint(f"⚠️ Failed to load hmm_alpha_training_data_1h for regime_alpha context: {e_alpha_load}", "WARNING")
-            alpha_training = None
+        specialist_df = get_specialist_models_outputs(
+            artifact_router=step.artifact_router,
+            training_index=md.index,
+            config=specialist_config,
+            logger=getattr(step, "logger", None),
+            strict=False,
+        )
 
-        if isinstance(alpha_training, pd.DataFrame) and not alpha_training.empty:
-            at = alpha_training.copy()
-            if "timestamp" in at.columns:
-                at["timestamp"] = pd.to_datetime(at["timestamp"])
-                at.set_index("timestamp", inplace=True)
-            if isinstance(at.index, pd.DatetimeIndex):
-                exp_cols = [
-                    c
-                    for c in at.columns
-                    if c.startswith("alpha_expectation_")
-                ]
-                if exp_cols:
-                    at_sub = at[exp_cols].sort_index()
-                    at_aligned = at_sub.reindex(md.index, method="ffill")
-                    # Rename to 1h context to avoid confusion with 15m features
+        if specialist_df is not None and not specialist_df.empty:
+            # HMM Alpha expectations (1h), renamed to the existing 1h-aware
+            # column names on md. The shared specialist loader already
+            # aligns indices to md.index; avoid an additional reindex step
+            # here to prevent duplicate-index reindex errors.
+            try:
+                alpha_cols = []
+                rename_map = {}
+
+                # Prefer the unified calibrated score if available
+                if "alpha_score_continuous" in specialist_df.columns:
+                    alpha_cols = [
+                        c
+                        for c in specialist_df.columns
+                        if c == "alpha_score_continuous" or c.startswith("alpha_score_continuous_ewm_")
+                    ]
+                    at_aligned = specialist_df[alpha_cols].copy()
                     rename_map = {}
-                    for c in exp_cols:
-                        if c == "alpha_expectation_raw_01":
-                            rename_map[c] = "hmm_alpha_expectation_raw_1h"
-                        elif c == "alpha_expectation_ema_01":
-                            rename_map[c] = "hmm_alpha_expectation_ema_1h"
-                        else:
-                            rename_map[c] = f"hmm_alpha_{c}"
+                    for c in alpha_cols:
+                        if c == "alpha_score_continuous":
+                            rename_map[c] = "hmm_alpha_score_continuous_1h"
+                        elif c.startswith("alpha_score_continuous_ewm_"):
+                            rename_map[c] = f"hmm_{c}_1h"
+                else:
+                    # Backward compatibility: fall back to expectation columns
+                    alpha_cols = [
+                        c
+                        for c in specialist_df.columns
+                        if c.startswith("alpha_expectation_")
+                    ]
+                    if alpha_cols:
+                        at_aligned = specialist_df[alpha_cols].copy()
+                        rename_map = {}
+                        for c in alpha_cols:
+                            if c == "alpha_expectation_raw_01":
+                                rename_map[c] = "hmm_alpha_expectation_raw_1h"
+                            elif c == "alpha_expectation_ema_01":
+                                rename_map[c] = "hmm_alpha_expectation_ema_1h"
+                            else:
+                                rename_map[c] = f"hmm_alpha_{c}"
+
+                if alpha_cols:
+                    # Safety: if indices somehow differ, fall back to a
+                    # one-time ffill reindex without allowing duplicates to
+                    # raise. This should be rare since the specialist loader
+                    # already reindexes to md.index.
+                    if not at_aligned.index.equals(md.index):
+                        try:
+                            at_aligned = at_aligned.reindex(md.index, method="ffill")
+                        except ValueError:
+                            # As a last resort, align positionally on the
+                            # tail window without changing md.index.
+                            at_arr = at_aligned.reset_index(drop=True)
+                            n_md = len(md)
+                            if len(at_arr) > n_md:
+                                at_arr = at_arr.iloc[-n_md:, :].reset_index(drop=True)
+                            elif len(at_arr) < n_md:
+                                pad_rows = n_md - len(at_arr)
+                                pad = pd.DataFrame(np.nan, index=range(pad_rows), columns=at_arr.columns)
+                                at_arr = pd.concat([pad, at_arr], axis=0, ignore_index=True)
+                            at_arr.index = md.index
+                            at_aligned = at_arr
+
                     at_aligned = at_aligned.rename(columns=rename_map)
                     for c in at_aligned.columns:
                         md[c] = at_aligned[c]
-    except Exception as e_alpha:
-        tprint(f"⚠️ Failed to attach HMM Alpha expectation features: {e_alpha}", "WARNING")
+            except Exception as e_alpha:
+                tprint(
+                    f"⚠️ Failed to attach HMM Alpha expectation features from specialist outputs: {e_alpha}",
+                    "WARNING",
+                )
 
-    try:
-        symbol_rr = symbol
-        exchange_rr = exchange
-        regime_timeframe_rr = regime_timeframe
-        direction_rr = direction
-
-        risk_context = {
-            "symbol": symbol_rr,
-            "exchange": exchange_rr,
-            "timeframe": regime_timeframe_rr,
-            "direction": direction_rr,
-            "model": "regime_risk",
-            "step_name": "ml_risk_regime_step",
-        }
-
-        risk_training = None
-        try:
-            risk_training = step.artifact_router.load(  # type: ignore[attr-defined]
-                artifact_name="ml_risk_training_data_1h",
-                artifact_type="data",
-                data_category="features",
-                context=risk_context,
-            )
-        except Exception as e_load:
-            tprint(f"⚠️ Failed to load ml_risk_training_data_1h for regime_risk context: {e_load}", "WARNING")
-            risk_training = None
-
-        if isinstance(risk_training, pd.DataFrame) and not risk_training.empty:
-            rt = risk_training.copy()
-            if "timestamp" in rt.columns:
-                rt["timestamp"] = pd.to_datetime(rt["timestamp"])
-                rt.set_index("timestamp", inplace=True)
-            if isinstance(rt.index, pd.DatetimeIndex):
+            # ML Risk regimes / scores (1h expectations aligned to base
+            # timeframe). Again, rely on the shared specialist loader for
+            # index alignment and avoid redundant reindexing.
+            try:
                 risk_cols = [
                     c
-                    for c in rt.columns
+                    for c in specialist_df.columns
                     if c.startswith("risk_regime") or c.startswith("risk_score")
                 ]
                 if risk_cols:
-                    rt_sub = rt[risk_cols].sort_index()
-                    rt_aligned = rt_sub.reindex(md.index, method="ffill")
+                    rt_aligned = specialist_df[risk_cols].copy()
+
+                    if not rt_aligned.index.equals(md.index):
+                        try:
+                            rt_aligned = rt_aligned.reindex(md.index, method="ffill")
+                        except ValueError:
+                            rt_arr = rt_aligned.reset_index(drop=True)
+                            n_md = len(md)
+                            if len(rt_arr) > n_md:
+                                rt_arr = rt_arr.iloc[-n_md:, :].reset_index(drop=True)
+                            elif len(rt_arr) < n_md:
+                                pad_rows = n_md - len(rt_arr)
+                                pad = pd.DataFrame(np.nan, index=range(pad_rows), columns=rt_arr.columns)
+                                rt_arr = pd.concat([pad, rt_arr], axis=0, ignore_index=True)
+                            rt_arr.index = md.index
+                            rt_aligned = rt_arr
+
                     for col in risk_cols:
                         md[col] = rt_aligned[col]
-    except Exception as e_risk:
-        tprint(f"⚠️ Failed to attach ML Risk regime probabilities: {e_risk}", "WARNING")
+            except Exception as e_risk:
+                tprint(
+                    f"⚠️ Failed to attach ML Risk regime features from specialist outputs: {e_risk}",
+                    "WARNING",
+                )
+    except Exception as e_spec:
+        tprint(
+            f"⚠️ Failed to load specialist model outputs for HMM Alpha / ML Risk attachment: {e_spec}",
+            "WARNING",
+        )
 
     return md
 
@@ -4496,48 +5355,45 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             # enable_labeling_hpo_params: if True (default), try to load best params JSON
             if config.get('enable_labeling_hpo_params', True):
                 try:
-                    outcomes_dir = Path('outcomes')
                     symbol = str(config['symbol'])
                     timeframe = str(config['timeframe'])
-                    pattern = f"meta_labeling_hpo_best_params_{symbol}_{timeframe}_*.json"
-                    candidates = sorted(outcomes_dir.glob(pattern)) if outcomes_dir.exists() else []
-                    if candidates:
-                        latest = candidates[-1]
-                        tprint(f"🔍 Using labeling HPO params from {latest}", "INFO")
-                        import json as _json
-                        with open(latest, 'r') as f:
-                            hpo_cfg = _json.load(f)
-                        best_params = hpo_cfg.get('best_params', {}) if isinstance(hpo_cfg, dict) else {}
+                    hpo_params, latest_path, params_source = _load_latest_labeling_hpo_params(
+                        symbol,
+                        timeframe,
+                    )
+                    if latest_path is not None and hpo_params:
+                        label_source = params_source or 'params'
+                        tprint(f"🔍 Using labeling HPO {label_source} from {latest_path}", "INFO")
 
                         # Map HPO params → step parameters with safety clamps
-                        if 'profit_thr_base' in best_params:
-                            profit_threshold = float(best_params['profit_thr_base'])
-                        if 'stop_to_profit_ratio' in best_params:
-                            stop_ratio = float(best_params['stop_to_profit_ratio'])
+                        if 'profit_thr_base' in hpo_params:
+                            profit_threshold = float(hpo_params['profit_thr_base'])
+                        if 'stop_to_profit_ratio' in hpo_params:
+                            stop_ratio = float(hpo_params['stop_to_profit_ratio'])
                             stop_threshold = max(0.0005, profit_threshold * stop_ratio)
-                        if 'horizon_bars' in best_params:
-                            horizon = int(best_params['horizon_bars'])
-                        if 'min_event_spacing' in best_params:
-                            min_event_spacing = int(best_params['min_event_spacing'])
+                        if 'horizon_bars' in hpo_params:
+                            horizon = int(hpo_params['horizon_bars'])
+                        if 'min_event_spacing' in hpo_params:
+                            min_event_spacing = int(hpo_params['min_event_spacing'])
 
-                        if 'kalman_Q' in best_params:
-                            kalman_Q = float(best_params['kalman_Q'])
-                        if 'kalman_R' in best_params:
-                            kalman_R = float(best_params['kalman_R'])
-                        if 'vol_baseline_window' in best_params:
-                            vol_baseline_window = int(best_params['vol_baseline_window'])
-                        if 'profit_mult_min' in best_params:
-                            profit_mult_min = float(best_params['profit_mult_min'])
-                        if 'profit_mult_max' in best_params:
-                            profit_mult_max = float(best_params['profit_mult_max'])
-                        if 'stop_mult_min' in best_params:
-                            stop_mult_min = float(best_params['stop_mult_min'])
-                        if 'stop_mult_max' in best_params:
-                            stop_mult_max = float(best_params['stop_mult_max'])
-                        if 'iso_min_prob' in best_params:
-                            iso_min_prob_param = float(best_params['iso_min_prob'])
-                        if 'target_clip_high_q' in best_params:
-                            target_clip_high_q_param = float(best_params['target_clip_high_q'])
+                        if 'kalman_Q' in hpo_params:
+                            kalman_Q = float(hpo_params['kalman_Q'])
+                        if 'kalman_R' in hpo_params:
+                            kalman_R = float(hpo_params['kalman_R'])
+                        if 'vol_baseline_window' in hpo_params:
+                            vol_baseline_window = int(hpo_params['vol_baseline_window'])
+                        if 'profit_mult_min' in hpo_params:
+                            profit_mult_min = float(hpo_params['profit_mult_min'])
+                        if 'profit_mult_max' in hpo_params:
+                            profit_mult_max = float(hpo_params['profit_mult_max'])
+                        if 'stop_mult_min' in hpo_params:
+                            stop_mult_min = float(hpo_params['stop_mult_min'])
+                        if 'stop_mult_max' in hpo_params:
+                            stop_mult_max = float(hpo_params['stop_mult_max'])
+                        if 'iso_min_prob' in hpo_params:
+                            iso_min_prob_param = float(hpo_params['iso_min_prob'])
+                        if 'target_clip_high_q' in hpo_params:
+                            target_clip_high_q_param = float(hpo_params['target_clip_high_q'])
 
                         vol_baseline_window = max(8, min(512, vol_baseline_window))
                         if profit_mult_min > profit_mult_max:
@@ -4555,27 +5411,84 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                 except Exception as hpo_exc:
                     tprint(f"⚠️ Failed to load labeling HPO params: {hpo_exc}", "WARNING")
 
-            # Load market data
-            tprint("📊 [prep] Loading market data...", "INFO")
-            from src.utils.data.klines_parquet import get_klines_manager
-            klines_manager = get_klines_manager(data_dir=config.get('data_dir', 'historical_data'))
-
-            market_data = klines_manager.read_data(
-                symbol=config['symbol'],
-                interval=config['timeframe'],
-                data_type="processed"
+            # Load market data via BaseStep helpers so execution mode and lookback days are centralized
+            tprint("📊 [prep] Loading market data via BaseStep...", "INFO")
+            pipeline_state: Dict[str, Any] = {}
+            market_data, source = self.load_market_data_or_fail(
+                config,
+                pipeline_state=pipeline_state,
+                allow_config_override=True,
             )
 
-            if market_data is None or market_data.empty:
+            if not isinstance(market_data, pd.DataFrame) or market_data.empty:
                 raise ValueError(f"No market data available for {config['symbol']} {config['timeframe']}")
 
-            tprint(f"✅ Loaded {len(market_data)} samples", "SUCCESS")
+            # Index diagnostics and normalization (timezone-safe)
+            idx = market_data.index
+            if isinstance(idx, pd.DatetimeIndex):
+                tprint(
+                    f"🕒 [index] market_data.index tz={idx.tz}, name={idx.name}, len={len(idx)}",
+                    "INFO",
+                )
+                if idx.tz is not None:
+                    try:
+                        market_data = market_data.copy()
+                        market_data.index = market_data.index.tz_convert("UTC").tz_localize(None)
+                        tprint("🕒 [index] Normalized market_data.index to UTC-naive", "INFO")
+                    except Exception as tz_exc:
+                        tprint(f"⚠️ [index] Failed to normalize market_data.index timezone: {tz_exc}", "WARNING")
+            else:
+                tprint(
+                    f"🕒 [index] market_data.index type={type(idx)}, len={len(idx)}",
+                    "INFO",
+                )
+
+            tprint(f"📊 Loaded {len(market_data)} samples from {source}", "SUCCESS")
 
             if 'close' not in market_data.columns:
                 raise ValueError("Missing required 'close' column in market data")
 
+            # STEP 1: Generate FIXED primary signals
+            tprint("🎯 [1/13] Generating fixed primary signals...", "INFO")
+            primary_signals = generate_primary_signals(market_data)
+
+            n_long_signals = (primary_signals['consensus'] > 0).sum()
+            n_short_signals = (primary_signals['consensus'] < 0).sum()
+            tprint(f"📊 Primary signals: {n_long_signals} long, {n_short_signals} short", "INFO")
+
+            # Define canonical training index based on primary signals
+            train_index = primary_signals.index
+
+            # Align market_data to train_index (positionally via reindex) to avoid
+            # length and duplicate-index issues downstream.
+            if not market_data.index.equals(train_index):
+                try:
+                    tprint(
+                        f"⚠️ [train_index] Aligning market_data (len={len(market_data)}) "
+                        f"to primary_signals index (len={len(train_index)})",
+                        "WARNING",
+                    )
+                    market_data = market_data.reindex(train_index, method="ffill")
+                except Exception as align_exc:
+                    tprint(
+                        f"⚠️ [train_index] Failed to align market_data to train_index: {align_exc}",
+                        "WARNING",
+                    )
+
+            # Defensive: ensure primary_signals also uses train_index exactly
+            if not primary_signals.index.equals(train_index):
+                try:
+                    primary_signals = primary_signals.reindex(train_index, method="ffill")
+                except Exception as sig_align_exc:
+                    tprint(
+                        f"⚠️ [train_index] Failed to align primary_signals to train_index: {sig_align_exc}",
+                        "WARNING",
+                    )
+
+            # Volume flag after potential realignment
             volume_available = 'volume' in market_data.columns
 
+            # Attach rolling HMM regimes and specialist features aligned to train_index
             try:
                 market_data = attach_rolling_hmm_regimes_to_market_data(
                     self,
@@ -4585,13 +5498,31 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             except Exception as e_reg:
                 tprint(f"⚠️ Failed to attach rolling HMM regimes to market_data: {e_reg}", "WARNING")
 
-            # STEP 1: Generate FIXED primary signals
-            tprint("🎯 [1/13] Generating fixed primary signals...", "INFO")
-            primary_signals = generate_primary_signals(market_data)
-
-            n_long_signals = (primary_signals['consensus'] > 0).sum()
-            n_short_signals = (primary_signals['consensus'] < 0).sum()
-            tprint(f"📊 Primary signals: {n_long_signals} long, {n_short_signals} short", "INFO")
+            # Attach specialist model outputs (liquidity regimes, etc.) aligned to train_index
+            try:
+                specialist_df = get_specialist_models_outputs(
+                    artifact_router=self.artifact_router,
+                    training_index=train_index,
+                    config=config,
+                    logger=self.logger,
+                    strict=False,
+                )
+                if specialist_df is not None and not specialist_df.empty:
+                    # Liquidity regime probabilities
+                    prob_cols = [
+                        c for c in specialist_df.columns
+                        if c.startswith('liquidity_regime_') and 'prob_' in c
+                    ]
+                    if prob_cols:
+                        liquidity_features = specialist_df[prob_cols].reindex(train_index, method='ffill')
+                        for col in liquidity_features.columns:
+                            market_data[f'liquidity_{col}'] = liquidity_features[col]
+                        tprint(
+                            f"✅ Added {len(prob_cols)} liquidity regime probability features to market_data via specialist loader",
+                            "SUCCESS",
+                        )
+            except Exception as e_liquidity:
+                tprint(f"⚠️ Failed to attach specialist liquidity regime probabilities: {e_liquidity}", "WARNING")
 
             # STEP 2: Compute volatility for adaptive thresholds
             tprint("📊 [2/13] Computing volatility for adaptive thresholds...", "INFO")
@@ -4742,6 +5673,12 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
 
             # STEP 8: Calibrate ensemble with isotonic regression only (preserve variance)
             tprint("📈 [8/13] Calibrating ensemble (isotonic on blended predictions)...", "INFO")
+            tprint(
+                f"    Calibration inputs: n_oof={len(oof_predictions_df)}, "
+                f"n_labels={binary_labels.notna().sum()}, "
+                f"n_returns={realized_returns.notna().sum()}",
+                "INFO",
+            )
 
             platt_calibrators, iso_regressor = calibrate_ensemble(
                 oof_predictions=oof_predictions_df,
@@ -4780,37 +5717,43 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
 
             # Compute CV metrics for reporting
             cv_results = []
-            oof_mask = ~binary_labels.isna()
-            for col in oof_predictions_df.columns:
-                oof_mask &= ~oof_predictions_df[col].isna()
 
-            if oof_mask.sum() > 0:
-                y_oof = binary_labels[oof_mask]
-                for model_name in oof_predictions_df.columns:
-                    try:
-                        y_pred_proba = oof_predictions_df[model_name][oof_mask]
-                        auc = roc_auc_score(y_oof, y_pred_proba)
-                        y_pred = (y_pred_proba >= 0.5).astype(int)
-                        precision = precision_score(y_oof, y_pred, zero_division=0)
-                        recall = recall_score(y_oof, y_pred, zero_division=0)
-                        f1 = f1_score(y_oof, y_pred, zero_division=0)
+            n_metrics = min(len(binary_labels), len(oof_predictions_df))
+            if n_metrics > 0:
+                labels_for_metrics = binary_labels.iloc[-n_metrics:]
+                preds_for_metrics = oof_predictions_df.iloc[-n_metrics:]
 
-                        cv_results.append({
-                            'model': model_name,
-                            'auc': auc,
-                            'precision': precision,
-                            'recall': recall,
-                            'f1': f1
-                        })
+                mask = ~pd.isna(labels_for_metrics.to_numpy())
+                for col in preds_for_metrics.columns:
+                    col_arr = preds_for_metrics[col].to_numpy()
+                    mask &= ~pd.isna(col_arr)
 
-                        tprint(f"  📊 {model_name}: AUC={auc:.3f}, Prec={precision:.3f}, Rec={recall:.3f}, F1={f1:.3f}", "INFO")
-                    except Exception as e:
-                        tprint(f"  ⚠️ Could not compute metrics for {model_name}: {e}", "WARNING")
+                if mask.sum() > 0:
+                    y_oof = labels_for_metrics.iloc[mask]
+                    for model_name in preds_for_metrics.columns:
+                        try:
+                            y_pred_proba = preds_for_metrics[model_name].iloc[mask]
+                            auc = roc_auc_score(y_oof, y_pred_proba)
+                            y_pred = (y_pred_proba >= 0.5).astype(int)
+                            precision = precision_score(y_oof, y_pred, zero_division=0)
+                            recall = recall_score(y_oof, y_pred, zero_division=0)
+                            f1 = f1_score(y_oof, y_pred, zero_division=0)
+
+                            cv_results.append({
+                                'model': model_name,
+                                'auc': auc,
+                                'precision': precision,
+                                'recall': recall,
+                                'f1': f1
+                            })
+
+                            tprint(f"  📊 {model_name}: AUC={auc:.3f}, Prec={precision:.3f}, Rec={recall:.3f}, F1={f1:.3f}", "INFO")
+                        except Exception as e:
+                            tprint(f"  ⚠️ Could not compute metrics for {model_name}: {e}", "WARNING")
 
             # STEP 10: Train final models on full dataset (for deployment)
             tprint("🎓 [10/13] Training final ensemble models on full dataset...", "INFO")
 
-            full_mask = ~binary_labels.isna()
             meta_features_enhanced_model = prepare_feature_matrix(meta_features_enhanced)
 
             train_columns = list(meta_features_enhanced_model.columns)
@@ -4846,11 +5789,27 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                 except Exception as e_w_full:
                     tprint(f"⚠️ Winsorisation for final models failed, using raw features: {e_w_full}", "WARNING")
 
-            X_full = pd.DataFrame(X_full)[full_mask].fillna(0)
-            y_full = binary_labels[full_mask]
+            # Align features and labels positionally (tail-aligned) to avoid
+            # index alignment issues (including any datetime tz mismatches).
+            X_full = pd.DataFrame(X_full)
+            y_series = binary_labels
 
-            final_models = create_base_models({})
+            n_full = min(len(X_full), len(y_series))
+            if n_full > 0:
+                X_tail = X_full.iloc[-n_full:]
+                y_tail = y_series.iloc[-n_full:]
+                full_mask_arr = ~pd.isna(y_tail.to_numpy())
+                X_full = X_tail.iloc[full_mask_arr].fillna(0)
+                y_full = y_tail.iloc[full_mask_arr]
+            else:
+                X_full = X_full.iloc[0:0]
+                y_full = y_series.iloc[0:0]
+
+            final_models = create_base_models({}, use_focal_loss=False)
             for model_name, model in final_models.items():
+                if model_name == 'logreg':
+                    tprint("  ⏭ Skipping final logreg training (not used in meta ensemble)", "INFO")
+                    continue
                 try:
                     model.fit(X_full, y_full)
                     tprint(f"  ✓ Trained final {model_name}", "INFO")
@@ -4988,6 +5947,44 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             labeled_data['labeling_timestamp'] = timestamp_ns
             labeled_data['labeling_method_id'] = np.int8(2)
 
+            # Ensure all object-dtype columns are HDF5-safe. For HDF5, we
+            # prefer numeric encodings over generic Python objects.
+            #
+            # - exit_reason: encode as categorical integer codes
+            # - labeled_data_schema_version: store as a numeric version id
+            if 'exit_reason' in labeled_data.columns:
+                try:
+                    cat = labeled_data['exit_reason'].astype('category')
+                    labeled_data['exit_reason'] = cat.cat.codes.astype('int16')
+                except Exception:
+                    # Fallback: treat missing/unknown as -1
+                    labeled_data['exit_reason'] = pd.Series(-1, index=labeled_data.index, dtype='int16')
+
+            if 'labeled_data_schema_version' in labeled_data.columns:
+                try:
+                    version_numeric = float(LABELED_DATA_SCHEMA_VERSION)
+                except Exception:
+                    version_numeric = 1.0
+                labeled_data['labeled_data_schema_version'] = np.full(
+                    len(labeled_data), version_numeric, dtype='float32'
+                )
+
+            # Ensure index is HDF5-safe: prefer DatetimeIndex, else fall back
+            # to a simple RangeIndex so that the HDF5 backend never sees an
+            # object-typed index.
+            if not isinstance(labeled_data.index, pd.DatetimeIndex):
+                try:
+                    idx_dt = pd.to_datetime(labeled_data.index, errors="coerce")
+                    if isinstance(idx_dt, pd.DatetimeIndex) and idx_dt.notna().all():
+                        labeled_data.index = idx_dt
+                        tprint("    ℹ️ Coerced labeled_data index to DatetimeIndex for HDF5 storage", "INFO")
+                    else:
+                        labeled_data.index = pd.RangeIndex(len(labeled_data))
+                        tprint("    ℹ️ Using RangeIndex for labeled_data (HDF5-safe)", "INFO")
+                except Exception:
+                    labeled_data.index = pd.RangeIndex(len(labeled_data))
+                    tprint("    ℹ️ Fallback: Using RangeIndex for labeled_data (HDF5-safe)", "INFO")
+
             # Save labeled data
             tprint("💾 [12b/13] Saving labeled data...", "INFO")
 
@@ -5100,44 +6097,69 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                     # Derive simple meta-gating thresholds from OOF probabilities + realized returns
                     try:
                         event_mask = ~realized_returns.isna()
-                        n_events = int(event_mask.sum())
+                        event_mask_arr = event_mask.to_numpy(dtype=bool, copy=False)
+                        # Positions of valid events in time order
+                        event_positions = np.flatnonzero(event_mask_arr)
+                        n_events = int(event_positions.size)
 
                         best_cfg = None
-                        if n_events >= 20:
-                            # Use ensemble_probs_series (pandas Series) for safe masking
-                            p_series = ensemble_probs_series.loc[event_mask].astype(float)
-                            r_series = realized_returns.loc[event_mask].astype(float)
+                        train_metrics = None
+                        holdout_metrics = None
 
-                            p_array = p_series.to_numpy()
-                            r_array = r_series.to_numpy()
+                        if n_events >= 20:
+                            # Use positional masking to avoid any index alignment issues
+                            p_all = ensemble_probs_series.to_numpy(dtype=float)
+                            r_all = realized_returns.to_numpy(dtype=float)
 
                             # Expected returns from isotonic mapping (if possible)
                             try:
-                                E_hat_array = iso_regressor.predict(p_array)
+                                E_hat_all = iso_regressor.predict(p_all)
                             except Exception:
-                                E_hat_array = None
+                                E_hat_all = None
+
+                            # Time-ordered split: earlier fraction for gate tuning, later for internal holdout
+                            train_frac = float(config.get("meta_gating_train_fraction", 0.7) or 0.7)
+                            if train_frac <= 0.0 or train_frac >= 1.0:
+                                train_frac = 0.7
+
+                            n_train = int(max(20, min(n_events - 10, int(round(n_events * train_frac)))))
+                            if n_train <= 0 or n_train >= n_events:
+                                n_train = max(20, n_events // 2)
+
+                            train_pos = event_positions[:n_train]
+                            holdout_pos = event_positions[n_train:]
+
+                            p_train = p_all[train_pos]
+                            r_train = r_all[train_pos]
+                            E_train = E_hat_all[train_pos] if E_hat_all is not None else None
 
                             prob_thresholds = [0.55, 0.60, 0.65, 0.70, 0.75]
                             er_multipliers = [1.0, 2.0, 3.0]
                             tx_cost = float(transaction_cost)
 
+                            def _evaluate_gate_local(p_arr, r_arr, E_arr, p_thr_val, E_thr_val):
+                                gate_local = p_arr >= p_thr_val
+                                if E_arr is not None and E_thr_val > 0.0:
+                                    gate_local &= (E_arr >= E_thr_val)
+                                gated_r_local = r_arr[gate_local]
+                                n_trades_local = int(gated_r_local.size)
+                                if n_trades_local == 0:
+                                    return n_trades_local, 0.0, 0.0
+                                mean_r_local = float(np.mean(gated_r_local))
+                                std_r_local = float(np.std(gated_r_local, ddof=1)) if n_trades_local > 1 else 0.0
+                                sharpe_local = float(mean_r_local / std_r_local) if std_r_local > 0.0 else 0.0
+                                return n_trades_local, mean_r_local, sharpe_local
+
                             for p_thr in prob_thresholds:
                                 for k in er_multipliers:
                                     # If isotonic mapping is not available, fall back to prob-only gating
-                                    E_thr = tx_cost * k if E_hat_array is not None else 0.0
+                                    E_thr = tx_cost * k if E_train is not None else 0.0
 
-                                    gate = p_array >= p_thr
-                                    if E_hat_array is not None:
-                                        gate &= (E_hat_array >= E_thr)
-
-                                    gated_r = r_array[gate]
-                                    n_trades = int(len(gated_r))
+                                    n_trades, mean_r, sharpe = _evaluate_gate_local(
+                                        p_train, r_train, E_train, float(p_thr), float(E_thr)
+                                    )
                                     if n_trades < 10:
                                         continue
-
-                                    mean_r = float(np.mean(gated_r))
-                                    std_r = float(np.std(gated_r, ddof=1)) if n_trades > 1 else 0.0
-                                    sharpe = float(mean_r / std_r) if std_r > 0 else 0.0
 
                                     # Score: prefer higher Sharpe and more trades
                                     score = sharpe * np.sqrt(max(n_trades, 1))
@@ -5151,6 +6173,36 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                                             "n_trades": n_trades,
                                             "score": float(score),
                                         }
+
+                            # Compute simple internal holdout metrics for information only
+                            if best_cfg is not None and holdout_pos.size > 0:
+                                p_hold = p_all[holdout_pos]
+                                r_hold = r_all[holdout_pos]
+                                E_hold = E_hat_all[holdout_pos] if E_hat_all is not None else None
+                                n_tr_train, mean_train, sharpe_train = _evaluate_gate_local(
+                                    p_train,
+                                    r_train,
+                                    E_train,
+                                    best_cfg["prob_threshold"],
+                                    best_cfg["expected_return_threshold"],
+                                )
+                                n_tr_hold, mean_hold, sharpe_hold = _evaluate_gate_local(
+                                    p_hold,
+                                    r_hold,
+                                    E_hold,
+                                    best_cfg["prob_threshold"],
+                                    best_cfg["expected_return_threshold"],
+                                )
+                                train_metrics = {
+                                    "n_trades": int(n_tr_train),
+                                    "mean_return": float(mean_train),
+                                    "sharpe": float(sharpe_train),
+                                }
+                                holdout_metrics = {
+                                    "n_trades": int(n_tr_hold),
+                                    "mean_return": float(mean_hold),
+                                    "sharpe": float(sharpe_hold),
+                                }
 
                         # Fallback if no valid configuration found
                         if best_cfg is None:
@@ -5166,7 +6218,8 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                         regime_gating = {}
                         try:
                             if "hmm_regime_label_1h" in labeled_data.columns:
-                                reg_all_events = labeled_data.loc[event_mask, "hmm_regime_label_1h"]
+                                # Restrict to the same event window using positional masking
+                                reg_all_events = labeled_data["hmm_regime_label_1h"].iloc[event_mask_arr]
                                 unique_regs = pd.unique(reg_all_events.dropna())
                                 for reg_val in unique_regs:
                                     try:

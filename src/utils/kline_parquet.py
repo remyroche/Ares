@@ -269,55 +269,133 @@ class KlinesParquetManager:
                     tprint_warning(f"⚠️ No data found for {symbol} {exchange} {interval}")
                     return pd.DataFrame()
                 
-                # Find the latest timestamp in the data
+                # Find the latest timestamp in the data. Support multiple layouts:
+                # 1) DatetimeIndex
+                # 2) 'timestamp' column
+                # 3) 'open_time' / 'close_time' columns (Binance-style epochs)
+                time_series: Optional[pd.Series]
+                time_series = None
+                time_source = "unknown"
+
                 if isinstance(combined_df.index, pd.DatetimeIndex):
-                    latest_date = pd.Timestamp(combined_df.index.max())  # type: ignore
+                    time_series = pd.Series(combined_df.index, index=combined_df.index)
+                    time_source = "index"
                 elif 'timestamp' in combined_df.columns:
-                    latest_date = pd.Timestamp(pd.to_datetime(combined_df['timestamp']).max())  # type: ignore
-                else:
-                    tprint_error("❌ Cannot determine latest date - no timestamp found")
+                    # Generic timestamp column – let pandas infer details.
+                    try:
+                        ts = pd.to_datetime(combined_df['timestamp'], errors='coerce')
+                        if ts.notna().any():
+                            time_series = ts
+                            time_source = "timestamp"
+                    except Exception as e:
+                        tprint_warning(f"⚠️ Failed to parse 'timestamp' column as datetime: {e}")
+
+                # If we still don't have a time_series, try Binance-style
+                # open_time/close_time columns which may be stored as seconds,
+                # milliseconds, microseconds, or nanoseconds since epoch, or
+                # already as datetime.
+                if time_series is None:
+                    def _infer_epoch_series(col_name: str) -> Optional[pd.Series]:
+                        if col_name not in combined_df.columns:
+                            return None
+
+                        col = combined_df[col_name]
+
+                        try:
+                            # If already datetime-like, use directly.
+                            if pd.api.types.is_datetime64_any_dtype(col):
+                                # Already datetime-like: simple, safe parsing.
+                                ts_local = pd.to_datetime(col, errors='coerce')
+                            else:
+                                # Try numeric epoch-based parsing with magnitude
+                                # heuristics to select an appropriate unit.
+                                # Use a local numpy errstate guard so that any
+                                # internal overflows become NaT via
+                                # errors='coerce' instead of raising
+                                # FloatingPointError.
+                                with np.errstate(all='ignore'):
+                                    col_numeric = pd.to_numeric(col, errors='coerce')
+                                    finite = col_numeric[np.isfinite(col_numeric)]
+
+                                    if finite.empty:
+                                        # Fallback: attempt generic datetime parsing.
+                                        ts_local = pd.to_datetime(col, errors='coerce')
+                                    else:
+                                        max_abs = float(np.nanmax(np.abs(finite)))
+
+                                        # Heuristic unit selection:
+                                        # - >1e15 → likely nanoseconds
+                                        # - >1e11 → likely milliseconds
+                                        # - otherwise seconds
+                                        if max_abs > 1e15:
+                                            unit = 'ns'
+                                        elif max_abs > 1e11:
+                                            unit = 'ms'
+                                        else:
+                                            unit = 's'
+
+                                        try:
+                                            ts_local = pd.to_datetime(
+                                                col_numeric,
+                                                unit=unit,
+                                                errors='coerce',
+                                            )
+                                        except (OverflowError, ValueError, TypeError, FloatingPointError) as unit_exc:
+                                            tprint_warning(
+                                                f"⚠️ Failed to parse '{col_name}' with unit={unit}: {unit_exc} – "
+                                                "falling back to generic to_datetime",
+                                            )
+                                            ts_local = pd.to_datetime(col, errors='coerce')
+
+                            if ts_local is None or not isinstance(ts_local, pd.Series):
+                                return None
+
+                            if ts_local.notna().any():
+                                return ts_local
+                        except Exception as parse_exc:
+                            tprint_warning(
+                                f"⚠️ Failed to interpret '{col_name}' as datetime: {parse_exc}",
+                            )
+                        return None
+
+                    # Prefer open_time, then close_time
+                    ts_open = _infer_epoch_series('open_time')
+                    ts_close = _infer_epoch_series('close_time') if ts_open is None else None
+
+                    if ts_open is not None and ts_open.notna().any():
+                        time_series = ts_open
+                        time_source = "open_time"
+                    elif ts_close is not None and ts_close.notna().any():
+                        time_series = ts_close
+                        time_source = "close_time"
+
+                if time_series is None or len(time_series) == 0:
+                    tprint_error("❌ Cannot determine latest date - no usable time column or index found")
                     return pd.DataFrame()
-                
+
+                latest_date = pd.Timestamp(time_series.max())  # type: ignore[arg-type]
+
                 # Calculate start date as latest_date - last_n_days
-                start_date = latest_date - pd.Timedelta(days=last_n_days)  # type: ignore
-                
-                tprint_info(f"📊 Latest available data: {latest_date}")
+                start_date = latest_date - pd.Timedelta(days=last_n_days)  # type: ignore[arg-type]
+
+                tprint_info(f"📊 Latest available data ({time_source}): {latest_date}")
                 tprint_info(f"📊 Filtering to last {last_n_days} days: {start_date} to {latest_date}")
-                
+
+                # Normalize timezone information for consistent comparison
+                if hasattr(time_series, 'dt') and getattr(time_series.dt, 'tz', None) is not None:
+                    time_series = time_series.dt.tz_convert('UTC').dt.tz_localize(None)
+                if hasattr(start_date, 'tz') and start_date.tz is not None:
+                    start_date = start_date.tz_convert('UTC').tz_localize(None)
+
                 # Filter the data to the last N days
-                if isinstance(combined_df.index, pd.DatetimeIndex):
-                    # Add timezone normalization before comparison
-                    tprint(f"🔧 TIMEZONE: Index timezone: {getattr(combined_df.index, 'tz', 'NAIVE')}", "INFO")
-                    tprint(f"🔧 TIMEZONE: Start date timezone: {getattr(start_date, 'tz', 'NAIVE')}", "INFO")
-                    
-                    if hasattr(combined_df.index, 'tz') and combined_df.index.tz is not None:
-                        # Convert all timestamps to UTC naive for consistent comparison
-                        combined_df.index = combined_df.index.tz_convert('UTC').tz_localize(None)
-                        tprint("🔧 TIMEZONE: Converted timezone-aware index to UTC naive", "INFO")
-                    elif hasattr(start_date, 'tz') and start_date.tz is not None:
-                        # Convert start_date to UTC naive for consistent comparison
-                        start_date = start_date.tz_convert('UTC').tz_localize(None)
-                        tprint("🔧 TIMEZONE: Converted start_date to UTC naive", "INFO")
-                    
-                    combined_df = combined_df[combined_df.index >= start_date]
-                elif 'timestamp' in combined_df.columns:
-                    timestamp_col = pd.to_datetime(combined_df['timestamp'])
-                    
-                    # Add timezone normalization before comparison
-                    tprint(f"🔧 TIMEZONE: Timestamp column timezone: {getattr(timestamp_col, 'tz', 'NAIVE')}", "INFO")
-                    tprint(f"🔧 TIMEZONE: Start date timezone: {getattr(start_date, 'tz', 'NAIVE')}", "INFO")
-                    
-                    if hasattr(timestamp_col, 'tz') and timestamp_col.tz is not None:
-                        # Convert all timestamps to UTC naive for consistent comparison
-                        timestamp_col = timestamp_col.tz_convert('UTC').tz_localize(None)
-                        tprint("🔧 TIMEZONE: Converted timezone-aware timestamps to UTC naive", "INFO")
-                    elif hasattr(start_date, 'tz') and start_date.tz is not None:
-                        # Convert start_date to UTC naive for consistent comparison
-                        start_date = start_date.tz_convert('UTC').tz_localize(None)
-                        tprint("🔧 TIMEZONE: Converted start_date to UTC naive", "INFO")
-                    
-                    combined_df = combined_df[timestamp_col >= start_date]
-                
+                mask = time_series >= start_date
+                combined_df = combined_df.loc[mask].copy()
+
+                # If the index is not already a DatetimeIndex, set it from the
+                # time series so downstream steps see a proper DateTimeIndex.
+                if not isinstance(combined_df.index, pd.DatetimeIndex):
+                    combined_df.index = pd.to_datetime(time_series[mask])
+
                 tprint_success(f"✅ Loaded {len(combined_df)} klines records for {symbol} {interval} (last {last_n_days} days)")
                 return combined_df
             

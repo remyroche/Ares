@@ -426,10 +426,14 @@ class HPOWithOverfittingPrevention:
         param_spaces = {
             'xgboost': {
                 'n_estimators': optuna.distributions.IntDistribution(50, 500),
-                'max_depth': optuna.distributions.IntDistribution(3, 10),
+                # Constrain tree depth to a small, well-regularized set. This
+                # searches only over {4, 8} instead of a wide [3, 10] range.
+                'max_depth': optuna.distributions.CategoricalDistribution([4, 8]),
                 'learning_rate': optuna.distributions.LogUniformDistribution(0.01, 0.3),
-                'subsample': optuna.distributions.UniformDistribution(0.6, 1.0),
-                'colsample_bytree': optuna.distributions.UniformDistribution(0.6, 1.0),
+                # Ensure subsample and colsample_bytree never go below 0.7 so we
+                # avoid extremely sparse trees in global HPO.
+                'subsample': optuna.distributions.UniformDistribution(0.7, 1.0),
+                'colsample_bytree': optuna.distributions.UniformDistribution(0.7, 1.0),
                 'reg_alpha': optuna.distributions.LogUniformDistribution(1e-5, 1.0),
                 'reg_lambda': optuna.distributions.LogUniformDistribution(1e-5, 1.0)
             },

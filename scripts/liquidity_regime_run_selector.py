@@ -124,9 +124,9 @@ def score_run(
     else:
         # Soft scoring: combine CoV separation and balance with overall quality
         score = (
-            0.30 * overall
+            0.40 * overall
             + 0.25 * cov_effort
-            + 0.25 * cov_ret
+            + 0.15 * cov_ret
             + 0.20 * balance
         )
 

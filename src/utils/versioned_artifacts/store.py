@@ -303,14 +303,15 @@ class VersionedArtifactStore:
                 elif pd.api.types.is_categorical_dtype(series):
                     # Convert categorical to string, handling NaN properly, and store as Unicode
                     column_data = series.astype(str).replace('nan', '').astype('U256').to_numpy()
-                elif pd.api.types.is_string_dtype(series) or column_data.dtype == object:
+                elif pd.api.types.is_string_dtype(series) or pd.api.types.is_object_dtype(series) or pd.api.types.is_object_dtype(column_data):
                     # Use a Unicode dtype to avoid ASCII encoding issues with non-ASCII characters
                     column_data = series.fillna('').astype(str).astype('U256').to_numpy()
                 elif pd.api.types.is_float_dtype(series):
                     column_data = series.astype(np.float64).to_numpy()
                 elif pd.api.types.is_integer_dtype(series):
                     column_data = series.astype(np.int64).to_numpy()
-                elif column_data.dtype == object:
+                elif pd.api.types.is_object_dtype(column_data):
+                    # Final fallback: encode arbitrary Python objects as categorical integer codes
                     column_data = series.astype('category').cat.codes.astype(np.int32).to_numpy()
 
                 if column_data.ndim == 1:
@@ -348,9 +349,16 @@ class VersionedArtifactStore:
                 )
                 version_group.attrs['index_type'] = 'datetime'
             else:
+                # Ensure index is HDF5-safe: convert object-like indexes to Unicode strings
+                raw_index = data.index.values
+                if pd.api.types.is_object_dtype(raw_index):
+                    index_data = data.index.astype(str).astype('U256').values
+                else:
+                    index_data = raw_index
+
                 version_group.create_dataset(
                     '_index',
-                    data=data.index.values,
+                    data=index_data,
                     compression=self.compression,
                     compression_opts=self.compression_level,
                     chunks=index_chunk_shape

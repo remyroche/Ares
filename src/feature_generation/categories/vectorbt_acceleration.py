@@ -790,7 +790,10 @@ class VectorBTVolumeAccelerationGenerator(VectorBTFeatureGenerator):
         # Calculate volume acceleration using VectorBT
         volume_acceleration = base_values.diff(self.period).diff(self.period)
 
-        return volume_acceleration.rename(f'vectorbt_volume_acceleration_{self.period}_{self.base_calculation.value}')
+        return _finalize_series_output(
+            volume_acceleration, data.index,
+            f'vectorbt_volume_acceleration_{self.period}_{self.base_calculation.value}'
+        )
 
 class VectorBTVolatilityAccelerationGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized volatility acceleration generator."""
@@ -833,7 +836,10 @@ class VectorBTVolatilityAccelerationGenerator(VectorBTFeatureGenerator):
         # Calculate volatility acceleration using VectorBT
         volatility_acceleration = volatility.diff(self.period).diff(self.period)
 
-        return volatility_acceleration.rename(f'vectorbt_volatility_acceleration_{self.period}_{self.volatility_window}_{self.base_calculation.value}')
+        return _finalize_series_output(
+            volatility_acceleration, data.index,
+            f'vectorbt_volatility_acceleration_{self.period}_{self.volatility_window}_{self.base_calculation.value}'
+        )
 
 class VectorBTMomentumAccelerationGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized momentum acceleration generator."""
@@ -876,7 +882,10 @@ class VectorBTMomentumAccelerationGenerator(VectorBTFeatureGenerator):
         # Calculate momentum acceleration using VectorBT
         momentum_acceleration = momentum.diff(self.period).diff(self.period)
 
-        return momentum_acceleration.rename(f'vectorbt_momentum_acceleration_{self.period}_{self.momentum_window}_{self.base_calculation.value}')
+        return _finalize_series_output(
+            momentum_acceleration, data.index,
+            f'vectorbt_momentum_acceleration_{self.period}_{self.momentum_window}_{self.base_calculation.value}'
+        )
 
 class VectorBTAccelerationMomentumGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized acceleration momentum generator."""
@@ -921,7 +930,10 @@ class VectorBTAccelerationMomentumGenerator(VectorBTFeatureGenerator):
         # Calculate acceleration momentum using VectorBT
         acceleration_momentum = self._vectorbt_rolling_operation(acceleration, 'mean', window=self.period)
 
-        return acceleration_momentum.rename(f'vectorbt_acceleration_momentum_{self.period}_{self.acceleration_window}_{self.base_calculation.value}')
+        return _finalize_series_output(
+            acceleration_momentum, data.index,
+            f'vectorbt_acceleration_momentum_{self.period}_{self.acceleration_window}_{self.base_calculation.value}'
+        )
 
 class VectorBTAccelerationVolatilityGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized acceleration volatility generator."""
@@ -966,7 +978,10 @@ class VectorBTAccelerationVolatilityGenerator(VectorBTFeatureGenerator):
         # Calculate acceleration volatility using VectorBT
         acceleration_volatility = self._vectorbt_rolling_operation(acceleration, 'std', window=self.period)
 
-        return acceleration_volatility.rename(f'vectorbt_acceleration_volatility_{self.period}_{self.acceleration_window}_{self.base_calculation.value}')
+        return _finalize_series_output(
+            acceleration_volatility, data.index,
+            f'vectorbt_acceleration_volatility_{self.period}_{self.acceleration_window}_{self.base_calculation.value}'
+        )
 
 class VectorBTAccelerationTrendStrengthGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized acceleration trend strength generator."""
@@ -1037,7 +1052,10 @@ class VectorBTAccelerationTrendStrengthGenerator(VectorBTFeatureGenerator):
             calculate_acceleration_trend_strength, raw=False
         )
 
-        return acceleration_trend_strength.rename(f'vectorbt_acceleration_trend_strength_{self.period}_{self.acceleration_window}_{self.base_calculation.value}')
+        return _finalize_series_output(
+            acceleration_trend_strength, data.index,
+            f'vectorbt_acceleration_trend_strength_{self.period}_{self.acceleration_window}_{self.base_calculation.value}'
+        )
 
 class VectorBTAccelerationConsistencyGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized acceleration consistency generator."""
@@ -1083,7 +1101,10 @@ class VectorBTAccelerationConsistencyGenerator(VectorBTFeatureGenerator):
         acceleration_volatility = self._vectorbt_rolling_operation(acceleration, 'std', window=self.period)
         acceleration_consistency = 1.0 / (acceleration_volatility + 1e-8)  # Add small epsilon to avoid division by zero
 
-        return acceleration_consistency.rename(f'vectorbt_acceleration_consistency_{self.period}_{self.acceleration_window}_{self.base_calculation.value}')
+        return _finalize_series_output(
+            acceleration_consistency, data.index,
+            f'vectorbt_acceleration_consistency_{self.period}_{self.acceleration_window}_{self.base_calculation.value}'
+        )
 
 class VectorBTAccelerationRegimeGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized acceleration regime detection generator."""
@@ -1183,7 +1204,10 @@ class VectorBTMultiTimeframeAccelerationGenerator(VectorBTFeatureGenerator):
         # Calculate multi-timeframe acceleration ratio
         multi_timeframe_acceleration = safe_divide(acceleration_short, acceleration_long)
 
-        return multi_timeframe_acceleration.rename(f'vectorbt_multi_timeframe_acceleration_{self.short_period}_{self.long_period}_{self.base_calculation.value}')
+        return _finalize_series_output(
+            multi_timeframe_acceleration, data.index,
+            f'vectorbt_multi_timeframe_acceleration_{self.short_period}_{self.long_period}_{self.base_calculation.value}'
+        )
 
 class VectorBTAccelerationCorrelationGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized acceleration correlation generator."""
@@ -1237,7 +1261,10 @@ class VectorBTAccelerationCorrelationGenerator(VectorBTFeatureGenerator):
         if hasattr(acceleration_correlation, 'index') and acceleration_correlation.index.duplicated().any():
             acceleration_correlation = acceleration_correlation.reset_index(drop=True)
 
-        return acceleration_correlation.rename(f'vectorbt_acceleration_correlation_{self.period}_{self.base_calculation.value}')
+        return _finalize_series_output(
+            acceleration_correlation, data.index,
+            f'vectorbt_acceleration_correlation_{self.period}_{self.base_calculation.value}'
+        )
 
 class VectorBTAccelerationDivergenceGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized acceleration divergence generator."""
@@ -1282,7 +1309,10 @@ class VectorBTAccelerationDivergenceGenerator(VectorBTFeatureGenerator):
         price_trend = self._vectorbt_rolling_operation(base_values, 'mean', window=self.period)
         acceleration_divergence = acceleration - price_trend.pct_change()
 
-        return acceleration_divergence.rename(f'vectorbt_acceleration_divergence_{self.period}_{self.base_calculation.value}')
+        return _finalize_series_output(
+            acceleration_divergence, data.index,
+            f'vectorbt_acceleration_divergence_{self.period}_{self.base_calculation.value}'
+        )
 
 def create_vectorbt_acceleration_generators() -> List[VectorBTFeatureGenerator]:
     """Create all VectorBT-optimized acceleration feature generators."""

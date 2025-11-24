@@ -297,9 +297,12 @@ class TrainingUtils:
                     'search_space': {
                         'learning_rate': {'min': 0.001, 'max': 0.1, 'scale': 'log'},
                         'n_estimators': {'min': 100, 'max': 2000},
-                        'max_depth': {'min': 3, 'max': 12},
-                        'subsample': {'min': 0.6, 'max': 1.0},
-                        'colsample_bytree': {'min': 0.4, 'max': 1.0},
+                        # Narrow the depth band to concentrate search around
+                        # shallow-to-moderate depths near {4, 8}.
+                        'max_depth': {'min': 4, 'max': 10},
+                        # Ensure sampling parameters never drop below 0.7.
+                        'subsample': {'min': 0.7, 'max': 1.0},
+                        'colsample_bytree': {'min': 0.7, 'max': 1.0},
                         'reg_alpha': {'min': 0.0, 'max': 10.0},
                         'reg_lambda': {'min': 0.0, 'max': 10.0},
                         'min_child_weight': {'min': 1, 'max': 20},

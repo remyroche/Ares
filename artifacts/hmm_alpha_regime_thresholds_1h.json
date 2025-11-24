@@ -1,19 +1,19 @@
 {
   "data": {
-    "regime_thresholds_df": "        min_score  max_score  ...  n_samples  sample_percentage\nregime                        ...                              \n0       -0.005058  -0.005015  ...         79          16.561845\n1       -0.005058  -0.001733  ...         84          17.610063\n2       -0.005058  -0.001223  ...         71          14.884696\n3       -0.005058   0.001122  ...         92          19.287212\n4       -0.005058   0.012275  ...         80          16.771488\n5       -0.005058   0.016609  ...         71          14.884696\n\n[6 rows x 7 columns]",
+    "regime_thresholds_df": "        min_score  max_score  ...  n_samples  sample_percentage\nregime                        ...                              \n0       -4.030116   2.300491  ...       1795          22.998078\n1       -4.030116   3.435694  ...       2029          25.996156\n2       -4.030116   3.856432  ...       2029          25.996156\n3       -2.850619   3.883267  ...       1952          25.009609\n\n[4 rows x 7 columns]",
     "metadata": {
-      "extraction_timestamp": "2025-11-20T23:56:16.656430",
+      "extraction_timestamp": "2025-11-22T17:19:14.541074",
       "symbol": "ETHUSDT",
-      "regime_col_name": "alpha_regime_bucket_6",
-      "total_samples": 477,
-      "n_regimes": 6
+      "regime_col_name": "alpha_regime_bucket_4",
+      "total_samples": 7805,
+      "n_regimes": 4
     }
   },
   "metadata": {
     "symbol": "ETHUSDT",
     "exchange": "binance",
     "timeframe": "1h",
-    "n_regimes": 6
+    "n_regimes": 4
   },
-  "saved_at": "2025-11-20T23:56:16.658961"
+  "saved_at": "2025-11-22T17:19:14.549245"
 }

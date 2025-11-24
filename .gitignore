@@ -254,3 +254,6 @@ _site/
 *.dmp
 *.hprof
 outcomes/market_analysis_hybrid_nas_tas_regime_discovery_outcome_*.json
+
+# Ignore huge rolling HMM HPO results
+artifacts/rolling_hmm_hpo_results.json

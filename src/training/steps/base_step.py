@@ -360,10 +360,13 @@ class BaseStep(ABC):
                 config=StorageConfig(base_dir=data_dir)
             )
 
+            # Prefer explicit execution_mode from context, then launcher/ENV,
+            # and finally fall back to 'light' for legacy behaviour.
+            from os import environ as _os_environ
             execution_mode = str(
                 self._current_context.get(
                     'execution_mode',
-                    self._current_context.get('mode', 'light')
+                    self._current_context.get('mode', _os_environ.get('EXECUTION_MODE', 'light')),
                 )
             ).lower()
 
@@ -377,6 +380,7 @@ class BaseStep(ABC):
 
             timeframe = self._current_context.get('timeframe', timeframe)
 
+            days_limit: Optional[int] = None
             if start_date is None:
                 # Add validation for mode-specific days
                 tprint(f"🔧 BASESTEP: Using execution_mode={execution_mode}", "INFO")
@@ -388,39 +392,62 @@ class BaseStep(ABC):
                 from src.training.steps.market_analysis.shared_utils.execution_mode_lookback_config import get_execution_mode_config
                 execution_config = get_execution_mode_config()
 
+                # Support light/blank/full modes for historical loading; other
+                # modes fall back to centralized defaults.
                 mode_days_defaults = {
                     'light': self._current_context.get('light_mode_days', execution_config.get_data_loading_days('light')),
                     'blank': self._current_context.get('blank_mode_days', execution_config.get_data_loading_days('blank')),
+                    'full': self._current_context.get('full_mode_days', execution_config.get_data_loading_days('full')),
                 }
                 days_limit = mode_days_defaults.get(execution_mode)
-                
+
                 # Add fallback logic with warnings when context values are missing
                 if days_limit is None:
                     # Fallback to centralized configuration
-                    from src.training.steps.market_analysis.shared_utils.execution_mode_lookback_config import get_execution_mode_config
-                    execution_config = get_execution_mode_config()
                     days_limit = execution_config.get_data_loading_days(execution_mode)
-                    tprint(f"⚠️ Using centralized config {execution_mode}_mode_days={days_limit} (not found in context)", "WARNING")
-                    tprint(f"🔧 BASESTEP: Context keys available: {list(self._current_context.keys())}", "INFO")
+                    tprint(
+                        f"⚠️ Using centralized config {execution_mode}_mode_days={days_limit} (not found in context)",
+                        "WARNING",
+                    )
+                    tprint(
+                        f"🔧 BASESTEP: Context keys available: {list(self._current_context.keys())}",
+                        "INFO",
+                    )
 
                 if days_limit is not None:
-                    effective_end = end_date or end_dt or datetime.utcnow()
-                    start_dt = effective_end - timedelta(days=days_limit)
-                    end_dt = effective_end
-                    message_prefix = "💡 Light" if execution_mode == 'light' else "⚪ Blank"
+                    message_prefix = {
+                        'light': "💡 Light",
+                        'blank': "⚪ Blank",
+                        'full': "📅 Full",
+                    }.get(execution_mode, "📅 Mode")
                     tprint(
-                        f"{message_prefix} mode pre-filter: loading data window "
-                        f"{start_dt.date()} → {end_dt.date()} ({days_limit} days, timeframe {timeframe})"
+                        f"{message_prefix} mode pre-filter: requesting last {days_limit} days "
+                        f"(anchored at latest available data, timeframe {timeframe})",
                     )
-                    tprint(f"🔧 BASESTEP: Using execution_mode={execution_mode} with days_limit={days_limit}", "INFO")
+                    tprint(
+                        f"🔧 BASESTEP: Using execution_mode={execution_mode} with days_limit={days_limit}",
+                        "INFO",
+                    )
 
-            market_data = klines_manager.load_klines(
-                symbol=symbol,
-                exchange=exchange,
-                interval=timeframe,
-                start_time=start_dt,
-                end_time=end_dt,
-            )
+            # If no explicit start_date and we have a mode-specific days_limit,
+            # load the last N days anchored at the most recent available data
+            # using KlinesParquetManager's last_n_days helper. Otherwise, honour
+            # explicit start/end bounds.
+            if start_date is None and days_limit is not None:
+                market_data = klines_manager.load_klines(
+                    symbol=symbol,
+                    exchange=exchange,
+                    interval=timeframe,
+                    last_n_days=days_limit,
+                )
+            else:
+                market_data = klines_manager.load_klines(
+                    symbol=symbol,
+                    exchange=exchange,
+                    interval=timeframe,
+                    start_time=start_dt,
+                    end_time=end_dt,
+                )
 
             if market_data is not None and not getattr(market_data, "empty", False):
                 tprint(
@@ -448,6 +475,7 @@ class BaseStep(ABC):
         allow_config_override: bool = True,
         light_mode_filter: bool = True,
         artifact_candidates: Optional[List[Tuple[str, str]]] = None,
+        skip_artifacts: bool = False,
     ) -> Tuple[Any, str]:
         """
         Load market data using a multi-stage strategy.
@@ -490,6 +518,21 @@ class BaseStep(ABC):
             raise ValueError("Configuration must include a timeframe string")
         timeframe = timeframe_value
 
+        # Propagate launcher-provided lookback_days into context-specific mode keys
+        # so that historical loading honours centralized execution-mode windows.
+        try:
+            exec_mode_cfg = str(config.get("execution_mode", "")).lower()
+            if exec_mode_cfg in {"light", "blank", "full"}:
+                lookback_days_val = config.get("lookback_days")
+                if isinstance(lookback_days_val, (int, float)) and lookback_days_val > 0:
+                    mode_key = f"{exec_mode_cfg}_mode_days"
+                    # Respect any explicit context override if already present
+                    if mode_key not in self._current_context:
+                        self._current_context[mode_key] = int(lookback_days_val)
+        except Exception:
+            # Non-fatal: fall back to centralized execution_mode configuration
+            pass
+
         # 1. Config override
         if allow_config_override and config.get("market_data") is not None:
             data = config["market_data"]
@@ -509,13 +552,17 @@ class BaseStep(ABC):
                 tprint(f"✅ Using cached market data from {source_name}", color="green")
                 return candidate, source_name
 
-        # 3. Artifact manager/router
-        data = self._load_market_data_from_artifacts(
-            symbol=symbol,
-            exchange=exchange,
-            timeframe=timeframe,
-            artifact_candidates=artifact_candidates,
-        )
+        # 3. Artifact manager/router (unless explicitly skipped)
+        data = None
+        source_name = "historical_data"
+
+        if not skip_artifacts:
+            data = self._load_market_data_from_artifacts(
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=timeframe,
+                artifact_candidates=artifact_candidates,
+            )
 
         if data is not None:
             source_name = "artifacts"
@@ -877,10 +924,21 @@ class BaseStep(ABC):
                 original_artifact_context = self._current_context.copy()
                 adjusted_context = original_artifact_context.copy()
                 adjusted_context['timeframe'] = timeframe
+
+                # Only forward keys supported by ArtifactManager.set_context to
+                # avoid unexpected keyword arguments such as execution_mode.
+                allowed_keys = {
+                    'symbol', 'exchange', 'timeframe', 'datetime',
+                    'information', 'direction', 'model'
+                }
                 try:
+                    adjusted_for_artifact = {
+                        k: v for k, v in adjusted_context.items()
+                        if k in allowed_keys
+                    }
                     self.artifact_manager.set_context(
                         step_name=self.step_name,
-                        **{k: v for k, v in adjusted_context.items() if k != 'step_name'}
+                        **adjusted_for_artifact,
                     )
                     data, resolved_path = self.artifact_manager.get_artifact(
                         artifact_name=artifact_name,
@@ -888,9 +946,13 @@ class BaseStep(ABC):
                         return_path=True
                     )
                 finally:
+                    original_for_artifact = {
+                        k: v for k, v in original_artifact_context.items()
+                        if k in allowed_keys
+                    }
                     self.artifact_manager.set_context(
                         step_name=self.step_name,
-                        **{k: v for k, v in original_artifact_context.items() if k != 'step_name'}
+                        **original_for_artifact,
                     )
 
                 if data is not None and resolved_path:
@@ -939,7 +1001,7 @@ class BaseStep(ABC):
         try:
             execution_mode = config.get('execution_mode', 'light')
             
-            if execution_mode.lower() != 'light':
+            if str(execution_mode).lower() != 'light':
                 tprint(
                     f"💡 Light mode disabled for '{self.step_name}' (mode: {execution_mode})"
                 )
@@ -957,10 +1019,15 @@ class BaseStep(ABC):
                 '1d': 1
             }
 
-            # Use centralized configuration for light mode days
-            from src.training.steps.market_analysis.shared_utils.execution_mode_lookback_config import get_execution_mode_config
-            execution_config = get_execution_mode_config()
-            days_limit = execution_config.get_data_loading_days('light')
+            # Prefer launcher-provided lookback_days when available; otherwise
+            # fall back to the centralized execution_mode lookback configuration.
+            days_limit = config.get('lookback_days')
+            if not isinstance(days_limit, (int, float)) or days_limit <= 0:
+                from src.training.steps.market_analysis.shared_utils.execution_mode_lookback_config import get_execution_mode_config
+                execution_config = get_execution_mode_config()
+                days_limit = execution_config.get_data_loading_days('light')
+
+            days_limit = int(days_limit)
 
             samples_per_day = samples_per_day_map.get(timeframe, 96)  # Default to 15m
             light_limit = days_limit * samples_per_day
@@ -1458,7 +1525,10 @@ class BaseStep(ABC):
         try:
             self.logger.info(f"Starting execution of {self.step_name}")
             
-            # Detect execution mode
+            # Detect execution persona (analyst vs tactician) for logging and
+            # optimisation purposes. Do not store this under 'execution_mode'
+            # in the shared context, as that key is reserved for data-loading
+            # modes ('full', 'light', 'blank') controlled by the launcher.
             self.execution_mode = self._detect_execution_mode(config)
             tprint(
                 f"🔧 Running '{self.step_name}' in {self.execution_mode} mode"

@@ -36,6 +36,7 @@ except ImportError:
 from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_success
+from src.utils.ml_common.get_specialist_models_outputs import get_specialist_models_outputs
 
 # Reuse core labeling utilities from the production meta-labeling step
 from src.training.steps.labeling.feature_generation_meta_labeling_step import (
@@ -45,6 +46,7 @@ from src.training.steps.labeling.feature_generation_meta_labeling_step import (
     translate_to_targets_with_isotonic,
     generate_primary_signals,
     DEFAULT_TRANSACTION_COST,
+    ECON_MIN_RETURN_MULTIPLE,
     create_meta_features,
     build_meta_features_for_model,
     compute_learnability_score,
@@ -135,6 +137,7 @@ def compute_learnability_with_calibration(
     cv_splits: int = 3,
     time_aware_cv: bool = True,
     use_ensemble: bool = False,
+    signal_strength_scale_max: float = 1.5,
 ) -> Tuple[float, float, np.ndarray, Optional[IsotonicRegression]]:
     """Compute learnability score with isotonic calibration for accurate P&L estimation.
 
@@ -284,6 +287,37 @@ def compute_learnability_with_calibration(
         ret_for_weight = np.clip(np.maximum(returns_array, 0.0), 0.0, ret_clip)
         weight_factor = 1.0 + (ret_for_weight / ret_clip)
         sample_weights[pos_mask] *= weight_factor[pos_mask]
+
+    # Optional: scale positive-class weights by signal strength so that
+    # high-confidence signal configurations receive slightly higher weight
+    # in the learnability scorer. We use the "signal_strength_all" meta-feature
+    # when present in X_clean, normalised and clipped for robustness. The
+    # overall strength of this effect is controlled by ``signal_strength_scale_max``.
+    signal_strength = None
+    if isinstance(X_clean, pd.DataFrame) and "signal_strength_all" in X_clean.columns:
+        try:
+            s = X_clean.loc[valid_mask, "signal_strength_all"].to_numpy(dtype=float)
+            s = np.abs(s)
+            # Robust scaling: use 90th percentile to avoid extreme values
+            if np.isfinite(s).any():
+                s_clean = s[np.isfinite(s)]
+                if s_clean.size >= 10:
+                    s_clip = float(np.nanpercentile(s_clean, 90))
+                    s_clip = max(s_clip, 1e-6)
+                else:
+                    s_clip = float(np.nanmax(s_clean)) if s_clean.size > 0 else 1.0
+                if s_clip <= 0:
+                    s_clip = 1.0
+                strength_norm = np.clip(s / s_clip, 0.0, 1.0)
+                # Map to [1.0, signal_strength_scale_max] so HPO can tune the
+                # influence of signal strength on sample weighting.
+                scale_max = max(1.0, float(signal_strength_scale_max))
+                scale_range = max(0.0, scale_max - 1.0)
+                signal_weight = 1.0 + scale_range * strength_norm
+                sample_weights[pos_mask] *= signal_weight[pos_mask]
+        except Exception:
+            # If anything goes wrong, fall back to return-only weighting.
+            pass
 
     # Normalize weights for numerical stability
     mean_w = float(sample_weights.mean()) if sample_weights.size > 0 else 1.0
@@ -641,19 +675,30 @@ def compute_realistic_pnl_edge(
     mean_return_positive: float,
     mean_auc: float,
     transaction_cost: float = DEFAULT_TRANSACTION_COST,
+    n_trades: int | None = None,
+    reference_trades: float | None = None,
 ) -> float:
     """Compute realistic P&L edge using the capture ratio formula.
 
-    Edge = (Mean_Return_Label1 - Cost) × max(0, 2×AUC - 1)
+    Edge_base = (Mean_Return_Label1 - Cost) × max(0, 2×AUC - 1)
 
-    This metric penalizes "profitable but unlearnable" strategies more realistically:
-    - If AUC is 0.5 (random), Edge is 0 regardless of profitability
-    - If AUC is 1.0 (perfect), you capture full mean return minus cost
+    When ``n_trades`` and ``reference_trades`` are provided, apply a
+    Sharpe-like scaling so that configurations with more high-quality
+    trades are rewarded, while extremely sparse or excessively dense
+    configurations do not dominate purely by count:
+
+        Edge = Edge_base × sqrt(min(n_trades, 4×reference_trades) / reference_trades)
+
+    This keeps the original capture-ratio logic while modestly
+    encouraging configurations that achieve good per-trade edge with a
+    reasonable number of trades.
 
     Args:
         mean_return_positive: Mean return of positive-labeled events
         mean_auc: Cross-validated AUC of the model
         transaction_cost: Transaction cost per trade
+        n_trades: Number of labeled events/trades used for this edge
+        reference_trades: Reference trade count for scaling (e.g. days_span × target_trades_per_day)
 
     Returns:
         Realistic P&L edge score
@@ -665,8 +710,24 @@ def compute_realistic_pnl_edge(
     # Net profitability after costs
     net_profit = mean_return_positive - transaction_cost
 
-    # Edge = net profit × capture ratio
+    # Base edge = net profit × capture ratio
     edge = net_profit * capture_ratio
+
+    # Optional Sharpe-like scaling by number of trades when a
+    # reasonable reference count is provided. This nudges the
+    # optimizer towards configurations that generate a healthy number
+    # of good trades, without letting sheer trade count dominate.
+    if (
+        n_trades is not None
+        and reference_trades is not None
+        and reference_trades > 0
+        and n_trades > 0
+    ):
+        # Cap effective trade count at 4× reference to avoid runaway
+        # scaling for extremely dense configurations.
+        effective_trades = min(float(n_trades), float(reference_trades) * 4.0)
+        trade_factor = float(np.sqrt(effective_trades / float(reference_trades)))
+        edge *= trade_factor
 
     return edge
 
@@ -719,12 +780,60 @@ class MetaLabelingHPOExperimentStep(BaseStep):
             config,
             pipeline_state,
             allow_config_override=True,
+            skip_artifacts=True,
         )
 
         if not isinstance(market_data, pd.DataFrame) or market_data.empty:
             msg = "❌ No market data available for labeling HPO"
             tprint(msg, "ERROR")
             return {"success": False, "error": msg, "metrics": {}, "artifacts": {}}
+
+        # Honour centralized lookback_days from the launcher for full/blank modes
+        # by trimming to the last N days on the DateTimeIndex. Light-mode behavior
+        # (shorter windows) is handled via BaseStep._apply_light_mode_filter.
+        try:
+            exec_mode = str(config.get("execution_mode", "full")).lower()
+            lookback_days = int(config.get("lookback_days", 0) or 0)
+            if (
+                lookback_days > 0
+                and exec_mode in {"full", "blank"}
+                and isinstance(market_data.index, pd.DatetimeIndex)
+            ):
+                end_ts = market_data.index.max()
+                start_ts = end_ts - pd.Timedelta(days=lookback_days)
+                orig_rows = len(market_data)
+                try:
+                    orig_span_days = max(
+                        1,
+                        (market_data.index.max() - market_data.index.min()).days,
+                    )
+                except Exception:
+                    orig_span_days = -1
+
+                mask = market_data.index >= start_ts
+                if int(mask.sum()) > 0:
+                    market_data = market_data.loc[mask].copy()
+                    try:
+                        new_span_days = max(
+                            1,
+                            (market_data.index.max() - market_data.index.min()).days,
+                        )
+                    except Exception:
+                        new_span_days = -1
+                    tprint_info(
+                        f"⏱️ HPO lookback alignment: mode={exec_mode}, "
+                        f"requested={lookback_days}d, span {orig_span_days}d → {new_span_days}d, "
+                        f"rows {orig_rows}→{len(market_data)}",
+                    )
+                else:
+                    tprint_warning(
+                        f"⚠️ HPO lookback alignment requested {lookback_days}d but no data "
+                        f"falls in that window; keeping original dataset (rows={orig_rows})",
+                    )
+        except Exception as lb_exc:
+            tprint_warning(
+                f"⚠️ Failed to apply lookback_days to HPO market_data; proceeding with raw window: {lb_exc}",
+            )
 
         # Attach rolling HMM regimes (typically 1h) to the market_data frame so that
         # regime-aware features and thresholds can be evaluated during HPO.
@@ -739,6 +848,40 @@ class MetaLabelingHPOExperimentStep(BaseStep):
             )
         except Exception as e_reg:
             tprint_warning(f"⚠️ Failed to attach rolling HMM regimes to market_data for HPO: {e_reg}")
+
+        # Attach specialist liquidity regime probabilities as additional regime features
+        try:
+            tprint_info("💧 Attempting to attach liquidity regime probabilities for HPO via specialist loader...")
+
+            specialist_df = get_specialist_models_outputs(
+                artifact_router=self.artifact_router,
+                training_index=market_data.index,
+                config=config,
+                logger=logger,
+                strict=False,
+            )
+
+            if specialist_df is not None and not specialist_df.empty:
+                prob_cols = [
+                    c for c in specialist_df.columns
+                    if c.startswith('liquidity_regime_') and 'prob_' in c
+                ]
+
+                if prob_cols:
+                    liquidity_features = specialist_df[prob_cols].reindex(market_data.index, method='ffill')
+                    tprint_info(f"   ↪ Selected {len(prob_cols)} liquidity regime probability columns: {prob_cols}")
+
+                    for col in liquidity_features.columns:
+                        market_data[f'liquidity_{col}'] = liquidity_features[col]
+
+                    tprint_success(f"✅ Added {len(prob_cols)} liquidity regime probability features to market_data")
+                else:
+                    tprint_warning("⚠️ No liquidity regime probability columns found in specialist outputs for HPO")
+            else:
+                tprint_warning("⚠️ No specialist liquidity regime outputs found for HPO")
+
+        except Exception as e_liquidity:
+            tprint_warning(f"⚠️ Failed to attach specialist liquidity regime probabilities for HPO: {e_liquidity}")
 
         tprint_info(f"📊 Loaded market data from: {source} | rows={len(market_data)}")
 
@@ -760,7 +903,14 @@ class MetaLabelingHPOExperimentStep(BaseStep):
             days_span = 1
 
         stage1_enable_subsample = bool(config.get("stage1_enable_subsample", True))
-        stage1_subsample_window_days = int(config.get("stage1_subsample_window_days", min(365, days_span)))
+        lookback_days_cfg = int(config.get("lookback_days", 0) or 0)
+        if lookback_days_cfg > 0:
+            default_stage1_window = min(days_span, lookback_days_cfg)
+        else:
+            default_stage1_window = days_span
+        stage1_subsample_window_days = int(
+            config.get("stage1_subsample_window_days", default_stage1_window)
+        )
         stage1_market_data = market_data
         stage1_primary_signals = primary_signals
         stage1_volatility_1d = volatility_1d
@@ -834,13 +984,39 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 params={
                     "iso_min_prob": {
                         "type": "float",
-                        "low": 0.0,
-                        "high": 0.1,
+                        "low": 0.05,
+                        "high": 0.15,
                     },
                     "target_clip_high_q": {
                         "type": "float",
                         "low": 0.90,
-                        "high": 0.99,
+                        "high": 0.98,
+                    },
+                    # Economic floor for isotonic mapping and vol-scaled labels,
+                    # expressed as a multiple of transaction cost.
+                    "econ_min_return_multiple": {
+                        "type": "float",
+                        "low": 1.5,
+                        "high": 2.5,
+                    },
+                    # Quantile thresholds for volatility-scaled label generation.
+                    # Constrained to a narrow band around the default 0.30/0.80.
+                    "label_low_q": {
+                        "type": "float",
+                        "low": 0.25,
+                        "high": 0.35,
+                    },
+                    "label_high_q": {
+                        "type": "float",
+                        "low": 0.75,
+                        "high": 0.85,
+                    },
+                    # Maximum scaling factor for signal-strength-based sample
+                    # weighting in the learnability scorer.
+                    "signal_strength_scale_max": {
+                        "type": "float",
+                        "low": 1.2,
+                        "high": 2.0,
                     },
                 },
                 priority=2,
@@ -1110,14 +1286,29 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     }
 
                 # Use safe defaults when target_transform params are not part of the current group
-                iso_min_prob = float(params.get("iso_min_prob", 0.0))
-                iso_min_prob = max(0.0, min(0.1, iso_min_prob))
+                iso_min_prob = float(params.get("iso_min_prob", 0.05))
+                # Allow slightly stronger clipping on both tails; keep symmetric band.
+                iso_min_prob = max(0.05, min(0.15, iso_min_prob))
                 iso_max_prob = 1.0 - iso_min_prob
-                iso_max_prob = max(0.9, min(1.0, iso_max_prob))
+                iso_max_prob = max(0.85, min(1.0, iso_max_prob))
 
                 q_high = float(params.get("target_clip_high_q", 0.95))
-                q_high = max(0.90, min(0.99, q_high))
+                q_high = max(0.90, min(0.98, q_high))
                 q_low = max(0.0, min(0.5, 1.0 - q_high))
+
+                # Economic floor multiplier for vol-scaled labels and isotonic mapping
+                econ_min_mult = float(params.get("econ_min_return_multiple", ECON_MIN_RETURN_MULTIPLE))
+                if not np.isfinite(econ_min_mult) or econ_min_mult <= 0:
+                    econ_min_mult = float(ECON_MIN_RETURN_MULTIPLE)
+
+                # Label quantile thresholds (regime-aware when regimes are present).
+                label_low_q = float(params.get("label_low_q", 0.30))
+                label_high_q = float(params.get("label_high_q", 0.80))
+                # Guard-rail: ensure a proper ordering and keep them away from extremes.
+                label_low_q = max(0.10, min(0.45, label_low_q))
+                label_high_q = max(0.55, min(0.90, label_high_q))
+                if label_high_q <= label_low_q:
+                    label_low_q, label_high_q = 0.30, 0.80
 
                 # --- Recompute realized returns ---
                 vol_baseline = volatility_1d.rolling(vol_baseline_window).mean()
@@ -1149,31 +1340,72 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     min_event_spacing=min_spacing,
                 )
 
+                # Basic diagnostics on raw realized returns and labels before
+                # any vol-scaling or quantile-based relabeling.
+                n_raw_events = len(realized_returns)
+                n_raw_labeled = int((~binary_labels.isna()).sum())
+                if debug_sample_count < debug_sample_limit:
+                    tprint_info(
+                        f"[HPO_DEBUG_LABELS] raw_events={n_raw_events}, raw_labeled={n_raw_labeled}, "
+                        f"profit_thr_base={profit_thr_base:.6f}, stop_thr_base={stop_thr_base:.6f}, "
+                        f"econ_min_mult={econ_min_mult:.3f}, label_low_q={label_low_q:.3f}, label_high_q={label_high_q:.3f}",
+                    )
+
                 # Replace legacy R-multiple based labels with quantile-based labels
                 # derived from volatility-scaled realized returns, to improve label
                 # balance and economic relevance in HPO scoring.
                 vol_scaled_returns = compute_vol_scaled_returns_for_events(
                     realized_returns=realized_returns,
                     volatility=volatility_1d,
+                    econ_min_return_multiple=econ_min_mult,
                 )
+
+                n_vol_non_nan = int(vol_scaled_returns.dropna().size)
+                if debug_sample_count < debug_sample_limit:
+                    tprint_info(
+                        f"[HPO_DEBUG_LABELS] vol_scaled_non_nan={n_vol_non_nan}",
+                    )
+
+                # Decide whether to use regime-aware quantiles based on the
+                # attached HMM regimes (typically 1h) on market_data.
                 regimes_for_labeling = None
                 if config.get("enable_regime_aware_quantiles", True) and "hmm_regime_label_1h" in market_data.columns:
                     regimes_for_labeling = market_data["hmm_regime_label_1h"]
 
-                if regimes_for_labeling is not None:
-                    quantile_labels = create_regime_aware_quantile_labels_from_vol_scaled_returns(
-                        vol_scaled=vol_scaled_returns,
-                        regimes=regimes_for_labeling,
-                        low_q=0.35,
-                        high_q=0.75,
+                def _make_quantile_labels(vol_scaled_series: pd.Series) -> pd.Series:
+                    """Helper to create (regime-aware) quantile labels from a score series."""
+                    if regimes_for_labeling is not None:
+                        return create_regime_aware_quantile_labels_from_vol_scaled_returns(
+                            vol_scaled=vol_scaled_series,
+                            regimes=regimes_for_labeling,
+                            low_q=label_low_q,
+                            high_q=label_high_q,
+                        )
+                    return create_quantile_labels_from_vol_scaled_returns(
+                        vol_scaled=vol_scaled_series,
+                        low_q=label_low_q,
+                        high_q=label_high_q,
                     )
-                else:
-                    quantile_labels = create_quantile_labels_from_vol_scaled_returns(
-                        vol_scaled=vol_scaled_returns,
-                        low_q=0.35,
-                        high_q=0.75,
-                    )
+
+                # Primary quantile labels on vol-scaled returns with the
+                # HPO-chosen economic floor.
+                quantile_labels = _make_quantile_labels(vol_scaled_returns)
                 binary_labels = quantile_labels
+
+                n_quantile_non_nan = int((~quantile_labels.isna()).sum())
+                unique_quantile_vals: list[int] = []
+                if n_quantile_non_nan > 0:
+                    try:
+                        unique_quantile_vals = sorted(
+                            pd.unique(quantile_labels.dropna().astype(int)).tolist()
+                        )
+                    except Exception:
+                        unique_quantile_vals = []
+                if debug_sample_count < debug_sample_limit:
+                    tprint_info(
+                        f"[HPO_DEBUG_LABELS] quantile_labels_non_nan={n_quantile_non_nan}, "
+                        f"unique_labels={unique_quantile_vals}",
+                    )
 
                 # Guard: configurations that produce no labeled events at all are
                 # rejected outright; sparse but non-zero densities are handled via
@@ -1182,10 +1414,66 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 n_events = int(labeled_mask.sum())
                 events_per_day = n_events / max(days_span, 1)
                 if n_events == 0:
+                    if debug_sample_count < debug_sample_limit:
+                        tprint_warning(
+                            f"[HPO_DEBUG_LABELS] rejecting config with zero labeled events: "
+                            f"raw_labeled={n_raw_labeled}, vol_non_nan={n_vol_non_nan}, "
+                            f"quantile_non_nan={n_quantile_non_nan}",
+                        )
                     tprint_warning(
                         f"⚠️ HPO config produced zero labeled events (n={n_events}, {events_per_day:.3f} events/day), rejecting",
                     )
                     return -1e9
+
+                # Lightweight density diagnostics for the first few configs:
+                # report days_span and events/day so we can tune label density
+                # targets and event filters more precisely.
+                if debug_sample_count < debug_sample_limit:
+                    tprint_info(
+                        f"[HPO_DEBUG_DENSITY] days_span={days_span}, n_events={n_events}, "
+                        f"events_per_day={events_per_day:.3f}",
+                    )
+
+                # --- Time-to-Outcome (TTO) metrics for constraints & penalties ---
+                mean_tto = float("nan")
+                timeout_rate = float("nan")
+                tto_penalty = 0.0
+                try:
+                    if horizon > 0 and isinstance(event_durations, pd.Series):
+                        event_mask_tto = labeled_mask & ~event_durations.isna()
+                        if event_mask_tto.any():
+                            tto_series = (event_durations[event_mask_tto] / float(horizon)).replace([np.inf, -np.inf], np.nan)
+                            if len(tto_series) > 0:
+                                mean_tto = float(tto_series.mean())
+
+                        if exit_reasons is not None and isinstance(exit_reasons, pd.Series):
+                            exit_events = exit_reasons[event_mask_tto]
+                            timeout_rate = float((exit_events == 2).mean())
+
+                    # Hard constraint on mean TTO to avoid pathologically slow exits
+                    tto_hard_max = float(config.get("tto_max", 0.6))
+                    if np.isfinite(mean_tto) and mean_tto > tto_hard_max:
+                        tprint_warning(
+                            f"⚠️ HPO config rejected due to high mean TTO={mean_tto:.3f} (> {tto_hard_max:.2f})"
+                        )
+                        return {
+                            'learnability': 0.0,
+                            'profitability': -1e9,
+                            'edge': -1e9,
+                            'combined': -1e9,
+                        }
+
+                    # Soft TTO penalty (secondary importance): gently discourage
+                    # configurations with mean TTO above a target.
+                    if np.isfinite(mean_tto):
+                        tto_target = float(config.get("tto_target", 0.4))
+                        tto_penalty_weight = float(config.get("tto_penalty_weight", 20.0))
+                        tto_excess = max(0.0, mean_tto - tto_target)
+                        tto_penalty = tto_excess * tto_penalty_weight
+                except Exception:
+                    mean_tto = float("nan")
+                    timeout_rate = float("nan")
+                    tto_penalty = 0.0
 
                 # --- Kalman smoothing for meta probability proxy ---
                 smoothed_labels, _ = kalman_smooth_labels(
@@ -1206,6 +1494,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     probabilities=prob_clipped.values,
                     realized_returns=realized_returns.values,
                     method="isotonic",
+                    econ_min_return_multiple=econ_min_mult,
                 )
 
                 # Translate to long/short targets using existing helper
@@ -1256,7 +1545,12 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 # match the production training path.
                 X_for_learnability = meta_features_model_processed
 
-                # Compute learnability score with isotonic calibration
+                # Compute learnability score with isotonic calibration. Allow HPO to
+                # tune the strength of signal-strength-based weighting.
+                signal_strength_scale_max = float(params.get("signal_strength_scale_max", 1.5))
+                if not np.isfinite(signal_strength_scale_max) or signal_strength_scale_max < 1.0:
+                    signal_strength_scale_max = 1.5
+
                 learnability_score, mean_auc, calibrated_probs, iso_reg_probe = compute_learnability_with_calibration(
                     X=X_for_learnability,
                     y=binary_labels,
@@ -1265,6 +1559,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     cv_splits=cv_splits,
                     time_aware_cv=True,
                     use_ensemble=use_ensemble,
+                    signal_strength_scale_max=signal_strength_scale_max,
                 )
 
                 # PENALTY: if mean_auc < 0.7, heavily penalize
@@ -1441,7 +1736,8 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     top_bucket_sharpe = 0.0
 
                 # Profitability score: emphasize separation and Sharpe, subtract penalties,
-                # and reward strong top-bucket performance.
+                # and reward strong top-bucket performance. TTO penalty is secondary but
+                # present so that extremely slow configurations are disfavoured.
                 profitability_score = (
                     sep * 100.0
                     + sharpe_pos * 10.0
@@ -1449,6 +1745,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     + top_bucket_mean * 1000.0
                     - penalty_density
                     - penalty_noise
+                    - tto_penalty
                 )
 
                 # Extra penalty when label balance is extreme (balance_score == 0)
@@ -1495,6 +1792,13 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 except Exception:
                     pass  # Skip if temporal check fails
 
+                # Reference trade count for Sharpe-like scaling of edge. We
+                # center this around a target trades/day consistent with the
+                # density band above so that edge mildly rewards configurations
+                # that achieve a healthy number of good trades.
+                target_trades_per_day = float(config.get("edge_target_trades_per_day", 2.0))
+                reference_trades = max(1.0, float(days_span) * target_trades_per_day)
+
                 # ===== REALISTIC P&L EDGE METRIC =====
                 # Edge = (Mean Return - Cost) × max(0, 2×AUC - 1)
                 # This penalizes "profitable but unlearnable" strategies more realistically
@@ -1502,6 +1806,8 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     mean_return_positive=mean_pos,
                     mean_auc=mean_auc,
                     transaction_cost=tx,
+                    n_trades=n_events,
+                    reference_trades=reference_trades,
                 )
                 # Tie temporal instability to edge: softly down-weight edge when
                 # rolling-window AUC variance is high.
@@ -1525,10 +1831,17 @@ class MetaLabelingHPOExperimentStep(BaseStep):
 
                 # ===== COMBINED OBJECTIVE (Using Edge as Primary Metric) =====
                 # New formula: Edge-weighted combination
-                # Edge is already a function of both profitability AND learnability
-                # We add a small learnability bonus for high-AUC configs
+                # Edge is already a function of both profitability AND learnability.
+                # We add a small learnability bonus for high-AUC configs and include
+                # a lightly weighted TTO penalty so that pathologically slow
+                # configurations are slightly down-weighted.
                 learnability_bonus = max(0, (mean_auc - 0.6) * 2)  # Bonus above 0.6 AUC
-                combined_score = edge_scaled + (learnability_bonus * 10.0) - (penalty_density * 0.1)
+                combined_score = (
+                    edge_scaled
+                    + (learnability_bonus * 10.0)
+                    - (penalty_density * 0.1)
+                    - (tto_penalty * 0.1)
+                )
 
                 # Store candidate configuration for later persistence
                 candidate_config = {
@@ -1545,6 +1858,9 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     'n_events': int(n_events),
                     'balance_score': float(balance_score),
                     'trades_per_day': float(trades_per_day),
+                    'mean_tto': float(mean_tto) if np.isfinite(mean_tto) else float('nan'),
+                    'timeout_rate': float(timeout_rate) if np.isfinite(timeout_rate) else float('nan'),
+                    'tto_penalty': float(tto_penalty),
                     'n_pre_events': int(n_pre_total),
                     'retention_total': float(retention_total),
                     'retention_pos': float(retention_pos),
@@ -1590,20 +1906,28 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                                 mean_pos_reg = float(r_pos_reg.mean()) if len(r_pos_reg) > 0 else 0.0
                                 mean_neg_reg = float(r_neg_reg.mean()) if len(r_neg_reg) > 0 else 0.0
 
-                                # Simple AUC on calibrated probabilities within this regime
-                                auc_reg = 0.5
+                                # Realized AUC within this regime (diagnostic only)
+                                auc_reg_local = float("nan")
                                 if probs_events is not None:
                                     try:
                                         probs_reg = probs_events[reg_mask]
                                         if len(labels_reg.unique()) >= 2:
-                                            auc_reg = float(_roc_auc_score_reg(labels_reg, probs_reg))
+                                            auc_reg_local = float(_roc_auc_score_reg(labels_reg, probs_reg))
                                     except Exception:
-                                        auc_reg = 0.5
+                                        auc_reg_local = float("nan")
+
+                                # For edge, use the same cross-validated mean_auc and
+                                # Sharpe-like trade-count scaling as the global metric,
+                                # so that regime-level edges are directly comparable to
+                                # the reported best_edge.
+                                auc_for_edge = float(mean_auc)
 
                                 edge_reg = compute_realistic_pnl_edge(
                                     mean_return_positive=mean_pos_reg,
-                                    mean_auc=auc_reg,
+                                    mean_auc=auc_for_edge,
                                     transaction_cost=tx,
+                                    n_trades=n_reg,
+                                    reference_trades=reference_trades,
                                 )
 
                                 trades_per_day_reg = float(n_reg) / max(days_span, 1)
@@ -1613,7 +1937,10 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                                     'trades_per_day': trades_per_day_reg,
                                     'mean_pos': mean_pos_reg,
                                     'mean_neg': mean_neg_reg,
-                                    'auc': auc_reg,
+                                    # Expose the aligned AUC used for edge, and keep the
+                                    # local realized AUC as an auxiliary diagnostic field.
+                                    'auc': auc_for_edge,
+                                    'auc_local': auc_reg_local,
                                     'edge': edge_reg,
                                 }
                             except Exception:
@@ -1693,6 +2020,10 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     "stop_mult_max",
                     "iso_min_prob",
                     "target_clip_high_q",
+                    "econ_min_return_multiple",
+                    "label_low_q",
+                    "label_high_q",
+                    "signal_strength_scale_max",
                 ]
                 for p in shrinkable_params:
                     if p not in initial_search_space:
@@ -1737,10 +2068,14 @@ class MetaLabelingHPOExperimentStep(BaseStep):
         # 6) Multi-Stage HPO Execution Loop
         # ------------------------------------------------------------------
         # Parameters optimized per stage:
-        # Stage 1: horizon_bars, min_event_spacing, target_clip_high_q +
-        #          kalman_Q, kalman_R, vol_baseline_window, profit_mult_min/max, stop_mult_min/max
-        # Stage 2: kalman_Q, kalman_R, vol_baseline_window, profit_mult_min/max, stop_mult_min/max
-        # Stage 3: All parameters (profit_thr_base, stop_to_profit_ratio, iso_min_prob + refinement)
+        # Stage 1: horizon_bars, min_event_spacing, target_transform (iso/clipping,
+        #          econ_min_return_multiple, label quantiles, signal strength
+        #          scaling) + kalman_Q, kalman_R, vol_baseline_window,
+        #          profit_mult_min/max, stop_mult_min/max
+        # Stage 2: kalman_Q, kalman_R, vol_baseline_window, profit_mult_min/max,
+        #          stop_mult_min/max
+        # Stage 3: All parameters (profit_thr_base, stop_to_profit_ratio,
+        #          iso_min_prob, target_transform refinements, etc.)
         #
         # The multi-stage process progressively increases model complexity to find
         # configurations that are both profitable AND learnable by production models.
@@ -1748,9 +2083,12 @@ class MetaLabelingHPOExperimentStep(BaseStep):
         # Define which parameters to optimize at each stage
         if calibrated_horizon is not None:
             stage_1_params = [
-                'min_event_spacing', 'iso_min_prob', 'target_clip_high_q',
+                'min_event_spacing',
+                'iso_min_prob', 'target_clip_high_q',
+                'econ_min_return_multiple', 'label_low_q', 'label_high_q',
+                'signal_strength_scale_max',
                 'kalman_Q', 'kalman_R', 'vol_baseline_window',
-                'profit_mult_min', 'profit_mult_max', 'stop_mult_min', 'stop_mult_max'
+                'profit_mult_min', 'profit_mult_max', 'stop_mult_min', 'stop_mult_max',
             ]
             stage_2_params = [
                 'kalman_Q', 'kalman_R', 'vol_baseline_window',
@@ -1758,9 +2096,12 @@ class MetaLabelingHPOExperimentStep(BaseStep):
             ]
         else:
             stage_1_params = [
-                'horizon_bars', 'min_event_spacing', 'iso_min_prob', 'target_clip_high_q',
+                'horizon_bars', 'min_event_spacing',
+                'iso_min_prob', 'target_clip_high_q',
+                'econ_min_return_multiple', 'label_low_q', 'label_high_q',
+                'signal_strength_scale_max',
                 'kalman_Q', 'kalman_R', 'vol_baseline_window',
-                'profit_mult_min', 'profit_mult_max', 'stop_mult_min', 'stop_mult_max'
+                'profit_mult_min', 'profit_mult_max', 'stop_mult_min', 'stop_mult_max',
             ]
             stage_2_params = [
                 'kalman_Q', 'kalman_R', 'vol_baseline_window',
@@ -1863,8 +2204,13 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     stage_param_groups.append(['profit_mult_min', 'profit_mult_max', 'stop_mult_min', 'stop_mult_max'])
                     # Group C – smoothing
                     stage_param_groups.append(['kalman_Q', 'kalman_R'])
-                    # Group D – target transform
-                    stage_param_groups.append(['iso_min_prob', 'target_clip_high_q'])
+                    # Group D – target transform (clipping, econ floor, label quantiles,
+                    # and signal-strength weighting strength)
+                    stage_param_groups.append([
+                        'iso_min_prob', 'target_clip_high_q',
+                        'econ_min_return_multiple', 'label_low_q', 'label_high_q',
+                        'signal_strength_scale_max',
+                    ])
                 else:
                     # Stage 2 (medium model, full data): smoothing + TPSL/vol
                     stage_param_groups.append(['kalman_Q', 'kalman_R'])
@@ -2256,14 +2602,18 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 if stop_mult_min > stop_mult_max:
                     stop_mult_min, stop_mult_max = stop_mult_max, stop_mult_min
 
-                iso_min_prob = float(diag_params.get("iso_min_prob", 0.0))
-                iso_min_prob = max(0.0, min(0.1, iso_min_prob))
+                iso_min_prob = float(diag_params.get("iso_min_prob", 0.05))
+                iso_min_prob = max(0.05, min(0.15, iso_min_prob))
                 iso_max_prob = 1.0 - iso_min_prob
-                iso_max_prob = max(0.9, min(1.0, iso_max_prob))
+                iso_max_prob = max(0.85, min(1.0, iso_max_prob))
 
                 q_high = float(diag_params.get("target_clip_high_q", 0.95))
-                q_high = max(0.90, min(0.99, q_high))
+                q_high = max(0.90, min(0.98, q_high))
                 q_low = max(0.0, min(0.5, 1.0 - q_high))
+
+                econ_min_mult = float(diag_params.get("econ_min_return_multiple", ECON_MIN_RETURN_MULTIPLE))
+                if not np.isfinite(econ_min_mult) or econ_min_mult <= 0:
+                    econ_min_mult = float(ECON_MIN_RETURN_MULTIPLE)
 
                 # Recompute adaptive profit/stop thresholds
                 vol_baseline = volatility_1d.rolling(vol_baseline_window).mean()
@@ -2320,6 +2670,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                         probabilities=prob_clipped.values,
                         realized_returns=realized_returns.values,
                         method="isotonic",
+                        econ_min_return_multiple=econ_min_mult,
                     )
 
                     # Translate to long/short targets

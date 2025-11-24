@@ -1583,25 +1583,24 @@ class ArtifactManager:
 		self.logger.info("Manual cleanup completed")
 
 	def _start_background_tasks(self) -> None:
-		"""Start background maintenance tasks."""
+		"""Start background maintenance tasks (one-shot per run)."""
 		if self.enable_health_checks:
-			# Start cleanup task
+			# Start a one-shot cleanup task that runs once per process/run
 			cleanup_task = threading.Thread(
 				target=self._background_cleanup,
 				daemon=True,
-				name="ArtifactManagerCleanup"
+				name="ArtifactManagerCleanup",
 			)
 			cleanup_task.start()
-			self.logger.debug("Background cleanup task started")
+			self.logger.debug("Background cleanup task started (one-shot)")
 
 	def _background_cleanup(self) -> None:
-		"""Background task for periodic cleanup and maintenance."""
-		while True:
-			try:
-				time.sleep(self.cleanup_interval_seconds)
-				self._perform_cleanup()
-			except Exception as e:
-				self.logger.error(f"Background cleanup failed: {e}")
+		"""Background task for a single cleanup pass per run."""
+		try:
+			time.sleep(self.cleanup_interval_seconds)
+			self._perform_cleanup()
+		except Exception as e:
+			self.logger.error(f"Background cleanup failed: {e}")
 
 	def _perform_cleanup(self) -> None:
 		"""Perform cleanup operations."""

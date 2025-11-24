@@ -51,6 +51,12 @@ from datetime import datetime
 import time
 from pathlib import Path
 from sklearn.preprocessing import RobustScaler
+from src.training.utils.meta_label_constants import (
+    META_LABEL_TARGET_COLUMNS,
+    META_LABEL_PRIMARY_TRAINING_TARGETS,
+    META_LABEL_DIAGNOSTIC_COLUMNS,
+    META_LABEL_EXCLUDED_FEATURE_COLUMNS,
+)
 
 from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
@@ -58,6 +64,42 @@ from src.utils.tprint import (
     tprint, tprint_info, tprint_success, tprint_error, tprint_performance,
     tprint_warning, tprint_structured, LogLevel
 )
+
+
+def _align_for_label_guided_discovery_helper(
+    features: pd.DataFrame,
+    target: pd.Series,
+) -> Tuple[pd.DataFrame, pd.Series]:
+    """Align features and target for label-guided interaction discovery.
+
+    This mirrors LabelGuidedInteractionDiscovery._clean_inputs:
+    - Use index intersection when there is overlap.
+    - If there is no overlap, fall back to positional alignment on the last
+      min(len(features), len(target)) rows and reset to a shared RangeIndex.
+    - Drop any rows with non-finite values in features or target.
+    """
+
+    common_idx = features.index.intersection(target.index)
+
+    if len(common_idx) == 0:
+        min_len = min(len(features), len(target))
+        if min_len == 0:
+            return features.iloc[0:0].copy(), target.iloc[0:0].copy()
+        features_aligned = features.iloc[-min_len:].copy()
+        target_aligned = target.iloc[-min_len:].copy()
+        features_aligned.index = pd.RangeIndex(min_len)
+        target_aligned.index = pd.RangeIndex(min_len)
+    else:
+        features_aligned = features.loc[common_idx].copy()
+        target_aligned = target.loc[common_idx].copy()
+
+    finite_mask = np.isfinite(target_aligned.values) & np.all(
+        np.isfinite(features_aligned.values), axis=1
+    )
+    features_clean = features_aligned[finite_mask]
+    target_clean = target_aligned[finite_mask]
+
+    return features_clean, target_clean
 
 # VectorBT imports
 try:
@@ -813,6 +855,42 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         
         return lookback_optimization, labeled_data, generated_features, top_features_by_category
 
+    def _get_primary_summary_targets(self, config: Dict[str, Any]) -> Optional[pd.DataFrame]:
+        """Load labeled_data and select a primary target column for summary metrics.
+
+        Prefers smoothed_label, then binary_label, then realized_return, and
+        finally falls back to the first available non-empty column.
+        """
+
+        try:
+            artifact_name = f"labeled_data_{config['symbol']}_{config['timeframe']}"
+            labeled_data = self._get_artifact(artifact_name, "data")
+        except Exception:
+            try:
+                labeled_data = self._get_artifact("labeled_data", "data")
+            except Exception:
+                return None
+
+        if not isinstance(labeled_data, pd.DataFrame) or labeled_data.empty:
+            return None
+
+        preferred_targets = [
+            "smoothed_label",
+            "binary_label",
+            "realized_return",
+        ]
+        existing = [col for col in preferred_targets if col in labeled_data.columns]
+        if existing:
+            return labeled_data[[existing[0]]]
+
+        # Fallback: first non-all-NaN column
+        for col in labeled_data.columns:
+            series = labeled_data[col]
+            if getattr(series, "notna", None) is not None and series.notna().any():
+                return labeled_data[[col]]
+
+        return labeled_data.iloc[:, :1]
+
     def _normalize_lookback_optimization(self, lookback_optimization: Any) -> pd.DataFrame:
         """Normalize lookback_optimization artifact into a per-feature DataFrame.
 
@@ -1473,37 +1551,88 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             try:
                 symbol = config.get('symbol', 'ETHUSDT')
                 timeframe = config.get('timeframe', '15m')
-                
-                # Initialize KlinesParquetManager
-                klines_manager = get_klines_manager()
-                
-                # Load OHLCV data
-                ohlcv_data = klines_manager.read_data(
-                    symbol=symbol,
-                    interval=timeframe,
-                    data_type='raw',
-                    columns=['open', 'high', 'low', 'close', 'volume']
-                )
-                
+
+                # Determine data directory and exchange from config (fallback to defaults)
+                data_dir = config.get('data_dir', 'historical_data')
+                exchange_name = config.get('exchange', 'binance')
+
+                # Initialize KlinesParquetManager with explicit data_dir/exchange so we
+                # can reliably load the underlying OHLCV needed for variant generation.
+                klines_manager = get_klines_manager(data_dir=data_dir, exchange=exchange_name)
+
+                # Prefer processed data (partitioned or consolidated), fall back to raw
+                ohlcv_data = None
+                last_source = None
+                for data_type_candidate in ("processed", "raw"):
+                    try:
+                        candidate = klines_manager.read_data(
+                            symbol=symbol,
+                            interval=timeframe,
+                            data_type=data_type_candidate,
+                            columns=['open', 'high', 'low', 'close', 'volume']
+                        )
+                        if candidate is not None and len(candidate) > 0:
+                            ohlcv_data = candidate
+                            last_source = data_type_candidate
+                            tprint_info(
+                                f"📁 Loaded {data_type_candidate} OHLCV candidate for {symbol} {timeframe}: {ohlcv_data.shape}"
+                            )
+                            break
+                        else:
+                            tprint_warning(
+                                f"⚠️ No {data_type_candidate} OHLCV data found for {symbol} {timeframe}"
+                            )
+                    except Exception as inner_exc:
+                        tprint_warning(
+                            f"⚠️ Failed to load {data_type_candidate} OHLCV data for {symbol} {timeframe}: {inner_exc}"
+                        )
+
                 if ohlcv_data is not None and len(ohlcv_data) > 0:
                     # Ensure unique time index to allow reindexing safely
                     if ohlcv_data.index.has_duplicates:
                         tprint_warning("⚠️ OHLCV index has duplicates. Collapsing to last occurrence per timestamp for safe reindexing")
                         ohlcv_data = ohlcv_data[~ohlcv_data.index.duplicated(keep='last')]
-                    
-                    # Ensure the index matches generated_features
-                    ohlcv_data = ohlcv_data.reindex(generated_features.index, method='ffill')
-                    
-                    # Debug: Check the types of OHLCV columns
-                    tprint_info(f"🔍 OHLCV data types: close={type(ohlcv_data['close'])}, high={type(ohlcv_data['high'])}, low={type(ohlcv_data['low'])}")
-                    
-                    # Ensure all columns are pandas Series
-                    for col in ['open', 'high', 'low', 'close', 'volume']:
-                        if col in ohlcv_data.columns:
-                            if not isinstance(ohlcv_data[col], pd.Series):
-                                ohlcv_data[col] = pd.Series(ohlcv_data[col], name=col, index=ohlcv_data.index)
-                    
-                    tprint_success(f"✅ Loaded OHLCV data: {ohlcv_data.shape}")
+
+                    # Try to align OHLCV index with generated_features index. If this fails
+                    # due to mixed index dtypes (e.g. Timestamp vs bytes), fall back to a
+                    # robust positional alignment on the most recent overlapping window.
+                    try:
+                        ohlcv_data = ohlcv_data.reindex(generated_features.index, method='ffill')
+                    except Exception as align_exc:
+                        tprint_warning(
+                            f"⚠️ Failed to align OHLCV index with generated_features index via reindex; "
+                            f"falling back to positional alignment: {align_exc}"
+                        )
+                        min_len = min(len(ohlcv_data), len(generated_features))
+                        if min_len > 0:
+                            # Preserve the most recent history and force the index to match
+                            # the tail of generated_features so downstream alignment is safe.
+                            ohlcv_aligned = ohlcv_data.iloc[-min_len:].copy()
+                            ohlcv_aligned.index = generated_features.index[-min_len:]
+                            ohlcv_data = ohlcv_aligned
+                        else:
+                            tprint_warning(
+                                "⚠️ OHLCV alignment produced no usable rows; disabling OHLCV-based variants"
+                            )
+                            ohlcv_data = None
+
+                    if ohlcv_data is not None and len(ohlcv_data) > 0:
+                        # Debug: Check the types of OHLCV columns
+                        tprint_info(
+                            f"🔍 OHLCV data types: close={type(ohlcv_data['close'])}, high={type(ohlcv_data['high'])}, low={type(ohlcv_data['low'])}"
+                        )
+                        
+                        # Ensure all columns are pandas Series
+                        for col in ['open', 'high', 'low', 'close', 'volume']:
+                            if col in ohlcv_data.columns:
+                                if not isinstance(ohlcv_data[col], pd.Series):
+                                    ohlcv_data[col] = pd.Series(ohlcv_data[col], name=col, index=ohlcv_data.index)
+                        
+                        source_label = last_source or "unknown"
+                        tprint_success(f"✅ Loaded OHLCV data ({source_label}) for variant generation: {ohlcv_data.shape}")
+                    else:
+                        ohlcv_data = None
+                        tprint_warning("⚠️ OHLCV alignment resulted in empty data; OHLCV-based variants will be skipped")
                 else:
                     ohlcv_data = None
                     tprint_warning("⚠️ No OHLCV data found from KlinesParquetManager")
@@ -1673,6 +1802,39 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             tprint_error(f"❌ Variant generation failed: {e}")
             raise
 
+    def _generate_extended_timeframe_feature(
+        self,
+        base_feature_name: str,
+        variant_type: str,
+        extended_lookback: int,
+        generated_features: pd.DataFrame,
+        ohlcv_data: pd.DataFrame,
+    ) -> Optional[pd.Series]:
+        """Thin wrapper around variant_generator._generate_extended_timeframe_variant.
+
+        This keeps the cross-timeframe feature generation logic centralized in the
+        variant_generator module while exposing a simple helper on the step class.
+        """
+
+        try:
+            from src.training.utils.feature_selection.variant_generator import (
+                _generate_extended_timeframe_variant,
+            )
+        except ImportError as exc:
+            tprint_warning(
+                f"⚠️ Extended timeframe variant helper not available; "
+                f"skipping CT extension for {base_feature_name} ({variant_type}): {exc}"
+            )
+            return None
+
+        return _generate_extended_timeframe_variant(
+            base_feature_name=base_feature_name,
+            variant_type=variant_type,
+            extended_lookback=extended_lookback,
+            generated_features=generated_features,
+            ohlcv_data=ohlcv_data,
+        )
+
     async def _generate_cross_timeframe_features(
         self,
         variant_features: pd.DataFrame,
@@ -1770,12 +1932,15 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                 # Extract base feature name and variant type
                 base_feature_name = self._extract_base_feature_name(variant_col)
                 variant_type = self._extract_variant_type(variant_col)
-                
+
+                if variant_type in ("volnorm", "trend_adj"):
+                    continue
+
                 if base_feature_name not in lookback_mapping:
                     tprint_warning(f"⚠️ No lookback found for base feature {base_feature_name}, skipping")
                     failed_count += 1
                     continue
-                
+
                 base_lookback = lookback_mapping[base_feature_name]
                 base_feature_series = variant_features[variant_col]
                 
@@ -1883,1030 +2048,87 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             tprint_warning("⚠️ No cross-timeframe features generated")
             return pd.DataFrame()
     
-    def _extract_period_from_feature_name(self, feature_name: str) -> Optional[int]:
-        """Extract the period from a feature name."""
-        import re
-        
-        # Common patterns for period extraction
-        patterns = [
-            r'_(\d+)$',  # Feature ending with _number
-            r'_(\d+)_',  # Feature with _number_ in the middle
-            r'(\d+)_',   # Feature starting with number_
-        ]
-        
-        for pattern in patterns:
-            match = re.search(pattern, feature_name)
-            if match:
-                try:
-                    return int(match.group(1))
-                except ValueError:
-                    continue
-        
-        # Default fallback periods for common features
-        default_periods = {
-            'rsi': 14,
-            'sma': 20,
-            'ema': 20,
-            'bb': 20,
-            'atr': 14,
-            'stoch': 14,
-            'williams': 14,
-            'cci': 20,
-            'macd': 12,
-            'volume': 20,
-            'volatility': 20,
-        }
-        
-        for key, default_period in default_periods.items():
-            if key in feature_name.lower():
-                return default_period
-        
-        return None
-    
-    def _recalculate_feature_with_period(self, feature_name: str, period: int, ohlcv_data: pd.DataFrame) -> Optional[pd.Series]:
-        """
-        Recalculate a feature with a specific period using the original OHLCV data.
-        
-        Uses three-tier fallback strategy:
-        1. Try FeatureBank regeneration (most accurate)
-        2. Try simple pattern matching
-        3. Use rolling window approximation as last resort
-        """
-        try:
-            from src.training.utils.feature_calculators import FeatureCalculator
-            
-            # Tier 1: Try FeatureBank regeneration (BEST - recalculates from scratch)
-            try:
-                if hasattr(self, 'feature_bank') and self.feature_bank is not None:
-                    # Try to regenerate the feature using FeatureBank
-                    result = self._regenerate_feature_with_feature_bank(feature_name, period, ohlcv_data)
-                    if result is not None and not result.isna().all():
-                        nan_pct = result.isna().sum() / len(result) * 100
-                        if nan_pct < 95:  # Accept if less than 95% NaN
-                            tprint_info(f"    ✅ FeatureBank regeneration succeeded for {feature_name} ({nan_pct:.1f}% NaN)")
-                            return result
-            except Exception as e:
-                pass  # Continue to next tier
-            
-            # Tier 2: Try simple pattern matching
-            feature_mappings = {
-                'rsi': lambda data, p: FeatureCalculator.calculate_rsi(data['close'], p),
-                'sma': lambda data, p: FeatureCalculator.calculate_sma(data['close'], p),
-                'ema': lambda data, p: FeatureCalculator.calculate_ema(data['close'], p),
-                'bb': lambda data, p: FeatureCalculator.calculate_bollinger_position(data, p),
-                'atr': lambda data, p: FeatureCalculator.calculate_atr(data, p),
-                'stoch': lambda data, p: FeatureCalculator.calculate_stochastic_k(data, p),
-                'williams': lambda data, p: FeatureCalculator.calculate_williams_r(data, p),
-                'cci': lambda data, p: FeatureCalculator.calculate_cci(data, p),
-                'macd': lambda data, p: FeatureCalculator.calculate_ema(data['close'], p),
-                'volume': lambda data, p: data['volume'].rolling(p, min_periods=max(1, p//2)).mean(),
-                'volatility': lambda data, p: data['close'].pct_change().rolling(p, min_periods=max(1, p//2)).std(),
-                'momentum': lambda data, p: data['close'] - data['close'].shift(p),
-                'roc': lambda data, p: FeatureCalculator.calculate_roc(data['close'], p),
-                'vwap': lambda data, p: FeatureCalculator.calculate_vwap(data, p),
-            }
-            
-            feature_lower = feature_name.lower()
-            for key, calc_func in feature_mappings.items():
-                if key in feature_lower:
-                    result = calc_func(ohlcv_data, period)
-                    if result is not None and not result.isna().all():
-                        nan_pct = result.isna().sum() / len(result) * 100
-                        if nan_pct < 95:
-                            tprint_info(f"    ✅ Pattern match '{key}' succeeded for {feature_name} ({nan_pct:.1f}% NaN)")
-                            return result
-            
-            # Tier 3: Use rolling window approximation (FALLBACK)
-            # This approximates the extended timeframe by using rolling windows
-            tprint_warning(f"    ⚠️ Using rolling window approximation for {feature_name}")
-            result = self._rolling_window_approximation(feature_name, period, ohlcv_data)
-            if result is not None and not result.isna().all():
-                nan_pct = result.isna().sum() / len(result) * 100
-                tprint_warning(f"    ✅ Rolling approximation succeeded ({nan_pct:.1f}% NaN)")
-                return result
-            
-            # All tiers failed
-            tprint_error(f"    ❌ All recalculation methods failed for {feature_name}")
-            return None
-            
-        except Exception as e:
-            tprint_error(f"❌ Failed to recalculate {feature_name}: {e}")
-            return None
-    
-    def _regenerate_feature_with_feature_bank(self, feature_name: str, period: int, ohlcv_data: pd.DataFrame) -> Optional[pd.Series]:
-        """
-        Attempt to regenerate a feature using the FeatureBank with the specified period.
-        This is the most accurate method as it recalculates from scratch.
-        """
-        try:
-            # The feature bank can regenerate features with different parameters
-            # For now, return None and let it fall through to other methods
-            # TODO: Implement proper FeatureBank regeneration when needed
-            return None
-        except Exception as e:
-            return None
-    
-    def _rolling_window_approximation(self, feature_name: str, period: int, ohlcv_data: pd.DataFrame) -> Optional[pd.Series]:
-        """
-        Create an approximation of the extended timeframe feature using rolling windows.
-        This is a fallback when proper recalculation fails.
-        
-        The approximation uses rolling means/operations to simulate longer timeframes.
-        While not perfect, it's better than returning None/NaN.
-        """
-        try:
-            # Strategy: Apply rolling window to approximate longer timeframe
-            # This preserves some signal even if not perfectly accurate
-            
-            # For most features, a rolling mean approximation works reasonably well
-            # The idea is that a feature calculated on a longer period behaves similarly
-            # to a smoothed version of the same feature
-            
-            # Check if we have close price to work with
-            if 'close' not in ohlcv_data.columns:
-                return None
-            
-            close = ohlcv_data['close']
-            
-            # Different approximation strategies based on feature type
-            feature_lower = feature_name.lower()
-            
-            # For trend/momentum features: use price momentum over the period
-            if any(keyword in feature_lower for keyword in ['trend', 'momentum', 'direction']):
-                # Calculate momentum over the extended period
-                result = (close - close.shift(period)) / (close.shift(period) + 1e-8)
-                result = result.rolling(window=max(5, period//4), min_periods=1).mean()
-                return result
-            
-            # For volatility features: use rolling std over the period
-            elif any(keyword in feature_lower for keyword in ['volatility', 'vol', 'atr', 'std']):
-                returns = close.pct_change()
-                result = returns.rolling(window=period, min_periods=max(1, period//2)).std()
-                return result
-            
-            # For volume features: use rolling volume statistics
-            elif 'volume' in feature_lower and 'volume' in ohlcv_data.columns:
-                volume = ohlcv_data['volume']
-                # Normalize by rolling mean to capture relative volume
-                vol_mean = volume.rolling(window=period, min_periods=max(1, period//2)).mean()
-                result = volume / (vol_mean + 1e-8)
-                return result
-            
-            # For oscillator/indicator features: use smoothed price ratios
-            elif any(keyword in feature_lower for keyword in ['rsi', 'stoch', 'oscillator', 'index']):
-                # Approximate with smoothed price momentum
-                sma_short = close.rolling(window=max(5, period//4), min_periods=1).mean()
-                sma_long = close.rolling(window=period, min_periods=max(1, period//2)).mean()
-                result = (sma_short - sma_long) / (sma_long + 1e-8)
-                return result
-            
-            # For price-based features: use simple moving average as approximation
-            elif any(keyword in feature_lower for keyword in ['price', 'close', 'sma', 'ema', 'ma']):
-                result = close.rolling(window=period, min_periods=max(1, period//2)).mean()
-                return result
-            
-            # Default: use rolling mean of close price changes
-            else:
-                returns = close.pct_change()
-                result = returns.rolling(window=period, min_periods=max(1, period//2)).mean()
-                return result
-                
-        except Exception as e:
-            tprint_warning(f"    ⚠️ Rolling approximation failed: {e}")
-            return None
-    
-    def _apply_volatility_normalization(self, feature: pd.Series, ohlcv_data: pd.DataFrame, lookback_period: int = 20) -> pd.Series:
-        """Apply volatility normalization to a feature using the specified lookback period."""
-        try:
-            # Calculate rolling volatility of returns using the extended lookback period
-            returns = ohlcv_data['close'].pct_change()
-            volatility = returns.rolling(window=lookback_period, min_periods=max(1, lookback_period // 2)).std()
-            
-            # Normalize the feature by volatility
-            normalized = feature / (volatility + 1e-8)
-            return normalized
-        except Exception as e:
-            tprint_warning(f"⚠️ Volatility normalization failed: {e}")
-            return feature
-    
-    def _apply_vwap_weighting(self, feature: pd.Series, ohlcv_data: pd.DataFrame, lookback_period: int = 20) -> Optional[pd.Series]:
-        """Apply VWAP weighting to a feature using the specified lookback period."""
-        try:
-            if 'volume' not in ohlcv_data.columns:
-                return feature
-            
-            # Calculate VWAP using the extended lookback period
-            typical_price = (ohlcv_data['high'] + ohlcv_data['low'] + ohlcv_data['close']) / 3
-            vwap = (typical_price * ohlcv_data['volume']).rolling(window=lookback_period, min_periods=max(1, lookback_period // 2)).sum() / ohlcv_data['volume'].rolling(window=lookback_period, min_periods=max(1, lookback_period // 2)).sum()
-            
-            # Weight the feature by VWAP ratio
-            price_vwap_ratio = ohlcv_data['close'] / (vwap + 1e-8)
-            weighted_feature = feature * price_vwap_ratio
-            
-            return weighted_feature
-        except Exception as e:
-            tprint_warning(f"⚠️ VWAP weighting failed: {e}")
-            return feature
-    
-    def _apply_trend_adjustment(self, feature: pd.Series, ohlcv_data: pd.DataFrame, lookback_period: int = 20) -> pd.Series:
-        """Apply trend adjustment to a feature using the specified lookback period."""
-        try:
-            # Calculate trend strength using price momentum with the extended lookback period
-            price_momentum = ohlcv_data['close'].pct_change().rolling(window=lookback_period, min_periods=max(1, lookback_period // 2)).mean()
-            trend_strength = np.abs(price_momentum) / (ohlcv_data['close'].pct_change().rolling(window=lookback_period, min_periods=max(1, lookback_period // 2)).std() + 1e-8)
-            
-            # Calculate trend direction
-            trend_direction = np.sign(price_momentum)
-            
-            # Adjust the feature by trend
-            trend_adjusted = feature * trend_strength * trend_direction
-            
-            return trend_adjusted
-        except Exception as e:
-            tprint_warning(f"⚠️ Trend adjustment failed: {e}")
-            return feature
-    
-    def _generate_extended_timeframe_feature(
-        self,
-        base_feature_name: str,
-        variant_type: str,
-        extended_lookback: int,
-        generated_features: pd.DataFrame,
-        ohlcv_data: pd.DataFrame
-    ) -> Optional[pd.Series]:
-        """
-        Generate extended timeframe version of a feature with different lookback period.
-        
-        SIMPLIFIED APPROACH: Use rolling window smoothing on the base feature itself.
-        This preserves the scale and variant transformations of the base feature.
-        
-        Args:
-            base_feature_name: Name of the base feature
-            variant_type: Type of variant (base, volnorm, vwap, trend_adj)
-            extended_lookback: Extended lookback period
-            generated_features: Original features DataFrame
-            ohlcv_data: OHLCV data for recalculation
-            
-        Returns:
-            Series with extended timeframe feature or None if generation fails
-        """
-        try:
-            # Get the base feature series
-            if base_feature_name not in generated_features.columns:
-                return None
-            
-            base_feature_series = generated_features[base_feature_name]
-            
-            # SIMPLIFIED APPROACH: Apply rolling mean to the base feature
-            # This approximates the "longer timeframe" version while preserving scale
-            # The ratio between base and smoothed-base captures timeframe divergence
-            
-            # Use extended_lookback as the smoothing window
-            smoothing_window = int(extended_lookback)
-            
-            # Ensure window doesn't exceed data length
-            smoothing_window = min(smoothing_window, len(base_feature_series) - 1)
-            smoothing_window = max(2, smoothing_window)  # At least window of 2
-            
-            # Create smoothed version (simulates longer timeframe)
-            extended_feature = base_feature_series.rolling(
-                window=smoothing_window,
-                min_periods=max(1, smoothing_window // 3)  # Require at least 1/3 of window
-            ).mean()
-            
-            # Fill leading NaN values
-            extended_feature = extended_feature.fillna(method='bfill').fillna(method='ffill')
-            
-            # If still has NaN, fill with base feature values
-            if extended_feature.isna().any():
-                extended_feature = extended_feature.fillna(base_feature_series)
-            
-            # Validate result
-            if extended_feature.isna().all():
-                return None
-            
-            # Check if result is constant (no variance)
-            if extended_feature.std() < 1e-10:
-                # If constant, add small noise to avoid division issues
-                noise = np.random.normal(0, extended_feature.mean() * 0.001, len(extended_feature))
-                extended_feature = extended_feature + noise
-            
-            return extended_feature
-            
-        except Exception as e:
-            return None
-            
-    async def _extract_cross_timeframe_interactions(self, features: pd.DataFrame) -> pd.DataFrame:
-        """
-        Extract cross-timeframe interaction features between features from different timeframes.
-        
-        Looks for features with timeframe markers in their names (3x, 6x, 9x, 27x) and generates
-        interactions between the base timeframe features and the extended timeframe features.
-        
-        Args:
-            features: DataFrame with features that may include timeframe variants
-            
-        Returns:
-            DataFrame with cross-timeframe interaction features
-        """
-        try:
-            tprint_info("  🔍 Scanning features for cross-timeframe patterns...")
-            
-            # Identify base features and timeframe features
-            base_features = []
-            timeframe_features = {}
-            
-            for col in features.columns:
-                # Check if feature has timeframe marker (e.g., _3x_ratio, _6x_ratio, etc.)
-                if '_3x_ratio' in col or '_6x_ratio' in col or '_9x_ratio' in col or '_27x_ratio' in col:
-                    # Extract base feature name
-                    for multiplier in ['_3x_ratio', '_6x_ratio', '_9x_ratio', '_27x_ratio']:
-                        if multiplier in col:
-                            base_name = col.replace(multiplier, '')
-                            if base_name not in timeframe_features:
-                                timeframe_features[base_name] = {}
-                            timeframe_features[base_name][multiplier.replace('_', '').replace('ratio', '')] = col
-                            break
-                else:
-                    # Base feature without timeframe marker
-                    base_features.append(col)
-            
-            tprint_info(f"  📊 Found {len(base_features)} base features and {len(timeframe_features)} features with timeframe variants")
-            
-            # Generate cross-timeframe interactions
-            cross_timeframe_interactions = {}
-            
-            for base_feat in base_features:
-                if base_feat in timeframe_features:
-                    # Generate interactions between base feature and its timeframe variants
-                    for tf_marker, tf_feature in timeframe_features[base_feat].items():
-                        # Create product interaction: base * timeframe_variant
-                        interaction_name = f"{base_feat}_x_{tf_marker}"
-                        
-                        try:
-                            # Get base and timeframe feature series
-                            base_series = features[base_feat]
-                            tf_series = features[tf_feature]
-                            
-                            # Create product interaction with causality enforcement
-                            interaction = (base_series * tf_series).shift(1)
-                            
-                            # Handle NaN values
-                            interaction = interaction.fillna(method='ffill').fillna(0)
-                            
-                            # Store interaction
-                            cross_timeframe_interactions[interaction_name] = interaction
-                        
-                        except Exception as e:
-                            tprint_warning(f"  ⚠️ Failed to create cross-timeframe interaction {interaction_name}: {e}")
-            
-            # Create DataFrame from interactions
-            if cross_timeframe_interactions:
-                result_df = pd.DataFrame(cross_timeframe_interactions, index=features.index)
-                # Memory optimization: use float32 to reduce footprint
-                result_df = result_df.astype(np.float32)
-                tprint_success(f"  ✅ Generated {len(result_df.columns)} cross-timeframe interactions")
-                return result_df
-            else:
-                tprint_info("  ℹ️ No cross-timeframe interactions generated")
-                return pd.DataFrame()                
-        except Exception as e:
-            tprint_error(f"  ❌ Failed to extract cross-timeframe interactions: {e}")
-            return pd.DataFrame()
-
     async def _phase2_cheap_pruning(
         self,
         variant_features: pd.DataFrame,
         labeled_data: pd.DataFrame,
         lookback_optimization: pd.DataFrame,
-        config: Dict[str, Any]
-    ) -> Tuple[pd.DataFrame, Dict]:
+        config: Dict[str, Any],
+    ) -> Tuple[pd.DataFrame, Dict[str, Any], pd.DataFrame]:
+        """Phase 2: Cheap pruning wrapper.
+
+        Applies OptimizedCheapPruningPipeline via apply_optimized_cheap_pruning,
+        using composite scores from _calculate_composite_scores and feature
+        categories from _get_feature_categories_from_bank. Returns
+        (pruned_features, pruning_stats, targets_df).
         """
-        Phase 2: Apply cheap pruning with category protection (40-50% reduction).
-        
-        Uses our new CheapPruningPipeline with 5 sequential methods:
-        1. Variance pruning (~5% reduction, no category protection)
-        2. Statistical significance pruning (~10% reduction, no category protection)
-        3. Stability pruning (~10-15% reduction, category protection ≥3 per category)
-        4. Mutual information pruning (~10% reduction, category protection ≥3 per category)
-        5. Correlation pruning (~10-15% reduction, category protection ≥3 per category)
-        
-        Returns:
-            Tuple of (pruned_features, pruning_stats)
-        """
-        
-        tprint_info("✂️ Applying cheap pruning with category protection")
-        
-        if not UTILITIES_AVAILABLE:
-            raise ImportError("Cheap pruning utilities not available")
-        
-        # Get targets from labeled data - comprehensive detection
-        
-        # Primary target columns (from labeling integration step)
-        # Prefer binary meta-label when available, then fused targets for more informative selection
-        preferred_order = [
-            'binary_label',
-            'target_long_fused', 'target_short_fused',
-            'target_long', 'target_short',
-            'directional_confidence', 'opportunity_asymmetry',
-            'long_overall_opportunity', 'short_overall_opportunity', 'opportunity',
-            'confidence_score', 'quality_score', 'signal_strength'
-        ]
-        primary_target_columns = [col for col in labeled_data.columns if col in preferred_order]
-        
-        # Secondary target columns (pattern-based detection)
-        secondary_target_columns = []
-        for col in labeled_data.columns:
-            col_lower = col.lower()
-            if any(keyword in col_lower for keyword in [
-                'target', 'label', 'signal', 'opportunity', 'quality', 'confidence',
-                'long_', 'short_', 'directional', 'asymmetry', 'regime', 'trend'
-            ]):
-                secondary_target_columns.append(col)
-        
-        # Combine and deduplicate
-        all_target_candidates = list(set(primary_target_columns + secondary_target_columns))
-        
-        # Feature count summary before pruning
-        tprint_info(f"📊 PHASE 2: Feature counts before pruning:")
-        tprint_info(f"  📈 Input variant features: {len(variant_features.columns)} features")
-        tprint_info(f"  📈 Primary target candidates: {primary_target_columns}")
-        tprint_info(f"  📈 Secondary target candidates: {secondary_target_columns}")
-        tprint_info(f"  📈 All target candidates: {all_target_candidates}")
-        
-        # Validate target columns have non-zero variance
-        valid_target_columns = []
-        for col in all_target_candidates:
-            try:
-                col_data = labeled_data[col].dropna()
-                if len(col_data) > 0:
-                    variance = col_data.var()
-                    non_zero_count = (col_data != 0).sum()
-                    
-                    if variance > 1e-10 and non_zero_count > len(col_data) * 0.01:  # At least 1% non-zero
-                        valid_target_columns.append(col)
-                        tprint_success(f"✅ Valid target found: '{col}' (variance={variance:.6f})")
-                    else:
-                        tprint_warning(f"⚠️ Invalid target '{col}': variance={variance:.6f}, non-zero={non_zero_count}")
+
+        # Select target(s) for pruning
+        targets_df = self._get_primary_summary_targets(config)
+        if targets_df is None or targets_df.empty:
+            # Fallback: try basic columns on labeled_data
+            candidate_cols = [
+                "smoothed_label",
+                "binary_label",
+                "realized_return",
+            ]
+            if isinstance(labeled_data, pd.DataFrame) and not labeled_data.empty:
+                existing = [c for c in candidate_cols if c in labeled_data.columns]
+                if existing:
+                    targets_df = labeled_data[[existing[0]]]
                 else:
-                    tprint_warning(f"⚠️ Target '{col}' has no valid data after dropna()")
-            except Exception as e:
-                tprint_warning(f"⚠️ Error validating target '{col}': {e}")
-        
-        target_columns = valid_target_columns
-        
-        # If still no valid targets found, raise detailed error
-        if not target_columns:
-            error_msg = f"""
-            ❌ CRITICAL ERROR: No valid target columns found in labeled_data!
-            
-            Labeled data analysis:
-            - Shape: {labeled_data.shape}
-            - Columns: {list(labeled_data.columns)}
-            - Primary candidates: {primary_target_columns}
-            - Secondary candidates: {secondary_target_columns}
-            
-            This indicates a problem with the labeling integration step.
-            Expected columns from labeling step: target_long, target_short, opportunity, directional_confidence, etc.
-            """
-            tprint_error(error_msg)
-            raise ValueError("No valid target columns found in labeled_data - check labeling integration step")
-        
-        
-        
-        if not target_columns:
-            raise ValueError("No target columns found in labeled_data")
-        
-        # Handle different target column scenarios (prefer fused when present)
-        if set(target_columns) >= {'target_long_fused', 'target_short_fused'}:
-            tprint_info("📊 Using fused targets: target_long_fused and target_short_fused")
-            targets = labeled_data[['target_long_fused', 'target_short_fused']].copy()
-            # Derived compatibility columns
-            targets['directional_confidence'] = (targets['target_long_fused'] + targets['target_short_fused']).abs()
-            targets['opportunity_asymmetry'] = targets['target_long_fused'] - targets['target_short_fused']
-            targets['long_overall_opportunity'] = targets['target_long_fused']
-            targets['short_overall_opportunity'] = targets['target_short_fused']
-        elif target_columns == ['opportunity']:
-            tprint_info("📊 Using 'opportunity' column as primary target")
-            targets = labeled_data[['opportunity']]
-            targets['directional_confidence'] = labeled_data['opportunity'].abs()
-            targets['opportunity_asymmetry'] = labeled_data['opportunity']
-            targets['long_overall_opportunity'] = labeled_data['opportunity'].clip(lower=0)
-            targets['short_overall_opportunity'] = labeled_data['opportunity'].clip(upper=0).abs()
-        elif target_columns == ['dummy_target']:
-            tprint_info("📊 Using dummy target for testing")
-            targets = labeled_data[['dummy_target']]
-            targets['directional_confidence'] = labeled_data['dummy_target'].abs()
-            targets['opportunity_asymmetry'] = labeled_data['dummy_target']
-            targets['long_overall_opportunity'] = labeled_data['dummy_target'].clip(lower=0)
-            targets['short_overall_opportunity'] = labeled_data['dummy_target'].clip(upper=0).abs()
-        elif set(target_columns) == {'target_long', 'target_short'}:
-            tprint_info("📊 Using simplified binary targets: target_long and target_short")
-            targets = labeled_data[['target_long', 'target_short']].copy()
-            targets['directional_confidence'] = (labeled_data['target_long'] + labeled_data['target_short']).abs()
-            targets['opportunity_asymmetry'] = labeled_data['target_long'] - labeled_data['target_short']
-            targets['long_overall_opportunity'] = labeled_data['target_long']
-            targets['short_overall_opportunity'] = labeled_data['target_short']
-        else:
-            tprint_info(f"📊 Using alternative target columns: {target_columns}")
-            targets = labeled_data[target_columns].copy()
-            if len(target_columns) == 1 and target_columns[0] not in ['target_long', 'target_short', 'target_long_fused', 'target_short_fused']:
-                target_col = target_columns[0]
-                targets['directional_confidence'] = labeled_data[target_col].abs()
-                targets['opportunity_asymmetry'] = labeled_data[target_col]
-                targets['long_overall_opportunity'] = labeled_data[target_col].clip(lower=0)
-                targets['short_overall_opportunity'] = labeled_data[target_col].clip(upper=0).abs()
-        
-        # Get feature categories from lookback optimization (feature bank)
-        feature_categories = self._get_feature_categories_from_bank(variant_features.columns, lookback_optimization)
-        
-        # Calculate composite scores with MI/CMI and stability
-        tprint_info("="*80)
-        tprint_info("📊 CALCULATING COMPOSITE SCORES (MI/CMI + Stability)")
-        tprint_info("="*80)
-        composite_scores = self._calculate_composite_scores(
-            variant_features, targets, feature_categories, config
-        )
-        
-        # Apply pruning using our utility
+                    # Last resort: first column of labeled_data
+                    targets_df = labeled_data.iloc[:, :1].copy()
+            else:
+                # Absolute fallback: dummy zero target with correct index
+                targets_df = pd.DataFrame(index=variant_features.index)
+                targets_df["dummy_target"] = 0.0
+
+        # Infer feature categories
         try:
-            pruned_features, pruning_stats = apply_optimized_cheap_pruning(
+            feature_categories = self._get_feature_categories_from_bank(
+                list(variant_features.columns),
+                lookback_optimization,
+            )
+        except Exception as exc:
+            tprint_warning(
+                f"⚠️ Failed to obtain feature categories from bank: {exc}; "
+                f"falling back to local inference."
+            )
+            feature_categories = {
+                col: self._infer_feature_category(col) for col in variant_features.columns
+            }
+
+        # Composite scores for pruning
+        try:
+            composite_scores = self._calculate_composite_scores(
+                variant_features,
+                targets_df,
+                feature_categories,
+                config,
+            )
+        except Exception as exc:
+            tprint_warning(
+                f"⚠️ Composite score calculation failed for cheap pruning: {exc}; "
+                f"using uniform scores."
+            )
+            composite_scores = {col: 1.0 for col in variant_features.columns}
+
+        # Apply optimized cheap pruning
+        try:
+            pruned_df, stats = apply_optimized_cheap_pruning(
                 features_df=variant_features,
-                targets_df=targets,
+                targets_df=targets_df,
                 feature_categories=feature_categories,
                 composite_scores=composite_scores,
-                config=OptimizedPruningConfig(
-                    # Much less aggressive pruning to retain cross-timeframe features
-                    variance_bottom_percentile=1.0,  # Remove only 1% lowest variance
-                    stability_bottom_percentile=1.0,  # Remove only 1% least stable
-                    significance_bottom_percentile=1.0,  # Remove only 1% least significant
-                    mi_bottom_percentile=2.0,  # Remove only 2% lowest MI
-                    correlation_threshold=0.95,  # Only remove very highly correlated (95%+)
-                    min_features_per_category=1  # Keep at least 1 feature per category
-                )
+                config=OptimizedPruningConfig(),
             )
-            
-            self.performance_stats['features_after_pruning'] = len(pruned_features.columns)
-            
-            # Feature count summary after pruning
-            retention_rate = len(pruned_features.columns) / len(variant_features.columns)
-            tprint_info(f"📊 PHASE 2: Pruning results:")
-            tprint_info(f"  📈 Input features: {len(variant_features.columns)} features")
-            tprint_info(f"  📈 Pruned features: {len(pruned_features.columns)} features")
-            tprint_info(f"  📈 Features removed: {len(variant_features.columns) - len(pruned_features.columns)} features")
-            tprint_info(f"  📈 Retention rate: {retention_rate:.1%}")
-            tprint_info(f"  📈 Reduction rate: {(1 - retention_rate)*100:.1f}%")
-            
-            # Analyze retention effectiveness
-            if retention_rate >= 0.75:
-                tprint_success(f"✅ EXCELLENT: {retention_rate:.1%} retention - optimal for interaction generation")
-            elif retention_rate >= 0.60:
-                tprint_success(f"✅ GOOD: {retention_rate:.1%} retention - good for interaction generation")
-            elif retention_rate >= 0.40:
-                tprint_warning(f"⚠️ MODERATE: {retention_rate:.1%} retention - may limit interaction generation")
-            else:
-                tprint_warning(f"⚠️ LOW: {retention_rate:.1%} retention - may significantly limit interaction generation")
-            
-            tprint_success(f"✅ Pruning completed: {len(variant_features.columns)} -> {len(pruned_features.columns)} features")
-            
-            # Log category distribution after pruning
-            final_categories = self._get_category_distribution(pruned_features.columns, feature_categories)
-            tprint_info(f"📊 Final category distribution: {final_categories}")
-            
-            return pruned_features, pruning_stats, targets
-            
-        except Exception as e:
-            tprint_error(f"❌ Cheap pruning failed: {e}")
-            raise
-    
-    def _get_category_distribution(self, feature_names: List[str], feature_categories: Dict[str, str]) -> Dict[str, int]:
-        """Get distribution of features by category."""
-        distribution = {}
-        for feature_name in feature_names:
-            category = feature_categories.get(feature_name, 'unknown')
-            distribution[category] = distribution.get(category, 0) + 1
-        return distribution
+        except Exception as exc:
+            tprint_error(f"❌ Optimized cheap pruning failed: {exc}; returning original features.")
+            pruned_df = variant_features.copy()
+            stats = {"error": str(exc)}
 
-    async def _phase3_lgbm_shap_pipeline(
-        self,
-        pruned_features: pd.DataFrame,
-        targets: pd.DataFrame,
-        config: Dict[str, Any],
-        lookback_optimization: Dict[str, Any] = None
-    ) -> Tuple[pd.DataFrame, pd.DataFrame, Dict]:
-        """
-        Phase 3: Three-phase LGBM+SHAP pipeline with corrected interaction discovery.
-        
-        Phase 3.1: Shallow LGBM sweep (max_depth=4, num_leaves=15, n_estimators=100)
-        Phase 3.2: Deeper LGBM refinement (max_depth=5, num_leaves=31, n_estimators=100)
-        Phase 3.3: Deep interaction discovery (max_depth=6, num_leaves=31, corrected SHAP approach)
-        
-        Returns:
-            Tuple of (final_features, interactions, shap_metadata)
-        """
-        if not LGBM_AVAILABLE or not SHAP_AVAILABLE:
-            raise ImportError("LightGBM and SHAP are required for Phase 3")
-        
-        self._ensure_runtime_integrity("_phase3_lgbm_shap_pipeline")
-        # Feature count summary before Phase 3
-        tprint_info(f"📊 PHASE 3: Feature counts before LGBM+SHAP pipeline:")
-        tprint_info(f"  📈 Input pruned features: {len(pruned_features.columns)} features")
-        tprint_info(f"  📈 Target columns: {len(targets.columns)} targets")
-        
-        # Targets are already provided as parameter
-        
-        # Phase 3.1: Shallow LGBM sweep (Select Top 120 Features to protect cross-timeframe features)
-        tprint_info("🤖 Phase 3.1: Shallow LGBM Sweep (Select Top 100 Features)")
-        phase3_1_start = time.time()
-        
-        top_120_features = await self._phase3_1_shallow_sweep(pruned_features, targets, config)
-        
-        self.performance_stats['phase3_1_time'] = time.time() - phase3_1_start
-        tprint_performance(f"Phase 3.1 completed", self.performance_stats['phase3_1_time'])
-        
-        # Feature count summary after Phase 3.1
-        tprint_info(f"📊 PHASE 3.1: Shallow sweep results:")
-        tprint_info(f"  📈 Input features: {len(pruned_features.columns)} features")
-        tprint_info(f"  📈 Selected features: {len(top_120_features.columns)} features")
-        tprint_info(f"  📈 Selection rate: {len(top_120_features.columns) / len(pruned_features.columns) * 100:.1f}%")
-        
-        # Phase 3.2: Deeper LGBM refinement (Select Top 80 to protect cross-timeframe features)
-        tprint_info("🤖 Phase 3.2: Deeper LGBM Refinement (Select Top 80)")
-        phase3_2_start = time.time()
-        
-        top_80_features = await self._phase3_2_deeper_refinement(top_120_features, targets, config)
-        
-        self.performance_stats['phase3_2_time'] = time.time() - phase3_2_start
-        tprint_performance(f"Phase 3.2 completed", self.performance_stats['phase3_2_time'])
-        
-        # Feature count summary after Phase 3.2
-        tprint_info(f"📊 PHASE 3.2: Deeper refinement results:")
-        tprint_info(f"  📈 Input features: {len(top_120_features.columns)} features")
-        tprint_info(f"  📈 Refined features: {len(top_80_features.columns)} features")
-        tprint_info(f"  📈 Refinement rate: {len(top_80_features.columns) / len(top_120_features.columns) * 100:.1f}%")
-        
-        # Phase 3.3: Deep interaction discovery (Generate Top 80)
-        tprint_info("🤖 Phase 3.3: Deep Interaction Discovery (Generate Top 80)")
-        phase3_3_start = time.time()
-        
-        # Get feature categories for the top 80 features
-        if lookback_optimization is not None:
-            feature_categories = self._get_feature_categories_from_bank(top_80_features.columns, lookback_optimization)
-        else:
-            # Fallback to inference if lookback_optimization not available
-            feature_categories = {}
-            for feature_name in top_80_features.columns:
-                feature_categories[feature_name] = self._infer_feature_category(feature_name)
-        
-        # Use label-guided interaction discovery (falls back to legacy if not available)
-        interactions, shap_metadata = await self._phase3_3_label_guided_interaction_discovery(
-            top_80_features, targets, config, feature_categories
-        )
-        
-        self.performance_stats['phase3_3_time'] = time.time() - phase3_3_start
-        tprint_performance(f"Phase 3.3 completed", self.performance_stats['phase3_3_time'])
-        
-        # Feature count summary after Phase 3.3
-        tprint_info("="*80)
-        tprint_info(f"📊 PHASE 3.3: Interaction discovery results:")
-        tprint_info(f"  📈 Input features: {len(top_80_features.columns)} features")
-        tprint_info(f"  📈 Generated interactions: {len(interactions.columns)} features")
-        tprint_info(f"  📈 Total features after Phase 3: {len(top_80_features.columns) + len(interactions.columns)} features")
-        tprint_info(f"  🔍 DEBUG: Interactions DataFrame shape: {interactions.shape}")
-        tprint_info(f"  🔍 DEBUG: Interactions columns (first 10): {list(interactions.columns)[:10]}")
-        tprint_info("="*80)
-        
-        return top_80_features, interactions, shap_metadata
-
-    async def _phase3_1_shallow_sweep(
-        self,
-        features: pd.DataFrame,
-        targets: pd.DataFrame,
-        config: Dict[str, Any]
-    ) -> pd.DataFrame:
-        """
-        Phase 3.1: Shallow LGBM sweep to select top 120 features.
-        
-        Uses fast feature importance + mutual information proxy instead of expensive SHAP.
-        - max_depth=4 (increased to capture interactions)
-        - num_leaves=15 (more flexibility)
-        - n_estimators=100 (more stable importance)
-        - Fast proxy: 60% feature importance + 40% mutual information
-        - Fixed selection: Always select top 120 features (or all if <120 available)
-        """
-        self._ensure_runtime_integrity("_phase3_1_shallow_sweep")
-        tprint_info("  📊 Training shallow LGBM with fast feature selection...")
-        
-        
-        # Align features and targets by index with comprehensive validation
-        
-        # Find common indices with detailed analysis
-        common_indices = features.index.intersection(targets.index)
-        
-        # Validate alignment requirements
-        if len(common_indices) == 0:
-            error_msg = f"""
-            ❌ CRITICAL ERROR: No common indices between features and targets!
-            
-            Features analysis:
-            - Shape: {features.shape}
-            - Index range: {features.index.min()} to {features.index.max()}
-            - Index type: {type(features.index)}
-            
-            Targets analysis:
-            - Shape: {targets.shape}
-            - Index range: {targets.index.min()} to {targets.index.max()}
-            - Index type: {type(targets.index)}
-            
-            This indicates a data pipeline issue - features and targets must have aligned indices.
-            """
-            tprint_error(error_msg)
-            raise ValueError("No common indices between features and targets - check data pipeline alignment")
-        
-        # Check if we have sufficient overlap
-        overlap_ratio = len(common_indices) / min(len(features), len(targets))
-        
-        if overlap_ratio < 0.5:  # Less than 50% overlap
-            tprint_warning(f"⚠️ Low index overlap: {overlap_ratio:.3f} - this may affect model performance")
-        
-        # Align both datasets to common indices (always do this)
-        features_aligned = features.loc[common_indices]
-        targets_aligned = targets.loc[common_indices]
-
-        # 🔍 INDEX ALIGNMENT VERIFICATION
-        tprint_info("🔍 Verifying index alignment...")
-        assert (features_aligned.index == targets_aligned.index).all(), "❌ Indices not properly aligned after alignment step!"
-        tprint_success(f"✅ Index alignment verified: {len(features_aligned)} rows perfectly aligned")
-
-        # 🔍 TEMPORAL ORDERING CHECK: Detect data leakage risks
-        tprint_info("🔍 Checking temporal ordering for data leakage risks...")
-        if hasattr(features_aligned.index, 'is_monotonic_increasing'):
-            is_temporal_sorted = features_aligned.index.is_monotonic_increasing
-            if not is_temporal_sorted:
-                tprint_warning("⚠️ WARNING: Data is NOT temporally sorted! This may cause data leakage in time-series CV.")
-                tprint_warning("⚠️ Consider sorting by index before training to ensure proper temporal splits.")
-            else:
-                tprint_success("✅ Data is temporally sorted (monotonic increasing index)")
-
-        # Check for duplicate timestamps (another leakage risk)
-        dup_count = features_aligned.index.duplicated().sum()
-        if dup_count > 0:
-            tprint_warning(f"⚠️ WARNING: Found {dup_count} duplicate timestamps! This may cause leakage between train/test splits.")
-        else:
-            tprint_success("✅ No duplicate timestamps found")
-
-        # Validate alignment success
-        if len(features_aligned) == 0 or len(targets_aligned) == 0:
-            error_msg = f"""
-            ❌ CRITICAL ERROR: Alignment resulted in empty datasets!
-            
-            After alignment:
-            - Features shape: {features_aligned.shape}
-            - Targets shape: {targets_aligned.shape}
-            - Common indices: {len(common_indices)}
-            """
-            tprint_error(error_msg)
-            raise ValueError("Alignment resulted in empty datasets")
-
-        # 📊 NaN DIAGNOSTICS: Check NaN counts beyond first 50 rows
-        tprint_info("🔍 NaN Diagnostics:")
-        if len(features_aligned) > 50:
-            features_beyond_50 = features_aligned.iloc[50:]
-            nan_count_features = features_beyond_50.isna().sum().sum()
-            nan_pct_features = (nan_count_features / features_beyond_50.size) * 100
-            tprint_info(f"  📈 Features NaN beyond row 50: {nan_count_features:,} ({nan_pct_features:.2f}% of data)")
-
-            # Show top columns with NaN
-            nan_per_col = features_beyond_50.isna().sum()
-            top_nan_cols = nan_per_col[nan_per_col > 0].sort_values(ascending=False).head(5)
-            if len(top_nan_cols) > 0:
-                tprint_warning(f"  ⚠️ Top 5 feature columns with NaN: {dict(top_nan_cols)}")
-
-        if len(targets_aligned) > 50:
-            targets_beyond_50 = targets_aligned.iloc[50:]
-            nan_count_targets = targets_beyond_50.isna().sum().sum()
-            nan_pct_targets = (nan_count_targets / targets_beyond_50.size) * 100
-            tprint_info(f"  🎯 Targets NaN beyond row 50: {nan_count_targets:,} ({nan_pct_targets:.2f}% of data)")
-
-            # Show target columns with NaN
-            nan_per_target = targets_beyond_50.isna().sum()
-            if nan_per_target.sum() > 0:
-                tprint_warning(f"  ⚠️ Target columns with NaN: {dict(nan_per_target[nan_per_target > 0])}")
-
-        # Handle NaN values in features
-        features_cleaned = features_aligned.fillna(0)  # Fill NaN with 0
-
-        # Handle NaN values in targets with validation
-        targets_cleaned = targets_aligned.fillna(0)  # Fill NaN with 0
-        
-        # Validate target data quality before model training
-        tprint_info("🔍 Validating target data quality...")
-        valid_targets = []
-        
-        for col in targets_cleaned.columns:
-            col_data = targets_cleaned[col]
-            variance = col_data.var()
-            non_zero_count = (col_data != 0).sum()
-            unique_count = col_data.nunique()
-            
-            tprint_info(f"🔍 Target '{col}': variance={variance:.6f}, non-zero={non_zero_count}/{len(col_data)}, unique={unique_count}")
-            
-            if variance < 1e-10:
-                warning_msg = f"""
-                ⚠️ WARNING: Target column '{col}' has zero variance - skipping this target!
-                
-                Target analysis:
-                - Variance: {variance:.10f}
-                - Non-zero values: {non_zero_count}/{len(col_data)}
-                - Unique values: {unique_count}
-                - Data range: {col_data.min():.6f} to {col_data.max():.6f}
-                
-                This target will be excluded from model training.
-                """
-                tprint_warning(warning_msg)
-                continue  # Skip this target instead of failing
-            
-            if non_zero_count < len(col_data) * 0.01:  # Less than 1% non-zero
-                tprint_warning(f"⚠️ Target '{col}' has very few non-zero values: {non_zero_count}/{len(col_data)}")
-            
-            valid_targets.append(col)
-        
-        if len(valid_targets) == 0:
-            error_msg = "❌ CRITICAL ERROR: No valid targets found! All target columns have zero variance."
-            tprint_error(error_msg)
-            raise ValueError("No valid targets available for model training")
-        
-        # Filter targets to only include valid ones
-        targets_cleaned = targets_cleaned[valid_targets]
-        tprint_success(f"✅ Target data quality validation passed - using {len(valid_targets)} valid targets: {valid_targets}")
-        
-        # Use consistent sampling strategy with chunked processing
-        try:
-            # Reduce sample size in blank mode to lower memory/compute
-            blank_mode = str(config.get('execution_mode', '')).lower() == 'blank'
-            max_samples = config.get('max_samples_phase3', 10000 if blank_mode else 15000)
-            features_sample, targets_sample = self._get_consistent_sample(features_cleaned, targets_cleaned, max_samples=max_samples)
-            tprint_info(f"  🔍 DEBUG: _get_consistent_sample returned successfully with max_samples={max_samples}!")
-        except Exception as e:
-            tprint_error(f"  🔍 DEBUG: Exception in _get_consistent_sample: {e}")
-            raise
-        
-        # Apply chunked processing for large datasets
-        try:
-            tprint_info(f"  🔍 DEBUG: About to check chunked processing condition...")
-        except Exception as e:
-            tprint_error(f"  🔍 DEBUG: Exception after _get_consistent_sample: {e}")
-            raise
-        if len(features_sample) > 5000:
-            tprint_info(f"  🔍 DEBUG: Applying chunked processing for {len(features_sample)} samples")
-            features_sample = self._chunked_processing(features_sample, targets_sample, chunk_size=2000)
-            tprint_info(f"  🔍 DEBUG: After chunked processing - features shape: {features_sample.shape}")
-        else:
-            tprint_info(f"  🔍 DEBUG: Skipping chunked processing (samples: {len(features_sample)} <= 5000)")
-        
-        # Setup LGBM with overfitting prevention parameters
-        tprint_info(f"  🔍 DEBUG: About to setup LGBM parameters with regularization...")
-        lgbm_params = {
-            'max_depth': 3,                    # Further reduced from 4 to prevent overfitting
-            'num_leaves': 10,                  # Further reduced from 15 to prevent overfitting
-            'n_estimators': 80,                # Further reduced from 100 to prevent overfitting
-            'learning_rate': 0.05,             # Reduced from 0.1 for more conservative learning
-            'reg_alpha': 0.2,                  # Increased L1 regularization
-            'reg_lambda': 0.2,                 # Increased L2 regularization
-            'min_child_samples': 80,           # Increased from 50 to prevent overfitting
-            'min_split_gain': 0.02,            # Increased minimum gain for splits
-            'subsample': 0.6,                  # Reduced row subsampling
-            'colsample_bytree': 0.6,           # Reduced column subsampling
-            'max_bin': 255,                    # Added max_bin limit
-            'min_data_per_group': 50,          # Added minimum data per group
-            'random_state': 42,
-            'verbose': -1
-        }
-        
-        # Train MultiOutputRegressor with early stopping
-        tprint_info(f"  🔍 DEBUG: About to create MultiOutputRegressor with early stopping...")
-        
-        # Train model
-        # Note: MultiOutputRegressor doesn't support early stopping or eval_set
-        # So we train directly without these features
-        model = MultiOutputRegressor(lgb.LGBMRegressor(**lgbm_params))
-        self._ensure_runtime_integrity("_phase3_2_deeper_refinement")
-        tprint_info("  🔄 Training LGBM model...")
-        model.fit(features_sample, targets_sample)
-        tprint_info("  ✅ Training completed")
-        
-        # Calculate performance metrics with comprehensive error reporting
-        tprint_info("  📊 Calculating model performance metrics...")
-        try:
-            # Calculate accuracy (R² score for regression)
-            from sklearn.metrics import r2_score
-            predictions = model.predict(features_sample)
-            accuracy = r2_score(targets_sample, predictions)
-            
-            # Calculate cross-validation score with time-series aware validation
-            if OVERFITTING_PREVENTION_AVAILABLE:
-                tprint_info("  📊 Using time-series aware cross-validation...")
-                cv_results = temporal_cross_validation(
-                    model, features_sample, targets_sample,
-                    n_splits=5,
-                    gap=1,  # Gap to prevent data leakage
-                    test_size=None,  # Use default test size
-                    scoring='r2'
-                )
-                cv_score = cv_results.get('mean', 0.0)
-                cv_scores_std = cv_results.get('std', 0.0)
-                tprint_info(f"  ✅ Time-series CV completed: {cv_score:.4f} ± {cv_scores_std:.4f}")
-                tprint_info(f"  📊 CV Fold Scores: {cv_results.get('scores', [])}")
-                tprint_info(f"  📊 CV Score Range: [{cv_results.get('min', 0.0):.4f}, {cv_results.get('max', 0.0):.4f}]")
-            else:
-                # Fallback to standard cross-validation
-                from sklearn.model_selection import cross_val_score
-                cv_scores = cross_val_score(model, features_sample, targets_sample, cv=3, scoring='r2')
-                cv_score = cv_scores.mean()
-                cv_scores_std = cv_scores.std()
-
-            # 📊 Calculate Mutual Information between features and targets
-            tprint_info("  📊 Calculating Mutual Information between features and targets...")
-            mi_scores = self._calculate_feature_target_mi(features_sample, targets_sample)
-            mean_mi = np.mean(list(mi_scores.values())) if mi_scores else 0.0
-            tprint_info(f"  ✅ Mean MI across all targets: {mean_mi:.6f}")
-
-            # Calculate feature importance consistency
-            importance_consistency = self._calculate_importance_consistency(model, features_sample, targets_sample)
-
-            # Store performance metrics
-            self._phase3_1_performance = {
-                'accuracy': accuracy,
-                'cv_score': cv_score,
-                'importance_consistency': importance_consistency,
-                'cv_scores_std': cv_scores_std,
-                'mean_mi': mean_mi,
-                'mi_scores': mi_scores
-            }
-            
-            tprint_success(f"  ✅ Performance metrics calculated: Accuracy={accuracy:.4f}, CV Score={cv_score:.4f}")
-            
-        except Exception as e:
-            error_msg = f"""
-            ❌ CRITICAL ERROR: Failed to calculate performance metrics!
-            
-            Error details:
-            - Exception: {e}
-            - Exception type: {type(e)}
-            
-            Data analysis:
-            - Features shape: {features_sample.shape}
-            - Targets shape: {targets_sample.shape}
-            - Features columns: {len(features_sample.columns)}
-            - Targets columns: {len(targets_sample.columns)}
-            - Features NaN count: {features_sample.isna().sum().sum()}
-            - Targets NaN count: {targets_sample.isna().sum().sum()}
-            
-            Model analysis:
-            - Model type: {type(model)}
-            - Model fitted: {hasattr(model, 'estimators_')}
-            
-            This indicates a fundamental issue with model training or data quality.
-            """
-            tprint_error(error_msg)
-            self.logger.error(error_msg)
-            
-            # Re-raise the exception to stop execution
-            raise ValueError(f"Performance metrics calculation failed: {e}") from e
-        
-        # Fast feature importance calculation (no SHAP)
-        tprint_info("  🔍 Calculating fast feature importance...")
-        
-        # Get feature importance from LGBM
-        importance_scores = model.estimators_[0].feature_importances_
-        
-        # Calculate mutual information with first target using fast proxy
-        mi_scores = []
-        for col in features_sample.columns:
-            mi_score = self._fast_mi_proxy(features_sample[col], targets_sample.iloc[:, 0], n_bins=5)
-            mi_scores.append(mi_score)
-        mi_scores = np.array(mi_scores)
-        
-        # Normalize scores
-        importance_scores = (importance_scores - np.min(importance_scores)) / (np.max(importance_scores) - np.min(importance_scores) + 1e-8)
-        mi_scores = (mi_scores - np.min(mi_scores)) / (np.max(mi_scores) - np.min(mi_scores) + 1e-8)
-        
-        # Combined score: 80% importance + 20% mutual information (Phase 3.1 less decisive)
-        combined_scores = 0.8 * importance_scores + 0.2 * mi_scores
-        
-        # Rank features by combined score
-        feature_importance = pd.Series(
-            combined_scores,
-            index=features.columns
-        ).sort_values(ascending=False)
-        
-        # Select top 120 features (fixed number)
-        n_select = min(120, len(features.columns))  # Select 120 or all if less than 120
-        top_features = feature_importance.head(n_select).index.tolist()
-        
-        tprint_success(f"  ✅ Selected {len(top_features)} features (top {n_select}) using fast proxy")
-
-        return features[top_features]
+        return pruned_df, stats, targets_df
 
     async def _phase3_3_label_guided_interaction_discovery(
         self,
@@ -2947,6 +2169,18 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             for feature_name in features.columns:
                 feature_categories[feature_name] = self._infer_feature_category(feature_name)
 
+        # Shared cleaning/alignment so both tree-guided training and
+        # LabelGuidedInteractionDiscovery operate on the exact same
+        # feature/target sample. Use the module-level helper to avoid
+        # attribute issues when methods are monkey-patched via fallbacks.
+        first_target_name = targets.columns[0]
+        aligned_features, aligned_target = _align_for_label_guided_discovery_helper(
+            features,
+            targets[first_target_name],
+        )
+        features = aligned_features
+        targets = aligned_target.to_frame(name=first_target_name)
+
         # Configure label-guided interaction discovery
         lgid_config = LabelGuidedInteractionConfig(
             # MI/SHAP scoring
@@ -2957,7 +2191,11 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
 
             # Lift requirements - CRITICAL for ensuring interactions beat base features
             min_r2_lift=float(config.get('min_interaction_r2_lift', 0.01)),  # 1% R² improvement
-            min_mi_lift=float(config.get('min_interaction_mi_lift', 0.05)),  # 5% MI improvement
+            # Require at least 10% MI improvement: child MI ≥ 1.1 × best parent MI
+            # (used for diagnostics and optional gating). For this diagnostic
+            # run, we disable the hard MI-lift requirement and let LASSO and
+            # stability drive selection.
+            min_mi_lift=float(config.get('min_interaction_mi_lift', 0.10)),
             require_r2_lift=False,  # Don't require R² lift (too expensive to compute)
             require_mi_lift=True,   # Require MI lift (fast to compute)
 
@@ -3008,8 +2246,32 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                 # Extract pairs
                 tree_pairs = self._extract_tree_splitting_pairs(model)
                 if len(tree_pairs) > 0:
-                    feature_pairs = [(f1, f2) for f1, f2, _ in tree_pairs[:lgid_config.max_pairs_to_test]]
-                    tprint_success(f"  ✅ Extracted {len(feature_pairs)} tree-guided feature pairs")
+                    resolved_pairs: List[Tuple[str, str]] = []
+                    for f1, f2, _ in tree_pairs[:lgid_config.max_pairs_to_test]:
+                        if isinstance(f1, int):
+                            if 0 <= f1 < len(features.columns):
+                                f1_name = features.columns[f1]
+                            else:
+                                continue
+                        else:
+                            f1_name = f1
+
+                        if isinstance(f2, int):
+                            if 0 <= f2 < len(features.columns):
+                                f2_name = features.columns[f2]
+                            else:
+                                continue
+                        else:
+                            f2_name = f2
+
+                        if f1_name in features.columns and f2_name in features.columns:
+                            resolved_pairs.append((f1_name, f2_name))
+
+                    if resolved_pairs:
+                        feature_pairs = resolved_pairs
+                        tprint_success(f"  ✅ Extracted {len(feature_pairs)} tree-guided feature pairs")
+                    else:
+                        tprint_warning("  ⚠️ Tree-guided pair extraction produced no valid feature name pairs, will generate pairs automatically")
                 else:
                     tprint_warning("  ⚠️ No tree pairs found, will generate pairs automatically")
             except Exception as e:
@@ -3069,1282 +2331,6 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             tprint_error(f"  🔍 Traceback: {traceback.format_exc()}")
             tprint_warning("  ⚠️ Falling back to legacy interaction discovery")
             return await self._phase3_3_interaction_discovery_legacy(features, targets, config, feature_categories)
-
-    async def _phase3_3_interaction_discovery_legacy(
-        self,
-        features: pd.DataFrame,
-        targets: pd.DataFrame,
-        config: Dict[str, Any],
-        feature_categories: Dict[str, str] = None
-    ) -> Tuple[pd.DataFrame, Dict]:
-        """
-        Phase 3.3: Deep interaction discovery with corrected SHAP approach (LEGACY).
-
-        Uses tree-based interaction guidance and corrected SHAP analysis:
-        1. Train deep LGBM to extract feature pairs
-        2. Generate 3 operations per top 10 pairs (30 candidates)
-        3. Use standard SHAP values FOR interaction features (not interaction values)
-        4. Select top 80 interactions
-        5. Generate cross-timeframe interactions between features from different timeframes
-        """
-        self._ensure_runtime_integrity("_phase3_3_interaction_discovery")
-        tprint_info("  🌳 Training deep LGBM for interaction guidance...")
-        
-        # Extract cross-timeframe interaction features
-        tprint_info("  🔄 Extracting cross-timeframe interactions...")
-        cross_timeframe_interactions = await self._extract_cross_timeframe_interactions(features)
-        if len(cross_timeframe_interactions.columns) > 0:
-            tprint_success(f"  ✅ Found {len(cross_timeframe_interactions.columns)} cross-timeframe interaction features")
-            # Merge cross-timeframe interactions into features
-            features = pd.concat([features, cross_timeframe_interactions], axis=1)
-        else:
-            tprint_info("  ℹ️ No cross-timeframe interactions detected")
-        
-        # Align features and targets by index before sampling
-        
-        # CRITICAL FIX: Deduplicate indices to prevent "cannot reindex on an axis with duplicate labels" error
-        if features.index.duplicated().any():
-            n_dup = features.index.duplicated().sum()
-            tprint_warning(f"  ⚠️ Features has {n_dup} duplicate indices, deduplicating...")
-            features = features[~features.index.duplicated(keep='first')]
-            tprint_success(f"  ✅ Deduplicated features to {len(features)} unique indices")
-        
-        if targets.index.duplicated().any():
-            n_dup = targets.index.duplicated().sum()
-            tprint_warning(f"  ⚠️ Targets has {n_dup} duplicate indices, deduplicating...")
-            targets = targets[~targets.index.duplicated(keep='first')]
-            tprint_success(f"  ✅ Deduplicated targets to {len(targets)} unique indices")
-        
-        # Find common indices
-        common_indices = features.index.intersection(targets.index)
-        
-        # Deduplicate common_indices if needed
-        if common_indices.duplicated().any():
-            n_dup = common_indices.duplicated().sum()
-            tprint_warning(f"  ⚠️ Found {n_dup} duplicate indices in common_indices, removing duplicates...")
-            common_indices = common_indices[~common_indices.duplicated(keep='first')]
-            tprint_success(f"  ✅ Deduplicated common_indices to {len(common_indices)} unique indices")
-        
-        if len(common_indices) == 0:
-            # Use the smaller dataset size
-            min_length = min(len(features), len(targets))
-            features_aligned = features.iloc[:min_length]
-            targets_aligned = targets.iloc[:min_length]
-        else:
-            # Align both datasets to common indices
-            features_aligned = features.loc[common_indices]
-            targets_aligned = targets.loc[common_indices]
-        
-        
-        # Handle NaN values in features
-        features_cleaned = features_aligned.fillna(0)  # Fill NaN with 0
-        
-        # Handle NaN values in targets
-        targets_cleaned = targets_aligned.fillna(0)  # Fill NaN with 0
-        
-        
-        # Use consistent sampling strategy with chunked processing
-        try:
-            features_sample, targets_sample = self._get_consistent_sample(features_cleaned, targets_cleaned, max_samples=15000)
-            tprint_info(f"  🔍 DEBUG: _get_consistent_sample returned successfully!")
-        except Exception as e:
-            tprint_error(f"  🔍 DEBUG: Exception in _get_consistent_sample: {e}")
-            tprint_error(f"  🔍 DEBUG: Exception type: {type(e)}")
-            import traceback
-            tprint_error(f"  🔍 DEBUG: Traceback: {traceback.format_exc()}")
-            raise
-        
-        tprint_info(f"  🔍 DEBUG: After _get_consistent_sample - features shape: {features_sample.shape}, targets shape: {targets_sample.shape}")
-        
-        # Apply chunked processing for large datasets
-        tprint_info(f"  🔍 DEBUG: Checking chunked processing condition...")
-        if len(features_sample) > 5000:
-            tprint_info(f"  🔍 DEBUG: Applying chunked processing for {len(features_sample)} samples")
-            features_sample = self._chunked_processing(features_sample, targets_sample, chunk_size=2000)
-            tprint_info(f"  🔍 DEBUG: After chunked processing - features shape: {features_sample.shape}")
-        else:
-            tprint_info(f"  🔍 DEBUG: Skipping chunked processing (samples: {len(features_sample)} <= 5000)")
-        
-        tprint_info(f"  🔍 DEBUG: About to setup LGBM parameters...")
-        
-        # Setup LGBM with corrected parameters
-        lgbm_params = {
-            'max_depth': 3,                    # Further reduced from 5 to prevent overfitting
-            'num_leaves': 10,                  # Further reduced from 20 to prevent overfitting
-            'n_estimators': 80,                # Further reduced from 150 to prevent overfitting
-            'learning_rate': 0.05,             # Reduced from 0.1 for more conservative learning
-            'reg_alpha': 0.25,                 # Increased L1 regularization
-            'reg_lambda': 0.25,                # Increased L2 regularization
-            'min_child_samples': 100,          # Increased from 75 to prevent overfitting
-            'min_split_gain': 0.02,            # Increased minimum gain for splits
-            'subsample': 0.6,                  # Further reduced row subsampling
-            'colsample_bytree': 0.6,           # Further reduced column subsampling
-            'max_bin': 255,                    # Added max_bin limit
-            'min_data_per_group': 50,          # Added minimum data per group
-            'random_state': 42,
-            'verbose': -1
-        }
-        
-        tprint_info(f"  🔍 DEBUG: LGBM parameters set, about to train LGBM model...")
-        tprint_info(f"  🔍 DEBUG: About to train LGBM model with features shape: {features_sample.shape}, targets shape: {targets_sample.shape}")
-        
-        # Train LGBM model for tree analysis
-        tprint_info("  🔧 Training LGBM model for tree analysis...")
-        tprint_info(f"  🔍 DEBUG: Features shape: {features_sample.shape}, Targets shape: {targets_sample.shape}")
-        
-        try:
-            tprint_info("  🔍 DEBUG: About to create LGBMRegressor...")
-            model = lgb.LGBMRegressor(**lgbm_params)
-            
-            tprint_info("  🔍 DEBUG: About to fit LGBM model...")
-            model.fit(features_sample, targets_sample.iloc[:, 0])  # Use first target column
-            
-        except Exception as e:
-            tprint_error(f"  🔍 DEBUG: Exception during LGBM training: {e}")
-            tprint_error(f"  🔍 DEBUG: Exception type: {type(e)}")
-            import traceback
-            tprint_error(f"  🔍 DEBUG: Traceback: {traceback.format_exc()}")
-            raise
-        
-        tprint_info("  ✅ LGBM model trained successfully")
-        
-        # Extract feature pairs from trees
-        tprint_info("  🔍 Extracting feature pairs from tree splits...")
-        feature_pairs = self._extract_tree_splitting_pairs(model)
-        
-        if len(feature_pairs) == 0:
-            tprint_warning("  ⚠️ No feature pairs extracted from tree analysis - this will result in no interactions")
-            # Fallback: create some basic interactions from available features
-            available_features = list(features.columns)
-            if len(available_features) >= 2:
-                tprint_info("  🔧 Creating fallback feature pairs...")
-                for i in range(min(3, len(available_features))):
-                    for j in range(i+1, min(i+3, len(available_features))):
-                        feature_pairs.append((available_features[i], available_features[j], 1))
-                tprint_info(f"  🔍 DEBUG: Created {len(feature_pairs)} fallback feature pairs")
-        
-        
-        # Generate interaction candidates (top 80 pairs × 5 operations = 400 candidates)
-        tprint_info("  🔧 Generating interaction candidates...")
-        interaction_candidates = []
-        
-        # Candidate generation limits for memory efficiency
-        blank_mode = str(config.get('execution_mode', '')).lower() == 'blank'
-        pairs_limit = int(config.get('interaction_pairs_limit', 40 if blank_mode else 80))
-        ops_mode = str(config.get('interaction_ops_mode', 'reduced' if blank_mode else 'full')).lower()
-        
-        for i, (f1, f2, co_occurrence) in enumerate(feature_pairs[:pairs_limit]):
-            # Convert integer indices to column names
-            if isinstance(f1, int) and isinstance(f2, int):
-                if f1 < len(features.columns) and f2 < len(features.columns):
-                    f1_name = features.columns[f1]
-                    f2_name = features.columns[f2]
-                else:
-                    continue
-            else:
-                f1_name = f1
-                f2_name = f2
-            
-            if f1_name in features.columns and f2_name in features.columns:
-                # Generate 5 operations per pair (including logarithmic relationships)
-                operations = [
-                    (f"{f1_name}_x_{f2_name}", features[f1_name] * features[f2_name]),
-                    (f"{f1_name}_div_{f2_name}", features[f1_name] / (features[f2_name] + 1e-8)),
-                    (f"{f1_name}_minus_{f2_name}", features[f1_name] - features[f2_name]),
-                    (f"{f1_name}_log_{f2_name}", np.log(np.abs(features[f1_name]) + 1e-8) / (np.log(np.abs(features[f2_name]) + 1e-8) + 1e-8)),
-                    (f"{f1_name}_log_ratio_{f2_name}", np.log(np.abs(features[f1_name] / (features[f2_name] + 1e-8)) + 1e-8))
-                ]
-                
-                for name, interaction in operations:
-                    interaction_candidates.append((name, interaction))
-        
-        # Use CompositeFeatureScorer with RFE-style selection for robust interaction selection
-        tprint_info("="*80)
-        tprint_info("📊 COMPOSITE SCORING WITH RFE FOR INTERACTION SELECTION")
-        tprint_info("="*80)
-        tprint_info(f"  📊 Testing {len(interaction_candidates)} interaction candidates (pre-prune in chunks)...")
-        tprint_info(f"  📊 Target: Select top 80 interactions")
-        tprint_info(f"  📊 Method: Chunked MI preselection + redundancy pruning → Composite RFE")
-        
-        # Prepare data for CompositeFeatureScorer
-        from src.training.utils.feature_selection import CompositeFeatureScorer
-        from sklearn.feature_selection import mutual_info_regression
-        
-        # Find common indices between features and targets
-        common_indices = features.index.intersection(targets.index)
-        if len(common_indices) == 0:
-            tprint_error("  ❌ No common indices between features and targets!")
-            return pd.DataFrame(), {}
-        
-        # Align targets
-        targets_aligned = targets.loc[common_indices]
-        target_col = targets_aligned.columns[0]
-        y_vec = targets_aligned[target_col].values
-
-        # Filter out non-finite target values for MI scoring while keeping
-        # the full index for downstream DataFrame construction.
-        finite_mask = np.isfinite(y_vec)
-        if finite_mask.sum() == 0:
-            tprint_error("  ❌ All target values are non-finite; cannot perform MI-based preselection")
-            return pd.DataFrame(), {}
-        if finite_mask.sum() < len(y_vec):
-            tprint_warning(
-                f"  ⚠️ Filtering out {len(y_vec) - finite_mask.sum()} non-finite target values before MI scoring"
-            )
-        y_vec_clean = y_vec[finite_mask]
-
-        # Chunked candidate building with MI preselection and redundancy pruning
-        batch_size = int(config.get('candidate_batch_size', 4000))
-        per_batch_keep = int(config.get('per_batch_keep', 400))
-        global_keep = int(config.get('global_preselect', 600))
-        redundancy_threshold = float(config.get('redundancy_corr_threshold', 0.98))
-        redundancy_check_tail = int(config.get('redundancy_check_tail', 100))
-        
-        kept_names = []
-        kept_series = []  # store as list of pd.Series aligned to common_indices for quick corr checks
-        kept_scores = {}
-        
-        def _update_global_keep(cand_names, cand_scores, cand_series_list):
-            nonlocal kept_names, kept_series, kept_scores
-            # Merge into globals with score-based trimming
-            for nm, sc, ser in zip(cand_names, cand_scores, cand_series_list):
-                prev = kept_scores.get(nm)
-                if (prev is None) or (sc > prev):
-                    kept_scores[nm] = sc
-            # Rebuild top by score
-            top_sorted = sorted(kept_scores.items(), key=lambda x: x[1], reverse=True)[:global_keep]
-            top_set = {nm for nm, _ in top_sorted}
-            # Filter names/series to top_set preserving order
-            new_kept_names = []
-            new_kept_series = []
-            for nm, ser in zip(kept_names + cand_names, kept_series + cand_series_list):
-                if nm in top_set and nm not in new_kept_names:
-                    new_kept_names.append(nm)
-                    new_kept_series.append(ser)
-            kept_names, kept_series = new_kept_names, new_kept_series
-            
-        # Iterate in batches
-        for i in range(0, len(interaction_candidates), batch_size):
-            batch = interaction_candidates[i:i+batch_size]
-            if not batch:
-                continue
-            # Build batch DataFrame (float32 + robustness: fillna, finite)
-            batch_cols = []
-            batch_names = []
-            for nm, ser in batch:
-                # Align and sanitize
-                if hasattr(ser, 'reindex'):
-                    s = ser.reindex(common_indices)
-                else:
-                    s = pd.Series(ser, index=common_indices)
-                s = s.replace([np.inf, -np.inf], 0).fillna(0).astype(np.float32)
-                batch_cols.append(s.values)
-                batch_names.append(nm)
-            if not batch_cols:
-                continue
-            X = np.vstack(batch_cols).T  # shape (n_samples, n_batch_features)
-            # Event-aware scoring in batch (use only rows with finite targets)
-            try:
-                X_mi = X[finite_mask]
-                if X_mi.shape[0] == 0:
-                    raise ValueError("No finite target rows available for event-aware scoring")
-
-                # Event mask based on target amplitude
-                y_abs = np.abs(y_vec_clean)
-                event_min_amp = float(config.get('event_min_amplitude', 0.0) or 0.0)
-                event_mask = y_abs > event_min_amp
-
-                if not np.any(event_mask):
-                    raise ValueError("No event samples for event-aware scoring")
-
-                non_event_mask = ~event_mask
-
-                # Restrict to event samples for reward term
-                X_events = X_mi[event_mask]
-                y_events = y_vec_clean[event_mask]
-
-                # Intensity weights (normalized by |target|)
-                weights = np.abs(y_events).astype(float)
-                weights_sum = float(weights.sum())
-                if weights_sum <= 0.0:
-                    raise ValueError("Event weights sum to zero in event-aware scoring")
-                weights = weights / weights_sum
-
-                # Weighted means
-                mu_y = float(np.sum(weights * y_events))
-                y_centered = y_events - mu_y
-
-                mu_x = np.sum(weights[:, None] * X_events, axis=0)
-                X_centered = X_events - mu_x[None, :]
-
-                # Weighted covariance and variances
-                cov_xy = np.sum(weights[:, None] * X_centered * y_centered[:, None], axis=0)
-                var_x = np.sum(weights[:, None] * (X_centered ** 2), axis=0)
-                var_y = float(np.sum(weights * (y_centered ** 2)))
-
-                denom = np.sqrt(var_x * var_y) + 1e-12
-                reward = np.zeros_like(cov_xy, dtype=float)
-                valid = denom > 0
-                reward[valid] = np.abs(cov_xy[valid] / denom[valid])
-
-                # False-activation penalty: frequency of large activations on non-event rows,
-                # relative to each feature's typical event-time amplitude.
-                X_std = X_mi.std(axis=0)
-                X_std = np.where(X_std == 0.0, 1.0, X_std)
-                X_std_all = X_mi / X_std
-
-                if np.any(non_event_mask):
-                    X_events_std = X_std_all[event_mask]
-                    if X_events_std.shape[0] > 0:
-                        event_scale = np.median(np.abs(X_events_std), axis=0)
-                    else:
-                        event_scale = np.ones_like(X_std)
-
-                    base_z = float(config.get('false_activation_z_threshold', 1.0) or 0.0)
-                    if base_z <= 0.0:
-                        base_z = 1.0
-
-                    # Ensure non-degenerate scale
-                    event_scale = np.where(event_scale <= 1e-6, 1.0, event_scale)
-                    thr = base_z * event_scale
-
-                    X_ne = X_std_all[non_event_mask]
-                    freq = np.mean((np.abs(X_ne) > thr).astype(float), axis=0)
-                    penalty = freq
-                else:
-                    penalty = np.zeros_like(reward)
-
-                false_penalty = float(config.get('false_activation_penalty', 0.3) or 0.0)
-                mi = reward - false_penalty * penalty
-                mi = np.maximum(mi, 0.0)
-            except Exception as e:
-                tprint_warning(
-                    f"  ⚠️ MI scoring failed on batch {i//batch_size}: {e} - using variance proxy"
-                )
-                var = X.var(axis=0)
-                mi = (var - var.min()) / (var.ptp() + 1e-8)
-            # Select per-batch top
-            order = np.argsort(-mi)[:per_batch_keep]
-            cand_names = [batch_names[j] for j in order]
-            cand_scores = [float(mi[j]) for j in order]
-            cand_series_list = [pd.Series(X[:, j], index=common_indices) for j in order]
-            
-            # Early redundancy pruning vs most recent kept tail
-            pruned_names, pruned_scores, pruned_series = [], [], []
-            # Build tail matrix once for speed
-            tail_series = kept_series[-redundancy_check_tail:] if redundancy_check_tail > 0 else []
-            tail_mat = None
-            if tail_series:
-                tail_mat = np.vstack([s.values for s in tail_series]).T  # (n_samples, k)
-            for nm, sc, ser in zip(cand_names, cand_scores, cand_series_list):
-                if tail_mat is not None and tail_mat.size > 0:
-                    # Corr with tail
-                    a = ser.values
-                    # compute max |corr| to tail quickly
-                    denom = (a.std() + 1e-12) * (tail_mat.std(axis=0) + 1e-12)
-                    corr = ((a - a.mean())[:, None] * (tail_mat - tail_mat.mean(axis=0))).mean(axis=0) / denom
-                    if np.nanmax(np.abs(corr)) >= redundancy_threshold:
-                        continue  # skip redundant
-                pruned_names.append(nm)
-                pruned_scores.append(sc)
-                pruned_series.append(ser)
-            
-            _update_global_keep(pruned_names, pruned_scores, pruned_series)
-            tprint_info(f"  🔍 Batch {i//batch_size+1}: kept {len(pruned_names)}/{len(batch_names)} after redundancy; global={len(kept_names)}")
-        
-        # Assemble preselected candidates DataFrame for composite scoring
-        interaction_df_candidates = pd.DataFrame(index=common_indices)
-        candidate_names = []
-        for nm, ser in zip(kept_names, kept_series):
-            interaction_df_candidates[nm] = ser.values
-            candidate_names.append(nm)
-        interaction_df_candidates = interaction_df_candidates.fillna(0).astype(np.float32)
-        tprint_info(f"  📊 Prepared {len(candidate_names)} preselected candidates for composite scoring")
-        
-        # Use CompositeFeatureScorer once to get composite scores (no RFE loop).
-        composite_scorer = CompositeFeatureScorer(config={
-            'rfe_removal_rate': 0.33,  # Retained for other call sites, not used here
-            'min_features_per_round': 10
-        })
-
-        try:
-            composite_scores = composite_scorer.score_features_once(
-                X=interaction_df_candidates.values,
-                y=targets_aligned[target_col].values,
-                feature_names=candidate_names,
-            )
-            sorted_interactions = sorted(composite_scores.items(), key=lambda x: x[1], reverse=True)
-
-            tprint_success("  ✅ Composite scoring (single pass) completed")
-            tprint_info(f"  📊 Scored {len(sorted_interactions)} interactions")
-
-            # Log score breakdown for top features
-            if len(sorted_interactions) > 0:
-                tprint_info(f"  📊 Score range: {sorted_interactions[-1][1]:.4f} - {sorted_interactions[0][1]:.4f}")
-        except Exception as e:
-            tprint_error(f"  ❌ Composite scoring failed: {e}")
-            # Fallback to simple MI
-            tprint_warning("  ⚠️ Falling back to simple MI selection...")
-            from sklearn.feature_selection import mutual_info_regression
-            mi_scores = mutual_info_regression(
-                interaction_df_candidates.values,
-                targets_aligned[target_col].values,
-                random_state=42,
-                n_neighbors=3
-            )
-            mi_dict = {candidate_names[i]: mi_scores[i] for i in range(len(candidate_names))}
-            sorted_interactions = sorted(mi_dict.items(), key=lambda x: x[1], reverse=True)
-        
-        tprint_info(f"  📊 Valid interactions selected: {len(sorted_interactions)}")
-        
-        # Apply overfitting prevention: Limit interaction complexity and apply stability checks
-        if OVERFITTING_PREVENTION_AVAILABLE and self.overfitting_manager is not None:
-            # Filter interactions by complexity (limit to 3-way interactions max)
-            max_complexity = getattr(self.overfitting_config, 'max_interaction_complexity', 3)
-            filtered_interactions = []
-            for name, score in sorted_interactions:
-                # Count interaction terms (e.g., "feature1_x_feature2" = 2 terms)
-                complexity = len(name.split('_x_'))
-                if complexity <= max_complexity:
-                    filtered_interactions.append((name, score))
-                else:
-                    tprint_info(f"  🚫 Filtered out complex interaction: {name} (complexity: {complexity})")
-            
-            sorted_interactions = filtered_interactions
-            tprint_info(f"  📊 Interactions after complexity filtering: {len(sorted_interactions)}")
-        
-        # Select top interactions with overfitting-aware limits
-        max_interactions = min(80, len(sorted_interactions))  # Increased to 80 for richer interaction set
-        top_interactions = sorted_interactions[:max_interactions]
-        
-        tprint_info(f"  📊 Selected top {len(top_interactions)} interactions (target: 80)")
-        
-        # Create interaction features dictionary from top-scoring candidates
-        interaction_features = {}
-        for name, score in top_interactions:
-            # Find the corresponding interaction from candidates
-            for candidate_name, candidate_interaction in interaction_candidates:
-                if candidate_name == name:
-                    interaction_features[name] = candidate_interaction
-                    break
-        
-        # Store scores for metadata
-        self._last_interaction_scores = [(name, score) for name, score in top_interactions]
-        
-        tprint_info(f"  🔍 DEBUG: Generated {len(interaction_features)} interaction features using pre-calculated MI scores")
-        
-        # Create interaction DataFrame
-        interaction_df = pd.DataFrame(interaction_features, index=features.index)
-        # Memory optimization: narrow dtype and pre-fill NAs
-        interaction_df = interaction_df.fillna(0).astype(np.float32)
-        
-        # Apply causality shift
-        interaction_df = interaction_df.shift(1)
-        
-        # Apply RobustScaler only if there are interactions
-        if len(interaction_df.columns) > 0 and len(interaction_df) > 0:
-            scaler = RobustScaler()
-            interaction_df = pd.DataFrame(
-                scaler.fit_transform(interaction_df),
-                columns=interaction_df.columns,
-                index=interaction_df.index
-            )
-        else:
-            tprint_warning("  ⚠️ No interactions generated, skipping RobustScaler")
-        
-        # Create comprehensive SHAP metadata with interaction discovery details
-        # Convert feature pairs to strings for metadata
-        feature_pairs_str = []
-        for f1, f2, count in feature_pairs[:80]:  # Use all 80 pairs for metadata
-            feature_pairs_str.append(f"{f1}_x_{f2}")
-        
-        # Use actual calculated interaction scores instead of hardcoded 1.0
-        actual_scores = {}
-        if hasattr(self, '_last_interaction_scores') and self._last_interaction_scores:
-            # Use the scores from the interaction generation process
-            for name in interaction_df.columns:
-                # Find the score for this interaction
-                for score_name, score_value in self._last_interaction_scores:
-                    if score_name == name:
-                        actual_scores[name] = score_value
-                        break
-                else:
-                    # Fallback to 0.5 if no score found
-                    actual_scores[name] = 0.5
-        else:
-            # Fallback to 0.5 if no scores available
-            actual_scores = {name: 0.5 for name in interaction_df.columns}
-        
-        # Calculate valid interactions count
-        valid_interactions_count = len([score for score in actual_scores.values() if score > 0])
-        
-        # Get feature categories for all features (base + interactions)
-        all_features = list(features.columns) + list(interaction_df.columns)
-        if feature_categories is None:
-            # Fallback to inference if not provided
-            feature_categories = {}
-            for feature_name in all_features:
-                feature_categories[feature_name] = self._infer_feature_category(feature_name)
-        
-        shap_metadata = {
-            'feature_categories': feature_categories,  # Add feature categories to metadata
-            'interaction_discovery': {
-                'feature_pairs': feature_pairs_str,
-                'interaction_scores': actual_scores,
-                'early_stopping_applied': False,  # Using pre-calculated MI scores instead
-                'total_interactions_generated': len(interaction_df.columns),
-                'operations_per_pair': 5,  # x, div, minus, log, log_ratio
-                'max_candidates_processed': len(interaction_candidates),  # All candidates processed (400)
-                'mi_based_selection': True,  # Using MI scores for selection
-                'valid_interactions_found': valid_interactions_count
-            },
-            'model_performance': {
-                'lgbm_training_successful': True,
-                'tree_analysis_successful': True,
-                'interaction_generation_successful': len(interaction_df.columns) > 0,
-                'accuracy': self._phase3_1_performance.get('accuracy', 0.0),
-                'cv_score': self._phase3_1_performance.get('cv_score', 0.0),
-                'importance_consistency': self._phase3_1_performance.get('importance_consistency', 0.0),
-                'cv_scores_std': self._phase3_1_performance.get('cv_scores_std', 0.0)
-            }
-        }
-        
-        tprint_success(f"  ✅ Generated {len(interaction_df.columns)} interaction features with early stopping")
-        tprint_info(f"  🔍 DEBUG: interaction_df shape at Phase 3.3 exit: {interaction_df.shape}")
-        tprint_info(f"  🔍 DEBUG: interaction_df columns count: {len(interaction_df.columns)}")
-        
-        return interaction_df, shap_metadata
-
-
-    async def _phase3_2_deeper_refinement(
-        self,
-        features: pd.DataFrame,
-        targets: pd.DataFrame,
-        config: Dict[str, Any]
-    ) -> pd.DataFrame:
-        """
-        Phase 3.2: Deeper LGBM refinement to select top 80 features.
-
-        Uses deeper LGBM with fast multi-criteria selection:
-        - Feature importance (60%)
-        - Mutual information (30%)
-        - Stability (10%)
-        """
-        self._ensure_runtime_integrity("_phase3_2_deeper_refinement")
-        tprint_info("  📊 Training refined LGBM model...")
-
-        # Align features and targets by index with comprehensive validation
-
-        # Find common indices with detailed analysis
-        common_indices = features.index.intersection(targets.index)
-
-        # Validate alignment requirements
-        if len(common_indices) == 0:
-            error_msg = f"""
-            ❌ CRITICAL ERROR: No common indices between features and targets!
-
-            Features analysis:
-            - Shape: {features.shape}
-            - Index range: {features.index.min()} to {features.index.max()}
-            - Index type: {type(features.index)}
-
-            Targets analysis:
-            - Shape: {targets.shape}
-            - Index range: {targets.index.min()} to {targets.index.max()}
-            - Index type: {type(targets.index)}
-
-            This indicates a data pipeline issue - features and targets must have aligned indices.
-            """
-            tprint_error(error_msg)
-            raise ValueError("No common indices between features and targets - check data pipeline alignment")
-
-        # Check if we have sufficient overlap
-        overlap_ratio = len(common_indices) / min(len(features), len(targets))
-
-        if overlap_ratio < 0.5:  # Less than 50% overlap
-            tprint_warning(f"⚠️ Low index overlap: {overlap_ratio:.3f} - this may affect model performance")
-
-        # Align both datasets to common indices (always do this)
-        features_aligned = features.loc[common_indices]
-        targets_aligned = targets.loc[common_indices]
-
-        # 🔍 INDEX ALIGNMENT VERIFICATION
-        tprint_info("🔍 Verifying index alignment...")
-        assert (features_aligned.index == targets_aligned.index).all(), "❌ Indices not properly aligned after alignment step!"
-        tprint_success(f"✅ Index alignment verified: {len(features_aligned)} rows perfectly aligned")
-
-        # 🔍 TEMPORAL ORDERING CHECK: Detect data leakage risks
-        tprint_info("🔍 Checking temporal ordering for data leakage risks...")
-        if hasattr(features_aligned.index, 'is_monotonic_increasing'):
-            is_temporal_sorted = features_aligned.index.is_monotonic_increasing
-            if not is_temporal_sorted:
-                tprint_warning("⚠️ WARNING: Data is NOT temporally sorted! This may cause data leakage in time-series CV.")
-                tprint_warning("⚠️ Consider sorting by index before training to ensure proper temporal splits.")
-            else:
-                tprint_success("✅ Data is temporally sorted (monotonic increasing index)")
-
-        # Check for duplicate timestamps (another leakage risk)
-        dup_count = features_aligned.index.duplicated().sum()
-        if dup_count > 0:
-            tprint_warning(f"⚠️ WARNING: Found {dup_count} duplicate timestamps! This may cause leakage between train/test splits.")
-        else:
-            tprint_success("✅ No duplicate timestamps found")
-
-        # Validate alignment success
-        if len(features_aligned) == 0 or len(targets_aligned) == 0:
-            error_msg = f"""
-            ❌ CRITICAL ERROR: Alignment resulted in empty datasets!
-
-            After alignment:
-            - Features shape: {features_aligned.shape}
-            - Targets shape: {targets_aligned.shape}
-            - Common indices: {len(common_indices)}
-            """
-            tprint_error(error_msg)
-            raise ValueError("Alignment resulted in empty datasets")
-
-        # 📊 NaN DIAGNOSTICS: Check NaN counts beyond first 50 rows
-        tprint_info("🔍 NaN Diagnostics:")
-        if len(features_aligned) > 50:
-            features_beyond_50 = features_aligned.iloc[50:]
-            nan_count_features = features_beyond_50.isna().sum().sum()
-            nan_pct_features = (nan_count_features / features_beyond_50.size) * 100
-            tprint_info(f"  📈 Features NaN beyond row 50: {nan_count_features:,} ({nan_pct_features:.2f}% of data)")
-
-            # Show top columns with NaN
-            nan_per_col = features_beyond_50.isna().sum()
-            top_nan_cols = nan_per_col[nan_per_col > 0].sort_values(ascending=False).head(5)
-            if len(top_nan_cols) > 0:
-                tprint_warning(f"  ⚠️ Top 5 feature columns with NaN: {dict(top_nan_cols)}")
-
-        if len(targets_aligned) > 50:
-            targets_beyond_50 = targets_aligned.iloc[50:]
-            nan_count_targets = targets_beyond_50.isna().sum().sum()
-            nan_pct_targets = (nan_count_targets / targets_beyond_50.size) * 100
-            tprint_info(f"  🎯 Targets NaN beyond row 50: {nan_count_targets:,} ({nan_pct_targets:.2f}% of data)")
-
-            # Show target columns with NaN
-            nan_per_target = targets_beyond_50.isna().sum()
-            if nan_per_target.sum() > 0:
-                tprint_warning(f"  ⚠️ Target columns with NaN: {dict(nan_per_target[nan_per_target > 0])}")
-
-        # Handle NaN values in features
-        features_cleaned = features_aligned.fillna(0)  # Fill NaN with 0
-
-        # Handle NaN values in targets with validation
-        targets_cleaned = targets_aligned.fillna(0)  # Fill NaN with 0
-
-        # Validate target data quality before model training
-        tprint_info("🔍 Validating target data quality...")
-        valid_targets = []
-
-        for col in targets_cleaned.columns:
-            col_data = targets_cleaned[col]
-            variance = col_data.var()
-            non_zero_count = (col_data != 0).sum()
-            unique_count = col_data.nunique()
-
-            tprint_info(f"🔍 Target '{col}': variance={variance:.6f}, non-zero={non_zero_count}/{len(col_data)}, unique={unique_count}")
-
-            if variance < 1e-10:
-                warning_msg = f"""
-                ⚠️ WARNING: Target column '{col}' has zero variance - skipping this target!
-
-                Target analysis:
-                - Variance: {variance:.10f}
-                - Non-zero values: {non_zero_count}/{len(col_data)}
-                - Unique values: {unique_count}
-                - Data range: {col_data.min():.6f} to {col_data.max():.6f}
-
-                This target will be excluded from model training.
-                """
-                tprint_warning(warning_msg)
-                continue  # Skip this target instead of failing
-
-            if non_zero_count < len(col_data) * 0.01:  # Less than 1% non-zero
-                tprint_warning(f"⚠️ Target '{col}' has very few non-zero values: {non_zero_count}/{len(col_data)}")
-
-            valid_targets.append(col)
-
-        if len(valid_targets) == 0:
-            error_msg = "❌ CRITICAL ERROR: No valid targets found! All target columns have zero variance."
-            tprint_error(error_msg)
-            raise ValueError("No valid targets available for model training")
-
-        # Filter targets to only include valid ones
-        targets_cleaned = targets_cleaned[valid_targets]
-        tprint_success(f"✅ Target data quality validation passed - using {len(valid_targets)} valid targets: {valid_targets}")
-
-        # Use consistent sampling strategy with chunked processing
-        blank_mode = str(config.get('execution_mode', '')).lower() == 'blank'
-        max_samples = config.get('max_samples_phase3', 6000 if blank_mode else 8000)
-        features_sample, targets_sample = self._get_consistent_sample(features_cleaned, targets_cleaned, max_samples=max_samples)
-
-        # Apply chunked processing for large datasets
-        if len(features_sample) > 5000:
-            features_sample = self._chunked_processing(features_sample, targets_sample, chunk_size=2000)
-
-        # Setup deeper LGBM with enhanced overfitting prevention
-        lgbm_params = {
-            'max_depth': 3,                    # Further reduced from 4 to prevent overfitting
-            'num_leaves': 10,                  # Further reduced from 15 to prevent overfitting
-            'n_estimators': 80,                # Reduced from 100 to prevent overfitting
-            'learning_rate': 0.05,             # Reduced from 0.1 for more conservative learning
-            'reg_alpha': 0.2,                  # Increased L1 regularization
-            'reg_lambda': 0.2,                 # Increased L2 regularization
-            'min_child_samples': 80,           # Increased from 50 to prevent overfitting
-            'min_split_gain': 0.02,            # Increased minimum gain for splits
-            'subsample': 0.6,                  # Reduced row subsampling
-            'colsample_bytree': 0.6,           # Reduced column subsampling
-            'max_bin': 255,                    # Added max_bin limit
-            'min_data_per_group': 50,          # Added minimum data per group
-            'random_state': 42,
-            'verbose': -1
-        }
-
-        # Train MultiOutputRegressor
-        model = MultiOutputRegressor(lgb.LGBMRegressor(**lgbm_params))
-        model.fit(features_sample, targets_sample)
-
-        # Calculate performance metrics for Phase 3.2 with comprehensive error reporting
-        tprint_info("  📊 Calculating Phase 3.2 performance metrics...")
-        try:
-            from sklearn.metrics import r2_score
-            from sklearn.model_selection import cross_val_score
-
-            # Calculate accuracy (R² score for regression)
-            predictions = model.predict(features_sample)
-            accuracy = r2_score(targets_sample, predictions)
-
-            # Calculate cross-validation score with time-series aware validation
-            if OVERFITTING_PREVENTION_AVAILABLE:
-                tprint_info("  📊 Using time-series aware cross-validation for Phase 3.2...")
-                cv_results = temporal_cross_validation(
-                    model, features_sample, targets_sample,
-                    n_splits=5,
-                    gap=1,  # Gap to prevent data leakage
-                    test_size=None,
-                    scoring='r2'
-                )
-                cv_score = cv_results.get('mean', 0.0)
-                cv_scores_std = cv_results.get('std', 0.0)
-                tprint_info(f"  ✅ Phase 3.2 Time-series CV: {cv_score:.4f} ± {cv_scores_std:.4f}")
-                tprint_info(f"  📊 Phase 3.2 CV Fold Scores: {cv_results.get('scores', [])}")
-                tprint_info(f"  📊 Phase 3.2 CV Score Range: [{cv_results.get('min', 0.0):.4f}, {cv_results.get('max', 0.0):.4f}]")
-            else:
-                # Fallback to standard cross-validation
-                cv_scores = cross_val_score(model, features_sample, targets_sample, cv=3, scoring='r2')
-                cv_score = cv_scores.mean()
-                cv_scores_std = cv_scores.std()
-
-            # 📊 Calculate Mutual Information between features and targets (Phase 3.2)
-            tprint_info("  📊 Phase 3.2: Calculating Mutual Information between features and targets...")
-            mi_scores = self._calculate_feature_target_mi(features_sample, targets_sample)
-            mean_mi = np.mean(list(mi_scores.values())) if mi_scores else 0.0
-            tprint_info(f"  ✅ Phase 3.2 Mean MI across all targets: {mean_mi:.6f}")
-
-            # Calculate feature importance consistency
-            importance_consistency = self._calculate_importance_consistency(model, features_sample, targets_sample)
-
-            # Store performance metrics
-            self._phase3_2_performance = {
-                'accuracy': accuracy,
-                'cv_score': cv_score,
-                'importance_consistency': importance_consistency,
-                'cv_scores_std': cv_scores_std,
-                'mean_mi': mean_mi,
-                'mi_scores': mi_scores
-            }
-
-            tprint_success(f"  ✅ Phase 3.2 Performance: Accuracy={accuracy:.4f}, CV Score={cv_score:.4f}")
-
-        except Exception as e:
-            error_msg = f"""
-            ❌ CRITICAL ERROR: Failed to calculate Phase 3.2 performance metrics!
-
-            Error details:
-            - Exception: {e}
-            - Exception type: {type(e)}
-
-            Data analysis:
-            - Features shape: {features_sample.shape}
-            - Targets shape: {targets_sample.shape}
-            - Features columns: {len(features_sample.columns)}
-            - Targets columns: {len(targets_sample.columns)}
-            - Features NaN count: {features_sample.isna().sum().sum()}
-            - Targets NaN count: {targets_sample.isna().sum().sum()}
-
-            Model analysis:
-            - Model type: {type(model)}
-            - Model fitted: {hasattr(model, 'estimators_')}
-
-            This indicates a fundamental issue with Phase 3.2 model training or data quality.
-            """
-            tprint_error(error_msg)
-            self.logger.error(error_msg)
-
-            # Re-raise the exception to stop execution
-            raise ValueError(f"Phase 3.2 performance metrics calculation failed: {e}") from e
-
-        # Fast multi-criteria selection (no SHAP)
-        tprint_info("  🔍 Calculating fast multi-criteria scores...")
-
-        # Calculate feature importance
-        feature_importance = model.estimators_[0].feature_importances_
-
-        # Calculate mutual information with first target using fast proxy
-        mi_scores = []
-        for col in features_sample.columns:
-            mi_score = self._fast_mi_proxy(features_sample[col], targets_sample.iloc[:, 0], n_bins=5)
-            mi_scores.append(mi_score)
-        mi_scores = np.array(mi_scores)
-
-        # Calculate stability (variance across features)
-        stability = np.var(features_sample.values, axis=0)
-
-        # Normalize scores
-        imp_scores = (feature_importance - np.min(feature_importance)) / (np.max(feature_importance) - np.min(feature_importance) + 1e-8)
-        mi_scores = (mi_scores - np.min(mi_scores)) / (np.max(mi_scores) - np.min(mi_scores) + 1e-8)
-        stab_scores = (stability - np.min(stability)) / (np.max(stability) - np.min(stability) + 1e-8)
-
-        # Multi-criteria selection
-        combined_scores = (
-            0.6 * imp_scores +   # Feature importance (60%)
-            0.3 * mi_scores +    # Mutual information (30%)
-            0.1 * stab_scores    # Stability (10%)
-        )
-
-        # Rank and select top 80
-        feature_scores = pd.Series(combined_scores, index=features.columns).sort_values(ascending=False)
-        n_select = min(80, len(features.columns))
-        top_features = feature_scores.head(n_select).index.tolist()
-
-        tprint_success(f"  ✅ Selected {len(top_features)} features (top 80) using fast proxy")
-
-        return features[top_features]
-
-    
-    def _create_holdout_split(self, features_df: pd.DataFrame, targets_df: pd.DataFrame, 
-                             test_size: float = 0.2, gap_size: int = 1) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-        """
-        Create holdout validation split with gap to prevent data leakage.
-        
-        Args:
-            features_df: Feature dataframe
-            targets_df: Target dataframe  
-            test_size: Proportion of data for test set
-            gap_size: Gap between train and test to prevent leakage
-            
-        Returns:
-            Tuple of (X_train, X_test, y_train, y_test)
-        """
-        if OVERFITTING_PREVENTION_AVAILABLE and self.data_leakage_prevention:
-            tprint_info("🔒 Creating holdout split with data leakage prevention...")
-            
-            # Use data leakage prevention to create proper time-series split
-            split_result = self.data_leakage_prevention.create_time_series_split(
-                features_df, targets_df,
-                test_size=test_size,
-                gap_size=gap_size,
-                random_state=42
-            )
-            
-            X_train, X_test, y_train, y_test = split_result
-            tprint_info(f"✅ Holdout split created: Train={len(X_train)}, Test={len(X_test)}, Gap={gap_size}")
-            
-            return X_train, X_test, y_train, y_test
-        else:
-            # Fallback to simple time-based split
-            tprint_warning("⚠️ Using fallback time-based split (no data leakage prevention)")
-            
-            # Simple time-based split (last test_size% for test)
-            split_idx = int(len(features_df) * (1 - test_size))
-            
-            # Add gap
-            gap_start = max(0, split_idx - gap_size)
-            gap_end = min(len(features_df), split_idx + gap_size)
-            
-            X_train = features_df.iloc[:gap_start]
-            X_test = features_df.iloc[gap_end:]
-            y_train = targets_df.iloc[:gap_start]
-            y_test = targets_df.iloc[gap_end:]
-            
-            tprint_info(f"✅ Fallback split created: Train={len(X_train)}, Test={len(X_test)}")
-            
-            return X_train, X_test, y_train, y_test
-
-    def _validate_feature_selection_oos(self, selected_features: List[str], 
-                                       X_train: pd.DataFrame, X_test: pd.DataFrame,
-                                       y_train: pd.DataFrame, y_test: pd.DataFrame) -> Dict[str, Any]:
-        """
-        Validate feature selection on out-of-sample data to detect overfitting.
-        
-        Args:
-            selected_features: List of selected feature names
-            X_train, X_test: Training and test features
-            y_train, y_test: Training and test targets
-            
-        Returns:
-            Dictionary with validation metrics
-        """
-        if not LGBM_AVAILABLE:
-            return {'validation_performed': False, 'reason': 'LGBM not available'}
-        
-        try:
-            tprint_info("🔍 Validating feature selection on out-of-sample data...")
-            
-            # Ensure selected features exist in both train and test
-            available_features = [f for f in selected_features if f in X_train.columns and f in X_test.columns]
-            
-            if len(available_features) < len(selected_features):
-                tprint_warning(f"⚠️ {len(selected_features) - len(available_features)} features missing in test set")
-            
-            if len(available_features) == 0:
-                return {'validation_performed': False, 'reason': 'No features available for validation'}
-            
-            # Create train/test sets with selected features
-            X_train_selected = X_train[available_features]
-            X_test_selected = X_test[available_features]
-            
-            # Train model on training set
-            lgbm_params = {
-                'max_depth': 4,
-                'num_leaves': 15,
-                'n_estimators': 100,
-                'learning_rate': 0.1,
-                'reg_alpha': 0.1,
-                'reg_lambda': 0.1,
-                'min_child_samples': 50,
-                'random_state': 42,
-                'verbose': -1
-            }
-            
-            model = MultiOutputRegressor(lgb.LGBMRegressor(**lgbm_params))
-            model.fit(X_train_selected, y_train)
-            
-            # Evaluate on training set
-            from sklearn.metrics import r2_score
-            train_pred = model.predict(X_train_selected)
-            train_score = r2_score(y_train, train_pred)
-            
-            # Evaluate on test set
-            test_pred = model.predict(X_test_selected)
-            test_score = r2_score(y_test, test_pred)
-            
-            # Calculate overfitting metrics
-            performance_gap = train_score - test_score
-            overfitting_risk = 'High' if performance_gap > 0.1 else 'Medium' if performance_gap > 0.05 else 'Low'
-            
-            validation_results = {
-                'validation_performed': True,
-                'train_score': train_score,
-                'test_score': test_score,
-                'performance_gap': performance_gap,
-                'overfitting_risk': overfitting_risk,
-                'features_validated': len(available_features),
-                'features_missing': len(selected_features) - len(available_features)
-            }
-            
-            tprint_info(f"📊 OOS Validation Results:")
-            tprint_info(f"  Train Score: {train_score:.4f}")
-            tprint_info(f"  Test Score: {test_score:.4f}")
-            tprint_info(f"  Performance Gap: {performance_gap:.4f}")
-            tprint_info(f"  Overfitting Risk: {overfitting_risk}")
-            
-            return validation_results
-            
-        except Exception as e:
-            tprint_error(f"❌ OOS validation failed: {e}")
-            return {'validation_performed': False, 'reason': f'Validation failed: {e}'}
-    
-    def _calculate_importance_consistency(self, model, features: pd.DataFrame, targets: pd.DataFrame) -> float:
-        """
-        Calculate feature importance consistency across different CV folds.
-
-        Uses TimeSeriesSplit to respect temporal ordering and prevent data leakage.
-        Returns a score between 0 and 1 indicating how consistent feature importance is.
-        """
-        try:
-            from sklearn.model_selection import TimeSeriesSplit
-            from sklearn.metrics import r2_score
-
-            # Get feature importance from multiple CV folds (using TimeSeriesSplit for temporal data)
-            tscv = TimeSeriesSplit(n_splits=3, gap=1)  # Gap of 1 to prevent data leakage
-            importance_folds = []
-
-            for train_idx, val_idx in tscv.split(features):
-                X_train, X_val = features.iloc[train_idx], features.iloc[val_idx]
-                y_train, y_val = targets.iloc[train_idx], targets.iloc[val_idx]
-                
-                # Train a model on this fold
-                fold_model = MultiOutputRegressor(lgb.LGBMRegressor(
-                    max_depth=4, num_leaves=15, n_estimators=50, 
-                    learning_rate=0.1, random_state=42, verbose=-1
-                ))
-                fold_model.fit(X_train, y_train)
-                
-                # Get feature importance
-                importance = fold_model.estimators_[0].feature_importances_
-                importance_folds.append(importance)
-            
-            # Calculate consistency (correlation between fold importances)
-            if len(importance_folds) >= 2:
-                consistency_scores = []
-                for i in range(len(importance_folds)):
-                    for j in range(i + 1, len(importance_folds)):
-                        corr = np.corrcoef(importance_folds[i], importance_folds[j])[0, 1]
-                        if not np.isnan(corr):
-                            consistency_scores.append(abs(corr))
-                
-                return np.mean(consistency_scores) if consistency_scores else 0.0
-            else:
-                return 0.0
-                
-        except Exception as e:
-            self.logger.warning(f"Error calculating importance consistency: {e}")
-            return 0.0
-
-    def _calculate_feature_target_mi(self, features: pd.DataFrame, targets: pd.DataFrame) -> Dict[str, float]:
-        """
-        Calculate Mutual Information between features and each target using fast binned approximation.
-
-        Performance:
-        - Uses discretization + entropy calculation: 10-100x faster than sklearn's KNN approach
-        - With numba JIT: Additional 10x speedup on joint probability calculation
-        - Total speedup: 100-1000x faster than sklearn.feature_selection.mutual_info_regression
-
-        Returns a dictionary mapping target names to their average MI with all features.
-        Higher MI indicates stronger predictive relationships.
-        """
-        try:
-            mi_scores = {}
-
-            # Use fast binned MI calculation
-            for target_col in targets.columns:
-                target_values = targets[target_col].values
-
-                # Calculate MI between all features and this target
-                mi = self._fast_mi_binned(features.values, target_values, n_bins=10)
-
-                # Average MI across all features for this target
-                avg_mi = np.mean(mi)
-                mi_scores[target_col] = float(avg_mi)
-
-                # Log top features for this target
-                top_mi_indices = np.argsort(mi)[-5:][::-1]
-                top_features = [(features.columns[i], mi[i]) for i in top_mi_indices]
-                tprint_info(f"    Target '{target_col}': Avg MI={avg_mi:.6f}, Top features: {top_features[:3]}")
-
-            return mi_scores
-
-        except Exception as e:
-            self.logger.warning(f"Error calculating feature-target MI: {e}")
-            return {}
-
-    def _fast_mi_binned(self, X: np.ndarray, y: np.ndarray, n_bins: int = 10) -> np.ndarray:
-        """
-        Fast Mutual Information approximation using binning/discretization.
-
-        This is 10-100x faster than sklearn's mutual_info_regression (which uses KNN).
-        Uses equal-frequency binning and entropy calculation.
-
-        Args:
-            X: Feature matrix (n_samples, n_features)
-            y: Target vector (n_samples,)
-            n_bins: Number of bins for discretization (default: 10)
-
-        Returns:
-            Array of MI scores for each feature (n_features,)
-        """
-        n_samples, n_features = X.shape
-        mi_scores = np.zeros(n_features)
-
-        # Discretize target into bins (equal-frequency binning)
-        y_binned = self._quantile_bin(y, n_bins)
-
-        # Calculate MI for each feature
-        for i in range(n_features):
-            feature = X[:, i]
-
-            # Discretize feature into bins (equal-frequency binning)
-            feature_binned = self._quantile_bin(feature, n_bins)
-
-            # Calculate MI using entropy formula: MI(X,Y) = H(X) + H(Y) - H(X,Y)
-            mi_scores[i] = self._mi_from_bins(feature_binned, y_binned, n_bins)
-
-        return mi_scores
-
-    @staticmethod
-    def _quantile_bin(data: np.ndarray, n_bins: int) -> np.ndarray:
-        """
-        Fast quantile-based binning (equal-frequency binning).
-
-        Args:
-            data: Input array to bin
-            n_bins: Number of bins
-
-        Returns:
-            Binned data as integers (0 to n_bins-1)
-        """
-        # Handle edge cases
-        if len(np.unique(data)) <= n_bins:
-            # If unique values <= bins, use direct mapping
-            unique_vals = np.unique(data)
-            bin_map = {val: i for i, val in enumerate(unique_vals)}
-            return np.array([bin_map[val] for val in data], dtype=np.int32)
-
-        # Use quantile-based binning for continuous data
-        quantiles = np.linspace(0, 100, n_bins + 1)
-        bin_edges = np.percentile(data, quantiles)
-        bin_edges[-1] += 1e-10  # Ensure last value is included
-
-        binned = np.digitize(data, bin_edges[1:-1], right=False)
-        return binned.astype(np.int32)
-
-    @staticmethod
-    def _mi_from_bins(x_binned: np.ndarray, y_binned: np.ndarray, n_bins: int) -> float:
-        """
-        Calculate Mutual Information from pre-binned data using entropy formula.
-
-        MI(X,Y) = H(X) + H(Y) - H(X,Y)
-        where H is Shannon entropy
-
-        Uses numba-accelerated joint probability calculation if available (10x speedup).
-
-        Args:
-            x_binned: Binned feature values
-            y_binned: Binned target values
-            n_bins: Number of bins used
-
-        Returns:
-            Mutual Information score
-        """
-        n_samples = len(x_binned)
-
-        # Calculate marginal probabilities
-        px = np.bincount(x_binned, minlength=n_bins) / n_samples
-        py = np.bincount(y_binned, minlength=n_bins) / n_samples
-
-        # Calculate joint probability (numba-accelerated if available)
-        if NUMBA_AVAILABLE:
-            pxy = _fast_joint_prob_numba(x_binned, y_binned, n_bins) / n_samples
-        else:
-            pxy = np.zeros((n_bins, n_bins))
-            for i in range(n_samples):
-                pxy[x_binned[i], y_binned[i]] += 1
-            pxy /= n_samples
-
-        # Calculate entropies (with small epsilon to avoid log(0))
-        eps = 1e-10
-
-        # H(X)
-        hx = -np.sum(px[px > 0] * np.log2(px[px > 0] + eps))
-
-        # H(Y)
-        hy = -np.sum(py[py > 0] * np.log2(py[py > 0] + eps))
-
-        # H(X,Y)
-        hxy = -np.sum(pxy[pxy > 0] * np.log2(pxy[pxy > 0] + eps))
-
-        # MI(X,Y) = H(X) + H(Y) - H(X,Y)
-        mi = hx + hy - hxy
-
-        return max(0.0, mi)  # MI should be non-negative
-
-
-# Numba-accelerated helper function (placed at module level for JIT compilation)
-@njit
-def _fast_joint_prob_numba(x_binned, y_binned, n_bins):
-    """
-    Fast joint probability calculation using numba JIT compilation.
-
-    This is the hottest loop in MI calculation - numba gives ~10x speedup.
-
-    Args:
-        x_binned: Binned feature values (int32)
-        y_binned: Binned target values (int32)
-        n_bins: Number of bins
-
-    Returns:
-        Joint probability matrix (n_bins x n_bins)
-    """
-    n_samples = len(x_binned)
-    pxy = np.zeros((n_bins, n_bins), dtype=np.float64)
-
-    for i in range(n_samples):
-        pxy[x_binned[i], y_binned[i]] += 1.0
-
-    return pxy
-
-    
-    def _extract_tree_splitting_pairs(self, model) -> List[Tuple[str, str, int]]:
-        """
-        Extract feature pairs that frequently split together in trees.
-        
-        Returns:
-            List of (feature1, feature2, co_occurrence_count) tuples
-        """
-        from collections import defaultdict
-        
-        feature_pairs = defaultdict(int)
-        
-        try:
-            # Get tree structure from the trained model's booster
-            # Handle both MultiOutputRegressor and direct LGBMRegressor
-            if hasattr(model, 'estimators_'):
-                # MultiOutputRegressor case
-                booster = model.estimators_[0].booster_
-            else:
-                # Direct LGBMRegressor case
-                booster = model.booster_
-            
-            trees = booster.dump_model()['tree_info']
-            tprint_info(f"  🔍 DEBUG: Found {len(trees)} trees in model")
-            tprint_info(f"  🔍 DEBUG: Model type: {type(model)}")
-            tprint_info(f"  🔍 DEBUG: Booster type: {type(booster)}")
-            
-            for tree in trees:
-                features_in_tree = set()
-                
-                # Traverse tree to find all features used
-                def traverse_node(node):
-                    if 'split_feature' in node:
-                        features_in_tree.add(node['split_feature'])
-                        if 'left_child' in node:
-                            traverse_node(node['left_child'])
-                        if 'right_child' in node:
-                            traverse_node(node['right_child'])
-                
-                traverse_node(tree['tree_structure'])
-                
-                # Count all pairs in this tree
-                features_list = list(features_in_tree)
-                tprint_info(f"  🔍 DEBUG: Tree {len(feature_pairs)} has {len(features_list)} features: {features_list}")
-                
-                for i in range(len(features_list)):
-                    for j in range(i + 1, len(features_list)):
-                        pair = tuple(sorted([features_list[i], features_list[j]]))
-                        feature_pairs[pair] += 1
-            
-            # Convert to list and sort by co-occurrence
-            pairs_list = [(f1, f2, count) for (f1, f2), count in feature_pairs.items()]
-            pairs_list.sort(key=lambda x: x[2], reverse=True)
-            
-            tprint_info(f"  🔍 DEBUG: Found {len(pairs_list)} feature pairs")
-            if len(pairs_list) > 0:
-                tprint_info(f"  🔍 DEBUG: Top 5 pairs: {pairs_list[:5]}")
-            else:
-                tprint_warning("  ⚠️ DEBUG: No feature pairs found in tree analysis")
-            return pairs_list[:80]  # Return top 80 pairs
-            
-        except Exception as e:
-            tprint_error(f"  ❌ Tree analysis failed: {e}")
-            tprint_error(f"  ❌ Exception type: {type(e)}")
-            import traceback
-            tprint_error(f"  ❌ Traceback: {traceback.format_exc()}")
-            tprint_warning(f"  ⚠️ Model type: {type(model)}")
-            tprint_warning(f"  ⚠️ Estimators count: {len(model.estimators_) if hasattr(model, 'estimators_') else 'N/A'}")
-            return []
 
     async def _phase4_save_artifacts(
         self,
@@ -4471,6 +2457,53 @@ def _fast_joint_prob_numba(x_binned, y_binned, n_bins):
                 or {}
             )
 
+            # Compute per-feature MI and stability for the final combined feature set
+            mi_scores: Dict[str, float] = {}
+            stability_scores: Dict[str, float] = {}
+            composite_scores: Dict[str, float] = {}
+            try:
+                targets_for_summary = self._get_primary_summary_targets(config)
+                if targets_for_summary is not None and not targets_for_summary.empty:
+                    composite_scores = self._calculate_composite_scores(
+                        combined_features,
+                        targets_for_summary,
+                        feature_categories,
+                        config,
+                    )
+                    mi_scores = getattr(self, "_last_mi_scores", {}) or {}
+                    stability_scores = getattr(self, "_last_stability_scores", {}) or {}
+            except Exception as metrics_exc:
+                tprint_warning(
+                    f"⚠️ Failed to compute per-feature MI/stability for CSV summary: {metrics_exc}"
+                )
+                composite_scores = {}
+                mi_scores = {}
+                stability_scores = {}
+
+            def _strip_ct_suffix(name: str) -> str:
+                ct_suffixes = [
+                    '_3x_ratio',
+                    '_6x_ratio',
+                    '_9x_ratio',
+                    '_15x_ratio',
+                    '_27x_ratio',
+                    '_45x_ratio',
+                    '_60x_ratio',
+                ]
+                base = name
+                for sfx in ct_suffixes:
+                    if base.endswith(sfx):
+                        return base[:-len(sfx)]
+                return base
+
+            def _parse_interaction_parents(name: str) -> List[str]:
+                ops = ['_log_ratio_', '_div_', '_minus_', '_plus_', '_x_']
+                for op in ops:
+                    if op in name:
+                        left, right = name.split(op, 1)
+                        return [left, right]
+                return []
+
             summary_rows = []
             for col in combined_features.columns:
                 if col in hybrid_ct_interactions:
@@ -4491,11 +2524,79 @@ def _fast_joint_prob_numba(x_binned, y_binned, n_bins):
                     score = 0.0
 
                 category = feature_categories.get(col, 'unknown')
+
+                mi_val = mi_scores.get(col)
+                if mi_val is None:
+                    mi_val = np.nan
+                stability_val = stability_scores.get(col)
+                if stability_val is None:
+                    stability_val = np.nan
+                composite_val = composite_scores.get(col)
+                if composite_val is None:
+                    composite_val = np.nan
+
+                parent_feature = None
+                parent_mi = np.nan
+                parent_stability = np.nan
+                mi_lift = np.nan
+                stability_ratio = np.nan
+
+                # Parent mapping depends on feature type
+                if feature_type in ('variant', 'ct_ratio'):
+                    base_name = self._extract_base_feature_name(col)
+                    base_candidate = f"{base_name}_base"
+                    if base_candidate in combined_features.columns:
+                        parent_feature = base_candidate
+                    else:
+                        stripped = _strip_ct_suffix(col)
+                        if stripped in combined_features.columns:
+                            parent_feature = stripped
+                elif feature_type in ('interaction', 'ct_interaction'):
+                    raw_name = col
+                    if feature_type == 'ct_interaction':
+                        raw_name = _strip_ct_suffix(col)
+                    parent_candidates = _parse_interaction_parents(raw_name)
+                    best_name = None
+                    best_mi = -np.inf
+                    for cand in parent_candidates:
+                        cand_mi = mi_scores.get(cand)
+                        if cand_mi is not None and cand_mi > best_mi:
+                            best_mi = cand_mi
+                            best_name = cand
+                    if best_name is not None:
+                        parent_feature = best_name
+
+                if parent_feature is not None:
+                    parent_mi = mi_scores.get(parent_feature, np.nan)
+                    parent_stability = stability_scores.get(parent_feature, np.nan)
+                    if (
+                        parent_mi is not None
+                        and not np.isnan(parent_mi)
+                        and parent_mi != 0
+                        and not np.isnan(mi_val)
+                    ):
+                        mi_lift = (mi_val - parent_mi) / (abs(parent_mi) + 1e-8)
+                    if (
+                        parent_stability is not None
+                        and not np.isnan(parent_stability)
+                        and parent_stability != 0
+                        and not np.isnan(stability_val)
+                    ):
+                        stability_ratio = stability_val / (parent_stability + 1e-8)
+
                 summary_rows.append({
                     'feature_name': col,
                     'feature_type': feature_type,
                     'category': category,
                     'importance_score': score,
+                    'mi': mi_val,
+                    'stability': stability_val,
+                    'composite_score': composite_val,
+                    'parent_feature': parent_feature,
+                    'parent_mi': parent_mi,
+                    'parent_stability': parent_stability,
+                    'mi_lift_vs_parent': mi_lift,
+                    'stability_ratio_vs_parent': stability_ratio,
                 })
 
             # Add category coverage summary rows
@@ -4559,8 +2660,13 @@ def _fast_joint_prob_numba(x_binned, y_binned, n_bins):
 
             if summary_rows:
                 summary_df = pd.DataFrame(summary_rows)
-                summary_path = Path('artifacts') / 'analyst_interaction_summary.csv'
-                summary_path.parent.mkdir(exist_ok=True)
+                symbol = config.get('symbol', 'UNKNOWN')
+                timeframe = config.get('timeframe', 'UNKNOWN')
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                summary_dir = Path('outcomes')
+                summary_dir.mkdir(exist_ok=True)
+                summary_filename = f"analyst_interaction_summary_{symbol}_{timeframe}_{timestamp}.csv"
+                summary_path = summary_dir / summary_filename
                 summary_df.to_csv(summary_path, index=False)
                 tprint_info(f"📄 Saved analyst interaction summary CSV: {summary_path}")
         except Exception as csv_exc:
@@ -5146,6 +3252,10 @@ def _fast_joint_prob_numba(x_binned, y_binned, n_bins):
         features_aligned = features_df.loc[common_index]
         target_aligned = target.loc[common_index]
         
+        if features_aligned.empty or target_aligned.empty:
+            tprint_warning("  ⚠️ No overlapping samples between features and targets; using uniform composite scores")
+            return {col: 0.5 for col in features_df.columns}
+        
         # Remove any features with all NaN or constant values
         # Use relaxed validation for ratio features (like cross-timeframe)
         valid_features = []
@@ -5172,6 +3282,11 @@ def _fast_joint_prob_numba(x_binned, y_binned, n_bins):
                     valid_features.append(col)
         
         features_for_mi = features_aligned[valid_features].fillna(0)
+
+        if len(valid_features) == 0:
+            tprint_warning("  ⚠️ No features passed MI validity checks; relaxing thresholds for fallback scoring")
+            valid_features = list(features_aligned.columns)
+            features_for_mi = features_aligned.fillna(0)
         
         # Log cross-timeframe validation stats
         ct_features_total = [c for c in features_aligned.columns if '_3x_ratio' in c or '_6x_ratio' in c or '_9x_ratio' in c or '_27x_ratio' in c]
@@ -5278,6 +3393,14 @@ def _fast_joint_prob_numba(x_binned, y_binned, n_bins):
         except Exception as e:
             tprint_warning(f"  ⚠️ Stability calculation failed: {e}")
             stability_dict = {col: 0.5 for col in valid_features}
+        
+        # Persist raw MI and stability scores for downstream reporting (Phase 4 CSV)
+        try:
+            self._last_mi_scores = dict(mi_dict)
+            self._last_stability_scores = dict(stability_dict)
+        except Exception:
+            # Best-effort only; do not break scoring if caching fails
+            pass
         
         # Combine MI and stability into composite score
         composite_scores = {}
@@ -5445,7 +3568,34 @@ def _fast_joint_prob_numba(x_binned, y_binned, n_bins):
         # Sort by similarity score and return top matches
         scored_features.sort(key=lambda x: x[1], reverse=True)
         return [feature for feature, score in scored_features[:3]]  # Return top 3 matches
-    
+
+    def _align_for_label_guided_discovery(
+        self,
+        features: pd.DataFrame,
+        target: pd.Series,
+    ) -> Tuple[pd.DataFrame, pd.Series]:
+        common_idx = features.index.intersection(target.index)
+
+        if len(common_idx) == 0:
+            min_len = min(len(features), len(target))
+            if min_len == 0:
+                return features.iloc[0:0].copy(), target.iloc[0:0].copy()
+            features_aligned = features.iloc[-min_len:].copy()
+            target_aligned = target.iloc[-min_len:].copy()
+            features_aligned.index = pd.RangeIndex(min_len)
+            target_aligned.index = pd.RangeIndex(min_len)
+        else:
+            features_aligned = features.loc[common_idx].copy()
+            target_aligned = target.loc[common_idx].copy()
+
+        finite_mask = np.isfinite(target_aligned.values) & np.all(
+            np.isfinite(features_aligned.values), axis=1
+        )
+        features_clean = features_aligned[finite_mask]
+        target_clean = target_aligned[finite_mask]
+
+        return features_clean, target_clean
+
     def _get_consistent_sample(self, features: pd.DataFrame, targets: pd.DataFrame, max_samples: int = 8000) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """Get consistent sample across all phases."""
         

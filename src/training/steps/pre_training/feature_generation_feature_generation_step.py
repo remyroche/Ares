@@ -256,70 +256,19 @@ class FeatureGenerationFeatureGenerationStep(BaseStep):
             }
 
     async def _load_market_data(self, config: Dict[str, Any]) -> Any:
-        """Load market data for feature generation."""
+        """Load market data for feature generation via BaseStep helpers."""
         try:
-            from src.utils.data.klines_parquet import get_klines_manager
-            from datetime import datetime, timedelta
-            import pandas as pd
-
-            klines_manager = get_klines_manager(data_dir=config.get('data_dir', 'historical_data'))
-
-            # Calculate date range for light/blank modes
-            execution_mode = str(config.get('execution_mode', 'light')).lower()
-            start_date = config.get('start_date')
-            end_date = config.get('end_date')
-            
-            # For light/blank modes, we need to determine the date range based on available data
-            # First load without filters to find the latest available date, then filter
-            if start_date is None and execution_mode in ('light', 'blank'):
-                # Use centralized execution mode configuration
-                from src.training.steps.market_analysis.shared_utils.execution_mode_lookback_config import get_execution_mode_config
-                execution_config = get_execution_mode_config()
-                days_limit_default = execution_config.get_data_loading_days(execution_mode)
-
-                # Allow override from config if specified
-                days_limit = config.get(f'{execution_mode}_mode_days', days_limit_default)
-                mode_emoji = "💡" if execution_mode == 'light' else "⚪"
-                tprint(
-                    f"{mode_emoji} {execution_mode.capitalize()} mode: will load last {days_limit} days from most recent data"
-                )
-
-            market_data = klines_manager.read_data(
-                symbol=config['symbol'],
-                interval=config['timeframe'],
-                start_date=start_date,
-                end_date=end_date,
-                data_type="processed"
+            # Delegate to BaseStep so execution mode and lookback days are handled centrally
+            pipeline_state: Dict[str, Any] = {}
+            market_data, _ = self.load_market_data_or_fail(
+                config,
+                pipeline_state=pipeline_state,
+                allow_config_override=True,
             )
-            
-            # Apply light/blank mode filtering based on actual data availability
-            if market_data is not None and not market_data.empty and start_date is None and execution_mode in ('light', 'blank'):
-                # Use centralized execution mode configuration
-                from src.training.steps.market_analysis.shared_utils.execution_mode_lookback_config import get_execution_mode_config
-                execution_config = get_execution_mode_config()
-                days_limit_default = execution_config.get_data_loading_days(execution_mode)
-
-                # Allow override from config if specified
-                days_limit = config.get(f'{execution_mode}_mode_days', days_limit_default)
-                
-                # Get the latest date from the actual data
-                if isinstance(market_data.index, pd.DatetimeIndex):
-                    latest_date = market_data.index.max()
-                    cutoff_date = latest_date - pd.Timedelta(days=days_limit)
-                    original_size = len(market_data)
-                    market_data = market_data[market_data.index >= cutoff_date]
-                    filtered_size = len(market_data)
-                    
-                    mode_emoji = "💡" if execution_mode == 'light' else "⚪"
-                    tprint(
-                        f"{mode_emoji} {execution_mode.capitalize()} mode: filtered to last {days_limit} days "
-                        f"({cutoff_date.date()} → {latest_date.date()}) - {original_size:,} → {filtered_size:,} rows"
-                    )
-
             return market_data
 
         except Exception as e:
-            self.logger.error(f"Failed to load market data: {e}")
+            self.logger.error(f"Failed to load market data via BaseStep: {e}")
             return None
 
     def _load_optimized_lookbacks(self, config: Dict[str, Any]) -> Optional[Dict[str, int]]:

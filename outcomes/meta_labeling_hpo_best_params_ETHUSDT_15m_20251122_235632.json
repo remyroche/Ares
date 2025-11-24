@@ -1,0 +1,66 @@
+{
+  "symbol": "ETHUSDT",
+  "exchange": "binance",
+  "timeframe": "15m",
+  "best_score": 0.012381770370593254,
+  "best_edge": 0.012381770370593254,
+  "best_params": {
+    "profit_thr_base": 0.02034341848400196,
+    "stop_to_profit_ratio": 0.3351396338196895,
+    "min_event_spacing": 3,
+    "iso_min_prob": 0.13980260909722764,
+    "target_clip_high_q": 0.9290448398603106,
+    "econ_min_return_multiple": 2.0406763467093145,
+    "label_low_q": 0.33410641647821876,
+    "label_high_q": 0.836089329042614,
+    "signal_strength_scale_max": 1.4063787724611572,
+    "kalman_Q": 2.1304399188638292e-05,
+    "kalman_R": 0.0018184821581778178,
+    "vol_baseline_window": 101,
+    "profit_mult_min": 0.9492470170182604,
+    "profit_mult_max": 1.3972425940619129,
+    "stop_mult_min": 0.7056723508031656,
+    "stop_mult_max": 1.1575634157787376
+  },
+  "knee_params": {
+    "profit_thr_base": 0.02034341848400196,
+    "stop_to_profit_ratio": 0.3351396338196895,
+    "min_event_spacing": 3,
+    "iso_min_prob": 0.13980260909722764,
+    "target_clip_high_q": 0.9290448398603106,
+    "econ_min_return_multiple": 2.0406763467093145,
+    "label_low_q": 0.33410641647821876,
+    "label_high_q": 0.836089329042614,
+    "signal_strength_scale_max": 1.4063787724611572,
+    "kalman_Q": 2.1304399188638292e-05,
+    "kalman_R": 0.0018184821581778178,
+    "vol_baseline_window": 101,
+    "profit_mult_min": 0.9492470170182604,
+    "profit_mult_max": 1.3972425940619129,
+    "stop_mult_min": 0.7056723508031656,
+    "stop_mult_max": 1.1575634157787376,
+    "horizon_bars": 32
+  },
+  "pareto_front_size": 1,
+  "total_trials": 56,
+  "stage_results": [
+    {
+      "stage": "Stage 1 (Screening)",
+      "complexity": "fast",
+      "best_score": 0.0048312679227929195,
+      "trials": 24
+    },
+    {
+      "stage": "Stage 2 (Refinement)",
+      "complexity": "medium",
+      "best_score": 0.0032202036129725985,
+      "trials": 12
+    },
+    {
+      "stage": "Stage 3 (Production Proxy)",
+      "complexity": "strong",
+      "best_score": 0.012381770370593254,
+      "trials": 20
+    }
+  ]
+}

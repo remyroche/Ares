@@ -418,18 +418,67 @@ class KlinesParquetManager:
             if start_date and isinstance(start_date, str):
                 try:
                     start_date = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
-                except:
+                except Exception:
                     start_date = None
-            
+
             if end_date and isinstance(end_date, str):
                 try:
                     end_date = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
-                except:
+                except Exception:
                     end_date = None
-            # Auto-detect data type: use processed data for timeframes > 1m
-            if data_type == "raw" and interval in ["1m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d", "3d", "1w"]:
-                self.logger.info(f"🔄 Auto-switching to processed data for {interval} timeframe")
-                data_type = "processed"
+
+            # ------------------------------------------------------------------
+            # Compatibility path: delegate to BaseStep's historical loader when
+            # an execution mode is configured (e.g. via ares_launcher). This
+            # reuses centralized lookback/processed-directory logic across
+            # legacy callers that still depend on this manager. On any error we
+            # fall back to the legacy parquet loading logic below.
+            # ------------------------------------------------------------------
+            try:
+                from os import environ as _os_environ
+                exec_mode_env = _os_environ.get("EXECUTION_MODE") or _os_environ.get("ARES_EXECUTION_MODE")
+
+                if exec_mode_env:
+                    from src.training.steps.base_step import BaseStep  # Local import to avoid cycles
+
+                    compat_step = BaseStep(step_name="klines_parquet_compat")
+                    compat_config: Dict[str, Any] = {
+                        "symbol": symbol,
+                        "exchange": self.exchange,
+                        "timeframe": interval,
+                        "data_dir": str(self.data_dir),
+                        "execution_mode": exec_mode_env,
+                    }
+                    if start_date is not None:
+                        compat_config["start_date"] = start_date
+                    if end_date is not None:
+                        compat_config["end_date"] = end_date
+
+                    market_data, source = compat_step.load_market_data_or_fail(
+                        compat_config,
+                        pipeline_state={},
+                        allow_config_override=False,
+                        light_mode_filter=False,
+                        artifact_candidates=None,
+                        skip_artifacts=True,
+                    )
+
+                    if market_data is not None and not market_data.empty:
+                        self.logger.info(
+                            "✅ Loaded historical market data via BaseStep for %s %s (%d rows) [source=%s]",
+                            symbol,
+                            interval,
+                            len(market_data),
+                            source,
+                        )
+                        return market_data
+            except Exception as compat_exc:  # pragma: no cover - defensive
+                self.logger.debug(
+                    "BaseStep compatibility loader failed for %s %s: %s",
+                    symbol,
+                    interval,
+                    compat_exc,
+                )
 
             data_dir = self._get_symbol_data_dir(symbol, data_type)
 

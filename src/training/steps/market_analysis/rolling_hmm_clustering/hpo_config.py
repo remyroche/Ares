@@ -336,6 +336,15 @@ class RollingHMMOptimizer:
                 min_covar = float(params.get('min_covar', 1e-3))
                 kappa = float(params.get('kappa', 10.0))
 
+                tprint_info(
+                    f"🎯 HMM HPO trial {self.current_trial} START "
+                    f"(stage={self.current_stage or 'unknown'}, "
+                    f"ewma_config_idx={ewma_config_idx}, "
+                    f"n_components={n_components}, "
+                    f"min_covar={min_covar:.1e}, "
+                    f"kappa={kappa:.2f})"
+                )
+
                 # Import required classes
                 from src.training.steps.market_analysis.rolling_hmm_clustering.feature_engineering import (
                     DEFAULT_EWMA_CONFIGS
@@ -489,7 +498,7 @@ class RollingHMMOptimizer:
                             if thread_id:
                                 res = ctypes.pythonapi.PyThreadState_SetAsyncExc(
                                     ctypes.c_ulong(thread_id),
-                                    ctypes.py_object(SystemError("HMM fitting timeout"))
+                                    ctypes.py_object(SystemError)
                                 )
                                 if res == 0:
                                     tprint_warning("  ⚠️ Thread termination signal sent")
@@ -874,11 +883,21 @@ class RollingHMMOptimizer:
                     - economic_penalty * 0.4  # Penalize poor economic differentiation - important
                 )
 
+                tprint_info(
+                    f"✅ HMM HPO trial {self.current_trial} END "
+                    f"(stage={self.current_stage or 'unknown'}, "
+                    f"score={objective_score:.6f})"
+                )
+
                 return objective_score, metrics
 
             except Exception as e:
                 self.logger.warning(f"Objective function failed: {e}")
                 tprint_warning(f"  ⚠️  Trial {self.current_trial} failed: {str(e)[:80]}")
+                tprint_info(
+                    f"⚠️ HMM HPO trial {self.current_trial} END "
+                    f"(stage={self.current_stage or 'unknown'}, failed=True)"
+                )
                 return -1e6, None
 
         return objective

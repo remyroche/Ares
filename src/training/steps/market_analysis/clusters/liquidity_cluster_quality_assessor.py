@@ -379,6 +379,11 @@ class LiquidityClusterQualityAssessor:
         volume_efficiency_ratio = df.get("volume_efficiency_ratio")
         intraday_close_ratio = df.get("intraday_close_ratio")
 
+        # Core illiquidity and long-horizon volume / delta features
+        amihud_spike_ratio_scaled = df.get("amihud_spike_ratio_scaled")
+        rvol_168_scaled = df.get("rvol_168_scaled")
+        cumulative_delta_divergence = df.get("cumulative_delta_divergence")
+
         # CATEGORY 1: Directional orderflow metrics
         volume_direction_conviction = df.get("volume_direction_conviction")
         volume_direction_imbalance = df.get("volume_direction_imbalance")
@@ -475,6 +480,11 @@ class LiquidityClusterQualityAssessor:
             ver_mean, ver_std, ver_cov = _mean_std_cov(volume_efficiency_ratio)
             ic_mean, ic_std, ic_cov = _mean_std_cov(intraday_close_ratio)
 
+            # Key CoV-driven axes for regime distinctiveness
+            ami_mean, ami_std, ami_cov = _mean_std_cov(amihud_spike_ratio_scaled)
+            rv168_mean, rv168_std, rv168_cov = _mean_std_cov(rvol_168_scaled)
+            cdd_mean, cdd_std, cdd_cov = _mean_std_cov(cumulative_delta_divergence)
+
             # CATEGORY 1: Directional orderflow
             vdc_mean, vdc_std, vdc_cov = _mean_std_cov(volume_direction_conviction)
             vdi_mean, vdi_std, vdi_cov = _mean_std_cov(volume_direction_imbalance)
@@ -536,6 +546,16 @@ class LiquidityClusterQualityAssessor:
                     "intraday_close_ratio_mean": ic_mean,
                     "intraday_close_ratio_std": ic_std,
                     "intraday_close_ratio_cov": ic_cov,
+                    # Key CoV axes
+                    "amihud_spike_ratio_scaled_mean": ami_mean,
+                    "amihud_spike_ratio_scaled_std": ami_std,
+                    "amihud_spike_ratio_scaled_cov": ami_cov,
+                    "rvol_168_scaled_mean": rv168_mean,
+                    "rvol_168_scaled_std": rv168_std,
+                    "rvol_168_scaled_cov": rv168_cov,
+                    "cumulative_delta_divergence_mean": cdd_mean,
+                    "cumulative_delta_divergence_std": cdd_std,
+                    "cumulative_delta_divergence_cov": cdd_cov,
                     # CATEGORY 1: Directional orderflow
                     "volume_direction_conviction_mean": vdc_mean,
                     "volume_direction_conviction_std": vdc_std,
@@ -628,6 +648,16 @@ class LiquidityClusterQualityAssessor:
                 "rvol_20_cov",
                 "volume_efficiency_ratio_cov",
                 "intraday_close_ratio_cov",
+            ]:
+                val = metrics.get(key)
+                if isinstance(val, (int, float)):
+                    eff_components.append(float(val))
+
+            # Key CoV-based axes we explicitly care about for liquidity regimes
+            for key in [
+                "amihud_spike_ratio_scaled_cov",
+                "rvol_168_scaled_cov",
+                "cumulative_delta_divergence_cov",
             ]:
                 val = metrics.get(key)
                 if isinstance(val, (int, float)):
@@ -752,6 +782,7 @@ class LiquidityClusterQualityAssessor:
         metrics: LiquidityClusterQualityMetrics,
         symbol: str,
         output_dir: Optional[str] = None,
+        suffix: str = "",
     ) -> str:
         """Save a human-readable markdown report of liquidity cluster quality."""
         if output_dir is None:
@@ -761,7 +792,7 @@ class LiquidityClusterQualityAssessor:
         output_path.mkdir(parents=True, exist_ok=True)
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"liquidity_cluster_quality_{symbol}_{timestamp}.md"
+        filename = f"liquidity_cluster_quality_{symbol}{suffix}_{timestamp}.md"
         filepath = output_path / filename
 
         with open(filepath, "w") as f:
@@ -859,7 +890,7 @@ class LiquidityClusterQualityAssessor:
         labels = regime_labels.loc[common_idx].astype(int)
 
         # Get all numeric features (70+ liquidity regime features including Tier 1 & 2)
-        liquidity_features = [
+        base_liquidity_features = [
             col for col in df.columns
             if any(x in col for x in [
                 # Original features
@@ -879,6 +910,24 @@ class LiquidityClusterQualityAssessor:
             ])
         ]
 
+        # Always include the core dimension features used by the liquidity regime model
+        core_dimension_features = [
+            f for f in [
+                'rvol_24_scaled',              # Volume (short) dimension
+                'rvol_168_scaled',             # Volume (long) dimension
+                # Delta / orderflow family
+                'delta_regime_signal_scaled',
+                'delta_alignment_3h',
+                'volume_direction_conviction',
+                'cumulative_delta_divergence',
+                # Amihud illiquidity dimension
+                'amihud_spike_ratio_scaled',
+            ]
+            if f in df.columns
+        ]
+
+        liquidity_features = sorted(set(base_liquidity_features + core_dimension_features))
+
         eps = 1e-9
         regime_ids = sorted(labels.unique())
         n_regimes = len(regime_ids)
@@ -896,6 +945,7 @@ class LiquidityClusterQualityAssessor:
             # Between-regime variance: how much does mean differ across regimes?
             regime_means = []
             within_covs = []
+            regime_stats: Dict[int, Dict[str, float]] = {}
 
             for regime_id in regime_ids:
                 mask = labels == regime_id
@@ -908,6 +958,10 @@ class LiquidityClusterQualityAssessor:
                     std_val = float(regime_vals.std())
                     cov_val = float(std_val / (abs(mean_val) + eps)) if mean_val != 0.0 else 0.0
                     within_covs.append(cov_val)
+                    regime_stats[int(regime_id)] = {
+                        "mean": mean_val,
+                        "cov": cov_val,
+                    }
 
             if len(regime_means) < 2:
                 continue
@@ -934,6 +988,7 @@ class LiquidityClusterQualityAssessor:
                 'within_cov': within_cov,
                 'distinctiveness': distinctiveness,
                 'regime_means': regime_means,
+                'per_regime': regime_stats,
             }
 
         # Sort by distinctiveness
@@ -1022,6 +1077,42 @@ class LiquidityClusterQualityAssessor:
         lines.append("FEATURE DISTINCTIVENESS ANALYSIS (Winsorized CoV Ratios)")
         lines.append("=" * 100)
 
+        # ------------------------------------------------------------------
+        # Core Dimension WCoV Summary (Volume / Delta family / Amihud)
+        # ------------------------------------------------------------------
+        core_keys = [
+            # Volume dimensions
+            ('rvol_24_scaled', 'Volume (rvol_24_scaled)'),
+            ('rvol_168_scaled', 'Volume Long (rvol_168_scaled)'),
+            # Delta / orderflow family
+            ('delta_regime_signal_scaled', 'Delta Regime Signal (delta_regime_signal_scaled)'),
+            ('delta_alignment_3h', 'Delta Align 3h (delta_alignment_3h)'),
+            ('volume_direction_conviction', 'Volume Direction Conviction'),
+            ('cumulative_delta_divergence', 'Cumulative Delta Divergence'),
+            # Amihud / illiquidity
+            ('amihud_spike_ratio_scaled', 'Amihud Illiquidity (amihud_spike_ratio_scaled)'),
+        ]
+
+        all_scores = distinctiveness_analysis.get('all_distinctiveness_scores', {})
+        core_rows = []
+        for feature_name, label in core_keys:
+            scores = all_scores.get(feature_name)
+            if scores is None:
+                continue
+            core_rows.append((label, scores))
+
+        if core_rows:
+            lines.append("\n## Core Dimension WCoV (Between/Within CoV Ratios)\n")
+            lines.append(
+                f"{'Feature':<45} {'Between-CoV':<15} {'Within-CoV':<15} {'Distinctiveness':<15}"
+            )
+            lines.append("-" * 95)
+            for label, scores in core_rows:
+                lines.append(
+                    f"{label:<45} {scores['between_cov']:<15.4f} "
+                    f"{scores['within_cov']:<15.4f} {scores['distinctiveness']:<15.4f}"
+                )
+
         lines.append("\n## Top Overall Features for Regime Distinction (Between/Within CoV)\n")
         lines.append(f"{'Rank':<6} {'Feature':<40} {'Between-CoV':<15} {'Within-CoV':<15} {'Distinctiveness':<15}")
         lines.append("-" * 95)
@@ -1050,6 +1141,68 @@ class LiquidityClusterQualityAssessor:
             for rank, (feature, separation) in enumerate(features, 1):
                 lines.append(f"{rank:<6} {feature:<40} {separation:<15.4f}")
 
+            # ------------------------------------------------------------------
+            # Core Dimension WCoV mini-table for this regime pair
+            # ------------------------------------------------------------------
+            eps = 1e-9
+            all_scores = distinctiveness_analysis.get('all_distinctiveness_scores', {})
+            core_keys = [
+                # Volume dimensions
+                ('rvol_24_scaled', 'Volume (rvol_24_scaled)'),
+                ('rvol_168_scaled', 'Volume Long (rvol_168_scaled)'),
+                # Delta / orderflow family
+                ('delta_regime_signal_scaled', 'Delta Regime Signal (delta_regime_signal_scaled)'),
+                ('delta_alignment_3h', 'Delta Align 3h (delta_alignment_3h)'),
+                ('volume_direction_conviction', 'Volume Direction Conviction'),
+                ('cumulative_delta_divergence', 'Cumulative Delta Divergence'),
+                # Amihud / illiquidity
+                ('amihud_spike_ratio_scaled', 'Amihud Illiquidity (amihud_spike_ratio_scaled)'),
+            ]
+
+            core_rows = []
+            for feature_name, label in core_keys:
+                scores = all_scores.get(feature_name)
+                if not scores:
+                    continue
+                per_regime = scores.get('per_regime') or {}
+                stats_a = per_regime.get(regime_a)
+                stats_b = per_regime.get(regime_b)
+                if not stats_a or not stats_b:
+                    continue
+
+                mean_a = float(stats_a.get('mean', 0.0))
+                cov_a = float(stats_a.get('cov', 0.0))
+                mean_b = float(stats_b.get('mean', 0.0))
+                cov_b = float(stats_b.get('cov', 0.0))
+
+                means_pair = np.asarray([mean_a, mean_b], dtype=float)
+                if len(means_pair) < 2:
+                    continue
+                between_mean = float(np.mean(means_pair))
+                between_std = float(np.std(means_pair))
+                between_cov_pair = (
+                    float(between_std / (abs(between_mean) + eps))
+                    if between_mean != 0.0
+                    else 0.0
+                )
+
+                within_cov_pair = float((cov_a + cov_b) / 2.0)
+                ratio_pair = float(between_cov_pair / (within_cov_pair + eps))
+
+                core_rows.append((label, between_cov_pair, within_cov_pair, ratio_pair))
+
+            if core_rows:
+                lines.append("\n#### Core Dimension WCoV for This Pair (Between/Within CoV Ratios)\n")
+                lines.append(
+                    f"{'Feature':<45} {'Between-CoV':<15} {'Within-CoV':<15} {'Distinctiveness':<15}"
+                )
+                lines.append("-" * 95)
+                for label, between_cov_pair, within_cov_pair, ratio_pair in core_rows:
+                    lines.append(
+                        f"{label:<45} {between_cov_pair:<15.4f} "
+                        f"{within_cov_pair:<15.4f} {ratio_pair:<15.4f}"
+                    )
+
         return "\n".join(lines)
 
     def save_csv_report(
@@ -1057,6 +1210,7 @@ class LiquidityClusterQualityAssessor:
         metrics: LiquidityClusterQualityMetrics,
         symbol: str,
         output_dir: Optional[str] = None,
+        suffix: str = "",
     ) -> str:
         """Save a CSV summary of liquidity cluster quality metrics."""
         if output_dir is None:
@@ -1066,7 +1220,7 @@ class LiquidityClusterQualityAssessor:
         output_path.mkdir(parents=True, exist_ok=True)
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"liquidity_cluster_quality_{symbol}_{timestamp}.csv"
+        filename = f"liquidity_cluster_quality_{symbol}{suffix}_{timestamp}.csv"
         filepath = output_path / filename
 
         row: Dict[str, Any] = {
@@ -1089,6 +1243,24 @@ class LiquidityClusterQualityAssessor:
             "n_samples": metrics.n_samples,
         }
 
+        # Surface WCoV (between/within/ratio) for the three core dimensions in the CSV
+        core_scores = (metrics.distinctiveness_analysis or {}).get('all_distinctiveness_scores', {})
+        core_map = {
+            'rvol_24_scaled': 'core_wcov_rvol24',
+            'rvol_168_scaled': 'core_wcov_rvol168',
+            'delta_regime_signal_scaled': 'core_wcov_delta',
+            'amihud_spike_ratio_scaled': 'core_wcov_amihud',
+            'cumulative_delta_divergence': 'core_wcov_cdd',
+        }
+
+        for feature_name, prefix in core_map.items():
+            scores = core_scores.get(feature_name)
+            if not scores:
+                continue
+            row[f"{prefix}_between_cov"] = scores.get('between_cov', 0.0)
+            row[f"{prefix}_within_cov"] = scores.get('within_cov', 0.0)
+            row[f"{prefix}_ratio"] = scores.get('distinctiveness', 0.0)
+
         # Flatten per-regime metrics
         for regime_id, regime_data in sorted(metrics.per_regime_metrics.items()):
             prefix = f"regime_{regime_id}_"
@@ -1106,6 +1278,7 @@ class LiquidityClusterQualityAssessor:
         metrics: LiquidityClusterQualityMetrics,
         symbol: str,
         output_dir: Optional[str] = None,
+        suffix: str = "",
     ) -> str:
         """Save feature distinctiveness analysis report as markdown.
 
@@ -1118,7 +1291,7 @@ class LiquidityClusterQualityAssessor:
         output_path.mkdir(parents=True, exist_ok=True)
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"liquidity_feature_distinctiveness_{symbol}_{timestamp}.md"
+        filename = f"liquidity_feature_distinctiveness_{symbol}{suffix}_{timestamp}.md"
         filepath = output_path / filename
 
         # Generate the distinctiveness report

@@ -46,6 +46,8 @@ from src.training.steps.pre_training.components.final_feature_selection import (
 )
 
 from src.features_common.transforms.scaling_normalization import robust_normalize
+from sklearn.metrics import roc_auc_score
+from sklearn.feature_selection import mutual_info_regression, mutual_info_classif
 
 # Import VectorBT optimization tools
 from src.feature_generation.utils.vectorbt_rolling_optimizer import (
@@ -123,6 +125,12 @@ from src.utils.hardware.advanced_memory_optimizer import (
 # Import utilities
 from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_warning, tprint_error, configure_tprint, TPrintConfig, LogLevel
 from src.utils.artifact_manager import ArtifactManager
+from src.training.utils.meta_label_constants import (
+    META_LABEL_TARGET_COLUMNS,
+    META_LABEL_PRIMARY_TRAINING_TARGETS,
+    META_LABEL_DIAGNOSTIC_COLUMNS,
+    META_LABEL_EXCLUDED_FEATURE_COLUMNS,
+)
 
 # Configure tprint for minimal mode to reduce overhead
 configure_tprint(TPrintConfig(
@@ -137,16 +145,9 @@ configure_tprint(TPrintConfig(
 
 logger = logging.getLogger(__name__)
 
-# Define target column names once to avoid hardcoding throughout the codebase
-# Updated to include fused/simplified target structures and meta-label outputs
-TARGET_COLUMN_NAMES = [
-    'binary_label',
-    'target_long_fused', 'target_short_fused',
-    'target_long', 'target_short',
-    'target', 'label', 'return', 'price_target_vol_normalized',
-    'meta_probability', 'r_multiple',
-    'target_sample_weight', 'labeling_method_id', 'labeling_timestamp'
-]
+# Keep backward-compatibility aliases within this module
+TARGET_COLUMN_NAMES = META_LABEL_TARGET_COLUMNS + META_LABEL_DIAGNOSTIC_COLUMNS
+PRIMARY_TARGET_COLUMN_NAMES = META_LABEL_PRIMARY_TRAINING_TARGETS
 
 
 class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
@@ -342,25 +343,38 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                     tprint_info(f"   - Index range: {large_features_df.index.min()} to {large_features_df.index.max()}")
                     tprint_info(f"   - Sample indices: {large_features_df.index[:5].tolist()} ... {large_features_df.index[-5:].tolist()}")
                     
-                    # Check for time period overlap
-                    labeled_start, labeled_end = labeled_df.index.min(), labeled_df.index.max()
-                    features_start, features_end = large_features_df.index.min(), large_features_df.index.max()
-                    
-                    overlap_start = max(labeled_start, features_start)
-                    overlap_end = min(labeled_end, features_end)
-                    
-                    tprint_info(f"📅 TIME PERIOD ANALYSIS:")
-                    tprint_info(f"   Labeled data period: {labeled_start} to {labeled_end}")
-                    tprint_info(f"   Features period: {features_start} to {features_end}")
-                    tprint_info(f"   Theoretical overlap: {overlap_start} to {overlap_end}")
-                    
-                    if overlap_start <= overlap_end:
-                        overlap_days = (overlap_end - overlap_start).days
-                        tprint_info(f"   Overlap duration: {overlap_days} days")
-                        expected_samples = overlap_days * 96  # 96 samples per day for 15m
-                        tprint_info(f"   Expected samples in overlap: ~{expected_samples}")
-                    else:
-                        tprint_error(f"   ❌ NO TIME OVERLAP! Labeled ends before features start or vice versa")
+                    # Check for time period overlap (best-effort; guard against
+                    # mixed index dtypes such as integer vs bytes/datetime).
+                    try:
+                        labeled_start, labeled_end = labeled_df.index.min(), labeled_df.index.max()
+                        features_start, features_end = large_features_df.index.min(), large_features_df.index.max()
+
+                        tprint_info(f"📅 TIME PERIOD ANALYSIS:")
+                        tprint_info(f"   Labeled data period: {labeled_start} to {labeled_end}")
+                        tprint_info(f"   Features period: {features_start} to {features_end}")
+
+                        # Only attempt overlap math when both endpoints look
+                        # datetime-like; otherwise skip to avoid type errors.
+                        from datetime import datetime as _dt_cls
+                        def _is_dt_like(v):
+                            return isinstance(v, (pd.Timestamp, _dt_cls))
+
+                        if _is_dt_like(labeled_start) and _is_dt_like(labeled_end) and _is_dt_like(features_start) and _is_dt_like(features_end):
+                            overlap_start = max(labeled_start, features_start)
+                            overlap_end = min(labeled_end, features_end)
+                            tprint_info(f"   Theoretical overlap: {overlap_start} to {overlap_end}")
+
+                            if overlap_start <= overlap_end:
+                                overlap_days = (overlap_end - overlap_start).days
+                                tprint_info(f"   Overlap duration: {overlap_days} days")
+                                expected_samples = overlap_days * 96  # 96 samples per day for 15m
+                                tprint_info(f"   Expected samples in overlap: ~{expected_samples}")
+                            else:
+                                tprint_error("   ❌ NO TIME OVERLAP! Labeled ends before features start or vice versa")
+                        else:
+                            tprint_info("   Skipping detailed overlap analysis (non-datetime indices)")
+                    except Exception as overlap_exc:
+                        tprint_warning(f"   Skipping time period overlap analysis due to error: {overlap_exc}")
                     
                     # Find common index between labeled_data and large_features
                     common_index = labeled_df.index.intersection(large_features_df.index)
@@ -459,13 +473,27 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             tprint_error(f"   Columns: {labeled_df.shape[1]}")
             tprint_error(f"   Time range: {labeled_df.index.min()} to {labeled_df.index.max()}")
             
-            # Calculate time span
-            time_span_days = (labeled_df.index.max() - labeled_df.index.min()).days
-            expected_samples_at_15m = time_span_days * 96  # 96 samples per day for 15m timeframe
-            tprint_error(f"   Time span: {time_span_days} days")
-            tprint_error(f"   Expected samples at 15m: ~{expected_samples_at_15m}")
+            # Calculate time span (robust to non-datetime indices). When the
+            # index is not datetime-like (e.g. RangeIndex), approximate the
+            # span from the number of rows instead of relying on .days.
+            try:
+                idx_min = labeled_df.index.min()
+                idx_max = labeled_df.index.max()
+                delta = idx_max - idx_min
+                if hasattr(delta, "days"):
+                    time_span_days = float(delta.days)
+                else:
+                    # Fallback: approximate span from sample count
+                    time_span_days = float(len(labeled_df)) / 96.0
+            except Exception:
+                time_span_days = float(len(labeled_df)) / 96.0
+
+            expected_samples_at_15m = max(time_span_days, 0.0) * 96  # 96 samples per day for 15m timeframe
+            tprint_error(f"   Time span (approx): {time_span_days:.2f} days")
+            tprint_error(f"   Expected samples at 15m: ~{expected_samples_at_15m:.0f}")
             tprint_error(f"   Actual samples: {len(labeled_df)}")
-            tprint_error(f"   Sample density: {len(labeled_df) / expected_samples_at_15m * 100:.1f}%")
+            if expected_samples_at_15m > 0:
+                tprint_error(f"   Sample density: {len(labeled_df) / expected_samples_at_15m * 100:.1f}%")
             
             if len(labeled_df) < 1000:
                 tprint_error(f"❌ CRITICAL: Only {len(labeled_df)} rows loaded!")
@@ -583,13 +611,24 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 largest_features = feature_sets[largest_set_key]
                 
                 # Separate features from targets for analysis
-                feature_cols = [col for col in combined_features_df.columns 
-                               if col not in TARGET_COLUMN_NAMES + ['timestamp']]
+                feature_cols = [
+                    col for col in combined_features_df.columns
+                    if col not in META_LABEL_EXCLUDED_FEATURE_COLUMNS + ['timestamp']
+                ]
                 X = combined_features_df[feature_cols]
                 y = combined_features_df[targets.name] if hasattr(targets, 'name') else combined_features_df.iloc[:, -1]
                 
                 # Perform comprehensive analysis
                 enhanced_analysis = self._perform_enhanced_analysis(X, y, largest_features)
+
+                # Add explicit meta-label diagnostics (IC/AUC vs binary_label and realized_return)
+                try:
+                    meta_diag = self._compute_meta_label_feature_diagnostics(
+                        combined_features_df, largest_features
+                    )
+                    enhanced_analysis['meta_label_diagnostics'] = meta_diag
+                except Exception as diag_exc:
+                    tprint_warning(f"⚠️ Meta-label diagnostics failed: {diag_exc}")
                 
                 # Store analysis results in feature_sets for report generation
                 feature_sets['enhanced_analysis'] = enhanced_analysis
@@ -1317,24 +1356,58 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 dataframe_info.append({'name': 'feature_dataframe', 'df': feature_df})
                 tprint_info(f"📊 Collected feature_dataframe: {feature_df.shape}")
         
-        # CRITICAL: Find common index across ALL dataframes
+        # CRITICAL: Find common index across ALL dataframes, with a robust
+        # fallback when indices do not overlap (e.g. RangeIndex vs bytes
+        # datetime index). When the intersection is empty, fall back to
+        # positional alignment on the last min_len rows and reset to a shared
+        # RangeIndex so we never end up with a 0-row combined_features_df.
         tprint_info(f"📊 Finding common index across {len(dataframe_info)} dataframes...")
         common_index = dataframe_info[0]['df'].index
         for info in dataframe_info[1:]:
             common_index = common_index.intersection(info['df'].index)
             tprint_info(f"📊 After {info['name']}: {len(common_index)} common indices")
-        
-        if len(common_index) < 100:
-            tprint_error(f"❌ Too few common indices ({len(common_index)}). Minimum required: 100")
-            tprint_warning("⚠️ This will cause feature selection to fail. Check data alignment issues.")
-        
-        tprint_success(f"✅ Found {len(common_index)} common indices across all dataframes")
-        
-        # Align ALL dataframes to common index
-        tprint_info("📊 Aligning all dataframes to common index...")
-        for info in dataframe_info:
-            info['df'] = info['df'].loc[common_index]
-            tprint_info(f"📊 Aligned {info['name']}: {info['df'].shape}")
+
+        if len(common_index) == 0:
+            tprint_error("❌ No common indices across dataframes; falling back to positional alignment")
+
+            # Positional fallback: align all dataframes on the last min_len
+            # rows and reset indices to a shared RangeIndex.
+            try:
+                min_len = min(len(info['df']) for info in dataframe_info)
+            except Exception as e:
+                tprint_error(f"❌ Failed to compute min_len for positional alignment: {e}")
+                min_len = 0
+
+            if min_len <= 0:
+                tprint_error("❌ Positional alignment failed: no non-empty dataframes")
+                common_index = dataframe_info[0]['df'].index[:0]
+            else:
+                tprint_info(f"📊 Positional alignment using last {min_len} rows from each dataframe")
+                for info in dataframe_info:
+                    df_local = info['df']
+                    if len(df_local) > min_len:
+                        df_local = df_local.iloc[-min_len:].copy()
+                    else:
+                        df_local = df_local.copy()
+                    df_local.index = pd.RangeIndex(min_len)
+                    info['df'] = df_local
+                    tprint_info(f"📊 Positional-aligned {info['name']}: {info['df'].shape}")
+
+                # After positional alignment, indices are already a shared
+                # RangeIndex, so we can define common_index accordingly.
+                common_index = dataframe_info[0]['df'].index
+        else:
+            if len(common_index) < 100:
+                tprint_error(f"❌ Too few common indices ({len(common_index)}). Minimum required: 100")
+                tprint_warning("⚠️ This may cause feature selection to be unstable. Check data alignment issues.")
+
+            tprint_success(f"✅ Found {len(common_index)} common indices across all dataframes")
+
+            # Align ALL dataframes to common index
+            tprint_info("📊 Aligning all dataframes to common index...")
+            for info in dataframe_info:
+                info['df'] = info['df'].loc[common_index]
+                tprint_info(f"📊 Aligned {info['name']}: {info['df'].shape}")
         
         # Now extract base_features and build feature_chunks
         base_features = dataframe_info[0]['df']
@@ -1457,7 +1530,7 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             tprint_info(f"📊 Target columns found: target_long ({result_df['target_long'].notna().sum()} non-NaN), target_short ({result_df['target_short'].notna().sum()} non-NaN)")
         else:
             # Fall back to legacy target detection
-            available_targets = [col for col in TARGET_COLUMN_NAMES if col in result_df.columns]
+            available_targets = [col for col in PRIMARY_TARGET_COLUMN_NAMES if col in result_df.columns]
             tprint_info(f"📊 Using legacy target detection: {available_targets}")
             # Check if we have the old price_target_vol_normalized column
             if 'price_target_vol_normalized' in result_df.columns:
@@ -1629,11 +1702,13 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         min_interaction_features: int = 4,
         min_cross_timeframe_features: int = 4,
         min_variant_features: int = 4,
+        max_cross_timeframe_total: Optional[int] = None,
     ) -> List[str]:
         interaction_count = 0
         variant_count = 0
         cross_timeframe_counts: Dict[str, int] = {}
         capped_features: List[str] = []
+        cross_timeframe_total = 0
 
         for feature in ranked_features:
             name = str(feature)
@@ -1663,6 +1738,12 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                         continue
                     filtered_parts.append(part)
                 cross_base = "_".join(filtered_parts) if filtered_parts else name
+                if max_cross_timeframe_per_base is not None and max_cross_timeframe_per_base < 0:
+                    max_cross_timeframe_per_base = 0
+                # Enforce global cap across all bases (if provided)
+                if max_cross_timeframe_total is not None and cross_timeframe_total >= max_cross_timeframe_total:
+                    continue
+                # Enforce per-base cap
                 if cross_timeframe_counts.get(cross_base, 0) >= max_cross_timeframe_per_base:
                     continue
 
@@ -1675,10 +1756,9 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 interaction_count += 1
             if is_cross_timeframe and cross_base is not None:
                 cross_timeframe_counts[cross_base] = cross_timeframe_counts.get(cross_base, 0) + 1
+                cross_timeframe_total += 1
             if is_variant:
                 variant_count += 1
-
-        cross_timeframe_total = sum(cross_timeframe_counts.values())
 
         if interaction_count < min_interaction_features:
             tprint_warning(
@@ -1757,37 +1837,30 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         
         # Prioritize sophisticated features first
         feature_cols = sophisticated_features + basic_engineered_features
-        
-        # Check for primary binary meta-label first
-        if 'binary_label' in features_df.columns:
-            target_cols = ['binary_label']
-            tprint_info("📊 Using primary binary target: binary_label")
-            pos_signals = (features_df['binary_label'] == 1).sum()
-            neg_signals = (features_df['binary_label'] == 0).sum()
-            tprint_info(f"📊 Target statistics: positives={pos_signals}, negatives={neg_signals}")
-        # Next check for new simplified target structure (highest priority among price-based targets)
-        elif 'target_long_fused' in features_df.columns and 'target_short_fused' in features_df.columns:
-            target_cols = ['target_long_fused', 'target_short_fused']
-            tprint_info("📊 Using fused target structure: target_long_fused, target_short_fused")
-            # Log target statistics for fused structure
-            long_signals = (features_df['target_long_fused'] > 0).sum()
-            short_signals = (features_df['target_short_fused'] > 0).sum()
-            tprint_info(f"📊 Target statistics: Long signals={long_signals}, Short signals={short_signals}")
-        elif 'target_long' in features_df.columns and 'target_short' in features_df.columns:
-            target_cols = ['target_long', 'target_short']
-            tprint_info("📊 Using new simplified target structure: target_long, target_short")
-            # Log target statistics for new simplified structure
-            long_signals = (features_df['target_long'] > 0).sum()
-            short_signals = (features_df['target_short'] > 0).sum()
-            tprint_info(f"📊 Target statistics: Long signals={long_signals}, Short signals={short_signals}")
-        else:
-            # Fall back to legacy target detection
-            target_cols = [col for col in TARGET_COLUMN_NAMES
-                          if col in features_df.columns]
-            tprint_info(f"📊 Using legacy target detection: {target_cols}")
-            # Check if we have old price_target_vol_normalized column
-            if 'price_target_vol_normalized' in features_df.columns:
-                tprint_warning("⚠️ Legacy target 'price_target_vol_normalized' found - consider migrating to new simplified target structure")
+
+        # Prefer meta-label outputs from feature_generation_meta_labeling_step.
+        # We no longer fall back to fused/simplified price-based targets here;
+        # if meta-label outputs are missing or empty, this step should fail
+        # explicitly so the meta-labeling pipeline can be fixed.
+        target_cols: List[str] = []
+        meta_preferred_targets = ['binary_label', 'smoothed_label', 'realized_return']
+        for col in meta_preferred_targets:
+            if col in features_df.columns:
+                non_null = features_df[col].notna().sum()
+                tprint_info(f"📊 Meta-label column '{col}' non-NaN count: {non_null}")
+                if non_null > 0:
+                    target_cols = [col]
+                    tprint_info(f"📊 Using meta-label target: {col} (non-NaN={non_null})")
+                    break
+
+        if not target_cols:
+            msg = (
+                "No usable meta-label target found for final feature selection. "
+                "Expected at least one of ['binary_label', 'smoothed_label', 'realized_return'] "
+                "with non-NaN values. Ensure feature_generation_meta_labeling_step has populated these."
+            )
+            tprint_error(f"❌ {msg}")
+            raise ValueError(msg)
 
         tprint_info(f"🔍 Sophisticated features: {len(sophisticated_features)}")
         tprint_info(f"🔍 Basic engineered features: {len(basic_engineered_features)}")
@@ -1920,14 +1993,33 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             tprint_error(f"   Input feature_cols count: {len(feature_cols)}")
             return feature_sets
 
+        # Apply caps to control the mix of interaction, cross-timeframe, and
+        # variant features in the final sets. We want:
+        #   - base features and their VWAP/vol-normal variants to be well
+        #     represented,
+        #   - interaction and cross-timeframe features to be allowed but
+        #     bounded so they don't dominate the pool.
+
+        max_interaction_features = int(config.get('max_interaction_features', 10))
+        max_cross_timeframe_per_base = int(config.get('max_cross_timeframe_per_base', 10))
+        # Global cap on cross-timeframe features across all bases (user
+        # requirement: up to ~20 cross-timeframe features in total).
+        max_cross_timeframe_total = int(config.get('max_cross_timeframe_total', 20))
+        # Variants (VWAP/vol-normal/trend-adjusted) should be represented but
+        # not explode combinatorially; cap them at a moderate number.
+        max_variant_features = int(config.get('max_variant_features', 40))
+
         capped_features = self._apply_feature_caps(
             all_selected_features,
-            max_interaction_features=10,
-            max_cross_timeframe_per_base=10,
-            max_variant_features=10,
-            min_interaction_features=4,
-            min_cross_timeframe_features=4,
-            min_variant_features=4,
+            max_interaction_features=max_interaction_features,
+            max_cross_timeframe_per_base=max_cross_timeframe_per_base,
+            max_variant_features=max_variant_features,
+            max_cross_timeframe_total=max_cross_timeframe_total,
+            # Soft minimums can be overridden via config but default to
+            # encouraging variants while not forcing interactions/CTF.
+            min_interaction_features=int(config.get('min_interaction_features', 0)),
+            min_cross_timeframe_features=int(config.get('min_cross_timeframe_features', 0)),
+            min_variant_features=int(config.get('min_variant_features', 4)),
         )
 
         if not capped_features:
@@ -2167,6 +2259,126 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         except Exception as e:
             tprint_error(f"❌ Error in enhanced analysis: {e}")
             return {"error": str(e)}
+
+    def _compute_meta_label_feature_diagnostics(
+        self,
+        full_df: pd.DataFrame,
+        selected_features: List[str],
+    ) -> Dict[str, Any]:
+        """Compute IC/AUC diagnostics vs binary_label and realized_return.
+
+        Uses the full labeled dataset (including regime and TTO diagnostics) to
+        evaluate selected features. Results are organized into:
+        - overall: metrics on full sample
+        - by_volatility_regime: per volatility_regime bucket, if available
+        - by_tto_bucket: per event_tto_mean_last_50 tercile, if available
+        """
+        results: Dict[str, Any] = {
+            'overall': {},
+            'by_volatility_regime': {},
+            'by_tto_bucket': {},
+        }
+
+        has_binary = 'binary_label' in full_df.columns
+        has_rr = 'realized_return' in full_df.columns
+
+        if not (has_binary or has_rr):
+            return {'error': 'binary_label and realized_return not found in dataset'}
+
+        bin_series = full_df['binary_label'] if has_binary else None
+        rr_series = full_df['realized_return'] if has_rr else None
+
+        def _safe_corr(x: pd.Series, y: Optional[pd.Series]) -> Optional[float]:
+            if x is None or y is None:
+                return None
+            valid = x.notna() & y.notna()
+            if valid.sum() < 100:
+                return None
+            try:
+                val = float(x[valid].corr(y[valid]))
+                return None if not np.isfinite(val) else val
+            except Exception:
+                return None
+
+        def _compute_for_mask(mask: pd.Series) -> Dict[str, Any]:
+            slice_result: Dict[str, Any] = {}
+            if mask is None or mask.sum() < 100:
+                return slice_result
+
+            for feat in selected_features:
+                if feat not in full_df.columns:
+                    continue
+
+                s_feat = pd.to_numeric(full_df.loc[mask, feat], errors='coerce')
+                feat_metrics: Dict[str, Any] = {}
+
+                if has_binary:
+                    yb = bin_series.loc[mask]
+                    valid = s_feat.notna() & yb.notna()
+                    auc_val: Optional[float] = None
+                    if valid.sum() >= 100 and yb[valid].nunique() == 2:
+                        try:
+                            auc_val = float(roc_auc_score(yb[valid], s_feat[valid]))
+                        except Exception:
+                            auc_val = None
+                    ic_clf = _safe_corr(s_feat, yb)
+                    feat_metrics['binary_label'] = {
+                        'ic': ic_clf,
+                        'auc': auc_val,
+                        'n': int(valid.sum()),
+                    }
+
+                if has_rr:
+                    yr = rr_series.loc[mask]
+                    ic_ret = _safe_corr(s_feat, yr)
+                    n_ret = int((s_feat.notna() & yr.notna()).sum())
+                    feat_metrics['realized_return'] = {
+                        'ic': ic_ret,
+                        'n': n_ret,
+                    }
+
+                if feat_metrics:
+                    slice_result[feat] = feat_metrics
+
+            return slice_result
+
+        # Overall diagnostics
+        base_mask = full_df.index.notnull()
+        results['overall'] = _compute_for_mask(base_mask)
+
+        # Volatility regime slices (if available)
+        if 'volatility_regime' in full_df.columns:
+            try:
+                regimes = pd.unique(full_df['volatility_regime'].dropna())
+                for reg_val in regimes:
+                    reg_mask = base_mask & (full_df['volatility_regime'] == reg_val)
+                    slice_res = _compute_for_mask(reg_mask)
+                    if slice_res:
+                        results['by_volatility_regime'][str(reg_val)] = slice_res
+            except Exception as e:
+                results['by_volatility_regime'] = {'error': str(e)}
+
+        # TTO slices using terciles of event_tto_mean_last_50 (if available)
+        if 'event_tto_mean_last_50' in full_df.columns:
+            try:
+                tto = pd.to_numeric(full_df['event_tto_mean_last_50'], errors='coerce')
+                tto_non_null = tto.dropna()
+                if len(tto_non_null) >= 150:
+                    q1, q2 = tto_non_null.quantile([0.33, 0.66])
+                    buckets = {
+                        'short': (tto <= q1),
+                        'medium': (tto > q1) & (tto < q2),
+                        'long': (tto >= q2),
+                    }
+                    for bucket_name, bucket_mask in buckets.items():
+                        mask = base_mask & bucket_mask & tto.notna()
+                        slice_res = _compute_for_mask(mask)
+                        if slice_res:
+                            results['by_tto_bucket'][bucket_name] = slice_res
+            except Exception as e:
+                results['by_tto_bucket'] = {'error': str(e)}
+
+        return results
 
     def _perform_cmi_aware_selection(self, features_df: pd.DataFrame, targets: pd.Series, 
                                    config: Dict[str, Any], feature_set_sizes: List[int]) -> Dict[str, List[str]]:
@@ -2661,14 +2873,16 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
         from sklearn.inspection import permutation_importance
 
-        # Choose target
-        target_cols_pref = ['target_long_fused', 'target_short_fused', 'target_long', 'target_short', 'opportunity']
-        target_cols = [c for c in target_cols_pref if c in combined_features_df.columns]
+        # Choose target: only use meta-label outputs. If these are not
+        # available we skip the CSV report rather than falling back to fused
+        # or legacy price-based targets.
+        meta_target_pref = ['binary_label', 'smoothed_label', 'realized_return']
+        target_cols = [c for c in meta_target_pref if c in combined_features_df.columns]
         if not target_cols:
-            # fallback to any 'target' column
-            target_cols = [c for c in combined_features_df.columns if 'target' in c.lower()]
-        if not target_cols:
-            tprint_warning("⚠️ No target column found for quality CSV report; skipping")
+            tprint_warning(
+                "⚠️ No meta-label target column (binary_label/smoothed_label/realized_return) "
+                "found for quality CSV report; skipping"
+            )
             return
         target_col = target_cols[0]
 
@@ -2708,6 +2922,20 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             baseline_pred = np.full(len(y), y.mean())
         else:
             baseline_pred = np.full(len(y), y.mean())
+
+        # Mutual information per feature so we can compute relative MI vs the
+        # strongest base feature. This lets us see whether interaction,
+        # cross-timeframe, or variant features add MI beyond the best base.
+        mi_scores = {}
+        try:
+            if is_classification:
+                mi_raw = mutual_info_classif(X.values, y.values, random_state=42)
+            else:
+                mi_raw = mutual_info_regression(X.values, y.values, random_state=42)
+            mi_scores = {feat: float(mi_raw[i]) for i, feat in enumerate(selected_cols)}
+        except Exception as e:
+            tprint_warning(f"⚠️ MI calculation for feature quality CSV failed: {e}")
+            mi_scores = {}
 
         # Model
         if is_classification:
@@ -2833,10 +3061,75 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             visited |= cluster
             cid += 1
 
+        # Helper to classify feature types for downstream slicing
+        def _classify_feature_for_csv(name: str):
+            nl = str(name).lower()
+            is_interaction = ("interaction" in nl) or ("_x_" in nl)
+            is_variant = (
+                nl.endswith("_volnorm")
+                or nl.endswith("_vwap")
+                or nl.endswith("_trend_adj")
+            )
+            is_cross_timeframe = (
+                "ctf_" in nl
+                or "cross_timeframe" in nl
+                or re.search(r"\d+[mhd]", nl) is not None
+            )
+            return is_interaction, is_variant, is_cross_timeframe
+
+        # Identify base features (neither interaction, variant, nor cross-timeframe)
+        base_features = []
+        for f in selected_cols:
+            is_interaction, is_variant, is_cross = _classify_feature_for_csv(f)
+            if not (is_interaction or is_variant or is_cross):
+                base_features.append(f)
+
+        # Best base MI (for relative MI computation)
+        best_base_mi = None
+        if mi_scores:
+            base_mi_vals = [mi_scores.get(f) for f in base_features if f in mi_scores]
+            base_mi_vals = [v for v in base_mi_vals if v is not None and not np.isnan(v)]
+            if base_mi_vals:
+                best_base_mi = float(max(base_mi_vals))
+
+        # Stability scores (if available) to measure stability delta vs base
+        stability_scores = {}
+        base_stability_mean = None
+        enhanced_analysis_local = feature_sets.get('enhanced_analysis') if isinstance(feature_sets, dict) else None
+        if enhanced_analysis_local and isinstance(enhanced_analysis_local, dict):
+            stab = enhanced_analysis_local.get('stability_analysis')
+            if stab and isinstance(stab, dict):
+                stability_scores = (
+                    (stab.get('stability_results', {}) or {}).get('stability_scores', {}) or {}
+                )
+        if stability_scores:
+            base_stab_vals = [
+                float(stability_scores[f])
+                for f in base_features
+                if f in stability_scores and stability_scores[f] is not None
+            ]
+            base_stab_vals = [v for v in base_stab_vals if not np.isnan(v)]
+            if base_stab_vals:
+                base_stability_mean = float(np.mean(base_stab_vals))
+
         # Build CSV rows
         rows = []
         for f in selected_cols:
-            rows.append({
+            is_interaction, is_variant, is_cross = _classify_feature_for_csv(f)
+
+            mi_val = mi_scores.get(f, np.nan) if mi_scores else np.nan
+            if best_base_mi is not None and best_base_mi > 0 and not np.isnan(mi_val):
+                mi_lift_pct = float(100.0 * (mi_val - best_base_mi) / best_base_mi)
+            else:
+                mi_lift_pct = np.nan
+
+            stab_val = stability_scores.get(f, np.nan) if stability_scores else np.nan
+            if base_stability_mean is not None and not np.isnan(stab_val):
+                stab_delta = float(stab_val - base_stability_mean)
+            else:
+                stab_delta = np.nan
+
+            row = {
                 'feature': f,
                 'perm_importance': float(pi_scores.get(f, np.nan)),
                 'shap_importance': float(shap_importance.get(f, np.nan)),
@@ -2852,8 +3145,18 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 'max_abs_corr': max_abs_corr.get(f, np.nan),
                 'cv_score': cv_score,
                 'cv_baseline': cv_base,
-                'cv_uplift': cv_uplift
-            })
+                'cv_uplift': cv_uplift,
+                # Feature type flags for easy slicing of interaction/CTF/variants
+                'is_interaction': is_interaction,
+                'is_cross_timeframe': is_cross,
+                'is_variant': is_variant,
+                # MI and stability diagnostics relative to base features
+                'mi_score': float(mi_val) if not np.isnan(mi_val) else np.nan,
+                'mi_lift_vs_best_base_pct': mi_lift_pct,
+                'stability_score': float(stab_val) if not np.isnan(stab_val) else np.nan,
+                'stability_delta_vs_base_mean': stab_delta,
+            }
+            rows.append(row)
 
         # Augment rows with enhanced analysis metrics when available
         enhanced_analysis = feature_sets.get('enhanced_analysis')
@@ -3292,17 +3595,59 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
 - **Importance Type:** Permutation (captures feature interactions, not just Gini splits) 📊
 - **Optimization Enabled:** {self.optimization_enabled}
 
-## Feature Selection Methodology
-
-✅ **Using Permutation Importance**
-- Captures how features work together (feature interactions)
-- More reliable than standard Gini importance for complex trading strategies
-- Measures true impact on model predictions
-- Better for identifying genuinely predictive features
-
-## Feature Selection Results
+## Top IC Features (Meta-Label Overview)
 
 """
+            # High-level IC summary from meta-label diagnostics (if available)
+            try:
+                enhanced_analysis = feature_sets.get('enhanced_analysis', {})
+                meta_diag = enhanced_analysis.get('meta_label_diagnostics') if isinstance(enhanced_analysis, dict) else None
+                if isinstance(meta_diag, dict):
+                    overall = meta_diag.get('overall', {}) or {}
+
+                    def _collect_top_ic(target_key: str, top_n: int = 5) -> List[Tuple[str, float]]:
+                        rows: List[Tuple[str, float]] = []
+                        for feat_name, metrics in overall.items():
+                            if not isinstance(metrics, dict):
+                                continue
+                            tmetrics = metrics.get(target_key) or {}
+                            ic_val = tmetrics.get('ic')
+                            if isinstance(ic_val, (int, float)) and np.isfinite(ic_val):
+                                rows.append((feat_name, float(ic_val)))
+                        rows_sorted = sorted(rows, key=lambda x: abs(x[1]), reverse=True)
+                        return rows_sorted[:top_n]
+
+                    top_bin = _collect_top_ic('binary_label')
+                    top_rr = _collect_top_ic('realized_return')
+
+                    if top_bin or top_rr:
+                        report += "**Top 5 features by IC vs binary_label (overall):**\n\n"
+                        if top_bin:
+                            for rank, (feat, ic_val) in enumerate(top_bin, 1):
+                                report += f"{rank}. {feat} (IC = {ic_val:.4f})\\n"
+                        else:
+                            report += "No valid IC scores for binary_label available.\\n"
+
+                        report += "\n**Top 5 features by IC vs realized_return (overall):**\n\n"
+                        if top_rr:
+                            for rank, (feat, ic_val) in enumerate(top_rr, 1):
+                                report += f"{rank}. {feat} (IC = {ic_val:.4f})\\n"
+                        else:
+                            report += "No valid IC scores for realized_return available.\\n"
+            except Exception:
+                # Do not fail report generation if diagnostics are missing
+                pass
+
+            report += "\n\n## Feature Selection Methodology\n\n"
+
+            report += (
+                "✅ **Using Permutation Importance**\n"
+                "- Captures how features work together (feature interactions)\n"
+                "- More reliable than standard Gini importance for complex trading strategies\n"
+                "- Measures true impact on model predictions\n"
+                "- Better for identifying genuinely predictive features\n\n"
+                "## Feature Selection Results\n\n"
+            )
             
             # Add feature set summaries
             for set_name, features in feature_sets.items():
@@ -3586,6 +3931,97 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                         report += f"\n✅ All features have sufficient information content\n"
 
                     report += f"\n"
+
+                # NEW: Meta-Label Diagnostics (IC/AUC vs binary_label and realized_return)
+                meta_diag = enhanced_analysis.get('meta_label_diagnostics')
+                if isinstance(meta_diag, dict):
+                    report += f"### Meta-Label Diagnostics (IC/AUC vs Targets)\n\n"
+                    report += (
+                        "These diagnostics summarize how the final selected features relate to the "
+                        "meta-label targets: binary_label (classification) and realized_return (economic P&L). "
+                        "Scores are reported as Information Coefficient (Pearson correlation) and AUC where applicable.\n\n"
+                    )
+
+                    def _format_slice(title: str, slice_data: Dict[str, Any]) -> None:
+                        nonlocal report
+                        if not isinstance(slice_data, dict) or not slice_data:
+                            return
+
+                        rows: List[Dict[str, Any]] = []
+                        for feat_name, metrics in slice_data.items():
+                            if not isinstance(metrics, dict):
+                                continue
+
+                            bin_m = metrics.get('binary_label') or {}
+                            ret_m = metrics.get('realized_return') or {}
+
+                            ic_bin = bin_m.get('ic')
+                            auc_bin = bin_m.get('auc')
+                            n_bin = bin_m.get('n')
+                            ic_ret = ret_m.get('ic')
+                            n_ret = ret_m.get('n')
+
+                            # Determine best IC magnitude for ranking
+                            best_ic_vals = [v for v in [ic_bin, ic_ret] if isinstance(v, (int, float)) and np.isfinite(v)]
+                            best_ic = max(best_ic_vals, key=lambda x: abs(x)) if best_ic_vals else None
+
+                            rows.append({
+                                'feature': feat_name,
+                                'ic_bin': ic_bin,
+                                'auc_bin': auc_bin,
+                                'n_bin': n_bin,
+                                'ic_ret': ic_ret,
+                                'n_ret': n_ret,
+                                'rank_score': abs(best_ic) if best_ic is not None else 0.0,
+                            })
+
+                        if not rows:
+                            return
+
+                        # Sort by absolute best IC
+                        rows_sorted = sorted(rows, key=lambda r: r['rank_score'], reverse=True)[:10]
+
+                        report += f"#### {title}\n\n"
+                        report += (
+                            "| Rank | Feature | IC (binary_label) | AUC (binary_label) | N (binary) | IC (realized_return) | N (ret) |\n" \
+                            "| --- | --- | --- | --- | --- | --- | --- |\n"
+                        )
+                        for idx, row in enumerate(rows_sorted, 1):
+                            def _fmt(v: Any) -> str:
+                                if isinstance(v, (int, float)) and np.isfinite(v):
+                                    return f"{v:.4f}"
+                                return "N/A"
+
+                            report += (
+                                f"| {idx} | {row['feature']} | "
+                                f"{_fmt(row['ic_bin'])} | {_fmt(row['auc_bin'])} | "
+                                f"{row['n_bin'] if row.get('n_bin') is not None else 'N/A'} | "
+                                f"{_fmt(row['ic_ret'])} | {row['n_ret'] if row.get('n_ret') is not None else 'N/A'} |\n"
+                            )
+                        report += "\n"
+
+                    # Overall diagnostics
+                    overall_slice = meta_diag.get('overall', {})
+                    _format_slice("Overall (Full Sample)", overall_slice)
+
+                    # Volatility regime slices
+                    by_regime = meta_diag.get('by_volatility_regime', {})
+                    if isinstance(by_regime, dict):
+                        for reg_name, reg_slice in by_regime.items():
+                            if isinstance(reg_slice, dict):
+                                _format_slice(f"Volatility Regime = {reg_name}", reg_slice)
+
+                    # TTO buckets
+                    by_tto = meta_diag.get('by_tto_bucket', {})
+                    if isinstance(by_tto, dict):
+                        for bucket, bucket_slice in by_tto.items():
+                            if isinstance(bucket_slice, dict):
+                                label = {
+                                    'short': 'Short TTO (fast exits)',
+                                    'medium': 'Medium TTO',
+                                    'long': 'Long TTO (slow exits)',
+                                }.get(bucket, bucket)
+                                _format_slice(f"TTO Bucket = {label}", bucket_slice)
 
             # Baseline learnability diagnostics for the final selected feature set (if available)
             baseline_check_results = feature_sets.get('baseline_check')

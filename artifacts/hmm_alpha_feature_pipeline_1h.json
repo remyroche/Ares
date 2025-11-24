@@ -8,20 +8,20 @@
       "volume",
       "regime_label",
       "regime_label_ml",
-      "regime_0_prob",
-      "regime_1_prob",
-      "regime_2_prob",
-      "regime_3_prob",
-      "regime_4_prob",
       "hl_range",
       "mean_return_short",
       "return_1h",
       "return_momentum",
       "sharpe",
       "volatility_short",
-      "volume_ratio"
+      "volume_ratio",
+      "trend_ema_fast",
+      "trend_ema_slow",
+      "trend_price_slope",
+      "alpha_target_raw",
+      "alpha_target_vol"
     ],
-    "scaler": "<src.features_common.transforms.scaling_normalization.ScalingNormalizer object at 0x340a62510>",
+    "scaler": "<src.features_common.transforms.scaling_normalization.ScalingNormalizer object at 0x33b28b4d0>",
     "normalizer_config": {
       "default_strategy": "robust",
       "auto_select": false,
@@ -42,19 +42,19 @@
       "volume",
       "regime_label",
       "regime_label_ml",
-      "regime_0_prob",
-      "regime_1_prob",
-      "regime_2_prob",
-      "regime_3_prob",
-      "regime_4_prob",
       "hl_range",
       "mean_return_short",
       "return_1h",
       "return_momentum",
       "sharpe",
       "volatility_short",
-      "volume_ratio"
+      "volume_ratio",
+      "trend_ema_fast",
+      "trend_ema_slow",
+      "trend_price_slope",
+      "alpha_target_raw",
+      "alpha_target_vol"
     ]
   },
-  "saved_at": "2025-11-19T02:01:01.886305"
+  "saved_at": "2025-11-22T17:19:31.854277"
 }

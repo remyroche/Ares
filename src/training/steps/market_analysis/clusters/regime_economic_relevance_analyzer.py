@@ -189,7 +189,7 @@ class RegimeEconomicRelevanceAnalyzer:
                  trading_days_per_year: int = 252,
                  transaction_cost: float = 0.001,
                  significance_tests: bool = True,
-                 n_permutations: int = 1000,
+                 n_permutations: int = 100,
                  block_size: Optional[int] = None,
                  random_state: Optional[int] = None):
         """
@@ -1458,7 +1458,7 @@ def create_regime_economic_relevance_analyzer(
     trading_days_per_year: int = 252,
     transaction_cost: float = 0.001,
     significance_tests: bool = True,
-    n_permutations: int = 1000,
+    n_permutations: int = 100,
     block_size: Optional[int] = None,
     random_state: Optional[int] = None
 ) -> RegimeEconomicRelevanceAnalyzer:

@@ -915,13 +915,17 @@ class PermutationEntropyGenerator(BaseEntropyGenerator):
                     unique_patterns, counts = np.unique(patterns, return_counts=True)
                     probabilities = counts / len(patterns)
 
-                    # Calculate permutation entropy
-                    entropy = 0
+                    # Calculate permutation entropy (normalized to [0, 1])
+                    entropy = 0.0
                     for p in probabilities:
                         if p > 0:
                             entropy -= p * np.log2(p)
 
-                    perm_entropy[i] = entropy
+                    max_entropy = np.log2(np.math.factorial(self.embedding_dim))
+                    if max_entropy <= 0.0:
+                        perm_entropy[i] = np.nan
+                    else:
+                        perm_entropy[i] = float(entropy / max_entropy)
 
         return pd.Series(perm_entropy, index=data.index)
 

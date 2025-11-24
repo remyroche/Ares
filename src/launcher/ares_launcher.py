@@ -374,6 +374,24 @@ Examples:
         help='Alias for --enable-labeling-hpo-params; use latest meta-labeling HPO best-params in labeling steps'
     )
     
+    parser.add_argument(
+        '--meta-permutation-test',
+        action='store_true',
+        help='Enable permutation test diagnostics in meta_gated_backtest'
+    )
+    parser.add_argument(
+        '--meta-permutation-repeats',
+        type=int,
+        default=None,
+        help='Number of permutation repeats for meta_gated_backtest'
+    )
+    parser.add_argument(
+        '--meta-forward-walk-n-windows',
+        type=int,
+        default=None,
+        help='Number of forward-walk evaluation windows for meta_gated_backtest'
+    )
+    
     # Legacy compatibility options
     parser.add_argument('--start-from-step-name', type=str, help='Legacy: start from specific step')
     parser.add_argument('--stop-at-step', type=int, help='Legacy: stop at specific step number')
@@ -431,6 +449,16 @@ def cleanup_duplicate_files(directories: List[str], keep_count: int = 5):
         
         for file_path in files:
             file_name = file_path.name
+
+            # Guard against race conditions where a file may be deleted
+            # between globbing and stat(). If this happens, simply skip the
+            # missing file rather than failing the entire launcher on
+            # FileNotFoundError.
+            try:
+                mtime = file_path.stat().st_mtime
+            except FileNotFoundError:
+                logger.debug(f"File disappeared during cleanup scan, skipping: {file_name}")
+                continue
             
             # Try to extract base name and datetime
             match = datetime_pattern.search(file_name)
@@ -452,7 +480,7 @@ def cleanup_duplicate_files(directories: List[str], keep_count: int = 5):
                 'path': file_path,
                 'name': file_name,
                 'datetime': datetime_str,
-                'mtime': file_path.stat().st_mtime
+                'mtime': mtime,
             })
         
         # Process each group
@@ -636,10 +664,35 @@ async def main():
     if getattr(args, 'enable_labeling_hpo_params', False) or getattr(args, 'labeling_hpo_use_best_params', False):
         config['enable_labeling_hpo_params'] = True
     
-    # Optional global HPO configuration (used by ml_risk_regime_step and unified training)
+    # Optional global HPO configuration (used by ml_risk_regime_step, ml_map_regime_step and unified training)
     if getattr(args, 'enable_hpo', False):
         config['enable_hpo'] = True
         config['risk_enable_hpo'] = True
+
+    # Map XGB: when running ml_map_regime_step with --enable-hpo, enable XGB training
+    # and feature pruning by default so we exercise the WCoV objective and pruning logic.
+    if getattr(args, 'enable_hpo', False):
+        target_steps: List[str] = []
+        if args.step:
+            target_steps = [args.step]
+        elif args.steps:
+            target_steps = [s.strip() for s in args.steps.split(',') if s.strip()]
+        elif args.command:
+            target_steps = [args.command]
+
+        if 'ml_map_regime_step' in target_steps:
+            config['map_xgb_enable_training'] = True
+            config['map_xgb_enable_feature_pruning'] = True
+
+    # Optional meta-gated backtest diagnostics configuration
+    # These flags are no-ops for other steps; MetaGatedBacktestStep will
+    # consume them when present.
+    if getattr(args, 'meta_permutation_test', False):
+        config['permutation_test'] = True
+    if getattr(args, 'meta_permutation_repeats', None) is not None:
+        config['permutation_repeats'] = args.meta_permutation_repeats
+    if getattr(args, 'meta_forward_walk_n_windows', None) is not None:
+        config['forward_walk_n_windows'] = args.meta_forward_walk_n_windows
     
     # Import tprint for troubleshooting output
     try:

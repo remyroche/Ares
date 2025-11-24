@@ -164,10 +164,10 @@ class StickyHMMModel:
     def _initialize_model(self) -> None:
         """Initialize the underlying HMM model with current configuration."""
         logger.debug(
-            "Initializing StickyHMMModel",
-            f"n_components={self.config.n_components}",
-            f"covariance_type={self.config.covariance_type}",
-            f"kappa={self.config.kappa}"
+            "Initializing StickyHMMModel: n_components=%s, covariance_type=%s, kappa=%s",
+            self.config.n_components,
+            self.config.covariance_type,
+            self.config.kappa,
         )
         
         self._model = hmm.GaussianHMM(

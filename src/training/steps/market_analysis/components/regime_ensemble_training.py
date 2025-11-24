@@ -1538,13 +1538,13 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                                 try:
                                     tprint("💰 [REGIME_ENSEMBLE] Performing economic relevance analysis", color="cyan")
 
-                                    # Initialize economic analyzer
+                                    # Initialize economic analyzer (use 100 permutations for broad-strokes significance)
                                     economic_analyzer = RegimeEconomicRelevanceAnalyzer(
                                         risk_free_rate=0.02,
                                         trading_days_per_year=365,  # Will be adjusted based on timeframe
                                         transaction_cost=0.001,
                                         significance_tests=True,
-                                        n_permutations=1000
+                                        n_permutations=100
                                     )
 
                                     # Evaluate strategies

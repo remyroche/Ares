@@ -1,0 +1,76 @@
+{
+  "versions": {
+    "ml_breakout_bounce_training_data_15m_20251123_230501_885": {
+      "created_at": "2025-11-23T23:05:01.885502",
+      "num_rows": 7828,
+      "num_columns": 8,
+      "columns": [
+        "timestamp",
+        "breakout_regime_0_prob",
+        "breakout_regime_1_prob",
+        "breakout_regime_2_prob",
+        "breakout_long_edge_score",
+        "breakout_short_edge_score",
+        "is_resistance",
+        "is_support"
+      ],
+      "artifact_name": "ml_breakout_bounce_training_data_15m",
+      "symbol": "ETHUSDT",
+      "exchange": "binance",
+      "timeframe": "1h",
+      "direction": "long",
+      "model": "breakout_bounce",
+      "step_name": "ml_breakout_bounce_regime_step",
+      "source_market_data": "historical_data"
+    },
+    "ml_breakout_bounce_training_data_15m_20251123_234924_408": {
+      "created_at": "2025-11-23T23:49:24.408198",
+      "num_rows": 25468,
+      "num_columns": 8,
+      "columns": [
+        "timestamp",
+        "breakout_regime_0_prob",
+        "breakout_regime_1_prob",
+        "breakout_regime_2_prob",
+        "breakout_long_edge_score",
+        "breakout_short_edge_score",
+        "is_resistance",
+        "is_support"
+      ],
+      "artifact_name": "ml_breakout_bounce_training_data_15m",
+      "symbol": "ETHUSDT",
+      "exchange": "binance",
+      "timeframe": "1h",
+      "direction": "long",
+      "model": "breakout_bounce",
+      "step_name": "ml_breakout_bounce_regime_step",
+      "source_market_data": "historical_data"
+    },
+    "ml_breakout_bounce_training_data_15m_20251124_001546_716": {
+      "created_at": "2025-11-24T00:15:46.716093",
+      "num_rows": 25468,
+      "num_columns": 8,
+      "columns": [
+        "timestamp",
+        "breakout_regime_0_prob",
+        "breakout_regime_1_prob",
+        "breakout_regime_2_prob",
+        "breakout_long_edge_score",
+        "breakout_short_edge_score",
+        "is_resistance",
+        "is_support"
+      ],
+      "artifact_name": "ml_breakout_bounce_training_data_15m",
+      "symbol": "ETHUSDT",
+      "exchange": "binance",
+      "timeframe": "1h",
+      "direction": "long",
+      "model": "breakout_bounce",
+      "step_name": "ml_breakout_bounce_regime_step",
+      "source_market_data": "historical_data"
+    }
+  },
+  "current_version": "ml_breakout_bounce_training_data_15m_20251124_001546_716",
+  "created_at": "2025-11-23T23:05:01.884911",
+  "updated_at": "2025-11-24T00:53:25.671906"
+}

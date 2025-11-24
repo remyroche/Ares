@@ -41,6 +41,9 @@ from src.training.steps.market_analysis.clusters.cluster_quality_assessor import
     ClusterQualityAssessor,
     ClusterQualityMetrics,
 )
+from src.training.steps.market_analysis.rolling_hmm_clustering.rolling_hmm_regime_discovery_step import (
+    RollingHMMRegimeDiscoveryStep,
+)
 from src.utils.ml_common.optimization import (
     HierarchicalParameterOptimizer,
     ParameterGroup,
@@ -113,7 +116,7 @@ class HMMMLAlphaStep(BaseStep):
             symbol = str(config.get("symbol", "ETHUSDT"))
             exchange = str(config.get("exchange", "binance"))
             regime_timeframe = str(
-                config.get("regime_timeframe", config.get("timeframe", "1h"))
+                config.get("regime_timeframe", config.get("timeframe", "15m"))
             )
             direction = str(config.get("direction", "long"))
 
@@ -129,12 +132,26 @@ class HMMMLAlphaStep(BaseStep):
                 "alpha_enable_hpo": False,
                 "alpha_hpo_cv_folds": 3,
                 "alpha_hpo_final_trials": 20,
+                "alpha_early_stopping_rounds": 30,
                 "alpha_enable_regression_calibration": True,
                 "alpha_enable_expectation_calibration": True,
                 "alpha_expectation_positive_threshold": 0.0,
                 "alpha_expectation_min_samples": 200,
                 "alpha_expectation_ema_period": 4,
                 "alpha_expectation_ema_weight_recent": None,
+                "alpha_target_vol_window": 320,
+                # Enable trend feature engineering on aligned market data
+                "alpha_enable_trend_features": True,
+                "alpha_trend_ema_fast_window": 48,
+                "alpha_trend_ema_slow_window": 104,
+                "alpha_trend_slope_window": 80,
+                # Auto-pruning experiment enabled by default with a small R^2 threshold
+                "alpha_enable_auto_prune_rerun": True,
+                "alpha_auto_prune_min_delta": 0.0005,
+                # Quantile-based auto-prune thresholds over permutation importance.
+                # Try slightly more aggressive thresholds; still require a small
+                # positive improvement in validation R^2 before adopting.
+                "alpha_auto_prune_quantiles": [0.15, 0.25, 0.35, 0.45],
             }
             for k, v in alpha_defaults.items():
                 config.setdefault(k, v)
@@ -160,6 +177,14 @@ class HMMMLAlphaStep(BaseStep):
                 model="regime",
             )
 
+            await self._ensure_hmm_economic_features(
+                symbol=symbol,
+                exchange=exchange,
+                regime_timeframe=regime_timeframe,
+                direction=direction,
+                config=config,
+            )
+
             labels_df, probs_df, economic_df = self._load_hmm_artifacts(
                 symbol=symbol,
                 exchange=exchange,
@@ -170,15 +195,18 @@ class HMMMLAlphaStep(BaseStep):
             # ------------------------------------------------------------------
             # 2) Load 1h OHLCV market data
             # ------------------------------------------------------------------
-            # For alignment we always load the full 1h series (execution_mode='full')
-            # to avoid light-mode tailing pushing the window beyond the coverage
-            # of HMM artifacts. Light-mode filtering is applied *after* alignment.
+            # Use the centralized execution_mode lookback (blank/light/full)
+            # when loading market data so that blank mode uses the configured
+            # ~1 year window instead of a hard-coded sample cap. Light-mode
+            # filtering is still applied *after* alignment.
             market_data_config = {
                 **config,
                 "timeframe": regime_timeframe,
             }
             market_data_load_config = dict(market_data_config)
-            market_data_load_config["execution_mode"] = "full"
+            market_data_load_config["execution_mode"] = str(
+                config.get("execution_mode", "full")
+            ).lower()
 
             market_data, market_source = self.load_market_data_or_fail(
                 market_data_load_config,
@@ -237,6 +265,59 @@ class HMMMLAlphaStep(BaseStep):
                         "Aligned dataset became empty after light-mode filtering; check HMM and market data coverage"
                     )
 
+            if bool(config.get("alpha_enable_trend_features", True)):
+                try:
+                    if "close" in aligned_df.columns:
+                        price_series = aligned_df["close"].astype(float)
+
+                        fast_w = int(config.get("alpha_trend_ema_fast_window", 12))
+                        slow_w = int(config.get("alpha_trend_ema_slow_window", 26))
+                        slope_w = int(config.get("alpha_trend_slope_window", 20))
+
+                        if fast_w > 0:
+                            ema_fast = price_series.ewm(span=fast_w, adjust=False).mean()
+                            aligned_df["trend_ema_fast"] = ema_fast
+
+                        if slow_w > 0:
+                            ema_slow = price_series.ewm(span=slow_w, adjust=False).mean()
+                            aligned_df["trend_ema_slow"] = ema_slow
+
+                        if slope_w > 1:
+                            # Compute rolling log-price slope using fully
+                            # vectorized NumPy operations (no per-window
+                            # Python callbacks) for efficiency.
+                            log_price = np.log(price_series.clip(lower=1e-8))
+                            y = log_price.to_numpy(dtype=float, copy=False)
+                            n = y.shape[0]
+
+                            if n >= slope_w:
+                                x = np.arange(slope_w, dtype=float)
+                                x_mean = x.mean()
+                                denom_loc = float(((x - x_mean) ** 2).sum())
+
+                                if denom_loc <= 0.0:
+                                    slope_vals = np.zeros_like(y, dtype=float)
+                                else:
+                                    # Rolling sums via convolution
+                                    kernel_ones = np.ones(slope_w, dtype=float)
+                                    sum_y = np.convolve(y, kernel_ones, mode="valid")
+                                    sum_xy = np.convolve(y, x, mode="valid")
+
+                                    # Covariance numerator: Σ(x*y) - x_mean * Σ(y)
+                                    num = sum_xy - x_mean * sum_y
+                                    slope_core = num / denom_loc
+
+                                    slope_vals = np.full(n, np.nan, dtype=float)
+                                    slope_vals[slope_w - 1 :] = slope_core
+
+                                aligned_df["trend_price_slope"] = pd.Series(
+                                    slope_vals,
+                                    index=aligned_df.index,
+                                    name="trend_price_slope",
+                                )
+                except Exception as trend_exc:
+                    tprint_warning(f"Trend feature engineering failed (ignored): {trend_exc}")
+
             # ------------------------------------------------------------------
             # 4) Compute alpha labels
             # ------------------------------------------------------------------
@@ -261,15 +342,29 @@ class HMMMLAlphaStep(BaseStep):
             feature_pipeline_path: Optional[str] = None
 
             try:
+                alpha_enable_hpo = bool(config.get("alpha_enable_hpo", False))
+                tprint_info(
+                    f" Starting alpha model training: samples={len(alpha_df)}, "
+                    f"features={len([c for c in alpha_df.select_dtypes(include=[np.number]).columns if c != 'alpha_target' and not c.startswith('alpha_forward_return_')])}, "
+                    f"target_type={config.get('alpha_target_type', 'regression')}, "
+                    f"alpha_enable_hpo={alpha_enable_hpo}"
+                )
+
                 model, alpha_scores, pred_col_name, training_metrics, feature_pipeline_artifacts = self._train_alpha_model(
                     alpha_df,
                     config,
                 )
+
+                tprint_info(
+                    f" Alpha model training complete: model_type="
+                    f"{training_metrics.get('model_type', 'unknown')} | "
+                    f"alpha_hpo_used={training_metrics.get('alpha_hpo_used', False)}"
+                )
                 if alpha_scores is not None:
                     alpha_df[pred_col_name] = alpha_scores
-                    alpha_df["alpha_score_continuous"] = alpha_scores
-
-                    # Derive calibrated 0–1 expectation score from alpha predictions
+                    # Derive calibrated 01 expectation score from alpha predictions
+                    # and make this the canonical alpha_score_continuous signal.
+                    canonical_score: Optional[pd.Series] = None
                     try:
                         target_type_local = str(config.get("alpha_target_type", "regression")).lower()
                         expectation_series = None
@@ -277,6 +372,7 @@ class HMMMLAlphaStep(BaseStep):
                         if target_type_local == "classification":
                             # Classification branch already produces calibrated probabilities
                             expectation_series = alpha_scores.clip(0.0, 1.0)
+                            canonical_score = expectation_series
                         else:
                             expectation_calibration_enabled = bool(
                                 config.get("alpha_enable_expectation_calibration", True)
@@ -293,51 +389,70 @@ class HMMMLAlphaStep(BaseStep):
                                     from sklearn.isotonic import IsotonicRegression
 
                                     y_target = alpha_df["alpha_target"].reindex(alpha_scores.index)
-                                    mask = (
+                                    base_mask = (
                                         alpha_scores.notna()
                                         & y_target.notna()
                                         & np.isfinite(alpha_scores)
                                         & np.isfinite(y_target)
                                     )
 
-                                    if mask.sum() >= max(min_samples, 50):
-                                        y_bin = (y_target[mask] > positive_threshold).astype(float)
+                                    # Use an out-of-fold style calibration: fit isotonic only on
+                                    # the validation tail defined by alpha_train_fraction.
+                                    n_valid = int(base_mask.sum())
+                                    if n_valid >= max(min_samples, 50):
+                                        train_frac_local = float(config.get("alpha_train_fraction", 0.8))
+                                        train_frac_local = min(max(train_frac_local, 0.5), 0.95)
 
-                                        iso = IsotonicRegression(
-                                            out_of_bounds="clip",
-                                            y_min=0.0,
-                                            y_max=1.0,
-                                        )
-                                        iso.fit(
-                                            alpha_scores[mask].to_numpy(
-                                                dtype=float,
-                                                copy=False,
-                                            ),
-                                            y_bin.to_numpy(
-                                                dtype=float,
-                                                copy=False,
-                                            ),
-                                        )
+                                        # Chronological ordering for effective validation split
+                                        valid_index = alpha_scores.index[base_mask]
+                                        split_idx_local = int(n_valid * train_frac_local)
+                                        split_idx_local = max(min(split_idx_local, n_valid - 1), 1)
 
-                                        calibrated_vals = iso.predict(
-                                            alpha_scores.to_numpy(
-                                                dtype=float,
-                                                copy=False,
+                                        val_index = valid_index[split_idx_local:]
+                                        if len(val_index) >= max(50, min_samples // 2):
+                                            scores_val = alpha_scores.loc[val_index]
+                                            y_val = y_target.loc[val_index]
+                                            y_bin_val = (y_val > positive_threshold).astype(float)
+
+                                            iso = IsotonicRegression(
+                                                out_of_bounds="clip",
+                                                y_min=0.0,
+                                                y_max=1.0,
                                             )
-                                        )
-                                        expectation_series = pd.Series(
-                                            calibrated_vals,
-                                            index=alpha_scores.index,
-                                            name="alpha_expectation_raw_01",
-                                        ).clip(0.0, 1.0)
+                                            iso.fit(
+                                                scores_val.to_numpy(
+                                                    dtype=float,
+                                                    copy=False,
+                                                ),
+                                                y_bin_val.to_numpy(
+                                                    dtype=float,
+                                                    copy=False,
+                                                ),
+                                            )
 
-                                        training_metrics["alpha_expectation_calibration_used"] = True
-                                        training_metrics[
-                                            "alpha_expectation_positive_threshold"
-                                        ] = positive_threshold
-                                        training_metrics[
-                                            "alpha_expectation_calibration_method"
-                                        ] = "isotonic_regression_binary"
+                                            calibrated_vals = iso.predict(
+                                                alpha_scores.to_numpy(
+                                                    dtype=float,
+                                                    copy=False,
+                                                )
+                                            )
+                                            expectation_series = pd.Series(
+                                                calibrated_vals,
+                                                index=alpha_scores.index,
+                                                name="alpha_expectation_raw_01",
+                                            ).clip(0.0, 1.0)
+
+                                            training_metrics["alpha_expectation_calibration_used"] = True
+                                            training_metrics[
+                                                "alpha_expectation_positive_threshold"
+                                            ] = positive_threshold
+                                            training_metrics[
+                                                "alpha_expectation_calibration_method"
+                                            ] = "isotonic_regression_binary_oof"
+                                        else:
+                                            training_metrics["alpha_expectation_calibration_used"] = False
+                                    else:
+                                        training_metrics["alpha_expectation_calibration_used"] = False
                                 except ImportError:
                                     training_metrics["alpha_expectation_calibration_used"] = False
                                 except Exception as exp_calib_exc:
@@ -371,6 +486,7 @@ class HMMMLAlphaStep(BaseStep):
 
                             if expectation_series is not None:
                                 alpha_df["alpha_expectation_raw_01"] = expectation_series
+                                canonical_score = expectation_series
 
                                 # EMA smoothing on expectation score
                                 try:
@@ -398,6 +514,7 @@ class HMMMLAlphaStep(BaseStep):
                                     alpha_df[
                                         "alpha_expectation_ema_01"
                                     ] = expectation_ema
+                                    canonical_score = expectation_ema
                                     training_metrics[
                                         "alpha_expectation_ema_weight_recent"
                                     ] = ema_weight
@@ -413,6 +530,35 @@ class HMMMLAlphaStep(BaseStep):
                         training_metrics["alpha_expectation_error"] = str(
                             expectation_exc
                         )
+
+                    # Finalize canonical alpha_score_continuous: prefer calibrated expectation,
+                    # fall back to the underlying alpha_scores if calibration was unavailable.
+                    if canonical_score is not None:
+                        alpha_df["alpha_score_continuous"] = canonical_score
+                    else:
+                        alpha_df["alpha_score_continuous"] = alpha_scores
+
+                    # Add EWM-smoothed variants of alpha_score_continuous as additional features
+                    try:
+                        score_base = (
+                            alpha_df["alpha_score_continuous"]
+                            .astype(float)
+                            .replace([np.inf, -np.inf], np.nan)
+                        )
+                        ewm_periods_cfg = config.get("alpha_score_ewm_periods", [3, 5])
+                        try:
+                            ewm_periods = [int(p) for p in ewm_periods_cfg if int(p) > 0]
+                        except Exception:
+                            ewm_periods = [3, 5]
+
+                        for period in ewm_periods:
+                            col_name = f"alpha_score_continuous_ewm_{period}"
+                            alpha_df[col_name] = score_base.ewm(
+                                span=period,
+                                adjust=False,
+                            ).mean()
+                    except Exception:
+                        pass
 
                     alpha_df, regime_stats_df, regime_col_name = self._assign_alpha_regimes(
                         alpha_df,
@@ -443,6 +589,26 @@ class HMMMLAlphaStep(BaseStep):
                             alpha_scores = fallback_series
                             alpha_df[pred_col_name_fallback] = alpha_scores
                             alpha_df["alpha_score_continuous"] = alpha_scores
+                            try:
+                                score_base = (
+                                    alpha_df["alpha_score_continuous"]
+                                    .astype(float)
+                                    .replace([np.inf, -np.inf], np.nan)
+                                )
+                                ewm_periods_cfg = config.get("alpha_score_ewm_periods", [3, 5])
+                                try:
+                                    ewm_periods = [int(p) for p in ewm_periods_cfg if int(p) > 0]
+                                except Exception:
+                                    ewm_periods = [3, 5]
+
+                                for period in ewm_periods:
+                                    col_name = f"alpha_score_continuous_ewm_{period}"
+                                    alpha_df[col_name] = score_base.ewm(
+                                        span=period,
+                                        adjust=False,
+                                    ).mean()
+                            except Exception:
+                                pass
                             alpha_df, regime_stats_df, regime_col_name = self._assign_alpha_regimes(
                                 alpha_df,
                                 alpha_scores,
@@ -458,6 +624,79 @@ class HMMMLAlphaStep(BaseStep):
                     tprint_warning(
                         f"Alpha fallback regime assignment failed; proceeding without regimes: {fallback_exc}"
                     )
+
+            # ------------------------------------------------------------------
+            # 5b) Diagnostics for alpha_score_continuous distribution & economics
+            # ------------------------------------------------------------------
+            try:
+                if "alpha_score_continuous" in alpha_df.columns:
+                    score_series = (
+                        alpha_df["alpha_score_continuous"]
+                        .astype(float)
+                        .replace([np.inf, -np.inf], np.nan)
+                        .dropna()
+                    )
+
+                    if not score_series.empty:
+                        # Basic distribution statistics
+                        dist = {
+                            "mean": float(score_series.mean()),
+                            "std": float(score_series.std()),
+                            "min": float(score_series.min()),
+                            "max": float(score_series.max()),
+                            "q05": float(score_series.quantile(0.05)),
+                            "q50": float(score_series.quantile(0.50)),
+                            "q95": float(score_series.quantile(0.95)),
+                            "n": int(score_series.shape[0]),
+                        }
+                        training_metrics["alpha_score_continuous_distribution"] = dist
+
+                        # Economic deciles on 1h forward return
+                        fwd_col = "alpha_forward_return_1h" if "alpha_forward_return_1h" in alpha_df.columns else None
+                        if fwd_col is not None:
+                            fwd_ret = (
+                                alpha_df.loc[score_series.index, fwd_col]
+                                .astype(float)
+                                .replace([np.inf, -np.inf], np.nan)
+                                .dropna()
+                            )
+                            common_idx = score_series.index.intersection(fwd_ret.index)
+                            if len(common_idx) >= 50:
+                                s = score_series.loc[common_idx]
+                                r = fwd_ret.loc[common_idx]
+                                try:
+                                    ranks = s.rank(method="first")
+                                    deciles = pd.qcut(ranks, 10, labels=False, duplicates="drop")
+                                    decile_stats = []
+                                    for d in sorted(deciles.dropna().unique()):
+                                        mask = deciles == d
+                                        if not mask.any():
+                                            continue
+                                        r_d = r[mask]
+                                        if r_d.empty:
+                                            continue
+                                        mean_ret = float(r_d.mean())
+                                        vol = float(r_d.std()) if len(r_d) > 1 else 0.0
+                                        sharpe = mean_ret / (vol + 1e-8) if vol > 0 else 0.0
+                                        decile_stats.append(
+                                            {
+                                                "decile": int(d),
+                                                "n": int(mask.sum()),
+                                                "mean_forward_return": mean_ret,
+                                                "vol_forward_return": vol,
+                                                "sharpe_forward_return": sharpe,
+                                            }
+                                        )
+                                    if decile_stats:
+                                        training_metrics[
+                                            "alpha_score_decile_forward_returns"
+                                        ] = decile_stats
+                                except Exception:
+                                    # Decile diagnostics are best-effort only
+                                    pass
+            except Exception:
+                # Diagnostics are best-effort only; never fail the pipeline
+                pass
 
             # ------------------------------------------------------------------
             # 6) Extract and save regime thresholds for production use
@@ -498,7 +737,7 @@ class HMMMLAlphaStep(BaseStep):
 
                             regime_thresholds_path = self._save_artifact(
                                 data=regime_thresholds_for_save,
-                                artifact_name="hmm_alpha_regime_thresholds_1h",
+                                artifact_name="hmm_alpha_regime_thresholds_15m",
                                 artifact_type="model",
                                 data_category="config",
                                 metadata={
@@ -508,7 +747,7 @@ class HMMMLAlphaStep(BaseStep):
                                     "n_regimes": regime_thresholds.get("n_regimes", 0),
                                 },
                             )
-                            tprint_info(f"💾 Saved regime thresholds artifact: {regime_thresholds_path}")
+                            tprint_info(f" Saved regime thresholds artifact: {regime_thresholds_path}")
                         except Exception as thresholds_save_exc:
                             tprint_warning(f"Failed to save regime thresholds artifact: {thresholds_save_exc}")
 
@@ -540,15 +779,17 @@ class HMMMLAlphaStep(BaseStep):
             except Exception as quality_exc:
                 tprint_warning(f"Alpha regime quality assessment failed: {quality_exc}")
 
-            alpha_to_save = alpha_df.reset_index().rename(columns={alpha_df.index.name or "index": "timestamp"})
+            alpha_to_save = alpha_df.reset_index().rename(
+                columns={alpha_df.index.name or "index": "timestamp"}
+            )
 
             tprint_info(
-                f"💾 Saving alpha training dataset with shape {alpha_to_save.shape} "
+                f" Saving alpha training dataset with shape {alpha_to_save.shape} "
                 f"to versioned HDF5 store"
             )
             training_data_path = self._save_artifact(
                 data=alpha_to_save,
-                artifact_name="hmm_alpha_training_data_1h",
+                artifact_name="hmm_alpha_training_data_15m",
                 artifact_type="data",
                 metadata={
                     "symbol": symbol,
@@ -561,10 +802,10 @@ class HMMMLAlphaStep(BaseStep):
             # Save trained model if available
             if model is not None:
                 try:
-                    tprint_info("💾 Saving LightGBM alpha model via artifact router")
+                    tprint_info(" Saving LightGBM alpha model via artifact router")
                     model_path = self._save_artifact(
                         data=model,
-                        artifact_name="hmm_alpha_model_1h",
+                        artifact_name="hmm_alpha_model_15m",
                         artifact_type="model",
                         metadata={
                             "symbol": symbol,
@@ -581,7 +822,7 @@ class HMMMLAlphaStep(BaseStep):
                 try:
                     feature_pipeline_path = self._save_artifact(
                         data=feature_pipeline_artifacts,
-                        artifact_name="hmm_alpha_feature_pipeline_1h",
+                        artifact_name="hmm_alpha_feature_pipeline_15m",
                         artifact_type="model",
                         metadata={
                             "symbol": symbol,
@@ -599,7 +840,7 @@ class HMMMLAlphaStep(BaseStep):
                     regime_stats_to_save = regime_stats_df.reset_index()
                     regime_stats_path = self._save_artifact(
                         data=regime_stats_to_save,
-                        artifact_name="hmm_alpha_regime_stats_1h",
+                        artifact_name="hmm_alpha_regime_stats_15m",
                         artifact_type="data",
                         metadata={
                             "symbol": symbol,
@@ -614,449 +855,26 @@ class HMMMLAlphaStep(BaseStep):
 
             execution_time = time.time() - start_time
             tprint_info(
-                f"✅ {self.step_name} completed in {execution_time:.2f}s "
+                f" {self.step_name} completed in {execution_time:.2f}s "
                 f"with {len(alpha_df)} samples"
             )
 
-            # ------------------------------------------------------------------
-            # 7) Generate alpha-specific reports in outcomes/
-            # ------------------------------------------------------------------
-            try:
-                # Alpha quality markdown + CSV reports via ClusterQualityAssessor
-                if alpha_quality_metrics is not None:
-                    try:
-                        method_config = {
-                            "alpha_config": {
-                                "alpha_horizon_bars": config.get("alpha_horizon_bars", 1),
-                                "alpha_regime_bins": config.get("alpha_regime_bins", 5),
-                                "alpha_target_type": config.get("alpha_target_type", "regression"),
-                            }
-                        }
-
-                        target_type = str(config.get("alpha_target_type", "regression")).lower()
-                        calibration_config: Dict[str, Any] = {}
-
-                        if target_type == "regression":
-                            calibration_config = {
-                                "target_type": target_type,
-                                "regression_calibration_enabled": training_metrics.get("regression_calibration_enabled"),
-                                "regression_calibration_used": training_metrics.get("regression_calibration_used"),
-                                "regression_calibration_method": training_metrics.get("regression_calibration_method"),
-                                "val_rmse_uncalibrated": training_metrics.get("val_rmse_uncalibrated", training_metrics.get("val_rmse")),
-                                "val_rmse_calibrated": training_metrics.get("val_rmse_calibrated"),
-                            }
-                        elif target_type == "classification":
-                            calibration_config = {
-                                "target_type": target_type,
-                                "probability_calibration_enabled": training_metrics.get("probability_calibration_enabled"),
-                                "calibration_method": training_metrics.get("calibration_method"),
-                                "val_auc_uncalibrated": training_metrics.get("val_auc_uncalibrated", training_metrics.get("val_auc")),
-                                "val_auc_calibrated": training_metrics.get("val_auc_calibrated"),
-                                "ece_uncalibrated": training_metrics.get("ece_uncalibrated"),
-                                "ece_calibrated": training_metrics.get("ece_calibrated"),
-                                "ece_improvement": training_metrics.get("ece_improvement"),
-                            }
-
-                        if calibration_config:
-                            method_config["alpha_calibration"] = calibration_config
-
-                        report_prefix = "hmm_alpha_quality"
-                        self.quality_assessor.generate_markdown_report(
-                            alpha_quality_metrics,
-                            symbol=symbol,
-                            output_dir="outcomes",
-                            method_specific_config=method_config,
-                            report_prefix=report_prefix,
-                        )
-
-                        self.quality_assessor.generate_comprehensive_csv_report(
-                            alpha_quality_metrics,
-                            all_trials=None,
-                            symbol=symbol,
-                            output_dir="outcomes",
-                            method_specific_config=method_config,
-                        )
-                    except Exception as report_exc:
-                        tprint_warning(f"Alpha quality report generation failed (ignored): {report_exc}")
-
-                # Regime stats CSV for alpha regimes
-                if regime_stats_df is not None and not regime_stats_df.empty:
-                    try:
-                        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        stats_csv_name = f"hmm_alpha_regime_stats_{symbol}_{ts}.csv"
-                        stats_csv_path = f"outcomes/{stats_csv_name}"
-                        regime_stats_df.to_csv(stats_csv_path)
-                        tprint_info(
-                            f"📊 Saved alpha regime statistics CSV: {stats_csv_path}"
-                        )
-                    except Exception as stats_csv_exc:
-                        tprint_warning(
-                            f"Failed to save alpha regime statistics CSV (ignored): {stats_csv_exc}"
-                        )
-
-                # Walk-Forward Validation window metrics CSV (if available)
-                wfv_window_metrics = training_metrics.get("wfv_window_metrics", [])
-                if wfv_window_metrics and isinstance(wfv_window_metrics, list) and len(wfv_window_metrics) > 0:
-                    try:
-                        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        wfv_csv_name = f"hmm_alpha_wfv_window_metrics_{symbol}_{ts}.csv"
-                        wfv_csv_path = f"outcomes/{wfv_csv_name}"
-                        wfv_df = pd.DataFrame(wfv_window_metrics)
-                        wfv_df.to_csv(wfv_csv_path, index=False)
-                        tprint_info(
-                            f"📊 Saved Walk-Forward Validation window metrics CSV: {wfv_csv_path}"
-                        )
-                    except Exception as wfv_csv_exc:
-                        tprint_warning(
-                            f"Failed to save WFV metrics CSV (ignored): {wfv_csv_exc}"
-                        )
-
-                # Regime thresholds CSV (if available) - CRITICAL for production deployment
-                regime_thresholds_data = training_metrics.get("regime_thresholds", {})
-                if regime_thresholds_data and "regime_thresholds" in regime_thresholds_data:
-                    try:
-                        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        thresholds_csv_name = f"hmm_alpha_regime_thresholds_{symbol}_{ts}.csv"
-                        thresholds_csv_path = f"outcomes/{thresholds_csv_name}"
-
-                        # Convert thresholds to DataFrame for easier viewing
-                        thresholds_dict = regime_thresholds_data["regime_thresholds"]
-                        threshold_rows = []
-                        for regime_id, threshold_info in sorted(thresholds_dict.items()):
-                            threshold_rows.append({
-                                "regime_id": regime_id,
-                                "min_score": threshold_info.get("min_score", 0.0),
-                                "max_score": threshold_info.get("max_score", 0.0),
-                                "mean_score": threshold_info.get("mean_score", 0.0),
-                                "median_score": threshold_info.get("median_score", 0.0),
-                                "std_score": threshold_info.get("std_score", 0.0),
-                                "n_samples": threshold_info.get("n_samples", 0),
-                                "sample_percentage": threshold_info.get("sample_percentage", 0.0),
-                            })
-
-                        thresholds_df = pd.DataFrame(threshold_rows)
-                        thresholds_df.to_csv(thresholds_csv_path, index=False)
-                        tprint_info(
-                            f"📊 Saved regime thresholds CSV: {thresholds_csv_path}"
-                        )
-
-                        # Also export percentile thresholds
-                        percentile_data = regime_thresholds_data.get("percentile_thresholds", {})
-                        if percentile_data:
-                            percentile_csv_name = f"hmm_alpha_percentile_thresholds_{symbol}_{ts}.csv"
-                            percentile_csv_path = f"outcomes/{percentile_csv_name}"
-                            percentile_rows = [
-                                {"percentile": p, "threshold_score": score}
-                                for p, score in sorted(percentile_data.items())
-                            ]
-                            percentile_df = pd.DataFrame(percentile_rows)
-                            percentile_df.to_csv(percentile_csv_path, index=False)
-                            tprint_info(
-                                f"📊 Saved percentile thresholds CSV: {percentile_csv_path}"
-                            )
-                    except Exception as thresholds_csv_exc:
-                        tprint_warning(
-                            f"Failed to save regime thresholds CSV (ignored): {thresholds_csv_exc}"
-                        )
-
-                # Feature importance analysis CSV (if available)
-                try:
-                    feature_importance_dfs = []
-
-                    # LGBM importance
-                    lgbm_importance = training_metrics.get("lgbm_importance", [])
-                    if lgbm_importance:
-                        feature_importance_dfs.append(pd.DataFrame(lgbm_importance))
-
-                    # Permutation importance
-                    perm_importance = training_metrics.get("permutation_importance", {})
-                    if perm_importance:
-                        perm_data = []
-                        for feat_name, feat_data in perm_importance.items():
-                            perm_data.append({
-                                "feature_name": feat_name,
-                                "permutation_importance_mean": feat_data.get("importance_mean", 0.0),
-                                "permutation_importance_std": feat_data.get("importance_std", 0.0),
-                                "permutation_stability": feat_data.get("stability", True),
-                            })
-                        feature_importance_dfs.append(pd.DataFrame(perm_data))
-
-                    # mRMR analysis
-                    mrmr_relevance = training_metrics.get("mrmr_relevance_scores", {})
-                    if mrmr_relevance and isinstance(mrmr_relevance, dict):
-                        mrmr_selected = training_metrics.get("mrmr_selected_features", [])
-                        mrmr_data = []
-                        for feat_name, relevance_score in mrmr_relevance.items():
-                            mrmr_data.append({
-                                "feature_name": feat_name,
-                                "mrmr_relevance_score": relevance_score if isinstance(relevance_score, (int, float)) else float(relevance_score),
-                                "mrmr_selected": feat_name in mrmr_selected,
-                            })
-                        feature_importance_dfs.append(pd.DataFrame(mrmr_data))
-
-                    # SHAP importance
-                    shap_importance = training_metrics.get("shap_importance", [])
-                    if shap_importance:
-                        feature_importance_dfs.append(pd.DataFrame(shap_importance))
-
-                    # Merge all importance metrics
-                    if feature_importance_dfs:
-                        # Start with first dataframe
-                        merged_df = feature_importance_dfs[0].copy()
-
-                        # Merge remaining dataframes on feature_name
-                        for df in feature_importance_dfs[1:]:
-                            if "feature_name" in df.columns:
-                                merged_df = merged_df.merge(df, on="feature_name", how="outer")
-
-                        # Export combined importance CSV
-                        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        importance_csv_name = f"hmm_alpha_feature_importance_{symbol}_{ts}.csv"
-                        importance_csv_path = f"outcomes/{importance_csv_name}"
-                        merged_df = merged_df.fillna(0.0)
-                        merged_df.to_csv(importance_csv_path, index=False)
-                        tprint_info(
-                            f"📊 Saved feature importance metrics CSV: {importance_csv_path}"
-                        )
-                except Exception as importance_csv_exc:
-                    tprint_warning(
-                        f"Failed to save feature importance CSV (ignored): {importance_csv_exc}"
-                    )
-            except Exception as report_outer_exc:
-                tprint_warning(
-                    f"Alpha report generation encountered a non-fatal error: {report_outer_exc}"
-                )
-
-            return {
+            result: Dict[str, Any] = {
                 "success": True,
-                "artifacts": {
-                    "alpha_training_data": alpha_df,
-                    "alpha_training_data_path": training_data_path,
-                    "alpha_model_path": model_path,
-                    "alpha_regime_stats": regime_stats_df,
-                    "alpha_regime_stats_path": regime_stats_path,
-                    "alpha_regime_thresholds": regime_thresholds,
-                    "alpha_regime_thresholds_path": regime_thresholds_path,
-                    "alpha_regime_quality_metrics": alpha_quality_metrics,
-                    "alpha_regime_quality_path": alpha_quality_path,
-                    "alpha_feature_pipeline": feature_pipeline_artifacts,
-                    "alpha_feature_pipeline_path": feature_pipeline_path,
-                },
-                "metrics": training_metrics,
-                "execution_time": execution_time,
+                "symbol": symbol,
+                "exchange": exchange,
+                "timeframe": regime_timeframe,
+                "n_samples": int(len(alpha_df)),
+                "training_data_path": training_data_path,
+                "model_path": model_path,
+                "training_metrics": training_metrics,
             }
+
+            return result
 
         except Exception as exc:
-            execution_time = time.time() - start_time
-            error_msg = f"{self.step_name} failed: {exc}"
-            self.logger.error(error_msg, exc_info=True)
-            tprint_error(error_msg)
-            return {
-                "success": False,
-                "artifacts": {},
-                "metrics": {},
-                "error": str(exc),
-                "execution_time": execution_time,
-            }
-
-    # ------------------------------------------------------------------
-    # Internal helper methods
-    # ------------------------------------------------------------------
-
-    def _load_hmm_artifacts(
-        self,
-        *,
-        symbol: str,
-        exchange: str,
-        timeframe: str,
-        config: Dict[str, Any],
-    ) -> Tuple[pd.DataFrame, Optional[pd.DataFrame], Optional[pd.DataFrame]]:
-        """Load HMM labels, probabilities, and economic features from HDF5.
-
-        Uses the same context that RollingHMMRegimeDiscoveryStep used when
-        saving its artifacts: model='regime' and the specified timeframe.
-        """
-        # Labels
-        labels = self._get_artifact(
-            artifact_name="rolling_hmm_regime_labels",
-            artifact_type="data",
-        )
-        if labels is None:
-            raise FileNotFoundError(
-                "rolling_hmm_regime_labels artifact not found in versioned store"
-            )
-
-        if not isinstance(labels, pd.DataFrame):
-            labels = pd.DataFrame(labels)
-
-        if "timestamp" in labels.columns:
-            labels = labels.copy()
-            labels["timestamp"] = pd.to_datetime(labels["timestamp"])
-            labels.set_index("timestamp", inplace=True)
-        elif isinstance(labels.index, pd.DatetimeIndex):
-            pass
-        else:
-            raise ValueError(
-                "HMM labels artifact must have a 'timestamp' column or DatetimeIndex"
-            )
-
-        tprint_info(
-            f"✅ Loaded HMM labels: {labels.shape} "
-            f"({labels.index.min()} → {labels.index.max()})"
-        )
-
-        # Probabilities (optional)
-        probs = self._get_artifact(
-            artifact_name="rolling_hmm_regime_probabilities",
-            artifact_type="data",
-        )
-        if probs is not None:
-            if not isinstance(probs, pd.DataFrame):
-                probs = pd.DataFrame(probs)
-            if "timestamp" in probs.columns:
-                probs = probs.copy()
-                probs["timestamp"] = pd.to_datetime(probs["timestamp"])
-                probs.set_index("timestamp", inplace=True)
-            elif not isinstance(probs.index, pd.DatetimeIndex):
-                tprint_warning(
-                    "HMM probabilities artifact has no DatetimeIndex; "
-                    "dropping probability features"
-                )
-                probs = None
-
-        if probs is not None and not probs.empty:
-            tprint_info(
-                f"✅ Loaded HMM probabilities: {probs.shape} "
-                f"({probs.index.min()} → {probs.index.max()})"
-            )
-        else:
-            tprint_warning("No HMM probabilities found; proceeding without them")
-            probs = None
-
-        # Economic features (optional)
-        economic = self._get_artifact(
-            artifact_name="rolling_hmm_economic_features",
-            artifact_type="data",
-        )
-        if economic is not None:
-            if not isinstance(economic, pd.DataFrame):
-                economic = pd.DataFrame(economic)
-            if "timestamp" in economic.columns:
-                economic = economic.copy()
-                economic["timestamp"] = pd.to_datetime(economic["timestamp"])
-                economic.set_index("timestamp", inplace=True)
-            elif not isinstance(economic.index, pd.DatetimeIndex):
-                tprint_warning(
-                    "Economic features artifact has no DatetimeIndex; "
-                    "dropping economic features"
-                )
-                economic = None
-
-        if economic is not None and not economic.empty:
-            tprint_info(
-                f"✅ Loaded economic features: {economic.shape} "
-                f"({economic.index.min()} → {economic.index.max()})"
-            )
-        else:
-            tprint_warning("No economic features found; proceeding without them")
-            economic = None
-
-        return labels, probs, economic
-
-    def _align_inputs(
-        self,
-        *,
-        market_data: pd.DataFrame,
-        labels_df: pd.DataFrame,
-        probs_df: Optional[pd.DataFrame],
-        economic_df: Optional[pd.DataFrame],
-    ) -> pd.DataFrame:
-        """Align market data, labels, probabilities, and economic features."""
-        # Ensure all indices are datetime and sorted
-        def _prepare(df: pd.DataFrame) -> pd.DataFrame:
-            if not isinstance(df.index, pd.DatetimeIndex):
-                df = df.copy()
-                df.index = pd.to_datetime(df.index)
-            return df.sort_index()
-
-        market_data = _prepare(market_data)
-        labels_df = _prepare(labels_df)
-
-        # Some historical HMM artifacts have lost their original datetime index
-        # and appear as epoch-like timestamps around 1970 with sub-second
-        # spacing. When that happens there is no intersection with real market
-        # data (2021+), and an inner join would produce an empty DataFrame.
-        #
-        # To make the alpha step robust, we detect clearly unrealistic
-        # timestamp ranges and re-anchor those artifacts onto the tail of the
-        # market_data index by position, preserving their internal ordering.
-        def _maybe_reanchor_to_market(
-            df: pd.DataFrame,
-            name: str,
-        ) -> pd.DataFrame:
-            if not isinstance(df.index, pd.DatetimeIndex):
-                return df
-
-            try:
-                idx_min = df.index.min()
-                idx_max = df.index.max()
-            except Exception:
-                return df
-
-            # Treat anything strictly before year 2000 as clearly invalid for
-            # crypto markets; those are almost certainly misinterpreted epoch
-            # timestamps from HDF5 reloads.
-            cutoff = pd.Timestamp("2000-01-01")
-            if idx_max < cutoff:
-                if len(df) <= len(market_data):
-                    new_index = market_data.index[-len(df) :]
-                    df = df.copy()
-                    df.index = new_index
-                    tprint_warning(
-                        f"Detected unrealistic {name} timestamp range {idx_min} → {idx_max}; "
-                        f"re-anchoring to last {len(df)} bars of market_data for alignment"
-                    )
-                else:
-                    tprint_warning(
-                        f"Detected unrealistic {name} timestamp range {idx_min} → {idx_max} "
-                        f"with more rows ({len(df)}) than market_data ({len(market_data)}); "
-                        "skipping re-anchoring"
-                    )
-
-            return df
-
-        labels_df = _maybe_reanchor_to_market(labels_df, "HMM labels")
-
-        frames = [
-            market_data[[col for col in market_data.columns if col.lower() in {"open", "high", "low", "close", "volume"}]].rename(
-                columns=lambda c: c.lower()
-            ),
-            labels_df,
-        ]
-
-        if probs_df is not None and not probs_df.empty:
-            probs_df = _prepare(probs_df)
-            probs_df = _maybe_reanchor_to_market(probs_df, "HMM probabilities")
-            frames.append(probs_df)
-
-        if economic_df is not None and not economic_df.empty:
-            economic_df = _prepare(economic_df)
-            economic_df = _maybe_reanchor_to_market(economic_df, "HMM economic features")
-            frames.append(economic_df)
-
-        # Inner join on time to ensure all required information is present
-        aligned = frames[0]
-        for extra in frames[1:]:
-            aligned = aligned.join(extra, how="inner")
-
-        aligned = aligned.dropna(how="all")
-
-        tprint_info(
-            f"🔗 Aligned dataset shape: {aligned.shape} "
-            f"({aligned.index.min()} → {aligned.index.max()})"
-        )
-
-        return aligned
+            tprint_error(f" {self.step_name} failed: {exc}")
+            return {"success": False, "error": str(exc)}
 
     def _compute_alpha_labels(
         self,
@@ -1084,51 +902,106 @@ class HMMMLAlphaStep(BaseStep):
 
         # Always compute 1h forward return
         if return_type == "simple":
-            fwd_ret_1h = close.shift(-1) / close - 1.0
+            fwd_ret_1h = close.shift(-4) / close - 1.0
         else:
-            fwd_ret_1h = np.log(close.shift(-1) / close)
+            fwd_ret_1h = np.log(close.shift(-4) / close)
         df["alpha_forward_return_1h"] = fwd_ret_1h
 
-        # Multi-horizon forward returns (1–3h)
-        max_h = 3
-        fwd_cols: Dict[int, str] = {1: "alpha_forward_return_1h"}
-        for h in range(2, max_h + 1):
-            if return_type == "simple":
-                fwd_ret_h = close.shift(-h) / close - 1.0
-            else:
-                fwd_ret_h = np.log(close.shift(-h) / close)
-            col_name = f"alpha_forward_return_{h}h"
-            df[col_name] = fwd_ret_h
-            fwd_cols[h] = col_name
-
-        # Winsorize forward returns at 1% and 99% percentiles
         # This prevents extreme events (flash crashes, +50% bars) from dominating
-        # the Loss Function (MSE) of LightGBM/XGBoost models
+        # the Loss Function (MSE) of LightGBM/XGBoost models.
         winsorize_enabled = config.get("alpha_winsorize_targets", True)
         winsorize_lower = config.get("alpha_winsorize_lower_quantile", 0.01)
         winsorize_upper = config.get("alpha_winsorize_upper_quantile", 0.99)
 
+        # Build forward-return columns for multiple horizons
+        max_h = int(config.get("alpha_max_horizon_bars", 3))
+        max_h = max(max_h, 1)
+        fwd_cols: Dict[int, str] = {}
+
+        for h in range(1, max_h + 1):
+            if return_type == "simple":
+                fwd_ret = close.shift(-4 * h) / close - 1.0
+            else:
+                fwd_ret = np.log(close.shift(-4 * h) / close)
+            col_name = f"alpha_forward_return_{h}h"
+            df[col_name] = fwd_ret
+            fwd_cols[h] = col_name
+
         if winsorize_enabled:
-            tprint_info(
-                f"🔧 Winsorizing forward returns at {winsorize_lower:.1%} and {winsorize_upper:.1%} quantiles"
-            )
-            for col_name in fwd_cols.values():
-                col_data = df[col_name].dropna()
-                if len(col_data) > 0:
-                    lower_bound = col_data.quantile(winsorize_lower)
-                    upper_bound = col_data.quantile(winsorize_upper)
-                    df[col_name] = df[col_name].clip(lower=lower_bound, upper=upper_bound)
-                    tprint_info(
-                        f"  ✓ {col_name}: clipped to [{lower_bound:.6f}, {upper_bound:.6f}]"
-                    )
+            try:
+                tprint_info(
+                    f" Winsorizing forward returns at {winsorize_lower:.1%} and {winsorize_upper:.1%} quantiles"
+                )
+                for col_name in fwd_cols.values():
+                    col_data = df[col_name].dropna()
+                    if len(col_data) > 0:
+                        lower_bound = col_data.quantile(winsorize_lower)
+                        upper_bound = col_data.quantile(winsorize_upper)
+                        df[col_name] = df[col_name].clip(lower=lower_bound, upper=upper_bound)
+                        tprint_info(
+                            f"  {col_name}: clipped to [{lower_bound:.6f}, {upper_bound:.6f}]"
+                        )
+            except Exception as wins_exc:
+                tprint_warning(
+                    f" Failed to winsorize forward returns (best-effort only): {wins_exc}"
+                )
 
         if target_type == "regression":
             # Average of 1–3h forward returns as macro target
             horizon_keys = [h for h in fwd_cols.keys() if 1 <= h <= max_h]
             fwd_stack = [df[fwd_cols[h]] for h in horizon_keys]
             multi_target = pd.concat(fwd_stack, axis=1).mean(axis=1)
-            df["alpha_target"] = multi_target
-            effective_horizon = f"1-{max_h}h_mean"
+
+            # Volatility-normalized target: scale by recent realized volatility
+            # computed from underlying returns (not forward returns) to reduce
+            # heteroskedasticity and stabilize the alpha target.
+            if return_type == "simple":
+                base_returns = close.pct_change()
+            else:
+                base_returns = np.log(close).diff()
+
+            vol_window = int(config.get("alpha_target_vol_window", 320))
+            vol_window = max(vol_window, 1)
+            realized_vol = base_returns.rolling(vol_window).std()
+
+            df["alpha_target_raw"] = multi_target
+            df["alpha_target_vol"] = realized_vol
+
+            alpha_target = multi_target / (realized_vol + 1e-8)
+
+            # Optional robust clipping on the normalized target itself
+            target_winsorize_enabled = bool(
+                config.get("alpha_target_winsorize_enabled", True)
+            )
+            target_q_lower = float(
+                config.get("alpha_target_winsorize_lower_quantile", 0.01)
+            )
+            target_q_upper = float(
+                config.get("alpha_target_winsorize_upper_quantile", 0.99)
+            )
+
+            if target_winsorize_enabled:
+                try:
+                    tgt_clean = (
+                        pd.Series(alpha_target)
+                        .replace([np.inf, -np.inf], np.nan)
+                        .dropna()
+                    )
+                    if not tgt_clean.empty:
+                        t_low = float(tgt_clean.quantile(target_q_lower))
+                        t_high = float(tgt_clean.quantile(target_q_upper))
+                        alpha_target = alpha_target.clip(t_low, t_high)
+                        tprint_info(
+                            f"🔧 Winsorizing alpha_target at {target_q_lower:.1%}/{target_q_upper:.1%}: "
+                            f"[{t_low:.6f}, {t_high:.6f}]"
+                        )
+                except Exception as tgt_wins_exc:
+                    tprint_warning(
+                        f"⚠️ Failed to winsorize alpha_target (vol-normalized): {tgt_wins_exc}"
+                    )
+
+            df["alpha_target"] = alpha_target
+            effective_horizon = f"1-{max_h}h_mean_vol_norm"
         else:
             # Classification: sign of 1h forward return
             target = (fwd_ret_1h > 0).astype(float)
@@ -1189,6 +1062,120 @@ class HMMMLAlphaStep(BaseStep):
             except TypeError:
                 return float(np.sqrt(mean_squared_error(y_true, y_pred)))  # type: ignore[call-arg]
 
+        def _alpha_hpo_objective(
+            params: Dict[str, Any],
+            X_train: np.ndarray,
+            y_train: np.ndarray,
+            X_val: Optional[np.ndarray] = None,
+            y_val: Optional[np.ndarray] = None,
+            model: Optional[Any] = None,
+            cv_folds: int = 5,
+            scoring_metric: str = "r2",
+        ) -> float:
+            """Custom HPO objective emphasizing IC/rank correlation and smoothness.
+
+            This follows the HierarchicalParameterOptimizer objective_func signature
+            but focuses on holdout validation (X_val, y_val) rather than CV.
+            """
+            if model is None or X_val is None or y_val is None or X_val.shape[0] == 0:
+                return float("-inf")
+
+            try:
+                model.set_params(**params)
+                es_rounds = int(config.get("alpha_early_stopping_rounds", 0))
+
+                if es_rounds > 0 and X_val is not None and y_val is not None and X_val.shape[0] > 0:
+                    try:
+                        model.fit(
+                            X_train,
+                            y_train,
+                            eval_set=[(X_val, y_val)],
+                            eval_metric="l2",
+                            early_stopping_rounds=es_rounds,
+                            verbose=False,
+                        )
+                    except TypeError:
+                        # Fallback if early_stopping_rounds or eval_set are unsupported
+                        model.fit(X_train, y_train)
+                else:
+                    model.fit(X_train, y_train)
+
+                y_pred = model.predict(X_val)
+            except Exception:
+                return float("-inf")
+
+            y_val_arr = np.asarray(y_val, dtype=float).ravel()
+            y_pred_arr = np.asarray(y_pred, dtype=float).ravel()
+            if y_val_arr.shape[0] != y_pred_arr.shape[0] or y_val_arr.shape[0] == 0:
+                return float("-inf")
+
+            # Core metrics
+            ic_pearson = 0.0
+            ic_spearman = 0.0
+            r2_val = 0.0
+            smooth_penalty = 0.0
+
+            try:
+                if y_val_arr.shape[0] >= 2:
+                    ic_pearson = float(np.corrcoef(y_val_arr, y_pred_arr)[0, 1])
+                    if not np.isfinite(ic_pearson):
+                        ic_pearson = 0.0
+            except Exception:
+                ic_pearson = 0.0
+
+            try:
+                if y_val_arr.shape[0] >= 2:
+                    ic_spearman = float(
+                        pd.Series(y_val_arr).corr(pd.Series(y_pred_arr), method="spearman")
+                    )
+                    if not np.isfinite(ic_spearman):
+                        ic_spearman = 0.0
+            except Exception:
+                ic_spearman = 0.0
+
+            if r2_score is not None:
+                try:
+                    r2_val = float(r2_score(y_val_arr, y_pred_arr))
+                    if not np.isfinite(r2_val):
+                        r2_val = 0.0
+                except Exception:
+                    r2_val = 0.0
+
+            try:
+                if y_pred_arr.shape[0] >= 3:
+                    diffs = np.diff(y_pred_arr)
+                    smooth_penalty = float(np.std(diffs))
+                    if not np.isfinite(smooth_penalty):
+                        smooth_penalty = 0.0
+            except Exception:
+                smooth_penalty = 0.0
+
+            # Model complexity from num_leaves (higher -> larger penalty)
+            try:
+                num_leaves_val = float(
+                    params.get("num_leaves", config.get("alpha_num_leaves", 64))
+                )
+            except Exception:
+                num_leaves_val = float(config.get("alpha_num_leaves", 64))
+            complexity_penalty = float(np.log1p(max(num_leaves_val, 1.0)))
+
+            # Weights are configurable via config with sensible defaults
+            w_ic = float(config.get("alpha_hpo_weight_ic_pearson", 1.0))
+            w_ic_spearman = float(config.get("alpha_hpo_weight_ic_spearman", 0.5))
+            w_r2 = float(config.get("alpha_hpo_weight_r2", 0.3))
+            w_smooth = float(config.get("alpha_hpo_weight_smoothness", 0.1))
+            w_complex = float(config.get("alpha_hpo_weight_complexity", 0.05))
+
+            score = (
+                w_ic * ic_pearson
+                + w_ic_spearman * ic_spearman
+                + w_r2 * r2_val
+                - w_smooth * smooth_penalty
+                - w_complex * complexity_penalty
+            )
+
+            return float(score)
+
         # Default to regression model for continuous alpha
         target_type = str(config.get("alpha_target_type", "regression")).lower()
         horizon = int(config.get("alpha_horizon_bars", 1))
@@ -1209,6 +1196,18 @@ class HMMMLAlphaStep(BaseStep):
             for col in numeric_df.columns
             if col != "alpha_target" and not col.startswith("alpha_forward_return_")
         ]
+
+        # Treat regime probability channels as model outputs, not training inputs
+        regime_prob_cols = [
+            col
+            for col in feature_cols
+            if col.startswith("regime_") and col.endswith("_prob")
+        ]
+        if regime_prob_cols:
+            tprint_info(
+                f"ℹ️ Excluding regime probability columns from alpha features: {regime_prob_cols}"
+            )
+            feature_cols = [c for c in feature_cols if c not in regime_prob_cols]
 
         if not feature_cols:
             raise ValueError("No numeric features available for alpha model training")
@@ -1331,65 +1330,59 @@ class HMMMLAlphaStep(BaseStep):
         enable_hpo = bool(config.get("alpha_enable_hpo", False)) and target_type == "regression"
         if enable_hpo:
             try:
-                from src.utils.ml_common.optimization import default_objective_function
-            except Exception as hpo_import_err:
-                tprint_warning(f"Alpha HPO disabled due to import error: {hpo_import_err}")
-                enable_hpo = False
-            else:
-                try:
-                    hpo_param_groups = [
-                        ParameterGroup(
-                            name="lgbm_core",
-                            params={
-                                "num_leaves": {"type": "int", "low": 16, "high": 128},
-                                "subsample": {"type": "float", "low": 0.5, "high": 1.0},
-                                "colsample_bytree": {"type": "float", "low": 0.5, "high": 1.0},
-                                "learning_rate": {"type": "float", "low": 0.01, "high": 0.2, "log": True},
-                            },
-                            priority=1,
-                        ),
-                    ]
+                hpo_param_groups = [
+                    ParameterGroup(
+                        name="lgbm_core",
+                        params={
+                            "num_leaves": {"type": "int", "low": 16, "high": 128},
+                            "subsample": {"type": "float", "low": 0.5, "high": 1.0},
+                            "colsample_bytree": {"type": "float", "low": 0.5, "high": 1.0},
+                            "learning_rate": {"type": "float", "low": 0.01, "high": 0.2, "log": True},
+                        },
+                        priority=1,
+                    ),
+                ]
 
-                    base_model_for_hpo = lgb.LGBMRegressor(
-                        n_estimators=int(config.get("alpha_n_estimators", 300)),
-                        random_state=int(config.get("alpha_random_state", 42)),
-                    )
+                base_model_for_hpo = lgb.LGBMRegressor(
+                    n_estimators=int(config.get("alpha_n_estimators", 300)),
+                    random_state=int(config.get("alpha_random_state", 42)),
+                )
 
-                    optimizer = HierarchicalParameterOptimizer(
-                        param_groups=hpo_param_groups,
-                        objective_func=default_objective_function,
-                        stages=[OptimizationStage.COARSE_GRID, OptimizationStage.TPE],
-                        cv_folds=int(config.get("alpha_hpo_cv_folds", 3)),
-                        scoring_metric="r2",
-                        direction="maximize",
-                        n_rounds=1,
-                        enable_final_refinement=False,
-                        final_refinement_trials=int(config.get("alpha_hpo_final_trials", 20)),
-                        verbose=False,
-                        use_custom_balanced_score=False,
-                    )
+                optimizer = HierarchicalParameterOptimizer(
+                    param_groups=hpo_param_groups,
+                    objective_func=_alpha_hpo_objective,
+                    stages=[OptimizationStage.COARSE_GRID, OptimizationStage.TPE],
+                    cv_folds=int(config.get("alpha_hpo_cv_folds", 3)),
+                    scoring_metric="r2",
+                    direction="maximize",
+                    n_rounds=1,
+                    enable_final_refinement=False,
+                    final_refinement_trials=int(config.get("alpha_hpo_final_trials", 20)),
+                    verbose=True,
+                    use_custom_balanced_score=False,
+                )
 
-                    X_train_hpo = X_train.to_numpy(dtype=float, copy=False)
-                    y_train_hpo = y_train.to_numpy(dtype=float, copy=False)
-                    X_val_hpo = X_val.to_numpy(dtype=float, copy=False) if len(X_val) > 0 else None
-                    y_val_hpo = y_val.to_numpy(dtype=float, copy=False) if len(X_val) > 0 else None
+                X_train_hpo = X_train.to_numpy(dtype=float, copy=False)
+                y_train_hpo = y_train.to_numpy(dtype=float, copy=False)
+                X_val_hpo = X_val.to_numpy(dtype=float, copy=False) if len(X_val) > 0 else None
+                y_val_hpo = y_val.to_numpy(dtype=float, copy=False) if len(X_val) > 0 else None
 
-                    hpo_result = optimizer.optimize(
-                        X_train=X_train_hpo,
-                        y_train=y_train_hpo,
-                        X_val=X_val_hpo,
-                        y_val=y_val_hpo,
-                        model=base_model_for_hpo,
-                    )
+                hpo_result = optimizer.optimize(
+                    X_train=X_train_hpo,
+                    y_train=y_train_hpo,
+                    X_val=X_val_hpo,
+                    y_val=y_val_hpo,
+                    model=base_model_for_hpo,
+                )
 
-                    best_hpo_params = hpo_result.best_params or {}
-                    training_metrics["alpha_hpo_best_score"] = float(hpo_result.best_score)
-                    training_metrics["alpha_hpo_best_params"] = best_hpo_params
-                    training_metrics["alpha_hpo_used"] = True
-                except Exception as hpo_exc:
-                    tprint_warning(f"Alpha HPO failed; proceeding with default hyperparameters: {hpo_exc}")
-                    best_hpo_params = {}
-                    training_metrics["alpha_hpo_used"] = False
+                best_hpo_params = hpo_result.best_params or {}
+                training_metrics["alpha_hpo_best_score"] = float(hpo_result.best_score)
+                training_metrics["alpha_hpo_best_params"] = best_hpo_params
+                training_metrics["alpha_hpo_used"] = True
+            except Exception as hpo_exc:
+                tprint_warning(f"Alpha HPO failed; proceeding with default hyperparameters: {hpo_exc}")
+                best_hpo_params = {}
+                training_metrics["alpha_hpo_used"] = False
         else:
             training_metrics["alpha_hpo_used"] = False
 
@@ -1409,7 +1402,21 @@ class HMMMLAlphaStep(BaseStep):
                         base_params[key] = value
 
             model = lgb.LGBMRegressor(**base_params)
-            model.fit(X_train, y_train)
+            es_rounds = int(config.get("alpha_early_stopping_rounds", 0))
+            if es_rounds > 0 and len(X_val) > 0:
+                try:
+                    model.fit(
+                        X_train,
+                        y_train,
+                        eval_set=[(X_val, y_val)],
+                        eval_metric="l2",
+                        early_stopping_rounds=es_rounds,
+                    )
+                except TypeError:
+                    # Fallback if early stopping or eval_set are unsupported
+                    model.fit(X_train, y_train)
+            else:
+                model.fit(X_train, y_train)
 
             train_pred = model.predict(X_train)
             if r2_score is not None:
@@ -1672,6 +1679,197 @@ class HMMMLAlphaStep(BaseStep):
             if feature_analysis.get("feature_analysis_completed"):
                 training_metrics.update(feature_analysis)
                 tprint_info(f"✅ Comprehensive feature analysis completed and integrated into metrics")
+
+                # Optional auto-prune experiment: try multiple quantile-based thresholds
+                # over permutation importance and adopt the best pruned model if it
+                # improves validation R^2 by more than alpha_auto_prune_min_delta.
+                if (
+                    target_type == "regression"
+                    and bool(config.get("alpha_enable_auto_prune_rerun", False))
+                ):
+                    try:
+                        perm_info = feature_analysis.get("permutation_importance") or training_metrics.get("permutation_importance")
+                        if isinstance(perm_info, dict) and perm_info:
+                            imp_values = {}
+                            for fname, finfo in perm_info.items():
+                                try:
+                                    imp_values[fname] = float(finfo.get("importance_mean", 0.0))
+                                except Exception:
+                                    continue
+
+                            if imp_values:
+                                imp_series = pd.Series(imp_values)
+
+                                # Ensure we have a proper DataFrame view of features
+                                if hasattr(X_scaled_full, "columns"):
+                                    X_full_df = X_scaled_full
+                                else:
+                                    X_full_df = pd.DataFrame(
+                                        X_scaled_full,
+                                        columns=extended_feature_names,
+                                    )
+
+                                # Configuration for quantile-based pruning
+                                quantiles_cfg = config.get("alpha_auto_prune_quantiles", [0.1, 0.2, 0.3])
+                                try:
+                                    quantiles = sorted(
+                                        {
+                                            float(q)
+                                            for q in quantiles_cfg
+                                            if 0.0 < float(q) < 1.0
+                                        }
+                                    )
+                                except Exception:
+                                    quantiles = [0.1, 0.2, 0.3]
+
+                                baseline_val_r2 = training_metrics.get("val_r2")
+                                best_val_r2 = baseline_val_r2
+                                best_model = None
+                                best_drop_features: List[str] = []
+                                best_quantile: Optional[float] = None
+                                best_X_pruned: Optional[pd.DataFrame] = None
+
+                                # Reuse gentle minimum-keep heuristics from pruning config
+                                min_fraction = float(
+                                    config.get("alpha_feature_pruning_min_fraction", 0.6)
+                                )
+                                min_fraction = min(max(min_fraction, 0.2), 0.9)
+                                min_absolute = int(
+                                    config.get("alpha_feature_pruning_min_absolute", 5)
+                                )
+                                n_features_total = len(extended_feature_names)
+                                min_keep = int(
+                                    max(n_features_total * min_fraction, float(min_absolute), 1.0)
+                                )
+
+                                candidate_summaries = []
+
+                                for q in quantiles:
+                                    try:
+                                        threshold = imp_series.quantile(q)
+                                        drop_features = [
+                                            name
+                                            for name, val in imp_series.items()
+                                            if val <= threshold and name in extended_feature_names
+                                        ]
+
+                                        # Ensure we keep enough features
+                                        if not drop_features:
+                                            continue
+                                        if n_features_total - len(drop_features) < min_keep:
+                                            continue
+
+                                        X_pruned = X_full_df.drop(columns=drop_features, errors="ignore")
+                                        X_train_pruned = X_pruned.iloc[:split_idx]
+                                        X_val_pruned = X_pruned.iloc[split_idx:]
+
+                                        pruned_model = lgb.LGBMRegressor(**base_params)
+                                        pruned_model.fit(X_train_pruned, y_train)
+
+                                        pruned_val_r2 = None
+                                        if len(X_val_pruned) > 0 and r2_score is not None:
+                                            try:
+                                                val_pred_pruned = pruned_model.predict(X_val_pruned)
+                                                pruned_val_r2 = float(r2_score(y_val, val_pred_pruned))
+                                            except Exception:
+                                                pruned_val_r2 = None
+
+                                        candidate_summaries.append(
+                                            {
+                                                "quantile": q,
+                                                "threshold": float(threshold),
+                                                "n_dropped": len(drop_features),
+                                                "dropped_features": drop_features,
+                                                "val_r2": pruned_val_r2,
+                                            }
+                                        )
+
+                                        if pruned_val_r2 is not None and (
+                                            best_val_r2 is None
+                                            or pruned_val_r2 > best_val_r2
+                                        ):
+                                            best_val_r2 = pruned_val_r2
+                                            best_model = pruned_model
+                                            best_drop_features = drop_features
+                                            best_quantile = q
+                                            best_X_pruned = X_pruned
+                                    except Exception as cand_err:
+                                        tprint_warning(
+                                            f"Auto-prune candidate at quantile={q} failed (ignored): {cand_err}"
+                                        )
+
+                                training_metrics["auto_prune_enabled"] = True
+                                training_metrics["auto_prune_candidates"] = candidate_summaries
+                                training_metrics["auto_prune_baseline_val_r2"] = (
+                                    float(baseline_val_r2)
+                                    if baseline_val_r2 is not None
+                                    else None
+                                )
+
+                                epsilon = float(
+                                    config.get("alpha_auto_prune_min_delta", 0.0)
+                                )
+
+                                adopt_pruned = (
+                                    best_model is not None
+                                    and baseline_val_r2 is not None
+                                    and best_val_r2 is not None
+                                    and best_val_r2 > baseline_val_r2 + epsilon
+                                )
+
+                                training_metrics["auto_prune_adopted"] = bool(adopt_pruned)
+                                training_metrics["auto_prune_best_quantile"] = (
+                                    float(best_quantile) if best_quantile is not None else None
+                                )
+                                training_metrics["auto_prune_best_val_r2"] = (
+                                    float(best_val_r2)
+                                    if best_val_r2 is not None
+                                    else None
+                                )
+                                training_metrics["auto_prune_best_dropped_features"] = (
+                                    best_drop_features
+                                )
+
+                                if adopt_pruned and best_model is not None and best_X_pruned is not None:
+                                    # Adopt pruned model and feature set as primary
+                                    model = best_model
+                                    X_scaled_full = best_X_pruned
+                                    extended_feature_names = [
+                                        n for n in extended_feature_names if n not in best_drop_features
+                                    ]
+                                    feature_pipeline_artifacts["feature_names"] = (
+                                        extended_feature_names
+                                    )
+
+                                    try:
+                                        # Recompute full scores with pruned model
+                                        full_raw_scores_pruned = model.predict(X_scaled_full)
+                                        scores = pd.Series(
+                                            full_raw_scores_pruned,
+                                            index=df.index,
+                                            name=pred_col_name,
+                                        )
+                                        full_scores = scores.reindex(alpha_df.index)
+                                    except Exception as pred_err:
+                                        tprint_warning(
+                                            f"Auto-prune adoption prediction failed (non-fatal): {pred_err}"
+                                        )
+
+                                    tprint_info(
+                                        "🔍 Auto-prune ADOPTED: quantile="
+                                        f"{best_quantile}, dropped {len(best_drop_features)} features | "
+                                        f"val_r2 {baseline_val_r2 if baseline_val_r2 is not None else 'N/A'} → {best_val_r2:.6f}"
+                                    )
+                                else:
+                                    tprint_info(
+                                        "🔍 Auto-prune experiment completed: "
+                                        f"baseline val_r2={baseline_val_r2 if baseline_val_r2 is not None else 'N/A'}, "
+                                        f"best_pruned_val_r2={best_val_r2 if best_val_r2 is not None else 'N/A'} (no adoption)"
+                                    )
+                        else:
+                            training_metrics["auto_prune_enabled"] = False
+                    except Exception as auto_prune_err:
+                        tprint_warning(f"Auto-prune experiment failed (non-fatal): {auto_prune_err}")
         except Exception as feature_analysis_err:
             tprint_warning(f"Comprehensive feature analysis integration failed (non-fatal): {feature_analysis_err}")
 
@@ -2797,7 +2995,7 @@ class HMMMLAlphaStep(BaseStep):
                                 min_keep = int(
                                     max(
                                         len(feature_names) * min_fraction,
-                                        float(config.get("alpha_feature_pruning_min_absolute", 40)),
+                                        float(config.get("alpha_feature_pruning_min_absolute", 5)),
                                     )
                                 )
 

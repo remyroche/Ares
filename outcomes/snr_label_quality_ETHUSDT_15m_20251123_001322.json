@@ -1,0 +1,135 @@
+{
+  "metadata": {
+    "symbol": "ETHUSDT",
+    "exchange": "binance",
+    "timeframe": "15m",
+    "direction": "long",
+    "model": "analyst",
+    "prefix": "snr_label_quality",
+    "timestamp_utc": "20251123_001322"
+  },
+  "section": "label_quality",
+  "n_samples": 173439,
+  "n_labeled": 31974,
+  "coverage": 0.18435300019026862,
+  "n_positive": 15987,
+  "n_negative": 15987,
+  "positive_rate": 0.5,
+  "pre": {
+    "n_total": 56502,
+    "n_positive": 15371,
+    "n_negative": 41131,
+    "mean_pos_return": 0.01630472978574368,
+    "mean_neg_return": -0.007601258353048909,
+    "cohens_d": 6.105621615307108,
+    "snr_pos": 2.4426549166893103
+  },
+  "post": {
+    "n_total": 31974,
+    "n_positive": 15987,
+    "n_negative": 15987,
+    "mean_pos_return": 0.014824545933104507,
+    "mean_neg_return": -0.008042706723238266,
+    "cohens_d": 3.4902060559928185,
+    "snr_pos": 1.613354943409255
+  },
+  "retention": {
+    "total": 0.5658914728682171,
+    "positive": 1.0400754667881076,
+    "negative": 0.3886849335051421
+  },
+  "overlap": {
+    "pct_overlap": 0.04538062175517608
+  },
+  "cost_metrics": {
+    "tx_cost": 0.0015,
+    "unconditional_mean_return": 0.00339091960493312,
+    "mean_pos_minus_cost": 0.013324545933104507,
+    "frac_small_vs_cost": 0.0
+  },
+  "probability_buckets": {
+    "top_5": {
+      "frac": 0.05,
+      "threshold": 0.9937257779230578,
+      "n_events": 1599,
+      "win_rate": 1.0,
+      "mean_expected_return": 0.007138876398493718,
+      "sharpe_expected": 1.2528973276832658
+    },
+    "top_10": {
+      "frac": 0.1,
+      "threshold": 0.9877940337305624,
+      "n_events": 3198,
+      "win_rate": 1.0,
+      "mean_expected_return": 0.006817371217804134,
+      "sharpe_expected": 1.1834094741618577
+    },
+    "top_20": {
+      "frac": 0.2,
+      "threshold": 0.9162586489650997,
+      "n_events": 6395,
+      "win_rate": 1.0,
+      "mean_expected_return": 0.00601089458776566,
+      "sharpe_expected": 1.0292774180174984
+    },
+    "top_30": {
+      "frac": 0.3,
+      "threshold": 0.5829297556608761,
+      "n_events": 9592,
+      "win_rate": 0.8805254378648875,
+      "mean_expected_return": 0.004863695596501376,
+      "sharpe_expected": 0.8704783698924201
+    },
+    "top_40": {
+      "frac": 0.4,
+      "threshold": 0.5026328341256343,
+      "n_events": 12790,
+      "win_rate": 0.7547302580140735,
+      "mean_expected_return": 0.0036475815607225344,
+      "sharpe_expected": 0.6912000412078827
+    }
+  },
+  "volatility_buckets": {
+    "low": {
+      "n_events": 10658,
+      "n_positive": 2885,
+      "n_negative": 7773,
+      "positive_rate": 0.27068868455620193,
+      "mean_return": -0.0013473638205966844,
+      "sharpe": -0.12534129216132162,
+      "low_threshold": 0.0021713045270958533,
+      "high_threshold": 0.0029928653388055044
+    },
+    "mid": {
+      "n_events": 10658,
+      "n_positive": 3797,
+      "n_negative": 6861,
+      "positive_rate": 0.3562582097954588,
+      "mean_return": 0.0006700061355211395,
+      "sharpe": 0.053195523585713174,
+      "low_threshold": 0.0021713045270958533,
+      "high_threshold": 0.0029928653388055044
+    },
+    "high": {
+      "n_events": 10658,
+      "n_positive": 9305,
+      "n_negative": 1353,
+      "positive_rate": 0.8730531056483393,
+      "mean_return": 0.010850116499874905,
+      "sharpe": 0.8542839026373739,
+      "low_threshold": 0.0021713045270958533,
+      "high_threshold": 0.0029928653388055044
+    }
+  },
+  "advanced": {
+    "aleatoric_uncertainty_fraction": 0.0,
+    "aleatoric_comment": "Aleatoric fraction < 40%: most error is model/feature-driven; improvement is possible.",
+    "noise_ceiling": null,
+    "noise_ceiling_comment": "Noise ceiling requires multiple labelers or repeated labels; not available in current artifacts."
+  },
+  "summary_score": {
+    "score": 0.9123827929180699,
+    "rating": "Great",
+    "comment": "Strong label quality with good coverage, separation and economic margins."
+  }
+}

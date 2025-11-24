@@ -238,7 +238,9 @@ def _build_feature_matrix_from_labeled(labeled_df: pd.DataFrame) -> Tuple[pd.Dat
     # Numeric feature candidates
     numeric = labeled_df.select_dtypes(include=[np.number]).copy()
 
-    # Drop columns that are clearly targets/labels/returns or sample weights
+    # Drop columns that are clearly targets/labels/returns or sample weights,
+    # plus obvious post-event fields (exit_* and close_time) that can encode
+    # realized outcome information.
     drop_patterns = [
         "target",
         "label",
@@ -249,6 +251,8 @@ def _build_feature_matrix_from_labeled(labeled_df: pd.DataFrame) -> Tuple[pd.Dat
         "event_duration",
         "adaptive_profit_threshold",
         "adaptive_stop_threshold",
+        "exit_",
+        "close_time",
     ]
     drop_cols = []
     for col in numeric.columns:
@@ -278,7 +282,7 @@ def _compute_regime_auc_breakdown(
     y_proba: np.ndarray,
     y_true: np.ndarray,
 ) -> dict:
-    """Compute AUC breakdown by volatility and HMM regimes if available.
+    """Compute AUC breakdown by volatility, HMM, and liquidity regimes if available.
 
     Returns:
         Dict with per-regime AUC values and summary statistics.
@@ -306,6 +310,28 @@ def _compute_regime_auc_breakdown(
                 if regime_mask.sum() >= 20 and len(np.unique(y_true[regime_mask])) >= 2:
                     auc = roc_auc_score(y_true[regime_mask], y_proba[regime_mask])
                     regime_aucs[f"hmm_{regime}"] = float(auc)
+        except Exception:
+            pass
+
+    # Liquidity regime breakdown if available
+    liquidity_regime_cols = [
+        c for c in labeled_df.columns 
+        if c.startswith('liquidity_liquidity_regime_') and 'prob_' in c
+    ]
+    
+    if liquidity_regime_cols:
+        try:
+            # For each liquidity regime probability column, compute AUC for high-probability regime periods
+            for col in liquidity_regime_cols:
+                # Extract regime number from column name (e.g., 'liquidity_liquidity_regime_0_prob_')
+                regime_num = col.split('_')[2] if '_' in col else 'unknown'
+                
+                # Consider periods where probability > 0.6 as "in regime"
+                regime_mask = labeled_df[col].fillna(0) > 0.6
+                
+                if regime_mask.sum() >= 20 and len(np.unique(y_true[regime_mask])) >= 2:
+                    auc = roc_auc_score(y_true[regime_mask], y_proba[regime_mask])
+                    regime_aucs[f"liquidity_{regime_num}"] = float(auc)
         except Exception:
             pass
 
@@ -471,6 +497,265 @@ def _estimate_label_noise_confident_learning(
         "false_neg_rate_confident": float(false_neg_rate),
         "false_pos_rate_confident": float(false_pos_rate),
         "mislabeled_indices": mislabeled_indices.tolist()[:100],  # Limit to first 100
+    }
+
+
+def _run_label_shuffle_cv(
+    X: pd.DataFrame,
+    y: pd.Series,
+    cv_splits: int = 5,
+) -> dict:
+    """Run a label-shuffled time-series CV sanity check.
+
+    Uses the same TimeSeriesSplit and probe LightGBM as the main robustness
+    routine, but with labels randomly permuted along the time axis. AUC and
+    Brier should collapse towards random (≈0.5 / ≈0.25) if the pipeline is
+    free of structural leakage.
+    """
+
+    try:
+        X_array = X.values.astype(float)
+        y_array = y.values.astype(float)
+    except Exception:
+        return {"n_folds": 0}
+
+    if X_array.size == 0 or y_array.size == 0:
+        return {"n_folds": 0}
+
+    rng = np.random.default_rng(12345)
+    y_shuffled = y_array.copy()
+    rng.shuffle(y_shuffled)
+
+    tscv = TimeSeriesSplit(n_splits=cv_splits)
+    aucs: list[float] = []
+    briers: list[float] = []
+    aps: list[float] = []
+
+    for tr_idx, te_idx in tscv.split(X_array):
+        X_tr = X_array[tr_idx]
+        X_te = X_array[te_idx]
+        y_tr = y_shuffled[tr_idx]
+        y_te = y_shuffled[te_idx]
+
+        mask_tr = ~np.isnan(y_tr)
+        mask_te = ~np.isnan(y_te)
+        y_tr_clean = y_tr[mask_tr]
+        X_tr_clean = X_tr[mask_tr]
+        y_te_clean = y_te[mask_te]
+        X_te_clean = X_te[mask_te]
+
+        if len(y_tr_clean) < 50 or len(y_te_clean) < 20:
+            continue
+        if len(np.unique(y_tr_clean)) < 2 or len(np.unique(y_te_clean)) < 2:
+            continue
+
+        try:
+            clf = lgb.LGBMClassifier(
+                boosting_type="gbdt",
+                objective="binary",
+                max_depth=3,
+                n_estimators=50,
+                learning_rate=0.1,
+                subsample=0.7,
+                colsample_bytree=0.7,
+                min_child_samples=20,
+                n_jobs=-1,
+                verbose=-1,
+                random_state=1337,
+            )
+            clf.fit(X_tr_clean, y_tr_clean)
+            prob = clf.predict_proba(X_te_clean)[:, 1]
+
+            auc = roc_auc_score(y_te_clean, prob)
+            brier = brier_score_loss(y_te_clean, prob)
+            ap = average_precision_score(y_te_clean, prob)
+        except Exception:
+            continue
+
+        aucs.append(float(auc))
+        briers.append(float(brier))
+        aps.append(float(ap))
+
+    if not aucs:
+        return {"n_folds": 0}
+
+    aucs_arr = np.array(aucs, dtype=float)
+    briers_arr = np.array(briers, dtype=float)
+    aps_arr = np.array(aps, dtype=float)
+
+    return {
+        "n_folds": int(len(aucs_arr)),
+        "mean_auc": float(np.nanmean(aucs_arr)),
+        "std_auc": float(np.nanstd(aucs_arr)),
+        "mean_brier": float(np.nanmean(briers_arr)),
+        "mean_ap": float(np.nanmean(aps_arr)),
+    }
+
+
+def _compute_strict_holdout_metrics(
+    X: pd.DataFrame,
+    y: pd.Series,
+    holdout_fraction: float = 0.3,
+) -> dict:
+    """Compute a single forward holdout split (train early, test late).
+
+    This approximates a more realistic "train-then-freeze" evaluation by
+    using the earliest (1 - holdout_fraction) of samples for training and the
+    last holdout_fraction for testing.
+    """
+
+    try:
+        X_array = X.values.astype(float)
+        y_array = y.values.astype(float)
+    except Exception:
+        return {}
+
+    mask = ~np.isnan(y_array)
+    X_clean = X_array[mask]
+    y_clean = y_array[mask]
+
+    n_total = len(y_clean)
+    if n_total < 100:
+        return {
+            "n_total": int(n_total),
+            "n_train": 0,
+            "n_test": 0,
+        }
+
+    split_idx = int(n_total * (1.0 - holdout_fraction))
+    if split_idx <= 50 or n_total - split_idx <= 20:
+        return {
+            "n_total": int(n_total),
+            "n_train": 0,
+            "n_test": 0,
+        }
+
+    X_tr = X_clean[:split_idx]
+    y_tr = y_clean[:split_idx]
+    X_te = X_clean[split_idx:]
+    y_te = y_clean[split_idx:]
+
+    if len(np.unique(y_tr)) < 2 or len(np.unique(y_te)) < 2:
+        return {
+            "n_total": int(n_total),
+            "n_train": int(len(y_tr)),
+            "n_test": int(len(y_te)),
+        }
+
+    try:
+        clf = lgb.LGBMClassifier(
+            boosting_type="gbdt",
+            objective="binary",
+            max_depth=3,
+            n_estimators=50,
+            learning_rate=0.1,
+            subsample=0.7,
+            colsample_bytree=0.7,
+            min_child_samples=20,
+            n_jobs=-1,
+            verbose=-1,
+            random_state=4242,
+        )
+        clf.fit(X_tr, y_tr)
+        prob = clf.predict_proba(X_te)[:, 1]
+
+        auc = roc_auc_score(y_te, prob)
+        brier = brier_score_loss(y_te, prob)
+        ap = average_precision_score(y_te, prob)
+    except Exception:
+        return {
+            "n_total": int(n_total),
+            "n_train": int(len(y_tr)),
+            "n_test": int(len(y_te)),
+        }
+
+    return {
+        "n_total": int(n_total),
+        "n_train": int(len(y_tr)),
+        "n_test": int(len(y_te)),
+        "holdout_fraction": float(holdout_fraction),
+        "auc": float(auc),
+        "brier": float(brier),
+        "ap": float(ap),
+    }
+
+
+def _scan_single_feature_leakage(
+    X: pd.DataFrame,
+    y: pd.Series,
+    auc_threshold: float = 0.9,
+    top_k: int = 10,
+) -> dict:
+    """Scan single features for unusually high AUC vs labels.
+
+    This is a coarse leakage detector: if any individual feature can almost
+    perfectly separate the labels on its own, it is likely carrying target-
+    like information (e.g. realized return derivatives or hidden label codes).
+    """
+
+    results: list[dict] = []
+    try:
+        y_array = y.values.astype(float)
+    except Exception:
+        return {
+            "features": [],
+            "suspicious_features": [],
+            "max_auc": None,
+            "auc_threshold": float(auc_threshold),
+        }
+
+    for idx, col in enumerate(X.columns):
+        try:
+            x_col = X[col].values.astype(float)
+        except Exception:
+            continue
+
+        mask = ~np.isnan(x_col) & ~np.isnan(y_array)
+        if mask.sum() < 50:
+            continue
+
+        y_valid = y_array[mask]
+        x_valid = x_col[mask]
+
+        if len(np.unique(y_valid)) < 2:
+            continue
+
+        try:
+            auc = roc_auc_score(y_valid, x_valid)
+        except Exception:
+            continue
+
+        results.append(
+            {
+                "feature_name": str(col),
+                "feature_idx": int(idx),
+                "auc": float(auc),
+            }
+        )
+
+    if not results:
+        return {
+            "features": [],
+            "suspicious_features": [],
+            "max_auc": None,
+            "auc_threshold": float(auc_threshold),
+        }
+
+    # Sort by distance from random (0.5)
+    results_sorted = sorted(results, key=lambda r: abs(r["auc"] - 0.5), reverse=True)
+    suspicious = [
+        r
+        for r in results_sorted
+        if r["auc"] >= auc_threshold or r["auc"] <= 1.0 - auc_threshold
+    ][:top_k]
+
+    max_auc = results_sorted[0]["auc"] if results_sorted else None
+
+    return {
+        "features": results_sorted[:top_k],
+        "suspicious_features": suspicious,
+        "max_auc": float(max_auc) if max_auc is not None and np.isfinite(max_auc) else None,
+        "auc_threshold": float(auc_threshold),
     }
 
 
@@ -1512,6 +1797,11 @@ def run_model_robustness(
                 pseudo_r2_ci_low = float(np.percentile(boot_arr, 2.5))
                 pseudo_r2_ci_high = float(np.percentile(boot_arr, 97.5))
 
+    # Label-shuffle CV, strict holdout, and single-feature leakage scan
+    label_shuffle_metrics = _run_label_shuffle_cv(X, y, cv_splits=cv_splits)
+    strict_holdout_metrics = _compute_strict_holdout_metrics(X, y)
+    single_feature_leakage = _scan_single_feature_leakage(X, y)
+
     # NEW: Compute enhanced diagnostics
     regime_aucs = {}
     temporal_auc_data = {"temporal_aucs": [], "temporal_indices": []}
@@ -1680,6 +1970,32 @@ def run_model_robustness(
     print(f"Model-level SNR (p_hat pos vs neg): {_fmt(model_snr)}")
 
     print()
+    print("-- Label-Shuffle CV Sanity Check --")
+    if label_shuffle_metrics.get("n_folds", 0) > 0:
+        print(
+            "  Shuffled mean AUC: "
+            f"{_fmt(label_shuffle_metrics.get('mean_auc'))} "
+            f"(std={_fmt(label_shuffle_metrics.get('std_auc'))}), "
+            f"folds={int(label_shuffle_metrics.get('n_folds', 0))}"
+        )
+    else:
+        print("  No valid folds for label-shuffle CV (insufficient data).")
+
+    print()
+    print("-- Strict Forward Holdout --")
+    if strict_holdout_metrics.get("n_test", 0) > 0:
+        print(
+            "  Holdout AUC: "
+            f"{_fmt(strict_holdout_metrics.get('auc'))}, "
+            f"Brier: {_fmt(strict_holdout_metrics.get('brier'))}, "
+            f"AP: {_fmt(strict_holdout_metrics.get('ap'))}, "
+            f"train={strict_holdout_metrics.get('n_train', 0)}, "
+            f"test={strict_holdout_metrics.get('n_test', 0)}"
+        )
+    else:
+        print("  Holdout metrics not available (insufficient data).")
+
+    print()
     print("-- Naive Baseline Comparison (constant probability) --")
     print(f"Baseline AUC: {_fmt(baseline_auc)} | Probe AUC: {_fmt(mean_auc)} | Delta: {_fmt(delta_auc)}")
     print(
@@ -1695,6 +2011,17 @@ def run_model_robustness(
         f"{_fmt(residual_pattern_strength)}"
     )
     print(f"Residual lag-1 autocorrelation: {_fmt(residual_lag1_autocorr)}")
+
+    print()
+    print("-- Single-Feature Leakage Scan --")
+    if single_feature_leakage.get("max_auc") is not None:
+        print(
+            "  Max single-feature AUC: "
+            f"{_fmt(single_feature_leakage.get('max_auc'))} "
+            f"(threshold={_fmt(single_feature_leakage.get('auc_threshold'))})"
+        )
+    else:
+        print("  No valid single-feature AUCs computed.")
 
     print()
     print("-- Model Family Comparison (LightGBM vs LogisticRegression) --")
@@ -1789,6 +2116,9 @@ def run_model_robustness(
                 "delta_brier": float(delta_brier) if np.isfinite(delta_brier) else None,
                 "delta_ap": float(delta_ap) if np.isfinite(delta_ap) else None,
             },
+            "label_shuffle_cv": label_shuffle_metrics,
+            "strict_holdout": strict_holdout_metrics,
+            "single_feature_leakage": single_feature_leakage,
         },
         "regime_analysis": {
             "regime_aucs": regime_aucs,
@@ -1840,6 +2170,21 @@ def run_model_robustness(
             f"- Pseudo-R^2 95% CI: [{_fmt(pseudo_r2_ci_low)}, {_fmt(pseudo_r2_ci_high)}]",
             f"- Permutation p-value for global AUC: {_fmt(perm_pvalue)}",
             f"- Model-level SNR (p_hat pos vs neg): {_fmt(model_snr)}",
+            "",
+            "## Label-Shuffle CV Sanity Check",
+            f"- Shuffled mean AUC: {_fmt(label_shuffle_metrics.get('mean_auc'))}",
+            f"- Shuffled std AUC: {_fmt(label_shuffle_metrics.get('std_auc'))}",
+            f"- Shuffled folds: {int(label_shuffle_metrics.get('n_folds', 0))}",
+            "",
+            "## Strict Forward Holdout",
+            f"- Holdout AUC: {_fmt(strict_holdout_metrics.get('auc'))}",
+            f"- Holdout Brier: {_fmt(strict_holdout_metrics.get('brier'))}",
+            f"- Holdout AP: {_fmt(strict_holdout_metrics.get('ap'))}",
+            f"- Holdout train / test: {strict_holdout_metrics.get('n_train', 0)} / {strict_holdout_metrics.get('n_test', 0)}",
+            "",
+            "## Single-Feature Leakage Scan",
+            f"- Max single-feature AUC: {_fmt(single_feature_leakage.get('max_auc'))}",
+            f"- AUC threshold for suspicion: {_fmt(single_feature_leakage.get('auc_threshold'))}",
             "",
             "## Naive Baseline Comparison (constant probability)",
             f"- Baseline AUC: {_fmt(baseline_auc)} | Probe AUC: {_fmt(mean_auc)} | Delta: {_fmt(delta_auc)}",

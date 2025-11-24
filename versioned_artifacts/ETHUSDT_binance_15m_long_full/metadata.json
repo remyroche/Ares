@@ -1,0 +1,61 @@
+{
+  "versions": {
+    "selected_feature_dataframe_60_20251123_175001_088": {
+      "created_at": "2025-11-23T17:50:01.088460",
+      "num_rows": 1204,
+      "num_columns": 4,
+      "columns": [
+        "candlestick_piercing_line_pattern_vwap_27x_ratio",
+        "candlestick_engulfing_pattern_vwap_27x_ratio",
+        "day",
+        "binary_label"
+      ],
+      "artifact_name": "selected_feature_dataframe_60",
+      "symbol": "ETHUSDT",
+      "exchange": "binance",
+      "timeframe": "15m",
+      "direction": "long",
+      "model": "full",
+      "step_name": "feature_generation_final_feature_selection_step"
+    },
+    "selected_feature_dataframe_50_20251123_175001_102": {
+      "created_at": "2025-11-23T17:50:01.102951",
+      "num_rows": 1204,
+      "num_columns": 4,
+      "columns": [
+        "candlestick_piercing_line_pattern_vwap_27x_ratio",
+        "candlestick_engulfing_pattern_vwap_27x_ratio",
+        "day",
+        "binary_label"
+      ],
+      "artifact_name": "selected_feature_dataframe_50",
+      "symbol": "ETHUSDT",
+      "exchange": "binance",
+      "timeframe": "15m",
+      "direction": "long",
+      "model": "full",
+      "step_name": "feature_generation_final_feature_selection_step"
+    },
+    "selected_feature_dataframe_40_20251123_175001_114": {
+      "created_at": "2025-11-23T17:50:01.114755",
+      "num_rows": 1204,
+      "num_columns": 4,
+      "columns": [
+        "candlestick_piercing_line_pattern_vwap_27x_ratio",
+        "candlestick_engulfing_pattern_vwap_27x_ratio",
+        "day",
+        "binary_label"
+      ],
+      "artifact_name": "selected_feature_dataframe_40",
+      "symbol": "ETHUSDT",
+      "exchange": "binance",
+      "timeframe": "15m",
+      "direction": "long",
+      "model": "full",
+      "step_name": "feature_generation_final_feature_selection_step"
+    }
+  },
+  "current_version": "selected_feature_dataframe_40_20251123_175001_114",
+  "created_at": "2025-11-23T17:45:48.629673",
+  "updated_at": "2025-11-24T00:53:25.685649"
+}

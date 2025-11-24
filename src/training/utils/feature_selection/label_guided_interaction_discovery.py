@@ -25,6 +25,8 @@ from sklearn.metrics import r2_score
 from sklearn.model_selection import cross_val_score
 import warnings
 
+from src.utils.tprint import tprint_info
+
 try:
     import lightgbm as lgb
     import shap
@@ -153,6 +155,36 @@ class LabelGuidedInteractionDiscovery:
         else:
             feature_pairs = self._filter_feature_pairs(feature_pairs, feature_categories)
 
+        # Ensure that feature pairs only reference columns that are actually
+        # present in the cleaned feature matrix. This prevents the subsequent
+        # candidate-generation step from silently producing zero candidates
+        # because of stale or mismatched feature names.
+        valid_cols = set(features_clean.columns)
+        original_pair_count = len(feature_pairs)
+        feature_pairs = [
+            (f1, f2)
+            for (f1, f2) in feature_pairs
+            if f1 in valid_cols and f2 in valid_cols
+        ]
+
+        removed_pairs = original_pair_count - len(feature_pairs)
+        if removed_pairs > 0:
+            self.logger.info(
+                "  📊 Filtered %d feature pairs that referenced missing columns; %d remain",
+                removed_pairs,
+                len(feature_pairs),
+            )
+
+        # If all externally-provided pairs were filtered out, fall back to
+        # automatic pair generation based on the cleaned feature matrix so we
+        # still generate interaction candidates.
+        if len(feature_pairs) == 0:
+            self.logger.warning(
+                "  ⚠️ No valid feature pairs remain after alignment; "
+                "falling back to automatic pair generation"
+            )
+            feature_pairs = self._generate_feature_pairs(features_clean, feature_categories)
+
         self.logger.info(f"  📊 Testing {len(feature_pairs)} feature pairs")
 
         # Calculate base feature scores for lift comparison
@@ -191,16 +223,41 @@ class LabelGuidedInteractionDiscovery:
         features: pd.DataFrame,
         target: pd.Series
     ) -> Tuple[pd.DataFrame, pd.Series]:
-        """Clean and align features and target."""
-        # Align indices
+        """Clean and align features and target.
+
+        Primary alignment strategy:
+        - Use index intersection when there is at least some overlap.
+        - If there are *no* common indices (e.g. datetime index vs RangeIndex),
+          fall back to positional alignment on the last min(len(features), len(target))
+          rows and reset both indices to a shared RangeIndex. This mirrors the
+          robustness used in the higher-level Ares steps and prevents the
+          interaction discovery from operating on an empty sample set.
+        """
+
+        # Align indices with robust fallback when labels do not overlap
         common_idx = features.index.intersection(target.index)
-        features_clean = features.loc[common_idx].copy()
-        target_clean = target.loc[common_idx].copy()
+
+        if len(common_idx) == 0:
+            # Fall back to positional alignment, preserving recent data
+            min_len = min(len(features), len(target))
+            if min_len == 0:
+                # Nothing to align; return empty samples
+                return features.iloc[0:0].copy(), target.iloc[0:0].copy()
+
+            features_aligned = features.iloc[-min_len:].copy()
+            target_aligned = target.iloc[-min_len:].copy()
+
+            # Reset to a shared RangeIndex to guarantee alignment downstream
+            features_aligned.index = pd.RangeIndex(min_len)
+            target_aligned.index = pd.RangeIndex(min_len)
+        else:
+            features_aligned = features.loc[common_idx].copy()
+            target_aligned = target.loc[common_idx].copy()
 
         # Remove NaN/inf
-        finite_mask = np.isfinite(target_clean) & np.all(np.isfinite(features_clean), axis=1)
-        features_clean = features_clean[finite_mask]
-        target_clean = target_clean[finite_mask]
+        finite_mask = np.isfinite(target_aligned) & np.all(np.isfinite(features_aligned), axis=1)
+        features_clean = features_aligned[finite_mask]
+        target_clean = target_aligned[finite_mask]
 
         return features_clean, target_clean
 
@@ -295,6 +352,29 @@ class LabelGuidedInteractionDiscovery:
                 except Exception as e:
                     self.logger.warning(f"  ⚠️ R² calculation failed for {col}: {e}")
                     self._base_r2_scores[col] = 0.0
+
+        # Log summary statistics for base feature MI scores so we can
+        # understand how strong the individual features are and how much
+        # headroom interactions realistically have for MI lift.
+        if self._base_mi_scores:
+            mi_values = np.array(list(self._base_mi_scores.values()), dtype=float)
+            self.logger.info(
+                "  📊 Base feature MI stats: min=%.4f, median=%.4f, max=%.4f",
+                float(np.min(mi_values)),
+                float(np.median(mi_values)),
+                float(np.max(mi_values)),
+            )
+
+            # Also log the top-K base features by MI so we can inspect
+            # which concrete features (including vol-normalized / VWAP
+            # variants) are actually carrying most of the signal.
+            mi_items = sorted(
+                self._base_mi_scores.items(), key=lambda kv: kv[1], reverse=True
+            )
+            top_k = min(30, len(mi_items))
+            self.logger.info("  📊 Top base features by MI (top %d):", top_k)
+            for name, mi in mi_items[:top_k]:
+                self.logger.info("    • %s: MI=%.4f", name, float(mi))
 
     def _generate_candidates(
         self,
@@ -470,8 +550,11 @@ class LabelGuidedInteractionDiscovery:
     def _filter_by_lift(self):
         """Filter candidates that don't provide sufficient lift over base features."""
         self.logger.info("  🔍 Filtering by R²/MI lift requirements...")
+        tprint_info("  🔍 [LGID] Filtering candidates by R²/MI lift requirements...")
 
         filtered_candidates = []
+        mi_lifts_before_filter = []
+        total_before = len(self.candidates)
 
         for cand in self.candidates:
             # Calculate MI lift
@@ -484,6 +567,9 @@ class LabelGuidedInteractionDiscovery:
             else:
                 cand.mi_lift = 0.0
 
+            # Track MI lift values for diagnostics before any filtering
+            mi_lifts_before_filter.append(cand.mi_lift)
+
             # Check MI lift requirement
             if self.config.require_mi_lift:
                 if cand.mi_lift < self.config.min_mi_lift:
@@ -494,14 +580,76 @@ class LabelGuidedInteractionDiscovery:
 
             filtered_candidates.append(cand)
 
-        n_filtered = len(self.candidates) - len(filtered_candidates)
+        # Log MI-lift distribution across all candidates (before
+        # filtering) so we can see whether the current thresholds are
+        # realistic and whether interactions provide any incremental MI
+        # at all over the best base feature in each pair.
+        if mi_lifts_before_filter:
+            lifts_arr = np.array(mi_lifts_before_filter, dtype=float)
+
+            self.logger.info(
+                "  📊 MI-lift distribution (before filtering): min=%.4f, p25=%.4f, "
+                "median=%.4f, p75=%.4f, max=%.4f",
+                float(np.min(lifts_arr)),
+                float(np.percentile(lifts_arr, 25)),
+                float(np.percentile(lifts_arr, 50)),
+                float(np.percentile(lifts_arr, 75)),
+                float(np.max(lifts_arr)),
+            )
+
+            num_pos = int(np.sum(lifts_arr > 0.0))
+            num_ge_001 = int(np.sum(lifts_arr >= 0.01))
+            num_ge_005 = int(np.sum(lifts_arr >= 0.05))
+            num_ge_010 = int(np.sum(lifts_arr >= 0.10))
+
+            self.logger.info(
+                "  📊 MI-lift counts (before filtering): >0: %d, "+
+                ">=0.01: %d, >=0.05: %d, >=0.10: %d",
+                num_pos,
+                num_ge_001,
+                num_ge_005,
+                num_ge_010,
+            )
+
+            # Log the top few candidates by MI lift for easier manual
+            # inspection in logs.
+            top_k = min(5, len(self.candidates))
+            if top_k > 0:
+                top_by_lift = sorted(
+                    self.candidates, key=lambda c: c.mi_lift, reverse=True
+                )[:top_k]
+                for c in top_by_lift:
+                    base_mi_f1 = self._base_mi_scores.get(c.feature1, 0.0)
+                    base_mi_f2 = self._base_mi_scores.get(c.feature2, 0.0)
+                    max_base_mi = max(base_mi_f1, base_mi_f2)
+                    self.logger.info(
+                        "  🔝 MI-lift candidate: %s (%s, %s) "
+                        "mi=%.4f, base_max_mi=%.4f, mi_lift=%.4f",
+                        c.name,
+                        c.feature1,
+                        c.feature2,
+                        float(c.mi_score),
+                        float(max_base_mi),
+                        float(c.mi_lift),
+                    )
+        else:
+            self.logger.info(
+                "  📊 No MI-lift values computed for candidates (empty candidate set?)"
+            )
+
+        n_filtered = total_before - len(filtered_candidates)
         self.candidates = filtered_candidates
 
         self.logger.info(f"  📊 Filtered {n_filtered} candidates by lift requirements")
+        tprint_info(
+            f"  📊 [LGID] After lift filter: kept {len(self.candidates)}/{total_before}, "
+            f"filtered {n_filtered} by MI/R² lift"
+        )
 
     def _apply_lasso_selection(self, features: pd.DataFrame, target: pd.Series):
         """Apply LASSO regularization for interaction selection."""
         self.logger.info("  🔧 Applying LASSO regularization...")
+        tprint_info("  🔧 [LGID] Applying LASSO regularization to interaction candidates...")
 
         # Build candidate dataframe
         candidate_features = {}
@@ -550,6 +698,10 @@ class LabelGuidedInteractionDiscovery:
 
             n_selected = sum(selected_mask)
             self.logger.info(f"  ✅ LASSO selected {n_selected}/{len(self.candidates)} interactions")
+            tprint_info(
+                f"  📊 [LGID] After LASSO: selected {n_selected}/{len(self.candidates)} candidates "
+                f"with non-zero coefficients"
+            )
 
         except Exception as e:
             self.logger.warning(f"  ⚠️ LASSO selection failed: {e}")
@@ -560,6 +712,7 @@ class LabelGuidedInteractionDiscovery:
     def _apply_category_limits(self):
         """Apply per-category-pair limits to prevent over-representation."""
         self.logger.info("  🔧 Applying category-pair limits...")
+        tprint_info("  🔧 [LGID] Applying category-pair limits to selected interactions...")
 
         # Group by category pair
         category_pair_groups: Dict[Tuple[str, str], List[InteractionCandidate]] = {}
@@ -593,6 +746,10 @@ class LabelGuidedInteractionDiscovery:
             self.selected_interactions.extend(cands[:n_to_select])
 
         self.logger.info(f"  ✅ Selected {len(self.selected_interactions)} interactions after category limits")
+        tprint_info(
+            f"  📊 [LGID] After category limits: {len(self.selected_interactions)} final interactions "
+            f"across {len(category_pair_groups)} category pairs"
+        )
 
     def _build_interaction_dataframe(self, features: pd.DataFrame) -> pd.DataFrame:
         """Build final interaction dataframe from selected interactions."""

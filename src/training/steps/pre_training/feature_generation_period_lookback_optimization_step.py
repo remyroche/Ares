@@ -23,6 +23,7 @@ from src.utils.tprint import tprint
 from src.utils.hardware.unified_hardware_manager import UnifiedHardwareManager, HardwareConfig, WorkloadType
 from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer
 from src.utils.parallel_processing_optimizer import MacM1ParallelOptimizer
+from src.training.utils.meta_label_constants import META_LABEL_EXCLUDED_FEATURE_COLUMNS
 
 # VectorBT imports for high-performance optimization
 try:
@@ -63,7 +64,6 @@ except ImportError:
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 logger = logging.getLogger(__name__)
-
 
 class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
     """
@@ -131,6 +131,10 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         self.proxy_top_lookbacks_ratio = 0.5     # Keep top 50% of lookback periods after proxy filtering
         self.fast_mi_estimator = True           # Use fast mutual information approximation
         self.fast_fail_on_mi_error = True       # Fast fail instead of fallback to correlation
+        self.mi_max_samples = 50000
+        self.mi_early_stop_enabled = True
+        self.mi_early_stop_patience = 3
+        self.mi_early_stop_drop = 0.10  # 10% relative drop
     
     def _initialize_vectorbt_components(self):
         """Initialize VectorBT components for performance optimization."""
@@ -172,9 +176,9 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         # Long-term (120-300): Multi-regime interactions and market memory
         lookbacks = [
             # Micro-structure: 2-20 bars (immediate price action)
-            2, 3, 4, 5, 8, 10, 15, 20,
+            2, 3, 4, 5, 8, 10, 13, 15, 17, 20, 22,
             # Short-term: 25-50 bars (local trends and patterns)
-            25, 30, 35, 40, 45, 50,
+            25, 27, 30, 35, 40, 45, 50,
             # Medium-term: 60-100 bars (intraday regime shifts)
             60, 70, 80, 90, 100,
             # Long-term: 120-300 bars (multi-regime interactions)
@@ -184,6 +188,49 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             f"🎯 Generated {len(lookbacks)} intelligent lookback ranges up to 300 bars: {lookbacks}"
         )
         return lookbacks
+
+    def _get_mi_lookback_candidates(self) -> List[int]:
+        timeframe = getattr(self, '_timeframe', '15m')
+        try:
+            unit = str(timeframe)[-1]
+            value = int(str(timeframe)[:-1])
+            if unit == 'm':
+                minutes_per_bar = value
+            elif unit == 'h':
+                minutes_per_bar = value * 60
+            else:
+                minutes_per_bar = 15
+        except Exception:
+            minutes_per_bar = 15
+
+        min_horizon_min = 30
+        max_horizon_min = 180 * 6
+
+        try:
+            min_bars = max(1, int(round(min_horizon_min / float(minutes_per_bar))))
+            max_bars = max(min_bars, int(round(max_horizon_min / float(minutes_per_bar))))
+        except Exception:
+            min_bars = 3
+            max_bars = 20
+
+        candidates = [lb for lb in self.intelligent_lookbacks if min_bars <= lb <= max_bars]
+        if not candidates:
+            candidates = [lb for lb in self.intelligent_lookbacks if 3 <= lb <= 20]
+        return candidates
+
+    def _subsample_series_for_mi(self, feature_series: np.ndarray, target_series: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        n = len(feature_series)
+        if n <= getattr(self, 'mi_max_samples', 50000):
+            return feature_series, target_series
+        try:
+            max_samples = int(getattr(self, 'mi_max_samples', 50000))
+            if max_samples <= 0:
+                return feature_series, target_series
+        except Exception:
+            max_samples = 50000
+
+        indices = np.linspace(0, n - 1, max_samples, dtype=int)
+        return feature_series[indices], target_series[indices]
     
     def _optimize_with_intelligent_ranges(self, data: pd.DataFrame, feature_name: str, target_column: str, optimizer) -> Dict:
         """Optimize feature using intelligent lookback ranges with VectorBT batch processing."""
@@ -531,10 +578,18 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             target_abs = np.abs(target_data.astype(float))
             event_mask_raw = target_abs > 0.0
 
-            results = {}
+            results: Dict[int, float] = {}
+
+            early_stop_enabled = bool(getattr(self, 'mi_early_stop_enabled', False))
+            patience = int(getattr(self, 'mi_early_stop_patience', 3))
+            drop_frac = float(getattr(self, 'mi_early_stop_drop', 0.10))
+            best_score = 0.0
+            consecutive_drop = 0
+
+            ordered_lookbacks = sorted(lookback_ranges)
             
             # Evaluate each lookback period using pre-computed statistics
-            for lookback in lookback_ranges:
+            for lookback in ordered_lookbacks:
                 if lookback not in stats_cache:
                     results[lookback] = 0.0
                     continue
@@ -683,7 +738,20 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                         penalty = 1.0
 
                     scored_mi = mi_proxy * penalty
-                    results[lookback] = min(max(float(scored_mi), 0.0), 1.0)
+                    score_val = min(max(float(scored_mi), 0.0), 1.0)
+                    results[lookback] = score_val
+
+                    # Early stopping: if MI proxy drops significantly for
+                    # several consecutive larger lookbacks, stop exploring
+                    # further ranges for this feature.
+                    if score_val > best_score:
+                        best_score = score_val
+                        consecutive_drop = 0
+                    elif early_stop_enabled and best_score > 0.0:
+                        if score_val < best_score * (1.0 - drop_frac):
+                            consecutive_drop += 1
+                            if consecutive_drop >= patience:
+                                break
                     
                 except Exception as e:
                     self.logger.debug(f"Batch evaluation failed for lookback {lookback}: {e}")
@@ -759,6 +827,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             from sklearn.preprocessing import StandardScaler
             
             tprint("📊 Computing feature importance from merged data...")
+            start_time = time.time()
             
             # Identify target and feature columns (prefer fused, fallback to binary)
             target_col = None
@@ -796,8 +865,12 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 if target_col in ('target_long', 'target_short'):
                     tprint("⚠️ Fused targets not found for requested direction; falling back to binary targets for importance")
             
-            # Exclude all target-like columns from features
-            exclude_cols = set([c for c in merged_data.columns if 'target' in c.lower()] + ['timestamp', 'labeling_method_id', 'labeling_timestamp'])
+            # Exclude all target-like and label-like columns from features
+            exclude_cols = set(
+                [c for c in merged_data.columns if 'target' in c.lower()]
+                + ['timestamp']
+                + [c for c in merged_data.columns if c in META_LABEL_EXCLUDED_FEATURE_COLUMNS]
+            )
             feature_cols = [col for col in merged_data.columns if col not in exclude_cols]
             
             if len(feature_cols) == 0:
@@ -809,6 +882,62 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             # Prepare data for RandomForest-based importance (opportunity windows only)
             X = merged_data[feature_cols].fillna(0)
             y = merged_data[target_col].fillna(0)
+
+            # Detailed coverage diagnostics for FULL/BLANK modes
+            try:
+                tprint(
+                    f"📊 Optimization merged_data coverage: rows={len(merged_data)}, "
+                    f"features={len(feature_cols)}"
+                )
+                tprint(f"   Index type: {type(merged_data.index)}")
+                if len(merged_data) > 0:
+                    try:
+                        tprint(
+                            f"   Index range: {merged_data.index.min()} -> "
+                            f"{merged_data.index.max()}"
+                        )
+                    except Exception as idx_exc:
+                        self.logger.warning(
+                            f"Could not compute index min/max for merged_data: {idx_exc}"
+                        )
+                non_zero_count = int((y != 0).sum())
+                tprint(f"   Non-zero target count: {non_zero_count}")
+            except Exception as coverage_exc:
+                self.logger.warning(
+                    f"Error while logging merged_data coverage diagnostics: {coverage_exc}"
+                )
+            
+            # Derive and log MI lookback candidate range once per run
+            try:
+                mi_lookback_candidates = self._get_mi_lookback_candidates()
+            except Exception:
+                mi_lookback_candidates = []
+
+            try:
+                timeframe = getattr(self, '_timeframe', '15m')
+                unit = str(timeframe)[-1]
+                value = int(str(timeframe)[:-1])
+                if unit == 'm':
+                    minutes_per_bar = value
+                elif unit == 'h':
+                    minutes_per_bar = value * 60
+                else:
+                    minutes_per_bar = 15
+            except Exception:
+                timeframe = getattr(self, '_timeframe', '15m')
+                minutes_per_bar = 15
+
+            if mi_lookback_candidates:
+                min_bars = int(min(mi_lookback_candidates))
+                max_bars = int(max(mi_lookback_candidates))
+                min_minutes = int(min_bars * minutes_per_bar)
+                max_minutes = int(max_bars * minutes_per_bar)
+                tprint(
+                    f"📈 MI lookback candidates: {mi_lookback_candidates} bars "
+                    f"(~{min_minutes}-{max_minutes} minutes) for timeframe {timeframe}"
+                )
+            else:
+                tprint("⚠️ No MI lookback candidates derived from intelligent_lookbacks")
             
             # Optional sample weights from fused pipeline
             sample_weight = None
@@ -828,7 +957,11 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             
             # Train a simple Random Forest to get feature importances on opportunity windows
             rf = RandomForestRegressor(n_estimators=50, max_depth=10, random_state=42, n_jobs=-1)
-            rf.fit(X_valid, y_valid)
+            if sample_weight is not None:
+                sample_weight_valid = sample_weight[valid_mask.to_numpy()]
+                rf.fit(X_valid, y_valid, sample_weight=sample_weight_valid)
+            else:
+                rf.fit(X_valid, y_valid)
             
             # Get feature importances
             importances = rf.feature_importances_
@@ -838,22 +971,39 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             
             # Organize by category (simplified categorization)
             individual_results = {}
+
+            total_features = len(feature_cols)
+            # Log progress in coarse chunks rather than per-feature to avoid spam
+            log_every = max(10, total_features // 20) if total_features > 0 else 10
+
+            # Reuse MI lookback candidates for all features
+            mi_lookback_candidates_local = mi_lookback_candidates
+
             for idx, feature_name in enumerate(feature_cols):
+                # Chunk-level progress logging
+                if idx % log_every == 0:
+                    elapsed = time.time() - start_time
+                    tprint(
+                        f"🔄 Feature importance / MI progress: {idx + 1}/{total_features} features "
+                        f"processed (elapsed {elapsed:.1f}s)"
+                    )
                 importance = float(importances[idx])
                 # Use full, direction-aware target series for MI curves to avoid degenerate behaviour
                 feature_series = merged_data[feature_name].astype(float).values
                 target_series = full_target
 
-                # Jointly drop NaN/inf from feature and target
                 finite_mask = np.isfinite(feature_series) & np.isfinite(target_series)
                 if finite_mask.sum() < 60:
-                    # Not enough valid samples for a meaningful curve
                     continue
                 feature_series = feature_series[finite_mask]
                 target_series = target_series[finite_mask]
 
-                # Restrict MI/proxy search to short range around the 3-bar target horizon
-                lookback_candidates = [lb for lb in self.intelligent_lookbacks if 3 <= lb <= 20]
+                feature_series, target_series = self._subsample_series_for_mi(
+                    feature_series,
+                    target_series,
+                )
+
+                lookback_candidates = mi_lookback_candidates_local
                 optimal_lookback = 3
                 mi_score = 0.0
                 stability_mi = 0.0
@@ -988,7 +1138,21 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
 
                 individual_results[category][feature_name] = result_entry
             
-            tprint(f"✅ Computed importance for {len(feature_cols)} features across {len(individual_results)} categories")
+            # Final summary for this importance/MI computation
+            try:
+                successful_features = sum(
+                    len(features) for features in individual_results.values()
+                    if isinstance(features, dict)
+                )
+            except Exception:
+                successful_features = 0
+
+            total_elapsed = time.time() - start_time
+            tprint(
+                f"✅ Feature importance / MI completed: {successful_features}/{len(feature_cols)} features "
+                f"across {len(individual_results)} categories in {total_elapsed:.1f}s"
+            )
+
             return individual_results
             
         except Exception as e:
@@ -3489,8 +3653,8 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             if rolling_std_mean < global_std * 0.02:  # Rolling std < 2% of global std
                 self.logger.warning(f"⚠️ Suspicious stability for {feature_name}: rolling_std={rolling_std_mean:.6f}, global_std={global_std:.6f}")
                 # Return capped stability to avoid false inflation
-                capped_stability = 1.0 - (global_std * 0.02) / global_std
-                return min(max(capped_stability, 0.0), 0.95)  # Cap at 0.95
+                capped_stability = min(0.9, 1.0 - (rolling_std_mean / global_std))
+                return min(max(capped_stability, 0.0), 1.0)
 
             stability = 1.0 - (rolling_std_mean / global_std)
 
@@ -3502,26 +3666,16 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             return 0.5  # Default fallback
 
     def _calculate_r2_score(self, data: pd.DataFrame, feature_name: str, target_column: str, lookback: int) -> float:
-        """
-        Calculate R² regression score using per-feature LGBM.
+        """Calculate R² regression score using a simple per-feature model.
 
-        This provides a direct measure of predictive power via regression,
-        complementing the custom MI/stability metric (performance_score).
+        Primary implementation uses LightGBM when available; if LightGBM
+        is not installed, fall back to a small RandomForestRegressor from
+        scikit-learn. This ensures we get a meaningful R² score even in
+        environments without LightGBM.
 
-        Args:
-            data: DataFrame containing feature and target
-            feature_name: Name of the feature column
-            target_column: Name of the target column
-            lookback: Lookback period (not directly used but maintained for API consistency)
-
-        Returns:
-            R² score between 0 and 1, or 0.0 on failure
+        Returns an R² score between 0 and 1, or 0.0 on failure.
         """
         try:
-            import lightgbm as lgb
-            from sklearn.model_selection import train_test_split
-            from sklearn.metrics import r2_score
-
             # Extract feature and target data
             feature_col = data[[feature_name]].copy()
             target_col = data[target_column].copy()
@@ -3546,45 +3700,65 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 self.logger.debug(f"Target {target_column} has zero variance, R²=0.0")
                 return 0.0
 
-            # Split into train/test (80/20)
-            X_train, X_test, y_train, y_test = train_test_split(
-                feature_clean, target_clean,
-                test_size=0.2,
-                random_state=42,
-                shuffle=False  # Preserve temporal order
-            )
+            try:
+                # Preferred path: LightGBM
+                import lightgbm as lgb
+                from sklearn.model_selection import train_test_split
+                from sklearn.metrics import r2_score
 
-            # Train a simple LGBM regressor
-            # Use minimal parameters for speed
-            lgb_params = {
-                'objective': 'regression',
-                'metric': 'rmse',
-                'verbosity': -1,
-                'num_leaves': 15,
-                'max_depth': 3,
-                'learning_rate': 0.1,
-                'n_estimators': 50,
-                'min_child_samples': 20,
-                'random_state': 42
-            }
+                # Split into train/test (80/20) preserving temporal order
+                X_train, X_test, y_train, y_test = train_test_split(
+                    feature_clean, target_clean,
+                    test_size=0.2,
+                    random_state=42,
+                    shuffle=False,
+                )
 
-            model = lgb.LGBMRegressor(**lgb_params)
-            model.fit(X_train, y_train, verbose=False)
+                lgb_params = {
+                    'objective': 'regression',
+                    'metric': 'rmse',
+                    'verbosity': -1,
+                    'num_leaves': 15,
+                    'max_depth': 3,
+                    'learning_rate': 0.1,
+                    'n_estimators': 50,
+                    'min_child_samples': 20,
+                    'random_state': 42,
+                }
 
-            # Predict on test set
-            y_pred = model.predict(X_test)
+                model = lgb.LGBMRegressor(**lgb_params)
+                model.fit(X_train, y_train, verbose=False)
 
-            # Calculate R² score
-            r2 = r2_score(y_test, y_pred)
+                y_pred = model.predict(X_test)
+                r2 = r2_score(y_test, y_pred)
+
+            except ImportError:
+                # Fallback: small RandomForestRegressor
+                from sklearn.ensemble import RandomForestRegressor
+                from sklearn.model_selection import train_test_split
+                from sklearn.metrics import r2_score
+
+                X_train, X_test, y_train, y_test = train_test_split(
+                    feature_clean, target_clean,
+                    test_size=0.2,
+                    random_state=42,
+                    shuffle=False,
+                )
+
+                rf_model = RandomForestRegressor(
+                    n_estimators=50,
+                    max_depth=5,
+                    random_state=42,
+                    n_jobs=-1,
+                )
+                rf_model.fit(X_train, y_train)
+                y_pred = rf_model.predict(X_test)
+                r2 = r2_score(y_test, y_pred)
 
             # Clip to [0, 1] range (R² can be negative for very poor models)
-            r2 = max(0.0, min(r2, 1.0))
+            r2 = max(0.0, min(float(r2), 1.0))
+            return r2
 
-            return float(r2)
-
-        except ImportError:
-            self.logger.warning("LightGBM not available for R² calculation, returning 0.0")
-            return 0.0
         except Exception as e:
             self.logger.debug(f"R² calculation failed for {feature_name}: {e}")
             return 0.0
@@ -3929,6 +4103,12 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         tprint(f"🎯 Using target direction for optimization: {self._target_direction}")
 
         try:
+            self._timeframe = config.get('timeframe', '15m')
+        except Exception:
+            self._timeframe = '15m'
+        
+
+        try:
             # Load previously generated features
             from pathlib import Path
             import pandas as pd
@@ -4140,8 +4320,49 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 
                 tprint(f"🎯 Identified target columns: {target_columns}")
                 
-                # Merge on index (timestamps should align)
-                merged_data = generated_features.join(labeled_data[target_columns], how='inner')
+                # Merge features and labels with robust alignment
+                try:
+                    features_df = generated_features.copy()
+                    targets_df = labeled_data[target_columns].copy()
+
+                    # Heuristic 1: if lengths match, align by position
+                    if len(features_df) == len(targets_df) and len(features_df) > 0:
+                        features_df = features_df.reset_index(drop=True)
+                        targets_df = targets_df.reset_index(drop=True)
+                        merged_data = pd.concat([features_df, targets_df], axis=1)
+                    else:
+                        # Heuristic 2: try to build a datetime index on both sides
+                        if not isinstance(features_df.index, pd.DatetimeIndex):
+                            try:
+                                features_idx = pd.Index(features_df.index)
+                                if features_idx.dtype == object:
+                                    decoded = features_idx.astype(str).str.replace("^b'|'$", "", regex=True)
+                                    features_df.index = pd.to_datetime(decoded, errors="coerce")
+                                else:
+                                    features_df.index = pd.to_datetime(features_idx, errors="coerce")
+                            except Exception:
+                                pass
+
+                        if not isinstance(targets_df.index, pd.DatetimeIndex):
+                            for time_col in ["open_time", "close_time"]:
+                                if time_col in labeled_data.columns:
+                                    try:
+                                        targets_df.index = pd.to_datetime(labeled_data[time_col], errors="coerce")
+                                        break
+                                    except Exception:
+                                        continue
+
+                        if isinstance(features_df.index, pd.DatetimeIndex):
+                            features_df = features_df[features_df.index.notna()]
+                        if isinstance(targets_df.index, pd.DatetimeIndex):
+                            targets_df = targets_df[targets_df.index.notna()]
+
+                        merged_data = features_df.join(targets_df, how="inner")
+                except Exception as merge_exc:
+                    self.logger.warning(
+                        f"Feature/label merge failed, falling back to inner join on original indices: {merge_exc}"
+                    )
+                    merged_data = generated_features.join(labeled_data[target_columns], how="inner")
                 
                 tprint(f"✅ Merged features and labels")
                 tprint(f"📊 Merged data shape: {merged_data.shape}")
@@ -5878,11 +6099,6 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                                     'r2_score': feature_data.get('r2_score', 0.0),
                                     'information_score': feature_data.get('information_score', 0.0),
                                     'optimization_method': feature_data.get('optimization_method', 'cross_validation'),
-                                    'cv_folds': feature_data.get('cv_folds', 2),
-                                    'lookback_range_tested': feature_data.get('lookback_range', '1-51'),
-                                    'optimization_time_seconds': feature_data.get('optimization_time', 0.0),
-                                    'memory_usage_mb': feature_data.get('memory_usage', 0.0),
-                                    'success': feature_data.get('success', True)
                                 })
                         continue  # Skip other sources if we found individual results
                 
@@ -5902,11 +6118,6 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                                     'r2_score': feature_data.get('r2_score', 0.0),
                                     'information_score': feature_data.get('information_score', 0.0),
                                     'optimization_method': feature_data.get('optimization_method', 'cross_validation'),
-                                    'cv_folds': feature_data.get('cv_folds', 2),
-                                    'lookback_range_tested': feature_data.get('lookback_range', '1-51'),
-                                    'optimization_time_seconds': feature_data.get('optimization_time', 0.0),
-                                    'memory_usage_mb': feature_data.get('memory_usage', 0.0),
-                                    'success': feature_data.get('success', True)
                                 })
                         continue  # Skip other sources if we found individual results
                 
@@ -5930,11 +6141,6 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                                 'r2_score': feature_data.get('r2_score', 0.0),
                                 'information_score': feature_data.get('information_score', 0.0),
                                 'optimization_method': feature_data.get('optimization_method', 'cross_validation'),
-                                'cv_folds': feature_data.get('cv_folds', 2),
-                                'lookback_range_tested': feature_data.get('lookback_range', '1-50'),
-                                'optimization_time_seconds': feature_data.get('optimization_time', 0.0),
-                                'memory_usage_mb': feature_data.get('memory_usage', 0.0),
-                                'success': feature_data.get('success', True)
                             })
                 
                 # If no individual results, create a summary entry for the category
@@ -5951,11 +6157,6 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                             'r2_score': category_data.get('r2_score', 0.0),
                             'information_score': category_data.get('information_score', 0.0),
                             'optimization_method': 'cross_validation',
-                            'cv_folds': 2,
-                            'lookback_range_tested': '1-50',
-                            'optimization_time_seconds': 0.0,
-                            'memory_usage_mb': 0.0,
-                            'success': True
                         })
             
             # Add comprehensive lookback optimization results to CSV
@@ -6000,11 +6201,6 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                             'information_score': information_score,
                             'composite_score': composite_score,  # weighted: 0.4*(stability × information) + 0.6*R²
                             'optimization_method': feature_info.get('optimization_method', 'intelligent_ranges'),
-                            'cv_folds': 2,
-                            'lookback_range_tested': '1-51',
-                            'optimization_time_seconds': 0.0,
-                            'memory_usage_mb': 0.0,
-                            'success': True
                         }
                         
                         # Deduplicate: Keep only the best-scoring instance of each feature
@@ -6076,6 +6272,22 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             optimal_lookback = row.get('optimal_lookback')
             alt_1 = row.get('alternative_lookback_1')
             alt_2 = row.get('alternative_lookback_2')
+            feature_lower = feature_name.lower()
+            is_level_regime_feature = any(
+                kw in feature_lower
+                for kw in [
+                    'volume_price_trend',
+                    'volume_accumulation_distribution',
+                    'volume_weighted_ad_line',
+                    'vectorbt_volume_weighted_ad_line',
+                    'volume_ema_',
+                    'vectorbt_ema_',
+                    'ema_',
+                    'sma_',
+                    'trend_comprehensive',
+                    'vectorbt_trend_comprehensive',
+                ]
+            )
             # MI-based stability (early/late MI curve)
             stability_mi = row.get('stability_score', 0.0)
             # Physical rolling-std-based stability for the chosen lookback
@@ -6107,7 +6319,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             # Filter 2: Stability validation (physical stability + MI condition)
             # Only treat a feature as a leak candidate if it is both very stable in
             # its raw time-series (rolling-std based) AND has high information/MI.
-            if stability_phys >= 0.95 and information >= 0.6:
+            if (not is_level_regime_feature) and stability_phys >= 0.95 and information >= 0.6:
                 self.logger.warning(
                     f"🚩 Filtered {feature_name}: stability_phys={stability_phys:.3f}, information={information:.3f} "
                     f">= thresholds (0.95, 0.60) – high-information, ultra-stable signal (possible leakage)"

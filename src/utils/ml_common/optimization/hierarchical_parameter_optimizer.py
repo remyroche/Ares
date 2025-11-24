@@ -103,9 +103,12 @@ import pandas as pd
 import time
 import logging
 from typing import Dict, Any, Optional, List, Tuple, Union
+from copy import deepcopy
 from dataclasses import dataclass, field
-from pathlib import Path
 from enum import Enum
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from pathlib import Path
+from typing import Dict, Any, Optional, List, Tuple, Union
 
 # Import tprint for consistent output
 try:
@@ -927,6 +930,15 @@ class HierarchicalParameterOptimizer:
                 full_params, X_train, y_train, X_val, y_val, model
             )
             
+            if _tprint_available:
+                try:
+                    tprint_info(
+                        f"HPO trial: group={group.name}, stage=coarse_grid, "
+                        f"trial={i + 1}/{len(grid)}, score={float(score):.6f}"
+                    )
+                except Exception:
+                    pass
+            
             all_trials.append({
                 'params': params,
                 'score': score,
@@ -1014,6 +1026,15 @@ class HierarchicalParameterOptimizer:
                 full_params, X_train, y_train, X_val, y_val, model
             )
             
+            if _tprint_available:
+                try:
+                    tprint_info(
+                        f"HPO trial: group={group.name}, stage=fine_grid, "
+                        f"trial={i + 1}/{len(grid)}, score={float(score):.6f}"
+                    )
+                except Exception:
+                    pass
+            
             all_trials.append({
                 'params': params,
                 'score': score,
@@ -1099,6 +1120,15 @@ class HierarchicalParameterOptimizer:
             score = self._evaluate_params(
                 full_params, X_train, y_train, X_val, y_val, model
             )
+            
+            if _tprint_available:
+                try:
+                    tprint_info(
+                        f"HPO trial: group={group.name}, stage=tpe, "
+                        f"trial={trial.number + 1}/{stage_config.n_trials}, score={float(score):.6f}"
+                    )
+                except Exception:
+                    pass
             
             return score
         

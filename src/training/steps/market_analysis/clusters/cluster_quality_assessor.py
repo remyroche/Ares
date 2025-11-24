@@ -982,13 +982,19 @@ class ClusterQualityAssessor:
                 tprint_error(f"❌ Economic validation failed: {e}")
 
         # 9. Predictive power
+        # NOTE: This can be computationally heavy (RF + CV on full series).
+        # For fast_mode (HPO / interactive diagnostics), skip the expensive
+        # calculation and leave predictive_power at a neutral default.
         if forward_returns is not None and len(forward_returns) > 0:
-            try:
-                metrics.predictive_power = self._calculate_predictive_power(
-                    regime_labels, forward_returns, fast_mode=fast_mode
-                )
-            except Exception:
+            if fast_mode:
                 metrics.predictive_power = 0.0
+            else:
+                try:
+                    metrics.predictive_power = self._calculate_predictive_power(
+                        regime_labels, forward_returns, fast_mode=fast_mode
+                    )
+                except Exception:
+                    metrics.predictive_power = 0.0
 
         # 9. Economic relevance analysis (if forward_returns available)
         if forward_returns is not None and ECONOMIC_ANALYZER_AVAILABLE:
@@ -1106,6 +1112,8 @@ class ClusterQualityAssessor:
                     tprint_info("🔍 Starting ENHANCED HMM regime quality assessment")
 
                 # First, run standard quality assessment with fast mode if requested
+                if fast_mode:
+                    tprint_info("🔍 [HPO] Calling base assess_quality (primary pass)")
                 metrics = self.assess_quality(
                     regime_labels=regime_labels,
                     feature_data=feature_data,
@@ -1115,6 +1123,8 @@ class ClusterQualityAssessor:
                     temporal_sensitivity_mode=temporal_sensitivity_mode,
                     fast_mode=fast_mode
                 )
+                if fast_mode:
+                    tprint_info("✅ [HPO] Finished base assess_quality (primary pass)")
                 
                 # If validators disabled, return standard metrics
                 if not run_validators:
@@ -1255,7 +1265,11 @@ class ClusterQualityAssessor:
                         tprint_warning(f"⚠️ Posterior predictive check skipped: {e}")
                 
                 # VIII. ECONOMIC RELEVANCE ANALYSIS (NEW)
-                if forward_returns is not None and ECONOMIC_ANALYZER_AVAILABLE:
+                # For HPO (fast_mode=True), skip the heavy economic relevance analysis
+                # so that permutation-based tests only run for the final winning configuration.
+                if fast_mode:
+                    tprint_info("ℹ️ Skipping full economic relevance analysis in fast_mode (HPO); it will run only for the winning configuration")
+                elif forward_returns is not None and ECONOMIC_ANALYZER_AVAILABLE:
                     try:
                         tprint_info("🔍 Démarrage de l'analyse de pertinence économique HMM...")
                         
@@ -1308,7 +1322,7 @@ class ClusterQualityAssessor:
                     if thread_id:
                         res = ctypes.pythonapi.PyThreadState_SetAsyncExc(
                             ctypes.c_ulong(thread_id),
-                            ctypes.py_object(SystemError("HMM quality assessment timeout"))
+                            ctypes.py_object(SystemError)
                         )
                         if res == 0:
                             tprint_warning("⚠️ Thread termination signal sent")
@@ -1327,6 +1341,8 @@ class ClusterQualityAssessor:
                 
                 # Return basic quality assessment without HMM validators
                 try:
+                    if fast_mode:
+                        tprint_info("🔍 [HPO] Calling base assess_quality after TIMEOUT (fallback pass)")
                     default_metrics = self.assess_quality(
                         regime_labels=regime_labels,
                         feature_data=feature_data,
@@ -1336,6 +1352,8 @@ class ClusterQualityAssessor:
                         temporal_sensitivity_mode=temporal_sensitivity_mode,
                         fast_mode=fast_mode
                     )
+                    if fast_mode:
+                        tprint_info("✅ [HPO] Finished base assess_quality after TIMEOUT (fallback pass)")
                     tprint_warning(f"⚠️ Returned default quality metrics due to timeout")
                     return default_metrics
                 except Exception as e:
@@ -1558,15 +1576,18 @@ class ClusterQualityAssessor:
             
             if len(cluster_data) > 0:
                 cluster_mean = cluster_data.mean()
-                cluster_mean = cluster_mean[np.isfinite(cluster_mean)]
-                if len(cluster_mean) > 0:
-                    cluster_means.append(cluster_mean)
+                # Ensure numeric and replace infinities with NaN so shapes stay aligned
+                cluster_mean = pd.to_numeric(cluster_mean, errors='coerce')
+                cluster_mean = cluster_mean.replace([np.inf, -np.inf], np.nan)
+                cluster_means.append(cluster_mean)
         
         between_regime_cv_mean = 0.0
         between_regime_cv_std = 0.0
         
         if len(cluster_means) > 1:
-            cluster_means_array = np.array(cluster_means)
+            # Build a DataFrame to align feature indices across clusters, then convert to NumPy
+            cluster_means_df = pd.DataFrame(cluster_means).astype(float)
+            cluster_means_array = cluster_means_df.to_numpy()
             
             # Calculate CV for each feature across regimes
             between_cvs = []
@@ -1991,15 +2012,21 @@ class ClusterQualityAssessor:
                     accuracies.append(test_accuracy)
                     test_accuracies.append(test_accuracy)
 
-                    # Calculate training accuracy
-                    train_predictions = np.array([
-                        min(
-                            {rid: np.linalg.norm(X_train.iloc[i].values - mean)
-                             for rid, mean in regime_means.items()},
-                            key=lambda x: x[1]
-                        )[0] if regime_means else -1
-                        for i in range(len(X_train))
-                    ])
+                    # Calculate training accuracy (mirror nearest-centroid logic used for test set)
+                    train_predictions = []
+                    for i in range(len(X_train)):
+                        train_sample = X_train.iloc[i].values
+                        if regime_means:
+                            distances = {
+                                regime_id: np.linalg.norm(train_sample - mean)
+                                for regime_id, mean in regime_means.items()
+                            }
+                            predicted_regime = min(distances, key=distances.get)
+                        else:
+                            predicted_regime = -1
+                        train_predictions.append(predicted_regime)
+
+                    train_predictions = np.array(train_predictions)
                     train_accuracy = float(np.mean(train_predictions == y_train))
                     train_accuracies.append(train_accuracy)
 
@@ -2081,8 +2108,6 @@ class ClusterQualityAssessor:
 
         except Exception as e:
             self.logger.warning(f"Walk-forward validation failed: {e}")
-            import traceback
-            traceback.print_exc()
             return {
                 'error': str(e),
                 'n_windows': 0

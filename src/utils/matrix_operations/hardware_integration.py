@@ -35,6 +35,22 @@ except ImportError as e:
     optimize_dataframe_dtypes = None
     chunk_dataframe = None
 
+try:
+    from ..hardware.unified_hardware_manager import (
+        get_unified_hardware_manager,
+        UnifiedHardwareManager,
+        WorkloadType,
+        OptimizationLevel,
+    )
+    UNIFIED_HARDWARE_MANAGER_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"Unified hardware manager not available: {e}")
+    get_unified_hardware_manager = None
+    UnifiedHardwareManager = None
+    WorkloadType = None
+    OptimizationLevel = None
+    UNIFIED_HARDWARE_MANAGER_AVAILABLE = False
+
 # Conditional imports for computation libraries
 try:
     import numpy as np
@@ -518,3 +534,14 @@ def cleanup_hardware_resources():
 
 # Backward compatibility alias
 HardwareOptimizedOperations = HardwareOptimizedMatrixProcessor
+
+
+def get_hardware_manager(config: Optional[HardwareConfig] = None):
+    if not UNIFIED_HARDWARE_MANAGER_AVAILABLE or get_unified_hardware_manager is None:
+        return None
+    try:
+        manager = get_unified_hardware_manager()
+        return manager
+    except Exception as e:
+        logger.warning(f"Failed to initialize unified hardware manager: {e}")
+        return None

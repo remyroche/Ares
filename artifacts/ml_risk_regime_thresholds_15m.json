@@ -1,0 +1,19 @@
+{
+  "data": {
+    "extraction_timestamp": "2025-11-24T01:03:21.461121",
+    "symbol": "ETHUSDT",
+    "regime_col_name": "risk_regime",
+    "total_samples": 105087,
+    "n_regimes": 5,
+    "risk_regime_breakpoints": [],
+    "risk_regime_sigma": 0.05,
+    "kde_bandwidth": 0.05
+  },
+  "metadata": {
+    "symbol": "ETHUSDT",
+    "exchange": "binance",
+    "timeframe": "15m",
+    "n_regimes": 5
+  },
+  "saved_at": "2025-11-24T01:03:21.461627"
+}

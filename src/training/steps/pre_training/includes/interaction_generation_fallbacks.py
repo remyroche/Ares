@@ -126,11 +126,16 @@ def _calculate_composite_scores_fallback(
     target_col = targets_df.columns[0]
     target_series = targets_df[target_col].dropna()
     aligned_index = features_df.index.intersection(target_series.index)
-    if aligned_index.empty:
-        aligned_index = features_df.index[: min(len(features_df), len(target_series))]
 
-    features_aligned = features_df.loc[aligned_index].fillna(0)
-    target_aligned = target_series.loc[aligned_index].fillna(0)
+    if aligned_index.empty:
+        common_len = min(len(features_df), len(target_series))
+        if common_len == 0:
+            return {}
+        features_aligned = features_df.iloc[:common_len].fillna(0)
+        target_aligned = target_series.iloc[:common_len].fillna(0)
+    else:
+        features_aligned = features_df.loc[aligned_index].fillna(0)
+        target_aligned = target_series.loc[aligned_index].fillna(0)
 
     valid_features: List[str] = []
     for column in features_aligned.columns:
@@ -324,6 +329,148 @@ def _chunked_processing_fallback(
         return features
 
 
+def _extract_base_feature_name_fallback(step: Any, variant_col: str) -> str:
+    """Best-effort extraction of base feature name from variant column name."""
+    base_name = variant_col
+    suffixes_to_remove = ["_base", "_volnorm", "_vwap", "_trend_adj"]
+
+    for suffix in suffixes_to_remove:
+        if base_name.endswith(suffix):
+            base_name = base_name[: -len(suffix)]
+            break
+
+    return base_name
+
+
+def _extract_variant_type_fallback(step: Any, variant_col: str) -> str:
+    """Infer variant type (base/volnorm/vwap/trend_adj) from column name."""
+    if variant_col.endswith("_volnorm"):
+        return "volnorm"
+    if variant_col.endswith("_vwap"):
+        return "vwap"
+    if variant_col.endswith("_trend_adj"):
+        return "trend_adj"
+    return "base"
+
+
+async def _phase2_cheap_pruning_fallback(
+    step: Any,
+    variant_features: pd.DataFrame,
+    labeled_data: pd.DataFrame,
+    lookback_optimization: Dict,
+    config: Dict[str, Any],
+) -> Tuple[pd.DataFrame, Dict[str, Any], pd.DataFrame]:
+    """Minimal Phase 2 cheap pruning fallback.
+
+    This implementation is intentionally lightweight: it selects a single
+    target column from ``labeled_data`` (if available) and returns the input
+    ``variant_features`` unchanged together with basic statistics. It is
+    only used when the main step class does not provide its own
+    ``_phase2_cheap_pruning`` implementation.
+    """
+
+    if isinstance(labeled_data, pd.DataFrame) and not labeled_data.empty:
+        candidate_cols = [
+            "smoothed_label",
+            "binary_label",
+            "realized_return",
+        ]
+        existing = [c for c in candidate_cols if c in labeled_data.columns]
+        if existing:
+            targets_df = labeled_data[[existing[0]]]
+        else:
+            targets_df = labeled_data.iloc[:, :1].copy()
+    else:
+        targets_df = pd.DataFrame(index=variant_features.index)
+        targets_df["dummy_target"] = 0.0
+
+    stats: Dict[str, Any] = {
+        "fallback": True,
+        "reason": "interaction_generation_fallbacks._phase2_cheap_pruning_fallback",
+        "initial_features": len(variant_features.columns),
+        "final_features": len(variant_features.columns),
+        "reduction": 0.0,
+    }
+
+    return variant_features, stats, targets_df
+
+
+async def _phase3_lgbm_shap_pipeline_fallback(
+    step: Any,
+    pruned_features: pd.DataFrame,
+    targets: pd.DataFrame,
+    config: Dict[str, Any],
+    lookback_optimization: pd.DataFrame,
+) -> Tuple[pd.DataFrame, pd.DataFrame, Dict[str, Any]]:
+    """Minimal Phase 3 LGBM+SHAP pipeline fallback.
+
+    This orchestrator treats ``pruned_features`` as the final base feature
+    set and relies on the existing ``_phase3_3_label_guided_interaction_discovery``
+    helper (or its legacy fallback) to generate interactions. It is only
+    attached when the runtime class does not define its own
+    ``_phase3_lgbm_shap_pipeline`` implementation.
+    """
+
+    # Use pruned_features directly as the base feature set
+    final_features = pruned_features
+
+    # Infer feature categories for compatibility with label-guided discovery
+    feature_categories: Dict[str, str] = {}
+    try:
+        for col in final_features.columns:
+            if hasattr(step, "_infer_feature_category"):
+                feature_categories[col] = step._infer_feature_category(col)  # type: ignore[assignment]
+            else:
+                feature_categories[col] = _infer_feature_category_fallback(step, col)
+    except Exception:
+        # Best-effort fallback: leave feature_categories partially filled
+        pass
+
+    # Run label-guided interaction discovery when available
+    try:
+        if hasattr(step, "_phase3_3_label_guided_interaction_discovery"):
+            interactions, shap_metadata = await step._phase3_3_label_guided_interaction_discovery(  # type: ignore[call-arg]
+                final_features,
+                targets,
+                config,
+                feature_categories,
+            )
+        elif hasattr(step, "_phase3_3_interaction_discovery_legacy"):
+            interactions, shap_metadata = await step._phase3_3_interaction_discovery_legacy(  # type: ignore[call-arg]
+                final_features,
+                targets,
+                config,
+                feature_categories,
+            )
+        else:
+            # No interaction discovery available; return empty interactions
+            interactions = pd.DataFrame(index=final_features.index)
+            shap_metadata = {
+                "feature_categories": feature_categories,
+                "interaction_discovery": {"selected_interactions": 0},
+                "model_performance": {
+                    "lgbm_training_successful": False,
+                    "interaction_generation_successful": False,
+                },
+            }
+    except Exception as exc:
+        # On failure, return empty interactions but keep base features
+        interactions = pd.DataFrame(index=final_features.index)
+        shap_metadata = {
+            "feature_categories": feature_categories,
+            "interaction_discovery": {
+                "selected_interactions": 0,
+                "error": str(exc),
+            },
+            "model_performance": {
+                "lgbm_training_successful": False,
+                "interaction_generation_successful": False,
+            },
+        }
+
+    return final_features, interactions, shap_metadata
+
+
 def attach_interaction_generation_fallbacks(cls: Any) -> None:
     """Attach fallback helpers to the provided class if they are missing."""
     if not hasattr(cls, "_infer_feature_category"):
@@ -342,3 +489,12 @@ def attach_interaction_generation_fallbacks(cls: Any) -> None:
         setattr(cls, "_get_consistent_sample", _get_consistent_sample_fallback)
     if not hasattr(cls, "_chunked_processing"):
         setattr(cls, "_chunked_processing", _chunked_processing_fallback)
+    if not hasattr(cls, "_extract_base_feature_name"):
+        setattr(cls, "_extract_base_feature_name", _extract_base_feature_name_fallback)
+    if not hasattr(cls, "_extract_variant_type"):
+        setattr(cls, "_extract_variant_type", _extract_variant_type_fallback)
+    if not hasattr(cls, "_phase2_cheap_pruning"):
+        setattr(cls, "_phase2_cheap_pruning", _phase2_cheap_pruning_fallback)
+    if not hasattr(cls, "_phase3_lgbm_shap_pipeline"):
+        setattr(cls, "_phase3_lgbm_shap_pipeline", _phase3_lgbm_shap_pipeline_fallback)
+

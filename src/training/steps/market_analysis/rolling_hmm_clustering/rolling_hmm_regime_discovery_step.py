@@ -1256,13 +1256,13 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
                             f"  → Using regime type mapping for economic analysis: {regime_types}"
                         )
 
-                # Initialize economic analyzer
+                # Initialize economic analyzer (use 100 permutations for broad-strokes significance)
                 economic_analyzer = RegimeEconomicRelevanceAnalyzer(
                     risk_free_rate=0.02,
                     trading_days_per_year=365 * 24 if timeframe == '1h' else 365,  # Adjust for hourly data
                     transaction_cost=0.001,
                     significance_tests=True,
-                    n_permutations=1000
+                    n_permutations=100
                 )
 
                 tprint_info("  → Evaluating trading strategies based on regimes")

@@ -1,30 +1,26 @@
 """
 ML Risk Regime Step
 
-This step consumes 1h Rolling HMM regime outputs plus OHLCV data to
-construct risk-based regime labels using forward volatility and tail risk metrics.
+This step consumes 1h OHLCV data to construct risk-based regime labels using
+forward volatility and tail risk metrics with GMM + Simulated Annealing optimization.
 
 Primary Goal: Distinguish between turbulent, calm, crash-prone, volatile but trending,
-and recovering markets.
+and recovering markets using unsupervised learning on risk features.
 
 Responsibilities:
-- Load 1h HMM artifacts from versioned HDF5 (labels, probabilities,
-  economic features) using the same context as RollingHMMRegimeDiscoveryStep.
 - Load 1h OHLCV market data.
 - Align all series on a common DatetimeIndex.
-- Compute composite risk target from 4 components:
-  * Forward Vol 1h (30%): Short-term tactical risk
-  * Forward Vol 4h (20%): Medium-term persistent risk
-  * Tail Risk Probability (30%): Crash protection via CVaR
-  * Vol Acceleration (20%): Regime transition detection
-- Train XGBoost regression model with monotonic constraints on risk features.
-- Use KDE-based binning to identify natural risk regimes.
+- Generate comprehensive risk features (volatility, tail risk, acceleration).
+- Create optimal regime labels using GMM + Simulated Annealing (100% risk CV optimization).
+- Train XGBoost multi-class classifier on optimized labels.
 - Apply asymmetric hysteresis (instant danger detection, delayed safety confirmation).
 - Save risk regime outputs to versioned_artifacts for downstream consumption.
 """
 
 import logging
 import time
+import json
+import re
 from typing import Any, Dict, Optional, Tuple, List, Union
 from dataclasses import asdict, is_dataclass
 from datetime import datetime
@@ -97,6 +93,9 @@ class MLRiskRegimeStep(BaseStep):
         """Initialize the ML Risk Regime step with versioned artifacts enabled."""
         super().__init__(step_name, use_versioned_artifacts=True)
         self.logger = logger.getChild("MLRiskRegimeStep") if hasattr(logger, "getChild") else logger
+        self._cached_market_data_15m = None
+        self._cached_market_source_15m = None
+        self._cached_market_cache_key_15m = None
         tprint(f"✅ Initialized {step_name} step", "SUCCESS")
 
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
@@ -121,7 +120,7 @@ class MLRiskRegimeStep(BaseStep):
             symbol = str(config.get("symbol", "ETHUSDT"))
             exchange = str(config.get("exchange", "binance"))
             regime_timeframe = str(
-                config.get("regime_timeframe", config.get("timeframe", "1h"))
+                config.get("regime_timeframe", config.get("timeframe", "15m"))
             )
             direction = str(config.get("direction", "long"))
 
@@ -142,6 +141,67 @@ class MLRiskRegimeStep(BaseStep):
             for k, v in alpha_defaults.items():
                 config.setdefault(k, v)
 
+            risk_config_defaults: Dict[str, Any] = {
+                "risk_hpo_balance_strength": 26.0,
+                "risk_hpo_min_regime_pct": 0.05,
+                "risk_hpo_max_regime_pct": 0.40,
+                "risk_hpo_wcov_ratio_cap": 10.0,
+                "risk_hpo_within_floor": 0.3,
+                "risk_hpo_within_spread_penalty_weight": 0.2,
+                "risk_n_regimes": 4,
+                "risk_iterative_prune_weight_quadrant": 0.55,
+                "risk_iterative_prune_weight_balance": 0.45,
+                "risk_hpo_enable_balanced_sampling": True,
+                "risk_hpo_balanced_max_per_regime": 6000,
+                # Optional per-regime caps for the final classifier training
+                # dataset. Disabled by default (max_per_regime = 0) so current
+                # behavior is preserved unless explicitly enabled.
+                "risk_train_enable_balanced_sampling": True,
+                "risk_train_balanced_max_per_regime": 3500,
+                "risk_train_balanced_random_state": 45,
+                "risk_enable_temperature_scaling": True,
+                # Default SA configuration: enable subsampling with a 10k cap
+                # so full-mode runs do not process the entire 3-year window in
+                # every SA iteration unless explicitly overridden.
+                "risk_sa_enable_subsampling": True,
+                "risk_sa_max_samples": 10000,
+                # Expose GMM tolerance so we can approximate early stopping via
+                # a slightly looser convergence threshold.
+                "risk_gmm_tol": 5e-3,
+                # GMM runtime controls: default initialization/iterations and
+                # optional subsampling of the feature matrix used for GMM fit.
+                "risk_gmm_n_init": 10,
+                "risk_gmm_max_iter": 150,
+                "risk_gmm_enable_subsampling": True,
+                "risk_gmm_max_samples": 12000,
+                "risk_gmm_subsample_random_state": 43,
+                "risk_gmm_max_features": 10,
+                "risk_gmm_corr_threshold": 0.97,
+                # HPO subsampling defaults: evaluate candidate configs on a
+                # representative subset of samples to control runtime.
+                "risk_hpo_enable_subsampling": True,
+                "risk_hpo_max_samples": 8000,
+                # Diagnostics configuration for noise/WCoV analysis.
+                "risk_noise_max_diag_features": 200,
+                "risk_noise_diag_sampling_mode": "top_importance",
+                "risk_feature_wcov_max_features": 256,
+                "risk_noise_diag_enable_subsampling": True,
+                "risk_noise_diag_subsample_frac": 0.66,
+                "risk_low_importance_quantile": 0.05,
+                "risk_noise_harm_score_min": 0.02,
+                # EWMA correlation pruning threshold (applied only to smoothed
+                # features whose names contain 'ewma').
+                "risk_ewma_corr_threshold": 0.97,
+                # Hard cap on the number of features used by the classifier
+                # after scaling. A value <= 0 disables this cap.
+                "risk_classifier_max_features": 70,
+                # Maximum allowed absolute correlation between selected
+                # classifier features when applying the top-K variance cap.
+                "risk_classifier_corr_threshold": 0.97,
+            }
+            for k, v in risk_config_defaults.items():
+                config.setdefault(k, v)
+
             if not symbol or not exchange:
                 raise ValueError("Config must include 'symbol' and 'exchange'")
 
@@ -159,17 +219,41 @@ class MLRiskRegimeStep(BaseStep):
             labels_df, probs_df, economic_df = None, None, None
 
             # ------------------------------------------------------------------
-            # 2) Load 1h OHLCV market data
+            # 2) Load 15m OHLCV market data
             # ------------------------------------------------------------------
-            market_data, market_source = self.load_market_data_or_fail(
-                {
-                    **config,
-                    "timeframe": regime_timeframe,
-                },
-                pipeline_state={},
-                allow_config_override=True,
-                light_mode_filter=False,  # ✅ FIX #1: Load full data, not limited by execution_mode
-            )
+            exec_mode_cfg = str(config.get("execution_mode", "")).lower()
+            cache_key_15m = (symbol, exchange, regime_timeframe, exec_mode_cfg)
+
+            market_data = None
+            market_source = None
+
+            if (
+                getattr(self, "_cached_market_data_15m", None) is not None
+                and getattr(self, "_cached_market_cache_key_15m", None) == cache_key_15m
+            ):
+                try:
+                    market_data = self._cached_market_data_15m.copy()
+                except Exception:
+                    market_data = self._cached_market_data_15m
+                market_source = self._cached_market_source_15m
+                tprint_info("♻️ Reusing cached 15m market data for ML risk regimes")
+            else:
+                market_data, market_source = self.load_market_data_or_fail(
+                    {
+                        **config,
+                        "timeframe": regime_timeframe,
+                    },
+                    pipeline_state={},
+                    allow_config_override=True,
+                    light_mode_filter=False,  # ✅ FIX #1: Load full data, not limited by execution_mode
+                    skip_artifacts=True,
+                )
+                if isinstance(market_data, pd.DataFrame):
+                    self._cached_market_data_15m = market_data.copy()
+                else:
+                    self._cached_market_data_15m = market_data
+                self._cached_market_source_15m = market_source
+                self._cached_market_cache_key_15m = cache_key_15m
 
             if not isinstance(market_data, pd.DataFrame) or market_data.empty:
                 raise ValueError("Loaded market data is empty or not a DataFrame")
@@ -215,12 +299,12 @@ class MLRiskRegimeStep(BaseStep):
             aligned_df = self._generate_risk_features(aligned_df, config)
 
             # ------------------------------------------------------------------
-            # 5) Compute risk targets (4-component composite)
+            # 5) Prepare risk features for regime classification
             # ------------------------------------------------------------------
-            risk_df = self._compute_risk_targets(aligned_df, config)
+            risk_df = aligned_df.copy()
 
             if risk_df.empty:
-                raise ValueError("Risk dataset is empty after target construction")
+                raise ValueError("Risk dataset is empty after feature generation")
 
             # ------------------------------------------------------------------
             # 6) NEW: XGBoost Multi-Class Regime Classifier (100% Risk-Driven)
@@ -258,7 +342,8 @@ class MLRiskRegimeStep(BaseStep):
                 model, regime_probs, classifier_metrics = self._train_regime_classifier(
                     risk_df=risk_df,
                     regime_labels=regime_labels_optimized,
-                    config=config
+                    config=config,
+                    label_metrics=label_metrics,
                 )
 
                 training_metrics.update(classifier_metrics)
@@ -272,7 +357,7 @@ class MLRiskRegimeStep(BaseStep):
                         global_importance_df = pd.DataFrame(importance_data['global'])
                         global_importance_path = self._save_artifact(
                             data={'importance': global_importance_df},
-                            artifact_name="xgboost_feature_importance_global_1h",
+                            artifact_name="xgboost_feature_importance_global_15m",
                             artifact_type="model",
                             data_category="analysis",
                             metadata={
@@ -293,7 +378,7 @@ class MLRiskRegimeStep(BaseStep):
                         if per_regime_dfs:
                             per_regime_importance_path = self._save_artifact(
                                 data=per_regime_dfs,
-                                artifact_name="xgboost_feature_importance_per_regime_1h",
+                                artifact_name="xgboost_feature_importance_per_regime_15m",
                                 artifact_type="model",
                                 data_category="analysis",
                                 metadata={
@@ -329,6 +414,14 @@ class MLRiskRegimeStep(BaseStep):
                         )
                         tprint_success(f"📄 Feature importance report saved: {report_path}")
 
+                        # Update main diagnostics markdown with feature importance from THIS run
+                        self._update_risk_diagnostics_feature_importance(
+                            symbol=symbol,
+                            exchange=exchange,
+                            regime_timeframe=regime_timeframe,
+                            classifier_metrics=classifier_metrics,
+                        )
+
                 except Exception as save_exc:
                     tprint_warning(f"Failed to save feature importance artifacts/report: {save_exc}")
 
@@ -347,9 +440,6 @@ class MLRiskRegimeStep(BaseStep):
                 # Also store training labels for comparison/analysis
                 risk_df['risk_regime_training_label'] = regime_labels_optimized
 
-                # Store continuous score from max probability for compatibility
-                risk_df['risk_score_continuous'] = np.max(regime_probs, axis=1)
-
                 tprint_success(
                     f"=" * 80 + "\n"
                     f"✅ REGIME CLASSIFICATION COMPLETE\n"
@@ -363,25 +453,33 @@ class MLRiskRegimeStep(BaseStep):
                     f"=" * 80
                 )
 
-                # Calculate regime statistics
-                regime_stats_df = self._calculate_regime_statistics(risk_df, regime_col_name)
+                # Calculate regime statistics using a simple volatility-based risk score proxy.
+                # Prefer realized volatility; fall back to absolute returns if needed.
+                if "vol_realized_20" in risk_df.columns:
+                    risk_scores = risk_df["vol_realized_20"]
+                elif "returns_1h" in risk_df.columns:
+                    risk_scores = risk_df["returns_1h"].abs()
+                else:
+                    # As a last resort, use a constant score so statistics still compute.
+                    risk_scores = pd.Series(1.0, index=risk_df.index)
+
+                # Align labels and scores on the same index
+                regime_labels_series = risk_df[regime_col_name]
+                common_index = regime_labels_series.index.intersection(risk_scores.index)
+
+                regime_stats_df = self._calculate_regime_statistics(
+                    risk_df.loc[common_index],
+                    regime_labels_series.loc[common_index],
+                    risk_scores.loc[common_index],
+                )
 
             except Exception as exc:
                 tprint_error(f"❌ XGBoost regime classification failed: {exc}")
                 import traceback
                 traceback.print_exc()
-
-                # Fall back to simple quantile-based regimes
-                tprint_warning("⚠️ Falling back to simple quantile-based regimes")
-                if 'risk_target' in risk_df.columns:
-                    risk_scores = risk_df['risk_target'].dropna()
-                    if len(risk_scores) >= 20:
-                        regime_labels = pd.qcut(risk_scores.rank(method='first'), q=4, labels=False)
-                        risk_df['risk_regime'] = np.nan
-                        risk_df.loc[risk_scores.index, 'risk_regime'] = regime_labels
-                        regime_col_name = 'risk_regime'
-                        risk_df['risk_score_continuous'] = risk_scores
-                        training_metrics['fallback_used'] = True
+                # Fast-fail: do not fall back to heuristic volatility-based regimes
+                # to avoid producing inconsistent artifacts without proper probabilities.
+                raise
 
             # Ensure we have a valid regime column name for downstream quality assessment
             if regime_col_name is None and "risk_regime" in risk_df.columns:
@@ -393,19 +491,24 @@ class MLRiskRegimeStep(BaseStep):
             regime_thresholds: Optional[Dict[str, Any]] = None
             regime_thresholds_path: Optional[str] = None
 
-            if risk_scores is not None and regime_col_name is not None and regime_col_name in risk_df.columns:
+            if regime_col_name is not None and regime_col_name in risk_df.columns:
                 try:
-                    # Extract KDE breakpoints and sigma as regime thresholds
-                    regime_thresholds = {
-                        "extraction_timestamp": datetime.now().isoformat(),
-                        "symbol": symbol,
-                        "regime_col_name": regime_col_name,
-                        "total_samples": len(risk_scores),
-                        "n_regimes": int(config.get("risk_regime_n_regimes", 5)),
-                        "risk_regime_breakpoints": config.get("risk_regime_breakpoints", []),
-                        "risk_regime_sigma": config.get("risk_regime_sigma", 0.05),
-                        "kde_bandwidth": config.get("risk_kde_bandwidth", 0.05),
-                    }
+                    # Get regime data for threshold extraction
+                    regime_data = risk_df[regime_col_name].dropna()
+                    if regime_data.empty:
+                        tprint_warning("No valid regime data for threshold extraction")
+                    else:
+                        # Extract KDE breakpoints and sigma as regime thresholds
+                        regime_thresholds = {
+                            "extraction_timestamp": datetime.now().isoformat(),
+                            "symbol": symbol,
+                            "regime_col_name": regime_col_name,
+                            "total_samples": len(regime_data),
+                            "n_regimes": int(config.get("risk_regime_n_regimes", 5)),
+                            "risk_regime_breakpoints": config.get("risk_regime_breakpoints", []),
+                            "risk_regime_sigma": config.get("risk_regime_sigma", 0.05),
+                            "kde_bandwidth": config.get("risk_kde_bandwidth", 0.05),
+                        }
 
                     if regime_thresholds and "extraction_error" not in regime_thresholds:
                         # Save thresholds as artifact
@@ -434,7 +537,7 @@ class MLRiskRegimeStep(BaseStep):
 
                             regime_thresholds_path = self._save_artifact(
                                 data=regime_thresholds_for_save,
-                                artifact_name="ml_risk_regime_thresholds_1h",
+                                artifact_name="ml_risk_regime_thresholds_15m",
                                 artifact_type="model",
                                 data_category="config",
                                 metadata={
@@ -476,6 +579,40 @@ class MLRiskRegimeStep(BaseStep):
             except Exception as quality_exc:
                 tprint_warning(f"Risk regime quality assessment failed: {quality_exc}")
 
+            # Compute feature-level WCoV diagnostics for teacher vs predicted regimes
+            try:
+                max_wcov_feats = int(config.get("risk_feature_wcov_max_features", 0))
+                wcov_top_k: Optional[int]
+                wcov_top_k = max_wcov_feats if max_wcov_feats > 0 else None
+
+                wcov_diag_df = self._compute_feature_wcov_diagnostics(
+                    df=risk_df,
+                    regime_col_pred=regime_col_name,
+                    regime_col_teacher="risk_regime_training_label",
+                    top_k=wcov_top_k,
+                )
+
+                if wcov_diag_df is not None and not wcov_diag_df.empty:
+                    ts_diag = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    symbol_d = str(config.get("symbol", symbol or ""))
+                    exchange_d = str(config.get("exchange", exchange or ""))
+                    regime_tf_d = str(
+                        config.get("regime_timeframe", config.get("timeframe", "15m"))
+                    )
+
+                    diag_path = (
+                        f"outcomes/ml_risk_feature_wcov_diagnostics_"
+                        f"{symbol_d or 'UNKNOWN'}_{exchange_d or 'UNKNOWN'}_{regime_tf_d}_{ts_diag}.csv"
+                    )
+                    wcov_diag_df.to_csv(diag_path, index=False)
+                    tprint_info(
+                        f"💾 Saved feature WCoV diagnostics (teacher vs predicted regimes): {diag_path}"
+                    )
+            except Exception as diag_exc:  # pragma: no cover - defensive
+                tprint_warning(
+                    f"Feature WCoV diagnostics computation failed (non-fatal): {diag_exc}"
+                )
+
             risk_to_save = risk_df.reset_index().rename(columns={risk_df.index.name or "index": "timestamp"})
 
             tprint_info(
@@ -484,7 +621,7 @@ class MLRiskRegimeStep(BaseStep):
             )
             training_data_path = self._save_artifact(
                 data=risk_to_save,
-                artifact_name="ml_risk_training_data_1h",
+                artifact_name="ml_risk_training_data_15m",
                 artifact_type="data",
                 metadata={
                     "symbol": symbol,
@@ -494,60 +631,51 @@ class MLRiskRegimeStep(BaseStep):
                 },
             )
 
-            # Optionally upsample risk regimes to the base (e.g. 15m) timeframe for downstream steps
-            base_timeframe = str(config.get("timeframe", "15m"))
-            if base_timeframe and base_timeframe != regime_timeframe:
-                try:
-                    # Select regime probability and risk score columns
-                    risk_prob_cols = [
-                        col
-                        for col in risk_df.columns
-                        if col.startswith("risk_regime") or col.startswith("risk_score")
-                    ]
-                    if risk_prob_cols and isinstance(risk_df.index, pd.DatetimeIndex):
-                        risk_probs = risk_df[risk_prob_cols].copy()
-
-                        # Map timeframe string to pandas frequency
-                        freq_map = {
-                            "1m": "1T",
-                            "3m": "3T",
-                            "5m": "5T",
-                            "15m": "15T",
-                            "30m": "30T",
-                            "45m": "45T",
-                            "1h": "1H",
-                            "2h": "2H",
-                            "4h": "4H",
-                            "6h": "6H",
-                            "8h": "8H",
-                            "12h": "12H",
-                            "1d": "1D",
-                        }
-                        freq = freq_map.get(base_timeframe)
-                        if freq is not None:
-                            target_index = pd.date_range(
-                                start=risk_probs.index.min(),
-                                end=risk_probs.index.max(),
-                                freq=freq,
-                            )
-                            risk_probs_resampled = risk_probs.reindex(target_index, method="ffill")
-                            risk_probs_save = risk_probs_resampled.reset_index().rename(columns={"index": "timestamp"})
-
-                            self._save_artifact(
-                                data=risk_probs_save,
-                                artifact_name=f"ml_risk_regime_probabilities_{base_timeframe}",
-                                artifact_type="data",
-                                metadata={
-                                    "symbol": symbol,
-                                    "exchange": exchange,
-                                    "timeframe": base_timeframe,
-                                    "source_regime_timeframe": regime_timeframe,
-                                },
-                            )
-                except Exception as resample_exc:
-                    tprint_warning(
-                        f"Failed to upsample ML risk regimes to base timeframe {base_timeframe}: {resample_exc}"
+            # Save risk regime probabilities on the native regime timeframe (expected to be 15m)
+            try:
+                risk_prob_cols = [
+                    col
+                    for col in risk_df.columns
+                    if col.startswith("risk_regime") or col.startswith("risk_score")
+                ]
+                if risk_prob_cols and isinstance(risk_df.index, pd.DatetimeIndex):
+                    risk_probs = risk_df[risk_prob_cols].copy()
+                    risk_probs_save = risk_probs.reset_index().rename(
+                        columns={risk_probs.index.name or "index": "timestamp"}
                     )
+
+                    # Canonical native-timeframe probabilities artifact
+                    self._save_artifact(
+                        data=risk_probs_save,
+                        artifact_name=f"ml_risk_regime_probabilities_{regime_timeframe}",
+                        artifact_type="data",
+                        metadata={
+                            "symbol": symbol,
+                            "exchange": exchange,
+                            "timeframe": regime_timeframe,
+                            "source_regime_timeframe": regime_timeframe,
+                        },
+                    )
+
+                    # For 15m specifically, also emit a standardized
+                    # ml_risk_regime_probs_15m artifact to mirror the
+                    # liquidity regime step convention.
+                    if regime_timeframe == "15m":
+                        self._save_artifact(
+                            data=risk_probs_save,
+                            artifact_name="ml_risk_regime_probs_15m",
+                            artifact_type="data",
+                            metadata={
+                                "symbol": symbol,
+                                "exchange": exchange,
+                                "timeframe": regime_timeframe,
+                                "source_regime_timeframe": regime_timeframe,
+                            },
+                        )
+            except Exception as probs_exc:
+                tprint_warning(
+                    f"Failed to save ML risk regimes on timeframe {regime_timeframe}: {probs_exc}"
+                )
 
             # Save trained model if available
             if model is not None:
@@ -555,7 +683,7 @@ class MLRiskRegimeStep(BaseStep):
                     tprint_info("💾 Saving XGBoost risk model via artifact router")
                     model_path = self._save_artifact(
                         data=model,
-                        artifact_name="ml_risk_model_1h",
+                        artifact_name="ml_risk_model_15m",
                         artifact_type="model",
                         metadata={
                             "symbol": symbol,
@@ -572,7 +700,7 @@ class MLRiskRegimeStep(BaseStep):
                 try:
                     feature_pipeline_path = self._save_artifact(
                         data=feature_pipeline_artifacts,
-                        artifact_name="ml_risk_feature_pipeline_1h",
+                        artifact_name="ml_risk_feature_pipeline_15m",
                         artifact_type="model",
                         metadata={
                             "symbol": symbol,
@@ -590,7 +718,7 @@ class MLRiskRegimeStep(BaseStep):
                     regime_stats_to_save = regime_stats_df.reset_index()
                     regime_stats_path = self._save_artifact(
                         data=regime_stats_to_save,
-                        artifact_name="ml_risk_regime_stats_1h",
+                        artifact_name="ml_risk_regime_stats_15m",
                         artifact_type="data",
                         metadata={
                             "symbol": symbol,
@@ -678,15 +806,18 @@ class MLRiskRegimeStep(BaseStep):
                 if regime_stats_df is not None and not regime_stats_df.empty:
                     try:
                         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        stats_csv_name = f"hmm_alpha_regime_stats_{symbol}_{ts}.csv"
+                        # XGBoost-derived per-regime statistics for the ML risk
+                        # regimes, saved under a clear name to differentiate from
+                        # legacy HMM alpha stats.
+                        stats_csv_name = f"ml_risk_regime_xgb_stats_{symbol}_{ts}.csv"
                         stats_csv_path = f"outcomes/{stats_csv_name}"
                         regime_stats_df.to_csv(stats_csv_path)
                         tprint_info(
-                            f"📊 Saved alpha regime statistics CSV: {stats_csv_path}"
+                            f"📊 Saved ML risk XGB regime statistics CSV: {stats_csv_path}"
                         )
-                    except Exception as stats_csv_exc:
+                    except Exception as stats_csv_exc:  # pragma: no cover - defensive
                         tprint_warning(
-                            f"Failed to save alpha regime statistics CSV (ignored): {stats_csv_exc}"
+                            f"Failed to save ML risk XGB regime statistics CSV (non-fatal): {stats_csv_exc}"
                         )
 
                 # Walk-Forward Validation window metrics CSV (if available)
@@ -1036,7 +1167,6 @@ class MLRiskRegimeStep(BaseStep):
             MaxDrawdownGenerator,
         )
         from src.feature_generation.categories.volatility import (
-            OptimizedGARCHFeatureGenerator,
             VectorBTVolatilityExpansionGenerator,
             VectorBTGarmanKlassVolatilityGenerator,
             VectorBTParkinsonVolatilityGenerator,
@@ -1076,18 +1206,18 @@ class MLRiskRegimeStep(BaseStep):
         result_df['returns_1h'] = returns
 
         # EWMA periods
-        ewma_periods = [2, 6]
+        ewma_periods = [8, 24]
 
         # ============ 1. Core Volatility Features with EWMA ============
 
         # Simple realized volatility (baseline)
-        vol_20 = returns.rolling(window=20).std()
+        vol_20 = returns.rolling(window=80).std()
         result_df['vol_realized_20'] = vol_20
         for period in ewma_periods:
             result_df[f'vol_realized_20_ewma{period}'] = vol_20.ewm(span=period, adjust=False).mean()
 
         # High-Low range volatility (Parkinson-style)
-        parkinson_vol = np.sqrt(np.log(result_df['high'] / result_df['low']).rolling(window=20).var() / (4 * np.log(2)))
+        parkinson_vol = np.sqrt(np.log(result_df['high'] / result_df['low']).rolling(window=80).var() / (4 * np.log(2)))
         result_df['parkinson_vol'] = parkinson_vol
         for period in ewma_periods:
             result_df[f'parkinson_vol_ewma{period}'] = parkinson_vol.ewm(span=period, adjust=False).mean()
@@ -1095,7 +1225,7 @@ class MLRiskRegimeStep(BaseStep):
         # Garman-Klass volatility (uses OHLC)
         hl = np.log(result_df['high'] / result_df['low'])
         co = np.log(result_df['close'] / result_df['open'])
-        gk_vol = np.sqrt(0.5 * hl.rolling(window=20).var() - (2 * np.log(2) - 1) * co.rolling(window=20).var())
+        gk_vol = np.sqrt(0.5 * hl.rolling(window=80).var() - (2 * np.log(2) - 1) * co.rolling(window=80).var())
         result_df['garman_klass_vol'] = gk_vol
         for period in ewma_periods:
             result_df[f'garman_klass_vol_ewma{period}'] = gk_vol.ewm(span=period, adjust=False).mean()
@@ -1104,7 +1234,7 @@ class MLRiskRegimeStep(BaseStep):
 
         # CVaR (5% and 10% levels)
         for alpha in [0.05, 0.10]:
-            window = 20
+            window = 80
             cvar_vals = []
             for i in range(len(returns)):
                 if i < window:
@@ -1126,8 +1256,8 @@ class MLRiskRegimeStep(BaseStep):
                 result_df[f'cvar_{alpha_pct}pct_ewma{period}'] = cvar_series.ewm(span=period, adjust=False).mean()
 
         # Skewness and Kurtosis (tail shape)
-        skew_20 = returns.rolling(window=20).skew()
-        kurt_20 = returns.rolling(window=20).kurt()
+        skew_20 = returns.rolling(window=80).skew()
+        kurt_20 = returns.rolling(window=80).kurt()
         result_df['skewness_20'] = skew_20
         result_df['kurtosis_20'] = kurt_20
         for period in ewma_periods:
@@ -1138,17 +1268,17 @@ class MLRiskRegimeStep(BaseStep):
 
         # Max Drawdown (rolling 50-bar window)
         cumulative = (1 + returns).cumprod()
-        running_max = cumulative.rolling(window=50, min_periods=1).max()
+        running_max = cumulative.rolling(window=200, min_periods=1).max()
         drawdown = (cumulative - running_max) / running_max
-        max_dd = drawdown.rolling(window=50).min()
+        max_dd = drawdown.rolling(window=200).min()
         result_df['max_drawdown_50'] = max_dd
         for period in ewma_periods:
             result_df[f'max_drawdown_50_ewma{period}'] = max_dd.ewm(span=period, adjust=False).mean()
 
         # Max Run-Up (for short squeeze risk)
-        running_min = cumulative.rolling(window=50, min_periods=1).min()
+        running_min = cumulative.rolling(window=200, min_periods=1).min()
         runup = (cumulative - running_min) / (running_min + 1e-9)
-        max_ru = runup.rolling(window=50).max()
+        max_ru = runup.rolling(window=200).max()
         result_df['max_runup_50'] = max_ru
         for period in ewma_periods:
             result_df[f'max_runup_50_ewma{period}'] = max_ru.ewm(span=period, adjust=False).mean()
@@ -1156,11 +1286,11 @@ class MLRiskRegimeStep(BaseStep):
         # ============ 4. Jump Detection ============
 
         # Jump indicator (returns exceeding 3 std devs)
-        vol_rolling = returns.rolling(window=20).std()
+        vol_rolling = returns.rolling(window=80).std()
         jump_threshold = 3.0
         jumps = (abs(returns) > jump_threshold * vol_rolling).astype(float)
         result_df['jump_indicator'] = jumps
-        jump_freq = jumps.rolling(window=20).mean()
+        jump_freq = jumps.rolling(window=80).mean()
         result_df['jump_frequency_20'] = jump_freq
         for period in ewma_periods:
             result_df[f'jump_frequency_20_ewma{period}'] = jump_freq.ewm(span=period, adjust=False).mean()
@@ -1168,13 +1298,13 @@ class MLRiskRegimeStep(BaseStep):
         # ============ 5. Volatility Expansion & Acceleration ============
 
         # Vol expansion (rate of change)
-        vol_roc = vol_20.pct_change(periods=5)
+        vol_roc = vol_20.pct_change(periods=20)
         result_df['vol_expansion_5'] = vol_roc
         for period in ewma_periods:
             result_df[f'vol_expansion_5_ewma{period}'] = vol_roc.ewm(span=period, adjust=False).mean()
 
         # Vol acceleration (already in target, but also as feature)
-        vol_accel = (vol_20 - vol_20.shift(6)) / (vol_20.shift(6) + 1e-9)
+        vol_accel = (vol_20 - vol_20.shift(24)) / (vol_20.shift(24) + 1e-9)
         result_df['vol_acceleration'] = vol_accel
         for period in ewma_periods:
             result_df[f'vol_acceleration_ewma{period}'] = vol_accel.ewm(span=period, adjust=False).mean()
@@ -1182,7 +1312,7 @@ class MLRiskRegimeStep(BaseStep):
         # ============ 6. Hurst Exponent (Mean Reversion vs Trending) ============
 
         # Simplified Hurst calculation (R/S method)
-        window = 50
+        window = 200
         hurst_vals = []
         for i in range(len(returns)):
             if i < window:
@@ -1214,7 +1344,7 @@ class MLRiskRegimeStep(BaseStep):
         # Downside deviation (risk of negative returns)
         downside_returns = returns.copy()
         downside_returns[downside_returns > 0] = 0
-        downside_dev = downside_returns.rolling(window=20).std()
+        downside_dev = downside_returns.rolling(window=80).std()
         result_df['downside_deviation_20'] = downside_dev
         for period in ewma_periods:
             result_df[f'downside_deviation_20_ewma{period}'] = downside_dev.ewm(span=period, adjust=False).mean()
@@ -1222,7 +1352,7 @@ class MLRiskRegimeStep(BaseStep):
         # Upside deviation (squeeze risk for shorts)
         upside_returns = returns.copy()
         upside_returns[upside_returns < 0] = 0
-        upside_dev = upside_returns.rolling(window=20).std()
+        upside_dev = upside_returns.rolling(window=80).std()
         result_df['upside_deviation_20'] = upside_dev
         for period in ewma_periods:
             result_df[f'upside_deviation_20_ewma{period}'] = upside_dev.ewm(span=period, adjust=False).mean()
@@ -1230,8 +1360,8 @@ class MLRiskRegimeStep(BaseStep):
         # ============ 8. Cross-Timeframe Volatility Ratios ============
 
         # Vol ratio: short-term vs medium-term
-        vol_6 = returns.rolling(window=6).std()
-        vol_24 = returns.rolling(window=24).std()
+        vol_6 = returns.rolling(window=24).std()
+        vol_24 = returns.rolling(window=96).std()
         vol_ratio = vol_6 / (vol_24 + 1e-9)
         result_df['vol_ratio_6_24'] = vol_ratio
         for period in ewma_periods:
@@ -1241,12 +1371,12 @@ class MLRiskRegimeStep(BaseStep):
 
         # Fragility Ratio (Modified Amihud): |Return| / Volume
         fragility_raw = abs(returns) / (result_df['volume'] + 1e-9)
-        fragility_ewma24 = fragility_raw.ewm(span=24, adjust=False).mean()
+        fragility_ewma24 = fragility_raw.ewm(span=96, adjust=False).mean()
         fragility_ratio = fragility_raw / (fragility_ewma24 + 1e-9)
         result_df['fragility_ratio'] = fragility_ratio  # NO EWMA
 
         # Shock Ratio: (High - Low) / EWMA_Vol
-        vol_ewma6 = vol_20.ewm(span=6, adjust=False).mean()
+        vol_ewma6 = vol_20.ewm(span=24, adjust=False).mean()
         shock_ratio = (result_df['high'] - result_df['low']) / (vol_ewma6 + 1e-9)
         result_df['shock_ratio'] = shock_ratio  # NO EWMA
 
@@ -1257,9 +1387,9 @@ class MLRiskRegimeStep(BaseStep):
 
         # Volume-Vol Divergence (Trap Detector)
         vol_1h = vol_20
-        vol_ewma6_for_div = vol_1h.ewm(span=6, adjust=False).mean()
+        vol_ewma6_for_div = vol_1h.ewm(span=24, adjust=False).mean()
         volume_1h = result_df['volume']
-        volume_ewma6 = volume_1h.ewm(span=6, adjust=False).mean()
+        volume_ewma6 = volume_1h.ewm(span=24, adjust=False).mean()
 
         vol_component = vol_1h / (vol_ewma6_for_div + 1e-9)
         volume_component = volume_1h / (volume_ewma6 + 1e-9)
@@ -1270,9 +1400,9 @@ class MLRiskRegimeStep(BaseStep):
         # Use multiple volatility windows to separate regimes by persistence
         # Windows aligned to trading duration: 1h (immediate), 3h (trade-matched), 6h (structural context)
 
-        vol_1h = returns.rolling(window=1).std()
-        vol_3h = returns.rolling(window=3).std()
-        vol_6h = returns.rolling(window=6).std()
+        vol_1h = returns.rolling(window=4).std()
+        vol_3h = returns.rolling(window=12).std()
+        vol_6h = returns.rolling(window=24).std()
 
         result_df['vol_1h'] = vol_1h
         result_df['vol_3h'] = vol_3h
@@ -1293,6 +1423,44 @@ class MLRiskRegimeStep(BaseStep):
             result_df[f'vol_ratio_3h_6h_ewma{period}'] = vol_ratio_3h_6h.ewm(span=period, adjust=False).mean()
             result_df[f'vol_ratio_1h_6h_ewma{period}'] = vol_ratio_1h_6h.ewm(span=period, adjust=False).mean()
 
+        # ============ 10b. Quadrant-Aligned Vol/Autocorr Features ============
+
+        try:
+            # RSI(14) on 1h returns
+            rsi_window = 56
+            gains = returns.clip(lower=0.0)
+            losses = -returns.clip(upper=0.0)
+            avg_gain = gains.rolling(rsi_window).mean()
+            avg_loss = losses.rolling(rsi_window).mean()
+            rs = avg_gain / (avg_loss + 1e-9)
+            rsi_14 = 100.0 - (100.0 / (1.0 + rs))
+            result_df['rsi_14'] = rsi_14
+
+            # Short-horizon volatility-of-volatility (vol_of_vol) based on
+            # immediate volatility. This provides the "instability" axis.
+            vol_short = returns.rolling(window=12).std()
+            vol_of_vol_6 = vol_short.rolling(window=24).std()
+            result_df['vol_of_vol_6'] = vol_of_vol_6
+
+            # Short-horizon autocorrelation (lag-1) on returns to capture
+            # mean-reversion vs trending behaviour.
+            def _rolling_autocorr(x: pd.Series) -> float:
+                if len(x) < 3:
+                    return np.nan
+                try:
+                    return float(x.autocorr(lag=1))
+                except Exception:
+                    return np.nan
+
+            autocorr_3 = returns.rolling(window=12).apply(
+                lambda arr: _rolling_autocorr(pd.Series(arr)), raw=True
+            )
+            result_df['autocorrelation_3'] = autocorr_3
+        except Exception as quad_feat_exc:  # pragma: no cover - defensive
+            tprint_warning(
+                f"Quadrant-aligned RSI/vol_of_vol/autocorr feature generation failed (non-fatal): {quad_feat_exc}"
+            )
+
         # ============ 11. ENHANCED: Price Action Features ============
 
         # True Range (ATR building block)
@@ -1301,7 +1469,7 @@ class MLRiskRegimeStep(BaseStep):
         tr3 = abs(result_df['low'] - result_df['close'].shift(1))
         true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
         result_df['true_range'] = true_range
-        atr_14 = true_range.rolling(window=14).mean()
+        atr_14 = true_range.rolling(window=56).mean()
         result_df['atr_14'] = atr_14
         result_df['tr_atr_ratio'] = true_range / (atr_14 + 1e-9)  # Spikes = regime change
 
@@ -1332,8 +1500,8 @@ class MLRiskRegimeStep(BaseStep):
         # ============ 12. ENHANCED: Momentum Features ============
 
         # Rate of price change (not just volatility)
-        price_change_1 = result_df['close'].diff()
-        price_change_6 = result_df['close'].diff(6)
+        price_change_1 = result_df['close'].diff(4)
+        price_change_6 = result_df['close'].diff(24)
         result_df['price_change_1h'] = price_change_1
         result_df['price_change_6h'] = price_change_6
 
@@ -1361,8 +1529,8 @@ class MLRiskRegimeStep(BaseStep):
 
         if 'volume' in result_df.columns:
             volume = result_df['volume'].astype(float)
-            volume_ma_20 = volume.rolling(window=20).mean()
-            volume_ma_6 = volume.rolling(window=6).mean()
+            volume_ma_20 = volume.rolling(window=80).mean()
+            volume_ma_6 = volume.rolling(window=24).mean()
 
             # Volume spikes (sudden increases)
             volume_spike = volume / (volume_ma_20 + 1e-9)
@@ -1384,6 +1552,134 @@ class MLRiskRegimeStep(BaseStep):
             volume_price_divergence = price_trend_6h - volume_trend_6h
             result_df['volume_price_divergence'] = volume_price_divergence  # High = potential reversal
 
+            try:
+                if 'cvar_5pct' in result_df.columns:
+                    tail_liquidity_cvar5_dry = result_df['cvar_5pct'] * volume_dry
+                    result_df['tail_liquidity_cvar5_dry'] = tail_liquidity_cvar5_dry
+                    tail_volume_cvar5_spike = result_df['cvar_5pct'] * volume_spike
+                    result_df['tail_volume_cvar5_spike'] = tail_volume_cvar5_spike
+                if 'cvar_10pct' in result_df.columns:
+                    tail_liquidity_cvar10_dry = result_df['cvar_10pct'] * volume_dry
+                    result_df['tail_liquidity_cvar10_dry'] = tail_liquidity_cvar10_dry
+            except Exception as joint_tail_exc:  # pragma: no cover - defensive
+                tprint_warning(
+                    f"Joint tail-liquidity feature generation failed (non-fatal): {joint_tail_exc}"
+                )
+
+        try:
+            underwater = (drawdown < 0).astype(int)
+            dd_streak = np.zeros(len(underwater), dtype=float)
+            current_underwater = 0.0
+            for i, flag in enumerate(underwater.values):
+                if flag:
+                    current_underwater += 1.0
+                else:
+                    current_underwater = 0.0
+                dd_streak[i] = current_underwater
+            result_df['drawdown_duration_bars'] = dd_streak
+
+            underwater_float = underwater.astype(float)
+            drawdown_underwater_frac_20 = underwater_float.rolling(window=80, min_periods=1).mean()
+            result_df['drawdown_underwater_frac_20'] = drawdown_underwater_frac_20
+
+            dd_recovery_ratio_50 = max_ru / (max_dd.abs() + 1e-9)
+            result_df['dd_recovery_ratio_50'] = dd_recovery_ratio_50
+        except Exception as dd_exc:  # pragma: no cover - defensive
+            tprint_warning(
+                f"Drawdown path / recovery feature generation failed (non-fatal): {dd_exc}"
+            )
+
+        try:
+            vol_for_tail = vol_20
+            tail_event = ((returns < -2.0 * (vol_for_tail + 1e-9)) & vol_for_tail.notna()).astype(int)
+            tail_since = np.full(len(tail_event), np.nan, dtype=float)
+            last_idx_tail = -1
+            for i, flag in enumerate(tail_event.values):
+                if flag:
+                    last_idx_tail = i
+                    tail_since[i] = 0.0
+                elif last_idx_tail >= 0:
+                    tail_since[i] = float(i - last_idx_tail)
+            result_df['bars_since_tail_event'] = tail_since
+
+            vol_spike_event = (vol_20 > 1.5 * vol_ewma6).astype(int)
+            spike_since = np.full(len(vol_spike_event), np.nan, dtype=float)
+            last_idx_spike = -1
+            for i, flag in enumerate(vol_spike_event.values):
+                if flag:
+                    last_idx_spike = i
+                    spike_since[i] = 0.0
+                elif last_idx_spike >= 0:
+                    spike_since[i] = float(i - last_idx_spike)
+            result_df['bars_since_vol_spike'] = spike_since
+        except Exception as pers_exc:  # pragma: no cover - defensive
+            tprint_warning(
+                f"Risk persistence feature generation failed (non-fatal): {pers_exc}"
+            )
+
+        try:
+            return_3h = returns.rolling(window=12).sum()
+            result_df['return_3h'] = return_3h
+
+            sharpe_like_3h = return_3h / (downside_dev + 1e-9)
+            result_df['sharpe_like_3h'] = sharpe_like_3h
+            for period in ewma_periods:
+                result_df[f'sharpe_like_3h_ewma{period}'] = sharpe_like_3h.ewm(span=period, adjust=False).mean()
+
+            if 'cvar_5pct' in result_df.columns:
+                reward_to_cvar_5pct = return_3h / (result_df['cvar_5pct'] + 1e-9)
+                result_df['reward_to_cvar_5pct'] = reward_to_cvar_5pct
+                for period in ewma_periods:
+                    result_df[f'reward_to_cvar_5pct_ewma{period}'] = reward_to_cvar_5pct.ewm(span=period, adjust=False).mean()
+
+            reward_to_dd_50 = return_3h / (max_dd.abs() + 1e-9)
+            result_df['reward_to_dd_50'] = reward_to_dd_50
+            for period in ewma_periods:
+                result_df[f'reward_to_dd_50_ewma{period}'] = reward_to_dd_50.ewm(span=period, adjust=False).mean()
+        except Exception as rr_exc:  # pragma: no cover - defensive
+            tprint_warning(
+                f"Risk-normalized return / reward-to-risk feature generation failed (non-fatal): {rr_exc}"
+            )
+
+        try:
+            vol_slope_1h_3h = vol_3h - vol_1h
+            vol_slope_3h_6h = vol_6h - vol_3h
+            vol_convexity_1h_3h_6h = (vol_6h - vol_3h) - (vol_3h - vol_1h)
+
+            result_df['vol_slope_1h_3h'] = vol_slope_1h_3h
+            result_df['vol_slope_3h_6h'] = vol_slope_3h_6h
+            result_df['vol_convexity_1h_3h_6h'] = vol_convexity_1h_3h_6h
+        except Exception as shape_exc:  # pragma: no cover - defensive
+            tprint_warning(
+                f"Multi-horizon risk shape feature generation failed (non-fatal): {shape_exc}"
+            )
+
+        # Optional correlation-based pruning of EWMA/smoothed features to
+        # reduce dimensionality before downstream steps. This is applied only
+        # to columns whose names contain 'ewma' and leaves raw risk features
+        # untouched.
+        try:
+            ewma_cols = [c for c in result_df.columns if 'ewma' in c.lower()]
+            ewma_threshold = float(config.get("risk_ewma_corr_threshold", 0.97))
+
+            if ewma_cols and len(ewma_cols) > 1 and 0.0 < ewma_threshold < 1.0:
+                ewma_df = result_df[ewma_cols].select_dtypes(include=[np.number])
+                if not ewma_df.empty and ewma_df.shape[1] > 1:
+                    ewma_pruned, _ = self._drop_correlated_features(
+                        ewma_df,
+                        threshold=ewma_threshold,
+                    )
+                    kept_ewma_cols = set(ewma_pruned.columns.tolist())
+                    dropped_ewma = [c for c in ewma_cols if c not in kept_ewma_cols]
+                    if dropped_ewma:
+                        result_df = result_df.drop(columns=dropped_ewma, errors="ignore")
+                        tprint_info(
+                            f"📉 EWMA correlation pruning dropped {len(dropped_ewma)} / {len(ewma_cols)} "
+                            f"smoothed features (>{ewma_threshold:.2f} corr)."
+                        )
+        except Exception as ewma_exc:  # pragma: no cover - defensive
+            tprint_warning(f"EWMA correlation pruning failed (non-fatal): {ewma_exc}")
+
         tprint_info(
             f"✅ Generated {len([c for c in result_df.columns if c not in df.columns])} risk features "
             f"({len([c for c in result_df.columns if 'ewma' in c])} with EWMA smoothing)"
@@ -1391,607 +1687,9 @@ class MLRiskRegimeStep(BaseStep):
 
         return result_df
 
-    def _compute_risk_targets(
-        self,
-        aligned_df: pd.DataFrame,
-        config: Dict[str, Any],
-    ) -> pd.DataFrame:
-        """Compute risk-based composite target from 4 components.
-
-        Risk Target Composition (scaled individually then weighted):
-            - Forward Vol 1h (30%): Short-term tactical risk
-            - Forward Vol 4h (20%): Medium-term persistent risk
-            - Tail Risk Probability (30%): Crash protection via CVaR
-            - Vol Acceleration (20%): Regime transition detection
-
-        Each component is winsorized and scaled with RobustScaler before weighting.
-        """
-        from src.features_common.transforms.scaling_normalization import (
-            winsorized_zscore_normalize,
-            robust_normalize
-        )
-
-        df = aligned_df.copy()
-        required_cols = ["close", "high", "low"]
-        missing = [c for c in required_cols if c not in df.columns]
-        if missing:
-            raise ValueError(f"Aligned dataset must contain {required_cols}, missing: {missing}")
-
-        close = df["close"].astype(float)
-        high = df["high"].astype(float)
-        low = df["low"].astype(float)
-
-        # Winsorization parameters (0.05-0.95 for regime preservation)
-        winsorize_lower = float(config.get("risk_winsorize_lower_quantile", 0.05))
-        winsorize_upper = float(config.get("risk_winsorize_upper_quantile", 0.95))
-
-        tprint_info("🎯 Computing 4-component risk target...")
-
-        # =============== Component 1: Forward Vol 1h (30%) ===============
-        # Calculate forward 1h realized volatility (rolling std of returns)
-        returns_1h = np.log(close / close.shift(1))
-        fwd_vol_1h = returns_1h.shift(-1).rolling(window=1).std()
-        df["risk_fwd_vol_1h_raw"] = fwd_vol_1h
-
-        # =============== Component 2: Forward Vol 4h (20%) ===============
-        # Calculate forward 4h realized volatility
-        fwd_vol_4h = returns_1h.shift(-4).rolling(window=4).std()
-        df["risk_fwd_vol_4h_raw"] = fwd_vol_4h
-
-        # =============== Component 3: Tail Risk Probability (30%) ===============
-        # Use CVaR (Expected Shortfall) as tail risk proxy
-        # Calculate forward 1h worst-case tail losses
-        window_tail = int(config.get("risk_tail_window", 20))
-        confidence_level = float(config.get("risk_cvar_confidence", 0.05))
-
-        def rolling_cvar(returns_series, window, alpha=0.05):
-            """Calculate rolling CVaR (Expected Shortfall)."""
-            cvar_vals = []
-            for i in range(len(returns_series)):
-                if i < window:
-                    cvar_vals.append(np.nan)
-                else:
-                    window_returns = returns_series.iloc[i-window:i].dropna()
-                    if len(window_returns) > 0:
-                        var_threshold = window_returns.quantile(alpha)
-                        tail_losses = window_returns[window_returns <= var_threshold]
-                        cvar = tail_losses.mean() if len(tail_losses) > 0 else var_threshold
-                        cvar_vals.append(abs(cvar))  # Absolute value for risk magnitude
-                    else:
-                        cvar_vals.append(np.nan)
-
-            return pd.Series(cvar_vals, index=returns_series.index)
-
-        fwd_cvar = rolling_cvar(returns_1h.shift(-1), window=window_tail, alpha=confidence_level)
-        df["risk_tail_cvar_raw"] = fwd_cvar
-
-        # =============== Component 4: Vol Acceleration (20%) ===============
-        # Rate of change in volatility (vol momentum)
-        vol_current = returns_1h.rolling(window=6).std()
-        vol_prev = returns_1h.rolling(window=6).std().shift(6)
-        vol_accel = (vol_current - vol_prev) / (vol_prev + 1e-9)
-        df["risk_vol_acceleration_raw"] = vol_accel.shift(-1)  # Forward-looking
-
-        # =============== ENHANCED: Additional Regime Signals for Better Separation ===============
-        # These signals capture different aspects of regime dynamics for orthogonal separation
-
-        # Vol Clustering: Autocorrelation of vol changes (persistent vol = turbulent regime)
-        vol_changes = vol_current.pct_change().fillna(0)
-        vol_clustering = vol_changes.rolling(window=12).apply(
-            lambda x: pd.Series(x).autocorr(lag=1) if len(x) > 1 else 0, raw=False
-        )
-        df["risk_vol_clustering_raw"] = vol_clustering.fillna(0)
-
-        # Vol Persistence: How many consecutive bars had vol > MA
-        vol_ma = vol_current.rolling(window=6).mean()
-        vol_persistent = (vol_current > vol_ma).astype(int).rolling(window=6).sum()
-        df["risk_vol_persistence_raw"] = vol_persistent / 6.0  # Normalized to [0, 1]
-
-        # Price-Vol Efficiency (Separation metric): Price move per unit of vol
-        price_moves = close.diff().abs()
-        price_vol_efficiency = price_moves / (vol_current + 1e-9)
-        df["risk_price_vol_efficiency_raw"] = price_vol_efficiency
-
-        # Tail Risk Density: Concentration of tail losses
-        window_tail_density = int(config.get("risk_tail_window", 20))
-        tail_density = []
-        for i in range(len(returns_1h)):
-            if i < window_tail_density:
-                tail_density.append(0.0)
-            else:
-                window_returns = returns_1h.iloc[i-window_tail_density:i].dropna()
-                if len(window_returns) > 0:
-                    percentile_5 = window_returns.quantile(0.05)
-                    tail_count = (window_returns <= percentile_5).sum()
-                    tail_density.append(float(tail_count) / len(window_returns))
-                else:
-                    tail_density.append(0.0)
-        df["risk_tail_density_raw"] = tail_density
-
-        # =============== NEW: Regime-Specific Divergence Features ===============
-        # These features capture regime transitions and regime characteristics
-
-        # Vol-Return Correlation: Rolling correlation between vol and returns
-        # Negative in trending regimes, positive in mean-reverting/crash regimes
-        vol_return_corr = returns_1h.rolling(window=20).corr(vol_current)
-        df["vol_return_correlation_raw"] = vol_return_corr.fillna(0)
-
-        # Cross-Timeframe Vol Ratio: Local vs global volatility
-        # High ratio = locally elevated vol (regime transition)
-        vol_short = returns_1h.rolling(window=6).std()
-        vol_long = returns_1h.rolling(window=24).std()
-        vol_cross_ratio = vol_short / (vol_long + 1e-9)
-        df["vol_cross_timeframe_ratio_raw"] = vol_cross_ratio
-
-        # Drawdown Duration: How long current drawdown has lasted
-        # Long durations indicate persistent distress regimes
-        cumulative_returns = (1 + returns_1h).cumprod()
-        running_max = cumulative_returns.expanding().max()
-        drawdown = (cumulative_returns - running_max) / (running_max + 1e-9)
-
-        # Calculate duration of current drawdown
-        drawdown_duration = pd.Series(0, index=df.index)
-        in_drawdown = drawdown < -0.01  # 1% threshold
-        duration_counter = 0
-        for i in range(len(in_drawdown)):
-            if in_drawdown.iloc[i]:
-                duration_counter += 1
-                drawdown_duration.iloc[i] = duration_counter
-            else:
-                duration_counter = 0
-        df["drawdown_duration_raw"] = drawdown_duration
-
-        # Vol Regime Momentum: Rate of change in vol regime
-        # Captures whether vol is accelerating or decelerating
-        vol_roc = vol_current.pct_change(periods=3).fillna(0)
-        df["vol_regime_momentum_raw"] = vol_roc
-
-        # Return Skewness-Vol Interaction: Captures crash vs euphoria regimes
-        # High vol + negative skew = crash regime
-        # High vol + positive skew = euphoria/recovery regime
-        skew_20 = returns_1h.rolling(window=20).skew().fillna(0)
-        skew_vol_interaction = skew_20 * vol_current
-        df["skew_vol_interaction_raw"] = skew_vol_interaction
-
-        # Winsorize each component individually
-        risk_components = {
-            "risk_fwd_vol_1h_raw": 0.30,
-            "risk_fwd_vol_4h_raw": 0.20,
-            "risk_tail_cvar_raw": 0.30,
-            "risk_vol_acceleration_raw": 0.20,
-        }
-
-        tprint_info(f"🔧 Winsorizing risk components at {winsorize_lower:.1%} and {winsorize_upper:.1%} quantiles")
-
-        scaled_components = []
-        for comp_name, weight in risk_components.items():
-            if comp_name not in df.columns:
-                tprint_warning(f"Skipping missing component: {comp_name}")
-                continue
-
-            comp_data = df[comp_name].copy()
-
-            # Winsorize
-            comp_clean = comp_data.dropna()
-            if len(comp_clean) > 0:
-                lower_bound = comp_clean.quantile(winsorize_lower)
-                upper_bound = comp_clean.quantile(winsorize_upper)
-                comp_data = comp_data.clip(lower=lower_bound, upper=upper_bound)
-                tprint_info(f"  ✓ {comp_name}: clipped to [{lower_bound:.6f}, {upper_bound:.6f}]")
-
-            # Robust scale each component with winsorization built-in
-            try:
-                comp_scaled = winsorized_zscore_normalize(
-                    comp_data,
-                    ddof=0,
-                    lower_quantile=winsorize_lower,
-                    upper_quantile=winsorize_upper
-                )
-                df[f"{comp_name}_scaled"] = comp_scaled
-
-                # Weight the scaled component
-                comp_weighted = comp_scaled * weight
-                scaled_components.append(comp_weighted)
-
-                tprint_info(f"  ✓ {comp_name}: weight={weight:.1%}, mean={comp_scaled.mean():.4f}, std={comp_scaled.std():.4f}")
-            except Exception as e:
-                tprint_warning(f"Failed to scale {comp_name}: {e}")
-                continue
-
-        # Combine weighted components
-        if len(scaled_components) == 0:
-            raise ValueError("No valid risk components could be computed")
-
-        risk_target_raw = pd.concat(scaled_components, axis=1).sum(axis=1)
-        df["risk_target_raw"] = risk_target_raw
-
-        # Apply MinMaxScaler to get final target in [0, 1] range for KDE binning
-        scaler = MinMaxScaler(feature_range=(0, 1))
-        risk_target_scaled = risk_target_raw.dropna()
-        if len(risk_target_scaled) > 0:
-            risk_target_normalized = scaler.fit_transform(risk_target_scaled.values.reshape(-1, 1)).flatten()
-            df.loc[risk_target_scaled.index, "risk_target"] = risk_target_normalized
-        else:
-            df["risk_target"] = np.nan
-
-        # Drop rows with missing risk target
-        before = len(df)
-        df = df.dropna(subset=["risk_target"])
-        dropped = before - len(df)
-        if dropped > 0:
-            tprint_warning(f"Dropped {dropped} rows with NaN risk target")
-
-        tprint_info(
-            f"🎯 Risk target dataset shape: {df.shape} "
-            f"(target range: [{df['risk_target'].min():.4f}, {df['risk_target'].max():.4f}], "
-            f"mean: {df['risk_target'].mean():.4f})"
-        )
-
-        return df
-
-    def _train_risk_model(
-        self,
-        risk_df: pd.DataFrame,
-        config: Dict[str, Any],
-    ) -> Tuple[Any, Optional[pd.Series], str, Dict[str, Any], Dict[str, Any]]:
-        """Train XGBoost regression model to predict risk targets with monotonic constraints.
-
-        Returns:
-            - model: Trained XGBoost model
-            - scores: Risk predictions on full dataset
-            - pred_col_name: Name of prediction column
-            - training_metrics: Dict of training performance metrics
-            - feature_pipeline_artifacts: Dict containing scaler and feature names
-        """
-        try:
-            import xgboost as xgb
-        except ImportError as e:
-            raise ImportError("xgboost is required for risk model training") from e
-
-        try:
-            from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
-        except ImportError:
-            mean_squared_error = None
-            mean_absolute_error = None
-            r2_score = None
-
-        df = risk_df.copy()
-        if "risk_target" not in df.columns:
-            raise ValueError("risk_target column not found in dataset")
-
-        df = df.dropna(subset=["risk_target"])
-        if df.empty:
-            raise ValueError("No valid samples for risk model training after dropping NaNs")
-
-        y = df["risk_target"]
-
-        # Select numeric features, excluding risk target and intermediate risk components
-        numeric_df = df.select_dtypes(include=[np.number])
-        feature_cols = [
-            col
-            for col in numeric_df.columns
-            if col not in ["risk_target", "risk_target_raw"]
-            and not col.startswith("risk_")
-            and not col.startswith("alpha_")
-        ]
-
-        if not feature_cols:
-            raise ValueError("No numeric features available for risk model training")
-
-        X = numeric_df[feature_cols]
-
-        min_samples = int(config.get("risk_min_samples", 200))
-        if len(X) < max(min_samples, 20):
-            raise ValueError(
-                f"Insufficient samples for risk model training: {len(X)} < {min_samples}"
-            )
-
-        train_frac = float(config.get("risk_train_fraction", 0.8))
-        train_frac = min(max(train_frac, 0.5), 0.95)
-        split_idx = int(len(X) * train_frac)
-        split_idx = max(min(split_idx, len(X) - 1), 1)
-
-        # Chronological split to preserve temporal ordering
-        X_train_raw, y_train = X.iloc[:split_idx].copy(), y.iloc[:split_idx]
-        X_val_raw, y_val = X.iloc[split_idx:].copy(), y.iloc[split_idx:]
-
-        # Robust scaling with winsorization
-        outlier_threshold = float(config.get("risk_outlier_threshold", 3.0))
-        normalizer_config: Dict[str, Any] = {
-            "default_strategy": "robust",
-            "auto_select": False,
-            "handle_outliers": True,
-            "outlier_threshold": outlier_threshold,
-            "use_vectorbt": False,
-        }
-        scaler = ScalingNormalizer(normalizer_config)
-
-        X_train_scaled = scaler.fit_transform(X_train_raw, strategy="robust")
-        X_val_scaled = scaler.transform(X_val_raw)
-        X_scaled_full = scaler.transform(X)
-
-        # Apply EWMA temporal smoothing on scaled features (periods: 2, 6)
-        use_ewm_features = bool(config.get("risk_use_ewm_features", True))
-        ewma_periods = [2, 6]  # Fixed periods for risk features
-
-        if use_ewm_features:
-            base_df = X_scaled_full.copy()
-            feature_names_seq: List[str] = list(base_df.columns)
-
-            aggregated_ewm: Optional[np.ndarray] = None
-            n_features = base_df.shape[1]
-
-            for period in ewma_periods:
-                alpha_val = 2.0 / float(period + 1)
-                try:
-                    smoothed_array, _ = apply_ewm_smoothing(
-                        base_df.values,
-                        alpha=alpha_val,
-                        feature_names=feature_names_seq,
-                        use_vectorization_optimization=False,
-                    )
-
-                    if smoothed_array.shape[1] < 2 * n_features:
-                        raise ValueError(
-                            f"Unexpected smoothed_array shape {smoothed_array.shape} for n_features={n_features}"
-                        )
-
-                    ewm_block = smoothed_array[:, n_features:]
-
-                    if aggregated_ewm is None:
-                        aggregated_ewm = ewm_block.astype(float)
-                    else:
-                        aggregated_ewm = aggregated_ewm + ewm_block.astype(float)
-                except Exception as e:
-                    tprint_warning(
-                        f"EWMA temporal smoothing failed for period={period} (using unsmoothed features): {e}"
-                    )
-                    aggregated_ewm = None
-                    break
-
-            if aggregated_ewm is not None:
-                aggregated_ewm = aggregated_ewm / float(len(ewma_periods))
-                features_df = pd.DataFrame(
-                    aggregated_ewm,
-                    index=base_df.index,
-                    columns=pd.Index(feature_names_seq),
-                )
-
-                X_features_full = features_df
-                X_train = X_features_full.iloc[:split_idx].copy()
-                X_val = X_features_full.iloc[split_idx:].copy()
-                X_scaled_full = X_features_full
-                extended_feature_names = feature_names_seq
-            else:
-                X_train = X_train_scaled
-                X_val = X_val_scaled
-                extended_feature_names = list(X_scaled_full.columns)
-        else:
-            X_train = X_train_scaled
-            X_val = X_val_scaled
-            extended_feature_names = list(X_scaled_full.columns)
-
-        training_metrics: Dict[str, Any] = {}
-        training_metrics["scaling_strategy"] = "robust"
-        training_metrics["risk_outlier_threshold"] = outlier_threshold
-        training_metrics["risk_use_ewm_features"] = use_ewm_features
-        training_metrics["risk_ewm_periods"] = ewma_periods
-
-        # Prepare feature pipeline artifacts
-        feature_pipeline_artifacts: Dict[str, Any] = {
-            "feature_names": extended_feature_names,
-            "scaler": scaler,
-            "normalizer_config": normalizer_config,
-        }
-
-        # Define monotonic constraints for risk features
-        # +1 means feature increases risk, -1 means feature decreases risk, 0 means no constraint
-        monotone_constraints = {}
-        for feat in extended_feature_names:
-            feat_lower = feat.lower()
-            # Risk-increasing features (+1 monotonic constraint)
-            if any(keyword in feat_lower for keyword in [
-                'vol', 'volatility', 'garch', 'cvar', 'drawdown', 'jump',
-                'expansion', 'acceleration', 'parkinson', 'garman', 'rogers', 'yang',
-                'fragility', 'shock', 'tail', 'skew', 'kurtosis', 'divergence'
-            ]):
-                monotone_constraints[feat] = 1
-            # No strong prior for other features
-            else:
-                monotone_constraints[feat] = 0
-
-        # Convert monotone constraints to list format for XGBoost
-        monotone_constraints_list = [monotone_constraints.get(feat, 0) for feat in extended_feature_names]
-
-        tprint_info(f"🔒 Monotonic constraints: {sum(c == 1 for c in monotone_constraints_list)} risk-increasing features")
-
-        # XGBoost base parameters (optimized for risk modeling)
-        base_params = {
-            'booster': 'gbtree',
-            'objective': 'reg:squarederror',
-            'tree_method': 'hist',
-            'n_jobs': -1,
-
-            # Structural constraints
-            'max_depth': int(config.get("risk_max_depth", 4)),
-            'min_child_weight': int(config.get("risk_min_child_weight", 20)),
-
-            # Learning dynamics
-            'learning_rate': float(config.get("risk_learning_rate", 0.05)),
-            'n_estimators': int(config.get("risk_n_estimators", 1000)),
-
-            # Randomness (anti-overfitting)
-            'subsample': float(config.get("risk_subsample", 0.7)),
-            'colsample_bytree': float(config.get("risk_colsample_bytree", 0.8)),
-
-            # Regularization
-            'gamma': float(config.get("risk_gamma", 1.0)),
-            'reg_alpha': float(config.get("risk_reg_alpha", 0.5)),
-            'reg_lambda': float(config.get("risk_reg_lambda", 1.0)),
-
-            # Monotonic constraints
-            'monotone_constraints': monotone_constraints_list,
-
-            'random_state': int(config.get("risk_random_state", 42)),
-        }
-
-        # Hierarchical HPO (optional, config-gated)
-        enable_hpo = bool(config.get("risk_enable_hpo", False))
-        best_params = base_params.copy()
-
-        if enable_hpo:
-            try:
-                # Define parameter groups (2–3 parameters per group)
-                param_groups = [
-                    create_param_group(
-                        name="structure",
-                        params={
-                            "max_depth": {"type": "int", "low": 3, "high": 6},
-                            "min_child_weight": {"type": "int", "low": 10, "high": 100},
-                            "n_estimators": {"type": "int", "low": 500, "high": 1500},
-                        },
-                        priority=1,
-                        description="Tree depth, leaf size, and capacity",
-                    ),
-                    create_param_group(
-                        name="regularization",
-                        params={
-                            "gamma": {"type": "float", "low": 0.1, "high": 5.0},
-                            "reg_alpha": {"type": "float", "low": 1e-5, "high": 10.0, "log": True},
-                            "reg_lambda": {"type": "float", "low": 0.1, "high": 5.0},
-                        },
-                        priority=2,
-                        depends_on=["structure"],
-                        description="Regularization strength",
-                    ),
-                    create_param_group(
-                        name="sampling",
-                        params={
-                            "subsample": {"type": "float", "low": 0.5, "high": 0.9},
-                            "colsample_bytree": {"type": "float", "low": 0.5, "high": 0.9},
-                        },
-                        priority=3,
-                        depends_on=["regularization"],
-                        description="Row/feature subsampling ratios",
-                    ),
-                ]
-
-                # Initialize XGBoost model for objective evaluation
-                base_model = xgb.XGBRegressor(**base_params)
-
-                # Configure hierarchical optimizer (use neg MAE so direction is maximize)
-                hpo_cv_folds = int(config.get("risk_hpo_cv_folds", 3))
-                hpo_rounds = int(config.get("risk_hpo_rounds", 1))
-                hpo_final_trials = int(config.get("risk_hpo_final_trials", 20))
-                hpo_enable_final = bool(config.get("risk_hpo_enable_final_refinement", False))
-
-                optimizer = HierarchicalParameterOptimizer(
-                    param_groups=param_groups,
-                    objective_func=default_objective_function,
-                    cv_folds=hpo_cv_folds,
-                    scoring_metric="neg_mean_absolute_error",
-                    direction="maximize",
-                    n_rounds=hpo_rounds,
-                    enable_final_refinement=hpo_enable_final,
-                    final_refinement_trials=hpo_final_trials,
-                    cache_dir=None,
-                    random_state=int(config.get("risk_random_state", 42)),
-                    verbose=bool(config.get("risk_hpo_verbose", False)),
-                    use_custom_balanced_score=False,
-                )
-
-                # Run optimization (use holdout validation when available)
-                X_train_np = X_train.values if hasattr(X_train, "values") else X_train
-                y_train_np = y_train.values if hasattr(y_train, "values") else y_train
-                X_val_np = X_val.values if hasattr(X_val, "values") else X_val
-                y_val_np = y_val.values if hasattr(y_val, "values") else y_val
-
-                hpo_result = optimizer.optimize(
-                    X_train=X_train_np,
-                    y_train=y_train_np,
-                    X_val=X_val_np,
-                    y_val=y_val_np,
-                    model=base_model,
-                    initial_params=base_params,
-                )
-
-                # Hierarchical optimizer maximizes negative MAE; convert back to MAE for reporting
-                best_neg_mae = float(hpo_result.best_score)
-                best_mae = float(-best_neg_mae) if np.isfinite(best_neg_mae) else float("nan")
-
-                best_params.update(hpo_result.best_params or {})
-                training_metrics["risk_hpo_best_score"] = best_mae
-                training_metrics["risk_hpo_best_params"] = hpo_result.best_params
-                training_metrics["risk_hpo_used"] = True
-                training_metrics["risk_hpo_total_trials"] = int(hpo_result.total_trials)
-                tprint_info(f"✅ Hierarchical HPO completed: best MAE = {best_mae:.6f}")
-            except Exception as hpo_exc:
-                tprint_warning(f"Hierarchical HPO failed; proceeding with default params: {hpo_exc}")
-                training_metrics["risk_hpo_used"] = False
-        else:
-            training_metrics["risk_hpo_used"] = False
-
-        # Train final XGBoost model
-        model = xgb.XGBRegressor(**best_params)
-        model.fit(
-            X_train, y_train,
-            eval_set=[(X_train, y_train), (X_val, y_val)],
-            eval_metric='mae',
-            early_stopping_rounds=int(config.get("risk_early_stopping_rounds", 50)),
-            verbose=False
-        )
-
-        # Evaluate on train set
-        train_pred = model.predict(X_train)
-        if mean_squared_error:
-            training_metrics["train_rmse"] = float(np.sqrt(mean_squared_error(y_train, train_pred)))
-        if mean_absolute_error:
-            training_metrics["train_mae"] = float(mean_absolute_error(y_train, train_pred))
-        if r2_score:
-            training_metrics["train_r2"] = float(r2_score(y_train, train_pred))
-
-        # Evaluate on validation set
-        if len(X_val) > 0:
-            val_pred = model.predict(X_val)
-            if mean_squared_error:
-                training_metrics["val_rmse"] = float(np.sqrt(mean_squared_error(y_val, val_pred)))
-            if mean_absolute_error:
-                training_metrics["val_mae"] = float(mean_absolute_error(y_val, val_pred))
-            if r2_score:
-                training_metrics["val_r2"] = float(r2_score(y_val, val_pred))
-
-            # Calculate residual standard deviation (sigma) for probabilistic inference
-            residuals = y_val.values - val_pred
-            sigma = float(np.std(residuals))
-            training_metrics["val_residual_sigma"] = sigma
-            tprint_info(f"📊 Validation residual σ = {sigma:.6f} (for probabilistic inference)")
-
-        # Get predictions on full dataset
-        full_raw_pred = model.predict(X_scaled_full)
-
-        # Calibrate predictions to use full [0, 1] range (MinMaxScaler on predictions)
-        pred_scaler = MinMaxScaler(feature_range=(0, 1))
-        full_scores_calibrated = pred_scaler.fit_transform(full_raw_pred.reshape(-1, 1)).flatten()
-
-        scores = pd.Series(full_scores_calibrated, index=df.index, name="risk_pred_score")
-        pred_col_name = "risk_pred_score"
-        training_metrics["model_type"] = "xgboost_regression"
-        training_metrics["n_features"] = len(extended_feature_names)
-        training_metrics["n_train_samples"] = len(X_train)
-        training_metrics["n_val_samples"] = len(X_val)
-
-        tprint_info(
-            f"🤖 Trained XGBoost risk model on {len(X_train)} train / {len(X_val)} val samples "
-            f"with {len(extended_feature_names)} features"
-        )
-
-        # Store calibration scaler in artifacts
-        feature_pipeline_artifacts["prediction_scaler"] = pred_scaler
-
-        return model, scores, pred_col_name, training_metrics, feature_pipeline_artifacts
-
+    
     # ========================================================================
-    # NEW: XGBoost Multi-Class Classifier Approach for Regime Detection
+    # XGBoost Multi-Class Classifier Approach for Regime Detection
     # ========================================================================
 
     def _drop_correlated_features(
@@ -2304,9 +2002,26 @@ class MLRiskRegimeStep(BaseStep):
         if not within_cvs:
             return 1.0  # Prevent division by zero
 
-        within_cvs_array = np.array(within_cvs)
-        regime_sizes_array = np.array(regime_sizes)
-        weighted_cv = np.average(within_cvs_array, weights=regime_sizes_array)
+        within_cvs_array = np.array(within_cvs, dtype=float)
+        regime_sizes_array = np.array(regime_sizes, dtype=float)
+
+        total = float(regime_sizes_array.sum())
+        if total <= 0.0 or within_cvs_array.size == 0:
+            return 1.0
+
+        # Align lengths defensively in case some regimes produced no CVs.
+        if regime_sizes_array.shape[0] != within_cvs_array.shape[0]:
+            regime_sizes_array = regime_sizes_array[: within_cvs_array.shape[0]]
+
+        # Weight each regime by the square of its sample proportion (p_k^2),
+        # so that very small regimes contribute only weakly to the overall
+        # within-regime CV.
+        p = regime_sizes_array / total
+        weights = p ** 2
+        if np.all(weights <= 0.0):
+            return 1.0
+
+        weighted_cv = np.average(within_cvs_array, weights=weights)
 
         return float(weighted_cv)
 
@@ -2462,8 +2177,16 @@ class MLRiskRegimeStep(BaseStep):
         min_pct = label_counts.min() / len(regime_labels)
         max_pct = label_counts.max() / len(regime_labels)
 
-        if min_pct < 0.05 or max_pct > 0.45:
-            score *= 0.5  # Heavy penalty for extreme imbalance
+        target_min = 0.05
+        target_max = 0.45
+
+        violation_low = max(0.0, target_min - min_pct)
+        violation_high = max(0.0, max_pct - target_max)
+        total_violation = violation_low + violation_high
+
+        if total_violation > 0.0:
+            balance_penalty = float(np.exp(-8.0 * total_violation))
+            score *= balance_penalty  # Heavy penalty for extreme imbalance
 
         return float(score)
 
@@ -2528,6 +2251,92 @@ class MLRiskRegimeStep(BaseStep):
 
         return metrics
 
+    def _compute_feature_wcov_diagnostics(
+        self,
+        df: pd.DataFrame,
+        regime_col_pred: str,
+        regime_col_teacher: Optional[str] = None,
+        top_k: Optional[int] = None,
+    ) -> pd.DataFrame:
+        numeric_df = df.select_dtypes(include=[np.number]).copy()
+        if regime_col_pred not in df.columns:
+            return pd.DataFrame()
+
+        regime_pred = np.asarray(df[regime_col_pred].values)
+        teacher_labels: Optional[np.ndarray] = None
+        if regime_col_teacher is not None and regime_col_teacher in df.columns:
+            try:
+                teacher_labels = np.asarray(df[regime_col_teacher].values)
+            except Exception:
+                teacher_labels = None
+
+        exclude_prefixes = ("risk_target", "risk_regime", "alpha_")
+        feature_cols: List[str] = [
+            col
+            for col in numeric_df.columns
+            if not any(col.startswith(p) for p in exclude_prefixes)
+        ]
+
+        records: List[Dict[str, Any]] = []
+        for col in feature_cols:
+            series = numeric_df[col]
+            if series.isna().all():
+                continue
+
+            try:
+                between_pred = self._calculate_winsorized_cv_between(regime_pred, series)
+                within_pred = self._calculate_winsorized_cv_within(regime_pred, series)
+                ratio_pred = between_pred / (within_pred + 1e-8)
+            except Exception:
+                between_pred = np.nan
+                within_pred = np.nan
+                ratio_pred = np.nan
+
+            between_teacher = np.nan
+            within_teacher = np.nan
+            ratio_teacher = np.nan
+            if teacher_labels is not None:
+                try:
+                    between_teacher = self._calculate_winsorized_cv_between(
+                        teacher_labels,
+                        series,
+                    )
+                    within_teacher = self._calculate_winsorized_cv_within(
+                        teacher_labels,
+                        series,
+                    )
+                    ratio_teacher = between_teacher / (within_teacher + 1e-8)
+                except Exception:
+                    between_teacher = np.nan
+                    within_teacher = np.nan
+                    ratio_teacher = np.nan
+
+            improvement = np.nan
+            if np.isfinite(ratio_pred) and np.isfinite(ratio_teacher):
+                improvement = ratio_pred - ratio_teacher
+
+            records.append(
+                {
+                    "feature": col,
+                    "wcov_between_pred": float(between_pred) if np.isfinite(between_pred) else np.nan,
+                    "wcov_within_pred": float(within_pred) if np.isfinite(within_pred) else np.nan,
+                    "wcov_ratio_pred": float(ratio_pred) if np.isfinite(ratio_pred) else np.nan,
+                    "wcov_between_teacher": float(between_teacher) if np.isfinite(between_teacher) else np.nan,
+                    "wcov_within_teacher": float(within_teacher) if np.isfinite(within_teacher) else np.nan,
+                    "wcov_ratio_teacher": float(ratio_teacher) if np.isfinite(ratio_teacher) else np.nan,
+                    "wcov_ratio_improvement": float(improvement) if np.isfinite(improvement) else np.nan,
+                }
+            )
+
+        if not records:
+            return pd.DataFrame()
+
+        diag_df = pd.DataFrame(records)
+        diag_df = diag_df.sort_values("wcov_ratio_pred", ascending=False)
+        if top_k is not None and top_k > 0 and len(diag_df) > top_k:
+            diag_df = diag_df.head(top_k)
+        return diag_df.reset_index(drop=True)
+
     # REMOVED: Temporal smoothing methods (per user request)
     # Temporal smoothing is no longer applied to labels before training
     # Labels are used directly from GMM + SA optimization
@@ -2540,7 +2349,11 @@ class MLRiskRegimeStep(BaseStep):
         n_regimes: int,
         max_iterations: int = 500,
         initial_temp: float = 1.0,
-        cooling_rate: float = 0.995
+        cooling_rate: float = 0.995,
+        flip_fraction: float = 0.03,
+        neighborhood_mode: str = "any",
+        early_stop_patience: Optional[int] = None,
+        good_enough_improvement: Optional[float] = None,
     ) -> Tuple[np.ndarray, float]:
         """
         Refine regime labels using simulated annealing to maximize risk CV ratio.
@@ -2568,23 +2381,27 @@ class MLRiskRegimeStep(BaseStep):
 
         temperature = initial_temp
         accept_count = 0
+        plateau_iterations = 0
 
         tprint_info(f"🔥 Starting Simulated Annealing (100% risk CV): initial_score={current_score:.4f}")
 
         for iteration in range(max_iterations):
             # Propose modification: flip 1-2% of samples to neighboring regime
             candidate_labels = current_labels.copy()
-            n_flips = max(1, int(0.015 * len(candidate_labels)))
+            n_flips = max(1, int(flip_fraction * len(candidate_labels)))
             flip_indices = np.random.choice(len(candidate_labels), size=n_flips, replace=False)
 
             for idx in flip_indices:
                 current_regime = candidate_labels[idx]
-                # Flip to neighboring regime (maintain ordinality)
-                neighbors = []
-                if current_regime > 0:
-                    neighbors.append(current_regime - 1)
-                if current_regime < n_regimes - 1:
-                    neighbors.append(current_regime + 1)
+                # Flip to another regime
+                if neighborhood_mode == "adjacent":
+                    neighbors = []
+                    if current_regime > 0:
+                        neighbors.append(current_regime - 1)
+                    if current_regime < n_regimes - 1:
+                        neighbors.append(current_regime + 1)
+                else:
+                    neighbors = [r for r in range(n_regimes) if r != current_regime]
 
                 if neighbors:
                     candidate_labels[idx] = np.random.choice(neighbors)
@@ -2596,6 +2413,7 @@ class MLRiskRegimeStep(BaseStep):
 
             # Accept or reject (Metropolis criterion)
             delta = candidate_score - current_score
+            improved = False
             if delta > 0:
                 # Always accept improvements
                 current_labels = candidate_labels
@@ -2605,23 +2423,37 @@ class MLRiskRegimeStep(BaseStep):
                 if current_score > best_score:
                     best_labels = current_labels.copy()
                     best_score = current_score
+                    improved = True
             elif np.random.random() < np.exp(delta / temperature):
                 # Sometimes accept worse solutions (escape local optima)
                 current_labels = candidate_labels
                 current_score = candidate_score
                 accept_count += 1
 
+            if improved:
+                plateau_iterations = 0
+            else:
+                plateau_iterations += 1
+
             # Cool down
             temperature *= cooling_rate
 
             # Progress logging
-            if iteration % 100 == 0 or iteration == max_iterations - 1:
+            if iteration % 50 == 0 or iteration == max_iterations - 1:
                 accept_rate = accept_count / (iteration + 1)
                 tprint_info(
                     f"  SA iter {iteration}/{max_iterations}: "
                     f"score={current_score:.4f}, best={best_score:.4f}, "
                     f"temp={temperature:.4f}, accept_rate={accept_rate:.2%}"
                 )
+
+            # Early stopping: no improvement in best score for N iterations
+            if early_stop_patience is not None and early_stop_patience > 0 and plateau_iterations >= early_stop_patience:
+                tprint_info(
+                    f"  SA early stop: no improvement in best score for "
+                    f"{early_stop_patience} iterations (last iter={iteration}); stopping SA."
+                )
+                break
 
         improvement = best_score - self._calculate_regime_quality_score(initial_labels, risk_features, None)
         tprint_success(
@@ -2655,33 +2487,83 @@ class MLRiskRegimeStep(BaseStep):
         n_regimes = int(config.get("risk_n_regimes", 4))
 
         # ========== STEP 1: Select RAW Risk Features ONLY ==========
-        risk_features_cols = [
-            'risk_fwd_vol_1h_raw_scaled',
-            'risk_fwd_vol_4h_raw_scaled',
-            'risk_tail_cvar_raw_scaled',
-            'risk_vol_acceleration_raw_scaled',
-            'vol_clustering_raw',
-            'vol_persistence_raw',
-            'tail_density_raw',
-            'vol_return_correlation_raw',
-            'vol_cross_timeframe_ratio_raw',
-            'drawdown_duration_raw',
-            'price_vol_efficiency_raw',
-            'vol_regime_momentum_raw',
-            'skew_vol_interaction_raw',
+        # Prefer unsmoothed core risk features actually produced by _generate_risk_features.
+        primary_risk_cols = [
+            "vol_1h",
+            "vol_3h",
+            "vol_6h",
+            "vol_ratio_1h_3h",
+            "vol_ratio_3h_6h",
+            "vol_ratio_1h_6h",
+            "cvar_5pct",
+            "cvar_10pct",
+            "max_drawdown_50",
+            "max_runup_50",
+            "fragility_ratio",
+            "shock_ratio",
+            "desperation_clv",
+            "volume_vol_divergence",
+            "vol_expansion_5",
+            "vol_acceleration",
+            "downside_deviation_20",
+            "upside_deviation_20",
+            "volume_spike_ratio",
+            "volume_dry_ratio",
+            "volume_price_divergence",
         ]
 
-        # Filter to available columns
-        available_risk_cols = [c for c in risk_features_cols if c in risk_df.columns]
+        # Filter to available primary risk columns
+        available_risk_cols = [c for c in primary_risk_cols if c in risk_df.columns]
+
+        # Fallback: if none of the primary columns are present, use all numeric
+        # risk features except raw OHLCV to keep the pipeline robust.
+        if not available_risk_cols:
+            numeric_cols = risk_df.select_dtypes(include=[np.number]).columns.tolist()
+            exclude_prefixes = ["open", "high", "low", "close", "volume"]
+            available_risk_cols = [
+                c for c in numeric_cols
+                if not any(c.startswith(pref) for pref in exclude_prefixes)
+            ]
+
+        if not available_risk_cols:
+            raise ValueError(
+                "No suitable risk features found for GMM initialization; "
+                "verify that _generate_risk_features produced numeric columns."
+            )
+
         risk_features = risk_df[available_risk_cols].copy()
+        # Ensure purely numeric dtypes for downstream sklearn validation
+        risk_features = risk_features.apply(pd.to_numeric, errors="coerce")
 
-        tprint_info(f"📊 Using {len(available_risk_cols)} RAW features (no smoothing)")
+        # Drop columns that are entirely NaN (no usable information)
+        non_empty_cols = [c for c in risk_features.columns if risk_features[c].notna().any()]
+        if not non_empty_cols:
+            raise ValueError(
+                "All selected risk features are NaN; check risk feature generation configuration."
+            )
 
-        # Remove NaNs
-        valid_mask = risk_features.notna().all(axis=1)
-        risk_features_clean = risk_features[valid_mask]
+        if len(non_empty_cols) < len(risk_features.columns):
+            dropped_cols = [c for c in risk_features.columns if c not in non_empty_cols]
+            tprint_warning(
+                f"Dropping {len(dropped_cols)} all-NaN risk features before GMM: "
+                f"{dropped_cols[:10]}..."
+            )
 
-        tprint_info(f"  Valid samples: {len(risk_features_clean)}/{len(risk_df)}")
+        risk_features = risk_features[non_empty_cols]
+
+        tprint_info(f"📊 Using {len(risk_features.columns)} RAW risk features (no smoothing)")
+
+        # Median-impute remaining NaNs so we do not lose all samples due to window effects
+        col_medians = risk_features.median(axis=0, skipna=True)
+        risk_features_filled = risk_features.fillna(col_medians)
+
+        # Track which rows are fully valid after imputation (should typically be all)
+        valid_mask = risk_features_filled.notna().all(axis=1)
+        risk_features_clean = risk_features_filled[valid_mask]
+
+        tprint_info(
+            f"  Valid samples after imputation: {len(risk_features_clean)}/{len(risk_df)}"
+        )
 
         # ========== STEP 2: Drop Correlated Features ==========
         use_corr_filter = bool(config.get("risk_use_corr_filter", True))
@@ -2714,20 +2596,172 @@ class MLRiskRegimeStep(BaseStep):
                 n_components=int(config.get("risk_umap_components", 8))
             )
 
+        # ========== STEP 4.5: Restrict to structural risk features for GMM/SA ==========
+        structural_feature_candidates = [
+            "cvar_5pct",
+            "cvar_10pct",
+            "max_drawdown_50",
+            "downside_deviation_20",
+            "max_runup_50",
+            "upside_deviation_20",
+            "jump_frequency_20",
+            "jump_frequency_20_ewma20",
+            "vol_expansion_5",
+            "vol_expansion_5_ewma20",
+            "vol_acceleration",
+            "vol_acceleration_ewma20",
+            "risk_tail_cvar_raw_scaled",
+            "risk_vol_acceleration_raw_scaled",
+        ]
+        structural_features = [
+            col for col in structural_feature_candidates
+            if col in risk_features_clean.columns
+        ]
+
+        if structural_features:
+            gmm_sa_features = risk_features_clean[structural_features]
+        else:
+            gmm_sa_features = risk_features_clean
+
+        # Ensure GMM input is float32 for efficiency
+        gmm_sa_features = gmm_sa_features.astype(np.float32)
+
+        max_gmm_feats = int(config.get("risk_gmm_max_features", 0))
+        if max_gmm_feats > 0 and gmm_sa_features.shape[1] > max_gmm_feats:
+            try:
+                var_series_gmm = gmm_sa_features.var(axis=0)
+                var_series_gmm = var_series_gmm.replace([np.inf, -np.inf], np.nan).fillna(0.0)
+
+                ordered_gmm_cols = var_series_gmm.sort_values(ascending=False).index.tolist()
+
+                corr_thr_gmm = float(config.get("risk_gmm_corr_threshold", 0.97))
+                corr_mat_gmm = gmm_sa_features.corr().abs()
+                corr_mat_gmm = corr_mat_gmm.replace([np.inf, -np.inf], np.nan).fillna(0.0)
+
+                selected_gmm: List[str] = []
+                for col in ordered_gmm_cols:
+                    if len(selected_gmm) >= max_gmm_feats:
+                        break
+                    if not selected_gmm:
+                        selected_gmm.append(col)
+                        continue
+
+                    try:
+                        corr_with_sel = corr_mat_gmm.loc[col, selected_gmm]
+                        if corr_with_sel.max() >= corr_thr_gmm:
+                            continue
+                    except Exception:
+                        pass
+
+                    selected_gmm.append(col)
+
+                top_gmm_cols = [str(c) for c in selected_gmm]
+                if top_gmm_cols:
+                    gmm_sa_features = gmm_sa_features[top_gmm_cols]
+                    tprint_info(
+                        f"  GMM feature cap: using {len(top_gmm_cols)} structural features "
+                        f"after variance/correlation pruning (out of {len(var_series_gmm)})."
+                    )
+            except Exception as gmm_feat_exc:
+                tprint_warning(
+                    f"GMM top-K feature cap failed (non-fatal); using all structural features: {gmm_feat_exc}"
+                )
+
         # ========== STEP 5: GMM Initialization ==========
+        # Validate that we still have a non-empty, numeric feature matrix
+        if gmm_sa_features.empty or gmm_sa_features.shape[1] == 0:
+            raise ValueError(
+                "Risk feature matrix for GMM is empty after cleaning/correlation "
+                "filtering; reduce filtering or check feature generation."
+            )
+
         from sklearn.mixture import GaussianMixture
 
-        tprint_info(f"🎯 Initializing {n_regimes} regimes with GMM...")
+        # Optional subsampling: fit GMM on a representative subset of rows
+        # while still predicting labels for the full feature matrix.
+        gmm_fit_features = gmm_sa_features
+        gmm_full_n = len(gmm_sa_features)
+        gmm_enable_subsampling = bool(
+            config.get("risk_gmm_enable_subsampling", False)
+        )
+        gmm_max_samples = int(config.get("risk_gmm_max_samples", 0))
+
+        if gmm_enable_subsampling and gmm_max_samples > 0 and gmm_full_n > gmm_max_samples:
+            try:
+                rng_gmm = np.random.RandomState(
+                    int(config.get("risk_gmm_subsample_random_state", 43))
+                )
+            except Exception:
+                rng_gmm = np.random.RandomState(43)
+
+            subset_idx = rng_gmm.choice(gmm_full_n, size=gmm_max_samples, replace=False)
+            gmm_fit_features = gmm_sa_features.iloc[subset_idx]
+
+            tprint_info(
+                f"  GMM subsampling enabled: fitting on {len(gmm_fit_features)} samples "
+                f"out of {gmm_full_n}"
+            )
+
+        tprint_info(f"Initializing {n_regimes} regimes with GMM using "
+                    f"{gmm_sa_features.shape[1]} features and "
+                    f"{len(gmm_sa_features)} samples...")
+
+        exec_mode_gmm = str(config.get("execution_mode", "")).lower()
+
+        # Use stronger defaults in blank mode now that we use diag covariance,
+        # while still preventing extreme settings via hard caps.
+        default_n_init = 10 if exec_mode_gmm == "blank" else 20
+        default_max_iter = 200 if exec_mode_gmm == "blank" else 200
+
+        raw_n_init = int(config.get("risk_gmm_n_init", default_n_init))
+        raw_max_iter = int(config.get("risk_gmm_max_iter", default_max_iter))
+
+        if exec_mode_gmm == "blank":
+            # Hard caps in blank mode so config cannot accidentally request
+            # extremely heavy GMM runs.
+            n_init = min(raw_n_init, 10)
+            max_iter = min(raw_max_iter, 200)
+        else:
+            n_init = raw_n_init
+            max_iter = raw_max_iter
+
+        # Use diagonal covariance by default in all modes, but allow override
+        # via risk_gmm_covariance_type.
+        default_covariance_type = "diag"
+        covariance_type = str(config.get("risk_gmm_covariance_type", default_covariance_type))
+
+        # Configurable GMM convergence tolerance so we can approximate early
+        # stopping via a slightly looser threshold in full-mode runs. This
+        # defaults to 5e-3 (less strict than sklearn's 1e-3) but can be
+        # overridden via risk_gmm_tol in the launcher/step config.
+        gmm_tol = float(config.get("risk_gmm_tol", 5e-3))
+
+        tprint_info(
+            "  GMM configuration: "
+            f"covariance_type={covariance_type}, n_init={n_init}, max_iter={max_iter}, tol={gmm_tol}"
+        )
 
         gmm = GaussianMixture(
             n_components=n_regimes,
-            covariance_type='full',
-            n_init=20,
-            max_iter=200,
-            random_state=42
+            covariance_type=covariance_type,
+            n_init=n_init,
+            max_iter=max_iter,
+            tol=gmm_tol,
+            random_state=42,
         )
-        gmm.fit(risk_features_clean)
-        initial_labels = gmm.predict(risk_features_clean)
+
+        gmm_start = time.time()
+        tprint_info(
+            f"  Starting GMM fit on matrix shape={gmm_fit_features.shape} "
+            f"(n_init={n_init}, max_iter={max_iter}, tol={gmm_tol})"
+        )
+        gmm.fit(gmm_fit_features)
+        initial_labels = gmm.predict(gmm_sa_features)
+        gmm_duration = time.time() - gmm_start
+        tprint_info(
+            f"  GMM fit completed in {gmm_duration:.2f}s; proceeding to regime profiling "
+            f"and simulated annealing (if enabled)..."
+        )
 
         # DO NOT rank/reorder regimes - let GMM find distinct profiles
         # Each regime represents a different risk PROFILE, not a continuum
@@ -2757,24 +2791,117 @@ class MLRiskRegimeStep(BaseStep):
                     f"tail_risk={profile['mean_tail_risk']:.3f}"
                 )
 
+        score_start = time.time()
         initial_score = self._calculate_regime_quality_score(
-            initial_labels, risk_features_clean, None
+            initial_labels, gmm_sa_features, None
         )
-        tprint_info(f"  GMM initialization: score={initial_score:.4f}")
+        score_duration = time.time() - score_start
+        tprint_info(
+            f"  GMM initialization: score={initial_score:.4f} "
+            f"(quality score computed in {score_duration:.2f}s)"
+        )
 
         # ========== STEP 6: Simulated Annealing Refinement ==========
         use_sa_refinement = bool(config.get("risk_use_sa_refinement", True))
 
         if use_sa_refinement:
-            refined_labels, refined_score = self._refine_labels_simulated_annealing(
-                initial_labels=initial_labels,
-                risk_features=risk_features_clean,
-                forward_returns=None,  # NOT USED - 100% risk optimization
-                n_regimes=n_regimes,
-                max_iterations=int(config.get("risk_sa_iterations", 500)),
-                initial_temp=float(config.get("risk_sa_initial_temp", 1.0)),
-                cooling_rate=float(config.get("risk_sa_cooling_rate", 0.995))
+            sa_flip_fraction = float(config.get("risk_sa_flip_fraction", 0.10))
+            sa_neighborhood_mode = str(config.get("risk_sa_neighborhood_mode", "any"))
+            exec_mode_sa = str(config.get("execution_mode", "")).lower()
+
+            # Subsampling is now opt-in in all modes; default is disabled.
+            sa_enable_subsampling = bool(
+                config.get("risk_sa_enable_subsampling", False)
             )
+            sa_max_samples = int(config.get("risk_sa_max_samples", 6000))
+            sa_max_iterations = int(config.get("risk_sa_iterations", 2000))
+
+            # Early stopping: enabled by default in blank mode with
+            # conservative defaults, but fully configurable via config.
+            early_stop_patience_raw = config.get("risk_sa_early_stop_patience")
+            good_enough_improvement_raw = config.get("risk_sa_good_enough_improvement")
+
+            if exec_mode_sa == "blank":
+                if early_stop_patience_raw is None:
+                    early_stop_patience_raw = 300
+                if good_enough_improvement_raw is None:
+                    good_enough_improvement_raw = 0.015
+
+            early_stop_patience = early_stop_patience_raw
+            if early_stop_patience is not None:
+                try:
+                    early_stop_patience = int(early_stop_patience)
+                except Exception:
+                    early_stop_patience = None
+
+            good_enough_improvement = good_enough_improvement_raw
+            if good_enough_improvement is not None:
+                try:
+                    good_enough_improvement = float(good_enough_improvement)
+                except Exception:
+                    good_enough_improvement = None
+
+            tprint_info(
+                "  SA configuration: "
+                f"iterations={sa_max_iterations}, flip_fraction={sa_flip_fraction:.3f}, "
+                f"subsampling={sa_enable_subsampling} (max_samples={sa_max_samples}), "
+                f"early_stop_patience={early_stop_patience}, "
+                f"good_enough_improvement={good_enough_improvement}"
+            )
+
+            sa_features = risk_features_clean
+            sa_labels = initial_labels
+            subset_indices: Optional[np.ndarray] = None
+
+            if sa_enable_subsampling and len(risk_features_clean) > sa_max_samples:
+                try:
+                    rng = np.random.RandomState(
+                        int(config.get("risk_sa_subsample_random_state", 42))
+                    )
+                except Exception:
+                    rng = np.random.RandomState(42)
+
+                subset_indices = rng.choice(
+                    len(risk_features_clean), size=sa_max_samples, replace=False
+                )
+                sa_features = risk_features_clean.iloc[subset_indices]
+                sa_labels = initial_labels[subset_indices]
+
+                tprint_info(
+                    f"  SA subsampling enabled: using {len(sa_features)} samples "
+                    f"out of {len(risk_features_clean)} for optimization"
+                )
+
+            sa_start = time.time()
+            tprint_info(
+                "  Starting SA refinement (simulated annealing) "
+                f"for up to {sa_max_iterations} iterations..."
+            )
+            refined_labels_sa, refined_score = self._refine_labels_simulated_annealing(
+                initial_labels=sa_labels,
+                risk_features=sa_features,
+                forward_returns=None,
+                n_regimes=n_regimes,
+                max_iterations=sa_max_iterations,
+                initial_temp=float(config.get("risk_sa_initial_temp", 2.0)),
+                cooling_rate=float(config.get("risk_sa_cooling_rate", 0.995)),
+                flip_fraction=sa_flip_fraction,
+                neighborhood_mode=sa_neighborhood_mode,
+                early_stop_patience=early_stop_patience,
+                good_enough_improvement=good_enough_improvement,
+            )
+            sa_duration = time.time() - sa_start
+            tprint_info(
+                f"  SA refinement completed in {sa_duration:.2f}s; "
+                f"best_score={refined_score:.4f}"
+            )
+
+            if subset_indices is not None:
+                refined_labels = initial_labels.copy()
+                refined_labels[subset_indices] = refined_labels_sa
+            else:
+                refined_labels = refined_labels_sa
+
             final_labels = refined_labels
             final_score = refined_score
         else:
@@ -2785,15 +2912,72 @@ class MLRiskRegimeStep(BaseStep):
         metrics = self._calculate_regime_quality_metrics(
             final_labels, risk_features_clean, None
         )
+        tprint_info(
+            "  Final label quality: "
+            f"risk_cv_ratio={float(metrics.get('risk_cv_ratio', 0.0)):.4f}, "
+            f"min_regime_pct={float(metrics.get('min_regime_pct', 0.0)):.3f}, "
+            f"max_regime_pct={float(metrics.get('max_regime_pct', 0.0)):.3f}"
+        )
+
+        # Persist a compact, human-readable summary of label quality metrics so
+        # WCoV and separation diagnostics are easy to inspect across runs.
+        try:
+            symbol_q = str(config.get("symbol", ""))
+            exchange_q = str(config.get("exchange", ""))
+            regime_tf_q = str(config.get("regime_timeframe", config.get("timeframe", "15m")))
+
+            quality_row = {
+                "symbol": symbol_q,
+                "exchange": exchange_q,
+                "timeframe": regime_tf_q,
+                "risk_cv_ratio": float(metrics.get("risk_cv_ratio", 0.0)),
+                "risk_cv_between": float(metrics.get("risk_cv_between", 0.0)),
+                "risk_cv_within": float(metrics.get("risk_cv_within", 0.0)),
+                "wasserstein_distance": float(metrics.get("wasserstein_distance", 0.0)),
+                "kl_divergence": float(metrics.get("kl_divergence", 0.0)),
+                "min_regime_pct": float(metrics.get("min_regime_pct", 0.0)),
+                "max_regime_pct": float(metrics.get("max_regime_pct", 0.0)),
+                "quality_score": float(metrics.get("quality_score", 0.0)),
+            }
+
+            # Also include regime distribution as a string for quick inspection.
+            regime_dist = metrics.get("regime_distribution", {})
+            try:
+                quality_row["regime_distribution"] = json.dumps(regime_dist)
+            except Exception:
+                quality_row["regime_distribution"] = str(regime_dist)
+
+            quality_df = pd.DataFrame([quality_row])
+            ts_q = datetime.now().strftime("%Y%m%d_%H%M%S")
+            quality_path = (
+                f"outcomes/ml_risk_label_quality_"
+                f"{symbol_q or 'UNKNOWN'}_{regime_tf_q}_{ts_q}.csv"
+            )
+            quality_df.to_csv(quality_path, index=False)
+            tprint_info(f"💾 Saved risk label quality summary: {quality_path}")
+        except Exception as quality_exc:  # pragma: no cover - defensive
+            tprint_warning(f"Failed to persist risk label quality summary (non-fatal): {quality_exc}")
 
         # Expand labels back to full dataframe
         full_labels = np.full(len(risk_df), -1, dtype=int)
         full_labels[valid_mask] = final_labels
 
+        teacher_probs_full: Optional[np.ndarray]
+        teacher_probs_full = None
+        try:
+            responsibilities = gmm.predict_proba(risk_features_clean)
+            if responsibilities.shape[0] == valid_mask.sum():
+                teacher_probs_full = np.zeros((len(risk_df), n_regimes), dtype=float)
+                teacher_probs_full[valid_mask] = responsibilities
+        except Exception as resp_exc:
+            tprint_warning(f"Teacher probability extraction from GMM failed; skipping distillation helpers: {resp_exc}")
+
         # Store feature selection artifacts
         metrics['selected_features'] = list(risk_features_clean.columns)
         metrics['umap_reducer'] = umap_reducer
         metrics['n_features_used'] = len(risk_features_clean.columns)
+        if teacher_probs_full is not None:
+            metrics['teacher_probs'] = teacher_probs_full
 
         tprint_success(
             f"✅ Created {n_regimes} regime labels (NO temporal smoothing):\n"
@@ -2971,6 +3155,124 @@ class MLRiskRegimeStep(BaseStep):
 
         return report_path
 
+    def _update_risk_diagnostics_feature_importance(
+        self,
+        symbol: str,
+        exchange: str,
+        regime_timeframe: str,
+        classifier_metrics: Dict[str, Any],
+    ) -> None:
+        """Update ml_risk_regime_diagnostics_* markdown with feature importance from this run.
+
+        This ensures the diagnostics file uses the per-run feature_importance_detailed
+        structure produced during the current ml_risk_regime_step execution.
+        """
+
+        if 'feature_importance_detailed' not in classifier_metrics:
+            return
+
+        importance_data = classifier_metrics['feature_importance_detailed']
+
+        try:
+            global_df = pd.DataFrame(importance_data['global'])
+            per_regime_importance = {
+                regime_id: pd.DataFrame(records)
+                for regime_id, records in importance_data['per_regime'].items()
+            }
+        except Exception as exc:
+            tprint_warning(f"Failed to reconstruct feature importance for diagnostics: {exc}")
+            return
+
+        diagnostics_path = f"outcomes/ml_risk_regime_diagnostics_{symbol}_{regime_timeframe}.md"
+
+        try:
+            with open(diagnostics_path, 'r') as f:
+                existing = f.read()
+        except FileNotFoundError:
+            existing = ""
+
+        header = "## XGBoost Feature Importance by Regime"
+        footer = "## Generated CI Overlap Plots"
+
+        # Build new feature-importance section
+        lines: List[str] = []
+        lines.append(header)
+        lines.append("")
+
+        # Global top 20
+        lines.append("### Global Top 20 Features")
+        lines.append("")
+        lines.append("| Rank | Feature | Weight | Gain | Cover | Combined |")
+        lines.append("|------|---------|--------|------|-------|----------|")
+
+        if not global_df.empty:
+            top_global = global_df.sort_values('combined_score', ascending=False).head(20)
+            for rank, (_, row) in enumerate(top_global.iterrows(), start=1):
+                lines.append(
+                    f"| {rank:3d} | {str(row['feature'])[:40]:40s} | "
+                    f"{float(row.get('weight_norm', 0.0)):.4f} | "
+                    f"{float(row.get('gain_norm', 0.0)):.4f} | "
+                    f"{float(row.get('cover_norm', 0.0)):.4f} | "
+                    f"{float(row.get('combined_score', 0.0)):.4f} |"
+                )
+
+        lines.append("")
+        lines.append("### Per-Regime Top 10 Distinguishing Features")
+        lines.append("")
+
+        for regime_id in sorted(per_regime_importance.keys()):
+            regime_df = per_regime_importance[regime_id]
+            if regime_df.empty:
+                continue
+
+            lines.append(f"#### Regime {regime_id}")
+            lines.append("")
+            lines.append("| Rank | Feature | Regime Mean | Other Mean | Mean Sep | CV Ratio | Regime Imp |")
+            lines.append("|------|---------|-------------|------------|----------|----------|------------|")
+
+            top_regime = regime_df.sort_values('regime_importance', ascending=False).head(10)
+            for rank, (_, row) in enumerate(top_regime.iterrows(), start=1):
+                lines.append(
+                    f"| {rank:3d} | {str(row['feature'])[:35]:35s} | "
+                    f"{float(row.get('regime_mean', 0.0)):.4f} | "
+                    f"{float(row.get('other_mean', 0.0)):.4f} | "
+                    f"{float(row.get('mean_separation', 0.0)):.2f} | "
+                    f"{float(row.get('cv_ratio', 0.0)):.2f} | "
+                    f"{float(row.get('regime_importance', 0.0)):.2f} |"
+                )
+
+            lines.append("")
+
+        new_section = "\n".join(lines) + "\n"
+
+        if existing:
+            if header in existing:
+                start = existing.find(header)
+                end = existing.find(footer, start) if footer in existing else -1
+                if end != -1:
+                    updated = existing[:start] + new_section + existing[end:]
+                else:
+                    updated = existing[:start] + new_section
+            else:
+                # Insert before footer if present, otherwise append
+                if footer in existing:
+                    end = existing.find(footer)
+                    updated = existing[:end] + new_section + existing[end:]
+                else:
+                    updated = existing.rstrip() + "\n\n" + new_section
+        else:
+            # Create a minimal diagnostics file if none exists
+            updated = (
+                f"# ML Risk Regime Diagnostics for {symbol} {regime_timeframe}\n\n" +
+                new_section
+            )
+
+        try:
+            with open(diagnostics_path, 'w') as f:
+                f.write(updated)
+        except Exception as exc:
+            tprint_warning(f"Failed to update diagnostics markdown with feature importance: {exc}")
+
     def _calculate_comprehensive_feature_importance(
         self,
         model: Any,
@@ -3113,7 +3415,8 @@ class MLRiskRegimeStep(BaseStep):
         self,
         risk_df: pd.DataFrame,
         regime_labels: np.ndarray,
-        config: Dict[str, Any]
+        config: Dict[str, Any],
+        label_metrics: Optional[Dict[str, Any]] = None,
     ) -> Tuple[Any, np.ndarray, Dict[str, Any]]:
         """
         Train XGBoost multi-class classifier to predict regimes with probabilities.
@@ -3137,6 +3440,23 @@ class MLRiskRegimeStep(BaseStep):
         df_clean = risk_df[valid_mask].copy()
         y = regime_labels[valid_mask]
 
+        teacher_probs = None
+        teacher_conf_all = None
+        if label_metrics is not None and "teacher_probs" in label_metrics:
+            try:
+                teacher_array = np.asarray(label_metrics["teacher_probs"])
+                if teacher_array.shape[0] == len(regime_labels):
+                    teacher_probs = teacher_array[valid_mask]
+            except Exception as teacher_exc:
+                tprint_warning(f"Teacher probabilities unavailable; skipping distillation helpers: {teacher_exc}")
+                teacher_probs = None
+
+        if teacher_probs is not None:
+            try:
+                teacher_conf_all = teacher_probs.max(axis=1)
+            except Exception:
+                teacher_conf_all = None
+
         # Select features (exclude risk targets and intermediate components)
         numeric_df = df_clean.select_dtypes(include=[np.number])
         feature_cols = [
@@ -3157,6 +3477,10 @@ class MLRiskRegimeStep(BaseStep):
         X_train_raw, y_train = X.iloc[:split_idx], y[:split_idx]
         X_val_raw, y_val = X.iloc[split_idx:], y[split_idx:]
 
+        teacher_conf_train = None
+        if teacher_conf_all is not None and len(teacher_conf_all) == len(y):
+            teacher_conf_train = teacher_conf_all[:split_idx]
+
         # Robust scaling ONLY (no EWMA smoothing)
         from src.features_common.transforms.scaling_normalization import ScalingNormalizer
 
@@ -3173,6 +3497,67 @@ class MLRiskRegimeStep(BaseStep):
         X_val = scaler.transform(X_val_raw)
         X_full = scaler.transform(X)
 
+        # Use float32 features for XGBoost
+        X_train = X_train.astype(np.float32)
+        X_val = X_val.astype(np.float32)
+        X_full = X_full.astype(np.float32)
+
+        # Optional: restrict classifier to top-K features by variance, while
+        # also pruning highly correlated features to keep the set compact and
+        # diverse.
+        max_clf_feats = int(config.get("risk_classifier_max_features", 0))
+        if max_clf_feats > 0 and X_full.shape[1] > max_clf_feats:
+            try:
+                var_series = X_train.var(axis=0)
+                var_series = var_series.replace([np.inf, -np.inf], np.nan).fillna(0.0)
+
+                # Rank features by variance (descending)
+                ordered_cols = var_series.sort_values(ascending=False).index.tolist()
+
+                # Compute absolute correlation matrix once on the scaled
+                # training data.
+                corr_thr = float(
+                    config.get("risk_classifier_corr_threshold", 0.97)
+                )
+                corr_mat = X_train.corr().abs()
+                corr_mat = corr_mat.replace([np.inf, -np.inf], np.nan).fillna(0.0)
+
+                selected: List[str] = []
+                for col in ordered_cols:
+                    if len(selected) >= max_clf_feats:
+                        break
+                    if not selected:
+                        selected.append(col)
+                        continue
+
+                    # Skip if this feature is too correlated with any
+                    # already-selected feature.
+                    try:
+                        corr_with_selected = corr_mat.loc[col, selected]
+                        if corr_with_selected.max() >= corr_thr:
+                            continue
+                    except Exception:
+                        # Fallback: if correlation lookup fails, keep the
+                        # feature to avoid silently dropping too many.
+                        pass
+
+                    selected.append(col)
+
+                top_cols = [str(c) for c in selected]
+                if top_cols:
+                    X_train = X_train[top_cols]
+                    X_val = X_val[top_cols]
+                    X_full = X_full[top_cols]
+                    feature_cols = top_cols
+                    tprint_info(
+                        f"🧪 Restricting classifier to {len(top_cols)} features by variance/correlation "
+                        f"out of {len(var_series)} total (corr_thr={corr_thr:.3f})"
+                    )
+            except Exception as feat_cap_exc:  # pragma: no cover - defensive
+                tprint_warning(
+                    f"Top-K feature cap for classifier failed (non-fatal); using all features: {feat_cap_exc}"
+                )
+
         # Define monotonic constraints for risk features
         monotone_constraints = []
         for feat in X_full.columns:
@@ -3185,10 +3570,13 @@ class MLRiskRegimeStep(BaseStep):
             else:
                 monotone_constraints.append(0)  # No constraint
 
+        # Convert to XGBoost-compatible monotone constraints string
+        monotone_constraints_param = "(" + ",".join(str(c) for c in monotone_constraints) + ")"
+
         # XGBoost Classifier Parameters
         n_regimes = int(regime_labels.max() + 1)
 
-        params = {
+        base_params = {
             'objective': 'multi:softprob',
             'num_class': n_regimes,
             'tree_method': 'hist',
@@ -3204,13 +3592,13 @@ class MLRiskRegimeStep(BaseStep):
 
             # Regularization (stronger for classification)
             'subsample': float(config.get("risk_classifier_subsample", 0.7)),
-            'colsample_bytree': float(config.get("risk_classifier_colsample_bytree", 0.8)),
+            'colsample_bytree': float(config.get("risk_classifier_colsample_bytree", 0.7)),
             'gamma': float(config.get("risk_classifier_gamma", 2.0)),
             'reg_alpha': float(config.get("risk_classifier_reg_alpha", 1.0)),
             'reg_lambda': float(config.get("risk_classifier_reg_lambda", 2.0)),
 
             # Monotonic constraints
-            'monotone_constraints': monotone_constraints,
+            'monotone_constraints': monotone_constraints_param,
 
             # Evaluation
             'eval_metric': 'mlogloss',
@@ -3219,24 +3607,778 @@ class MLRiskRegimeStep(BaseStep):
             'random_state': 42,
         }
 
-        # Train classifier
-        model = xgb.XGBClassifier(**params)
+        best_params = base_params.copy()
 
-        model.fit(
-            X_train, y_train,
-            eval_set=[(X_val, y_val)],
-            verbose=False
+        # Optional high-confidence training configuration
+        enable_high_conf = bool(config.get("risk_enable_high_confidence_training", False))
+        high_conf_threshold = float(config.get("risk_high_confidence_threshold", 0.7))
+        min_high_conf_fraction = float(config.get("risk_min_high_conf_fraction", 0.3))
+        min_high_conf_per_regime = int(config.get("risk_min_high_conf_per_regime", 30))
+
+        def _select_quadrant_feature_cols(all_cols: List[str]) -> List[str]:
+            selected: List[str] = []
+
+            regime_tf = str(
+                config.get("regime_timeframe", config.get("timeframe", "1h"))
+            ).lower()
+
+            if regime_tf in ("1h", "60m"):
+                # 1 bar ≈ 1h → 30m–3h ≈ 0.5–3 bars.
+                # Use target ~3 bars with a slightly wider band [2, 8]
+                # to capture both slightly shorter and longer horizons.
+                default_target = 3
+                default_min = 2
+                default_max = 8
+            elif regime_tf in ("30m", "0.5h"):
+                # 1 bar ≈ 30m → 30m–3h ≈ 1–6 bars → target ~4, band [2, 8]
+                default_target = 4
+                default_min = 2
+                default_max = 8
+            elif regime_tf in ("15m",):
+                # 1 bar ≈ 15m → 30m–3h ≈ 2–12 bars → target ~8, band [4, 16]
+                default_target = 8
+                default_min = 4
+                default_max = 16
+            else:
+                # Fallback: generic intraday windows
+                default_target = 12
+                default_min = 6
+                default_max = 24
+
+            target_window = int(
+                config.get("risk_quadrant_target_window_bars", default_target)
+            )
+            min_window = int(config.get("risk_quadrant_min_window_bars", default_min))
+            max_window = int(config.get("risk_quadrant_max_window_bars", default_max))
+
+            def _pick_closest(
+                cols: List[str],
+                target_n: int,
+            ) -> Optional[str]:
+                best_col: Optional[str] = None
+                best_dist: float = float("inf")
+                for col in cols:
+                    matches = re.findall(r"\d+", col)
+                    if not matches:
+                        continue
+                    try:
+                        n_val = int(matches[-1])
+                    except Exception:
+                        continue
+                    if n_val < min_window or n_val > max_window:
+                        continue
+                    dist = abs(n_val - target_n)
+                    if dist < best_dist:
+                        best_dist = dist
+                        best_col = col
+                if best_col is not None:
+                    return best_col
+                return cols[0] if cols else None
+
+            # Prefer canonical RSI_14 when available, otherwise fall back to
+            # other RSI windows near the target bar count.
+            rsi_candidates = [
+                c for c in all_cols
+                if c.upper() == "RSI_14" or c.lower().endswith("rsi_14")
+            ]
+            if not rsi_candidates:
+                rsi_candidates = [c for c in all_cols if "rsi" in c.lower()]
+            rsi_col = _pick_closest(rsi_candidates, target_window) if rsi_candidates else None
+            if rsi_col is not None:
+                selected.append(rsi_col)
+
+            # Volatility-of-volatility (vol_of_vol) family
+            vov_candidates = [
+                c for c in all_cols
+                if "vol_of_vol" in c.lower() or "volofvol" in c.lower()
+            ]
+            if vov_candidates:
+                selected.append(vov_candidates[0])
+
+            # Prefer canonical parkinson_volatility name when present
+            park_candidates = [
+                c for c in all_cols
+                if c.lower() == "parkinson_volatility" or "parkinson" in c.lower()
+            ]
+            if park_candidates:
+                selected.append(park_candidates[0])
+
+            # Autocorrelation: prefer standard autocorrelation_* features when
+            # present (e.g. autocorrelation_5, autocorrelation_20), otherwise
+            # fall back to any feature mentioning autocorr.
+            autocorr_candidates = [
+                c for c in all_cols
+                if c.lower().startswith("autocorrelation_")
+            ]
+            if not autocorr_candidates:
+                autocorr_candidates = [
+                    c for c in all_cols
+                    if "autocorr" in c.lower() or "autocorrelation" in c.lower()
+                ]
+            autocorr_col = _pick_closest(autocorr_candidates, target_window) if autocorr_candidates else None
+            if autocorr_col is not None:
+                selected.append(autocorr_col)
+
+            return list(dict.fromkeys(selected))
+
+        enable_hpo = bool(config.get("risk_enable_hpo", False) or config.get("enable_hpo", False))
+        enable_quadrant_objective = bool(
+            config.get("risk_hpo_enable_quadrant_objective", True)
         )
 
-        # Predict probabilities on full dataset
-        regime_probs = model.predict_proba(X_full)
+        # Make HPO mode-aware: in blank execution mode, keep HPO enabled by
+        # default, but allow explicit opt-out via risk_disable_hpo_in_blank.
+        exec_mode_cfg = str(config.get("execution_mode", "")).lower()
+        if exec_mode_cfg == "blank" and bool(config.get("risk_disable_hpo_in_blank", False)):
+            enable_hpo = False
 
-        # Calculate training metrics
+        if enable_hpo:
+            try:
+                hpo_param_groups = [
+                    create_param_group(
+                        name="structure",
+                        params={
+                            # Allow moderately deep trees and smaller child
+                            # weights so the classifier can carve out sharper
+                            # quadrants when the data supports it.
+                            "max_depth": {"type": "int", "low": 4, "high": 8},
+                            "min_child_weight": {"type": "int", "low": 5, "high": 80},
+                            "n_estimators": {"type": "int", "low": 300, "high": 1600},
+                        },
+                        priority=1,
+                        description="Tree depth, leaf size, and capacity",
+                    ),
+                    create_param_group(
+                        name="learning",
+                        params={
+                            # Slightly wider learning-rate range; HPO will
+                            # settle on stable values based on WCoV objective.
+                            "learning_rate": {"type": "float", "low": 0.01, "high": 0.20},
+                        },
+                        priority=2,
+                        depends_on=["structure"],
+                        description="Learning rate",
+                    ),
+                    create_param_group(
+                        name="regularization",
+                        params={
+                            "gamma": {"type": "float", "low": 0.0, "high": 7.0},
+                            "reg_alpha": {"type": "float", "low": 1e-6, "high": 20.0, "log": True},
+                            "reg_lambda": {"type": "float", "low": 0.05, "high": 20.0},
+                        },
+                        priority=3,
+                        depends_on=["structure"],
+                        description="Regularization strength",
+                    ),
+                    create_param_group(
+                        name="sampling",
+                        params={
+                            # Allow a broader range of subsampling so HPO can
+                            # find robust yet expressive models.
+                            "subsample": {"type": "float", "low": 0.4, "high": 0.95},
+                            "colsample_bytree": {"type": "float", "low": 0.4, "high": 0.95},
+                        },
+                        priority=4,
+                        depends_on=["regularization"],
+                        description="Row/feature subsampling ratios",
+                    ),
+                ]
+
+                base_model_for_hpo = xgb.XGBClassifier(**base_params)
+
+                hpo_cv_folds = int(config.get("risk_hpo_cv_folds", 3))
+                hpo_rounds = int(config.get("risk_hpo_rounds", 1))
+                hpo_final_trials = int(config.get("risk_hpo_final_trials", 20))
+                hpo_enable_final = bool(config.get("risk_hpo_enable_final_refinement", False))
+
+                scoring_metric = str(config.get("risk_hpo_scoring_metric", "neg_log_loss"))
+
+                # Optional HPO subsampling: evaluate candidate configs on a
+                # representative subset of train/validation samples to control
+                # runtime without changing the final classifier fit.
+                X_train_hpo = X_train
+                y_train_hpo = y_train
+                X_val_hpo = X_val
+                y_val_hpo = y_val
+
+                hpo_enable_subsampling = bool(config.get("risk_hpo_enable_subsampling", True))
+                hpo_max_samples = int(config.get("risk_hpo_max_samples", 8000))
+                if hpo_enable_subsampling and hpo_max_samples > 0:
+                    try:
+                        rng_hpo = np.random.RandomState(
+                            int(config.get("risk_hpo_subsample_random_state", 42))
+                        )
+                    except Exception:
+                        rng_hpo = np.random.RandomState(42)
+
+                    def _subsample_for_hpo(X_in: pd.DataFrame, y_in: np.ndarray) -> Tuple[pd.DataFrame, np.ndarray]:
+                        if len(X_in) <= hpo_max_samples:
+                            return X_in, y_in
+                        idx = rng_hpo.choice(len(X_in), size=hpo_max_samples, replace=False)
+                        return X_in.iloc[idx], y_in[idx]
+
+                    X_train_hpo, y_train_hpo = _subsample_for_hpo(X_train, y_train)
+                    X_val_hpo, y_val_hpo = _subsample_for_hpo(X_val, y_val)
+
+                # Optional: apply per-regime caps so HPO does not over-focus on a
+                # single dominant regime when exploring the search space.
+                hpo_enable_balanced_sampling = bool(
+                    config.get("risk_hpo_enable_balanced_sampling", True)
+                )
+                hpo_max_per_regime = int(config.get("risk_hpo_balanced_max_per_regime", 0))
+                if hpo_enable_balanced_sampling and hpo_max_per_regime > 0:
+                    try:
+                        try:
+                            rng_bal = np.random.RandomState(
+                                int(config.get("risk_hpo_balanced_random_state", 44))
+                            )
+                        except Exception:
+                            rng_bal = np.random.RandomState(44)
+
+                        def _cap_per_regime(X_in, y_in):
+                            if y_in is None or len(y_in) == 0:
+                                return X_in, y_in
+                            y_arr = np.asarray(y_in)
+                            classes, counts = np.unique(y_arr, return_counts=True)
+                            keep_indices: List[int] = []
+                            for cls, cnt in zip(classes, counts):
+                                cls_idx = np.where(y_arr == cls)[0]
+                                if cnt > hpo_max_per_regime:
+                                    sel = rng_bal.choice(
+                                        cls_idx,
+                                        size=hpo_max_per_regime,
+                                        replace=False,
+                                    )
+                                else:
+                                    sel = cls_idx
+                                if sel.size > 0:
+                                    keep_indices.append(sel)
+
+                            if not keep_indices:
+                                return X_in, y_in
+
+                            idx_all = np.concatenate(keep_indices)
+                            rng_bal.shuffle(idx_all)
+
+                            if hasattr(X_in, "iloc"):
+                                X_out = X_in.iloc[idx_all]
+                            else:
+                                X_out = X_in[idx_all]
+                            y_out = y_arr[idx_all]
+                            return X_out, y_out
+
+                        X_train_hpo, y_train_hpo = _cap_per_regime(X_train_hpo, y_train_hpo)
+                        X_val_hpo, y_val_hpo = _cap_per_regime(X_val_hpo, y_val_hpo)
+
+                        tprint_info(
+                            f"⚖️ HPO per-regime cap enabled: max {hpo_max_per_regime} samples "
+                            f"per regime (train={len(y_train_hpo)}, "
+                            f"val={len(y_val_hpo) if y_val_hpo is not None else 0})"
+                        )
+                    except Exception as hpo_bal_exc:  # pragma: no cover - defensive
+                        tprint_warning(
+                            f"HPO balanced sampling failed (non-fatal); using unbalanced HPO data: {hpo_bal_exc}"
+                        )
+
+                quadrant_cols = _select_quadrant_feature_cols(feature_cols)
+
+                # Log which quadrant features will actually drive WCoV HPO and
+                # pruning, and warn if canonical candidates are missing from the
+                # classifier feature set.
+                if quadrant_cols:
+                    tprint_info(
+                        f"🧭 Quadrant features selected for WCoV HPO/pruning: {quadrant_cols}"
+                    )
+                else:
+                    tprint_warning(
+                        "No quadrant features found in classifier features; WCoV "
+                        "HPO/pruning will have no effect. Ensure RSI, vol_of_vol, "
+                        "Parkinson volatility, and autocorrelation features are "
+                        "present in the risk feature set."
+                    )
+
+                def quadrant_objective(
+                    params: Dict[str, Any],
+                    X_train: np.ndarray,
+                    y_train: np.ndarray,
+                    X_val: Optional[np.ndarray] = None,
+                    y_val: Optional[np.ndarray] = None,
+                    model: Optional[Any] = None,
+                    cv_folds: int = 5,
+                    scoring_metric: str = "neg_log_loss",
+                    **kwargs: Any,
+                ) -> float:
+                    """Pure WCoV-based HPO objective on quadrant features.
+
+                    Classifier validation metrics are deliberately ignored; HPO
+                    optimizes only for between/within separation on RSI, vol-of-
+                    vol, Parkinson volatility, and autocorr features.
+                    """
+                    try:
+                        if X_val is None or y_val is None:
+                            return float("-inf")
+
+                        base_model = model if model is not None else xgb.XGBClassifier(**base_params)
+                        base_model.set_params(**params)
+
+                        # Ensure early stopping has a validation set when enabled.
+                        # XGBoost's sklearn API expects at least one eval_set
+                        # whenever early_stopping_rounds > 0. Also silence
+                        # per-iteration logging during HPO for cleaner output.
+                        if X_val is not None and y_val is not None:
+                            base_model.fit(
+                                X_train,
+                                y_train,
+                                eval_set=[(X_val, y_val)],
+                                verbose=False,
+                            )
+                        else:
+                            base_model.fit(
+                                X_train,
+                                y_train,
+                                verbose=False,
+                            )
+
+                        val_probs = base_model.predict_proba(X_val)
+                        val_pred = np.argmax(val_probs, axis=1)
+
+                        # Previous classifier-based component (disabled: WCoV-only HPO)
+                        # metric_name = (scoring_metric or "neg_log_loss").lower()
+                        # if metric_name == "neg_log_loss":
+                        #     try:
+                        #         clf_score = -log_loss(y_val, val_probs, labels=np.arange(n_regimes))
+                        #     except Exception:
+                        #         clf_score = 0.0
+                        # elif metric_name in ("accuracy", "acc"):
+                        #     clf_score = accuracy_score(y_val, val_pred)
+                        # else:
+                        #     clf_score = accuracy_score(y_val, val_pred)
+
+                        wcov_log_term = 0.0
+                        within_spread_penalty = 0.0
+                        if quadrant_cols:
+                            try:
+                                val_df = pd.DataFrame(X_val, columns=feature_cols)
+                                quad_df = val_df[quadrant_cols]
+
+                                # Compute per-feature WCoV between/within ratios,
+                                # apply a log transform to each so that no single
+                                # feature dominates, then average.
+                                ratio_cap = float(
+                                    config.get("risk_hpo_wcov_ratio_cap", 10.0)
+                                )
+                                feature_scores: List[float] = []
+                                for col in quadrant_cols:
+                                    col_df = quad_df[[col]]
+                                    between_col = self._calculate_winsorized_cv_between(
+                                        val_pred,
+                                        col_df,
+                                    )
+                                    within_col = self._calculate_winsorized_cv_within(
+                                        val_pred,
+                                        col_df,
+                                    )
+
+                                    if not np.isfinite(between_col) or not np.isfinite(within_col):
+                                        continue
+
+                                    ratio_col = between_col / (within_col + 1e-8)
+                                    if ratio_col <= 0.0:
+                                        continue
+
+                                    ratio_capped = min(ratio_col, ratio_cap)
+                                    feature_scores.append(float(np.log1p(ratio_capped)))
+
+                                if feature_scores:
+                                    wcov_log_term = float(np.mean(feature_scores))
+                                else:
+                                    wcov_log_term = 0.0
+
+                                # Small heterogeneity penalty based on the
+                                # spread of per-regime within-WCoV values
+                                # across the quadrant features.
+                                try:
+                                    unique_regimes = [r for r in np.unique(val_pred) if r >= 0]
+                                    per_regime_cvs: List[float] = []
+                                    for rid in unique_regimes:
+                                        regime_mask = val_pred == rid
+                                        regime_data = quad_df[regime_mask]
+                                        if regime_data.shape[0] < 2:
+                                            continue
+
+                                        feature_cvs = []
+                                        for col in quad_df.columns:
+                                            col_data = regime_data[col].dropna()
+                                            if len(col_data) > 1:
+                                                lower_bound = col_data.quantile(0.05)
+                                                upper_bound = col_data.quantile(0.95)
+                                                col_winsorized = col_data.clip(
+                                                    lower=lower_bound,
+                                                    upper=upper_bound,
+                                                )
+                                                cv = col_winsorized.std() / (
+                                                    np.abs(col_winsorized.mean()) + 1e-8
+                                                )
+                                                feature_cvs.append(cv)
+
+                                        if feature_cvs:
+                                            per_regime_cvs.append(float(np.mean(feature_cvs)))
+
+                                    if len(per_regime_cvs) >= 2:
+                                        spread = float(max(per_regime_cvs) - min(per_regime_cvs))
+                                        spread_weight = float(
+                                            config.get(
+                                                "risk_hpo_within_spread_penalty_weight",
+                                                0.2,
+                                            )
+                                        )
+                                        within_spread_penalty = spread_weight * spread
+                                except Exception:
+                                    within_spread_penalty = 0.0
+                            except Exception:
+                                wcov_log_term = 0.0
+                                within_spread_penalty = 0.0
+
+                        # Predicted-regime balance term: discourage models that
+                        # collapse almost all samples into a single regime while
+                        # still primarily optimizing for WCoV separation.
+                        balance_penalty = 0.0
+                        try:
+                            if val_pred is not None:
+                                counts = np.bincount(val_pred, minlength=n_regimes)
+                                total = float(counts.sum()) if counts.sum() > 0 else 0.0
+                                if total > 0.0:
+                                    p = counts.astype(float) / total
+                                    min_pct = float(p.min())
+                                    max_pct = float(p.max())
+
+                                    # Default band for HPO: aim for each
+                                    # regime to have at least ~3% and at most
+                                    # ~75% of samples, unless overridden via
+                                    # config.
+                                    min_target = float(config.get("risk_hpo_min_regime_pct", 0.05))
+                                    max_target = float(config.get("risk_hpo_max_regime_pct", 0.65))
+
+                                    violation_low = max(0.0, min_target - min_pct)
+                                    violation_high = max(0.0, max_pct - max_target)
+                                    total_violation = violation_low + violation_high
+
+                                    # Additive balance penalty: larger when the
+                                    # predicted regime distribution is more
+                                    # imbalanced relative to the target band.
+                                    balance_strength = float(
+                                        config.get("risk_hpo_balance_strength", 12.0)
+                                    )
+                                    balance_penalty = float(
+                                        balance_strength * total_violation
+                                    )
+                        except Exception as balance_exc:  # pragma: no cover - defensive
+                            tprint_warning(
+                                f"Quadrant HPO balance term failed (non-fatal): {balance_exc}"
+                            )
+                            balance_penalty = 0.0
+
+                        lambda_wcov = float(config.get("risk_hpo_wcov_weight", 1.0))
+                        # Additive log-style objective: prioritize high WCoV
+                        # separation while subtracting balance and
+                        # within-spread penalties. Higher values are better.
+                        return float(
+                            lambda_wcov
+                            * (wcov_log_term - balance_penalty - within_spread_penalty)
+                        )
+                    except Exception as obj_exc:
+                        tprint_warning(f"Quadrant-aware HPO objective failed: {obj_exc}")
+                        return float("-inf")
+
+                objective_func = (
+                    quadrant_objective if enable_quadrant_objective else default_objective_function
+                )
+
+                optimizer = HierarchicalParameterOptimizer(
+                    param_groups=hpo_param_groups,
+                    objective_func=objective_func,
+                    cv_folds=hpo_cv_folds,
+                    scoring_metric=scoring_metric,
+                    direction="maximize",
+                    n_rounds=hpo_rounds,
+                    enable_final_refinement=hpo_enable_final,
+                    final_refinement_trials=hpo_final_trials,
+                    cache_dir=None,
+                    random_state=42,
+                    verbose=bool(config.get("risk_hpo_verbose", False)),
+                    use_custom_balanced_score=False,
+                )
+
+                X_train_np = X_train_hpo.values if hasattr(X_train_hpo, "values") else X_train_hpo
+                y_train_np = y_train_hpo
+                X_val_np = X_val_hpo.values if hasattr(X_val_hpo, "values") else X_val_hpo
+                y_val_np = y_val_hpo
+
+                hpo_result = optimizer.optimize(
+                    X_train=X_train_np,
+                    y_train=y_train_np,
+                    X_val=X_val_np,
+                    y_val=y_val_np,
+                    model=base_model_for_hpo,
+                    initial_params=base_params,
+                )
+
+                best_params.update(hpo_result.best_params or {})
+            except Exception as hpo_exc:
+                tprint_warning(f"Classifier HPO failed; proceeding with default params: {hpo_exc}")
+
+        enable_regime_weighting = bool(config.get("risk_enable_regime_weighting", True))
+
+        base_sample_weight = np.ones_like(y_train, dtype=float)
+        if enable_regime_weighting:
+            try:
+                class_counts = pd.Series(y_train).value_counts()
+                n_classes = len(class_counts)
+                total = float(len(y_train)) if len(y_train) > 0 else 1.0
+                class_weight = {
+                    int(cls): (total / (n_classes * float(cnt)))
+                    for cls, cnt in class_counts.items()
+                    if cnt > 0
+                }
+                base_sample_weight = np.array(
+                    [class_weight.get(int(lbl), 1.0) for lbl in y_train],
+                    dtype=float,
+                )
+
+                if teacher_conf_train is not None:
+                    lambda_conf = float(config.get("risk_teacher_confidence_weight", 0.5))
+                    centered = teacher_conf_train - float(teacher_conf_train.mean())
+                    base_sample_weight *= (1.0 + lambda_conf * centered)
+            except Exception as weight_exc:
+                tprint_warning(
+                    f"Regime-aware weighting failed; using uniform weights: {weight_exc}"
+                )
+                base_sample_weight = np.ones_like(y_train, dtype=float)
+
+        base_sample_weight = np.maximum(base_sample_weight, 0.0)
+        if float(base_sample_weight.mean()) > 0.0:
+            base_sample_weight = base_sample_weight / float(base_sample_weight.mean())
+
+        # Optional: per-regime caps for the final training dataset to prevent
+        # the classifier from being dominated by a single massive regime.
+        train_enable_balanced = bool(
+            config.get("risk_train_enable_balanced_sampling", False)
+        )
+        train_max_per_regime = int(config.get("risk_train_balanced_max_per_regime", 0))
+        if train_enable_balanced and train_max_per_regime > 0:
+            try:
+                try:
+                    rng_train_bal = np.random.RandomState(
+                        int(config.get("risk_train_balanced_random_state", 45))
+                    )
+                except Exception:
+                    rng_train_bal = np.random.RandomState(45)
+
+                y_arr = np.asarray(y_train)
+                classes, counts = np.unique(y_arr, return_counts=True)
+                keep_indices: List[int] = []
+                for cls, cnt in zip(classes, counts):
+                    cls_idx = np.where(y_arr == cls)[0]
+                    if cnt > train_max_per_regime:
+                        sel = rng_train_bal.choice(
+                            cls_idx,
+                            size=train_max_per_regime,
+                            replace=False,
+                        )
+                    else:
+                        sel = cls_idx
+                    if sel.size > 0:
+                        keep_indices.append(sel)
+
+                if keep_indices:
+                    idx_all = np.concatenate(keep_indices)
+                    rng_train_bal.shuffle(idx_all)
+
+                    if hasattr(X_train, "iloc"):
+                        X_train = X_train.iloc[idx_all]
+                    else:
+                        X_train = X_train[idx_all]
+                    y_train = y_arr[idx_all]
+                    base_sample_weight = base_sample_weight[idx_all]
+                    if (
+                        teacher_conf_train is not None
+                        and len(teacher_conf_train) == len(y_arr)
+                    ):
+                        teacher_conf_train = teacher_conf_train[idx_all]
+
+                    tprint_info(
+                        f"⚖️ Training per-regime cap enabled: max {train_max_per_regime} samples "
+                        f"per regime (train={len(y_train)})"
+                    )
+            except Exception as train_bal_exc:  # pragma: no cover - defensive
+                tprint_warning(
+                    f"Training balanced sampling failed (non-fatal); using full training set: {train_bal_exc}"
+                )
+
+        # Train classifier (optionally with high-confidence filtering)
+        X_train_final = X_train
+        y_train_final = y_train
+        sample_weight_final = base_sample_weight
+
+        if enable_high_conf:
+            try:
+                temp_model = xgb.XGBClassifier(**best_params)
+                temp_model.fit(
+                    X_train,
+                    y_train,
+                    sample_weight=base_sample_weight,
+                    eval_set=[(X_val, y_val)],
+                    verbose=False,
+                )
+
+                train_probs = temp_model.predict_proba(X_train)
+                max_conf = train_probs.max(axis=1)
+                high_conf_mask = max_conf >= high_conf_threshold
+
+                n_high_conf = int(high_conf_mask.sum())
+                frac_high_conf = (
+                    float(n_high_conf) / float(len(y_train)) if len(y_train) > 0 else 0.0
+                )
+
+                if n_high_conf > 0:
+                    y_train_high_conf = y_train[high_conf_mask]
+                    per_regime_counts = (
+                        pd.Series(y_train_high_conf).value_counts().to_dict()
+                    )
+                else:
+                    per_regime_counts = {}
+
+                min_required = int(len(y_train) * min_high_conf_fraction)
+                regime_ok = (
+                    all(
+                        count >= min_high_conf_per_regime
+                        for count in per_regime_counts.values()
+                    )
+                    if per_regime_counts
+                    else False
+                )
+
+                if n_high_conf >= max(min_required, n_regimes) and regime_ok:
+                    X_train_final = X_train.iloc[high_conf_mask]
+                    y_train_final = y_train_high_conf
+                    sample_weight_final = base_sample_weight[high_conf_mask]
+                    tprint_info(
+                        f"🧪 High-confidence training enabled: using {n_high_conf} / {len(y_train)} "
+                        f"samples ({frac_high_conf:.1%}), min_per_regime>={min_high_conf_per_regime}"
+                    )
+                else:
+                    tprint_info(
+                        "🧪 High-confidence filter skipped (insufficient high-confidence points or "
+                        "per-regime counts too small); training on full dataset instead."
+                    )
+            except Exception as high_conf_exc:  # pragma: no cover - defensive
+                tprint_warning(
+                    f"High-confidence training path failed; falling back to full dataset: {high_conf_exc}"
+                )
+                X_train_final = X_train
+                y_train_final = y_train
+                sample_weight_final = base_sample_weight
+
+        # Final classifier trained on either full or high-confidence subset (baseline model)
+        model = xgb.XGBClassifier(**best_params)
+        model.fit(
+            X_train_final,
+            y_train_final,
+            sample_weight=sample_weight_final,
+            eval_set=[(X_val, y_val)],
+            verbose=False,
+        )
+
+        regime_probs = model.predict_proba(X_full)
         y_val_pred = model.predict(X_val)
         y_val_probs = model.predict_proba(X_val)
 
+        def _apply_temperature_scaling(probs: np.ndarray, temperature: float) -> np.ndarray:
+            eps = 1e-12
+            clipped = np.clip(probs, eps, 1.0)
+            scaled = np.power(clipped, 1.0 / max(float(temperature), eps))
+            row_sums = scaled.sum(axis=1, keepdims=True)
+            row_sums[row_sums <= 0.0] = 1.0
+            return scaled / row_sums
+
+        def _fit_temperature_scaling(
+            y_true: np.ndarray,
+            probs: np.ndarray,
+        ) -> Tuple[float, np.ndarray, float, float]:
+            base_loss = float(
+                log_loss(y_true, probs, labels=np.arange(n_regimes))
+            )
+            best_T = 1.0
+            best_loss = base_loss
+            for T in np.linspace(0.5, 3.0, 11):
+                calibrated = _apply_temperature_scaling(probs, float(T))
+                loss_T = float(
+                    log_loss(y_true, calibrated, labels=np.arange(n_regimes))
+                )
+                if loss_T < best_loss:
+                    best_loss = loss_T
+                    best_T = float(T)
+            calibrated_best = _apply_temperature_scaling(probs, best_T)
+            return best_T, calibrated_best, base_loss, best_loss
+
+        temp_scaling_enabled = bool(
+            config.get("risk_enable_temperature_scaling", True)
+        )
+        temperature = 1.0
+        val_log_loss_uncalibrated = None
+        val_log_loss_calibrated = None
+
+        if temp_scaling_enabled and y_val_probs is not None:
+            try:
+                (
+                    temperature,
+                    y_val_probs_cal,
+                    base_loss,
+                    best_loss,
+                ) = _fit_temperature_scaling(y_val, y_val_probs)
+                val_log_loss_uncalibrated = base_loss
+                val_log_loss_calibrated = best_loss
+                regime_probs = _apply_temperature_scaling(regime_probs, temperature)
+                y_val_probs = y_val_probs_cal
+            except Exception as temp_exc:
+                tprint_warning(
+                    f"Temperature scaling failed (non-fatal): {temp_exc}"
+                )
+                temperature = 1.0
+
+        # Quadrant WCoV quality metrics (teacher vs predicted regimes)
+        regime_pred_all = np.argmax(regime_probs, axis=1)
+        quadrant_quality: Dict[str, Any] = {}
+        if quadrant_cols:
+            try:
+                full_df = pd.DataFrame(X_full, columns=feature_cols)
+                quad_full = full_df[quadrant_cols]
+
+                teacher_between = self._calculate_winsorized_cv_between(y, quad_full)
+                teacher_within = self._calculate_winsorized_cv_within(y, quad_full)
+                pred_between = self._calculate_winsorized_cv_between(regime_pred_all, quad_full)
+                pred_within = self._calculate_winsorized_cv_within(regime_pred_all, quad_full)
+
+                quadrant_quality = {
+                    "quadrant_features": list(quadrant_cols),
+                    "teacher_cv_between": float(teacher_between),
+                    "teacher_cv_within": float(teacher_within),
+                    "teacher_cv_ratio": float(teacher_between / (teacher_within + 1e-8)),
+                    "pred_cv_between": float(pred_between),
+                    "pred_cv_within": float(pred_within),
+                    "pred_cv_ratio": float(pred_between / (pred_within + 1e-8)),
+                }
+            except Exception as quad_exc:
+                tprint_warning(
+                    f"Quadrant WCoV quality computation failed (non-fatal): {quad_exc}"
+                )
+                quadrant_quality = {}
+
         val_accuracy = accuracy_score(y_val, y_val_pred)
-        val_log_loss = log_loss(y_val, y_val_probs)
+        if val_log_loss_calibrated is not None:
+            val_log_loss = float(val_log_loss_calibrated)
+        else:
+            val_log_loss = float(log_loss(y_val, y_val_probs))
 
         training_metrics = {
             'val_accuracy': float(val_accuracy),
@@ -3248,7 +4390,135 @@ class MLRiskRegimeStep(BaseStep):
             'n_features': len(X_full.columns),
         }
 
-        # ========== COMPREHENSIVE FEATURE IMPORTANCE ==========
+        if temp_scaling_enabled:
+            training_metrics['temperature_scaling_enabled'] = True
+            training_metrics['temperature'] = float(temperature)
+            if val_log_loss_uncalibrated is not None:
+                training_metrics['val_log_loss_uncalibrated'] = float(
+                    val_log_loss_uncalibrated
+                )
+                training_metrics['val_log_loss_calibrated'] = float(val_log_loss)
+
+        if quadrant_quality:
+            training_metrics['quadrant_quality'] = quadrant_quality
+
+            # Persist a dedicated quadrant WCoV quality summary reflecting HPO goals.
+            try:
+                symbol_q = str(config.get("symbol", ""))
+                exchange_q = str(config.get("exchange", ""))
+                regime_tf_q = str(
+                    config.get("regime_timeframe", config.get("timeframe", "1h"))
+                )
+                lambda_wcov = float(config.get("risk_hpo_wcov_weight", 1.0))
+
+                quality_row = {
+                    "symbol": symbol_q,
+                    "exchange": exchange_q,
+                    "timeframe": regime_tf_q,
+                    "risk_hpo_wcov_weight": lambda_wcov,
+                    "quadrant_teacher_cv_ratio": quadrant_quality["teacher_cv_ratio"],
+                    "quadrant_teacher_cv_between": quadrant_quality["teacher_cv_between"],
+                    "quadrant_teacher_cv_within": quadrant_quality["teacher_cv_within"],
+                    "quadrant_pred_cv_ratio": quadrant_quality["pred_cv_ratio"],
+                    "quadrant_pred_cv_between": quadrant_quality["pred_cv_between"],
+                    "quadrant_pred_cv_within": quadrant_quality["pred_cv_within"],
+                }
+
+                try:
+                    quality_row["quadrant_features"] = json.dumps(
+                        quadrant_quality["quadrant_features"]
+                    )
+                except Exception:
+                    quality_row["quadrant_features"] = str(
+                        quadrant_quality.get("quadrant_features", [])
+                    )
+
+                ts_q = datetime.now().strftime("%Y%m%d_%H%M%S")
+                quadrant_quality_path = (
+                    f"outcomes/ml_risk_quadrant_quality_"
+                    f"{symbol_q or 'UNKNOWN'}_{regime_tf_q}_{ts_q}.csv"
+                )
+                pd.DataFrame([quality_row]).to_csv(quadrant_quality_path, index=False)
+                tprint_info(
+                    f"💾 Saved quadrant WCoV quality summary: {quadrant_quality_path}"
+                )
+            except Exception as quad_csv_exc:  # pragma: no cover - defensive
+                tprint_warning(
+                    f"Failed to persist quadrant WCoV quality summary (non-fatal): {quad_csv_exc}"
+                )
+
+        # Per-regime risk profile diagnostics: summarize mean values of key
+        # volatility/tail/jump features for each predicted regime.
+        try:
+            regime_ids = sorted(np.unique(regime_pred_all))
+            total_samples = len(regime_pred_all)
+
+            # Focus on a compact set of core risk features. Only keep those
+            # that are actually present in the numeric DataFrame.
+            profile_feature_candidates = [
+                "parkinson_vol",
+                "vol_realized_20",
+                "cvar_5pct",
+                "cvar_10pct",
+                "downside_deviation_20",
+                "vol_acceleration",
+                "vol_acceleration_ewma2",
+                "vol_acceleration_ewma6",
+                "vol_expansion_5",
+                "vol_expansion_5_ewma2",
+                "jump_frequency_20",
+                "jump_frequency_20_ewma2",
+                "jump_frequency_20_ewma6",
+                "drawdown_underwater_frac_20",
+            ]
+
+            available_profile_feats = [
+                f for f in profile_feature_candidates if f in numeric_df.columns
+            ]
+
+            profile_records: List[Dict[str, Any]] = []
+            if available_profile_feats and total_samples > 0:
+                # Use positional boolean masks to align regimes with rows in
+                # numeric_df. Both are defined on the same cleaned dataset.
+                for rid in regime_ids:
+                    mask = regime_pred_all == rid
+                    n_k = int(mask.sum())
+                    if n_k == 0:
+                        continue
+
+                    row: Dict[str, Any] = {
+                        "regime_id": int(rid),
+                        "n_samples": n_k,
+                        "share": float(n_k / float(total_samples)),
+                    }
+
+                    regime_numeric = numeric_df.loc[mask, available_profile_feats]
+                    for feat in available_profile_feats:
+                        row[f"{feat}_mean"] = float(regime_numeric[feat].mean())
+
+                    profile_records.append(row)
+
+            if profile_records:
+                profile_df = pd.DataFrame(profile_records)
+
+                symbol_p = str(config.get("symbol", ""))
+                exchange_p = str(config.get("exchange", ""))
+                regime_tf_p = str(
+                    config.get("regime_timeframe", config.get("timeframe", "1h"))
+                )
+                ts_prof = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+                profile_path = (
+                    f"outcomes/ml_risk_regime_risk_profile_"
+                    f"{symbol_p or 'UNKNOWN'}_{regime_tf_p}_{ts_prof}.csv"
+                )
+                profile_df.to_csv(profile_path, index=False)
+                tprint_info(f"💾 Saved per-regime risk profile summary: {profile_path}")
+        except Exception as profile_exc:  # pragma: no cover - defensive
+            tprint_warning(
+                f"Per-regime risk profile diagnostics failed (non-fatal): {profile_exc}"
+            )
+
         tprint_info("🔍 Calculating comprehensive feature importance (weight, gain, cover)...")
 
         importance_data = self._calculate_comprehensive_feature_importance(
@@ -3266,7 +4536,6 @@ class MLRiskRegimeStep(BaseStep):
             }
         }
 
-        # Log global importance (top 15 features)
         global_imp = importance_data['global'].head(15)
         tprint_success("📊 Top 15 Global Feature Importance:")
         for idx, row in global_imp.iterrows():
@@ -3278,7 +4547,6 @@ class MLRiskRegimeStep(BaseStep):
                 f"Combined: {row['combined_score']:.3f}"
             )
 
-        # Log per-regime importance (top 10 features per regime)
         tprint_success("📊 Per-Regime Feature Importance (Top 10 per regime):")
         for regime_id, regime_df in importance_data['per_regime'].items():
             tprint_info(f"\n  === Regime {regime_id} ===")
@@ -3293,12 +4561,11 @@ class MLRiskRegimeStep(BaseStep):
                 )
 
         tprint_success(
-            f"✅ XGBoost Classifier trained:\n"
+            f"✅ XGBoost Classifier trained (baseline):\n"
             f"   Val Accuracy={val_accuracy:.3f}, Val LogLoss={val_log_loss:.4f}\n"
             f"   Best Iteration={model.best_iteration}, Features={len(X_full.columns)}"
         )
 
-        # Classification report
         report = classification_report(
             y_val, y_val_pred,
             target_names=[f'Regime_{i}' for i in range(n_regimes)],
@@ -3307,7 +4574,25 @@ class MLRiskRegimeStep(BaseStep):
         )
         training_metrics['classification_report'] = report
 
-        # Log per-regime accuracy
+        regime_calibration = {}
+        try:
+            for regime_id in range(n_regimes):
+                mask_regime = y_val == regime_id
+                if mask_regime.sum() == 0:
+                    continue
+                probs_k = y_val_probs[:, regime_id]
+                mean_pred = float(np.mean(probs_k[mask_regime]))
+                empirical_freq = float(mask_regime.mean())
+                regime_calibration[int(regime_id)] = {
+                    'mean_predicted': mean_pred,
+                    'empirical_freq': empirical_freq,
+                }
+        except Exception as calib_exc:
+            tprint_warning(f"Regime calibration summary failed: {calib_exc}")
+
+        if regime_calibration:
+            training_metrics['regime_calibration'] = regime_calibration
+
         for regime_id in range(n_regimes):
             regime_report = report.get(f'Regime_{regime_id}', {})
             precision = regime_report.get('precision', 0)
@@ -3318,11 +4603,1124 @@ class MLRiskRegimeStep(BaseStep):
                 f"Recall={recall:.3f}, F1={f1:.3f}"
             )
 
-        # Expand probabilities to full dataframe
-        full_probs = np.full((len(risk_df), n_regimes), np.nan)
-        full_probs[valid_mask] = regime_probs
+        baseline_model = model
+        baseline_regime_probs = regime_probs
+        baseline_training_metrics = dict(training_metrics)
 
-        return model, full_probs, training_metrics
+        noise_feature_table = None
+        noisy_features = []
+        min_keep = max(15, int(len(feature_cols) * 0.3))
+
+        try:
+            global_df = importance_data['global'].copy()
+            eps = 1e-8
+
+            diag_enable_subsampling = bool(
+                config.get("risk_noise_diag_enable_subsampling", True)
+            )
+            diag_frac = float(config.get("risk_noise_diag_subsample_frac", 0.66))
+            n_samples_diag = len(y)
+            diag_mask = np.ones(n_samples_diag, dtype=bool)
+            if (
+                diag_enable_subsampling
+                and 0.0 < diag_frac < 1.0
+                and n_samples_diag > 0
+            ):
+                try:
+                    rng_diag_samples = np.random.RandomState(
+                        int(config.get("risk_noise_diag_random_state", 41))
+                    )
+                except Exception:
+                    rng_diag_samples = np.random.RandomState(41)
+
+                sample_size = max(1, int(n_samples_diag * diag_frac))
+                idx_diag = rng_diag_samples.choice(
+                    n_samples_diag, size=sample_size, replace=False
+                )
+                diag_mask = np.zeros(n_samples_diag, dtype=bool)
+                diag_mask[idx_diag] = True
+                tprint_info(
+                    f"  Noise diagnostics subsampling: using {sample_size} / {n_samples_diag} samples"
+                )
+
+            # Restrict expensive diagnostics to a subset of features to keep
+            # runtime manageable on large feature sets.
+            max_diag_feats = int(config.get("risk_noise_max_diag_features", 0))
+            sampling_mode = str(config.get("risk_noise_diag_sampling_mode", "top_importance")).lower()
+
+            diag_feature_candidates: List[str] = list(feature_cols)
+            if max_diag_feats > 0 and len(diag_feature_candidates) > max_diag_feats:
+                try:
+                    if sampling_mode == "random":
+                        rng_diag = np.random.RandomState(int(config.get("risk_noise_diag_random_state", 41)))
+                        diag_feature_candidates = list(
+                            rng_diag.choice(diag_feature_candidates, size=max_diag_feats, replace=False)
+                        )
+                    else:
+                        # Default: top-N by global importance (gain_norm if available)
+                        if "gain_norm" in global_df.columns:
+                            ordered = (
+                                global_df.sort_values("gain_norm", ascending=False)["feature"].astype(str).tolist()
+                            )
+                        else:
+                            ordered = global_df["feature"].astype(str).tolist()
+                        # Preserve original order within the top-N pool
+                        top_set = set(ordered[:max_diag_feats])
+                        diag_feature_candidates = [f for f in feature_cols if f in top_set]
+                except Exception:
+                    # Fallback: just truncate the original feature list
+                    diag_feature_candidates = list(feature_cols)[:max_diag_feats]
+
+            distinctiveness_records = []
+            regime_ids = sorted(np.unique(y))
+
+            for feat in diag_feature_candidates:
+                if feat not in numeric_df.columns:
+                    continue
+                series = numeric_df[feat]
+                if series.isna().all():
+                    continue
+
+                regime_means = []
+                within_covs = []
+
+                for rid in regime_ids:
+                    rid_mask = (y == rid) & diag_mask
+                    vals = series[rid_mask].dropna()
+                    if len(vals) < 10:
+                        continue
+                    _, wcv = self._calculate_winsorized_cv(vals)
+                    within_covs.append(wcv)
+                    regime_means.append(vals.mean())
+
+                if not within_covs or len(regime_means) < 2:
+                    continue
+
+                overall_mean = float(np.mean(regime_means))
+                between_std = float(np.std(regime_means))
+                if abs(overall_mean) > eps:
+                    between_cov = abs(between_std / (overall_mean + eps))
+                else:
+                    between_cov = 0.0
+
+                within_cov = float(np.mean(within_covs))
+                if within_cov > 0.0:
+                    distinctiveness = float(between_cov / (within_cov + eps))
+                else:
+                    distinctiveness = 0.0
+
+                distinctiveness_records.append(
+                    {
+                        'feature': feat,
+                        'between_cov': between_cov,
+                        'within_cov': within_cov,
+                        'wcov_distinctiveness': distinctiveness,
+                    }
+                )
+
+            if distinctiveness_records:
+                distinctiveness_df = pd.DataFrame(distinctiveness_records)
+                noise_df = global_df.merge(distinctiveness_df, on='feature', how='left')
+            else:
+                noise_df = global_df.copy()
+                noise_df['between_cov'] = np.nan
+                noise_df['within_cov'] = np.nan
+                noise_df['wcov_distinctiveness'] = np.nan
+
+            conf = baseline_regime_probs.max(axis=1)
+            high_conf_thr = float(config.get("risk_diagnostics_high_conf_threshold", 0.8))
+            low_conf_thr = float(config.get("risk_diagnostics_low_conf_threshold", 0.5))
+
+            high_mask = (conf >= high_conf_thr) & diag_mask
+            low_mask = (conf <= low_conf_thr) & diag_mask
+
+            var_ratios = []
+            for feat in feature_cols:
+                if feat not in numeric_df.columns:
+                    continue
+                vals = numeric_df[feat].values
+                if len(vals) != len(conf):
+                    continue
+
+                hi_vals = vals[high_mask]
+                lo_vals = vals[low_mask]
+
+                if len(hi_vals) < 10 or len(lo_vals) < 10:
+                    var_ratios.append((feat, np.nan, np.nan, np.nan))
+                    continue
+
+                sigma_hi = float(np.std(hi_vals))
+                sigma_lo = float(np.std(lo_vals))
+                var_ratio = (sigma_lo + eps) / (sigma_hi + eps)
+                var_ratios.append((feat, sigma_hi, sigma_lo, var_ratio))
+
+            var_df = pd.DataFrame(
+                var_ratios,
+                columns=['feature', 'sigma_high_conf', 'sigma_low_conf', 'var_ratio_confidence'],
+            )
+
+            noise_df = noise_df.merge(var_df, on='feature', how='left')
+
+            correct_mask = y_val_pred == y_val
+            wrong_mask = ~correct_mask
+
+            misclass_records = []
+            for feat in feature_cols:
+                if feat not in X_val_raw.columns:
+                    continue
+                vals = X_val_raw[feat].values
+
+                corr_vals = vals[correct_mask]
+                wrong_vals = vals[wrong_mask]
+
+                if len(corr_vals) < 10 or len(wrong_vals) < 10:
+                    misclass_records.append(
+                        (feat, np.nan, np.nan, np.nan, np.nan)
+                    )
+                    continue
+
+                mu_corr = float(np.mean(corr_vals))
+                mu_wrong = float(np.mean(wrong_vals))
+                sigma_corr = float(np.std(corr_vals))
+                sigma_wrong = float(np.std(wrong_vals))
+                pooled = np.sqrt(
+                    (sigma_corr ** 2 + sigma_wrong ** 2) / 2.0
+                )
+                if pooled > 0.0:
+                    effect_size = abs(mu_wrong - mu_corr) / (pooled + eps)
+                else:
+                    effect_size = 0.0
+
+                misclass_records.append(
+                    (feat, mu_corr, mu_wrong, pooled, effect_size)
+                )
+
+            misclass_df = pd.DataFrame(
+                misclass_records,
+                columns=[
+                    'feature',
+                    'mean_correct',
+                    'mean_wrong',
+                    'pooled_std',
+                    'misclass_effect_size',
+                ],
+            )
+
+            noise_df = noise_df.merge(misclass_df, on='feature', how='left')
+
+            noise_df['gain_norm'] = noise_df['gain_norm'].fillna(0.0)
+            noise_df['wcov_distinctiveness'] = noise_df['wcov_distinctiveness'].fillna(0.0)
+            noise_df['var_ratio_confidence'] = noise_df['var_ratio_confidence'].fillna(0.0)
+            noise_df['misclass_effect_size'] = noise_df['misclass_effect_size'].fillna(0.0)
+
+            try:
+                try:
+                    baseline_pred_full = np.argmax(baseline_regime_probs, axis=1)
+                except Exception:
+                    baseline_pred_full = None
+
+                harm_diag_df = None
+                if baseline_pred_full is not None and len(baseline_pred_full) == len(y):
+                    wcov_tmp_df = numeric_df.copy()
+                    wcov_tmp_df["risk_regime_pred_tmp"] = baseline_pred_full
+                    wcov_tmp_df["risk_regime_teacher_tmp"] = y
+                    harm_diag_df = self._compute_feature_wcov_diagnostics(
+                        df=wcov_tmp_df,
+                        regime_col_pred="risk_regime_pred_tmp",
+                        regime_col_teacher="risk_regime_teacher_tmp",
+                        top_k=None,
+                    )
+
+                if harm_diag_df is not None and not harm_diag_df.empty:
+                    harm_df = harm_diag_df[["feature", "wcov_ratio_improvement"]]
+                    noise_df = noise_df.merge(harm_df, on="feature", how="left")
+
+                if "wcov_ratio_improvement" not in noise_df.columns:
+                    noise_df["wcov_ratio_improvement"] = 0.0
+                noise_df["wcov_ratio_improvement"] = noise_df["wcov_ratio_improvement"].fillna(0.0)
+
+                gains_all = noise_df["gain_norm"].astype(float).clip(lower=0.0)
+                wcov_improvement = noise_df["wcov_ratio_improvement"].astype(float)
+                harm_raw = np.maximum(0.0, -wcov_improvement) * gains_all
+                noise_df["harm_score"] = harm_raw
+
+                low_imp_q = float(config.get("risk_low_importance_quantile", 0.05))
+                if 0.0 < low_imp_q < 1.0:
+                    positive_gains = gains_all[gains_all > 0.0]
+                    if positive_gains.size >= 10:
+                        thr_low = float(np.quantile(positive_gains, low_imp_q))
+                        noise_df["low_importance_flag"] = gains_all <= thr_low
+                    else:
+                        noise_df["low_importance_flag"] = False
+                else:
+                    noise_df["low_importance_flag"] = False
+            except Exception:
+                noise_df["harm_score"] = 0.0
+                noise_df["low_importance_flag"] = False
+
+            # ------------------------------------------------------------------
+            # Collapse-driver and clarity-enhancer diagnostics
+            #
+            # Idea: identify features that strongly drive assignment into a
+            # single dominant predicted regime (collapse-drivers) vs features
+            # that are structurally distinctive across teacher regimes without
+            # just feeding the dominant state (clarity-enhancers).
+            # ------------------------------------------------------------------
+            clarity_protect: List[str] = []
+            try:
+                # Use hard predictions on the full dataset to detect the
+                # dominant regime under the student (XGB) classifier.
+                baseline_pred = np.argmax(baseline_regime_probs, axis=1)
+                dom_counts = np.bincount(baseline_pred, minlength=n_regimes)
+                dominant_regime = int(dom_counts.argmax())
+
+                dom_mask = baseline_pred == dominant_regime
+                other_mask = ~dom_mask
+
+                collapse_records = []
+                for feat in feature_cols:
+                    if feat not in numeric_df.columns:
+                        continue
+
+                    vals = numeric_df[feat].values
+                    if len(vals) != len(baseline_pred):
+                        continue
+
+                    valid_dom = dom_mask & np.isfinite(vals)
+                    valid_other = other_mask & np.isfinite(vals)
+                    dom_vals = vals[valid_dom]
+                    other_vals = vals[valid_other]
+
+                    if len(dom_vals) < 10 or len(other_vals) < 10:
+                        effect_dom = 0.0
+                    else:
+                        mu_dom = float(np.mean(dom_vals))
+                        mu_other = float(np.mean(other_vals))
+                        sigma_dom = float(np.std(dom_vals))
+                        sigma_other = float(np.std(other_vals))
+                        pooled = np.sqrt((sigma_dom ** 2 + sigma_other ** 2) / 2.0)
+                        if pooled > 0.0:
+                            effect_dom = float(abs(mu_dom - mu_other) / (pooled + eps))
+                        else:
+                            effect_dom = 0.0
+
+                    collapse_records.append((feat, effect_dom))
+
+                if collapse_records:
+                    collapse_df = pd.DataFrame(
+                        collapse_records,
+                        columns=["feature", "collapse_effect_size"],
+                    )
+                    noise_df = noise_df.merge(collapse_df, on="feature", how="left")
+                else:
+                    noise_df["collapse_effect_size"] = 0.0
+
+                # Derive collapse-driver and clarity-enhancer scores using
+                # teacher distinctiveness (wcov_distinctiveness) and the
+                # collapse effect size.
+                wcov_vals = noise_df["wcov_distinctiveness"].values.astype(float)
+                gain_vals = noise_df["gain_norm"].values.astype(float)
+                collapse_vals = (
+                    noise_df["collapse_effect_size"].fillna(0.0).values.astype(float)
+                )
+
+                wcov_max = float(np.nanmax(wcov_vals)) if np.isfinite(np.nanmax(wcov_vals)) and np.nanmax(wcov_vals) > 0.0 else 0.0
+                collapse_max = float(np.nanmax(collapse_vals)) if np.isfinite(np.nanmax(collapse_vals)) and np.nanmax(collapse_vals) > 0.0 else 0.0
+
+                if collapse_max > 0.0:
+                    collapse_norm = collapse_vals / (collapse_max + eps)
+                else:
+                    collapse_norm = np.zeros_like(collapse_vals)
+
+                if wcov_max > 0.0:
+                    teacher_norm = wcov_vals / (wcov_max + eps)
+                else:
+                    teacher_norm = np.zeros_like(wcov_vals)
+
+                # High collapse-driver score: important for XGB, low teacher
+                # distinctiveness, and strongly associated with the dominant
+                # regime.
+                teacher_lowness = 1.0 / (1.0 + wcov_vals)
+                collapse_driver_score = gain_vals * teacher_lowness * collapse_norm
+                noise_df["collapse_driver_score"] = collapse_driver_score
+
+                # High clarity score: structurally distinctive across teacher
+                # regimes but not primarily a collapse-driver.
+                clarity_score = teacher_norm * (1.0 - collapse_norm)
+                noise_df["clarity_enhancer_score"] = clarity_score
+
+                top_k = int(config.get("risk_noise_protect_top_clarity", 12))
+                if top_k > 0 and len(noise_df) > 0:
+                    order = np.argsort(-clarity_score)
+                    top_idx = order[: min(top_k, len(order))]
+                    clarity_protect = (
+                        noise_df["feature"].iloc[top_idx].dropna().astype(str).tolist()
+                    )
+            except Exception as clarity_exc:
+                tprint_warning(
+                    f"Collapse/clarity diagnostics failed (non-fatal); continuing without them: {clarity_exc}"
+                )
+                if "collapse_driver_score" not in noise_df.columns:
+                    noise_df["collapse_driver_score"] = 0.0
+                if "clarity_enhancer_score" not in noise_df.columns:
+                    noise_df["clarity_enhancer_score"] = 0.0
+                clarity_protect = []
+
+            # Safety guard: always keep at least 15 features and ~30% of originals
+            min_keep = max(15, int(len(feature_cols) * 0.3))
+
+            # Base thresholds (slightly more permissive defaults so we naturally
+            # surface candidates on smaller samples)
+            base_gain_min = float(config.get("risk_noise_gain_min", 0.007))
+            base_wcov_max = float(config.get("risk_noise_wcov_max", 1.1))
+            base_var_ratio_min = float(config.get("risk_noise_var_ratio_min", 1.7))
+            base_eff_size_min = float(config.get("risk_noise_effect_size_min", 0.45))
+
+            noise_hpo_enable = bool(config.get("risk_noise_hpo_enable", True))
+            noise_hpo_max_trials = int(config.get("risk_noise_hpo_max_trials", 6))
+            if noise_hpo_enable and noise_hpo_max_trials < 2:
+                noise_hpo_max_trials = 2
+
+            def _compute_flags(gain_min: float, wcov_max: float, var_ratio_min: float, eff_size_min: float):
+                flags_importance = noise_df['gain_norm'] >= gain_min
+                flags_wcov = noise_df['wcov_distinctiveness'] <= wcov_max
+                flags_conf = noise_df['var_ratio_confidence'] >= var_ratio_min
+                flags_misclass = noise_df['misclass_effect_size'] >= eff_size_min
+                base_noisy = (
+                    flags_importance
+                    & (
+                        (flags_wcov & flags_conf)
+                        | (flags_wcov & flags_misclass)
+                    )
+                )
+
+                harm_series = noise_df['harm_score'] if 'harm_score' in noise_df.columns else None
+                if harm_series is not None:
+                    harm_thr = float(config.get("risk_noise_harm_score_min", 0.0))
+                    if harm_thr > 0.0:
+                        flags_harm = harm_series >= harm_thr
+                    else:
+                        flags_harm = harm_series > 0.0
+                    base_noisy = base_noisy | flags_harm
+
+                if 'low_importance_flag' in noise_df.columns:
+                    low_imp_flags = noise_df['low_importance_flag'].astype(bool)
+                    base_noisy = base_noisy | low_imp_flags
+
+                is_noisy = base_noisy
+                noisy_list = noise_df.loc[is_noisy, 'feature'].dropna().tolist()
+
+                # Never treat quadrant-defining features (RSI, vol_of_vol,
+                # Parkinson volatility, autocorr) as noisy, even if their
+                # diagnostics would flag them. This ensures the core axes of
+                # the quadrant system remain present for both HPO and pruning.
+                protect = set()
+                if 'quadrant_cols' in locals() and quadrant_cols:
+                    protect.update(quadrant_cols)
+                if 'clarity_protect' in locals() and clarity_protect:
+                    protect.update(clarity_protect)
+                if protect:
+                    noisy_list = [f for f in noisy_list if f not in protect]
+
+                kept_list = [f for f in feature_cols if f not in noisy_list]
+                return is_noisy, noisy_list, kept_list
+
+            def _structural_score(is_noisy_mask: pd.Series, noisy_list, kept_list) -> float:
+                """Score a candidate purely on structure; min_keep is enforced later.
+
+                We allow candidates that would keep < min_keep features here so that
+                we can later cap the number of removed features to satisfy min_keep
+                while still pruning the worst offenders.
+                """
+                if len(kept_list) == len(feature_cols) or not noisy_list:
+                    return float('-inf')
+
+                subset = noise_df.loc[is_noisy_mask]
+                if subset.empty:
+                    return float('-inf')
+
+                wcov_penalty = np.maximum(0.0, 1.5 - subset['wcov_distinctiveness'].values)
+                raw = (
+                    subset['gain_norm'].values
+                    * subset['var_ratio_confidence'].values
+                    * subset['misclass_effect_size'].values
+                    * wcov_penalty
+                )
+
+                n_noisy = len(noisy_list)
+                total = len(feature_cols)
+                frac_noisy = n_noisy / float(total) if total > 0 else 0.0
+
+                coverage_weight = 1.0
+                if frac_noisy <= 0.0:
+                    coverage_weight = 0.0
+                elif frac_noisy < 0.1:
+                    coverage_weight = 0.5
+                elif frac_noisy < 0.4:
+                    coverage_weight = 1.0 + frac_noisy
+                elif frac_noisy <= 0.6:
+                    coverage_weight = 1.4
+                else:
+                    coverage_weight = 0.8
+
+                base_score = float(raw.mean()) if len(raw) > 0 else float('-inf')
+                if not np.isfinite(base_score) or coverage_weight <= 0.0:
+                    return float('-inf')
+                return base_score * coverage_weight
+
+            # Start from base thresholds
+            best_gain_min = base_gain_min
+            best_wcov_max = base_wcov_max
+            best_var_ratio_min = base_var_ratio_min
+            best_eff_size_min = base_eff_size_min
+
+            best_is_noisy, best_noisy_features, best_kept_features = _compute_flags(
+                best_gain_min, best_wcov_max, best_var_ratio_min, best_eff_size_min
+            )
+            best_score = _structural_score(best_is_noisy, best_noisy_features, best_kept_features)
+
+            # Optional lightweight HPO over noise thresholds (structure-based, no extra model fits)
+            if noise_hpo_enable and noise_hpo_max_trials > 1:
+                rng = np.random.RandomState(int(config.get("risk_noise_hpo_random_state", 42)))
+
+                gain_min_low = max(0.0005, base_gain_min * 0.2)
+                gain_min_high = max(gain_min_low * 1.1, base_gain_min * 3.0)
+                wcov_max_low = max(0.5, base_wcov_max * 0.5)
+                wcov_max_high = max(wcov_max_low * 1.1, base_wcov_max * 2.0)
+                var_ratio_min_low = max(1.0, base_var_ratio_min * 0.3)
+                var_ratio_min_high = max(var_ratio_min_low * 1.2, base_var_ratio_min * 2.0)
+                eff_size_min_low = max(0.1, base_eff_size_min * 0.5)
+                eff_size_min_high = max(eff_size_min_low * 1.2, base_eff_size_min * 2.0)
+
+                for _ in range(noise_hpo_max_trials - 1):
+                    cand_gain = float(rng.uniform(gain_min_low, gain_min_high))
+                    cand_wcov = float(rng.uniform(wcov_max_low, wcov_max_high))
+                    cand_var_ratio = float(rng.uniform(var_ratio_min_low, var_ratio_min_high))
+                    cand_eff_size = float(rng.uniform(eff_size_min_low, eff_size_min_high))
+
+                    cand_is_noisy, cand_noisy_features, cand_kept_features = _compute_flags(
+                        cand_gain, cand_wcov, cand_var_ratio, cand_eff_size
+                    )
+                    cand_score = _structural_score(
+                        cand_is_noisy, cand_noisy_features, cand_kept_features
+                    )
+
+                    if cand_score > best_score:
+                        best_score = cand_score
+                        best_gain_min = cand_gain
+                        best_wcov_max = cand_wcov
+                        best_var_ratio_min = cand_var_ratio
+                        best_eff_size_min = cand_eff_size
+                        best_is_noisy = cand_is_noisy
+                        best_noisy_features = cand_noisy_features
+                        best_kept_features = cand_kept_features
+
+                if best_score == float('-inf'):
+                    best_noisy_features = []
+                    best_kept_features = feature_cols
+
+                if best_noisy_features:
+                    tprint_info(
+                        f"🧪 Noise-HPO selected thresholds: "
+                        f"gain_min={best_gain_min:.4f}, "
+                        f"wcov_max={best_wcov_max:.3f}, "
+                        f"var_ratio_min={best_var_ratio_min:.2f}, "
+                        f"eff_size_min={best_eff_size_min:.2f}; "
+                        f"removed={len(best_noisy_features)} features, "
+                        f"kept={len(best_kept_features)}"
+                    )
+
+            # Apply best thresholds to noise_df for diagnostics and downstream pruning
+            if best_noisy_features:
+                noise_df['flag_importance'] = noise_df['gain_norm'] >= best_gain_min
+                noise_df['flag_wcov'] = noise_df['wcov_distinctiveness'] <= best_wcov_max
+                noise_df['flag_conf'] = noise_df['var_ratio_confidence'] >= best_var_ratio_min
+                noise_df['flag_misclass'] = noise_df['misclass_effect_size'] >= best_eff_size_min
+                noise_df['is_noisy_feature'] = best_is_noisy
+
+                noisy_features = best_noisy_features
+                kept_features = best_kept_features
+
+                tprint_success(
+                    f"🧹 Identified {len(noisy_features)} noisy / ambiguity-driving features "
+                    f"out of {len(feature_cols)} candidates (pre min_keep cap)"
+                )
+                top_noisy = noise_df[noise_df['is_noisy_feature']].sort_values(
+                    ['gain_norm'], ascending=False
+                ).head(15)
+                for _, row in top_noisy.iterrows():
+                    tprint_info(
+                        f"  NOISY {row['feature'][:40]:40s} | "
+                        f"Gain={row['gain_norm']:.3f} | "
+                        f"WCoV={row['wcov_distinctiveness']:.3f} | "
+                        f"VarRatio={row['var_ratio_confidence']:.2f} | "
+                        f"MisclassEff={row['misclass_effect_size']:.2f}"
+                    )
+            else:
+                tprint_info("🧹 Noise feature diagnostics found no strong pruning candidates")
+                noisy_features = []
+                kept_features = feature_cols
+
+            noise_feature_table = noise_df
+        except Exception as noise_exc:
+            tprint_warning(f"Noise feature diagnostics failed; skipping pruning: {noise_exc}")
+            noisy_features = []
+            noise_feature_table = None
+
+        final_model = baseline_model
+        final_regime_probs = baseline_regime_probs
+
+        final_training_metrics = dict(baseline_training_metrics)
+        final_training_metrics['baseline_classifier'] = baseline_training_metrics
+
+        # Record selected noise thresholds (even if HPO disabled)
+        final_training_metrics['noise_hpo_selected_thresholds'] = {
+            'gain_min': float(best_gain_min) if 'best_gain_min' in locals() else None,
+            'wcov_max': float(best_wcov_max) if 'best_wcov_max' in locals() else None,
+            'var_ratio_min': float(best_var_ratio_min) if 'best_var_ratio_min' in locals() else None,
+            'eff_size_min': float(best_eff_size_min) if 'best_eff_size_min' in locals() else None,
+            'min_keep': int(min_keep),
+            'n_noisy_features_initial': int(len(noisy_features)),
+            'n_features_total': int(len(feature_cols)),
+        }
+
+        best_model = final_model
+        best_regime_probs_local = final_regime_probs
+        best_training_metrics = dict(final_training_metrics)
+
+        # Baseline quadrant separation quality from the full model, if available.
+        baseline_quadrant_quality = best_training_metrics.get("quadrant_quality", {}) or {}
+        best_quadrant_pred_cv_ratio = float(
+            baseline_quadrant_quality.get("pred_cv_ratio", 0.0)
+            if isinstance(baseline_quadrant_quality, dict)
+            else 0.0
+        )
+
+        baseline_report_full = best_training_metrics.get("classification_report", {}) or {}
+        baseline_macro_f1 = (
+            baseline_report_full.get("macro avg", {}).get("f1-score", 0.0)
+            if isinstance(baseline_report_full, dict)
+            else 0.0
+        )
+        best_macro_f1 = float(baseline_macro_f1)
+        best_log_loss_local = float(best_training_metrics.get("val_log_loss", val_log_loss))
+
+        if noisy_features and noise_feature_table is not None:
+            candidate_df = noise_feature_table.copy()
+            if "is_noisy_feature" in candidate_df.columns:
+                candidate_df = candidate_df[candidate_df["is_noisy_feature"]]
+
+            if not candidate_df.empty:
+                wcov_penalty_all = np.maximum(
+                    0.0, 1.5 - candidate_df["wcov_distinctiveness"].values
+                )
+
+                base_severity = (
+                    candidate_df["gain_norm"].values
+                    * candidate_df["var_ratio_confidence"].values
+                    * candidate_df["misclass_effect_size"].values
+                    * wcov_penalty_all
+                )
+
+                collapse_vals = (
+                    candidate_df.get("collapse_driver_score", 0.0)
+                    .fillna(0.0)
+                    .values.astype(float)
+                )
+                clarity_vals = (
+                    candidate_df.get("clarity_enhancer_score", 0.0)
+                    .fillna(0.0)
+                    .values.astype(float)
+                )
+
+                collapse_max = float(np.nanmax(np.abs(collapse_vals))) if np.isfinite(np.nanmax(np.abs(collapse_vals))) and np.nanmax(np.abs(collapse_vals)) > 0.0 else 0.0
+                clarity_max = float(np.nanmax(np.abs(clarity_vals))) if np.isfinite(np.nanmax(np.abs(clarity_vals))) and np.nanmax(np.abs(clarity_vals)) > 0.0 else 0.0
+
+                if collapse_max > 0.0:
+                    collapse_norm = collapse_vals / (collapse_max + eps)
+                else:
+                    collapse_norm = np.zeros_like(collapse_vals)
+
+                if clarity_max > 0.0:
+                    clarity_norm = clarity_vals / (clarity_max + eps)
+                else:
+                    clarity_norm = np.zeros_like(clarity_vals)
+
+                collapse_boost = 1.0 + 2.0 * collapse_norm
+                clarity_penalty = 1.0 / (1.0 + 2.0 * clarity_norm)
+
+                candidate_df["severity"] = (
+                    base_severity * collapse_boost * clarity_penalty
+                )
+                candidate_df = candidate_df.sort_values("severity", ascending=False)
+                candidate_features_order = (
+                    candidate_df["feature"].dropna().tolist()
+                )
+            else:
+                candidate_features_order = []
+        else:
+            candidate_features_order = []
+
+        removed_features_iter: List[str] = []
+
+        def _train_candidate_with_features(kept: List[str]) -> Tuple[Any, np.ndarray, Dict[str, Any]]:
+            X_train_pruned = X_train[kept]
+            X_val_pruned = X_val[kept]
+            X_full_pruned = X_full[kept]
+
+            monotone_pruned = []
+            for feat in X_full_pruned.columns:
+                feat_lower = feat.lower()
+                if any(kw in feat_lower for kw in [
+                    'vol', 'cvar', 'drawdown', 'jump', 'acceleration',
+                    'fragility', 'shock', 'tail', 'kurtosis', 'correlation'
+                ]):
+                    monotone_pruned.append(1)
+                else:
+                    monotone_pruned.append(0)
+
+            monotone_constraints_param_pruned = "(" + ",".join(
+                str(c) for c in monotone_pruned
+            ) + ")"
+
+            pruned_params = best_params.copy()
+            pruned_params['monotone_constraints'] = monotone_constraints_param_pruned
+
+            X_train_use = X_train_pruned
+            y_train_use = y_train
+            sample_weight_use = base_sample_weight
+
+            if enable_high_conf:
+                try:
+                    temp_model_pruned = xgb.XGBClassifier(**pruned_params)
+                    temp_model_pruned.fit(
+                        X_train_pruned,
+                        y_train,
+                        sample_weight=base_sample_weight,
+                        eval_set=[(X_val_pruned, y_val)],
+                        verbose=False,
+                    )
+
+                    train_probs_pruned = temp_model_pruned.predict_proba(X_train_pruned)
+                    max_conf_pruned = train_probs_pruned.max(axis=1)
+                    high_conf_mask_pruned = max_conf_pruned >= high_conf_threshold
+
+                    n_high_conf_pruned = int(high_conf_mask_pruned.sum())
+                    frac_high_conf_pruned = (
+                        float(n_high_conf_pruned) / float(len(y_train)) if len(y_train) > 0 else 0.0
+                    )
+
+                    if n_high_conf_pruned > 0:
+                        y_train_high_conf_pruned = y_train[high_conf_mask_pruned]
+                        per_regime_counts_pruned = pd.Series(
+                            y_train_high_conf_pruned
+                        ).value_counts().to_dict()
+                    else:
+                        per_regime_counts_pruned = {}
+
+                    min_required_pruned = int(len(y_train) * min_high_conf_fraction)
+                    regime_ok_pruned = (
+                        all(
+                            count >= min_high_conf_per_regime
+                            for count in per_regime_counts_pruned.values()
+                        )
+                        if per_regime_counts_pruned
+                        else False
+                    )
+
+                    if n_high_conf_pruned >= max(min_required_pruned, n_regimes) and regime_ok_pruned:
+                        X_train_use = X_train_pruned.iloc[high_conf_mask_pruned]
+                        y_train_use = y_train_high_conf_pruned
+                        sample_weight_use = base_sample_weight[high_conf_mask_pruned]
+                        tprint_info(
+                            f"🧪 High-confidence training (iterative pruned) enabled: using "
+                            f"{n_high_conf_pruned} / {len(y_train)} samples "
+                            f"({frac_high_conf_pruned:.1%}), "
+                            f"min_per_regime>={min_high_conf_per_regime}"
+                        )
+                    else:
+                        tprint_info(
+                            "🧪 High-confidence filter (iterative pruned) skipped (insufficient "
+                            "high-confidence points or per-regime counts too small); "
+                            "training on full dataset instead."
+                        )
+                except Exception as high_conf_exc_pruned:
+                    tprint_warning(
+                        f"High-confidence training path (iterative pruned) failed; "
+                        f"falling back to full dataset: {high_conf_exc_pruned}"
+                    )
+                    X_train_use = X_train_pruned
+                    y_train_use = y_train
+                    sample_weight_use = base_sample_weight
+
+            model_candidate = xgb.XGBClassifier(**pruned_params)
+            model_candidate.fit(
+                X_train_use,
+                y_train_use,
+                sample_weight=sample_weight_use,
+                eval_set=[(X_val_pruned, y_val)],
+                verbose=False,
+            )
+
+            regime_probs_candidate = model_candidate.predict_proba(X_full_pruned)
+            y_val_pred_candidate = model_candidate.predict(X_val_pruned)
+            y_val_probs_candidate = model_candidate.predict_proba(X_val_pruned)
+
+            val_accuracy_candidate = accuracy_score(y_val, y_val_pred_candidate)
+            val_log_loss_candidate = log_loss(y_val, y_val_probs_candidate)
+
+            tprint_success(
+                f"✅ XGBoost Classifier trained (iterative noise-pruned):\n"
+                f"   Val Accuracy={val_accuracy_candidate:.3f} (baseline {val_accuracy:.3f})\n"
+                f"   Val LogLoss={val_log_loss_candidate:.4f} (baseline {val_log_loss:.4f})\n"
+                f"   Features={len(kept)} (baseline {len(feature_cols)})"
+            )
+
+            report_candidate = classification_report(
+                y_val,
+                y_val_pred_candidate,
+                target_names=[f'Regime_{i}' for i in range(n_regimes)],
+                output_dict=True,
+                zero_division=0,
+            )
+
+            importance_data_candidate = self._calculate_comprehensive_feature_importance(
+                model=model_candidate,
+                X=X_full_pruned,
+                y=y,
+                feature_names=list(X_full_pruned.columns),
+            )
+
+            candidate_metrics = {
+                'val_accuracy': float(val_accuracy_candidate),
+                'val_log_loss': float(val_log_loss_candidate),
+                'n_regimes': n_regimes,
+                'feature_names': list(X_full_pruned.columns),
+                'scaler': scaler,
+                'monotone_constraints': monotone_pruned,
+                'n_features': len(X_full_pruned.columns),
+                'feature_importance_detailed': {
+                    'global': importance_data_candidate['global'].to_dict('records'),
+                    'per_regime': {
+                        regime_id: df.to_dict('records')
+                        for regime_id, df in importance_data_candidate['per_regime'].items()
+                    },
+                },
+                'classification_report': report_candidate,
+                'baseline_classifier': baseline_training_metrics,
+            }
+
+            # Quadrant WCoV quality for the pruned candidate (predicted regimes
+            # on the full feature set restricted to pruned columns).
+            if quadrant_cols:
+                try:
+                    candidate_quadrant_cols = [
+                        c for c in quadrant_cols if c in X_full_pruned.columns
+                    ]
+                    if candidate_quadrant_cols:
+                        full_pruned_df = pd.DataFrame(
+                            X_full_pruned, columns=X_full_pruned.columns
+                        )
+                        quad_full_pruned = full_pruned_df[candidate_quadrant_cols]
+
+                        regime_pred_all_pruned = np.argmax(regime_probs_candidate, axis=1)
+
+                        teacher_between_pruned = self._calculate_winsorized_cv_between(
+                            y, quad_full_pruned
+                        )
+                        teacher_within_pruned = self._calculate_winsorized_cv_within(
+                            y, quad_full_pruned
+                        )
+                        pred_between_pruned = self._calculate_winsorized_cv_between(
+                            regime_pred_all_pruned, quad_full_pruned
+                        )
+                        pred_within_pruned = self._calculate_winsorized_cv_within(
+                            regime_pred_all_pruned, quad_full_pruned
+                        )
+
+                        quadrant_quality_candidate = {
+                            "quadrant_features": list(candidate_quadrant_cols),
+                            "teacher_cv_between": float(teacher_between_pruned),
+                            "teacher_cv_within": float(teacher_within_pruned),
+                            "teacher_cv_ratio": float(
+                                teacher_between_pruned / (teacher_within_pruned + 1e-8)
+                            ),
+                            "pred_cv_between": float(pred_between_pruned),
+                            "pred_cv_within": float(pred_within_pruned),
+                            "pred_cv_ratio": float(
+                                pred_between_pruned / (pred_within_pruned + 1e-8)
+                            ),
+                        }
+                        candidate_metrics["quadrant_quality"] = quadrant_quality_candidate
+                except Exception as quad_prune_exc:
+                    tprint_warning(
+                        f"Quadrant WCoV quality (iterative pruned) failed (non-fatal): {quad_prune_exc}"
+                    )
+
+            return model_candidate, regime_probs_candidate, candidate_metrics
+
+        epsilon_quadrant = float(config.get('risk_iterative_prune_min_delta_quadrant', 0.0))
+        max_rounds = int(config.get('risk_iterative_prune_max_rounds', 10))
+
+        # Minimum improvement thresholds for the two components that drive the
+        # combined objective below; these are applied after normalization so
+        # they are effectively in [0, 1] space.
+        epsilon_balance = float(config.get("risk_iterative_prune_min_delta_balance", 0.0))
+        lambda_quadrant = float(config.get("risk_iterative_prune_weight_quadrant", 0.5))
+        lambda_balance = float(config.get("risk_iterative_prune_weight_balance", 0.5))
+        if lambda_quadrant < 0.0:
+            lambda_quadrant = 0.0
+        if lambda_balance < 0.0:
+            lambda_balance = 0.0
+        if lambda_quadrant + lambda_balance <= 0.0:
+            lambda_quadrant, lambda_balance = 0.5, 0.5
+
+        best_balance_score: Optional[float] = None
+        try:
+            base_pred_full = np.argmax(best_regime_probs_local, axis=1)
+            base_counts = np.bincount(base_pred_full, minlength=n_regimes)
+            base_total = float(base_counts.sum()) if base_counts.sum() > 0 else 0.0
+            if base_total > 0.0:
+                p_base = base_counts.astype(float) / base_total
+                best_balance_score = float(p_base.max() - p_base.min())
+        except Exception as base_balance_exc:  # pragma: no cover - defensive
+            tprint_warning(
+                f"Iterative pruning baseline balance diagnostics failed (non-fatal): {base_balance_exc}"
+            )
+            best_balance_score = None
+
+        for round_idx in range(max_rounds):
+            remaining = [f for f in candidate_features_order if f not in removed_features_iter]
+            if not remaining:
+                break
+
+            chunk = remaining[:5]
+            candidate_removed = removed_features_iter + chunk
+            kept_round = [f for f in feature_cols if f not in candidate_removed]
+
+            if len(kept_round) < min_keep:
+                tprint_warning(
+                    f"🧹 Iterative pruning stopped due to min_keep={min_keep}: "
+                    f"attempted kept={len(kept_round)}"
+                )
+                break
+
+            tprint_info(
+                f"🧪 Iterative pruning round {round_idx + 1}: testing removal of "
+                f"{len(chunk)} features (total removed would be {len(candidate_removed)})"
+            )
+
+            cand_model, cand_probs, cand_metrics = _train_candidate_with_features(kept_round)
+
+            cand_report_full = cand_metrics.get('classification_report', {}) or {}
+            cand_macro_f1 = (
+                cand_report_full.get('macro avg', {}).get('f1-score', 0.0)
+                if isinstance(cand_report_full, dict)
+                else 0.0
+            )
+            cand_log_loss = float(cand_metrics.get('val_log_loss', best_log_loss_local))
+
+            # Quadrant separation quality for the candidate
+            cand_quadrant_quality = cand_metrics.get('quadrant_quality', {}) or {}
+            cand_quadrant_pred_cv_ratio = float(
+                cand_quadrant_quality.get('pred_cv_ratio', best_quadrant_pred_cv_ratio)
+                if isinstance(cand_quadrant_quality, dict)
+                else best_quadrant_pred_cv_ratio
+            )
+
+            cand_balance_score = None
+            try:
+                cand_pred_full = np.argmax(cand_probs, axis=1)
+                counts = np.bincount(cand_pred_full, minlength=n_regimes)
+                total = float(counts.sum()) if counts.sum() > 0 else 0.0
+                if total > 0.0:
+                    p = counts.astype(float) / total
+                    cand_min_pct = float(p.min())
+                    cand_max_pct = float(p.max())
+                    cand_balance_score = float(cand_max_pct - cand_min_pct)
+
+                    # Soft band diagnostics: report when regime shares fall
+                    # outside the preferred range, but do not enforce a hard
+                    # rejection. The actual acceptance decision is driven by
+                    # the combined score and improvement thresholds below.
+                    max_pref = float(
+                        config.get("risk_prune_max_regime_pct", 0.6)
+                    )
+                    min_pref = float(
+                        config.get("risk_prune_min_regime_pct", 0.03)
+                    )
+
+                    if cand_max_pct > max_pref or cand_min_pct < min_pref:
+                        tprint_info(
+                            "🧹 Iterative pruning candidate outside preferred "
+                            f"regime share band: min_pct={cand_min_pct:.3f}, "
+                            f"max_pct={cand_max_pct:.3f}"
+                        )
+            except Exception as dist_exc:  # pragma: no cover - defensive
+                tprint_warning(
+                    f"Iterative pruning balance diagnostics failed (non-fatal): {dist_exc}"
+                )
+
+            # Normalized improvements for a combined scalar objective.
+            #
+            # Quadrant term: prefer larger increases in pred_cv_ratio.
+            quad_gain_raw = (
+                cand_quadrant_pred_cv_ratio - best_quadrant_pred_cv_ratio
+            )
+            quad_gain_norm = max(0.0, quad_gain_raw)
+
+            # Balance term: prefer *reductions* in max-min spread
+            # (smaller is better). Map into a positive direction where
+            # improvements are positive.
+            if (
+                cand_balance_score is not None
+                and best_balance_score is not None
+                and best_balance_score > 0.0
+            ):
+                balance_gain_raw = best_balance_score - cand_balance_score
+                balance_gain_norm = max(0.0, balance_gain_raw)
+            else:
+                balance_gain_norm = 0.0
+
+            # Simple weighted sum; both components are non-negative after the
+            # max(0, ·) clamps. Users can tilt toward structure (quadrant) or
+            # distribution (balance) via config weights.
+            combined_score = (
+                lambda_quadrant * quad_gain_norm
+                + lambda_balance * balance_gain_norm
+            )
+
+            improved = (
+                quad_gain_norm > epsilon_quadrant
+                or balance_gain_norm > epsilon_balance
+                or combined_score > 0.0
+            )
+
+            if improved:
+                removed_features_iter = candidate_removed
+                best_model = cand_model
+                best_regime_probs_local = cand_probs
+                best_training_metrics = cand_metrics
+                best_macro_f1 = cand_macro_f1
+                best_log_loss_local = cand_log_loss
+                best_quadrant_pred_cv_ratio = cand_quadrant_pred_cv_ratio
+                if cand_balance_score is not None:
+                    best_balance_score = cand_balance_score
+                tprint_success(
+                    f"🧹 Iterative pruning round {round_idx + 1} accepted: "
+                    f"macroF1={cand_macro_f1:.3f}, "
+                    f"logLoss={cand_log_loss:.4f}, "
+                    f"quadrant_pred_cv_ratio={cand_quadrant_pred_cv_ratio:.3f}"
+                )
+            else:
+                tprint_info(
+                    "🧹 Iterative pruning did not improve metrics; "
+                    "stopping further removals."
+                )
+                break
+
+        if removed_features_iter:
+            best_training_metrics['removed_noisy_features'] = list(removed_features_iter)
+
+        final_model = best_model
+        final_regime_probs = best_regime_probs_local
+        final_training_metrics = best_training_metrics
+
+        if noise_feature_table is not None and 'noise_feature_diagnostics' not in final_training_metrics:
+            final_training_metrics['noise_feature_diagnostics'] = noise_feature_table.to_dict('records')
+
+        try:
+            symbol = str(config.get("symbol", "UNKNOWN"))
+            exchange = str(config.get("exchange", "UNKNOWN"))
+            regime_timeframe = str(config.get("regime_timeframe", config.get("timeframe", "1h")))
+
+            # Build compact summary row from training_metrics
+            baseline = final_training_metrics.get("baseline_classifier", {}) or {}
+            baseline_report = baseline.get("classification_report", {}) or {}
+            baseline_macro_f1 = (
+                baseline_report.get("macro avg", {}).get("f1-score", 0.0)
+                if isinstance(baseline_report, dict)
+                else 0.0
+            )
+
+            final_report = final_training_metrics.get("classification_report", {}) or {}
+            final_macro_f1 = (
+                final_report.get("macro avg", {}).get("f1-score", 0.0)
+                if isinstance(final_report, dict)
+                else 0.0
+            )
+
+            removed_features = final_training_metrics.get("removed_noisy_features", [])
+            if isinstance(removed_features, (list, tuple, set)):
+                n_removed_features = len(removed_features)
+            else:
+                n_removed_features = 0
+
+            row = {
+                "symbol": symbol,
+                "exchange": exchange,
+                "timeframe": regime_timeframe,
+                "val_accuracy_final": final_training_metrics.get("val_accuracy"),
+                "val_log_loss_final": final_training_metrics.get("val_log_loss"),
+                "macro_f1_final": final_macro_f1,
+                "val_accuracy_baseline": baseline.get("val_accuracy"),
+                "val_log_loss_baseline": baseline.get("val_log_loss"),
+                "macro_f1_baseline": baseline_macro_f1,
+                "n_features_final": final_training_metrics.get("n_features"),
+                "n_features_baseline": baseline.get("n_features"),
+                "n_removed_noisy_features": n_removed_features,
+            }
+
+            metrics_df = pd.DataFrame([row])
+
+            # 1) Always emit a compact, human-readable CSV summary in outcomes/
+            try:
+                ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                metrics_report_path = (
+                    f"outcomes/ml_risk_classifier_metrics_"
+                    f"{symbol}_{regime_timeframe}_{ts}.csv"
+                )
+                metrics_df.to_csv(metrics_report_path, index=False)
+                final_training_metrics["metrics_report_path"] = metrics_report_path
+            except Exception as human_exc:  # pragma: no cover - defensive
+                tprint_warning(
+                    f"Failed to write human-readable risk classifier metrics report (non-fatal): {human_exc}"
+                )
+
+            # 2) Optionally save the same summary via artifact router for programmatic use
+            try:
+                metrics_artifact_name = f"ml_risk_classifier_metrics_{regime_timeframe}"
+                metrics_artifact_path = self._save_artifact(
+                    data=metrics_df,
+                    artifact_name=metrics_artifact_name,
+                    artifact_type="data",
+                    data_category="analysis",
+                    metadata={
+                        "symbol": symbol,
+                        "exchange": exchange,
+                        "timeframe": regime_timeframe,
+                        "n_regimes": n_regimes,
+                        "n_features_final": final_training_metrics.get("n_features", len(feature_cols)),
+                        "n_features_baseline": baseline.get("n_features"),
+                        "has_baseline_classifier": "baseline_classifier" in final_training_metrics,
+                        "has_noise_diagnostics": "noise_feature_diagnostics" in final_training_metrics,
+                    },
+                )
+                final_training_metrics["metrics_artifact_path"] = metrics_artifact_path
+            except Exception as metrics_save_exc:  # pragma: no cover - defensive
+                tprint_warning(
+                    f"Failed to save compact risk classifier metrics artifact (non-fatal): {metrics_save_exc}"
+                )
+
+        except Exception as outer_metrics_exc:  # pragma: no cover - defensive
+            tprint_warning(
+                f"Risk classifier metrics persistence encountered a non-fatal error: {outer_metrics_exc}"
+            )
+
+        full_probs = np.full((len(risk_df), n_regimes), np.nan)
+        full_probs[valid_mask] = final_regime_probs
+
+        return final_model, full_probs, final_training_metrics
 
     def _calculate_iqr_winsorization_percentiles(
         self, data: pd.Series
@@ -4093,7 +6491,9 @@ class MLRiskRegimeStep(BaseStep):
         max_bin_samples = int(config.get("risk_max_bin_samples_pct", 0.95) * len(scores_scaled))
 
         # Target number of regimes (try to get 4)
-        target_regimes = int(config.get("risk_target_regimes", 4))
+        target_regimes = int(
+            config.get("risk_target_regimes", config.get("risk_n_regimes", 4))
+        )
         max_regimes = int(config.get("risk_max_regimes", 6))
         max_regimes = max(max_regimes, 2)  # At least 2 regimes
 
@@ -4473,7 +6873,7 @@ class MLRiskRegimeStep(BaseStep):
         - Switching back to Safe (low regime): Delayed, require 3 consecutive candles
         """
         danger_threshold = float(config.get("risk_danger_threshold", 0.25))
-        safety_confirmation_bars = int(config.get("risk_safety_confirmation_bars", 3))
+        safety_confirmation_bars = int(config.get("risk_safety_confirmation_bars", 12))
 
         n_regimes = regime_labels.max() + 1  # Highest regime = most dangerous
         calm_regime = 0  # Lowest regime = calmest

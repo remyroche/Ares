@@ -24,6 +24,9 @@ from src.utils.tprint import (
     tprint_error,
     tprint_success,
 )
+from src.features_common.transforms.scaling_normalization import (
+    winsorized_zscore_normalize,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +58,7 @@ class MLSMCRegimeStep(BaseStep):
                 f"(regime_timeframe={regime_timeframe})"
             )
 
-            # Load market data with caching
+            # Load market data with caching (using BaseStep pattern)
             exec_mode_cfg = str(config.get("execution_mode", "")).lower()
             cache_key = (symbol, exchange, regime_timeframe, exec_mode_cfg, "smc")
             market_data = None
@@ -102,7 +105,7 @@ class MLSMCRegimeStep(BaseStep):
                 f"({market_data.index.min()} → {market_data.index.max()})"
             )
 
-            # Generate SMC features
+            # Generate SMC features with proper normalization
             smc_df = self._generate_smc_features(market_data, config)
 
             # Train XGBoost model if enabled
@@ -123,7 +126,7 @@ class MLSMCRegimeStep(BaseStep):
                     tprint_error(f"SMC XGB training failed: {xgb_exc}")
                     raise
 
-            # Save SMC features
+            # Save SMC features using BaseStep pattern
             idx_name = smc_df.index.name or "index"
             if idx_name in smc_df.columns:
                 to_save = smc_df.copy()
@@ -182,7 +185,7 @@ class MLSMCRegimeStep(BaseStep):
         df: pd.DataFrame,
         config: Dict[str, Any],
     ) -> pd.DataFrame:
-        """Generate all SMC features."""
+        """Generate all SMC features with proper normalization."""
         result = df.copy()
 
         required_cols = ["open", "high", "low", "close", "volume"]
@@ -241,6 +244,10 @@ class MLSMCRegimeStep(BaseStep):
         tprint_info("Generating time category features...")
         result = self._add_time_categories(result, config)
 
+        # Apply normalization to features (except categorical/binary features)
+        tprint_info("Normalizing SMC features...")
+        result = self._normalize_smc_features(result, config)
+
         tprint_success(f"✅ Generated {len(result.columns)} SMC features")
 
         return result
@@ -263,15 +270,14 @@ class MLSMCRegimeStep(BaseStep):
         pdl = prev_day_low.reindex(day_index).to_numpy()
         day_open_vals = day_open.reindex(day_index).to_numpy()
 
-        df["pdh"] = pdh
-        df["pdl"] = pdl
-        df["dist_to_pdh_atr"] = (c.values - pdh) / (atr.values + 1e-9)
-        df["dist_to_pdl_atr"] = (c.values - pdl) / (atr.values + 1e-9)
+        df["smc_pdh"] = pdh
+        df["smc_pdl"] = pdl
+        df["smc_dist_to_pdh_atr"] = (c.values - pdh) / (atr.values + 1e-9)
+        df["smc_dist_to_pdl_atr"] = (c.values - pdl) / (atr.values + 1e-9)
 
-        # NY midnight open (00:00 NYC time = 05:00 UTC)
-        # Approximate as the first candle of each day
-        df["day_open"] = day_open_vals
-        df["dist_to_day_open"] = (c.values - day_open_vals) / (atr.values + 1e-9)
+        # Day open
+        df["smc_day_open"] = day_open_vals
+        df["smc_dist_to_day_open"] = (c.values - day_open_vals) / (atr.values + 1e-9)
 
         # Week open
         week_index = df.index.to_period('W').to_timestamp()
@@ -282,12 +288,12 @@ class MLSMCRegimeStep(BaseStep):
         week_open_vals = week_open.reindex(week_index).to_numpy()
         prev_week_close_vals = prev_week_close.reindex(week_index).to_numpy()
 
-        df["week_open"] = week_open_vals
-        df["dist_to_week_open"] = (c.values - week_open_vals) / (atr.values + 1e-9)
+        df["smc_week_open"] = week_open_vals
+        df["smc_dist_to_week_open"] = (c.values - week_open_vals) / (atr.values + 1e-9)
 
         # New Week Opening Gap (NWOG)
         nwog_gap = week_open_vals - prev_week_close_vals
-        df["nwog_gap_size"] = nwog_gap / (atr.values + 1e-9)
+        df["smc_nwog_gap_size"] = nwog_gap / (atr.values + 1e-9)
 
         return df
 
@@ -299,10 +305,7 @@ class MLSMCRegimeStep(BaseStep):
         o = df["open"].astype(float)
         atr = df["atr"].astype(float)
 
-        # FVG detection: gap between current candle and candle 2 bars ago
-        # Bullish FVG: low[i] > high[i-2]
-        # Bearish FVG: high[i] < low[i-2]
-
+        # FVG detection
         high_2 = h.shift(2)
         low_2 = l.shift(2)
 
@@ -314,35 +317,31 @@ class MLSMCRegimeStep(BaseStep):
         bearish_fvg_size = (low_2 - h).clip(lower=0.0)
 
         fvg_size = bullish_fvg_size.where(bullish_fvg, bearish_fvg_size.where(bearish_fvg, 0.0))
-        df["current_fvg_size"] = fvg_size / (atr + 1e-9)
+        df["smc_current_fvg_size"] = fvg_size / (atr + 1e-9)
 
-        # Calculate FVG midpoint for nearest distance calculation
+        # FVG midpoint
         bullish_fvg_mid = (l + high_2) / 2.0
         bearish_fvg_mid = (h + low_2) / 2.0
 
         fvg_mid = bullish_fvg_mid.where(bullish_fvg, bearish_fvg_mid.where(bearish_fvg, np.nan))
-
-        # Nearest FVG distance (simplified: just use most recent FVG)
         fvg_mid_filled = fvg_mid.ffill()
-        df["nearest_fvg_dist"] = (c - fvg_mid_filled) / (atr + 1e-9)
+        df["smc_nearest_fvg_dist"] = (c - fvg_mid_filled) / (atr + 1e-9)
 
-        # Consequent encroachment (CE) - position within the FVG
-        # For simplicity, calculate for current FVG only
+        # Consequent encroachment
         fvg_high = l.where(bullish_fvg, low_2.where(bearish_fvg, np.nan))
         fvg_low = high_2.where(bullish_fvg, h.where(bearish_fvg, np.nan))
 
         fvg_range = fvg_high - fvg_low
         ce_position = (c - fvg_low) / (fvg_range + 1e-9)
-        df["consequent_encroachment"] = ce_position.fillna(0.5)
+        df["smc_consequent_encroachment"] = ce_position.fillna(0.5)
 
-        # Volume imbalance (gaps between candle bodies)
+        # Volume imbalance
         volume_imb = (o - c.shift(1)).abs()
-        df["volume_imbalance_size"] = volume_imb / (atr + 1e-9)
+        df["smc_volume_imbalance_size"] = volume_imb / (atr + 1e-9)
 
-        # Gap fill ratio (how much of the FVG has been filled)
-        # Simplified: if price has moved into the FVG, calculate fill percentage
+        # Gap fill ratio
         fvg_fill = ((h - fvg_low) / (fvg_range + 1e-9)).clip(0.0, 1.0)
-        df["gap_fill_ratio"] = fvg_fill.fillna(0.0)
+        df["smc_gap_fill_ratio"] = fvg_fill.fillna(0.0)
 
         return df
 
@@ -353,7 +352,7 @@ class MLSMCRegimeStep(BaseStep):
         c = df["close"].astype(float)
         atr = df["atr"].astype(float)
 
-        # Swing highs and lows (5-bar fractal)
+        # Swing highs and lows
         sh = (
             (h.shift(2) < h.shift(1))
             & (h.shift(1) < h)
@@ -370,24 +369,23 @@ class MLSMCRegimeStep(BaseStep):
         swing_high = h.where(sh).ffill()
         swing_low = l.where(sl).ffill()
 
-        # Range position (0.0 to 0.5 = Discount, 0.5 to 1.0 = Premium)
+        # Range position
         range_height = swing_high - swing_low
         range_pos = (c - swing_low) / (range_height + 1e-9)
-        df["range_position"] = range_pos.clip(0.0, 1.0)
+        df["smc_range_position"] = range_pos.clip(0.0, 1.0)
 
         # Distance to swing high/low
-        df["dist_to_swing_high"] = (swing_high - c) / (atr + 1e-9)
-        df["dist_to_swing_low"] = (c - swing_low) / (atr + 1e-9)
+        df["smc_dist_to_swing_high"] = (swing_high - c) / (atr + 1e-9)
+        df["smc_dist_to_swing_low"] = (c - swing_low) / (atr + 1e-9)
 
-        # Fibonacci retracement level (as a ratio)
+        # Fibonacci retracement level
         fib_level = (swing_high - c) / (range_height + 1e-9)
-        df["fib_retracement_level"] = fib_level.clip(0.0, 1.0)
+        df["smc_fib_retracement_level"] = fib_level.clip(0.0, 1.0)
 
         # Break of structure magnitude
-        # Detection: when price breaks above previous swing high
         prev_swing_high = swing_high.shift(1)
         bos_magnitude = (c - prev_swing_high) / (atr + 1e-9)
-        df["break_of_structure_mag"] = bos_magnitude.clip(lower=0.0)
+        df["smc_break_of_structure_mag"] = bos_magnitude.clip(lower=0.0)
 
         return df
 
@@ -403,41 +401,37 @@ class MLSMCRegimeStep(BaseStep):
         avg_body = body.rolling(window=20).mean()
 
         # Displacement strength
-        df["displacement_strength"] = body / (avg_body + 1e-9)
+        df["smc_displacement_strength"] = body / (avg_body + 1e-9)
 
         # Wick to body ratio
         upper_wick = h - np.maximum(c, o)
         lower_wick = np.minimum(c, o) - l
         total_wick = upper_wick + lower_wick
-        df["wick_body_ratio"] = total_wick / (body + 1e-9)
+        df["smc_wick_body_ratio"] = total_wick / (body + 1e-9)
 
-        # Close position in candle (0.0 = close at low, 1.0 = close at high)
+        # Close position in candle
         candle_range = h - l
         close_pos = (c - l) / (candle_range + 1e-9)
-        df["close_position_in_candle"] = close_pos.clip(0.0, 1.0)
+        df["smc_close_position_in_candle"] = close_pos.clip(0.0, 1.0)
 
         # Velocity / Rate of Change
         roc = (c - c.shift(3)) / 3.0
-        df["velocity_roc"] = roc / (c.shift(3) + 1e-9)
+        df["smc_velocity_roc"] = roc / (c.shift(3) + 1e-9)
 
-        # Consecutive candles (streak)
+        # Consecutive candles
         candle_direction = np.sign(c - o)
+        streaks = np.zeros(len(candle_direction))
+        current_streak = 0
+        for i in range(len(candle_direction)):
+            if i == 0:
+                current_streak = candle_direction.iloc[i]
+            elif candle_direction.iloc[i] == candle_direction.iloc[i-1] and candle_direction.iloc[i] != 0:
+                current_streak += candle_direction.iloc[i]
+            else:
+                current_streak = candle_direction.iloc[i]
+            streaks[i] = current_streak
 
-        # Calculate streaks
-        def calculate_streaks(series):
-            streaks = np.zeros(len(series))
-            current_streak = 0
-            for i in range(len(series)):
-                if i == 0:
-                    current_streak = series.iloc[i]
-                elif series.iloc[i] == series.iloc[i-1] and series.iloc[i] != 0:
-                    current_streak += series.iloc[i]
-                else:
-                    current_streak = series.iloc[i]
-                streaks[i] = current_streak
-            return streaks
-
-        df["consecutive_candles"] = calculate_streaks(pd.Series(candle_direction))
+        df["smc_consecutive_candles"] = streaks
 
         return df
 
@@ -445,11 +439,10 @@ class MLSMCRegimeStep(BaseStep):
         """Add volatility and time-based features."""
         h = df["high"].astype(float)
         l = df["low"].astype(float)
-        c = df["close"].astype(float)
         v = df["volume"].astype(float)
         atr = df["atr"].astype(float)
 
-        # Average Daily Range (ADR)
+        # Average Daily Range
         day_index = df.index.normalize()
         daily_range = df.groupby(day_index).apply(lambda x: x["high"].max() - x["low"].min())
         adr = daily_range.rolling(window=20).mean()
@@ -459,18 +452,18 @@ class MLSMCRegimeStep(BaseStep):
         today_low = df.groupby(day_index)["low"].transform("min")
         today_range = today_high - today_low
         adr_reindexed = adr.reindex(day_index).to_numpy()
-        df["adr_filled_pct"] = today_range / (adr_reindexed + 1e-9)
+        df["smc_adr_filled_pct"] = today_range / (adr_reindexed + 1e-9)
 
-        # Relative volume
+        # Relative volume (use log1p for volume normalization later)
         avg_vol = v.rolling(window=20).mean()
-        df["rel_volume"] = v / (avg_vol + 1e-9)
+        df["smc_rel_volume"] = v / (avg_vol + 1e-9)
 
-        # Time elapsed in session (minutes since midnight)
-        df["time_elapsed_session"] = df.index.hour * 60 + df.index.minute
+        # Time elapsed in session
+        df["smc_time_elapsed_session"] = df.index.hour * 60 + df.index.minute
 
-        # ATR compression/expansion
+        # ATR compression
         atr_20 = atr.rolling(window=20).mean()
-        df["atr_compression"] = atr / (atr_20 + 1e-9)
+        df["smc_atr_compression"] = atr / (atr_20 + 1e-9)
 
         return df
 
@@ -490,11 +483,11 @@ class MLSMCRegimeStep(BaseStep):
             }).dropna()
 
             if len(df_1h) > 50:
-                # HTF trend (EMA slope)
+                # HTF trend
                 ema_20 = df_1h["close"].ewm(span=20).mean()
                 ema_50 = df_1h["close"].ewm(span=50).mean()
 
-                # Calculate HTF ATR
+                # HTF ATR
                 h_1h = df_1h["high"]
                 l_1h = df_1h["low"]
                 c_1h = df_1h["close"]
@@ -508,18 +501,15 @@ class MLSMCRegimeStep(BaseStep):
 
                 # Reindex to 15m
                 htf_trend_slope_15m = htf_trend_slope.reindex(df.index, method='ffill')
-                df["htf_trend_slope"] = htf_trend_slope_15m.fillna(0.0)
+                df["smc_htf_trend_slope"] = htf_trend_slope_15m.fillna(0.0)
             else:
-                df["htf_trend_slope"] = 0.0
+                df["smc_htf_trend_slope"] = 0.0
 
         except Exception as e:
             tprint_warning(f"MTF feature calculation failed: {e}")
-            df["htf_trend_slope"] = 0.0
+            df["smc_htf_trend_slope"] = 0.0
 
-        # Placeholder for daily FVG distance (would need daily data)
-        df["dist_to_daily_fvg"] = 0.0
-
-        # Daily wick rejection (using previous day data)
+        # Daily wick rejection
         day_index = df.index.normalize()
         daily_stats = df.groupby(day_index).agg(
             high=("high", "max"),
@@ -532,7 +522,7 @@ class MLSMCRegimeStep(BaseStep):
         prev_day_range = prev_day_high - prev_day_low
 
         daily_wick_rej = (prev_day_high - prev_day_close) / (prev_day_range + 1e-9)
-        df["daily_wick_rejection"] = daily_wick_rej.reindex(day_index).fillna(0.0).to_numpy()
+        df["smc_daily_wick_rejection"] = daily_wick_rej.reindex(day_index).fillna(0.0).to_numpy()
 
         return df
 
@@ -570,7 +560,6 @@ class MLSMCRegimeStep(BaseStep):
                     weights=window_volume,
                 )
 
-                # Find current bin
                 bin_index = np.digitize(current_price, bin_edges) - 1
                 bin_index = max(0, min(bins-1, bin_index))
 
@@ -586,7 +575,7 @@ class MLSMCRegimeStep(BaseStep):
                 poc_dist = (current_price - poc_price) / (atr.iloc[i] + 1e-9)
                 poc_dist_list.append(float(poc_dist))
 
-                # Value area (70% of volume)
+                # Value area
                 sorted_indices = np.argsort(hist)[::-1]
                 cumsum = 0
                 value_area_bins = []
@@ -611,18 +600,17 @@ class MLSMCRegimeStep(BaseStep):
                 is_in_value_area_list.append(1)
                 profile_skew_list.append(0.0)
 
-        df["hvn_gravity"] = hvn_gravity_list
-        df["poc_dist_atr"] = poc_dist_list
-        df["is_in_value_area"] = is_in_value_area_list
-        df["profile_skew"] = profile_skew_list
+        df["smc_hvn_gravity"] = hvn_gravity_list
+        df["smc_poc_dist_atr"] = poc_dist_list
+        df["smc_is_in_value_area"] = is_in_value_area_list
+        df["smc_profile_skew"] = profile_skew_list
 
         return df
 
     def _add_time_categories(self, df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
         """Add time category features."""
 
-        # Session (Kill Zone) - UTC times
-        # Asia: 00:00-08:00, London: 08:00-16:00, NY_AM: 13:00-17:00, NY_PM: 17:00-21:00, Dead: 21:00-00:00
+        # Session (Kill Zone)
         hour = df.index.hour
 
         session_kz = pd.Series("Dead", index=df.index)
@@ -633,14 +621,14 @@ class MLSMCRegimeStep(BaseStep):
 
         # One-hot encode sessions
         for session in ["Asia", "London", "NY_AM", "NY_PM", "Dead"]:
-            df[f"session_{session}"] = (session_kz == session).astype(int)
+            df[f"smc_session_{session}"] = (session_kz == session).astype(int)
 
         # Day of week
-        dow = df.index.dayofweek  # Monday=0, Sunday=6
+        dow = df.index.dayofweek
         for day_num, day_name in enumerate(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]):
-            df[f"dow_{day_name}"] = (dow == day_num).astype(int)
+            df[f"smc_dow_{day_name}"] = (dow == day_num).astype(int)
 
-        # Market structure (simplified: based on recent swing direction)
+        # Market structure (simplified)
         h = df["high"].astype(float)
         l = df["low"].astype(float)
 
@@ -653,21 +641,68 @@ class MLSMCRegimeStep(BaseStep):
         market_structure[hh & hl] = "Uptrend"
         market_structure[lh & ll] = "Downtrend"
 
-        df["market_structure_Uptrend"] = (market_structure == "Uptrend").astype(int)
-        df["market_structure_Downtrend"] = (market_structure == "Downtrend").astype(int)
-        df["market_structure_Range"] = (market_structure == "Range").astype(int)
+        df["smc_market_structure_Uptrend"] = (market_structure == "Uptrend").astype(int)
+        df["smc_market_structure_Downtrend"] = (market_structure == "Downtrend").astype(int)
+        df["smc_market_structure_Range"] = (market_structure == "Range").astype(int)
 
-        # Inside FVG (use existing FVG size as proxy)
-        df["is_inside_fvg"] = (df["current_fvg_size"] > 0).astype(int)
+        # Inside FVG
+        df["smc_is_inside_fvg"] = (df["smc_current_fvg_size"] > 0).astype(int)
 
-        # Sweep confirmed (wick beyond PDH/PDL but close inside)
+        # Sweep confirmed
         c = df["close"].astype(float)
-        pdh = df["pdh"]
-        pdl = df["pdl"]
+        pdh = df["smc_pdh"]
+        pdl = df["smc_pdl"]
 
         sweep_high = (h > pdh) & (c < pdh)
         sweep_low = (l < pdl) & (c > pdl)
-        df["sweep_confirmed"] = (sweep_high | sweep_low).astype(int)
+        df["smc_sweep_confirmed"] = (sweep_high | sweep_low).astype(int)
+
+        return df
+
+    def _normalize_smc_features(self, df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
+        """Apply winsorized z-score normalization to continuous features, log1p to volume features."""
+
+        # Identify continuous features (exclude binary/categorical and raw price levels)
+        exclude_patterns = [
+            "_session_", "_dow_", "_market_structure_", "_is_", "_confirmed",
+            "smc_pdh", "smc_pdl", "smc_day_open", "smc_week_open", "atr",
+            "open", "high", "low", "close", "volume"
+        ]
+
+        continuous_features = []
+        volume_features = []
+
+        for col in df.columns:
+            if any(pattern in col for pattern in exclude_patterns):
+                continue
+            if col.startswith("smc_"):
+                if "volume" in col.lower() or "rel_volume" in col.lower():
+                    volume_features.append(col)
+                else:
+                    continuous_features.append(col)
+
+        # Apply winsorized z-score to continuous features
+        if continuous_features:
+            tprint_info(f"Applying winsorized z-score normalization to {len(continuous_features)} features")
+            for feat in continuous_features:
+                try:
+                    normalized = winsorized_zscore_normalize(
+                        df[feat].values,
+                        lower_quantile=0.05,
+                        upper_quantile=0.95
+                    )
+                    df[feat] = normalized
+                except Exception as e:
+                    tprint_warning(f"Failed to normalize {feat}: {e}")
+
+        # Apply log1p to volume features
+        if volume_features:
+            tprint_info(f"Applying log1p transformation to {len(volume_features)} volume features")
+            for feat in volume_features:
+                try:
+                    df[feat] = np.log1p(df[feat].clip(lower=0.0))
+                except Exception as e:
+                    tprint_warning(f"Failed to log1p transform {feat}: {e}")
 
         return df
 
@@ -679,7 +714,7 @@ class MLSMCRegimeStep(BaseStep):
         exchange: str,
         regime_timeframe: str,
     ) -> Tuple[Dict[str, Any], List[str]]:
-        """Train XGBoost regression model with conformal prediction calibration."""
+        """Train XGBoost regression model with HPO and conformal prediction calibration."""
         metrics: Dict[str, Any] = {}
         artifacts: List[str] = []
 
@@ -696,7 +731,7 @@ class MLSMCRegimeStep(BaseStep):
             return metrics, artifacts
 
         # Create target ratio
-        lookahead = int(config.get("smc_lookahead", 16))  # 4 hours on 15m chart
+        lookahead = int(config.get("smc_lookahead", 16))
 
         future_close = df["close"].shift(-lookahead)
         current_range = (df["high"] - df["low"]).replace(0, 0.0001)
@@ -704,14 +739,21 @@ class MLSMCRegimeStep(BaseStep):
 
         df_with_target = df.copy()
         df_with_target["target_ratio"] = target_ratio
-        df_with_target = df_with_target.dropna(subset=["target_ratio"])
+
+        # Calculate actual forward returns for metrics
+        df_with_target["forward_return"] = (future_close / df["close"] - 1.0)
+
+        df_with_target = df_with_target.dropna(subset=["target_ratio", "forward_return"])
 
         tprint_info(f"SMC XGB: target ratio stats - mean: {target_ratio.mean():.3f}, std: {target_ratio.std():.3f}")
 
-        # Select features (exclude target and non-numeric)
-        exclude_cols = ["target_ratio", "pdh", "pdl", "day_open", "week_open"]
+        # Select features
+        exclude_cols = [
+            "target_ratio", "forward_return",
+            "smc_pdh", "smc_pdl", "smc_day_open", "smc_week_open"
+        ]
         numeric_df = df_with_target.select_dtypes(include=[np.number])
-        feature_cols = [col for col in numeric_df.columns if col not in exclude_cols]
+        feature_cols = [col for col in numeric_df.columns if col not in exclude_cols and col.startswith("smc_")]
 
         if len(feature_cols) < 5:
             tprint_warning(f"SMC XGB: insufficient features (n={len(feature_cols)})")
@@ -720,6 +762,7 @@ class MLSMCRegimeStep(BaseStep):
 
         X = numeric_df[feature_cols].astype(np.float32)
         y = df_with_target["target_ratio"].astype(np.float32)
+        forward_returns = df_with_target["forward_return"].astype(np.float32)
 
         # Handle infinities and NaNs
         X = X.replace([np.inf, -np.inf], np.nan)
@@ -731,7 +774,7 @@ class MLSMCRegimeStep(BaseStep):
             metrics["smc_xgb_early_exit_reason"] = f"insufficient_samples_{len(X)}"
             return metrics, artifacts
 
-        # Time-series split (80/20)
+        # Time-series split
         train_frac = float(config.get("smc_xgb_train_fraction", 0.80))
         split_idx = int(len(X) * train_frac)
 
@@ -739,27 +782,37 @@ class MLSMCRegimeStep(BaseStep):
         y_train = y.iloc[:split_idx]
         X_test = X.iloc[split_idx:]
         y_test = y.iloc[split_idx:]
+        forward_returns_train = forward_returns.iloc[:split_idx]
+        forward_returns_test = forward_returns.iloc[split_idx:]
 
         tprint_info(f"SMC XGB: train={len(X_train)}, test={len(X_test)}, features={len(feature_cols)}")
 
-        # Train XGBoost model
-        model = xgb.XGBRegressor(
-            objective='reg:squarederror',
-            n_estimators=int(config.get("smc_xgb_n_estimators", 500)),
-            learning_rate=float(config.get("smc_xgb_learning_rate", 0.05)),
-            max_depth=int(config.get("smc_xgb_max_depth", 6)),
-            subsample=0.8,
-            colsample_bytree=0.8,
-            gamma=0.1,
-            reg_alpha=0.1,
-            reg_lambda=1.0,
-            random_state=42,
-            n_jobs=-1,
-        )
+        # HPO using Bayesian TPE optimizer
+        enable_hpo = bool(config.get("smc_xgb_enable_hpo", True))
 
-        early_stop = int(config.get("smc_xgb_early_stopping", 50))
+        if enable_hpo:
+            tprint_info("Starting Bayesian TPE hyperparameter optimization...")
+            best_params = self._run_hpo(X_train, y_train, config)
+        else:
+            # Default params
+            best_params = {
+                'objective': 'reg:squarederror',
+                'n_estimators': 500,
+                'learning_rate': 0.05,
+                'max_depth': 6,
+                'subsample': 0.8,
+                'colsample_bytree': 0.8,
+                'gamma': 0.1,
+                'reg_alpha': 0.1,
+                'reg_lambda': 1.0,
+                'random_state': 42,
+                'n_jobs': -1,
+            }
 
-        tprint_info("Training XGBoost regression model...")
+        # Train final model
+        tprint_info("Training final XGBoost model with best params...")
+        model = xgb.XGBRegressor(**best_params)
+
         model.fit(
             X_train,
             y_train,
@@ -781,6 +834,32 @@ class MLSMCRegimeStep(BaseStep):
         train_r2 = r2_score(y_train, y_train_pred)
         test_r2 = r2_score(y_test, y_test_pred)
 
+        # Brier score (calibration metric)
+        # For regression, we can compute Brier for "will price go up?" binary event
+        binary_target_train = (y_train > 0.5).astype(int)
+        binary_target_test = (y_test > 0.5).astype(int)
+        binary_pred_train = y_train_pred.clip(0, 1)
+        binary_pred_test = y_test_pred.clip(0, 1)
+
+        from sklearn.metrics import brier_score_loss
+        try:
+            train_brier = brier_score_loss(binary_target_train, binary_pred_train)
+            test_brier = brier_score_loss(binary_target_test, binary_pred_test)
+        except Exception:
+            train_brier = test_brier = np.nan
+
+        # Mean returns (based on predictions)
+        # If model predicts > 1.0, we'd go long; if < 0.0, we'd go short
+        long_mask_train = y_train_pred > 1.0
+        long_mask_test = y_test_pred > 1.0
+        mean_return_long_train = forward_returns_train[long_mask_train].mean() if long_mask_train.sum() > 0 else 0.0
+        mean_return_long_test = forward_returns_test[long_mask_test].mean() if long_mask_test.sum() > 0 else 0.0
+
+        short_mask_train = y_train_pred < 0.0
+        short_mask_test = y_test_pred < 0.0
+        mean_return_short_train = forward_returns_train[short_mask_train].mean() if short_mask_train.sum() > 0 else 0.0
+        mean_return_short_test = forward_returns_test[short_mask_test].mean() if short_mask_test.sum() > 0 else 0.0
+
         metrics.update({
             "smc_xgb_train_rmse": float(train_rmse),
             "smc_xgb_test_rmse": float(test_rmse),
@@ -788,24 +867,28 @@ class MLSMCRegimeStep(BaseStep):
             "smc_xgb_test_mae": float(test_mae),
             "smc_xgb_train_r2": float(train_r2),
             "smc_xgb_test_r2": float(test_r2),
+            "smc_xgb_train_brier": float(train_brier) if not np.isnan(train_brier) else 0.0,
+            "smc_xgb_test_brier": float(test_brier) if not np.isnan(test_brier) else 0.0,
+            "smc_xgb_mean_return_long_train": float(mean_return_long_train),
+            "smc_xgb_mean_return_long_test": float(mean_return_long_test),
+            "smc_xgb_mean_return_short_train": float(mean_return_short_train),
+            "smc_xgb_mean_return_short_test": float(mean_return_short_test),
         })
 
-        # Directional accuracy (breakout prediction)
+        # Directional accuracy
         breakout_mask_test = y_test_pred > 1.0
         if breakout_mask_test.sum() > 0:
             breakout_accuracy = (y_test[breakout_mask_test] > 1.0).mean()
             metrics["smc_xgb_breakout_accuracy"] = float(breakout_accuracy)
-            tprint_info(f"Breakout prediction accuracy: {breakout_accuracy:.2%}")
 
         breakdown_mask_test = y_test_pred < 0.0
         if breakdown_mask_test.sum() > 0:
             breakdown_accuracy = (y_test[breakdown_mask_test] < 0.0).mean()
             metrics["smc_xgb_breakdown_accuracy"] = float(breakdown_accuracy)
-            tprint_info(f"Breakdown prediction accuracy: {breakdown_accuracy:.2%}")
 
         tprint_success(
-            f"✅ XGBoost trained: train_rmse={train_rmse:.4f}, test_rmse={test_rmse:.4f}, "
-            f"train_r2={train_r2:.4f}, test_r2={test_r2:.4f}"
+            f"✅ XGBoost trained: test_rmse={test_rmse:.4f}, test_r2={test_r2:.4f}, "
+            f"test_brier={test_brier:.4f}, mean_return_long_test={mean_return_long_test:.4f}"
         )
 
         # Conformal prediction calibration
@@ -824,15 +907,22 @@ class MLSMCRegimeStep(BaseStep):
             model,
             X,
             y,
+            forward_returns,
             feature_cols,
             calibration_results,
             symbol,
             exchange,
             regime_timeframe,
+            train_rmse,
+            test_rmse,
+            train_r2,
+            test_r2,
+            train_brier,
+            test_brier,
         )
         artifacts.extend(report_artifacts)
 
-        # Save model
+        # Save model using BaseStep
         tprint_info("Saving XGBoost model...")
         model_path = self._save_artifact(
             data=model,
@@ -865,19 +955,18 @@ class MLSMCRegimeStep(BaseStep):
             )
             artifacts.append(calibration_path)
 
-        # Save predictions and confidence scores
+        # Save predictions with confidence scores using BaseStep
         predictions_df = pd.DataFrame({
             "timestamp": df_with_target.index,
             "actual": y.values,
             "predicted": np.concatenate([y_train_pred, y_test_pred]),
+            "forward_return": forward_returns.values,
             "is_test": [False] * len(y_train) + [True] * len(y_test),
         })
 
         if calibration_results:
-            all_preds = np.concatenate([y_train_pred, y_test_pred])
-            predictions_df["confidence_50"] = calibration_results["confidence_scores"]["50%"]
-            predictions_df["confidence_80"] = calibration_results["confidence_scores"]["80%"]
-            predictions_df["confidence_90"] = calibration_results["confidence_scores"]["90%"]
+            for level in ["50%", "60%", "70%", "80%", "90%", "95%", "99%"]:
+                predictions_df[f"confidence_{level}"] = calibration_results["confidence_scores"][level]
 
         predictions_path = self._save_artifact(
             data=predictions_df,
@@ -894,6 +983,91 @@ class MLSMCRegimeStep(BaseStep):
 
         return metrics, artifacts
 
+    def _run_hpo(
+        self,
+        X_train: pd.DataFrame,
+        y_train: pd.Series,
+        config: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Run Bayesian TPE hyperparameter optimization."""
+        try:
+            import optuna
+            from optuna.samplers import TPESampler
+        except ImportError:
+            tprint_warning("Optuna not available, using default params")
+            return {
+                'objective': 'reg:squarederror',
+                'n_estimators': 500,
+                'learning_rate': 0.05,
+                'max_depth': 6,
+                'subsample': 0.8,
+                'colsample_bytree': 0.8,
+                'gamma': 0.1,
+                'reg_alpha': 0.1,
+                'reg_lambda': 1.0,
+                'random_state': 42,
+                'n_jobs': -1,
+            }
+
+        # Split for validation
+        val_frac = 0.2
+        split_idx = int(len(X_train) * (1 - val_frac))
+        X_tr = X_train.iloc[:split_idx]
+        y_tr = y_train.iloc[:split_idx]
+        X_val = X_train.iloc[split_idx:]
+        y_val = y_train.iloc[split_idx:]
+
+        def objective(trial):
+            import xgboost as xgb
+
+            params = {
+                'objective': 'reg:squarederror',
+                'n_estimators': trial.suggest_int('n_estimators', 200, 1000),
+                'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.2, log=True),
+                'max_depth': trial.suggest_int('max_depth', 3, 10),
+                'subsample': trial.suggest_float('subsample', 0.6, 1.0),
+                'colsample_bytree': trial.suggest_float('colsample_bytree', 0.6, 1.0),
+                'gamma': trial.suggest_float('gamma', 0.0, 1.0),
+                'reg_alpha': trial.suggest_float('reg_alpha', 0.0, 2.0),
+                'reg_lambda': trial.suggest_float('reg_lambda', 0.0, 2.0),
+                'min_child_weight': trial.suggest_int('min_child_weight', 1, 20),
+                'random_state': 42,
+                'n_jobs': -1,
+            }
+
+            try:
+                model = xgb.XGBRegressor(**params)
+                model.fit(X_tr, y_tr, eval_set=[(X_val, y_val)], verbose=False)
+                y_pred = model.predict(X_val)
+
+                # Objective: minimize RMSE
+                from sklearn.metrics import mean_squared_error
+                rmse = np.sqrt(mean_squared_error(y_val, y_pred))
+
+                return rmse
+
+            except Exception as e:
+                tprint_warning(f"HPO trial failed: {e}")
+                return float('inf')
+
+        # Create and run study
+        n_trials = int(config.get("smc_xgb_hpo_trials", 30))
+        sampler = TPESampler(seed=42)
+        study = optuna.create_study(direction='minimize', sampler=sampler)
+
+        study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
+
+        tprint_info(f"HPO completed: best RMSE={study.best_value:.4f}")
+
+        best_params = study.best_params
+        best_params.update({
+            'objective': 'reg:squarederror',
+            'random_state': 42,
+            'n_jobs': -1,
+        })
+
+        return best_params
+
     def _calibrate_conformal_prediction(
         self,
         model,
@@ -902,9 +1076,9 @@ class MLSMCRegimeStep(BaseStep):
         X_test: pd.DataFrame,
         y_test: pd.Series,
     ) -> Optional[Dict[str, Any]]:
-        """Perform conformal prediction calibration."""
+        """Perform conformal prediction calibration with extended confidence levels."""
         try:
-            # Split training data into proper train and calibration sets
+            # Split training data
             cal_frac = 0.2
             split_idx = int(len(X_train) * (1 - cal_frac))
 
@@ -913,15 +1087,15 @@ class MLSMCRegimeStep(BaseStep):
             X_cal = X_train.iloc[split_idx:]
             y_cal = y_train.iloc[split_idx:]
 
-            # Retrain model on proper training set
+            # Retrain on proper training set
             model.fit(X_proper_train, y_proper_train, verbose=False)
 
-            # Calculate non-conformity scores on calibration set
+            # Calculate non-conformity scores
             y_cal_pred = model.predict(X_cal)
             nonconformity_scores = np.abs(y_cal - y_cal_pred)
 
-            # Calculate quantiles for different confidence levels
-            confidence_levels = [0.50, 0.80, 0.90, 0.95, 0.99]
+            # Extended confidence levels: 50, 60, 70, 80, 90, 95, 99
+            confidence_levels = [0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99]
             quantiles = {}
 
             for alpha in confidence_levels:
@@ -930,16 +1104,15 @@ class MLSMCRegimeStep(BaseStep):
 
             tprint_info(f"Conformal prediction quantiles: {quantiles}")
 
-            # Calculate prediction intervals for all data
+            # Calculate confidence scores for all data
             all_X = pd.concat([X_train, X_test])
             all_preds = model.predict(all_X)
 
             confidence_scores = {}
             for level, q in quantiles.items():
-                # Normalized confidence: how much margin we have
-                # Higher is better (prediction is far from boundary)
-                conf_score = q / (np.abs(all_preds - 0.5) + 1e-9)
-                confidence_scores[level] = conf_score.clip(0.0, 10.0)
+                # Normalized confidence score
+                conf_score = q / (np.abs(all_preds - 0.5) + q + 1e-9)
+                confidence_scores[level] = conf_score.clip(0.0, 1.0)
 
             return {
                 "calibration": {
@@ -949,7 +1122,7 @@ class MLSMCRegimeStep(BaseStep):
                 "confidence_scores": confidence_scores,
                 "metrics": {
                     "conformal_quantile_50": quantiles["50%"],
-                    "conformal_quantile_80": quantiles["80%"],
+                    "conformal_quantile_70": quantiles["70%"],
                     "conformal_quantile_90": quantiles["90%"],
                 },
             }
@@ -964,88 +1137,48 @@ class MLSMCRegimeStep(BaseStep):
         model,
         X: pd.DataFrame,
         y: pd.Series,
+        forward_returns: pd.Series,
         feature_cols: List[str],
         calibration_results: Optional[Dict[str, Any]],
         symbol: str,
         exchange: str,
         regime_timeframe: str,
+        train_rmse: float,
+        test_rmse: float,
+        train_r2: float,
+        test_r2: float,
+        train_brier: float,
+        test_brier: float,
     ) -> List[str]:
-        """Generate comprehensive reports (MD/CSV with WCoV, correlations, F1, etc.)."""
+        """Generate consolidated comprehensive reports."""
         artifacts = []
 
         out_dir = Path("outcomes")
         out_dir.mkdir(exist_ok=True)
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-        # 1. Feature importance report
-        feature_importance = model.feature_importances_
-        importance_df = pd.DataFrame({
-            "feature": feature_cols,
-            "importance": feature_importance,
-        }).sort_values("importance", ascending=False)
-
-        importance_csv = out_dir / f"smc_feature_importance_{symbol}_{regime_timeframe}_{ts}.csv"
-        importance_df.to_csv(importance_csv, index=False)
-        artifacts.append(str(importance_csv))
-
-        # 2. Correlation with forward returns
+        # Predictions
         y_pred = model.predict(X)
 
-        # Calculate actual forward returns for correlation
-        df_aligned = df.loc[X.index]
-        forward_returns = (df_aligned["close"].shift(-16) / df_aligned["close"] - 1)
+        # 1. CONSOLIDATED CSV: Feature importance + correlations
+        feature_importance = model.feature_importances_
 
-        corr_with_target = {}
-        for feat in feature_cols[:30]:  # Top 30 features
-            if feat in X.columns:
-                try:
-                    corr = X[feat].corr(y)
-                    corr_with_target[feat] = float(corr) if not np.isnan(corr) else 0.0
-                except Exception:
-                    corr_with_target[feat] = 0.0
+        feature_data = []
+        for i, feat in enumerate(feature_cols):
+            corr = X[feat].corr(y) if feat in X.columns else 0.0
+            feature_data.append({
+                "feature": feat,
+                "importance": float(feature_importance[i]) if i < len(feature_importance) else 0.0,
+                "correlation_with_target": float(corr) if not np.isnan(corr) else 0.0,
+            })
 
-        corr_df = pd.DataFrame({
-            "feature": list(corr_with_target.keys()),
-            "correlation_with_target": list(corr_with_target.values()),
-        }).sort_values("correlation_with_target", key=abs, ascending=False)
+        features_df = pd.DataFrame(feature_data).sort_values("importance", ascending=False)
 
-        corr_csv = out_dir / f"smc_feature_correlations_{symbol}_{regime_timeframe}_{ts}.csv"
-        corr_df.to_csv(corr_csv, index=False)
-        artifacts.append(str(corr_csv))
+        features_csv = out_dir / f"smc_features_analysis_{symbol}_{regime_timeframe}_{ts}.csv"
+        features_df.to_csv(features_csv, index=False)
+        artifacts.append(str(features_csv))
 
-        # 3. Prediction distribution analysis
-        prediction_bins = np.linspace(y.min(), y.max(), 20)
-        pred_hist, pred_edges = np.histogram(y_pred, bins=prediction_bins)
-        actual_hist, _ = np.histogram(y, bins=prediction_bins)
-
-        dist_df = pd.DataFrame({
-            "bin_center": (pred_edges[:-1] + pred_edges[1:]) / 2,
-            "predicted_count": pred_hist,
-            "actual_count": actual_hist,
-        })
-
-        dist_csv = out_dir / f"smc_prediction_distribution_{symbol}_{regime_timeframe}_{ts}.csv"
-        dist_df.to_csv(dist_csv, index=False)
-        artifacts.append(str(dist_csv))
-
-        # 4. Confidence analysis at different levels
-        if calibration_results:
-            conf_data = []
-            for level, scores in calibration_results["confidence_scores"].items():
-                mean_conf = np.mean(scores)
-                std_conf = np.std(scores)
-                conf_data.append({
-                    "confidence_level": level,
-                    "mean_score": float(mean_conf),
-                    "std_score": float(std_conf),
-                })
-
-            conf_df = pd.DataFrame(conf_data)
-            conf_csv = out_dir / f"smc_confidence_analysis_{symbol}_{regime_timeframe}_{ts}.csv"
-            conf_df.to_csv(conf_csv, index=False)
-            artifacts.append(str(conf_csv))
-
-        # 5. Comprehensive Markdown report
+        # 2. COMPREHENSIVE MARKDOWN REPORT with integrated distributions
         md_lines = []
         md_lines.append("# SMC XGBoost Model Report")
         md_lines.append("")
@@ -1055,61 +1188,85 @@ class MLSMCRegimeStep(BaseStep):
         md_lines.append(f"- **Generated**: {ts}")
         md_lines.append("")
 
+        # Model Performance
         md_lines.append("## Model Performance")
         md_lines.append("")
-        md_lines.append("| Metric | Value |")
-        md_lines.append("| --- | --- |")
-
-        from sklearn.metrics import mean_squared_error, r2_score
-        rmse = np.sqrt(mean_squared_error(y, y_pred))
-        r2 = r2_score(y, y_pred)
-        md_lines.append(f"| RMSE | {rmse:.4f} |")
-        md_lines.append(f"| R² Score | {r2:.4f} |")
-        md_lines.append(f"| Samples | {len(y)} |")
-        md_lines.append(f"| Features | {len(feature_cols)} |")
+        md_lines.append("| Metric | Train | Test |")
+        md_lines.append("| --- | --- | --- |")
+        md_lines.append(f"| RMSE | {train_rmse:.4f} | {test_rmse:.4f} |")
+        md_lines.append(f"| R² Score | {train_r2:.4f} | {test_r2:.4f} |")
+        md_lines.append(f"| Brier Score | {train_brier:.4f} | {test_brier:.4f} |")
+        md_lines.append(f"| Samples | {int(len(y) * 0.8)} | {int(len(y) * 0.2)} |")
+        md_lines.append(f"| Features | {len(feature_cols)} | {len(feature_cols)} |")
         md_lines.append("")
 
+        # Mean returns by signal
+        breakout_pred = y_pred > 1.0
+        breakdown_pred = y_pred < 0.0
+        if breakout_pred.sum() > 0:
+            mean_ret_breakout = forward_returns[breakout_pred].mean()
+            md_lines.append(f"**Mean Return (Breakout Signals)**: {mean_ret_breakout:.4f} ({breakout_pred.sum()} signals)")
+        if breakdown_pred.sum() > 0:
+            mean_ret_breakdown = forward_returns[breakdown_pred].mean()
+            md_lines.append(f"**Mean Return (Breakdown Signals)**: {mean_ret_breakdown:.4f} ({breakdown_pred.sum()} signals)")
+        md_lines.append("")
+
+        # Top features
         md_lines.append("## Top 15 Features by Importance")
         md_lines.append("")
-        md_lines.append("| Rank | Feature | Importance |")
-        md_lines.append("| --- | --- | --- |")
-        for i, row in importance_df.head(15).iterrows():
-            md_lines.append(f"| {i+1} | {row['feature']} | {row['importance']:.4f} |")
+        md_lines.append("| Rank | Feature | Importance | Correlation |")
+        md_lines.append("| --- | --- | --- | --- |")
+        for i, row in features_df.head(15).iterrows():
+            md_lines.append(f"| {i+1} | {row['feature']} | {row['importance']:.4f} | {row['correlation_with_target']:.4f} |")
         md_lines.append("")
 
-        md_lines.append("## Feature Correlations with Target (Top 15)")
-        md_lines.append("")
-        md_lines.append("| Rank | Feature | Correlation |")
-        md_lines.append("| --- | --- | --- |")
-        for i, row in corr_df.head(15).iterrows():
-            md_lines.append(f"| {i+1} | {row['feature']} | {row['correlation_with_target']:.4f} |")
-        md_lines.append("")
-
+        # Conformal prediction
         if calibration_results:
             md_lines.append("## Conformal Prediction Calibration")
+            md_lines.append("")
+            md_lines.append("Prediction intervals for uncertainty quantification:")
             md_lines.append("")
             md_lines.append("| Confidence Level | Quantile |")
             md_lines.append("| --- | --- |")
             for level, q in calibration_results["calibration"]["quantiles"].items():
-                md_lines.append(f"| {level} | {q:.4f} |")
+                md_lines.append(f"| {level} | ±{q:.4f} |")
             md_lines.append("")
 
-        md_lines.append("## Prediction Statistics")
+        # Prediction distribution (integrated)
+        md_lines.append("## Prediction Distribution Analysis")
         md_lines.append("")
         md_lines.append("| Statistic | Predicted | Actual |")
         md_lines.append("| --- | --- | --- |")
         md_lines.append(f"| Mean | {y_pred.mean():.4f} | {y.mean():.4f} |")
         md_lines.append(f"| Std | {y_pred.std():.4f} | {y.std():.4f} |")
         md_lines.append(f"| Min | {y_pred.min():.4f} | {y.min():.4f} |")
+        md_lines.append(f"| 25th Percentile | {np.percentile(y_pred, 25):.4f} | {np.percentile(y, 25):.4f} |")
+        md_lines.append(f"| Median | {np.median(y_pred):.4f} | {np.median(y):.4f} |")
+        md_lines.append(f"| 75th Percentile | {np.percentile(y_pred, 75):.4f} | {np.percentile(y, 75):.4f} |")
         md_lines.append(f"| Max | {y_pred.max():.4f} | {y.max():.4f} |")
         md_lines.append("")
 
         # Directional accuracy
-        breakout_pred = y_pred > 1.0
         breakout_actual = y > 1.0
+        breakdown_actual = y < 0.0
         if breakout_pred.sum() > 0:
             breakout_acc = (breakout_actual[breakout_pred]).mean()
-            md_lines.append(f"**Breakout Prediction Accuracy** (when model predicts > 1.0): {breakout_acc:.2%}")
+            md_lines.append(f"**Breakout Prediction Accuracy**: {breakout_acc:.2%} ({breakout_pred.sum()} predictions)")
+        if breakdown_pred.sum() > 0:
+            breakdown_acc = (breakdown_actual[breakdown_pred]).mean()
+            md_lines.append(f"**Breakdown Prediction Accuracy**: {breakdown_acc:.2%} ({breakdown_pred.sum()} predictions)")
+        md_lines.append("")
+
+        # Confidence analysis (integrated)
+        if calibration_results:
+            md_lines.append("## Confidence Score Analysis")
+            md_lines.append("")
+            md_lines.append("| Confidence Level | Mean Score | Std Score |")
+            md_lines.append("| --- | --- | --- |")
+            for level, scores in calibration_results["confidence_scores"].items():
+                mean_conf = np.mean(scores)
+                std_conf = np.std(scores)
+                md_lines.append(f"| {level} | {mean_conf:.4f} | {std_conf:.4f} |")
             md_lines.append("")
 
         md_path = out_dir / f"smc_xgb_report_{symbol}_{regime_timeframe}_{ts}.md"

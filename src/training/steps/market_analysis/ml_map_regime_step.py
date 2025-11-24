@@ -279,12 +279,14 @@ class MLMapRegimeStep(BaseStep):
         v = result["volume"].astype(float)
 
         # ------------------------------------------------------------------
-        # Core price/volatility features (1h returns, ATR, wick ratios)
+        # Core price/volatility features (ATR, wick ratios)
+        # Note: Forward returns removed - replaced with WCoV targets
         # ------------------------------------------------------------------
         if profiling is not None:
             t0 = time.perf_counter()
 
-        result["returns_1h"] = np.log(c / c.shift(4))
+        # Removed: result["returns_1h"] = np.log(c / c.shift(4))
+        # Replaced with WCoV targets in _generate_wcov_targets()
 
         tr1 = h - l
         tr2 = (h - c.shift(1)).abs()
@@ -518,6 +520,13 @@ class MLMapRegimeStep(BaseStep):
 
         if profiling is not None:
             profiling["map_profile_groupby_vwap_s"] = time.perf_counter() - t2
+
+        # Generate WCoV targets for regime evaluation (replaces forward returns)
+        if bool(config.get("map_generate_wcov_targets", True)):
+            try:
+                result = self._generate_wcov_targets(result, config)
+            except Exception as wcov_exc:
+                tprint_warning(f"WCoV target generation failed: {wcov_exc}, continuing without WCoV targets")
 
         return result
 
@@ -793,70 +802,28 @@ class MLMapRegimeStep(BaseStep):
             tr = (df["high"] - df["low"]).abs()
             atr = tr.rolling(window=14).mean()
 
-        horizon = int(config.get("map_xgb_target_horizon_bars", 4))
-        if horizon <= 0 or horizon >= len(c):
-            tprint_warning(
-                f"Map XGB: invalid target horizon (horizon={horizon}, len={len(c)})"
-            )
-            metrics["map_xgb_early_exit_reason"] = "invalid_horizon"
+        # Use WCoV targets instead of forward returns
+        # Primary target: path shape labels (0=range, 1=trend, 2=reversal)
+        if "target_path_shape" not in df.columns:
+            tprint_warning("Map XGB: WCoV target 'target_path_shape' not found; ensure map_generate_wcov_targets=True")
+            metrics["map_xgb_early_exit_reason"] = "missing_wcov_targets"
             return metrics, artifacts
 
-        fwd_log_ret = np.log(c.shift(-horizon) / c)
+        y = df["target_path_shape"].to_numpy().astype(int)
 
-        use_adx_direction = bool(config.get("map_xgb_use_adx_direction", False))
+        # Validate path shape labels
+        unique_labels = np.unique(y[y >= 0])
+        if len(unique_labels) < 2:
+            tprint_warning(
+                f"Map XGB: insufficient path shape label diversity (unique_labels={unique_labels})"
+            )
+            metrics["map_xgb_early_exit_reason"] = "insufficient_path_shape_diversity"
+            return metrics, artifacts
 
-        if use_adx_direction:
-            # Resolve ADX column to use
-            adx_col_cfg = str(config.get("map_xgb_adx_column", "")).strip()
-            adx_col = adx_col_cfg if adx_col_cfg else ""
-
-            if not adx_col:
-                tf = str(config.get("regime_timeframe", config.get("timeframe", "")))
-                if tf:
-                    candidate = f"adx_{tf}"
-                    if candidate in df.columns:
-                        adx_col = candidate
-
-            if not adx_col:
-                # Fallback: first adx_* column if any
-                for col in df.columns:
-                    if col.startswith("adx_"):
-                        adx_col = col
-                        break
-
-            if adx_col and adx_col in df.columns:
-                adx = df[adx_col].astype(float)
-                adx_thr = float(config.get("map_xgb_adx_trend_threshold", 20.0))
-                ret_thr = float(config.get("map_xgb_label_threshold_ret", 0.0))
-
-                y = np.full(len(df), -1, dtype=int)
-                directional_mask = (adx >= adx_thr) & np.isfinite(fwd_log_ret)
-                y[directional_mask & (fwd_log_ret > ret_thr)] = 2
-                y[directional_mask & (fwd_log_ret < -ret_thr)] = 0
-
-                neutral_mask = (y == -1) & np.isfinite(fwd_log_ret)
-                y[neutral_mask] = 1
-
-                tprint_info(
-                    "Map XGB: using ADX-based directional labeling "
-                    f"(horizon={horizon}, adx_col='{adx_col}', adx_thr={adx_thr}, ret_thr={ret_thr})"
-                )
-            else:
-                tprint_warning(
-                    "Map XGB: map_xgb_use_adx_direction=True but no suitable ADX column "
-                    "found; falling back to ATR-based labeling"
-                )
-                use_adx_direction = False
-
-        if not use_adx_direction:
-            fwd_norm = fwd_log_ret / (atr + 1e-9)
-            threshold = float(config.get("map_xgb_label_threshold_atr", 0.3))
-
-            y = np.full(len(df), -1, dtype=int)
-            y[fwd_norm > threshold] = 2
-            y[fwd_norm < -threshold] = 0
-            neutral_mask = (np.abs(fwd_norm) <= threshold) & np.isfinite(fwd_norm)
-            y[neutral_mask] = 1
+        tprint_info(
+            f"Map XGB: using WCoV path shape target "
+            f"(labels: 0=range, 1=trend, 2=reversal, distribution={np.bincount(y[y >= 0])})"
+        )
 
         valid_mask = y >= 0
         min_samples = int(config.get("map_xgb_min_samples", 800))
@@ -1010,22 +977,35 @@ class MLMapRegimeStep(BaseStep):
             "map_pdh_pdl_position",
         ]
         core_cols = [c for c in core_cols if c in df_clean.columns]
-        if len(core_cols) < 2 or "returns_1h" not in df_clean.columns:
+
+        # Check for WCoV targets (replaced forward returns)
+        wcov_target_cols = [
+            "target_realized_volatility",
+            "target_hit_up_barrier",
+            "target_hit_down_barrier",
+            "target_exceeded_drawdown",
+            "target_path_is_range",
+            "target_path_is_trend",
+            "target_path_is_reversal",
+        ]
+        available_wcov_targets = [c for c in wcov_target_cols if c in df_clean.columns]
+
+        if len(core_cols) < 2 or len(available_wcov_targets) == 0:
             tprint_warning(
-                f"Map XGB: missing core features or returns_1h for WCoV objective "
-                f"(n_core={len(core_cols)}, has_returns={bool('returns_1h' in df_clean.columns)})"
+                f"Map XGB: missing core features or WCoV targets for objective "
+                f"(n_core={len(core_cols)}, n_wcov_targets={len(available_wcov_targets)})"
             )
             metrics["map_xgb_early_exit_reason"] = (
-                f"missing_core_features_n_core_{len(core_cols)}_"
-                f"has_returns_{bool('returns_1h' in df_clean.columns)}"
+                f"missing_core_features_or_wcov_targets_n_core_{len(core_cols)}_"
+                f"n_wcov_{len(available_wcov_targets)}"
             )
             return metrics, artifacts
 
         core_df_all = df_clean[core_cols].astype(float)
-        ret_all = df_clean["returns_1h"].astype(float)
+        wcov_targets_all = df_clean[available_wcov_targets].astype(float)
         val_index = X_val.index
         core_val = core_df_all.loc[val_index]
-        ret_val = ret_all.loc[val_index]
+        wcov_targets_val = wcov_targets_all.loc[val_index]
 
         n_classes = 3
         base_params = {
@@ -1131,15 +1111,7 @@ class MLMapRegimeStep(BaseStep):
                                     else:
                                         core_between = core_within = 0.0
 
-                                    # Returns WCoV remains scalar
-                                    ret_between = self._calculate_winsorized_cv_between(
-                                        labels_arr,
-                                        ret_val,
-                                    )
-                                    ret_within = self._calculate_winsorized_cv_within(
-                                        labels_arr,
-                                        ret_val,
-                                    )
+                                    # Note: WCoV targets computed below in the wcov_target_terms loop
                                 except Exception as wcov_exc:
                                     tprint_warning(
                                         f"Map XGB: WCoV computation failed in HPO trial: {wcov_exc}"
@@ -1147,7 +1119,6 @@ class MLMapRegimeStep(BaseStep):
                                     core_between_list = []
                                     core_within_list = []
                                     core_between = core_within = 0.0
-                                    ret_between = ret_within = 0.0
 
                                 try:
                                     # Aggregate per-feature WCoV contributions with log transforms
@@ -1167,15 +1138,34 @@ class MLMapRegimeStep(BaseStep):
                                     else:
                                         core_term = 0.0
 
-                                    # Returns term (single feature) with log-style transform
-                                    ret_between_clipped = max(float(ret_between), 0.0)
-                                    ret_between_log = float(np.log1p(ret_between_clipped))
-                                    ret_inv_within = 1.0 / (float(ret_within) + 1e-8)
-                                    ret_inv_within_clipped = max(ret_inv_within, 0.0)
-                                    ret_within_reverse_log = float(np.log1p(ret_inv_within_clipped))
-                                    ret_term = ret_between_log + ret_within_reverse_log
+                                    # WCoV targets term (multiple targets) with log-style transform
+                                    wcov_target_terms: List[float] = []
+                                    for wcov_col in wcov_targets_val.columns:
+                                        wcov_series = wcov_targets_val[wcov_col].astype(float)
+                                        wcov_between = self._calculate_winsorized_cv_between(
+                                            labels_arr,
+                                            wcov_series,
+                                        )
+                                        wcov_within = self._calculate_winsorized_cv_within(
+                                            labels_arr,
+                                            wcov_series,
+                                        )
+                                        wcov_between_clipped = max(float(wcov_between), 0.0)
+                                        wcov_between_log = float(np.log1p(wcov_between_clipped))
+                                        wcov_inv_within = 1.0 / (float(wcov_within) + 1e-8)
+                                        wcov_inv_within_clipped = max(wcov_inv_within, 0.0)
+                                        wcov_within_reverse_log = float(np.log1p(wcov_inv_within_clipped))
+                                        wcov_target_term = wcov_between_log + wcov_within_reverse_log
+                                        wcov_target_terms.append(wcov_target_term)
 
-                                    wcov_term = core_term + 0.5 * ret_term
+                                    # Average across all WCoV targets
+                                    if wcov_target_terms:
+                                        wcov_targets_term = float(np.mean(wcov_target_terms))
+                                    else:
+                                        wcov_targets_term = 0.0
+
+                                    # Combined WCoV objective: core features + WCoV targets
+                                    wcov_term = core_term + 0.5 * wcov_targets_term
                                     ratio_cap = float(config.get("map_xgb_wcov_ratio_cap", 10.0))
                                     wcov_term_capped = float(min(wcov_term, ratio_cap))
                                 except Exception as obj_exc:
@@ -1188,8 +1178,7 @@ class MLMapRegimeStep(BaseStep):
                                     tprint_warning(
                                         "Map XGB: non-finite WCoV objective in HPO trial "
                                         f"(core_between={core_between}, core_within={core_within}, "
-                                        f"ret_between={ret_between}, ret_within={ret_within}, "
-                                        f"wcov_term={wcov_term_capped})"
+                                        f"wcov_targets_term={wcov_targets_term}, wcov_term={wcov_term_capped})"
                                     )
                                     wcov_term_capped = 0.0
 
@@ -1308,7 +1297,7 @@ class MLMapRegimeStep(BaseStep):
                 best_prune_score, _, _, _ = self._compute_xgb_wcov_objective(
                     base_labels,
                     core_val,
-                    ret_val,
+                    wcov_targets_val,
                     config,
                 )
 
@@ -1365,7 +1354,7 @@ class MLMapRegimeStep(BaseStep):
                             trial_score, _, _, _ = self._compute_xgb_wcov_objective(
                                 trial_labels,
                                 core_val,
-                                ret_val,
+                                wcov_targets_val,
                                 config,
                             )
                         except Exception:
@@ -1422,7 +1411,7 @@ class MLMapRegimeStep(BaseStep):
         val_acc = float((val_pred == y_val_full).mean())
 
         core_full = df_clean[core_cols].astype(float).loc[X_val_full.index]
-        ret_full = df_clean["returns_1h"].astype(float).loc[X_val_full.index]
+        wcov_targets_full = wcov_targets_all.loc[X_val_full.index]
 
         try:
             core_between_full = self._calculate_winsorized_cv_between(
@@ -1435,18 +1424,27 @@ class MLMapRegimeStep(BaseStep):
             )
             core_ratio_full = core_between_full / (core_within_full + 1e-8)
 
-            ret_between_full = self._calculate_winsorized_cv_between(
-                val_pred.astype(int),
-                ret_full,
-            )
-            ret_within_full = self._calculate_winsorized_cv_within(
-                val_pred.astype(int),
-                ret_full,
-            )
-            ret_ratio_full = ret_between_full / (ret_within_full + 1e-8)
+            # Calculate WCoV metrics for each target
+            wcov_target_metrics: Dict[str, Dict[str, float]] = {}
+            for wcov_col in wcov_targets_full.columns:
+                wcov_series = wcov_targets_full[wcov_col].astype(float)
+                wcov_between = self._calculate_winsorized_cv_between(
+                    val_pred.astype(int),
+                    wcov_series,
+                )
+                wcov_within = self._calculate_winsorized_cv_within(
+                    val_pred.astype(int),
+                    wcov_series,
+                )
+                wcov_ratio = wcov_between / (wcov_within + 1e-8)
+                wcov_target_metrics[wcov_col] = {
+                    "between": float(wcov_between),
+                    "within": float(wcov_within),
+                    "ratio": float(wcov_ratio),
+                }
         except Exception:
             core_between_full = core_within_full = core_ratio_full = 0.0
-            ret_between_full = ret_within_full = ret_ratio_full = 0.0
+            wcov_target_metrics = {}
 
         metrics["map_xgb_hpo_best_score"] = float(best_score)
         metrics["map_xgb_val_accuracy"] = float(val_acc)
@@ -1456,9 +1454,14 @@ class MLMapRegimeStep(BaseStep):
         metrics["map_xgb_core_wcov_between"] = float(core_between_full)
         metrics["map_xgb_core_wcov_within"] = float(core_within_full)
         metrics["map_xgb_core_wcov_ratio"] = float(core_ratio_full)
-        metrics["map_xgb_returns_wcov_between"] = float(ret_between_full)
-        metrics["map_xgb_returns_wcov_within"] = float(ret_within_full)
-        metrics["map_xgb_returns_wcov_ratio"] = float(ret_ratio_full)
+
+        # Add WCoV metrics for each target
+        for wcov_col, wcov_metrics in wcov_target_metrics.items():
+            # Sanitize column name for metric key (replace special chars)
+            metric_key = wcov_col.replace("target_", "").replace("_", "")
+            metrics[f"map_xgb_{metric_key}_wcov_between"] = wcov_metrics["between"]
+            metrics[f"map_xgb_{metric_key}_wcov_within"] = wcov_metrics["within"]
+            metrics[f"map_xgb_{metric_key}_wcov_ratio"] = wcov_metrics["ratio"]
 
         metrics["map_xgb_best_max_depth"] = int(best_params.get("max_depth", 0))
         metrics["map_xgb_best_learning_rate"] = float(best_params.get("learning_rate", 0.0))
@@ -1548,7 +1551,7 @@ class MLMapRegimeStep(BaseStep):
         self,
         labels_arr: np.ndarray,
         core_val: pd.DataFrame,
-        ret_val: pd.Series,
+        wcov_targets_val: pd.DataFrame,
         config: Dict[str, Any],
     ) -> Tuple[float, float, float, float]:
         score = 0.0
@@ -1575,14 +1578,7 @@ class MLMapRegimeStep(BaseStep):
             else:
                 core_between = core_within = 0.0
 
-            ret_between = self._calculate_winsorized_cv_between(
-                labels_arr,
-                ret_val,
-            )
-            ret_within = self._calculate_winsorized_cv_within(
-                labels_arr,
-                ret_val,
-            )
+            # Note: WCoV targets computed below instead of single returns value
         except Exception as wcov_exc:
             tprint_warning(
                 f"Map XGB: WCoV computation failed in objective evaluation: {wcov_exc}"
@@ -1590,7 +1586,6 @@ class MLMapRegimeStep(BaseStep):
             core_between_list = []
             core_within_list = []
             core_between = core_within = 0.0
-            ret_between = ret_within = 0.0
 
         try:
             core_terms: List[float] = []
@@ -1609,14 +1604,34 @@ class MLMapRegimeStep(BaseStep):
             else:
                 core_term = 0.0
 
-            ret_between_clipped = max(float(ret_between), 0.0)
-            ret_between_log = float(np.log1p(ret_between_clipped))
-            ret_inv_within = 1.0 / (float(ret_within) + 1e-8)
-            ret_inv_within_clipped = max(ret_inv_within, 0.0)
-            ret_within_reverse_log = float(np.log1p(ret_inv_within_clipped))
-            ret_term = ret_between_log + ret_within_reverse_log
+            # WCoV targets term (multiple targets) with log-style transform
+            wcov_target_terms: List[float] = []
+            for wcov_col in wcov_targets_val.columns:
+                wcov_series = wcov_targets_val[wcov_col].astype(float)
+                wcov_between = self._calculate_winsorized_cv_between(
+                    labels_arr,
+                    wcov_series,
+                )
+                wcov_within = self._calculate_winsorized_cv_within(
+                    labels_arr,
+                    wcov_series,
+                )
+                wcov_between_clipped = max(float(wcov_between), 0.0)
+                wcov_between_log = float(np.log1p(wcov_between_clipped))
+                wcov_inv_within = 1.0 / (float(wcov_within) + 1e-8)
+                wcov_inv_within_clipped = max(wcov_inv_within, 0.0)
+                wcov_within_reverse_log = float(np.log1p(wcov_inv_within_clipped))
+                wcov_target_term = wcov_between_log + wcov_within_reverse_log
+                wcov_target_terms.append(wcov_target_term)
 
-            wcov_term = core_term + 0.5 * ret_term
+            # Average across all WCoV targets
+            if wcov_target_terms:
+                wcov_targets_term = float(np.mean(wcov_target_terms))
+            else:
+                wcov_targets_term = 0.0
+
+            # Combined WCoV objective: core features + WCoV targets
+            wcov_term = core_term + 0.5 * wcov_targets_term
             ratio_cap = float(config.get("map_xgb_wcov_ratio_cap", 10.0))
             wcov_term_capped = float(min(wcov_term, ratio_cap))
         except Exception as obj_exc:
@@ -1629,8 +1644,7 @@ class MLMapRegimeStep(BaseStep):
             tprint_warning(
                 "Map XGB: non-finite WCoV objective in objective evaluation "
                 f"(core_between={core_between}, core_within={core_within}, "
-                f"ret_between={ret_between}, ret_within={ret_within}, "
-                f"wcov_term={wcov_term_capped})"
+                f"wcov_targets_term={wcov_targets_term}, wcov_term={wcov_term_capped})"
             )
             wcov_term_capped = 0.0
 
@@ -1808,6 +1822,267 @@ class MLMapRegimeStep(BaseStep):
         # Shapes of within_cvs_array and weights are now aligned (one CV per regime)
         weighted_cv = float(np.average(within_cvs_array, weights=weights))
         return float(weighted_cv)
+
+    def _generate_wcov_targets(
+        self,
+        df: pd.DataFrame,
+        config: Dict[str, Any],
+    ) -> pd.DataFrame:
+        """
+        Generate WCoV-oriented targets for regime evaluation.
+
+        Creates three types of targets:
+        1. Realized volatility (future volatility to explain)
+        2. Barrier-hit indicators (binary directional targets)
+        3. Path shape labels (categorical: trend/range/reversal)
+
+        Returns:
+            DataFrame with additional target columns
+        """
+        tprint_info("🎯 Generating WCoV targets for regime evaluation...")
+
+        result = df.copy()
+
+        # Extract OHLC and ATR
+        c = df["close"].astype(float)
+        h = df["high"].astype(float)
+        l = df["low"].astype(float)
+        atr = df["atr_14"].astype(float) if "atr_14" in df.columns else None
+
+        if atr is None:
+            tprint_warning("⚠️ ATR not found, calculating it for WCoV targets...")
+            tr1 = h - l
+            tr2 = (h - c.shift(1)).abs()
+            tr3 = (l - c.shift(1)).abs()
+            true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+            atr = true_range.rolling(window=14).mean()
+
+        # 1. Realized Volatility Target
+        result = self._add_realized_volatility_target(result, c, h, l, config)
+
+        # 2. Barrier-Hit Indicator Targets
+        result = self._add_barrier_hit_targets(result, c, h, l, atr, config)
+
+        # 3. Path Shape Label Targets
+        result = self._add_path_shape_targets(result, c, h, l, atr, config)
+
+        tprint_success("✅ WCoV targets generated successfully")
+        return result
+
+    def _add_realized_volatility_target(
+        self,
+        df: pd.DataFrame,
+        c: pd.Series,
+        h: pd.Series,
+        l: pd.Series,
+        config: Dict[str, Any],
+    ) -> pd.DataFrame:
+        """
+        Add realized volatility target: future volatility over next N bars.
+
+        This measures how much variance in future realized volatility is explained by regimes.
+        Uses Parkinson volatility estimator (high-low range) for robustness.
+        """
+        result = df.copy()
+
+        # Configuration
+        rvol_horizon = int(config.get("map_wcov_rvol_horizon", 12))  # 12 bars = 3h at 15m
+        rvol_window = int(config.get("map_wcov_rvol_window", 4))     # Rolling window for realized vol
+
+        # Calculate log returns
+        log_returns = np.log(c / c.shift(1))
+
+        # Parkinson volatility: more efficient than close-to-close
+        # vol = sqrt(1/(4*ln(2)) * (ln(H/L))^2)
+        hl_ratio = np.log(h / l)
+        parkinson_vol = np.sqrt(1.0 / (4.0 * np.log(2)) * hl_ratio ** 2)
+
+        # Forward realized volatility (target to predict)
+        fwd_realized_vol = parkinson_vol.shift(-rvol_horizon).rolling(window=rvol_window).mean()
+
+        result["target_realized_volatility"] = fwd_realized_vol
+
+        tprint_info(f"  📊 Realized volatility target: horizon={rvol_horizon}, window={rvol_window}")
+        return result
+
+    def _add_barrier_hit_targets(
+        self,
+        df: pd.DataFrame,
+        c: pd.Series,
+        h: pd.Series,
+        l: pd.Series,
+        atr: pd.Series,
+        config: Dict[str, Any],
+    ) -> pd.DataFrame:
+        """
+        Add barrier-hit indicator targets: binary targets for directional moves.
+
+        Creates three binary targets:
+        - target_hit_up_barrier: Hit +k·ATR before hitting -k·ATR
+        - target_hit_down_barrier: Hit -k·ATR before hitting +k·ATR
+        - target_exceeded_drawdown: Experienced >x% drawdown from entry
+        """
+        result = df.copy()
+
+        # Configuration
+        barrier_k = float(config.get("map_wcov_barrier_atr_multiple", 1.5))  # 1.5x ATR barriers
+        barrier_horizon = int(config.get("map_wcov_barrier_horizon", 16))    # 16 bars = 4h at 15m
+        drawdown_threshold = float(config.get("map_wcov_drawdown_threshold", 0.02))  # 2% drawdown
+
+        n = len(df)
+        hit_up_first = np.full(n, np.nan, dtype=float)
+        hit_down_first = np.full(n, np.nan, dtype=float)
+        exceeded_drawdown = np.full(n, np.nan, dtype=float)
+
+        # Vectorized calculation for each entry point
+        for i in range(n - barrier_horizon):
+            entry_price = c.iloc[i]
+            entry_atr = atr.iloc[i]
+
+            if not np.isfinite(entry_price) or not np.isfinite(entry_atr) or entry_atr <= 0:
+                continue
+
+            # Define barriers
+            up_barrier = entry_price + barrier_k * entry_atr
+            down_barrier = entry_price - barrier_k * entry_atr
+
+            # Look ahead over horizon
+            future_high = h.iloc[i+1:i+1+barrier_horizon]
+            future_low = l.iloc[i+1:i+1+barrier_horizon]
+            future_close = c.iloc[i+1:i+1+barrier_horizon]
+
+            if len(future_high) == 0:
+                continue
+
+            # Check which barrier hit first
+            up_hit_mask = future_high >= up_barrier
+            down_hit_mask = future_low <= down_barrier
+
+            if up_hit_mask.any():
+                up_hit_idx = up_hit_mask.idxmax() if up_hit_mask.any() else None
+            else:
+                up_hit_idx = None
+
+            if down_hit_mask.any():
+                down_hit_idx = down_hit_mask.idxmax() if down_hit_mask.any() else None
+            else:
+                down_hit_idx = None
+
+            # Determine which hit first
+            if up_hit_idx is not None and down_hit_idx is not None:
+                if future_high.index.get_loc(up_hit_idx) < future_low.index.get_loc(down_hit_idx):
+                    hit_up_first[i] = 1.0
+                    hit_down_first[i] = 0.0
+                else:
+                    hit_up_first[i] = 0.0
+                    hit_down_first[i] = 1.0
+            elif up_hit_idx is not None:
+                hit_up_first[i] = 1.0
+                hit_down_first[i] = 0.0
+            elif down_hit_idx is not None:
+                hit_up_first[i] = 0.0
+                hit_down_first[i] = 1.0
+            else:
+                # Neither barrier hit - neutral case
+                hit_up_first[i] = 0.0
+                hit_down_first[i] = 0.0
+
+            # Check for drawdown
+            running_min = (future_close - entry_price).cumsum().min()
+            max_drawdown = abs(running_min / entry_price) if entry_price != 0 else 0
+            exceeded_drawdown[i] = 1.0 if max_drawdown > drawdown_threshold else 0.0
+
+        result["target_hit_up_barrier"] = hit_up_first
+        result["target_hit_down_barrier"] = hit_down_first
+        result["target_exceeded_drawdown"] = exceeded_drawdown
+
+        tprint_info(f"  🎯 Barrier targets: k={barrier_k}, horizon={barrier_horizon}, drawdown_threshold={drawdown_threshold}")
+        return result
+
+    def _add_path_shape_targets(
+        self,
+        df: pd.DataFrame,
+        c: pd.Series,
+        h: pd.Series,
+        l: pd.Series,
+        atr: pd.Series,
+        config: Dict[str, Any],
+    ) -> pd.DataFrame:
+        """
+        Add path shape label targets: categorical labels for price path behavior.
+
+        Classifies future price paths into:
+        - 0: Range (low volatility, mean-reverting)
+        - 1: Trend (directional move with momentum)
+        - 2: Reversal (initial move followed by opposite move)
+        """
+        result = df.copy()
+
+        # Configuration
+        path_horizon = int(config.get("map_wcov_path_horizon", 12))  # 12 bars = 3h at 15m
+        trend_threshold = float(config.get("map_wcov_path_trend_threshold", 0.8))  # 0.8x ATR for trend
+        range_threshold = float(config.get("map_wcov_path_range_threshold", 0.3))  # 0.3x ATR for range
+
+        n = len(df)
+        path_labels = np.full(n, -1, dtype=int)  # -1 = undefined
+
+        for i in range(n - path_horizon):
+            entry_price = c.iloc[i]
+            entry_atr = atr.iloc[i]
+
+            if not np.isfinite(entry_price) or not np.isfinite(entry_atr) or entry_atr <= 0:
+                continue
+
+            # Look ahead over horizon
+            future_close = c.iloc[i+1:i+1+path_horizon]
+            future_high = h.iloc[i+1:i+1+path_horizon]
+            future_low = l.iloc[i+1:i+1+path_horizon]
+
+            if len(future_close) < path_horizon:
+                continue
+
+            # Calculate path metrics
+            final_price = future_close.iloc[-1]
+            net_move = final_price - entry_price
+            net_move_atr = net_move / entry_atr
+
+            # High-water and low-water marks
+            max_price = future_high.max()
+            min_price = future_low.min()
+            high_water_atr = (max_price - entry_price) / entry_atr
+            low_water_atr = (entry_price - min_price) / entry_atr
+
+            # Classify path shape
+            if abs(net_move_atr) < range_threshold and max(high_water_atr, low_water_atr) < range_threshold:
+                # Range: small net move and small excursions
+                path_labels[i] = 0
+            elif abs(net_move_atr) > trend_threshold:
+                # Check if it's a clean trend or a reversal
+                if net_move_atr > 0:  # Upward net move
+                    # Check if we had significant downward excursion (reversal pattern)
+                    if low_water_atr > trend_threshold * 0.5:
+                        path_labels[i] = 2  # Reversal
+                    else:
+                        path_labels[i] = 1  # Trend up
+                else:  # Downward net move
+                    # Check if we had significant upward excursion (reversal pattern)
+                    if high_water_atr > trend_threshold * 0.5:
+                        path_labels[i] = 2  # Reversal
+                    else:
+                        path_labels[i] = 1  # Trend down
+            else:
+                # Mixed behavior - default to range
+                path_labels[i] = 0
+
+        result["target_path_shape"] = path_labels
+
+        # Create one-hot encoded versions for easier WCoV calculation
+        result["target_path_is_range"] = (path_labels == 0).astype(float)
+        result["target_path_is_trend"] = (path_labels == 1).astype(float)
+        result["target_path_is_reversal"] = (path_labels == 2).astype(float)
+
+        tprint_info(f"  🛤️  Path shape targets: horizon={path_horizon}, trend_threshold={trend_threshold}, range_threshold={range_threshold}")
+        return result
 
     def _generate_map_regime_reports(
         self,

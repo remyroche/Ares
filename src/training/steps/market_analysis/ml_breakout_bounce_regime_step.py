@@ -135,7 +135,7 @@ class MLPathRegimeStep(BaseStep):
             symbol = str(config.get("symbol", "ETHUSDT"))
             exchange = str(config.get("exchange", "binance"))
             regime_timeframe = str(
-                config.get("regime_timeframe", config.get("timeframe", "1h"))
+                config.get("regime_timeframe", config.get("timeframe", "15m"))
             )
             direction = str(config.get("direction", "long"))
 
@@ -4635,7 +4635,7 @@ class MLPathRegimeStep(BaseStep):
         try:
             symbol = str(config.get("symbol", "UNKNOWN"))
             exchange = str(config.get("exchange", "UNKNOWN"))
-            regime_timeframe = str(config.get("regime_timeframe", config.get("timeframe", "1h")))
+            regime_timeframe = str(config.get("regime_timeframe", config.get("timeframe", "15m")))
 
             # Build compact summary row from training_metrics
             baseline = final_training_metrics.get("baseline_classifier", {}) or {}
@@ -7308,6 +7308,15 @@ class MLBreakoutBounceRegimeStep(BaseStep):
         forward_ret = (fwd_close / close_series) - 1.0
         analysis_df[f"forward_return_h{horizon}"] = forward_ret
 
+        # Split forward returns by support/resistance to improve WCoV ratio
+        if "is_resistance" in analysis_df.columns and "is_support" in analysis_df.columns:
+            is_resistance_mask = analysis_df["is_resistance"].astype(bool)
+            is_support_mask = analysis_df["is_support"].astype(bool)
+
+            # Create separate columns for resistance and support forward returns
+            analysis_df[f"forward_return_h{horizon}_resistance"] = forward_ret.where(is_resistance_mask, np.nan)
+            analysis_df[f"forward_return_h{horizon}_support"] = forward_ret.where(is_support_mask, np.nan)
+
         regime_series = analysis_df["breakout_regime"].astype(int)
 
         # Derive important features from the trained model (top-N by importance)
@@ -7445,8 +7454,14 @@ class MLBreakoutBounceRegimeStep(BaseStep):
                         }
                     )
 
-        # Forward return metric
+        # Forward return metrics - split by support/resistance for better WCoV ratio
         _accumulate_cv_rows("forward_return", analysis_df[f"forward_return_h{horizon}"])
+
+        # Add separate forward return metrics for resistance and support
+        if f"forward_return_h{horizon}_resistance" in analysis_df.columns:
+            _accumulate_cv_rows("forward_return_resistance", analysis_df[f"forward_return_h{horizon}_resistance"])
+        if f"forward_return_h{horizon}_support" in analysis_df.columns:
+            _accumulate_cv_rows("forward_return_support", analysis_df[f"forward_return_h{horizon}_support"])
 
         # Important feature metrics
         for feat_name in important_features:
@@ -7547,52 +7562,64 @@ class MLBreakoutBounceRegimeStep(BaseStep):
         )
 
         # Sharpe-like ratios for forward returns (per-regime and global)
+        # Include breakdown by support/resistance
         sharpe_rows: List[Dict[str, Any]] = []
-        ret_series = analysis_df[f"forward_return_h{horizon}"]
-        full_ret = pd.to_numeric(ret_series.dropna(), errors="coerce")
-        full_ret = full_ret[np.isfinite(full_ret)]
-        if not full_ret.empty:
-            mean_ret = float(full_ret.mean())
-            std_ret = float(full_ret.std(ddof=0))
-            sharpe_global = mean_ret / std_ret if std_ret > 0.0 else float("nan")
-        else:
-            mean_ret = float("nan")
-            std_ret = float("nan")
-            sharpe_global = float("nan")
 
-        sharpe_rows.append(
-            {
-                "scope": "global",
-                "regime": -1,
-                "mean_return": mean_ret,
-                "std_return": std_ret,
-                "sharpe_like": sharpe_global,
-            }
-        )
+        def _add_sharpe_rows(ret_col: str, side_label: str) -> None:
+            """Helper to compute sharpe metrics for a given return column and side label."""
+            if ret_col not in analysis_df.columns:
+                return
 
-        for reg_val, group in analysis_df.groupby(regime_series):
-            g_ret = pd.to_numeric(
-                group[f"forward_return_h{horizon}"].dropna(), errors="coerce"
-            )
-            g_ret = g_ret[np.isfinite(g_ret)]
-            if g_ret.empty:
-                r_mean = float("nan")
-                r_std = float("nan")
-                r_sharpe = float("nan")
+            ret_series = analysis_df[ret_col]
+            full_ret = pd.to_numeric(ret_series.dropna(), errors="coerce")
+            full_ret = full_ret[np.isfinite(full_ret)]
+            if not full_ret.empty:
+                mean_ret = float(full_ret.mean())
+                std_ret = float(full_ret.std(ddof=0))
+                sharpe_global = mean_ret / std_ret if std_ret > 0.0 else float("nan")
             else:
-                r_mean = float(g_ret.mean())
-                r_std = float(g_ret.std(ddof=0))
-                r_sharpe = r_mean / r_std if r_std > 0.0 else float("nan")
+                mean_ret = float("nan")
+                std_ret = float("nan")
+                sharpe_global = float("nan")
 
             sharpe_rows.append(
                 {
-                    "scope": "regime",
-                    "regime": int(reg_val),
-                    "mean_return": r_mean,
-                    "std_return": r_std,
-                    "sharpe_like": r_sharpe,
+                    "scope": "global",
+                    "side": side_label,
+                    "regime": -1,
+                    "mean_return": mean_ret,
+                    "std_return": std_ret,
+                    "sharpe_like": sharpe_global,
                 }
             )
+
+            for reg_val, group in analysis_df.groupby(regime_series):
+                g_ret = pd.to_numeric(group[ret_col].dropna(), errors="coerce")
+                g_ret = g_ret[np.isfinite(g_ret)]
+                if g_ret.empty:
+                    r_mean = float("nan")
+                    r_std = float("nan")
+                    r_sharpe = float("nan")
+                else:
+                    r_mean = float(g_ret.mean())
+                    r_std = float(g_ret.std(ddof=0))
+                    r_sharpe = r_mean / r_std if r_std > 0.0 else float("nan")
+
+                sharpe_rows.append(
+                    {
+                        "scope": "regime",
+                        "side": side_label,
+                        "regime": int(reg_val),
+                        "mean_return": r_mean,
+                        "std_return": r_std,
+                        "sharpe_like": r_sharpe,
+                    }
+                )
+
+        # Add sharpe metrics for overall, resistance, and support
+        _add_sharpe_rows(f"forward_return_h{horizon}", "all")
+        _add_sharpe_rows(f"forward_return_h{horizon}_resistance", "resistance")
+        _add_sharpe_rows(f"forward_return_h{horizon}_support", "support")
 
         sharpe_df = pd.DataFrame(sharpe_rows)
 
@@ -7699,39 +7726,58 @@ class MLBreakoutBounceRegimeStep(BaseStep):
                 except Exception:
                     pass
 
-            # Sharpe-like summary
+            # Sharpe-like summary with support/resistance breakdown
             lines.append("")
             lines.append("## Forward Return Sharpe-like Ratios")
-            lines.append("| Scope | Regime | Mean Return | Std Return | Sharpe-like |")
-            lines.append("|-------|--------|-------------|------------|-------------|")
+            lines.append("| Scope | Side | Regime | Mean Return | Std Return | Sharpe-like |")
+            lines.append("|-------|------|--------|-------------|------------|-------------|")
             for _, row in sharpe_df.iterrows():
                 scope = str(row.get("scope", ""))
+                side = str(row.get("side", "all"))
                 regime_val = int(row.get("regime", -1))
                 m_ret = row.get("mean_return", float("nan"))
                 s_ret = row.get("std_return", float("nan"))
                 s_ratio = row.get("sharpe_like", float("nan"))
                 lines.append(
-                    f"| {scope} | {regime_val} | {m_ret:.6f} | {s_ret:.6f} | {s_ratio:.4f} |"
+                    f"| {scope} | {side} | {regime_val} | {m_ret:.6f} | {s_ret:.6f} | {s_ratio:.4f} |"
                 )
 
-            # Per-regime summary (forward returns & edge scores)
+            # Per-regime summary (forward returns & edge scores) with support/resistance breakdown
             try:
                 lines.append("")
                 lines.append("## Per-Regime Summary (Forward Returns & Edge Scores)")
                 lines.append(
-                    "| Regime | Count | Mean Forward Return | Sharpe-like | "
+                    "| Regime | Side | Count | Mean Forward Return | Sharpe-like | "
                     "Mean Long Edge | Mean Short Edge | Mean Bullish Prob | Mean Bearish Prob |"
                 )
                 lines.append(
-                    "|--------|-------|---------------------|------------|"
+                    "|--------|------|-------|---------------------|------------|"
                     "---------------|----------------|-------------------|--------------------|"
                 )
-                sharpe_by_reg = {
-                    int(row["regime"]): row
-                    for _, row in sharpe_df[sharpe_df["scope"] == "regime"].iterrows()
-                }
+
+                # Build lookup for sharpe values by regime and side
+                sharpe_by_reg_side: Dict[Tuple[int, str], Dict[str, Any]] = {}
+                for _, row in sharpe_df[sharpe_df["scope"] == "regime"].iterrows():
+                    reg = int(row["regime"])
+                    side = str(row.get("side", "all"))
+                    sharpe_by_reg_side[(reg, side)] = row
+
+                def _mean_if_col(group_data: pd.DataFrame, col_name: str) -> float:
+                    if col_name not in group_data.columns:
+                        return float("nan")
+                    series = pd.to_numeric(group_data[col_name], errors="coerce")
+                    series = series.replace([np.inf, -np.inf], np.nan)
+                    return (
+                        float(series.mean())
+                        if not series.dropna().empty
+                        else float("nan")
+                    )
+
+                # Iterate through each regime
                 for reg_val, group in analysis_df.groupby(regime_series):
                     reg_int = int(reg_val)
+
+                    # Overall stats for the regime
                     n_reg = int(len(group))
                     ret_g = pd.to_numeric(
                         group[f"forward_return_h{horizon}"], errors="coerce"
@@ -7740,33 +7786,56 @@ class MLBreakoutBounceRegimeStep(BaseStep):
                     mean_ret_reg = (
                         float(ret_g.mean()) if not ret_g.dropna().empty else float("nan")
                     )
-                    sharpe_row = sharpe_by_reg.get(reg_int)
+
+                    sharpe_row = sharpe_by_reg_side.get((reg_int, "all"))
                     sharpe_val = (
                         float(sharpe_row.get("sharpe_like", float("nan")))
                         if sharpe_row is not None
                         else float("nan")
                     )
 
-                    def _mean_if_col(col_name: str) -> float:
-                        if col_name not in group.columns:
-                            return float("nan")
-                        series = pd.to_numeric(group[col_name], errors="coerce")
-                        series = series.replace([np.inf, -np.inf], np.nan)
-                        return (
-                            float(series.mean())
-                            if not series.dropna().empty
-                            else float("nan")
-                        )
-
-                    mean_long = _mean_if_col("breakout_long_edge_score")
-                    mean_short = _mean_if_col("breakout_short_edge_score")
-                    mean_bull = _mean_if_col("breakout_bullish_prob")
-                    mean_bear = _mean_if_col("breakout_bearish_prob")
+                    mean_long = _mean_if_col(group, "breakout_long_edge_score")
+                    mean_short = _mean_if_col(group, "breakout_short_edge_score")
+                    mean_bull = _mean_if_col(group, "breakout_bullish_prob")
+                    mean_bear = _mean_if_col(group, "breakout_bearish_prob")
 
                     lines.append(
-                        f"| {reg_int} | {n_reg} | {mean_ret_reg:.6f} | {sharpe_val:.4f} | "
+                        f"| {reg_int} | all | {n_reg} | {mean_ret_reg:.6f} | {sharpe_val:.4f} | "
                         f"{mean_long:.6f} | {mean_short:.6f} | {mean_bull:.6f} | {mean_bear:.6f} |"
                     )
+
+                    # Support/resistance breakdown
+                    if "is_resistance" in group.columns and "is_support" in group.columns:
+                        for side_name, side_mask_col in [("resistance", "is_resistance"), ("support", "is_support")]:
+                            side_group = group[group[side_mask_col].astype(bool)]
+                            if side_group.empty:
+                                continue
+
+                            n_side = int(len(side_group))
+                            ret_side = pd.to_numeric(
+                                side_group[f"forward_return_h{horizon}"], errors="coerce"
+                            )
+                            ret_side = ret_side.replace([np.inf, -np.inf], np.nan)
+                            mean_ret_side = (
+                                float(ret_side.mean()) if not ret_side.dropna().empty else float("nan")
+                            )
+
+                            sharpe_side_row = sharpe_by_reg_side.get((reg_int, side_name))
+                            sharpe_side_val = (
+                                float(sharpe_side_row.get("sharpe_like", float("nan")))
+                                if sharpe_side_row is not None
+                                else float("nan")
+                            )
+
+                            mean_long_side = _mean_if_col(side_group, "breakout_long_edge_score")
+                            mean_short_side = _mean_if_col(side_group, "breakout_short_edge_score")
+                            mean_bull_side = _mean_if_col(side_group, "breakout_bullish_prob")
+                            mean_bear_side = _mean_if_col(side_group, "breakout_bearish_prob")
+
+                            lines.append(
+                                f"| {reg_int} | {side_name} | {n_side} | {mean_ret_side:.6f} | {sharpe_side_val:.4f} | "
+                                f"{mean_long_side:.6f} | {mean_short_side:.6f} | {mean_bull_side:.6f} | {mean_bear_side:.6f} |"
+                            )
             except Exception:
                 pass
 

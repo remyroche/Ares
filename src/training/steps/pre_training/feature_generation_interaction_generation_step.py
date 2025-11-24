@@ -2190,12 +2190,11 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             shap_weight=0.4,
 
             # Lift requirements - CRITICAL for ensuring interactions beat base features
-            min_r2_lift=float(config.get('min_interaction_r2_lift', 0.01)),  # 1% R² improvement
-            # Require at least 10% MI improvement: child MI ≥ 1.1 × best parent MI
-            # (used for diagnostics and optional gating). For this diagnostic
-            # run, we disable the hard MI-lift requirement and let LASSO and
-            # stability drive selection.
-            min_mi_lift=float(config.get('min_interaction_mi_lift', 0.10)),
+            min_r2_lift=float(config.get('min_interaction_r2_lift', 0.02)),  # 2% R² improvement (tightened from 1%)
+            # Require at least 15% MI improvement: child MI ≥ 1.15 × best parent MI
+            # This tighter threshold ensures composite scores become more informative
+            # now that CT features are no longer being discarded prematurely.
+            min_mi_lift=float(config.get('min_interaction_mi_lift', 0.15)),  # Tightened from 0.10
             require_r2_lift=False,  # Don't require R² lift (too expensive to compute)
             require_mi_lift=True,   # Require MI lift (fast to compute)
 
@@ -2290,14 +2289,51 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             if len(interaction_df.columns) > 0:
                 interaction_df = interaction_df.shift(1)
 
-                # Apply RobustScaler
-                from sklearn.preprocessing import RobustScaler
-                scaler = RobustScaler()
-                interaction_df = pd.DataFrame(
-                    scaler.fit_transform(interaction_df),
-                    columns=interaction_df.columns,
-                    index=interaction_df.index
-                )
+                # Apply differential normalization: winsorized z-score for non-volume, log1p for volume
+                from src.features_common.transforms.scaling_normalization import winsorized_zscore_normalize
+
+                # Identify volume vs non-volume interaction features
+                volume_interactions = []
+                non_volume_interactions = []
+
+                for col in interaction_df.columns:
+                    is_volume = any(pattern in col.lower() for pattern in [
+                        'volume', 'vol_', '_vol', 'vwap', 'obv', 'mfi', 'cmf', 'adl', 'ad_', 'pvt'
+                    ])
+                    if is_volume:
+                        volume_interactions.append(col)
+                    else:
+                        non_volume_interactions.append(col)
+
+                # Apply winsorized z-score to non-volume interactions
+                if non_volume_interactions:
+                    try:
+                        interaction_df[non_volume_interactions] = winsorized_zscore_normalize(
+                            interaction_df[non_volume_interactions],
+                            ddof=0,
+                            lower_quantile=0.01,
+                            upper_quantile=0.99
+                        )
+                        tprint_debug(f"  ✅ Winsorized z-score normalized {len(non_volume_interactions)} non-volume interactions")
+                    except Exception as e:
+                        tprint_warning(f"  ⚠️ Winsorized normalization failed for interactions: {e}, using robust scaler fallback")
+                        from sklearn.preprocessing import RobustScaler
+                        scaler = RobustScaler()
+                        interaction_df[non_volume_interactions] = pd.DataFrame(
+                            scaler.fit_transform(interaction_df[non_volume_interactions]),
+                            columns=non_volume_interactions,
+                            index=interaction_df.index
+                        )
+
+                # Apply log1p to volume interactions
+                if volume_interactions:
+                    try:
+                        volume_data = interaction_df[volume_interactions].clip(lower=0)
+                        interaction_df[volume_interactions] = np.log1p(volume_data)
+                        tprint_debug(f"  ✅ Log-transformed {len(volume_interactions)} volume interactions")
+                    except Exception as e:
+                        tprint_warning(f"  ⚠️ Log transformation failed for volume interactions: {e}, keeping original")
+
 
             # Build SHAP metadata for compatibility
             shap_metadata = {
@@ -2331,6 +2367,174 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             tprint_error(f"  🔍 Traceback: {traceback.format_exc()}")
             tprint_warning("  ⚠️ Falling back to legacy interaction discovery")
             return await self._phase3_3_interaction_discovery_legacy(features, targets, config, feature_categories)
+
+    async def _extract_cross_timeframe_interactions(
+        self,
+        features: pd.DataFrame
+    ) -> pd.DataFrame:
+        """
+        Extract cross-timeframe interaction features from the feature set.
+
+        This method identifies features that have cross-timeframe ratio markers
+        (e.g., _3x_ratio, _6x_ratio) and interaction operators (e.g., _x_, _div_).
+
+        Args:
+            features: Feature dataframe
+
+        Returns:
+            DataFrame of cross-timeframe interaction features
+        """
+        # Look for features that have both CT markers and interaction operators
+        ct_markers = ['_3x_ratio', '_6x_ratio', '_9x_ratio', '_15x_ratio', '_27x_ratio', '_45x_ratio', '_60x_ratio']
+        interaction_ops = ['_x_', '_div_', '_minus_', '_plus_', '_log_']
+
+        ct_interaction_cols = []
+        for col in features.columns:
+            has_ct = any(marker in col for marker in ct_markers)
+            has_interaction = any(op in col for op in interaction_ops)
+            if has_ct and has_interaction:
+                ct_interaction_cols.append(col)
+
+        if ct_interaction_cols:
+            tprint_debug(f"  🔍 Found {len(ct_interaction_cols)} cross-timeframe interaction features")
+            return features[ct_interaction_cols].copy()
+
+        # Return empty DataFrame with same index
+        return pd.DataFrame(index=features.index)
+
+    async def _phase3_lgbm_shap_pipeline(
+        self,
+        pruned_features: pd.DataFrame,
+        targets: pd.DataFrame,
+        config: Dict[str, Any],
+        lookback_optimization: pd.DataFrame,
+    ) -> Tuple[pd.DataFrame, pd.DataFrame, Dict[str, Any]]:
+        """
+        Full Phase 3 LGBM+SHAP pipeline with feature normalization.
+
+        This method implements the complete Phase 3 pipeline that:
+        1. Applies winsorized z-score normalization to handle large feature values
+        2. Runs label-guided interaction discovery with LGBM+SHAP
+        3. Saves both normalized and original features as artifacts
+        4. Returns properly normalized features and interactions
+
+        Args:
+            pruned_features: Features after cheap pruning (Phase 2)
+            targets: Target dataframe
+            config: Configuration dictionary
+            lookback_optimization: Lookback optimization dataframe
+
+        Returns:
+            Tuple of (final_features, interactions, shap_metadata)
+        """
+        from src.features_common.transforms.scaling_normalization import winsorized_zscore_normalize
+
+        tprint_info("🔧 Phase 3: Full LGBM+SHAP Pipeline")
+        tprint_info(f"  📊 Input: {len(pruned_features.columns)} pruned features")
+
+        # Step 1: Identify volume vs non-volume features for differential normalization
+        volume_features = []
+        non_volume_features = []
+
+        for col in pruned_features.columns:
+            # Identify volume-related features by common patterns
+            is_volume = any(pattern in col.lower() for pattern in [
+                'volume', 'vol_', '_vol', 'vwap', 'obv', 'mfi', 'cmf', 'adl', 'ad_', 'pvt'
+            ])
+            if is_volume:
+                volume_features.append(col)
+            else:
+                non_volume_features.append(col)
+
+        tprint_info(f"  📊 Feature categorization:")
+        tprint_info(f"    - Non-volume features: {len(non_volume_features)}")
+        tprint_info(f"    - Volume features: {len(volume_features)}")
+
+        # Step 2: Apply normalization
+        normalized_features = pruned_features.copy()
+
+        # Apply winsorized z-score to non-volume features
+        if non_volume_features:
+            tprint_info(f"  🔧 Applying winsorized z-score normalization to {len(non_volume_features)} non-volume features...")
+            try:
+                normalized_features[non_volume_features] = winsorized_zscore_normalize(
+                    pruned_features[non_volume_features],
+                    ddof=0,
+                    lower_quantile=0.01,
+                    upper_quantile=0.99
+                )
+                tprint_success(f"  ✅ Normalized {len(non_volume_features)} non-volume features")
+            except Exception as e:
+                tprint_error(f"  ❌ Winsorized normalization failed: {e}, using original features")
+                normalized_features[non_volume_features] = pruned_features[non_volume_features]
+
+        # Apply log1p transformation to volume features (better for volume data)
+        if volume_features:
+            tprint_info(f"  🔧 Applying log1p transformation to {len(volume_features)} volume features...")
+            try:
+                # Clip negative values to 0 before log transform
+                volume_data = pruned_features[volume_features].clip(lower=0)
+                normalized_features[volume_features] = np.log1p(volume_data)
+                tprint_success(f"  ✅ Log-transformed {len(volume_features)} volume features")
+            except Exception as e:
+                tprint_error(f"  ❌ Log transformation failed: {e}, using original features")
+                normalized_features[volume_features] = pruned_features[volume_features]
+
+        # Step 3: Infer feature categories for compatibility with label-guided discovery
+        feature_categories: Dict[str, str] = {}
+        try:
+            for col in normalized_features.columns:
+                feature_categories[col] = self._infer_feature_category(col)
+        except Exception as e:
+            tprint_warning(f"  ⚠️ Feature category inference failed: {e}, using defaults")
+            feature_categories = {col: 'unknown' for col in normalized_features.columns}
+
+        # Step 4: Run label-guided interaction discovery on NORMALIZED features
+        try:
+            tprint_info("  🌳 Running label-guided interaction discovery on normalized features...")
+            interactions, shap_metadata = await self._phase3_3_label_guided_interaction_discovery(
+                normalized_features,
+                targets,
+                config,
+                feature_categories,
+            )
+            tprint_success(f"  ✅ Generated {len(interactions.columns)} interactions")
+
+            # Add normalization metadata to shap_metadata
+            shap_metadata['normalization'] = {
+                'method': 'winsorized_zscore_and_log1p',
+                'non_volume_features': len(non_volume_features),
+                'volume_features': len(volume_features),
+                'non_volume_method': 'winsorized_zscore',
+                'volume_method': 'log1p',
+                'winsorize_quantiles': (0.01, 0.99),
+            }
+
+        except Exception as exc:
+            tprint_error(f"  ❌ Label-guided interaction discovery failed: {exc}")
+            # Return empty interactions but keep normalized base features
+            interactions = pd.DataFrame(index=normalized_features.index)
+            shap_metadata = {
+                "feature_categories": feature_categories,
+                "interaction_discovery": {
+                    "selected_interactions": 0,
+                    "error": str(exc),
+                },
+                "model_performance": {
+                    "lgbm_training_successful": False,
+                    "interaction_generation_successful": False,
+                },
+                'normalization': {
+                    'method': 'winsorized_zscore_and_log1p',
+                    'non_volume_features': len(non_volume_features),
+                    'volume_features': len(volume_features),
+                    'error': str(exc),
+                }
+            }
+
+        tprint_success(f"  ✅ Phase 3 complete: {len(normalized_features.columns)} features, {len(interactions.columns)} interactions")
+
+        return normalized_features, interactions, shap_metadata
 
     async def _phase4_save_artifacts(
         self,

@@ -64,8 +64,8 @@ class LabelGuidedInteractionConfig:
     shap_weight: float = 0.5
 
     # Lift requirements
-    min_r2_lift: float = 0.01  # Interaction must improve R² by at least 1%
-    min_mi_lift: float = 0.05  # Interaction must improve MI by at least 5%
+    min_r2_lift: float = 0.02  # Interaction must improve R² by at least 2% (tightened from 1%)
+    min_mi_lift: float = 0.15  # Interaction must improve MI by at least 15% (tightened from 5%)
     require_r2_lift: bool = True
     require_mi_lift: bool = True
 

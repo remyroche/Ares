@@ -2642,6 +2642,108 @@ class MLPathRegimeStep(BaseStep):
         if teacher_probs_full is not None:
             metrics['teacher_probs'] = teacher_probs_full
 
+        # ========== STEP 8: Persist GMM Model for Direct Inference ==========
+        # Save the optimized GMM model and create both GMM-direct and centroid-based
+        # detectors for live trading inference (no XGBoost student needed).
+        try:
+            import joblib
+            from pathlib import Path
+
+            symbol_gmm = str(config.get("symbol", "UNKNOWN"))
+            timeframe_gmm = str(config.get("regime_timeframe", config.get("timeframe", "15m")))
+            ts_gmm = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+            # Create regime metadata from final labels and features
+            regime_metadata = {}
+            for regime_id in range(n_regimes):
+                regime_mask = final_labels == regime_id
+                regime_count = np.sum(regime_mask)
+
+                if regime_count > 0:
+                    regime_features = risk_features_clean.iloc[regime_mask]
+                    regime_means = regime_features.mean().to_dict()
+
+                    regime_metadata[regime_id] = {
+                        "name": f"Path Regime {regime_id}",
+                        "description": f"Geometric path structure cluster {regime_id}",
+                        "count": int(regime_count),
+                        "percentage": float(regime_count / len(final_labels) * 100),
+                        "feature_means": {k: float(v) for k, v in regime_means.items()},
+                    }
+
+            # Prepare model metadata
+            model_metadata = {
+                "symbol": symbol_gmm,
+                "exchange": str(config.get("exchange", "UNKNOWN")),
+                "timeframe": timeframe_gmm,
+                "trained_at": ts_gmm,
+                "n_regimes": n_regimes,
+                "n_features": len(risk_features_clean.columns),
+                "n_samples": len(final_labels),
+                "risk_cv_ratio": float(metrics.get("risk_cv_ratio", 0.0)),
+                "wasserstein_distance": float(metrics.get("wasserstein_distance", 0.0)),
+                "covariance_type": covariance_type,
+            }
+
+            # 1. Save GMM-Direct detector (recommended for production)
+            gmm_detector_path = f"versioned_artifacts/regime_models/path_gmm_{symbol_gmm}_{timeframe_gmm}_{ts_gmm}.pkl"
+            Path(gmm_detector_path).parent.mkdir(parents=True, exist_ok=True)
+
+            gmm_model_data = {
+                "gmm_model": gmm,
+                "feature_names": list(risk_features_clean.columns),
+                "scaler": None,  # No scaling used in current implementation
+                "regime_metadata": regime_metadata,
+                "model_metadata": model_metadata,
+            }
+            joblib.dump(gmm_model_data, gmm_detector_path)
+            tprint_success(f"💾 Saved GMM-Direct detector: {gmm_detector_path}")
+
+            # 2. Save Centroid-Based detector (simpler backup option)
+            try:
+                # Compute regime centroids and covariances
+                regime_centroids_dict = {}
+                regime_covariances_dict = {}
+
+                for regime_id in range(n_regimes):
+                    regime_mask = final_labels == regime_id
+                    if np.sum(regime_mask) > 0:
+                        regime_data = risk_features_clean.iloc[regime_mask]
+                        regime_centroids_dict[regime_id] = regime_data.mean().values
+                        regime_covariances_dict[regime_id] = regime_data.cov().values
+
+                # Create centroids DataFrame
+                centroids_df = pd.DataFrame(
+                    regime_centroids_dict,
+                    index=risk_features_clean.columns
+                ).T
+
+                centroid_detector_path = f"versioned_artifacts/regime_models/path_centroid_{symbol_gmm}_{timeframe_gmm}_{ts_gmm}.pkl"
+
+                centroid_model_data = {
+                    "regime_centroids": centroids_df,
+                    "regime_covariances": regime_covariances_dict,
+                    "feature_names": list(risk_features_clean.columns),
+                    "scaler": None,
+                    "regime_metadata": regime_metadata,
+                    "distance_metric": "mahalanobis",
+                }
+                joblib.dump(centroid_model_data, centroid_detector_path)
+                tprint_info(f"💾 Saved Centroid detector (backup): {centroid_detector_path}")
+
+                metrics['gmm_detector_path'] = gmm_detector_path
+                metrics['centroid_detector_path'] = centroid_detector_path
+
+            except Exception as centroid_exc:
+                tprint_warning(f"Failed to create centroid detector (non-fatal): {centroid_exc}")
+                metrics['gmm_detector_path'] = gmm_detector_path
+                metrics['centroid_detector_path'] = None
+
+        except Exception as persist_exc:
+            tprint_warning(f"Failed to persist GMM detectors (non-fatal): {persist_exc}")
+            metrics['gmm_detector_path'] = None
+            metrics['centroid_detector_path'] = None
+
         tprint_success(
             f"✅ Created {n_regimes} regime labels (NO temporal smoothing):\n"
             f"   Risk CV Ratio={metrics['risk_cv_ratio']:.3f}, "
@@ -3712,18 +3814,32 @@ class MLPathRegimeStep(BaseStep):
             min_window = int(config.get("risk_quadrant_min_window_bars", default_min))
             max_window = int(config.get("risk_quadrant_max_window_bars", default_max))
 
+            # Updated path geometry features based on conceptual framework:
+            # - Roughness: hurst_exponent_path
+            # - Linearity: path_trend_r2
+            # - Directness: path_efficiency_return_3h
+            # - Shape/Bend: quadratic_fit_curvature
+            # - Steepness: linear_reg_slope
+            # - Timing: path_center_of_gravity
+            # - Morphology: body_range_ratio
+            #
+            # Additional structural features may be included to assist regime detection,
+            # but HPO tuning should focus on the 7 core geometry features above.
             path_priority = [
-                "path_ker_3h",
-                "path_ker_6h",
-                "body_range_ratio",
-                "traffic_overlap_3h",
-                "path_fractal_dimension",
-                "hurst_exponent_path",
-                "path_efficiency_return_3h",
-                "path_directional_eff_3h",
-                "path_trend_r2",
-                "path_efficiency_dropping",
-                "path_alpha_state",
+                # Core geometry features for HPO
+                "hurst_exponent_path",         # Roughness
+                "path_trend_r2",               # Linearity
+                "path_efficiency_return_3h",   # Directness
+                "quadratic_fit_curvature",     # Shape/Bend
+                "linear_reg_slope",            # Steepness
+                "path_center_of_gravity",      # Timing
+                "body_range_ratio",            # Morphology
+                # Supporting structural features (not for HPO tuning)
+                "path_fractal_dimension",      # Complexity
+                "traffic_overlap_3h",          # Overlap
+                "path_efficiency_dropping",    # Efficiency pattern
+                "path_alpha_state",            # Alpha indicator
+                "path_directional_eff_3h",     # Directional efficiency
             ]
 
             path_candidates: List[str] = [

@@ -43,7 +43,14 @@ from src.utils.tprint import (
     tprint_error,
     tprint_success,
 )
-from src.features_common.transforms.scaling_normalization import ScalingNormalizer
+from src.features_common.transforms.scaling_normalization import (
+    ScalingNormalizer,
+    rolling_winsorized_zscore_normalize,
+)
+from src.utils.versioned_artifacts.temporal_splits import (
+    create_temporal_split_config_for_pipeline,
+    TemporalSplitConfig,
+)
 from src.training.steps.market_analysis.clusters.cluster_quality_assessor import (
     ClusterQualityAssessor,
     ClusterQualityMetrics,
@@ -6548,6 +6555,25 @@ class MLBreakoutBounceRegimeStep(BaseStep):
                 f"({market_data.index.min()} → {market_data.index.max()})"
             )
 
+            # Create temporal split config with 6-month burn-in for indicator stabilization
+            split_config = create_temporal_split_config_for_pipeline(
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=regime_timeframe,
+                data_start=market_data.index.min(),
+                data_end=market_data.index.max(),
+                enable_burnin=True,
+                burnin_pct=1/6  # 6 months = 1/6 of 3 years
+            )
+            tprint_info(
+                f"📅 Temporal split config: "
+                f"burn-in={split_config.burnin.start if split_config.burnin else 'None'} → "
+                f"{split_config.burnin.effective_end if split_config.burnin else 'None'}, "
+                f"train={split_config.training.start} → {split_config.training.effective_end}, "
+                f"val={split_config.validation.start} → {split_config.validation.effective_end}, "
+                f"test={split_config.test.start} → {split_config.test.effective_end}"
+            )
+
             if self.hardware_manager is not None:
                 try:
                     self.hardware_manager.optimize_for_workload(
@@ -6587,6 +6613,7 @@ class MLBreakoutBounceRegimeStep(BaseStep):
                 feat_df,
                 labels,
                 config,
+                split_config=split_config,
                 optimal_cpus=optimal_cpus,
             )
 
@@ -6677,31 +6704,52 @@ class MLBreakoutBounceRegimeStep(BaseStep):
             existing_cols = [c for c in core_cols if c in to_save.columns]
             to_save = to_save[existing_cols]
 
+            # Build metadata with temporal split information
+            metadata = {
+                "symbol": symbol,
+                "exchange": exchange,
+                "timeframe": regime_timeframe,
+                "source_market_data": market_source,
+                "version": "v2_with_burnin",
+                "training_start": str(split_config.training.start),
+                "training_end": str(split_config.training.effective_end),
+                "validation_start": str(split_config.validation.start),
+                "validation_end": str(split_config.validation.effective_end),
+                "test_start": str(split_config.test.start),
+                "test_end": str(split_config.test.effective_end),
+            }
+            if split_config.burnin is not None:
+                metadata["burnin_start"] = str(split_config.burnin.start)
+                metadata["burnin_end"] = str(split_config.burnin.effective_end)
+
             training_data_path = self._save_artifact(
                 data=to_save,
                 artifact_name="ml_breakout_bounce_training_data_15m",
                 artifact_type="data",
-                metadata={
-                    "symbol": symbol,
-                    "exchange": exchange,
-                    "timeframe": regime_timeframe,
-                    "source_market_data": market_source,
-                },
+                metadata=metadata,
             )
 
             model_path = None
             if model is not None:
                 try:
+                    model_metadata = {
+                        "symbol": symbol,
+                        "exchange": exchange,
+                        "timeframe": regime_timeframe,
+                        "model_type": "xgboost_multiclass",
+                        "version": "v2_with_burnin",
+                        "training_start": str(split_config.training.start),
+                        "training_end": str(split_config.training.effective_end),
+                    }
+                    if split_config.burnin is not None:
+                        model_metadata["burnin_start"] = str(split_config.burnin.start)
+                        model_metadata["burnin_end"] = str(split_config.burnin.effective_end)
+
                     model_path = self._save_artifact(
                         data=model,
                         artifact_name="ml_breakout_bounce_model_15m",
                         artifact_type="model",
-                        metadata={
-                            "symbol": symbol,
-                            "exchange": exchange,
-                            "timeframe": regime_timeframe,
-                            "model_type": "xgboost_multiclass",
-                        },
+                        metadata=model_metadata,
                     )
                 except Exception as save_exc:
                     tprint_warning(f"Failed to save breakout/bounce model artifact: {save_exc}")
@@ -6968,6 +7016,21 @@ class MLBreakoutBounceRegimeStep(BaseStep):
                 feat_df[col] = xtf_aligned[col]
 
         feat_df = feat_df.replace([np.inf, -np.inf], np.nan)
+
+        # Apply rolling window normalization to features to prevent look-ahead bias
+        # Use rolling window to ensure calculations at time t use only data available at time t
+        window_size = int(config.get("breakout_normalization_window", 500))
+        try:
+            feat_df = rolling_winsorized_zscore_normalize(
+                feat_df,
+                window=window_size,
+                min_periods=window_size // 2,
+                lower_quantile=0.01,
+                upper_quantile=0.99
+            )
+        except Exception as norm_exc:
+            tprint_warning(f"Rolling normalization failed, using raw features: {norm_exc}")
+
         feat_df = feat_df.dropna()
 
         labels = self._create_breakout_labels(df.loc[feat_df.index], config)
@@ -7113,6 +7176,7 @@ class MLBreakoutBounceRegimeStep(BaseStep):
         feat_df: pd.DataFrame,
         labels: pd.Series,
         config: Dict[str, Any],
+        split_config: Optional[TemporalSplitConfig] = None,
         optimal_cpus: int = -1,
     ) -> Tuple[Any, Dict[str, Any], np.ndarray, np.ndarray]:
         import xgboost as xgb
@@ -7124,57 +7188,88 @@ class MLBreakoutBounceRegimeStep(BaseStep):
         if y.nunique() < 2:
             raise ValueError("Not enough classes for breakout/bounce classifier")
 
-        n_samples = len(X_raw)
-
         # ------------------------------------------------------------------
-        # Chronological train / validation / test split
+        # Temporal train / validation / test split using split_config
         # ------------------------------------------------------------------
-        train_frac = float(config.get("breakout_train_fraction", 0.7))
-        val_frac = float(config.get("breakout_val_fraction", 0.15))
+        if split_config is not None:
+            # Use temporal split config for proper train/val/test separation
+            train_mask = (X_raw.index >= split_config.training.start) & \
+                         (X_raw.index <= split_config.training.effective_end)
+            val_mask = (X_raw.index >= split_config.validation.start) & \
+                       (X_raw.index <= split_config.validation.effective_end)
+            test_mask = (X_raw.index >= split_config.test.start) & \
+                        (X_raw.index <= split_config.test.effective_end)
 
-        # Clamp to sensible bounds and ensure we leave some test data
-        train_frac = float(np.clip(train_frac, 0.5, 0.9))
-        val_frac = float(np.clip(val_frac, 0.05, 0.4))
-        if train_frac + val_frac >= 0.95:
-            val_frac = max(0.05, 0.95 - train_frac)
+            X_train_raw = X_raw.loc[train_mask]
+            y_train = y.loc[train_mask]
+            X_val_raw = X_raw.loc[val_mask]
+            y_val = y.loc[val_mask]
+            X_test_raw = X_raw.loc[test_mask]
+            y_test = y.loc[test_mask]
 
-        train_end = int(n_samples * train_frac)
-        val_end = int(n_samples * (train_frac + val_frac))
-
-        if train_end <= 0 or val_end <= train_end or val_end >= n_samples:
-            # Fallback to original 80/20 split with no explicit test set
-            split_idx = int(n_samples * 0.8)
-            train_idx = np.arange(0, split_idx)
-            val_idx = np.arange(split_idx, n_samples)
-            test_idx = np.array([], dtype=int)
+            tprint_info(
+                f"📊 Temporal splits: train={len(X_train_raw)}, val={len(X_val_raw)}, test={len(X_test_raw)}"
+            )
         else:
-            train_idx = np.arange(0, train_end)
-            val_idx = np.arange(train_end, val_end)
-            test_idx = np.arange(val_end, n_samples)
+            # Fallback to percentage-based split if no split_config provided
+            tprint_warning("No split_config provided, using percentage-based split (legacy fallback)")
+            n_samples = len(X_raw)
+            train_frac = float(config.get("breakout_train_fraction", 0.7))
+            val_frac = float(config.get("breakout_val_fraction", 0.15))
 
-        X_train_raw = X_raw.iloc[train_idx]
-        y_train = y.iloc[train_idx]
-        X_val_raw = X_raw.iloc[val_idx]
-        y_val = y.iloc[val_idx]
-        X_test_raw = X_raw.iloc[test_idx] if len(test_idx) > 0 else None
-        y_test = y.iloc[test_idx] if len(test_idx) > 0 else None
+            train_frac = float(np.clip(train_frac, 0.5, 0.9))
+            val_frac = float(np.clip(val_frac, 0.05, 0.4))
+            if train_frac + val_frac >= 0.95:
+                val_frac = max(0.05, 0.95 - train_frac)
+
+            train_end = int(n_samples * train_frac)
+            val_end = int(n_samples * (train_frac + val_frac))
+
+            if train_end <= 0 or val_end <= train_end or val_end >= n_samples:
+                split_idx = int(n_samples * 0.8)
+                train_idx = np.arange(0, split_idx)
+                val_idx = np.arange(split_idx, n_samples)
+                test_idx = np.array([], dtype=int)
+            else:
+                train_idx = np.arange(0, train_end)
+                val_idx = np.arange(train_end, val_end)
+                test_idx = np.arange(val_end, n_samples)
+
+            X_train_raw = X_raw.iloc[train_idx]
+            y_train = y.iloc[train_idx]
+            X_val_raw = X_raw.iloc[val_idx]
+            y_val = y.iloc[val_idx]
+            X_test_raw = X_raw.iloc[test_idx] if len(test_idx) > 0 else pd.DataFrame()
+            y_test = y.iloc[test_idx] if len(test_idx) > 0 else pd.Series()
 
         # ------------------------------------------------------------------
-        # Feature normalization (winsorised z-score by default)
+        # Feature normalization (optional, since features are pre-normalized)
+        # Apply minimal scaling if features are already rolling-normalized
         # ------------------------------------------------------------------
-        scaling_strategy = str(config.get("breakout_scaling_strategy", "winsorized_zscore"))
-        normalizer_config = {
-            "default_strategy": scaling_strategy,
-            "auto_select": False,
-            "handle_outliers": True,
-            "use_vectorbt": False,
-        }
+        skip_normalization = bool(config.get("breakout_skip_normalization", False))
 
-        scaler = ScalingNormalizer(normalizer_config)
-        X_train = scaler.fit_transform(X_train_raw)
-        X_val = scaler.transform(X_val_raw)
-        X_full = scaler.transform(X_raw)
-        X_test = scaler.transform(X_test_raw) if X_test_raw is not None and len(test_idx) > 0 else None
+        if skip_normalization:
+            # Features are already rolling-normalized, skip additional normalization
+            X_train = X_train_raw
+            X_val = X_val_raw
+            X_full = X_raw
+            X_test = X_test_raw if X_test_raw is not None and not X_test_raw.empty else None
+            tprint_info("⏩ Skipping additional normalization (features pre-normalized with rolling window)")
+        else:
+            # Apply ScalingNormalizer (legacy behavior)
+            scaling_strategy = str(config.get("breakout_scaling_strategy", "winsorized_zscore"))
+            normalizer_config = {
+                "default_strategy": scaling_strategy,
+                "auto_select": False,
+                "handle_outliers": True,
+                "use_vectorbt": False,
+            }
+
+            scaler = ScalingNormalizer(normalizer_config)
+            X_train = scaler.fit_transform(X_train_raw)
+            X_val = scaler.transform(X_val_raw)
+            X_full = scaler.transform(X_raw)
+            X_test = scaler.transform(X_test_raw) if X_test_raw is not None and not X_test_raw.empty else None
 
         # ------------------------------------------------------------------
         # Monotone constraints and XGBoost configuration

@@ -70,6 +70,11 @@ from src.utils.tprint import (
 from src.features_common.transforms.scaling_normalization import (
     ScalingNormalizer,
     winsorized_zscore_normalize,
+    rolling_winsorized_zscore_normalize,
+)
+from src.utils.versioned_artifacts.temporal_splits import (
+    create_temporal_split_config_for_pipeline,
+    TemporalSplitConfig,
 )
 
 
@@ -263,6 +268,25 @@ class MLRiskRegimeStepHMM(BaseStep):
             # Load market data
             market_data = await self._load_market_data(config, regime_timeframe)
 
+            # Create temporal split config with 6-month burn-in for indicator stabilization
+            split_config = create_temporal_split_config_for_pipeline(
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=regime_timeframe,
+                data_start=market_data.index.min(),
+                data_end=market_data.index.max(),
+                enable_burnin=True,
+                burnin_pct=1/6  # 6 months = 1/6 of 3 years
+            )
+            tprint_info(
+                f"📅 Temporal split config: "
+                f"burn-in={split_config.burnin.start if split_config.burnin else 'None'} → "
+                f"{split_config.burnin.effective_end if split_config.burnin else 'None'}, "
+                f"train={split_config.training.start} → {split_config.training.effective_end}, "
+                f"val={split_config.validation.start} → {split_config.validation.effective_end}, "
+                f"test={split_config.test.start} → {split_config.test.effective_end}"
+            )
+
             # Generate risk features
             risk_df = self._generate_risk_features(market_data, config)
 
@@ -316,7 +340,8 @@ class MLRiskRegimeStepHMM(BaseStep):
                 config=config,
                 symbol=symbol,
                 timeframe=regime_timeframe,
-                safe_state_id=safe_state_id
+                safe_state_id=safe_state_id,
+                split_config=split_config
             )
 
             duration = time.time() - start_time
@@ -460,10 +485,14 @@ class MLRiskRegimeStepHMM(BaseStep):
             index=risk_df.index,
         )
 
-        tprint_info("🔧 Applying winsorized zscore normalization...")
+        tprint_info("🔧 Applying rolling winsorized zscore normalization...")
         try:
-            scaled = winsorized_zscore_normalize(
+            # Use rolling window normalization to prevent look-ahead bias
+            window_size = int(config.get("risk_normalization_window", 500))
+            scaled = rolling_winsorized_zscore_normalize(
                 feature_frame,
+                window=window_size,
+                min_periods=window_size // 2,
                 lower_quantile=0.05,
                 upper_quantile=0.95,
             )
@@ -1293,7 +1322,8 @@ class MLRiskRegimeStepHMM(BaseStep):
         config: Dict[str, Any],
         symbol: str,
         timeframe: str,
-        safe_state_id: int
+        safe_state_id: int,
+        split_config: Optional[TemporalSplitConfig] = None
     ) -> Dict[str, str]:
         """Save HMM model, LiveHMM wrapper, and artifacts."""
         import joblib
@@ -1324,7 +1354,20 @@ class MLRiskRegimeStepHMM(BaseStep):
             "symbol": symbol,
             "timeframe": timeframe,
             "trained_at": timestamp,
+            "version": "v2_with_burnin",
         }
+
+        # Add burn-in metadata if available
+        if split_config is not None:
+            hmm_model_data["training_start"] = str(split_config.training.start)
+            hmm_model_data["training_end"] = str(split_config.training.effective_end)
+            hmm_model_data["validation_start"] = str(split_config.validation.start)
+            hmm_model_data["validation_end"] = str(split_config.validation.effective_end)
+            hmm_model_data["test_start"] = str(split_config.test.start)
+            hmm_model_data["test_end"] = str(split_config.test.effective_end)
+            if split_config.burnin is not None:
+                hmm_model_data["burnin_start"] = str(split_config.burnin.start)
+                hmm_model_data["burnin_end"] = str(split_config.burnin.effective_end)
 
         joblib.dump(hmm_model_data, hmm_path)
         tprint_success(f"✅ Saved HMM model: {hmm_path}")

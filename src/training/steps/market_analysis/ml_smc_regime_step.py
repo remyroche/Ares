@@ -26,9 +26,14 @@ from src.utils.tprint import (
 )
 from src.features_common.transforms.scaling_normalization import (
     winsorized_zscore_normalize,
+    rolling_winsorized_zscore_normalize,
 )
 from src.feature_generation.categories.cross_timeframe import CrossTimeframeFeatureGenerator
 from sklearn.isotonic import IsotonicRegression
+from src.utils.versioned_artifacts.temporal_splits import (
+    create_temporal_split_config_for_pipeline,
+    TemporalSplitConfig,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +122,25 @@ class MLSMCRegimeStep(BaseStep):
                 f"({market_data.index.min()} → {market_data.index.max()})"
             )
 
+            # Create temporal split config with 6-month burn-in for indicator stabilization
+            split_config = create_temporal_split_config_for_pipeline(
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=regime_timeframe,
+                data_start=market_data.index.min(),
+                data_end=market_data.index.max(),
+                enable_burnin=True,
+                burnin_pct=1/6  # 6 months = 1/6 of 3 years
+            )
+            tprint_info(
+                f"📊 Temporal split config created with burn-in: "
+                f"Burn-in {split_config.burnin.start if split_config.burnin else 'N/A'} → "
+                f"{split_config.burnin.effective_end if split_config.burnin else 'N/A'}, "
+                f"Train {split_config.training.start} → {split_config.training.effective_end}, "
+                f"Val {split_config.validation.start} → {split_config.validation.effective_end}, "
+                f"Test {split_config.test.start} → {split_config.test.effective_end}"
+            )
+
             # Generate SMC features with proper normalization
             smc_df = self._generate_smc_features(market_data, config)
 
@@ -126,6 +150,7 @@ class MLSMCRegimeStep(BaseStep):
                     xgb_metrics, xgb_artifacts = self._train_smc_xgb_model(
                         smc_df,
                         config,
+                        split_config,
                         symbol,
                         exchange,
                         regime_timeframe,
@@ -727,13 +752,16 @@ class MLSMCRegimeStep(BaseStep):
                 else:
                     continuous_features.append(col)
 
-        # Apply winsorized z-score to continuous features
+        # Apply rolling winsorized z-score to continuous features to prevent look-ahead bias
         if continuous_features:
-            tprint_info(f"Applying winsorized z-score normalization to {len(continuous_features)} features")
+            window_size = int(config.get("smc_normalization_window", 500))
+            tprint_info(f"Applying rolling winsorized z-score normalization to {len(continuous_features)} features (window={window_size})")
             for feat in continuous_features:
                 try:
-                    normalized = winsorized_zscore_normalize(
+                    normalized = rolling_winsorized_zscore_normalize(
                         df[feat],
+                        window=window_size,
+                        min_periods=window_size // 2,
                         lower_quantile=0.05,
                         upper_quantile=0.95
                     )
@@ -756,11 +784,12 @@ class MLSMCRegimeStep(BaseStep):
         self,
         df: pd.DataFrame,
         config: Dict[str, Any],
+        split_config: TemporalSplitConfig,
         symbol: str,
         exchange: str,
         regime_timeframe: str,
     ) -> Tuple[Dict[str, Any], List[str]]:
-        """Train XGBoost classifier with HPO and conformal prediction calibration."""
+        """Train XGBoost classifier with HPO and conformal prediction calibration using temporal splits."""
         metrics: Dict[str, Any] = {}
         artifacts: List[str] = []
 
@@ -873,45 +902,36 @@ class MLSMCRegimeStep(BaseStep):
             return metrics, artifacts
 
         # Time-series split into train / validation / test
-        n_samples = len(X)
-        train_frac = float(config.get("smc_xgb_train_fraction", 0.80))
-        train_frac = max(0.5, min(train_frac, 0.9))
-        val_rel_frac = float(config.get("smc_xgb_val_relative_fraction", 0.20))
-        val_rel_frac = max(0.05, min(val_rel_frac, 0.4))
+        # Use temporal split config for proper train/val/test separation
+        train_mask = (df_with_target.index >= split_config.training.start) & \
+                     (df_with_target.index <= split_config.training.effective_end)
+        val_mask = (df_with_target.index >= split_config.validation.start) & \
+                   (df_with_target.index <= split_config.validation.effective_end)
+        test_mask = (df_with_target.index >= split_config.test.start) & \
+                    (df_with_target.index <= split_config.test.effective_end)
 
-        train_val_end = int(n_samples * train_frac)
-        if train_val_end >= n_samples - 50:
-            train_val_end = max(n_samples - 50, int(n_samples * 0.75))
+        X_train = X.loc[train_mask]
+        X_val = X.loc[val_mask]
+        X_test = X.loc[test_mask]
 
-        n_train_val = train_val_end
-        n_val = int(n_train_val * val_rel_frac)
-        n_val = max(min(n_val, n_train_val // 2), 50)
-        if n_train_val - n_val < 100:
-            n_val = max(0, n_train_val - 100)
+        y_train_ratio = y_ratio.loc[train_mask]
+        y_val_ratio = y_ratio.loc[val_mask]
+        y_test_ratio = y_ratio.loc[test_mask]
 
-        train_end = n_train_val - n_val
-        if train_end <= 0:
-            train_end = max(1, n_train_val // 2)
-            n_val = n_train_val - train_end
+        y_train_cls = y_class.loc[train_mask]
+        y_val_cls = y_class.loc[val_mask]
+        y_test_cls = y_class.loc[test_mask]
 
-        X_train = X.iloc[:train_end]
-        X_val = X.iloc[train_end:train_val_end]
-        X_test = X.iloc[train_val_end:]
-
-        y_train_ratio = y_ratio.iloc[:train_end]
-        y_val_ratio = y_ratio.iloc[train_end:train_val_end]
-        y_test_ratio = y_ratio.iloc[train_val_end:]
-
-        y_train_cls = y_class.iloc[:train_end]
-        y_val_cls = y_class.iloc[train_end:train_val_end]
-        y_test_cls = y_class.iloc[train_val_end:]
-
-        forward_returns_train = forward_returns.iloc[:train_end]
-        forward_returns_val = forward_returns.iloc[train_end:train_val_end]
-        forward_returns_test = forward_returns.iloc[train_val_end:]
+        forward_returns_train = forward_returns.loc[train_mask]
+        forward_returns_val = forward_returns.loc[val_mask]
+        forward_returns_test = forward_returns.loc[test_mask]
 
         tprint_info(
-            f"SMC XGB: train={len(X_train)}, val={len(X_val)}, test={len(X_test)}, features={len(feature_cols)}"
+            f"📊 Using temporal splits: Train {len(X_train)} samples "
+            f"({split_config.training.start} → {split_config.training.effective_end}), "
+            f"Val {len(X_val)} samples ({split_config.validation.start} → {split_config.validation.effective_end}), "
+            f"Test {len(X_test)} samples ({split_config.test.start} → {split_config.test.effective_end}), "
+            f"Features {len(feature_cols)}"
         )
 
         # HPO using Bayesian TPE optimizer (classification). Always enabled; the
@@ -1228,19 +1248,32 @@ class MLSMCRegimeStep(BaseStep):
 
         # Save model using BaseStep
         tprint_info("Saving XGBoost model...")
+        # Prepare metadata with temporal split information
+        model_metadata = {
+            "symbol": symbol,
+            "exchange": exchange,
+            "timeframe": regime_timeframe,
+            "n_features": len(feature_cols),
+            "test_rmse": float(test_rmse),
+            "test_r2": float(test_r2),
+            "version": "v1_with_burnin",
+            "training_start": str(split_config.training.start),
+            "training_end": str(split_config.training.effective_end),
+            "validation_start": str(split_config.validation.start),
+            "validation_end": str(split_config.validation.effective_end),
+            "test_start": str(split_config.test.start),
+            "test_end": str(split_config.test.effective_end),
+        }
+        if split_config.burnin is not None:
+            model_metadata["burnin_start"] = str(split_config.burnin.start)
+            model_metadata["burnin_end"] = str(split_config.burnin.effective_end)
+
         model_path = self._save_artifact(
             data=model,
             artifact_name="smc_xgb_model",
             artifact_type="model",
             data_category="models",
-            metadata={
-                "symbol": symbol,
-                "exchange": exchange,
-                "timeframe": regime_timeframe,
-                "n_features": len(feature_cols),
-                "test_rmse": float(test_rmse),
-                "test_r2": float(test_r2),
-            },
+            metadata=model_metadata,
         )
         artifacts.append(model_path)
 
@@ -1304,11 +1337,7 @@ class MLSMCRegimeStep(BaseStep):
             artifact_name="smc_predictions_with_confidence",
             artifact_type="data",
             data_category="predictions",
-            metadata={
-                "symbol": symbol,
-                "exchange": exchange,
-                "timeframe": regime_timeframe,
-            },
+            metadata=model_metadata,  # Reuse metadata with temporal split info
         )
         artifacts.append(predictions_path)
 

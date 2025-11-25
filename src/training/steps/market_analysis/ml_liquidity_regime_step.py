@@ -52,7 +52,14 @@ from src.utils.tprint import (
     tprint_warning,
     tprint_error,
 )
-from src.features_common.transforms.scaling_normalization import ScalingNormalizer
+from src.features_common.transforms.scaling_normalization import (
+    ScalingNormalizer,
+    rolling_winsorized_zscore_normalize,
+)
+from src.utils.versioned_artifacts.temporal_splits import (
+    create_temporal_split_config_for_pipeline,
+    TemporalSplitConfig,
+)
 from src.training.steps.market_analysis.clusters.cluster_quality_assessor import (
     ClusterQualityAssessor,
     ClusterQualityMetrics,
@@ -704,6 +711,25 @@ class MLLiquidityRegimeStep(BaseStep):
                 f"({market_data_1h.index.min()} → {market_data_1h.index.max()})"
             )
 
+            # Create temporal split config with 6-month burn-in for indicator stabilization
+            split_config = create_temporal_split_config_for_pipeline(
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=regime_timeframe,
+                data_start=market_data_1h.index.min(),
+                data_end=market_data_1h.index.max(),
+                enable_burnin=True,
+                burnin_pct=1/6  # 6 months = 1/6 of 3 years
+            )
+            tprint_info(
+                f"📅 Temporal split config: "
+                f"burn-in={split_config.burnin.start if split_config.burnin else 'None'} → "
+                f"{split_config.burnin.effective_end if split_config.burnin else 'None'}, "
+                f"train={split_config.training.start} → {split_config.training.effective_end}, "
+                f"val={split_config.validation.start} → {split_config.validation.effective_end}, "
+                f"test={split_config.test.start} → {split_config.test.effective_end}"
+            )
+
             # ------------------------------------------------------------------
             # 2) Generate liquidity features on regime_timeframe grid
             #    Use the full feature generator so all core scaled features
@@ -1086,16 +1112,29 @@ class MLLiquidityRegimeStep(BaseStep):
                 f"💾 Saving liquidity training dataset with shape {liquidity_to_save.shape} "
                 f"to versioned HDF5 store"
             )
+            # Build metadata with temporal split information
+            metadata = {
+                "symbol": symbol,
+                "exchange": exchange,
+                "timeframe": regime_timeframe,
+                "source_market_data": market_source,
+                "version": "v2_with_burnin",
+                "training_start": str(split_config.training.start),
+                "training_end": str(split_config.training.effective_end),
+                "validation_start": str(split_config.validation.start),
+                "validation_end": str(split_config.validation.effective_end),
+                "test_start": str(split_config.test.start),
+                "test_end": str(split_config.test.effective_end),
+            }
+            if split_config.burnin is not None:
+                metadata["burnin_start"] = str(split_config.burnin.start)
+                metadata["burnin_end"] = str(split_config.burnin.effective_end)
+
             training_data_path = self._save_artifact(
                 data=liquidity_to_save,
                 artifact_name="ml_liquidity_training_data_15m",
                 artifact_type="data",
-                metadata={
-                    "symbol": symbol,
-                    "exchange": exchange,
-                    "timeframe": regime_timeframe,
-                    "source_market_data": market_source,
-                },
+                metadata=metadata,
             )
 
             execution_time = time.time() - start_time
@@ -2180,29 +2219,56 @@ class MLLiquidityRegimeStep(BaseStep):
         )
 
         # ============================================================================
-        # WINSORIZED Z-SCORE SCALING: Core dimensions for regime assignment
+        # ROLLING WINSORIZED Z-SCORE SCALING: Core dimensions for regime assignment
+        # Use rolling window to prevent look-ahead bias
         # ============================================================================
-        from src.features_common.transforms.scaling_normalization import winsorized_zscore_normalize
+        window_size = 500  # ~500 bars for 15m data
+        min_periods = window_size // 2
 
         # Volume dimension
-        df["rvol_24_scaled"] = winsorized_zscore_normalize(
-            df["rvol_24"], ddof=0, lower_quantile=0.01, upper_quantile=0.99
+        df["rvol_24_scaled"] = rolling_winsorized_zscore_normalize(
+            df["rvol_24"],
+            window=window_size,
+            min_periods=min_periods,
+            ddof=0,
+            lower_quantile=0.01,
+            upper_quantile=0.99
         )
-        df["rvol_168_scaled"] = winsorized_zscore_normalize(
-            df["rvol_168"], ddof=0, lower_quantile=0.01, upper_quantile=0.99
+        df["rvol_168_scaled"] = rolling_winsorized_zscore_normalize(
+            df["rvol_168"],
+            window=window_size,
+            min_periods=min_periods,
+            ddof=0,
+            lower_quantile=0.01,
+            upper_quantile=0.99
         )
-        df["vol_z_24_scaled"] = winsorized_zscore_normalize(
-            df["vol_z_24"], ddof=0, lower_quantile=0.01, upper_quantile=0.99
+        df["vol_z_24_scaled"] = rolling_winsorized_zscore_normalize(
+            df["vol_z_24"],
+            window=window_size,
+            min_periods=min_periods,
+            ddof=0,
+            lower_quantile=0.01,
+            upper_quantile=0.99
         )
 
         # Delta dimension (order flow alignment)
-        df["delta_regime_signal_scaled"] = winsorized_zscore_normalize(
-            df["delta_regime_signal"], ddof=0, lower_quantile=0.01, upper_quantile=0.99
+        df["delta_regime_signal_scaled"] = rolling_winsorized_zscore_normalize(
+            df["delta_regime_signal"],
+            window=window_size,
+            min_periods=min_periods,
+            ddof=0,
+            lower_quantile=0.01,
+            upper_quantile=0.99
         )
 
         # Amihud dimension (illiquidity/price impact)
-        df["amihud_spike_ratio_scaled"] = winsorized_zscore_normalize(
-            df["amihud_spike_ratio"], ddof=0, lower_quantile=0.01, upper_quantile=0.99
+        df["amihud_spike_ratio_scaled"] = rolling_winsorized_zscore_normalize(
+            df["amihud_spike_ratio"],
+            window=window_size,
+            min_periods=min_periods,
+            ddof=0,
+            lower_quantile=0.01,
+            upper_quantile=0.99
         )
 
         return df

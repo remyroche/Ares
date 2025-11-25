@@ -54,6 +54,7 @@ from src.utils.tprint import (
 )
 from src.features_common.transforms.scaling_normalization import (
     winsorized_zscore_normalize,
+    rolling_winsorized_zscore_normalize,
 )
 from src.training.steps.market_analysis.shared_utils.balanced_feature_extractor import (
     BalancedFeatureExtractor,
@@ -61,6 +62,10 @@ from src.training.steps.market_analysis.shared_utils.balanced_feature_extractor 
     FeatureCategory as BFCategory,
 )
 from src.utils.ml_common.trading_grid_backtester import run_simple_long_grid_backtest
+from src.utils.versioned_artifacts.temporal_splits import (
+    create_temporal_split_config_for_pipeline,
+    TemporalSplitConfig,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -136,6 +141,25 @@ class MLMeanReversionRegimeStep(BaseStep):
             if missing:
                 raise ValueError(f"Market data missing OHLCV columns: {missing}")
 
+            # Create temporal split config with 6-month burn-in for indicator stabilization
+            split_config = create_temporal_split_config_for_pipeline(
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=regime_timeframe,
+                data_start=market_data.index.min(),
+                data_end=market_data.index.max(),
+                enable_burnin=True,
+                burnin_pct=1/6  # 6 months = 1/6 of 3 years
+            )
+            tprint_info(
+                f"📊 Temporal split config created with burn-in: "
+                f"Burn-in {split_config.burnin.start if split_config.burnin else 'N/A'} → "
+                f"{split_config.burnin.effective_end if split_config.burnin else 'N/A'}, "
+                f"Train {split_config.training.start} → {split_config.training.effective_end}, "
+                f"Val {split_config.validation.start} → {split_config.validation.effective_end}, "
+                f"Test {split_config.test.start} → {split_config.test.effective_end}"
+            )
+
             # 2) Teacher features + GMM labels + continuous reversion score
             teacher_df = self._build_teacher_features(market_data, config)
             (
@@ -169,11 +193,12 @@ class MLMeanReversionRegimeStep(BaseStep):
             y_teacher_binary = teacher_binary.loc[common_idx].astype(int)
             teacher_score_aligned = teacher_score.loc[common_idx]
 
-            # 5) Train XGB classifier with isotonic calibration
+            # 5) Train XGB classifier with isotonic calibration using temporal splits
             model, calibrated_model, student_metrics, raw_scores, calibrated_scores = self._train_xgb_student(
                 X_all,
                 y_target_all,
                 config,
+                split_config=split_config,
                 y_teacher=y_teacher_binary,
             )
 
@@ -223,6 +248,7 @@ class MLMeanReversionRegimeStep(BaseStep):
                 teacher_metrics=teacher_metrics,
                 student_metrics=student_metrics,
                 fwd_metrics=fwd_metrics,
+                split_config=split_config,
                 symbol=symbol,
                 exchange=exchange,
                 timeframe=regime_timeframe,
@@ -376,7 +402,13 @@ class MLMeanReversionRegimeStep(BaseStep):
         if mask.sum() < min_teacher:
             raise ValueError("Not enough valid teacher samples")
 
-        X = winsorized_zscore_normalize(teacher_df.loc[mask, core_gmm_cols]).values.astype(float)
+        # Use rolling window normalization to prevent look-ahead bias
+        window_size = int(config.get("mr_normalization_window", 500))
+        X = rolling_winsorized_zscore_normalize(
+            teacher_df.loc[mask, core_gmm_cols],
+            window=window_size,
+            min_periods=window_size // 2
+        ).values.astype(float)
         n_comp = int(config.get("mr_teacher_n_components", 3))
         gmm = GaussianMixture(n_components=n_comp, covariance_type="full", random_state=42)
         gmm.fit(X)
@@ -646,11 +678,17 @@ class MLMeanReversionRegimeStep(BaseStep):
             except Exception as e:  # noqa: BLE001
                 tprint_warning(f"Balanced feature extraction failed: {e}")
 
-        # Normalise most features with winsorized z-score (keep core ones raw)
+        # Normalise most features with rolling winsorized z-score (keep core ones raw)
+        # Use rolling window to prevent look-ahead bias
         exclude = {"z_price_ma_slow", "z_price_vwap", "rsi", "bb_width"}
         norm_cols = [c for c in feats.columns if c not in exclude]
         if norm_cols:
-            feats[norm_cols] = winsorized_zscore_normalize(feats[norm_cols])
+            window_size = int(config.get("mr_normalization_window", 500))
+            feats[norm_cols] = rolling_winsorized_zscore_normalize(
+                feats[norm_cols],
+                window=window_size,
+                min_periods=window_size // 2
+            )
         return feats
 
     def _build_direction_target(self, df: pd.DataFrame, config: Dict[str, Any]) -> pd.Series:
@@ -689,9 +727,17 @@ class MLMeanReversionRegimeStep(BaseStep):
         X: pd.DataFrame,
         y: pd.Series,
         config: Dict[str, Any],
+        split_config: Optional[TemporalSplitConfig] = None,
         y_teacher: Optional[pd.Series] = None
     ) -> Tuple[xgb.XGBClassifier, CalibratedClassifierCV, Dict[str, Any], np.ndarray, np.ndarray]:
         """Train XGBoost classifier with isotonic calibration and walk-forward validation.
+
+        Args:
+            X: Feature dataframe with DatetimeIndex
+            y: Target series with DatetimeIndex
+            config: Configuration dictionary
+            split_config: Temporal split configuration (train/val/test boundaries)
+            y_teacher: Optional teacher labels
 
         Returns:
             - Base XGB model
@@ -700,23 +746,69 @@ class MLMeanReversionRegimeStep(BaseStep):
             - Raw scores (uncalibrated probabilities)
             - Calibrated scores
         """
-        X_np = X.astype(np.float32).values
-        y_np = y.astype(np.int32).values
-        n = len(X_np)
+        # Use temporal split config for proper train/val/test separation
+        if split_config is not None:
+            # Filter to train/val/test periods using temporal boundaries
+            train_mask = (X.index >= split_config.training.start) & (X.index <= split_config.training.effective_end)
+            val_mask = (X.index >= split_config.validation.start) & (X.index <= split_config.validation.effective_end)
+            test_mask = (X.index >= split_config.test.start) & (X.index <= split_config.test.effective_end)
 
-        train_frac = float(config.get("mr_train_fraction", 0.6))
-        val_frac = float(config.get("mr_val_fraction", 0.2))
-        n_train = int(n * train_frac)
-        n_val = int(n * val_frac)
-        n_train = max(100, min(n_train, n - 200))
-        n_val = max(50, min(n_val, n - n_train - 50))
-        n_test = n - n_train - n_val
-        if n_test < 50:
-            n_test = 50
-            n_train = n - n_val - n_test
-        idx_train = slice(0, n_train)
-        idx_val = slice(n_train, n_train + n_val)
-        idx_test = slice(n_train + n_val, n)
+            X_train = X.loc[train_mask]
+            X_val = X.loc[val_mask]
+            X_test = X.loc[test_mask]
+
+            y_train = y.loc[train_mask]
+            y_val = y.loc[val_mask]
+            y_test = y.loc[test_mask]
+
+            # Convert to numpy for XGBoost
+            X_train_np = X_train.astype(np.float32).values
+            X_val_np = X_val.astype(np.float32).values
+            X_test_np = X_test.astype(np.float32).values
+            y_train_np = y_train.astype(np.int32).values
+            y_val_np = y_val.astype(np.int32).values
+            y_test_np = y_test.astype(np.int32).values
+
+            n = len(X)
+            n_train = len(X_train)
+            n_val = len(X_val)
+            n_test = len(X_test)
+
+            tprint_info(
+                f"📊 Using temporal splits: "
+                f"Train {n_train} samples ({split_config.training.start} → {split_config.training.effective_end}), "
+                f"Val {n_val} samples ({split_config.validation.start} → {split_config.validation.effective_end}), "
+                f"Test {n_test} samples ({split_config.test.start} → {split_config.test.effective_end})"
+            )
+        else:
+            # Fallback to percentage-based splits (legacy behavior)
+            X_np_full = X.astype(np.float32).values
+            y_np_full = y.astype(np.int32).values
+            n = len(X_np_full)
+
+            train_frac = float(config.get("mr_train_fraction", 0.6))
+            val_frac = float(config.get("mr_val_fraction", 0.2))
+            n_train = int(n * train_frac)
+            n_val = int(n * val_frac)
+            n_train = max(100, min(n_train, n - 200))
+            n_val = max(50, min(n_val, n - n_train - 50))
+            n_test = n - n_train - n_val
+            if n_test < 50:
+                n_test = 50
+                n_train = n - n_val - n_test
+
+            idx_train = slice(0, n_train)
+            idx_val = slice(n_train, n_train + n_val)
+            idx_test = slice(n_train + n_val, n)
+
+            X_train_np = X_np_full[idx_train]
+            X_val_np = X_np_full[idx_val]
+            X_test_np = X_np_full[idx_test]
+            y_train_np = y_np_full[idx_train]
+            y_val_np = y_np_full[idx_val]
+            y_test_np = y_np_full[idx_test]
+
+            tprint_warning("Using legacy percentage-based splits - consider using temporal split config for better results")
 
         # Train base XGBoost classifier
         params = dict(
@@ -736,21 +828,16 @@ class MLMeanReversionRegimeStep(BaseStep):
 
         model = xgb.XGBClassifier(**params, random_state=42)
         model.fit(
-            X_np[idx_train],
-            y_np[idx_train],
-            eval_set=[(X_np[idx_val], y_np[idx_val])],
+            X_train_np,
+            y_train_np,
+            eval_set=[(X_val_np, y_val_np)],
             verbose=False
         )
 
-        # Get raw predictions (uncalibrated)
-        raw_proba = model.predict_proba(X_np)[:, 1]  # Probability of class 1 (bearish)
-        raw_train = raw_proba[idx_train]
-        raw_val = raw_proba[idx_val]
-        raw_test = raw_proba[idx_test]
-
-        y_train = y_np[idx_train]
-        y_val = y_np[idx_val]
-        y_test = y_np[idx_test]
+        # Get raw predictions (uncalibrated) for all splits
+        raw_train = model.predict_proba(X_train_np)[:, 1]  # Probability of class 1 (bearish)
+        raw_val = model.predict_proba(X_val_np)[:, 1]
+        raw_test = model.predict_proba(X_test_np)[:, 1]
 
         # Calibrate on validation set using isotonic regression
         calibration_method = config.get("mr_calibration_method", "isotonic")
@@ -762,13 +849,12 @@ class MLMeanReversionRegimeStep(BaseStep):
             method=calibration_method,
             cv="prefit"
         )
-        calibrated_model.fit(X_np[idx_val], y_np[idx_val])
+        calibrated_model.fit(X_val_np, y_val_np)
 
-        # Get calibrated predictions
-        calibrated_proba = calibrated_model.predict_proba(X_np)[:, 1]
-        calib_train = calibrated_proba[idx_train]
-        calib_val = calibrated_proba[idx_val]
-        calib_test = calibrated_proba[idx_test]
+        # Get calibrated predictions for all splits
+        calib_train = calibrated_model.predict_proba(X_train_np)[:, 1]
+        calib_val = calibrated_model.predict_proba(X_val_np)[:, 1]
+        calib_test = calibrated_model.predict_proba(X_test_np)[:, 1]
 
         def _metrics(y_true, y_pred_proba, prefix="") -> Dict[str, float]:
             y_pred_binary = (y_pred_proba >= 0.5).astype(int)
@@ -789,25 +875,34 @@ class MLMeanReversionRegimeStep(BaseStep):
             return metrics
 
         metrics: Dict[str, Any] = {
-            "train_raw": _metrics(y_train, raw_train, ""),
-            "val_raw": _metrics(y_val, raw_val, ""),
-            "test_raw": _metrics(y_test, raw_test, ""),
-            "train_calibrated": _metrics(y_train, calib_train, ""),
-            "val_calibrated": _metrics(y_val, calib_val, ""),
-            "test_calibrated": _metrics(y_test, calib_test, ""),
+            "train_raw": _metrics(y_train_np, raw_train, ""),
+            "val_raw": _metrics(y_val_np, raw_val, ""),
+            "test_raw": _metrics(y_test_np, raw_test, ""),
+            "train_calibrated": _metrics(y_train_np, calib_train, ""),
+            "val_calibrated": _metrics(y_val_np, calib_val, ""),
+            "test_calibrated": _metrics(y_test_np, calib_test, ""),
             "calibration_method": calibration_method,
             "class_balance": {
-                "train_pos_rate": float(y_train.mean()),
-                "val_pos_rate": float(y_val.mean()),
-                "test_pos_rate": float(y_test.mean()),
+                "train_pos_rate": float(y_train_np.mean()),
+                "val_pos_rate": float(y_val_np.mean()),
+                "test_pos_rate": float(y_test_np.mean()),
+            },
+            "split_sizes": {
+                "train": n_train,
+                "val": n_val,
+                "test": n_test,
             }
         }
 
-        # Walk-forward validation for OOF calibration
+        # Walk-forward validation for OOF calibration (using concatenated data)
+        # Combine train+val+test back for walk-forward analysis
+        X_full_np = np.vstack([X_train_np, X_val_np, X_test_np])
+        y_full_np = np.concatenate([y_train_np, y_val_np, y_test_np])
+
         try:
             wf_metrics = self._run_walkforward_validation(
-                X_np,
-                y_np,
+                X_full_np,
+                y_full_np,
                 config,
                 calibration_method=calibration_method,
             )
@@ -816,7 +911,11 @@ class MLMeanReversionRegimeStep(BaseStep):
         except Exception as e:
             tprint_warning(f"Walk-forward validation failed: {e}")
 
-        return model, calibrated_model, metrics, raw_proba, calibrated_proba
+        # Combine predictions back into full arrays (in temporal order)
+        raw_proba_full = np.concatenate([raw_train, raw_val, raw_test])
+        calibrated_proba_full = np.concatenate([calib_train, calib_val, calib_test])
+
+        return model, calibrated_model, metrics, raw_proba_full, calibrated_proba_full
 
     def _run_walkforward_validation(
         self,
@@ -985,12 +1084,13 @@ class MLMeanReversionRegimeStep(BaseStep):
         teacher_metrics: Dict[str, Any],
         student_metrics: Dict[str, Any],
         fwd_metrics: Dict[Any, Any],
+        split_config: TemporalSplitConfig,
         symbol: str,
         exchange: str,
         timeframe: str,
         market_source: str,
     ) -> Tuple[Dict[str, str], Dict[str, str]]:
-        """Save artifacts and generate comprehensive reports with improved diagnostics."""
+        """Save artifacts and generate comprehensive reports with improved diagnostics and burn-in metadata."""
         artifacts: Dict[str, str] = {}
         reports: Dict[str, str] = {}
 
@@ -1005,17 +1105,29 @@ class MLMeanReversionRegimeStep(BaseStep):
         ]].copy()
         to_save = to_save.reset_index().rename(columns={output_df.index.name or "index": "timestamp"})
         try:
+            # Prepare metadata with temporal split information
+            metadata = {
+                "symbol": symbol,
+                "exchange": exchange,
+                "timeframe": timeframe,
+                "source_market_data": market_source,
+                "version": "v2_classification_with_burnin",
+                "training_start": str(split_config.training.start),
+                "training_end": str(split_config.training.effective_end),
+                "validation_start": str(split_config.validation.start),
+                "validation_end": str(split_config.validation.effective_end),
+                "test_start": str(split_config.test.start),
+                "test_end": str(split_config.test.effective_end),
+            }
+            if split_config.burnin is not None:
+                metadata["burnin_start"] = str(split_config.burnin.start)
+                metadata["burnin_end"] = str(split_config.burnin.effective_end)
+
             artifacts["training_data"] = self._save_artifact(
                 data=to_save,
                 artifact_name=f"ml_mean_reversion_training_data_{timeframe}",
                 artifact_type="data",
-                metadata={
-                    "symbol": symbol,
-                    "exchange": exchange,
-                    "timeframe": timeframe,
-                    "source_market_data": market_source,
-                    "version": "v2_classification"
-                },
+                metadata=metadata,
             )
         except Exception as exc:  # noqa: BLE001
             tprint_warning(f"Failed to save training data artifact: {exc}")

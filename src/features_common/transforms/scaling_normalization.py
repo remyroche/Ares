@@ -44,6 +44,9 @@ __all__ = [
     "winsorized_zscore_normalize",
     "robust_normalize",
     "rank_normalize",
+    "rolling_zscore_normalize",
+    "rolling_winsorized_zscore_normalize",
+    "rolling_minmax_normalize",
 ]
 
 
@@ -172,6 +175,147 @@ def rank_normalize(
 
     normalized = df.rank(method=method, ascending=ascending, pct=True)
     normalized = normalized.fillna(0.5)
+
+    return _restore_output(normalized.astype(float), was_series, data)
+
+
+def rolling_zscore_normalize(
+    data: Union[pd.DataFrame, pd.Series],
+    window: int,
+    min_periods: Optional[int] = None,
+    ddof: int = 1,
+) -> Union[pd.DataFrame, pd.Series]:
+    """
+    Apply rolling z-score normalization using only data available at time t.
+
+    This ensures causality: the normalization at time t uses only data from t-window to t-1.
+    This is critical for preventing look-ahead bias in ML models.
+
+    Args:
+        data: Input data (Series or DataFrame)
+        window: Rolling window size (e.g., 500 for ~500 bars)
+        min_periods: Minimum number of observations required (default: window)
+        ddof: Degrees of freedom for standard deviation calculation (default: 1)
+
+    Returns:
+        Rolling z-score normalized data
+    """
+    df, was_series = _normalize_input(data)
+
+    if min_periods is None:
+        min_periods = window
+
+    # Calculate rolling statistics using only past data
+    rolling_mean = df.rolling(window=window, min_periods=min_periods).mean()
+    rolling_std = df.rolling(window=window, min_periods=min_periods).std(ddof=ddof)
+
+    # Normalize using rolling statistics
+    rolling_std_safe = rolling_std.replace(0, np.nan)
+    normalized = (df - rolling_mean) / rolling_std_safe
+    normalized = normalized.fillna(0.0)
+
+    return _restore_output(normalized.astype(float), was_series, data)
+
+
+def rolling_winsorized_zscore_normalize(
+    data: Union[pd.DataFrame, pd.Series],
+    window: int,
+    min_periods: Optional[int] = None,
+    ddof: int = 1,
+    lower_quantile: float = 0.01,
+    upper_quantile: float = 0.99,
+) -> Union[pd.DataFrame, pd.Series]:
+    """
+    Apply rolling winsorized z-score normalization using only data available at time t.
+
+    This combines rolling window approach with winsorization to handle outliers while
+    ensuring causality. At each time t, it uses data from t-window to t-1 to compute
+    the normalization parameters.
+
+    Args:
+        data: Input data (Series or DataFrame)
+        window: Rolling window size (e.g., 500 for ~500 bars)
+        min_periods: Minimum number of observations required (default: window)
+        ddof: Degrees of freedom for standard deviation calculation (default: 1)
+        lower_quantile: Lower quantile for winsorization (default: 0.01)
+        upper_quantile: Upper quantile for winsorization (default: 0.99)
+
+    Returns:
+        Rolling winsorized z-score normalized data
+    """
+    df, was_series = _normalize_input(data)
+
+    if min_periods is None:
+        min_periods = window
+
+    # Initialize result with NaN
+    normalized = pd.DataFrame(np.nan, index=df.index, columns=df.columns)
+
+    # Process each column separately
+    for col in df.columns:
+        series = df[col]
+        result_col = pd.Series(np.nan, index=series.index)
+
+        # Calculate rolling quantiles for winsorization
+        rolling_lower = series.rolling(window=window, min_periods=min_periods).quantile(lower_quantile)
+        rolling_upper = series.rolling(window=window, min_periods=min_periods).quantile(upper_quantile)
+
+        # Winsorize: clip values to rolling quantile bounds
+        winsorized = series.clip(lower=rolling_lower, upper=rolling_upper, axis=0)
+
+        # Calculate rolling statistics on winsorized data
+        rolling_mean = winsorized.rolling(window=window, min_periods=min_periods).mean()
+        rolling_std = winsorized.rolling(window=window, min_periods=min_periods).std(ddof=ddof)
+
+        # Normalize
+        rolling_std_safe = rolling_std.replace(0, np.nan)
+        result_col = (winsorized - rolling_mean) / rolling_std_safe
+        result_col = result_col.fillna(0.0)
+
+        normalized[col] = result_col
+
+    return _restore_output(normalized.astype(float), was_series, data)
+
+
+def rolling_minmax_normalize(
+    data: Union[pd.DataFrame, pd.Series],
+    window: int,
+    min_periods: Optional[int] = None,
+    feature_range: Tuple[float, float] = (0.0, 1.0),
+) -> Union[pd.DataFrame, pd.Series]:
+    """
+    Apply rolling min-max normalization using only data available at time t.
+
+    This normalizes each value to the range [feature_range[0], feature_range[1]]
+    based on the rolling min/max from the past window.
+
+    Args:
+        data: Input data (Series or DataFrame)
+        window: Rolling window size (e.g., 500 for ~500 bars)
+        min_periods: Minimum number of observations required (default: window)
+        feature_range: Desired output range (default: (0, 1))
+
+    Returns:
+        Rolling min-max normalized data
+    """
+    df, was_series = _normalize_input(data)
+
+    if min_periods is None:
+        min_periods = window
+
+    # Calculate rolling min and max using only past data
+    rolling_min = df.rolling(window=window, min_periods=min_periods).min()
+    rolling_max = df.rolling(window=window, min_periods=min_periods).max()
+
+    # Normalize to [0, 1]
+    range_val = rolling_max - rolling_min
+    range_val_safe = range_val.replace(0, np.nan)
+    normalized_01 = (df - rolling_min) / range_val_safe
+
+    # Scale to desired range
+    min_val, max_val = feature_range
+    normalized = normalized_01 * (max_val - min_val) + min_val
+    normalized = normalized.fillna(min_val)
 
     return _restore_output(normalized.astype(float), was_series, data)
 

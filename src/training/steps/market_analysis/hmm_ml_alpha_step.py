@@ -36,7 +36,14 @@ from src.utils.tprint import (
     tprint_warning,
     tprint_error,
 )
-from src.features_common.transforms.scaling_normalization import ScalingNormalizer
+from src.features_common.transforms.scaling_normalization import (
+    ScalingNormalizer,
+    rolling_winsorized_zscore_normalize,
+)
+from src.utils.versioned_artifacts.temporal_splits import (
+    create_temporal_split_config_for_pipeline,
+    TemporalSplitConfig,
+)
 from src.training.steps.market_analysis.clusters.cluster_quality_assessor import (
     ClusterQualityAssessor,
     ClusterQualityMetrics,
@@ -236,6 +243,25 @@ class HMMMLAlphaStep(BaseStep):
                 f"({market_data.index.min()} → {market_data.index.max()})"
             )
 
+            # Create temporal split config with 6-month burn-in for indicator stabilization
+            split_config = create_temporal_split_config_for_pipeline(
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=regime_timeframe,
+                data_start=market_data.index.min(),
+                data_end=market_data.index.max(),
+                enable_burnin=True,
+                burnin_pct=1/6  # 6 months = 1/6 of 3 years
+            )
+            tprint_info(
+                f"📅 Temporal split config: "
+                f"burn-in={split_config.burnin.start if split_config.burnin else 'None'} → "
+                f"{split_config.burnin.effective_end if split_config.burnin else 'None'}, "
+                f"train={split_config.training.start} → {split_config.training.effective_end}, "
+                f"val={split_config.validation.start} → {split_config.validation.effective_end}, "
+                f"test={split_config.test.start} → {split_config.test.effective_end}"
+            )
+
             # ------------------------------------------------------------------
             # 3) Align all inputs on common DatetimeIndex
             # ------------------------------------------------------------------
@@ -353,6 +379,7 @@ class HMMMLAlphaStep(BaseStep):
                 model, alpha_scores, pred_col_name, training_metrics, feature_pipeline_artifacts = self._train_alpha_model(
                     alpha_df,
                     config,
+                    split_config=split_config,
                 )
 
                 tprint_info(
@@ -787,32 +814,53 @@ class HMMMLAlphaStep(BaseStep):
                 f" Saving alpha training dataset with shape {alpha_to_save.shape} "
                 f"to versioned HDF5 store"
             )
+            # Build metadata with temporal split information
+            metadata = {
+                "symbol": symbol,
+                "exchange": exchange,
+                "timeframe": regime_timeframe,
+                "source_market_data": market_source,
+                "version": "v2_with_burnin",
+                "training_start": str(split_config.training.start),
+                "training_end": str(split_config.training.effective_end),
+                "validation_start": str(split_config.validation.start),
+                "validation_end": str(split_config.validation.effective_end),
+                "test_start": str(split_config.test.start),
+                "test_end": str(split_config.test.effective_end),
+            }
+            if split_config.burnin is not None:
+                metadata["burnin_start"] = str(split_config.burnin.start)
+                metadata["burnin_end"] = str(split_config.burnin.effective_end)
+
             training_data_path = self._save_artifact(
                 data=alpha_to_save,
                 artifact_name="hmm_alpha_training_data_15m",
                 artifact_type="data",
-                metadata={
-                    "symbol": symbol,
-                    "exchange": exchange,
-                    "timeframe": regime_timeframe,
-                    "source_market_data": market_source,
-                },
+                metadata=metadata,
             )
 
             # Save trained model if available
             if model is not None:
                 try:
                     tprint_info(" Saving LightGBM alpha model via artifact router")
+                    model_metadata = {
+                        "symbol": symbol,
+                        "exchange": exchange,
+                        "timeframe": regime_timeframe,
+                        "model_type": "lightgbm",
+                        "version": "v2_with_burnin",
+                        "training_start": str(split_config.training.start),
+                        "training_end": str(split_config.training.effective_end),
+                    }
+                    if split_config.burnin is not None:
+                        model_metadata["burnin_start"] = str(split_config.burnin.start)
+                        model_metadata["burnin_end"] = str(split_config.burnin.effective_end)
+
                     model_path = self._save_artifact(
                         data=model,
                         artifact_name="hmm_alpha_model_15m",
                         artifact_type="model",
-                        metadata={
-                            "symbol": symbol,
-                            "exchange": exchange,
-                            "timeframe": regime_timeframe,
-                            "model_type": "lightgbm",
-                        },
+                        metadata=model_metadata,
                     )
                 except Exception as save_model_exc:
                     tprint_warning(f"Failed to save alpha model artifact: {save_model_exc}")
@@ -1030,6 +1078,7 @@ class HMMMLAlphaStep(BaseStep):
         self,
         alpha_df: pd.DataFrame,
         config: Dict[str, Any],
+        split_config: Optional[TemporalSplitConfig] = None,
     ) -> Tuple[Any, Optional[pd.Series], str, Dict[str, Any], Dict[str, Any]]:
         """Train a LightGBM model to predict alpha targets."""
         try:
@@ -1220,29 +1269,76 @@ class HMMMLAlphaStep(BaseStep):
                 f"Insufficient samples for alpha model training: {len(X)} < {min_samples}"
             )
 
-        train_frac = float(config.get("alpha_train_fraction", 0.8))
-        train_frac = min(max(train_frac, 0.5), 0.95)
-        split_idx = int(len(X) * train_frac)
-        split_idx = max(min(split_idx, len(X) - 1), 1)
+        # Temporal train / validation / test split using split_config
+        if split_config is not None:
+            # Use temporal split config for proper train/val/test separation
+            train_mask = (X.index >= split_config.training.start) & \
+                         (X.index <= split_config.training.effective_end)
+            val_mask = (X.index >= split_config.validation.start) & \
+                       (X.index <= split_config.validation.effective_end)
 
-        # Chronological split to preserve temporal ordering
-        X_train_raw, y_train = X.iloc[:split_idx].copy(), y.iloc[:split_idx]
-        X_val_raw, y_val = X.iloc[split_idx:].copy(), y.iloc[split_idx:]
+            X_train_raw = X.loc[train_mask].copy()
+            y_train = y.loc[train_mask]
+            X_val_raw = X.loc[val_mask].copy()
+            y_val = y.loc[val_mask]
 
-        # Robust scaling with optional outlier handling (no VectorBT to keep deps minimal)
-        outlier_threshold = float(config.get("alpha_outlier_threshold", 3.0))
-        normalizer_config: Dict[str, Any] = {
-            "default_strategy": "robust",
-            "auto_select": False,
-            "handle_outliers": True,
-            "outlier_threshold": outlier_threshold,
-            "use_vectorbt": False,
-        }
-        scaler = ScalingNormalizer(normalizer_config)
+            tprint_info(
+                f"📊 Temporal splits: train={len(X_train_raw)}, val={len(X_val_raw)}"
+            )
+        else:
+            # Fallback to percentage-based split if no split_config provided
+            tprint_warning("No split_config provided, using percentage-based split (legacy fallback)")
+            train_frac = float(config.get("alpha_train_fraction", 0.8))
+            train_frac = min(max(train_frac, 0.5), 0.95)
+            split_idx = int(len(X) * train_frac)
+            split_idx = max(min(split_idx, len(X) - 1), 1)
 
-        X_train_scaled = scaler.fit_transform(X_train_raw, strategy="robust")
-        X_val_scaled = scaler.transform(X_val_raw)
-        X_scaled_full = scaler.transform(X)
+            X_train_raw = X.iloc[:split_idx].copy()
+            y_train = y.iloc[:split_idx]
+            X_val_raw = X.iloc[split_idx:].copy()
+            y_val = y.iloc[split_idx:]
+
+        # Apply rolling window normalization to features to prevent look-ahead bias
+        # Use rolling window to ensure calculations at time t use only data available at time t
+        window_size = int(config.get("alpha_normalization_window", 500))
+        try:
+            X_train_scaled = rolling_winsorized_zscore_normalize(
+                X_train_raw,
+                window=window_size,
+                min_periods=window_size // 2,
+                lower_quantile=0.01,
+                upper_quantile=0.99
+            )
+            X_val_scaled = rolling_winsorized_zscore_normalize(
+                X_val_raw,
+                window=window_size,
+                min_periods=window_size // 2,
+                lower_quantile=0.01,
+                upper_quantile=0.99
+            )
+            X_scaled_full = rolling_winsorized_zscore_normalize(
+                X,
+                window=window_size,
+                min_periods=window_size // 2,
+                lower_quantile=0.01,
+                upper_quantile=0.99
+            )
+            tprint_info("✅ Applied rolling window normalization to features")
+        except Exception as norm_exc:
+            tprint_warning(f"Rolling normalization failed, using ScalingNormalizer fallback: {norm_exc}")
+            # Fallback to ScalingNormalizer
+            outlier_threshold = float(config.get("alpha_outlier_threshold", 3.0))
+            normalizer_config: Dict[str, Any] = {
+                "default_strategy": "robust",
+                "auto_select": False,
+                "handle_outliers": True,
+                "outlier_threshold": outlier_threshold,
+                "use_vectorbt": False,
+            }
+            scaler = ScalingNormalizer(normalizer_config)
+            X_train_scaled = scaler.fit_transform(X_train_raw, strategy="robust")
+            X_val_scaled = scaler.transform(X_val_raw)
+            X_scaled_full = scaler.transform(X)
 
         # Optionally apply EWMA temporal smoothing on the scaled space
         use_ewm_features = bool(config.get("alpha_use_ewm_features", True))

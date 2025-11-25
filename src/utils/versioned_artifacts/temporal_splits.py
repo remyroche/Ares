@@ -61,14 +61,24 @@ class TemporalPeriod:
 
 @dataclass
 class TemporalSplitConfig:
-    """Configuration for train/validation/test splits."""
+    """Configuration for train/validation/test splits with optional burn-in period."""
 
     training: TemporalPeriod
     validation: TemporalPeriod
     test: TemporalPeriod
+    burnin: Optional[TemporalPeriod] = None  # Optional burn-in period before training
 
     def __post_init__(self):
         """Validate no overlaps between periods."""
+        # Check burn-in doesn't overlap with training if present
+        if self.burnin is not None:
+            if self.burnin.effective_end >= self.training.start:
+                raise ValueError(
+                    f"Burn-in period (ends {self.burnin.effective_end}) "
+                    f"overlaps with training period (starts {self.training.start}). "
+                    f"Increase burn-in embargo or adjust dates."
+                )
+
         # Check training doesn't overlap with validation
         if self.training.effective_end >= self.validation.start:
             raise ValueError(
@@ -87,19 +97,26 @@ class TemporalSplitConfig:
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization."""
-        return {
+        result = {
             'training': self.training.to_dict(),
             'validation': self.validation.to_dict(),
             'test': self.test.to_dict()
         }
+        if self.burnin is not None:
+            result['burnin'] = self.burnin.to_dict()
+        return result
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'TemporalSplitConfig':
         """Create from dictionary."""
+        burnin = None
+        if 'burnin' in data and data['burnin'] is not None:
+            burnin = TemporalPeriod.from_dict(data['burnin'])
         return cls(
             training=TemporalPeriod.from_dict(data['training']),
             validation=TemporalPeriod.from_dict(data['validation']),
-            test=TemporalPeriod.from_dict(data['test'])
+            test=TemporalPeriod.from_dict(data['test']),
+            burnin=burnin
         )
 
     def save(self, path: Path) -> None:
@@ -122,10 +139,15 @@ class TemporalSplitConfig:
         train_pct: float = 0.6,
         val_pct: float = 0.2,
         test_pct: float = 0.2,
-        embargo_days: int = 1  # Changed from 30 to 1 day
+        embargo_days: int = 1,  # Changed from 30 to 1 day
+        burnin_pct: float = 0.0  # Burn-in as percentage of total data (e.g., 1/6 ≈ 0.167)
     ) -> 'TemporalSplitConfig':
         """
-        Create split config from data range with specified proportions.
+        Create split config from data range with specified proportions and optional burn-in period.
+
+        The burn-in period is used by ML models for training without generating probabilities,
+        and is completely ignored by other models. This allows indicators to stabilize before
+        the training period begins.
 
         Args:
             data_start: Start of available data
@@ -134,22 +156,38 @@ class TemporalSplitConfig:
             val_pct: Proportion for validation (default: 0.2)
             test_pct: Proportion for testing (default: 0.2)
             embargo_days: Days of embargo between periods (default: 1)
+            burnin_pct: Proportion for burn-in period (default: 0.0, recommended: 1/6 ≈ 0.167)
 
         Returns:
-            TemporalSplitConfig with calculated periods
+            TemporalSplitConfig with calculated periods including optional burn-in
         """
         if not np.isclose(train_pct + val_pct + test_pct, 1.0):
             raise ValueError("Percentages must sum to 1.0")
 
         total_days = (data_end - data_start).days
 
-        # Calculate period durations (accounting for embargos)
-        train_days = int(total_days * train_pct)
-        val_days = int(total_days * val_pct)
-        test_days = total_days - train_days - val_days - 2 * embargo_days
+        # Calculate burn-in period if specified
+        burnin_period = None
+        burnin_days = 0
+        if burnin_pct > 0:
+            burnin_days = int(total_days * burnin_pct)
+            burnin_start = data_start
+            burnin_end = burnin_start + timedelta(days=burnin_days)
+            burnin_period = TemporalPeriod(burnin_start, burnin_end, embargo_days, "burnin")
+
+        # Adjust remaining days after burn-in
+        remaining_days = total_days - burnin_days - (embargo_days if burnin_days > 0 else 0)
+
+        # Calculate period durations from remaining days (accounting for embargos)
+        train_days = int(remaining_days * train_pct)
+        val_days = int(remaining_days * val_pct)
+        test_days = remaining_days - train_days - val_days - 2 * embargo_days
 
         # Calculate period boundaries
-        train_start = data_start
+        if burnin_days > 0:
+            train_start = burnin_end + timedelta(days=embargo_days)
+        else:
+            train_start = data_start
         train_end = train_start + timedelta(days=train_days)
 
         val_start = train_end + timedelta(days=embargo_days)
@@ -161,7 +199,8 @@ class TemporalSplitConfig:
         return cls(
             training=TemporalPeriod(train_start, train_end, embargo_days, "training"),
             validation=TemporalPeriod(val_start, val_end, embargo_days, "validation"),
-            test=TemporalPeriod(test_start, test_end, 0, "test")
+            test=TemporalPeriod(test_start, test_end, 0, "test"),
+            burnin=burnin_period
         )
 
 
@@ -388,7 +427,9 @@ def create_temporal_split_config_for_pipeline(
     timeframe: str,
     data_start: Optional[datetime] = None,
     data_end: Optional[datetime] = None,
-    config_path: Optional[Path] = None
+    config_path: Optional[Path] = None,
+    enable_burnin: bool = True,  # Enable 6-month burn-in by default for ML models
+    burnin_pct: float = 1/6  # 6 months = 1/6 of 3 years
 ) -> TemporalSplitConfig:
     """
     Create or load temporal split configuration for a trading pair.
@@ -400,6 +441,8 @@ def create_temporal_split_config_for_pipeline(
         data_start: Start of available data (required if creating new config)
         data_end: End of available data (required if creating new config)
         config_path: Path to save/load config (default: auto-generated)
+        enable_burnin: Whether to include burn-in period (default: True for ML models)
+        burnin_pct: Proportion for burn-in period (default: 1/6 for 6 months of 3 years)
 
     Returns:
         TemporalSplitConfig for this trading pair
@@ -407,7 +450,8 @@ def create_temporal_split_config_for_pipeline(
     if config_path is None:
         config_dir = Path("config/temporal_splits")
         config_dir.mkdir(parents=True, exist_ok=True)
-        config_path = config_dir / f"{symbol}_{exchange}_{timeframe}.json"
+        burnin_suffix = "_burnin" if enable_burnin else ""
+        config_path = config_dir / f"{symbol}_{exchange}_{timeframe}{burnin_suffix}.json"
 
     # Try to load existing config
     if config_path.exists():
@@ -426,7 +470,8 @@ def create_temporal_split_config_for_pipeline(
         train_pct=0.6,
         val_pct=0.2,
         test_pct=0.2,
-        embargo_days=1  # Reduced from 30 to 1 day - 30 days is excessive for 15m data
+        embargo_days=1,  # Reduced from 30 to 1 day - 30 days is excessive for 15m data
+        burnin_pct=burnin_pct if enable_burnin else 0.0
     )
 
     # Save for future use
@@ -513,14 +558,14 @@ def get_data_for_purpose(
     config: Optional[TemporalSplitConfig] = None
 ) -> ArtifactView:
     """
-    Get data view filtered for specific purpose (training/validation/test).
+    Get data view filtered for specific purpose (training/validation/test/burnin).
 
     This is the main function that steps should use to ensure proper
     temporal separation of data.
 
     Args:
         view: Source artifact view
-        purpose: One of 'training' (default), 'validation', 'test', or 'all'
+        purpose: One of 'training' (default), 'validation', 'test', 'burnin', or 'all'
         config: Temporal split configuration (if None, returns full view)
 
     Returns:
@@ -537,6 +582,9 @@ def get_data_for_purpose(
         >>> # In model training step (default)
         >>> training_view = get_data_for_purpose(view, 'training', config)
         >>>
+        >>> # Get burn-in data for indicator stabilization
+        >>> burnin_view = get_data_for_purpose(view, 'burnin', config)
+        >>>
         >>> # In parameter optimization step
         >>> validation_view = get_data_for_purpose(view, 'validation', config)
         >>>
@@ -552,7 +600,11 @@ def get_data_for_purpose(
 
     purpose = purpose.lower()
 
-    if purpose == 'training':
+    if purpose == 'burnin':
+        if config.burnin is None:
+            raise ValueError("Burn-in period requested but not configured in TemporalSplitConfig")
+        return TemporalViewFilter.filter_by_period(view, config.burnin)
+    elif purpose == 'training':
         return TemporalViewFilter.get_training_view(view, config)
     elif purpose == 'validation':
         return TemporalViewFilter.get_validation_view(view, config)
@@ -563,5 +615,5 @@ def get_data_for_purpose(
         return view
     else:
         raise ValueError(
-            f"Invalid purpose: {purpose}. Must be 'training', 'validation', 'test', or 'all'"
+            f"Invalid purpose: {purpose}. Must be 'training', 'validation', 'test', 'burnin', or 'all'"
         )

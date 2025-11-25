@@ -101,13 +101,19 @@ class LiveHMM:
         mahal_distance = live_hmm.get_mahalanobis_distance(new_observation)
     """
 
-    def __init__(self, trained_model: GaussianHMM, safe_state_id: int = 0):
+    def __init__(
+        self,
+        trained_model: GaussianHMM,
+        safe_state_id: int = 0,
+        mahal_scaler_params: Optional[Dict[str, float]] = None
+    ):
         """
         Initialize LiveHMM from a trained hmmlearn GaussianHMM model.
 
         Args:
             trained_model: Fitted GaussianHMM instance
             safe_state_id: Index of the "safe" state for Mahalanobis distance (default: 0)
+            mahal_scaler_params: Dict with 'min' and 'max' for [0, 1] normalization
         """
         # Extract parameters from trained model
         self.n_components = trained_model.n_components
@@ -122,6 +128,9 @@ class LiveHMM:
         self.safe_mean = self.means[safe_state_id]
         self.safe_cov = self._get_covariance(safe_state_id)
         self.safe_cov_inv = np.linalg.inv(self.safe_cov)
+
+        # Scaler parameters for [0, 1] normalization
+        self.mahal_scaler_params = mahal_scaler_params or {}
 
         # Initialize state probabilities
         self.state_probs = self.startprob.copy()
@@ -223,6 +232,41 @@ class LiveHMM:
         else:
             return raw_distance
 
+    def get_risk_score(self, observation: np.ndarray) -> float:
+        """
+        Calculate normalized risk score in [0, 1] range.
+
+        This is the production-ready risk score that should be used in live trading.
+
+        Args:
+            observation: 1D array of shape (n_features,)
+
+        Returns:
+            Normalized risk score in [0, 1]
+            - 0.0 = At safe regime center (lowest risk)
+            - 1.0 = Maximum distance from safe regime (highest risk)
+        """
+        # Get log-stabilized Mahalanobis distance
+        mahal_distance = self.get_mahalanobis_distance(observation, log_stabilize=True)
+
+        # Normalize using training data statistics
+        if self.mahal_scaler_params:
+            min_val = self.mahal_scaler_params.get('min', 0.0)
+            max_val = self.mahal_scaler_params.get('max', 1.0)
+
+            if max_val > min_val:
+                risk_score = (mahal_distance - min_val) / (max_val - min_val)
+            else:
+                risk_score = 0.5  # Fallback if constant
+        else:
+            # No scaler params: return raw distance (not recommended for production)
+            risk_score = mahal_distance
+
+        # Clip to [0, 1]
+        risk_score = np.clip(risk_score, 0.0, 1.0)
+
+        return float(risk_score)
+
     def reset(self):
         """Reset state probabilities to initial distribution."""
         self.state_probs = self.startprob.copy()
@@ -295,14 +339,14 @@ class MLRiskRegimeStepHMM(BaseStep):
                 risk_df, config, n_regimes
             )
 
-            # Calculate Mahalanobis distances
-            mahal_distances = self._calculate_mahalanobis_distances(
-                risk_df, hmm_model, safe_state_id
+            # Calculate normalized Mahalanobis distances [0, 1]
+            mahal_distances, mahal_scaler_params = self._calculate_mahalanobis_distances(
+                risk_df, hmm_model, safe_state_id, split_config
             )
 
-            # Add regime labels and Mahalanobis distances to dataframe
+            # Add regime labels and normalized Mahalanobis risk score to dataframe
             risk_df['risk_regime'] = regime_labels
-            risk_df['mahal_distance_log'] = mahal_distances
+            risk_df['risk_score'] = mahal_distances  # Normalized [0, 1] risk score
 
             # Calculate forward returns and Sharpe ratios
             forward_metrics = self._calculate_forward_returns_and_sharpe(
@@ -341,6 +385,7 @@ class MLRiskRegimeStepHMM(BaseStep):
                 symbol=symbol,
                 timeframe=regime_timeframe,
                 safe_state_id=safe_state_id,
+                mahal_scaler_params=mahal_scaler_params,
                 split_config=split_config
             )
 
@@ -747,21 +792,27 @@ class MLRiskRegimeStepHMM(BaseStep):
         self,
         risk_df: pd.DataFrame,
         hmm_model: GaussianHMM,
-        safe_state_id: int
-    ) -> np.ndarray:
+        safe_state_id: int,
+        split_config: Optional[TemporalSplitConfig] = None
+    ) -> Tuple[np.ndarray, Dict[str, float]]:
         """
         Calculate log-stabilized Mahalanobis distance from the "safe" state.
+        Normalized to [0, 1] range using training data statistics (no data leakage).
 
         Formula: D_M(x) = sqrt((x - μ_safe)^T * Σ_safe^-1 * (x - μ_safe))
         Log-stabilized: ln(1 + D_M(x))
+        Normalized: (distance - min_train) / (max_train - min_train)
 
         Args:
             risk_df: DataFrame with risk features
             hmm_model: Trained HMM model
             safe_state_id: ID of the "safe" state
+            split_config: Temporal split config (to fit scaler on training data only)
 
         Returns:
-            Array of log-stabilized Mahalanobis distances
+            Tuple of (normalized_distances, scaler_params)
+            - normalized_distances: Array of distances in [0, 1]
+            - scaler_params: Dict with min/max from training data
         """
         tprint_info(f"📐 Calculating Mahalanobis distances from safe state (regime {safe_state_id})...")
 
@@ -794,8 +845,8 @@ class MLRiskRegimeStepHMM(BaseStep):
             safe_cov += np.eye(safe_cov.shape[0]) * 1e-6
             safe_cov_inv = np.linalg.inv(safe_cov)
 
-        # Calculate Mahalanobis distances
-        mahal_distances = np.full(len(risk_features), np.nan)
+        # Calculate raw Mahalanobis distances (log-stabilized)
+        mahal_distances_raw = np.full(len(risk_features), np.nan)
 
         for i in range(len(risk_features)):
             if np.any(np.isnan(risk_features[i])):
@@ -806,17 +857,77 @@ class MLRiskRegimeStepHMM(BaseStep):
                 raw_distance = np.sqrt(diff.T @ safe_cov_inv @ diff)
 
                 # Log-stabilize: ln(1 + raw_distance)
-                mahal_distances[i] = np.log1p(raw_distance)
+                mahal_distances_raw[i] = np.log1p(raw_distance)
             except:
-                mahal_distances[i] = np.nan
+                mahal_distances_raw[i] = np.nan
 
-        valid_count = np.isfinite(mahal_distances).sum()
-        tprint_success(
-            f"✅ Calculated Mahalanobis distances: "
-            f"{valid_count}/{len(mahal_distances)} valid samples"
+        valid_count = np.isfinite(mahal_distances_raw).sum()
+        tprint_info(
+            f"  Raw distances calculated: {valid_count}/{len(mahal_distances_raw)} valid samples"
         )
 
-        return mahal_distances
+        # Normalize to [0, 1] using training data only (prevent data leakage)
+        if split_config is not None:
+            # Get training data mask
+            train_start = split_config.training.start
+            train_end = split_config.training.effective_end
+            train_mask = (risk_df.index >= train_start) & (risk_df.index <= train_end)
+
+            # Fit scaler on training data only
+            train_distances = mahal_distances_raw[train_mask]
+            train_distances_valid = train_distances[np.isfinite(train_distances)]
+
+            if len(train_distances_valid) > 0:
+                min_val = float(np.min(train_distances_valid))
+                max_val = float(np.max(train_distances_valid))
+            else:
+                tprint_warning("No valid training distances, using global statistics")
+                valid_distances = mahal_distances_raw[np.isfinite(mahal_distances_raw)]
+                min_val = float(np.min(valid_distances))
+                max_val = float(np.max(valid_distances))
+        else:
+            # No split config: use all data (less ideal, but backward compatible)
+            tprint_warning("No split_config provided, fitting scaler on all data")
+            valid_distances = mahal_distances_raw[np.isfinite(mahal_distances_raw)]
+            min_val = float(np.min(valid_distances))
+            max_val = float(np.max(valid_distances))
+
+        # Normalize all distances to [0, 1]
+        mahal_distances_normalized = np.full(len(mahal_distances_raw), np.nan)
+        valid_mask = np.isfinite(mahal_distances_raw)
+
+        if max_val > min_val:
+            mahal_distances_normalized[valid_mask] = (
+                (mahal_distances_raw[valid_mask] - min_val) / (max_val - min_val)
+            )
+        else:
+            # All distances are the same (edge case)
+            tprint_warning(f"All distances are constant ({min_val:.6f}), setting to 0.5")
+            mahal_distances_normalized[valid_mask] = 0.5
+
+        # Clip to [0, 1] to handle any out-of-range values in val/test
+        mahal_distances_normalized = np.clip(mahal_distances_normalized, 0.0, 1.0)
+
+        # Store scaler parameters
+        scaler_params = {
+            'min': min_val,
+            'max': max_val,
+            'fitted_on': 'training_data' if split_config is not None else 'all_data'
+        }
+
+        tprint_success(
+            f"✅ Normalized Mahalanobis distances to [0, 1]: "
+            f"min={min_val:.6f}, max={max_val:.6f}"
+        )
+        tprint_info(
+            f"  Range in data: [{np.nanmin(mahal_distances_normalized):.3f}, "
+            f"{np.nanmax(mahal_distances_normalized):.3f}]"
+        )
+        tprint_info(
+            f"  Interpretation: 0.0 = At safe regime center, 1.0 = Maximum risk/distance"
+        )
+
+        return mahal_distances_normalized, scaler_params
 
     def _calculate_forward_returns_and_sharpe(
         self,
@@ -1081,7 +1192,7 @@ class MLRiskRegimeStepHMM(BaseStep):
             'rolling_kurtosis',
             'rolling_skewness',
             'volatility_of_volatility',
-            'mahal_distance_log',
+            'risk_score',  # Normalized [0, 1] risk score
         ]
 
         available_features = [c for c in feature_cols if c in risk_df.columns]
@@ -1279,37 +1390,37 @@ class MLRiskRegimeStepHMM(BaseStep):
 
             f.write("---\n\n")
 
-            # Mahalanobis Distance Statistics
-            f.write("## Mahalanobis Distance from Safe State\n\n")
-            if 'mahal_distance_log' in risk_df.columns:
-                mahal_values = risk_df['mahal_distance_log'].dropna()
+            # Risk Score Statistics
+            f.write("## Normalized Risk Score [0, 1]\n\n")
+            if 'risk_score' in risk_df.columns:
+                risk_values = risk_df['risk_score'].dropna()
                 f.write(f"**Safe State ID**: {safe_state_id}\n\n")
-                f.write(f"**Mean Distance (log-stabilized)**: {mahal_values.mean():.4f}\n\n")
-                f.write(f"**Std Distance**: {mahal_values.std():.4f}\n\n")
-                f.write(f"**Median Distance**: {mahal_values.median():.4f}\n\n")
-                f.write(f"**95th Percentile**: {mahal_values.quantile(0.95):.4f}\n\n")
-                f.write(f"**99th Percentile**: {mahal_values.quantile(0.99):.4f}\n\n")
+                f.write(f"**Mean Risk Score**: {risk_values.mean():.4f}\n\n")
+                f.write(f"**Std Risk Score**: {risk_values.std():.4f}\n\n")
+                f.write(f"**Median Risk Score**: {risk_values.median():.4f}\n\n")
+                f.write(f"**95th Percentile**: {risk_values.quantile(0.95):.4f}\n\n")
+                f.write(f"**99th Percentile**: {risk_values.quantile(0.99):.4f}\n\n")
 
-                # Per-regime Mahalanobis statistics
-                f.write("### Mahalanobis Distance by Regime\n\n")
-                f.write("| Regime | Mean Distance | Std Distance | Median | 95th Pct | Samples |\n")
-                f.write("|--------|---------------|--------------|--------|----------|-------|\n")
+                # Per-regime risk score statistics
+                f.write("### Risk Score by Regime\n\n")
+                f.write("| Regime | Mean Risk | Std Risk | Median | 95th Pct | Samples |\n")
+                f.write("|--------|-----------|----------|--------|----------|-------|\n")
 
                 valid_mask = regime_labels >= 0
                 for regime_id in np.unique(regime_labels[valid_mask]):
-                    regime_mask = (regime_labels == regime_id) & risk_df['mahal_distance_log'].notna()
-                    regime_mahal = risk_df.loc[regime_mask, 'mahal_distance_log']
+                    regime_mask = (regime_labels == regime_id) & risk_df['risk_score'].notna()
+                    regime_risk = risk_df.loc[regime_mask, 'risk_score']
 
-                    if len(regime_mahal) > 0:
+                    if len(regime_risk) > 0:
                         f.write(
-                            f"| {regime_id} | {regime_mahal.mean():.4f} | "
-                            f"{regime_mahal.std():.4f} | {regime_mahal.median():.4f} | "
-                            f"{regime_mahal.quantile(0.95):.4f} | {len(regime_mahal)} |\n"
+                            f"| {regime_id} | {regime_risk.mean():.4f} | "
+                            f"{regime_risk.std():.4f} | {regime_risk.median():.4f} | "
+                            f"{regime_risk.quantile(0.95):.4f} | {len(regime_risk)} |\n"
                         )
                 f.write("\n")
 
             f.write("---\n\n")
-            f.write("*Report generated by ml_risk_regime_step_hmm with HMM architecture and Mahalanobis distance scoring*\n")
+            f.write("*Report generated by ml_risk_regime_step_hmm with normalized [0,1] risk scores*\n")
 
         return md_path
 
@@ -1323,9 +1434,10 @@ class MLRiskRegimeStepHMM(BaseStep):
         symbol: str,
         timeframe: str,
         safe_state_id: int,
+        mahal_scaler_params: Dict[str, float],
         split_config: Optional[TemporalSplitConfig] = None
     ) -> Dict[str, str]:
-        """Save HMM model, LiveHMM wrapper, and artifacts."""
+        """Save HMM model, LiveHMM wrapper, and artifacts with scaler parameters."""
         import joblib
 
         tprint_info("💾 Saving HMM model and artifacts...")
@@ -1351,10 +1463,11 @@ class MLRiskRegimeStepHMM(BaseStep):
             "safe_state_id": safe_state_id,
             "transition_matrix": hmm_model.transmat_,
             "temporal_metrics": temporal_metrics,
+            "mahal_scaler_params": mahal_scaler_params,  # Scaler for [0, 1] normalization
             "symbol": symbol,
             "timeframe": timeframe,
             "trained_at": timestamp,
-            "version": "v2_with_burnin",
+            "version": "v3_normalized_risk_score",
         }
 
         # Add burn-in metadata if available
@@ -1372,11 +1485,15 @@ class MLRiskRegimeStepHMM(BaseStep):
         joblib.dump(hmm_model_data, hmm_path)
         tprint_success(f"✅ Saved HMM model: {hmm_path}")
 
-        # 2. Save LiveHMM wrapper
-        live_hmm = LiveHMM(hmm_model, safe_state_id=safe_state_id)
+        # 2. Save LiveHMM wrapper with scaler parameters
+        live_hmm = LiveHMM(
+            hmm_model,
+            safe_state_id=safe_state_id,
+            mahal_scaler_params=mahal_scaler_params
+        )
         live_hmm_path = f"versioned_artifacts/risk_regime_models/risk_live_hmm_{symbol}_{timeframe}_{timestamp}.pkl"
         joblib.dump(live_hmm, live_hmm_path)
-        tprint_success(f"✅ Saved LiveHMM wrapper: {live_hmm_path}")
+        tprint_success(f"✅ Saved LiveHMM wrapper with [0, 1] normalization: {live_hmm_path}")
 
         # 3. Save artifact with Mahalanobis distances
         artifact_path = f"versioned_artifacts/risk_regime_models/risk_regime_artifact_{symbol}_{timeframe}_{timestamp}.parquet"

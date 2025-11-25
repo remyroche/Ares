@@ -6913,6 +6913,27 @@ class MLBreakoutBounceRegimeStep(BaseStep):
         feat_cols["int_test_prominence"] = prim_touch * prim_prom_z
         feat_cols["int_dist_opp_trend"] = dist_to_opp_atr * adx14
 
+        # ========================================================================
+        # NEW FEATURES: Volume Profile + Higher Timeframe Context
+        # ========================================================================
+        try:
+            tprint_info("📊 Computing volume profile features...")
+            vol_profile_features = self._compute_volume_profile_features(
+                df, primary_level, window=96
+            )
+            for feat_name, feat_series in vol_profile_features.items():
+                feat_cols[feat_name] = feat_series
+        except Exception as vol_exc:
+            tprint_warning(f"Failed to compute volume profile features: {vol_exc}")
+
+        try:
+            tprint_info("📊 Computing higher timeframe context (4-bar = 1h if 15m)...")
+            htf_features = self._compute_higher_timeframe_context(df, higher_tf_bars=4)
+            for feat_name, feat_series in htf_features.items():
+                feat_cols[feat_name] = feat_series
+        except Exception as htf_exc:
+            tprint_warning(f"Failed to compute higher timeframe context: {htf_exc}")
+
         # Optional cross-timeframe features (momentum/volatility/volume) for breakout context
         xtf_enabled = bool(config.get("breakout_enable_cross_timeframe", False))
         xtf_df = None
@@ -8714,3 +8735,780 @@ class MLBreakoutBounceRegimeStep(BaseStep):
         dx = (plus_di - minus_di).abs() / (plus_di + minus_di).replace(0.0, np.nan) * 100.0
         adx = dx.rolling(window, min_periods=1).mean()
         return adx
+
+    # =========================================================================
+    # NEW METHODS: Volume Profile, Higher Timeframe Context, Multi-Horizon
+    # =========================================================================
+
+    def _compute_volume_profile_features(
+        self,
+        df: pd.DataFrame,
+        level_price: pd.Series,
+        window: int = 96,
+    ) -> Dict[str, pd.Series]:
+        """Compute volume profile features for order flow depth analysis.
+
+        Returns:
+            Dict with volume_at_level, volume_profile_strength, cumulative_delta
+        """
+        close = df["close"]
+        high = df["high"]
+        low = df["low"]
+        volume = df["volume"]
+
+        # Volume-weighted proximity: how much volume traded near the level
+        price_bins = 20  # Discretize into price bins
+        features = {}
+
+        # 1. Volume at level (volume traded within 0.5% of level)
+        vol_at_level_list = []
+        for i in range(len(df)):
+            if i < window:
+                vol_at_level_list.append(np.nan)
+                continue
+
+            window_slice = df.iloc[i-window:i]
+            level_val = level_price.iloc[i]
+            if pd.isna(level_val):
+                vol_at_level_list.append(np.nan)
+                continue
+
+            # Volume where price touched within 0.5% of level
+            touched = (
+                (window_slice["low"] <= level_val * 1.005) &
+                (window_slice["high"] >= level_val * 0.995)
+            )
+            vol_at_level_list.append(window_slice.loc[touched, "volume"].sum())
+
+        vol_at_level = pd.Series(vol_at_level_list, index=df.index)
+        vol_mean = volume.rolling(window, min_periods=1).mean()
+        features["volume_at_level"] = vol_at_level
+        features["volume_profile_strength"] = vol_at_level / vol_mean.replace(0.0, np.nan)
+
+        # 2. Order flow imbalance (cumulative delta volume)
+        # Positive when buying pressure dominates
+        is_bullish = (close > close.shift(1)).astype(int)
+        is_bearish = (close < close.shift(1)).astype(int)
+        delta_volume = (is_bullish * volume) - (is_bearish * volume)
+        cumulative_delta = delta_volume.rolling(window, min_periods=1).sum()
+        delta_normalized = cumulative_delta / volume.rolling(window, min_periods=1).sum().replace(0.0, np.nan)
+
+        features["cumulative_delta_norm"] = delta_normalized
+
+        # 3. Volume concentration (what % of volume in last N bars was at this level)
+        total_vol = volume.rolling(window, min_periods=1).sum()
+        features["volume_concentration"] = vol_at_level / total_vol.replace(0.0, np.nan)
+
+        return features
+
+    def _compute_higher_timeframe_context(
+        self,
+        df: pd.DataFrame,
+        higher_tf_bars: int = 4,
+    ) -> Dict[str, pd.Series]:
+        """Aggregate to higher timeframe for macro trend context.
+
+        Args:
+            df: OHLCV dataframe at base timeframe (e.g., 15m)
+            higher_tf_bars: Number of base bars to aggregate (4 = 1h if base is 15m)
+
+        Returns:
+            Dict with macro_trend, macro_adx, macro_volatility features
+        """
+        features = {}
+
+        # Resample to higher timeframe
+        ohlc_dict = {
+            "open": "first",
+            "high": "max",
+            "low": "min",
+            "close": "last",
+            "volume": "sum",
+        }
+
+        # Group by higher_tf_bars
+        n = higher_tf_bars
+        df_resampled = df[["open", "high", "low", "close", "volume"]].iloc[::n]
+
+        # Compute macro features on resampled data
+        close_htf = df_resampled["close"]
+        high_htf = df_resampled["high"]
+        low_htf = df_resampled["low"]
+
+        # 1. Macro trend (close above/below 30-period MA)
+        ma_htf = close_htf.rolling(30, min_periods=10).mean()
+        macro_bullish = (close_htf > ma_htf).astype(int)
+
+        # 2. Macro ADX (trend strength)
+        macro_adx = self._compute_adx(high_htf, low_htf, close_htf, window=14)
+
+        # 3. Macro volatility (ATR / close ratio)
+        macro_atr = self._compute_atr(high_htf, low_htf, close_htf, window=14)
+        macro_volatility = macro_atr / close_htf.replace(0.0, np.nan)
+
+        # Align back to base timeframe using forward-fill
+        macro_bullish_aligned = macro_bullish.reindex(df.index, method="ffill")
+        macro_adx_aligned = macro_adx.reindex(df.index, method="ffill")
+        macro_volatility_aligned = macro_volatility.reindex(df.index, method="ffill")
+
+        features["macro_bullish"] = macro_bullish_aligned
+        features["macro_adx"] = macro_adx_aligned
+        features["macro_volatility"] = macro_volatility_aligned
+
+        # 4. Aligned breakout (resistance in downtrend = fade, support in uptrend = take)
+        # This is a directional filter
+        is_resistance = df.get("is_resistance", pd.Series(0, index=df.index))
+        is_support = df.get("is_support", pd.Series(0, index=df.index))
+
+        # Favorable = resistance in uptrend OR support in downtrend
+        features["macro_aligned_breakout"] = (
+            (is_resistance & macro_bullish_aligned) |
+            (is_support & (~macro_bullish_aligned.astype(bool)))
+        ).astype(int)
+
+        return features
+
+    def _create_multi_horizon_labels(
+        self,
+        df: pd.DataFrame,
+        horizons: List[int],
+        config: Dict[str, Any],
+    ) -> Dict[int, pd.Series]:
+        """Create breakout/bounce labels at multiple horizons.
+
+        Args:
+            df: OHLCV + level data
+            horizons: List of horizons in bars (e.g., [6, 12, 24])
+            config: Configuration dict
+
+        Returns:
+            Dict mapping horizon -> label Series (0=bounce, 1=break)
+        """
+        chop_band = float(config.get("breakout_chop_band_pct", 0.002))
+        cross_buf = float(config.get("breakout_cross_buffer_pct", 0.0025))
+        hold_buf = float(config.get("breakout_hold_buffer_pct", 0.0020))
+        bounce_move = float(config.get("breakout_bounce_move_pct", 0.0030))
+
+        high = df["high"]
+        low = df["low"]
+        close = df["close"]
+        primary = df["primary_level_price"]
+
+        is_resistance = df["is_resistance"].astype(bool)
+        is_support = df["is_support"].astype(bool)
+
+        labels_dict = {}
+
+        for horizon in horizons:
+            # Forward high/low/close for this horizon
+            fwd_high = high.shift(-1).rolling(horizon, min_periods=horizon).max()
+            fwd_low = low.shift(-1).rolling(horizon, min_periods=horizon).min()
+            fwd_close = close.shift(-horizon)
+
+            up_move_cross = (fwd_high - primary) / primary
+            up_move_hold = (fwd_close - primary) / primary
+            down_move_cross = (primary - fwd_low) / primary
+            down_move_hold = (primary - fwd_close) / primary
+
+            chop_range_high = (fwd_high - primary).abs() / primary
+            chop_range_low = (fwd_low - primary).abs() / primary
+
+            # Binary labels: 1=break, 0=bounce/other
+            # Resistance: break = price goes up and holds
+            # Support: break = price goes down and holds
+            res_break = is_resistance & (up_move_cross >= cross_buf) & (up_move_hold >= hold_buf)
+            sup_break = is_support & (down_move_cross >= cross_buf) & (down_move_hold >= hold_buf)
+
+            # Bounce = opposite direction
+            res_bounce = is_resistance & (down_move_cross >= bounce_move)
+            sup_bounce = is_support & (up_move_cross >= bounce_move)
+
+            # Chop = no significant move either way
+            is_chop = (chop_range_high <= chop_band) & (chop_range_low <= chop_band)
+
+            # Binary encoding: 1=break, 0=bounce or chop
+            labels = pd.Series(0, index=df.index, dtype=int)
+            labels[res_break | sup_break] = 1
+            labels[res_bounce | sup_bounce] = 0
+            labels[is_chop] = 0  # Treat chop as no-trade (bounce)
+
+            # Only keep labels where we had valid forward data
+            labels[fwd_high.isna() | fwd_low.isna() | fwd_close.isna()] = np.nan
+            labels = labels.dropna()
+
+            labels_dict[horizon] = labels
+
+        return labels_dict
+
+    def _select_best_horizon_label(
+        self,
+        labels_dict: Dict[int, pd.Series],
+        df: pd.DataFrame,
+        config: Dict[str, Any],
+    ) -> Tuple[pd.Series, pd.Series]:
+        """Select best label from multiple horizons using ensemble or highest-confidence.
+
+        Strategy: Use shortest horizon that shows a clear signal (high probability).
+        For each sample, check horizons in order [6, 12, 24] and take the first
+        that shows a clear break or bounce. If all are ambiguous, use longest horizon.
+
+        Returns:
+            (labels, horizon_used): label series and which horizon was used per sample
+        """
+        if not labels_dict:
+            return pd.Series(dtype=int), pd.Series(dtype=int)
+
+        # Get common index across all horizons
+        common_idx = labels_dict[list(labels_dict.keys())[0]].index
+        for horizon, labels in labels_dict.items():
+            common_idx = common_idx.intersection(labels.index)
+
+        if common_idx.empty:
+            return pd.Series(dtype=int), pd.Series(dtype=int)
+
+        # For simplicity, use majority vote across horizons
+        # (In production, you could use confidence-weighted ensemble)
+        horizons = sorted(labels_dict.keys())
+        label_matrix = pd.DataFrame({
+            h: labels_dict[h].reindex(common_idx)
+            for h in horizons
+        })
+
+        # Majority vote (0 or 1)
+        final_labels = label_matrix.mode(axis=1)[0].astype(int)
+
+        # Track which horizon was most "confident" (furthest from 0.5 after averaging)
+        label_probs = label_matrix.mean(axis=1)  # Average across horizons
+        horizon_confidence = (label_probs - 0.5).abs()
+
+        # For diagnostic purposes, return the shortest horizon (most responsive)
+        horizon_used = pd.Series(horizons[0], index=common_idx)
+
+        return final_labels, horizon_used
+
+    def _compute_forward_returns(
+        self,
+        df: pd.DataFrame,
+        horizon: int,
+    ) -> pd.Series:
+        """Compute forward returns for Sharpe calculation."""
+        close = df["close"]
+        fwd_close = close.shift(-horizon)
+        returns = (fwd_close - close) / close
+        return returns
+
+    def _sharpe_objective(
+        self,
+        y_true: np.ndarray,
+        y_pred_probs: np.ndarray,
+        forward_returns: np.ndarray,
+        gate_percentile: float = 75.0,
+        min_samples: int = 50,
+    ) -> float:
+        """Economic objective: Sharpe ratio of gated signals.
+
+        Args:
+            y_true: True labels (not used, but kept for API compatibility)
+            y_pred_probs: Predicted probabilities (Nx2 for binary, or Nx1 for regression)
+            forward_returns: Forward returns for each sample
+            gate_percentile: Only take top X% of signals
+            min_samples: Minimum samples required for valid Sharpe
+
+        Returns:
+            Sharpe ratio (higher is better), or -inf if invalid
+        """
+        # Extract success probability (for binary: P(class=1), for regression: the score itself)
+        if y_pred_probs.ndim == 2 and y_pred_probs.shape[1] == 2:
+            success_prob = y_pred_probs[:, 1]
+        elif y_pred_probs.ndim == 2 and y_pred_probs.shape[1] == 1:
+            success_prob = y_pred_probs[:, 0]
+        else:
+            success_prob = y_pred_probs
+
+        # Gate to top percentile
+        threshold = np.percentile(success_prob, gate_percentile)
+        gated_mask = success_prob >= threshold
+
+        if gated_mask.sum() < min_samples:
+            return float("-inf")
+
+        # Compute Sharpe on gated signals
+        gated_returns = forward_returns[gated_mask]
+        if len(gated_returns) == 0:
+            return float("-inf")
+
+        mean_return = np.mean(gated_returns)
+        std_return = np.std(gated_returns, ddof=1)
+
+        if std_return == 0 or not np.isfinite(std_return):
+            return float("-inf")
+
+        sharpe = mean_return / std_return
+        return sharpe if np.isfinite(sharpe) else float("-inf")
+
+    def _find_optimal_threshold(
+        self,
+        probs: np.ndarray,
+        forward_returns: np.ndarray,
+        min_sharpe: float = 0.5,
+        min_samples_pct: float = 0.10,
+    ) -> float:
+        """Find optimal probability threshold that achieves target Sharpe.
+
+        Uses adaptive gating: start at high percentile and relax until we achieve
+        target Sharpe or hit minimum sample size.
+
+        Returns:
+            Optimal threshold probability
+        """
+        n_samples = len(probs)
+        min_samples = max(50, int(n_samples * min_samples_pct))
+
+        # Try percentiles from 95 down to 50
+        percentiles = [95, 90, 85, 80, 75, 70, 65, 60, 55, 50]
+
+        for pct in percentiles:
+            threshold = np.percentile(probs, pct)
+            mask = probs >= threshold
+
+            if mask.sum() < min_samples:
+                continue
+
+            gated_returns = forward_returns[mask]
+            if len(gated_returns) < min_samples:
+                continue
+
+            sharpe = np.mean(gated_returns) / (np.std(gated_returns, ddof=1) + 1e-8)
+
+            if sharpe >= min_sharpe:
+                tprint_info(f"📊 Adaptive gating: {pct}th percentile (thresh={threshold:.3f}) achieves Sharpe={sharpe:.3f}")
+                return threshold
+
+        # Fallback: use 75th percentile
+        fallback_threshold = np.percentile(probs, 75)
+        tprint_warning(f"⚠️  Could not achieve Sharpe>={min_sharpe}, using 75th percentile threshold={fallback_threshold:.3f}")
+        return fallback_threshold
+
+    # =========================================================================
+    # 2-STAGE MODELING: Binary Direction + Quality Regression
+    # =========================================================================
+
+    def _train_2stage_model(
+        self,
+        feat_df: pd.DataFrame,
+        labels: pd.Series,
+        meta_labels: Optional[pd.Series],
+        forward_returns: pd.Series,
+        config: Dict[str, Any],
+        optimal_cpus: int = -1,
+    ) -> Tuple[Any, Any, Dict[str, Any], np.ndarray]:
+        """Train 2-stage model: (1) binary direction, (2) quality regression.
+
+        Stage 1: Predict break vs bounce (binary classification)
+        Stage 2: Predict success quality given direction (regression on forward returns)
+
+        Returns:
+            (stage1_model, stage2_model, metrics, final_probs)
+        """
+        import xgboost as xgb
+        from sklearn.model_selection import TimeSeriesSplit
+        from sklearn.calibration import CalibratedClassifierCV
+
+        tprint_info("🎯 Training 2-stage model: Stage 1 (direction) + Stage 2 (quality)")
+
+        # Prepare data
+        X_raw = feat_df.astype(np.float32)
+        y = labels.loc[X_raw.index].astype(int)
+        fwd_ret = forward_returns.loc[X_raw.index]
+
+        if y.nunique() < 2:
+            raise ValueError("Not enough classes for binary classifier")
+
+        n_samples = len(X_raw)
+
+        # Time-series split
+        train_frac = float(config.get("breakout_train_fraction", 0.7))
+        val_frac = float(config.get("breakout_val_fraction", 0.15))
+        train_frac = float(np.clip(train_frac, 0.5, 0.9))
+        val_frac = float(np.clip(val_frac, 0.05, 0.4))
+
+        train_end = int(n_samples * train_frac)
+        val_end = int(n_samples * (train_frac + val_frac))
+
+        train_idx = np.arange(0, train_end)
+        val_idx = np.arange(train_end, val_end)
+        test_idx = np.arange(val_end, n_samples)
+
+        X_train_raw = X_raw.iloc[train_idx]
+        y_train = y.iloc[train_idx]
+        X_val_raw = X_raw.iloc[val_idx]
+        y_val = y.iloc[val_idx]
+        X_test_raw = X_raw.iloc[test_idx] if len(test_idx) > 0 else None
+        y_test = y.iloc[test_idx] if len(test_idx) > 0 else None
+
+        fwd_ret_train = fwd_ret.iloc[train_idx]
+        fwd_ret_val = fwd_ret.iloc[val_idx]
+        fwd_ret_test = fwd_ret.iloc[test_idx] if len(test_idx) > 0 else None
+
+        # Feature normalization
+        scaling_strategy = str(config.get("breakout_scaling_strategy", "winsorized_zscore"))
+        normalizer_config = {
+            "default_strategy": scaling_strategy,
+            "auto_select": False,
+            "handle_outliers": True,
+            "use_vectorbt": False,
+        }
+
+        scaler = ScalingNormalizer(normalizer_config)
+        X_train = scaler.fit_transform(X_train_raw)
+        X_val = scaler.transform(X_val_raw)
+        X_full = scaler.transform(X_raw)
+        X_test = scaler.transform(X_test_raw) if X_test_raw is not None else None
+
+        n_jobs = int(optimal_cpus) if isinstance(optimal_cpus, (int, np.integer)) and optimal_cpus > 0 else -1
+
+        # =====================================================================
+        # STAGE 1: Binary Classification (Break=1 vs Bounce=0)
+        # =====================================================================
+        tprint_info("📊 Stage 1/2: Training binary direction classifier...")
+
+        stage1_params = {
+            "booster": "gbtree",
+            "objective": "binary:logistic",
+            "tree_method": "hist",
+            "n_jobs": n_jobs,
+            "max_depth": 4,
+            "min_child_weight": 50,
+            "learning_rate": 0.03,
+            "n_estimators": 1500,
+            "subsample": 0.70,
+            "colsample_bytree": 0.75,
+            "gamma": 1.2,
+            "reg_alpha": 0.5,
+            "reg_lambda": 1.0,
+            "scale_pos_weight": 1.0,  # Balance classes
+        }
+
+        # Optional HPO for stage 1
+        enable_hpo = bool(config.get("breakout_enable_hpo", False))
+        if enable_hpo:
+            tprint_info("🔧 Running HPO for stage 1 (binary classifier)...")
+            stage1_params = self._run_stage1_hpo(
+                X_train, y_train, X_val, y_val, fwd_ret_val, stage1_params, config
+            )
+
+        # Train stage 1 model
+        stage1_model = xgb.XGBClassifier(**stage1_params)
+
+        # Time-series CV for stage 1
+        use_tscv = bool(config.get("breakout_use_tscv", True))
+        if use_tscv and len(X_train) > 500:
+            tprint_info("🔄 Using Time-Series CV for stage 1...")
+            tscv = TimeSeriesSplit(n_splits=3)
+            cv_scores_stage1 = []
+
+            for fold_idx, (cv_train_idx, cv_val_idx) in enumerate(tscv.split(X_train)):
+                X_cv_train = X_train.iloc[cv_train_idx]
+                y_cv_train = y_train.iloc[cv_train_idx]
+                X_cv_val = X_train.iloc[cv_val_idx]
+                y_cv_val = y_train.iloc[cv_val_idx]
+
+                fold_model = xgb.XGBClassifier(**stage1_params)
+                fold_model.fit(X_cv_train, y_cv_train, verbose=False)
+
+                fold_probs = fold_model.predict_proba(X_cv_val)[:, 1]
+                fold_preds = (fold_probs >= 0.5).astype(int)
+
+                from sklearn.metrics import classification_report
+                fold_report = classification_report(y_cv_val, fold_preds, output_dict=True, zero_division=0)
+                fold_f1 = fold_report.get("macro avg", {}).get("f1-score", 0.0)
+                cv_scores_stage1.append(fold_f1)
+
+                tprint_info(f"  Fold {fold_idx+1}: F1={fold_f1:.3f}")
+
+            avg_cv_f1 = np.mean(cv_scores_stage1)
+            tprint_success(f"✅ Stage 1 Time-Series CV: Mean F1={avg_cv_f1:.3f} ± {np.std(cv_scores_stage1):.3f}")
+
+        # Fit final stage 1 model on full training set
+        stage1_model.fit(X_train, y_train, verbose=False)
+
+        # Calibrate stage 1 with isotonic calibration
+        tprint_info("🔧 Calibrating stage 1 probabilities (isotonic)...")
+        stage1_model_calibrated = CalibratedClassifierCV(
+            stage1_model,
+            method="isotonic",
+            cv="prefit",
+        )
+        stage1_model_calibrated.fit(X_val, y_val)
+
+        # Stage 1 predictions on val and test
+        stage1_val_probs = stage1_model_calibrated.predict_proba(X_val)[:, 1]
+        stage1_full_probs = stage1_model_calibrated.predict_proba(X_full)[:, 1]
+        if X_test is not None:
+            stage1_test_probs = stage1_model_calibrated.predict_proba(X_test)[:, 1]
+        else:
+            stage1_test_probs = None
+
+        # Stage 1 metrics
+        from sklearn.metrics import roc_auc_score, log_loss
+        stage1_val_auc = roc_auc_score(y_val, stage1_val_probs)
+        stage1_val_logloss = log_loss(y_val, stage1_val_probs)
+
+        tprint_success(f"✅ Stage 1: Val AUC={stage1_val_auc:.3f}, Log Loss={stage1_val_logloss:.3f}")
+
+        # =====================================================================
+        # STAGE 2: Quality Regression (Predict forward returns)
+        # =====================================================================
+        tprint_info("📊 Stage 2/2: Training quality regression model...")
+
+        # For stage 2, we only train on samples where stage 1 is confident
+        # (This helps stage 2 learn the "quality" of high-confidence predictions)
+        stage1_train_probs = stage1_model.predict_proba(X_train)[:, 1]
+        confident_mask_train = (stage1_train_probs >= 0.4) & (stage1_train_probs <= 0.6) == False  # Not ambiguous
+        # Actually, let's train on all samples but weight by confidence
+        confidence_weights_train = np.abs(stage1_train_probs - 0.5) * 2  # 0 at 0.5, 1 at 0/1
+
+        # Clean forward returns (remove inf/nan)
+        fwd_ret_train_clean = fwd_ret_train.replace([np.inf, -np.inf], np.nan).fillna(0.0)
+
+        stage2_params = {
+            "booster": "gbtree",
+            "objective": "reg:squarederror",
+            "tree_method": "hist",
+            "n_jobs": n_jobs,
+            "max_depth": 3,
+            "min_child_weight": 30,
+            "learning_rate": 0.03,
+            "n_estimators": 1000,
+            "subsample": 0.75,
+            "colsample_bytree": 0.80,
+            "gamma": 0.5,
+            "reg_alpha": 1.0,
+            "reg_lambda": 2.0,
+        }
+
+        stage2_model = xgb.XGBRegressor(**stage2_params)
+        stage2_model.fit(
+            X_train,
+            fwd_ret_train_clean,
+            sample_weight=confidence_weights_train,
+            verbose=False,
+        )
+
+        # Stage 2 predictions
+        stage2_val_preds = stage2_model.predict(X_val)
+        stage2_full_preds = stage2_model.predict(X_full)
+        if X_test is not None:
+            stage2_test_preds = stage2_model.predict(X_test)
+        else:
+            stage2_test_preds = None
+
+        # Stage 2 metrics (Spearman correlation with actual returns)
+        from scipy.stats import spearmanr
+        fwd_ret_val_clean = fwd_ret_val.replace([np.inf, -np.inf], np.nan).fillna(0.0)
+        stage2_val_corr, stage2_val_pval = spearmanr(stage2_val_preds, fwd_ret_val_clean)
+
+        tprint_success(f"✅ Stage 2: Val Spearman Corr={stage2_val_corr:.3f} (p={stage2_val_pval:.3e})")
+
+        # =====================================================================
+        # COMBINE STAGE 1 + STAGE 2: Final Score
+        # =====================================================================
+        # Final score = Stage1 probability × Stage2 quality (normalized)
+        # We want: 0 = strong bounce, 1 = strong breakout, 0.5 = neutral
+
+        # Normalize stage 2 predictions to [0, 1] using min-max on validation set
+        stage2_val_min = stage2_val_preds.min()
+        stage2_val_max = stage2_val_preds.max()
+        stage2_val_range = stage2_val_max - stage2_val_min
+
+        if stage2_val_range > 0:
+            stage2_full_norm = (stage2_full_preds - stage2_val_min) / stage2_val_range
+        else:
+            stage2_full_norm = np.full_like(stage2_full_preds, 0.5)
+
+        stage2_full_norm = np.clip(stage2_full_norm, 0.0, 1.0)
+
+        # Combine: final_score = weighted average of stage1_prob and stage2_quality
+        # Higher stage2 quality boosts score if stage1 is high, reduces if stage1 is low
+        alpha = 0.6  # Weight for stage 1
+        beta = 0.4   # Weight for stage 2
+        final_probs = alpha * stage1_full_probs + beta * stage2_full_norm
+
+        # Clip to [0, 1]
+        final_probs = np.clip(final_probs, 0.0, 1.0)
+
+        # =====================================================================
+        # METRICS
+        # =====================================================================
+        metrics = {
+            "stage1_val_auc": float(stage1_val_auc),
+            "stage1_val_logloss": float(stage1_val_logloss),
+            "stage2_val_corr": float(stage2_val_corr),
+            "stage2_val_pval": float(stage2_val_pval),
+            "stage2_val_min": float(stage2_val_min),
+            "stage2_val_max": float(stage2_val_max),
+            "final_probs_mean": float(final_probs.mean()),
+            "final_probs_std": float(final_probs.std()),
+        }
+
+        # Economic metrics (Sharpe) on validation set
+        val_final_probs = alpha * stage1_val_probs + beta * (
+            (stage2_val_preds - stage2_val_min) / (stage2_val_range + 1e-8)
+        )
+        val_final_probs = np.clip(val_final_probs, 0.0, 1.0)
+
+        val_sharpe = self._sharpe_objective(
+            y_val,
+            val_final_probs.reshape(-1, 1),
+            fwd_ret_val_clean.values,
+            gate_percentile=75.0,
+        )
+        metrics["val_sharpe_gated_75pct"] = float(val_sharpe)
+
+        tprint_success(f"✅ Combined Model: Val Sharpe (top 25%)={val_sharpe:.3f}")
+
+        # Test set metrics
+        if X_test is not None and stage1_test_probs is not None:
+            stage2_test_norm = (stage2_test_preds - stage2_val_min) / (stage2_val_range + 1e-8)
+            stage2_test_norm = np.clip(stage2_test_norm, 0.0, 1.0)
+            test_final_probs = alpha * stage1_test_probs + beta * stage2_test_norm
+            test_final_probs = np.clip(test_final_probs, 0.0, 1.0)
+
+            fwd_ret_test_clean = fwd_ret_test.replace([np.inf, -np.inf], np.nan).fillna(0.0)
+            test_sharpe = self._sharpe_objective(
+                y_test,
+                test_final_probs.reshape(-1, 1),
+                fwd_ret_test_clean.values,
+                gate_percentile=75.0,
+            )
+            metrics["test_sharpe_gated_75pct"] = float(test_sharpe)
+            tprint_success(f"✅ Test Sharpe (top 25%)={test_sharpe:.3f}")
+
+        return stage1_model_calibrated, stage2_model, metrics, final_probs
+
+    def _run_stage1_hpo(
+        self,
+        X_train: pd.DataFrame,
+        y_train: pd.Series,
+        X_val: pd.DataFrame,
+        y_val: pd.Series,
+        fwd_ret_val: pd.Series,
+        base_params: Dict[str, Any],
+        config: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Run HPO for stage 1 binary classifier using Sharpe objective.
+
+        Returns:
+            Best parameters dict
+        """
+        import xgboost as xgb
+
+        # Prepare forward returns for Sharpe calculation
+        fwd_ret_val_clean = fwd_ret_val.replace([np.inf, -np.inf], np.nan).fillna(0.0).values
+
+        # Define Sharpe-based objective for HPO
+        def sharpe_objective_hpo(
+            params: Dict[str, Any],
+            X_train: np.ndarray,
+            y_train: np.ndarray,
+            X_val: Optional[np.ndarray] = None,
+            y_val: Optional[np.ndarray] = None,
+            model: Optional[Any] = None,
+            cv_folds: int = 3,
+            scoring_metric: str = "sharpe",
+            **kwargs: Any,
+        ) -> float:
+            try:
+                if X_val is None or y_val is None:
+                    return float("-inf")
+
+                # Train model with these params
+                model_local = xgb.XGBClassifier(**base_params)
+                model_local.set_params(**params)
+                model_local.fit(X_train, y_train, verbose=False)
+
+                # Predict probabilities
+                val_probs = model_local.predict_proba(X_val)[:, 1]
+
+                # Compute Sharpe on top 25% of signals
+                sharpe = self._sharpe_objective(
+                    y_val,
+                    val_probs.reshape(-1, 1),
+                    fwd_ret_val_clean,
+                    gate_percentile=75.0,
+                )
+
+                return sharpe
+
+            except Exception as exc:
+                tprint_warning(f"HPO objective failed: {exc}")
+                return float("-inf")
+
+        # Define parameter search space
+        param_groups = [
+            create_param_group(
+                name="structure",
+                params={
+                    "max_depth": {"type": "int", "low": 3, "high": 6},
+                    "min_child_weight": {"type": "int", "low": 20, "high": 100},
+                    "n_estimators": {"type": "int", "low": 500, "high": 2000},
+                },
+                priority=1,
+            ),
+            create_param_group(
+                name="regularization",
+                params={
+                    "gamma": {"type": "float", "low": 0.5, "high": 3.0},
+                    "reg_alpha": {"type": "float", "low": 0.1, "high": 5.0},
+                    "reg_lambda": {"type": "float", "low": 0.5, "high": 5.0},
+                },
+                priority=2,
+                depends_on=["structure"],
+            ),
+            create_param_group(
+                name="sampling",
+                params={
+                    "subsample": {"type": "float", "low": 0.65, "high": 0.90},
+                    "colsample_bytree": {"type": "float", "low": 0.65, "high": 0.90},
+                },
+                priority=3,
+                depends_on=["regularization"],
+            ),
+        ]
+
+        optimizer = HierarchicalParameterOptimizer(
+            param_groups=param_groups,
+            objective_func=sharpe_objective_hpo,
+            cv_folds=3,
+            scoring_metric="sharpe",
+            direction="maximize",
+            n_rounds=1,
+            enable_final_refinement=False,
+            final_refinement_trials=15,
+            cache_dir=None,
+            random_state=42,
+            verbose=False,
+        )
+
+        X_train_np = X_train.values if hasattr(X_train, "values") else X_train
+        y_train_np = y_train.to_numpy() if hasattr(y_train, "to_numpy") else np.asarray(y_train)
+        X_val_np = X_val.values if hasattr(X_val, "values") else X_val
+        y_val_np = y_val.to_numpy() if hasattr(y_val, "to_numpy") else np.asarray(y_val)
+
+        hpo_result = optimizer.optimize(
+            X_train=X_train_np,
+            y_train=y_train_np,
+            X_val=X_val_np,
+            y_val=y_val_np,
+            model=None,
+            initial_params=base_params,
+        )
+
+        if hpo_result is not None and getattr(hpo_result, "best_params", None):
+            best_params = dict(base_params)
+            best_params.update(hpo_result.best_params)
+            tprint_success(f"✅ HPO complete. Best Sharpe: {hpo_result.best_score:.3f}")
+            return best_params
+        else:
+            tprint_warning("HPO did not improve params, using defaults")
+            return base_params

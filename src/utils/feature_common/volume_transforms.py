@@ -389,6 +389,71 @@ def calculate_robust_volume_features(data: pd.DataFrame,
     return pd.DataFrame(results, index=data.index)
 
 
+def log1p_zscore_normalize(
+    volume: Union[pd.Series, np.ndarray],
+    window: int = 500,
+    min_periods: int = 1,
+    ddof: int = 1,
+) -> Union[pd.Series, np.ndarray]:
+    """
+    Apply log1p transformation followed by rolling z-score normalization.
+
+    This is the recommended approach for volume features:
+    1. log1p(volume) - stabilizes variance and handles zero volumes
+    2. Rolling z-score with growing window up to 500 - normalizes across time
+
+    Args:
+        volume: Volume data
+        window: Rolling window size (default: 500 for ~500 bars)
+        min_periods: Minimum periods for rolling window (default: 1 for growing window)
+        ddof: Degrees of freedom for std calculation (default: 1)
+
+    Returns:
+        Log1p + z-score normalized volume
+
+    Examples:
+        >>> # Normalize volume for ML model
+        >>> volume_normalized = log1p_zscore_normalize(df['volume'])
+        >>>
+        >>> # With custom window
+        >>> volume_normalized = log1p_zscore_normalize(df['volume'], window=300)
+    """
+    # Apply log1p transformation
+    if isinstance(volume, pd.Series):
+        log_vol = np.log1p(volume)
+        log_vol.name = f'log1p_{volume.name}' if volume.name else 'log1p_volume'
+    else:
+        log_vol = np.log1p(volume)
+
+    # Apply rolling z-score with growing window
+    if isinstance(log_vol, pd.Series):
+        # Calculate rolling statistics using only past data
+        rolling_mean = log_vol.rolling(window=window, min_periods=min_periods).mean()
+        rolling_std = log_vol.rolling(window=window, min_periods=min_periods).std(ddof=ddof)
+
+        # Normalize using rolling statistics
+        rolling_std_safe = rolling_std.replace(0, np.nan)
+        normalized = (log_vol - rolling_mean) / rolling_std_safe
+        normalized = normalized.fillna(0.0)
+
+        if volume.name:
+            normalized.name = f'log1p_zscore_{volume.name}'
+
+        return normalized
+    else:
+        # Convert to Series for rolling operations
+        log_vol_series = pd.Series(log_vol)
+
+        rolling_mean = log_vol_series.rolling(window=window, min_periods=min_periods).mean()
+        rolling_std = log_vol_series.rolling(window=window, min_periods=min_periods).std(ddof=ddof)
+
+        rolling_std_safe = rolling_std.replace(0, np.nan)
+        normalized = (log_vol_series - rolling_mean) / rolling_std_safe
+        normalized = normalized.fillna(0.0)
+
+        return normalized.values
+
+
 __all__ = [
     'stabilize_volume',
     'log_volume',
@@ -399,4 +464,5 @@ __all__ = [
     'calculate_atr',
     'volume_normalized_by_tr',
     'calculate_robust_volume_features',
+    'log1p_zscore_normalize',
 ]

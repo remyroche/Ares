@@ -8,6 +8,8 @@ analyst_config:
   base_models:
     lgbm:
       model_type: LGBMRegressor
+      use_float32: true
+      use_isotonic_calibration: true
       params:
         n_estimators: 200
         learning_rate: 0.13125830316209655
@@ -83,140 +85,128 @@ analyst_config:
           total_trials: 350
           total_time_seconds: 0.45926570892333984
           n_rounds: 2
-    depthwise_cnn:
-      model_type: DepthwiseSeparableCNNRegressor
+    knn:
+      model_type: KNeighborsRegressor
+      use_float32: true
+      use_isotonic_calibration: true
+      use_soft_clipping: true
+      soft_clip_stretch: 2.0
+      use_pca: true
+      pca_n_components: 0.95
+      pca_max_components: 15
+      subsample_rate: 5
       params:
-        filters: 128
-        kernel_size: 3
-        dropout: 0.3
-        learning_rate: 0.001
-        batch_size: 32
-        epochs: 100
-        validation_split: 0.2
-        early_stopping_patience: 15
-        reduce_lr_patience: 7
-        verbose: 0
-        use_batch_norm: true
-        loss_function: mse
-      hpo:
-        enabled: true
-        n_rounds: 3
-        enable_final_refinement: true
-        final_refinement_trials: 100
-        search_space:
-          filters:
-            type: categorical
-            choices:
-            - 64
-            - 128
-            - 256
-            - 512
-          kernel_size:
-            type: categorical
-            choices:
-            - 2
-            - 3
-            - 5
-            - 7
-          dropout:
-            type: float
-            low: 0.1
-            high: 0.6
-          learning_rate:
-            type: float
-            low: 0.0001
-            high: 0.01
-            log: true
-          batch_size:
-            type: categorical
-            choices:
-            - 16
-            - 32
-            - 64
-            - 128
-          epochs:
-            type: int
-            low: 50
-            high: 200
-          use_batch_norm:
-            type: categorical
-            choices:
-            - false
-            - true
-          early_stopping_patience:
-            type: int
-            low: 10
-            high: 25
-        optimal_params: {}
-    catboost:
-      model_type: CatBoostRegressor
-      params:
-        iterations: 639
-        learning_rate: 0.1358198535217987
-        depth: 5
-        l2_leaf_reg: 4.2472407130841745
-        subsample: 0.9852142919229748
-        colsample_bylevel: 0.9852142919229748
-        border_count: 128
-        max_ctr_complexity: 2
-        random_seed: 42
-        verbose: false
-        early_stopping_rounds: 50
-        bootstrap_type: Bernoulli
-        loss_function: RMSE
-        eval_metric: RMSE
+        n_neighbors: 50
+        algorithm: ball_tree
+        leaf_size: 40
+        weights: distance
+        metric: minkowski
+        p: 2
+        n_jobs: -1
       hpo:
         enabled: true
         n_rounds: 2
         enable_final_refinement: true
         final_refinement_trials: 50
         search_space:
-          iterations:
+          n_neighbors:
             type: int
-            low: 300
-            high: 1500
-          learning_rate:
-            type: float
-            low: 0.01
-            high: 0.3
-            log: true
-          depth:
+            low: 20
+            high: 100
+          leaf_size:
             type: int
-            low: 4
-            high: 10
-          l2_leaf_reg:
-            type: float
-            low: 1.0
-            high: 10.0
-          subsample:
-            type: float
-            low: 0.6
-            high: 1.0
-          colsample_bylevel:
-            type: float
-            low: 0.6
-            high: 1.0
-          border_count:
-            type: int
-            low: 64
-            high: 254
-          max_ctr_complexity:
+            low: 20
+            high: 60
+          weights:
+            type: categorical
+            choices:
+            - uniform
+            - distance
+          p:
             type: int
             low: 1
-            high: 4
+            high: 3
         optimal_params:
-          depth: 5
-          learning_rate: 0.1358198535217987
-          iterations: 639
-          l2_leaf_reg: 4.2472407130841745
-          bootstrap_type: Bernoulli
-          subsample: 0.9852142919229748
-          colsample_bylevel: 0.9852142919229748
+          n_neighbors: 50
+          leaf_size: 40
+          weights: distance
+          p: 2
         last_optimization:
-          timestamp: '2025-11-21T00:42:09.257645'
+          timestamp: '2025-11-25T00:00:00.000000'
           best_score: -.inf
-          total_trials: 350
-          total_time_seconds: 0.3459467887878418
+          total_trials: 100
+          total_time_seconds: 0.0
+          n_rounds: 2
+    bayesianridge:
+      model_type: BayesianRidge
+      use_float32: true
+      use_isotonic_calibration: true
+      use_soft_clipping: true
+      soft_clip_stretch: 2.0
+      standardize_features: true
+      params:
+        n_iter: 300
+        tol: 0.001
+        alpha_1: 1.0e-06
+        alpha_2: 1.0e-06
+        lambda_1: 1.0e-06
+        lambda_2: 1.0e-06
+        compute_score: true
+        fit_intercept: true
+      hpo:
+        enabled: false
+    ngboost:
+      model_type: NGBoost
+      use_float32: true
+      use_isotonic_calibration: true
+      use_specialist_outputs_only: true
+      output_mean_and_variance: true
+      params:
+        n_estimators: 500
+        learning_rate: 0.01
+        minibatch_frac: 0.2
+        verbose: false
+        base_learner_params:
+          max_depth: 4
+          min_samples_leaf: 20
+      hpo:
+        enabled: true
+        n_rounds: 2
+        enable_final_refinement: true
+        final_refinement_trials: 50
+        search_space:
+          n_estimators:
+            type: int
+            low: 300
+            high: 800
+          learning_rate:
+            type: float
+            low: 0.005
+            high: 0.05
+            log: true
+          minibatch_frac:
+            type: float
+            low: 0.1
+            high: 0.5
+          base_learner_max_depth:
+            type: int
+            low: 3
+            high: 6
+          base_learner_min_samples_leaf:
+            type: int
+            low: 10
+            high: 30
+        optimal_params:
+          n_estimators: 500
+          learning_rate: 0.01
+          minibatch_frac: 0.2
+          base_learner_max_depth: 4
+          base_learner_min_samples_leaf: 20
+        last_optimization:
+          timestamp: '2025-11-25T00:00:00.000000'
+          best_score: -.inf
+          total_trials: 100
+          total_time_seconds: 0.0
           n_rounds: 2
   training:
     training_samples: 50000

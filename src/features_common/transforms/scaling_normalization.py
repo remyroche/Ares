@@ -70,90 +70,166 @@ def _restore_output(result: pd.DataFrame, was_series: bool, original: Union[pd.D
 
 def zscore_normalize(
     data: Union[pd.DataFrame, pd.Series],
-    ddof: int = 0,
+    window: int = 600,
+    ddof: int = 1,
 ) -> Union[pd.DataFrame, pd.Series]:
-    """Apply z-score normalization column-wise."""
-    df, was_series = _normalize_input(data)
+    """
+    Apply rolling z-score normalization column-wise with growing window.
 
-    means = df.mean(axis=0)
-    stds = df.std(axis=0, ddof=ddof)
-    stds_replaced = stds.replace(0, np.nan)
-    normalized = (df - means) / stds_replaced
-    normalized = normalized.fillna(0.0)
+    Uses rolling windows (growing windows for the first rows) to ensure causality
+    and prevent look-ahead bias.
 
-    return _restore_output(normalized.astype(float), was_series, data)
+    Args:
+        data: Input data (Series or DataFrame)
+        window: Rolling window size (default: 600 samples)
+        ddof: Degrees of freedom for standard deviation calculation
+
+    Returns:
+        Rolling z-score normalized data
+    """
+    # Delegate to rolling_zscore_normalize which already implements this correctly
+    return rolling_zscore_normalize(data, window=window, min_periods=1, ddof=ddof)
 
 
 def winsorized_zscore_normalize(
     data: Union[pd.DataFrame, pd.Series],
+    window: int = 600,
     ddof: int = 0,
     lower_quantile: float = 0.01,
     upper_quantile: float = 0.99,
 ) -> Union[pd.DataFrame, pd.Series]:
     """
-    Apply z-score normalization with winsorization to handle outliers.
+    Apply rolling z-score normalization via Polars with a growing window for the first rows.
 
-    Winsorization prevents extreme outliers from inflating the standard deviation,
-    which would otherwise compress normal values into a tiny range. This is critical
-    for financial data where flash crashes or fat-finger errors can distort the
-    entire distribution.
+    This uses rolling windows (growing windows for the first rows) to compute
+    z-score normalization with winsorization, with 600 samples per window by default.
+    This ensures causality and prevents look-ahead bias.
 
     Args:
         data: Input data (Series or DataFrame)
+        window: Rolling window size (default: 600 samples)
         ddof: Degrees of freedom for standard deviation calculation
         lower_quantile: Lower quantile for winsorization (default: 0.01 = 1st percentile)
         upper_quantile: Upper quantile for winsorization (default: 0.99 = 99th percentile)
 
     Returns:
-        Winsorized z-score normalized data
+        Rolling z-score normalized data with winsorization
     """
+    try:
+        import polars as pl
+    except ImportError:
+        # Fallback to pandas implementation if polars not available
+        return rolling_winsorized_zscore_normalize(data, window=window, ddof=ddof,
+                                                   lower_quantile=lower_quantile,
+                                                   upper_quantile=upper_quantile)
+
     df, was_series = _normalize_input(data)
 
-    # Winsorize each column to cap extreme outliers
-    df_winsorized = df.copy()
-    for col in df.columns:
-        col_data = df[col].dropna()
-        if len(col_data) == 0:
-            continue
+    # Convert to Polars for efficient rolling operations
+    pl_df = pl.from_pandas(df)
 
-        # Calculate winsorization bounds
-        lower_bound = col_data.quantile(lower_quantile)
-        upper_bound = col_data.quantile(upper_quantile)
+    # Process each column
+    normalized_cols = []
+    for col in pl_df.columns:
+        # Calculate rolling quantiles with expanding window for first rows
+        rolling_lower = (
+            pl_df.select(col)
+            .with_columns([
+                pl.col(col).rolling_quantile(
+                    quantile=lower_quantile,
+                    window_size=window,
+                    min_periods=1  # Growing window for first rows
+                ).alias('lower_bound')
+            ])
+        )['lower_bound']
 
-        # Clip values to bounds
-        df_winsorized[col] = df[col].clip(lower=lower_bound, upper=upper_bound)
+        rolling_upper = (
+            pl_df.select(col)
+            .with_columns([
+                pl.col(col).rolling_quantile(
+                    quantile=upper_quantile,
+                    window_size=window,
+                    min_periods=1  # Growing window for first rows
+                ).alias('upper_bound')
+            ])
+        )['upper_bound']
 
-    # Apply z-score normalization on winsorized data
-    means = df_winsorized.mean(axis=0)
-    stds = df_winsorized.std(axis=0, ddof=ddof)
-    stds_replaced = stds.replace(0, np.nan)
-    normalized = (df_winsorized - means) / stds_replaced
-    normalized = normalized.fillna(0.0)
+        # Winsorize: clip values to rolling quantile bounds
+        winsorized = pl_df.select(col).with_columns([
+            pl.col(col).clip(rolling_lower, rolling_upper).alias('winsorized')
+        ])['winsorized']
 
-    return _restore_output(normalized.astype(float), was_series, data)
+        # Calculate rolling mean and std with growing window
+        rolling_mean = (
+            pl_df.select(col)
+            .with_columns([
+                winsorized.rolling_mean(window_size=window, min_periods=1).alias('mean')
+            ])
+        )['mean']
+
+        rolling_std = (
+            pl_df.select(col)
+            .with_columns([
+                winsorized.rolling_std(window_size=window, min_periods=1, ddof=ddof).alias('std')
+            ])
+        )['std']
+
+        # Z-score normalization
+        normalized = (winsorized - rolling_mean) / rolling_std
+        normalized = normalized.fill_null(0.0).fill_nan(0.0)
+        normalized_cols.append(normalized.alias(col))
+
+    # Combine normalized columns
+    result_pl = pl.DataFrame(normalized_cols)
+
+    # Convert back to pandas
+    result = result_pl.to_pandas()
+    result.index = df.index
+
+    return _restore_output(result.astype(float), was_series, data)
 
 
 def robust_normalize(
     data: Union[pd.DataFrame, pd.Series],
+    window: int = 600,
     center: str = "median",
     scale: str = "mad",
     epsilon: float = 1e-9,
 ) -> Union[pd.DataFrame, pd.Series]:
-    """Apply robust normalization using median/IQR style scaling."""
+    """
+    Apply rolling robust normalization using median/IQR style scaling.
+
+    Uses rolling windows (growing windows for the first rows) to ensure causality
+    and prevent look-ahead bias.
+
+    Args:
+        data: Input data (Series or DataFrame)
+        window: Rolling window size (default: 600 samples)
+        center: Center metric ('median' or 'mean')
+        scale: Scale metric ('mad' or 'iqr')
+        epsilon: Small value to prevent division by zero
+
+    Returns:
+        Rolling robust normalized data
+    """
     df, was_series = _normalize_input(data)
 
+    # Calculate rolling centers with growing window
     if center == "median":
-        centers = df.median(axis=0)
+        centers = df.rolling(window=window, min_periods=1).median()
     elif center == "mean":
-        centers = df.mean(axis=0)
+        centers = df.rolling(window=window, min_periods=1).mean()
     else:
         raise ValueError("center must be 'median' or 'mean'")
 
+    # Calculate rolling scales with growing window
     if scale == "mad":
-        scales = (df - centers).abs().median(axis=0)
+        # Rolling MAD (Median Absolute Deviation)
+        scales = (df - centers).abs().rolling(window=window, min_periods=1).median()
     elif scale == "iqr":
-        q75 = df.quantile(0.75, axis=0)
-        q25 = df.quantile(0.25, axis=0)
+        # Rolling IQR (Interquartile Range)
+        q75 = df.rolling(window=window, min_periods=1).quantile(0.75)
+        q25 = df.rolling(window=window, min_periods=1).quantile(0.25)
         scales = q75 - q25
     else:
         raise ValueError("scale must be 'mad' or 'iqr'")

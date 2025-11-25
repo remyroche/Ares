@@ -36,8 +36,8 @@ class MonotonicConstraintCalculator:
 
     def __init__(
         self,
-        positive_threshold: float = 0.06,
-        negative_threshold: float = -0.06
+        positive_threshold: float = 0.04,
+        negative_threshold: float = -0.04
     ):
         """
         Initialize monotonic constraint calculator.
@@ -210,12 +210,15 @@ class NullImportanceTest:
 
     Trains models with shuffled targets to establish a null distribution
     of feature importance, then compares real importance against this baseline.
+    Includes Pareto cut and SNR threshold for robust feature selection.
     """
 
     def __init__(
         self,
         n_shuffles: int = 10,
-        significance_threshold: float = 0.95
+        significance_threshold: float = 0.95,
+        pareto_threshold: float = 0.99,
+        snr_threshold: float = 1.2
     ):
         """
         Initialize null importance test.
@@ -223,12 +226,18 @@ class NullImportanceTest:
         Args:
             n_shuffles: Number of shuffled target runs
             significance_threshold: Percentile threshold for significance
+            pareto_threshold: Cumulative gain threshold for Pareto cut (default: 0.99 = 99%)
+            snr_threshold: Signal-to-Noise Ratio threshold (Real Gain / Null Gain, default: 1.2)
         """
         self.n_shuffles = n_shuffles
         self.significance_threshold = significance_threshold
+        self.pareto_threshold = pareto_threshold
+        self.snr_threshold = snr_threshold
         self.null_importances = {}
         self.real_importances = {}
         self.significant_features = []
+        self.pareto_features = []
+        self.snr_features = []
 
     def run_test(
         self,
@@ -288,7 +297,57 @@ class NullImportanceTest:
 
         self.null_importances = null_importances
 
-        # Calculate significance scores
+        # Step 1: Pareto Cut - Drop features that cumulatively make up less than 1% of total gains
+        logger.info("Step 1: Applying Pareto cut...")
+        imp_series = pd.Series(self.real_importances).sort_values(ascending=False)
+
+        # Normalize to sum = 1.0
+        imp_norm = imp_series / imp_series.sum()
+
+        # Calculate cumulative sum
+        cumsum = imp_norm.cumsum()
+
+        # Keep features until we reach the threshold (e.g., 99% of total importance)
+        pareto_features = cumsum[cumsum <= self.pareto_threshold].index.tolist()
+
+        # Safety: Ensure we don't drop TOO much (keep at least top 10)
+        if len(pareto_features) < 10:
+            pareto_features = imp_series.head(10).index.tolist()
+
+        self.pareto_features = pareto_features
+        logger.info(
+            f"Pareto Cut: Keeping {len(pareto_features)} features "
+            f"(Explaining {self.pareto_threshold*100:.0f}% of Gain)"
+        )
+
+        # Step 2: Calculate SNR (Signal-to-Noise Ratio) and filter features
+        logger.info(f"Step 2: Applying SNR threshold (threshold: {self.snr_threshold})...")
+        snr_scores = {}
+        snr_features = []
+
+        for feature in feature_names:
+            real_imp = self.real_importances.get(feature, 0.0)
+            null_dist = np.array(null_importances[feature])
+
+            # Calculate mean null importance
+            mean_null_imp = np.mean(null_dist) if len(null_dist) > 0 else 0.0
+
+            # Calculate SNR (Signal-to-Noise Ratio)
+            snr = real_imp / (mean_null_imp + 1e-6)
+            snr_scores[feature] = snr
+
+            # Keep features where Real Gain / Null Gain > threshold (e.g., 1.2)
+            if snr > self.snr_threshold:
+                snr_features.append(feature)
+
+        self.snr_features = snr_features
+        logger.info(
+            f"SNR Filter: {len(snr_features)}/{len(feature_names)} features pass "
+            f"(SNR > {self.snr_threshold})"
+        )
+
+        # Step 3: Original significance test
+        logger.info("Step 3: Running original significance test...")
         significance_scores = {}
         significant_features = []
 
@@ -307,15 +366,29 @@ class NullImportanceTest:
             else:
                 significance_scores[feature] = 0.0
 
-        self.significant_features = significant_features
+        # Step 4: Combine all filters - feature must pass ALL tests
+        logger.info("Step 4: Combining all filters (intersection)...")
 
-        logger.info(
-            f"Null importance test completed: "
-            f"{len(significant_features)}/{len(feature_names)} features significant "
-            f"(threshold: {self.significance_threshold})"
-        )
+        # Convert to sets for intersection
+        pareto_set = set(pareto_features)
+        snr_set = set(snr_features)
+        significance_set = set(significant_features)
 
-        return significant_features, significance_scores
+        # Final features must pass all three tests
+        final_features = list(pareto_set & snr_set & significance_set)
+
+        self.significant_features = final_features
+
+        logger.info("=" * 80)
+        logger.info("FEATURE SELECTION SUMMARY:")
+        logger.info(f"  Total features: {len(feature_names)}")
+        logger.info(f"  Pareto cut (top {self.pareto_threshold*100:.0f}%): {len(pareto_features)} features")
+        logger.info(f"  SNR threshold (>{self.snr_threshold}): {len(snr_features)} features")
+        logger.info(f"  Significance test (>{self.significance_threshold}): {len(significant_features)} features")
+        logger.info(f"  FINAL (intersection): {len(final_features)} features")
+        logger.info("=" * 80)
+
+        return final_features, significance_scores
 
     def filter_dataframe(self, X: pd.DataFrame) -> pd.DataFrame:
         """
@@ -343,7 +416,7 @@ class AdaptiveFeatureSelector:
     def __init__(
         self,
         cache_dir: Path = Path("cache/feature_selection"),
-        correlation_threshold: float = 0.06,
+        correlation_threshold: float = 0.04,
         n_null_shuffles: int = 10
     ):
         """

@@ -49,6 +49,7 @@ class TrainingRole(Enum):
 class ModelType(Enum):
     """Types of ML models."""
     LIGHTGBM = "lightgbm"
+    EXTRATREES = "extratrees"  # ExtraTreesRegressor (replaces DepthwiseCNN/TabR)
     DEPTHWISE_CNN = "depthwise_cnn"  # DepthwiseSeparableCNNRegressor (replaces TCN)
     CATBOOST = "catboost"
     NEURAL_NETWORK = "neural_network"

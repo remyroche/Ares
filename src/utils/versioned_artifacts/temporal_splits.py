@@ -428,8 +428,8 @@ def create_temporal_split_config_for_pipeline(
     data_start: Optional[datetime] = None,
     data_end: Optional[datetime] = None,
     config_path: Optional[Path] = None,
-    enable_burnin: bool = True,  # Enable 6-month burn-in by default for ML models
-    burnin_pct: float = 1/6  # 6 months = 1/6 of 3 years
+    enable_burnin: bool = True,  # Enable 3-month burn-in by default for ML models
+    burnin_pct: float = 1/12  # 3 months = 1/12 of 3 years (reduced from 1/6)
 ) -> TemporalSplitConfig:
     """
     Create or load temporal split configuration for a trading pair.
@@ -442,7 +442,7 @@ def create_temporal_split_config_for_pipeline(
         data_end: End of available data (required if creating new config)
         config_path: Path to save/load config (default: auto-generated)
         enable_burnin: Whether to include burn-in period (default: True for ML models)
-        burnin_pct: Proportion for burn-in period (default: 1/6 for 6 months of 3 years)
+        burnin_pct: Proportion for burn-in period (default: 1/12 for 3 months of 3 years)
 
     Returns:
         TemporalSplitConfig for this trading pair

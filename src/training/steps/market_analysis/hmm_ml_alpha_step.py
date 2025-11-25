@@ -251,7 +251,7 @@ class HMMMLAlphaStep(BaseStep):
                 data_start=market_data.index.min(),
                 data_end=market_data.index.max(),
                 enable_burnin=True,
-                burnin_pct=1/6  # 6 months = 1/6 of 3 years
+                # Use default burnin_pct=1/12 (3 months)
             )
             tprint_info(
                 f"📅 Temporal split config: "

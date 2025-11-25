@@ -719,7 +719,7 @@ class MLLiquidityRegimeStep(BaseStep):
                 data_start=market_data_1h.index.min(),
                 data_end=market_data_1h.index.max(),
                 enable_burnin=True,
-                burnin_pct=1/6  # 6 months = 1/6 of 3 years
+                # Use default burnin_pct=1/12 (3 months)
             )
             tprint_info(
                 f"📅 Temporal split config: "

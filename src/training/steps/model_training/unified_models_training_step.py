@@ -151,15 +151,24 @@ class UnifiedModelsTrainingStep(BaseStep):
             # Log initial dataset size before any filtering
             if training_data is not None:
                 tprint_info("=" * 80)
-                tprint_info("📊 INITIAL DATASET SIZE (Before Walk-Forward Filtering)")
+                tprint_info("📊 INITIAL DATASET SIZE (Before Optimization)")
                 tprint_info("=" * 80)
                 tprint_info(f"   Training Data: {training_data.shape[0]:,} samples × {training_data.shape[1]:,} features")
                 if analyst_targets is not None:
                     tprint_info(f"   Analyst Targets: {len(analyst_targets):,} samples")
                 if tactician_targets is not None:
                     tprint_info(f"   Tactician Targets: {len(tactician_targets):,} samples")
-                tprint_info(f"   Memory Usage: {training_data.memory_usage(deep=True).sum() / 1024**2:.2f} MB")
+                memory_before = training_data.memory_usage(deep=True).sum() / 1024**2
+                tprint_info(f"   Memory Usage (Before): {memory_before:.2f} MB")
                 tprint_info(f"   Date Range: {training_data.index[0]} to {training_data.index[-1]}")
+
+                # Optimize memory usage (Float64→Float32, Int64→Int32/Int16/Int8)
+                from src.utils.ml_common.training_optimizations import optimize_dataframe_memory
+                tprint_info("🔧 Optimizing memory usage (precision reduction)...")
+                training_data = optimize_dataframe_memory(training_data)
+                memory_after = training_data.memory_usage(deep=True).sum() / 1024**2
+                memory_reduction = (memory_before - memory_after) / memory_before * 100
+                tprint_success(f"✅ Memory optimized: {memory_before:.2f} MB → {memory_after:.2f} MB ({memory_reduction:.1f}% reduction)")
                 tprint_info("=" * 80)
             else:
                 tprint_error("❌ No training data retrieved!")

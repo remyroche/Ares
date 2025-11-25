@@ -466,6 +466,8 @@ class ModelTrainer(BaseTrainer):
             result = None
             if model_type == ModelType.LIGHTGBM:
                 result = await self._train_lightgbm_model(model, engineered_data, aligned_targets)
+            elif model_type == ModelType.EXTRATREES:
+                result = await self._train_extratrees_model(model, engineered_data, aligned_targets)
             elif model_type == ModelType.DEPTHWISE_CNN:
                 result = await self._train_depthwise_cnn_model(model, engineered_data, aligned_targets)
             elif model_type == ModelType.CATBOOST:
@@ -830,7 +832,182 @@ class ModelTrainer(BaseTrainer):
             import traceback
             self.logger.error(traceback.format_exc())
             return TrainingResult(success=False, error_message=str(e))
-    
+
+    async def _train_extratrees_model(self, model: Any, data: pd.DataFrame, targets: pd.Series) -> TrainingResult:
+        """Train ExtraTreesRegressor model with role-specific parameters from YAML config."""
+        try:
+            from sklearn.ensemble import ExtraTreesRegressor
+            from sklearn.model_selection import train_test_split
+            from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+            import os
+            from src.utils.tprint import tprint_data_preview, tprint_info
+
+            # Log model-specific training start
+            tprint_info("=" * 80)
+            tprint_info("🌟 MODEL-SPECIFIC TRAINING: ExtraTrees")
+            tprint_info("=" * 80)
+            tprint_data_preview(
+                data,
+                name="ExtraTrees Training Data",
+                max_rows=5,
+                max_cols=10,
+                show_dtypes=True,
+                show_shape=True
+            )
+
+            # Get CPU optimizer for threading
+            cpu_optimizer = get_m1_cpu_optimizer()
+            n_threads = cpu_optimizer.get_optimal_thread_count() if cpu_optimizer else (os.cpu_count() or 4)
+
+            tprint_info(f"🔧 ExtraTrees Configuration:")
+            tprint_info(f"   CPU Threads: {n_threads}")
+            tprint_info(f"   Training samples: {len(data)}")
+            tprint_info(f"   Features: {len(data.columns)}")
+
+            # CRITICAL FIX: Split data into train/val/test (70/15/15) for proper evaluation
+            X_temp, X_test, y_temp, y_test = train_test_split(
+                data, targets, test_size=0.15, random_state=42, shuffle=False
+            )
+            X_train, X_val, y_train, y_val = train_test_split(
+                X_temp, y_temp, test_size=0.176, random_state=42, shuffle=False
+            )
+
+            tprint_info(f"   📊 Data splits (temporal order preserved):")
+            tprint_info(f"      Train: {len(X_train)} samples ({len(X_train)/len(data)*100:.1f}%)")
+            tprint_info(f"      Val: {len(X_val)} samples ({len(X_val)/len(data)*100:.1f}%)")
+            tprint_info(f"      Test: {len(X_test)} samples ({len(X_test)/len(data)*100:.1f}%)")
+            tprint_info("=" * 80)
+
+            # CRITICAL FIX: Load optimal params from YAML config when HPO is disabled
+            if hasattr(self, '_best_params') and self._best_params:
+                tprint_info(f"   Using HPO-optimized parameters from current session")
+                model_params = self._best_params
+            else:
+                # Load optimal params from YAML config file
+                tprint_info(f"   Loading optimal parameters from YAML config")
+                import yaml
+                from pathlib import Path
+                config_path = Path('src/training/steps/model_training/analyst_base_config.yaml')
+                if config_path.exists():
+                    with open(config_path) as f:
+                        yaml_config = yaml.safe_load(f)
+                        extratrees_config = yaml_config.get('analyst_config', {}).get('base_models', {}).get('extratrees', {})
+                        model_params = extratrees_config.get('params', {})
+                        if model_params:
+                            tprint_success(f"   ✅ Loaded {len(model_params)} parameters from YAML config")
+                        else:
+                            tprint_warning(f"   ⚠️  No ExtraTrees config found in YAML, using defaults")
+                else:
+                    tprint_warning(f"   ⚠️  YAML config not found, using defaults")
+                    model_params = {}
+
+            # Extract hyperparameters (from HPO, YAML, or defaults)
+            n_estimators = model_params.get('n_estimators', 200)
+            max_depth = model_params.get('max_depth', 15)
+            min_samples_split = model_params.get('min_samples_split', 10)
+            min_samples_leaf = model_params.get('min_samples_leaf', 4)
+            max_features = model_params.get('max_features', 'sqrt')  # CRITICAL: sqrt as specified
+            bootstrap = model_params.get('bootstrap', True)  # CRITICAL: bootstrap=True as specified
+
+            # Build parameters dictionary
+            params = {
+                'n_estimators': n_estimators,
+                'max_depth': max_depth,
+                'min_samples_split': min_samples_split,
+                'min_samples_leaf': min_samples_leaf,
+                'max_features': max_features,
+                'bootstrap': bootstrap,
+                'random_state': 42,
+                'n_jobs': n_threads,
+                'verbose': 0
+            }
+
+            tprint_info(f"Training ExtraTrees: n_estimators={n_estimators}, max_depth={max_depth}, max_features={max_features}, bootstrap={bootstrap}")
+            tprint_info(f"📊 ExtraTrees training data: {data.shape}")
+            tprint_info(f"   Feature columns (first 20): {list(data.columns[:20])}")
+            tprint_info(f"   Feature columns (last 10): {list(data.columns[-10:])}")
+
+            # Create and train model
+            model = ExtraTreesRegressor(**params)
+            model.fit(X_train, y_train)
+
+            # CRITICAL FIX: Evaluate on train/val/test splits separately
+            train_pred = model.predict(X_train)
+            val_pred = model.predict(X_val)
+            test_pred = model.predict(X_test)
+
+            metrics = {
+                'train_mse': mean_squared_error(y_train, train_pred),
+                'train_mae': mean_absolute_error(y_train, train_pred),
+                'train_r2': r2_score(y_train, train_pred),
+                'train_rmse': np.sqrt(mean_squared_error(y_train, train_pred)),
+                'val_mse': mean_squared_error(y_val, val_pred),
+                'val_mae': mean_absolute_error(y_val, val_pred),
+                'val_r2': r2_score(y_val, val_pred),
+                'val_rmse': np.sqrt(mean_squared_error(y_val, val_pred)),
+                'test_mse': mean_squared_error(y_test, test_pred),
+                'test_mae': mean_absolute_error(y_test, test_pred),
+                'test_r2': r2_score(y_test, test_pred),
+                'test_rmse': np.sqrt(mean_squared_error(y_test, test_pred)),
+                'train_test_r2_gap': r2_score(y_train, train_pred) - r2_score(y_test, test_pred),
+                'overfitting_ratio': (r2_score(y_train, train_pred) - r2_score(y_test, test_pred)) / max(r2_score(y_train, train_pred), 0.01),
+                'generalization_score': r2_score(y_test, test_pred) / max(r2_score(y_train, train_pred), 0.01),
+                'mse': mean_squared_error(y_test, test_pred),
+                'mae': mean_absolute_error(y_test, test_pred),
+                'r2': r2_score(y_test, test_pred),
+                'rmse': np.sqrt(mean_squared_error(y_test, test_pred)),
+                'n_estimators': n_estimators
+            }
+
+            feature_importance = dict(zip(data.columns, model.feature_importances_))
+
+            # Top features and basic leakage flags
+            top_features = sorted(feature_importance.items(), key=lambda kv: kv[1], reverse=True)[:20]
+            tprint_info("✨ Top 20 features by importance:")
+            for name, imp in top_features:
+                tprint_info(f"   {name:<40} {imp:>8.6f}")
+            leakage_flags = []
+            leakage_markers = ['target', 'label', 'future', 'lead', 't+', 'shift(-', 'ahead', 'lookahead', 'leak']
+            for name, _ in top_features:
+                lname = name.lower()
+                if any(m in lname for m in leakage_markers):
+                    leakage_flags.append(name)
+            if leakage_flags:
+                tprint_warning(f"⚠️ Potential leakage features among top importance: {leakage_flags}")
+
+            tprint_success(f"✅ ExtraTrees trained with {n_estimators} estimators")
+            tprint_info(f"   📊 Train R²: {metrics['train_r2']:.4f}, RMSE: {metrics['train_rmse']:.4f}")
+            tprint_info(f"   📊 Val R²: {metrics['val_r2']:.4f}, RMSE: {metrics['val_rmse']:.4f}")
+            tprint_info(f"   📊 Test R²: {metrics['test_r2']:.4f}, RMSE: {metrics['test_rmse']:.4f}")
+            tprint_info(f"   ⚠️  Train-Test Gap: {metrics['train_test_r2_gap']:.4f} ({metrics['overfitting_ratio']*100:.1f}%)")
+
+            if metrics['overfitting_ratio'] > 0.2:
+                tprint_warning(f"   ⚠️  HIGH OVERFITTING detected! Model may not generalize well.")
+            elif metrics['overfitting_ratio'] > 0.1:
+                tprint_warning(f"   ⚠️  Moderate overfitting detected.")
+            else:
+                tprint_success(f"   ✅ Good generalization (overfitting ratio < 10%)")
+
+            return TrainingResult(
+                success=True,
+                model=model,
+                metrics=metrics,
+                feature_importance=feature_importance,
+                metadata={
+                    'n_features': len(data.columns),
+                    'n_samples': len(data),
+                    'test_predictions': test_pred.tolist() if hasattr(test_pred, 'tolist') else list(test_pred),
+                    'train_predictions': train_pred.tolist() if hasattr(train_pred, 'tolist') else list(train_pred),
+                    'val_predictions': val_pred.tolist() if hasattr(val_pred, 'tolist') else list(val_pred)
+                }
+            )
+
+        except Exception as e:
+            self.logger.error(f"ExtraTrees training failed: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+            return TrainingResult(success=False, error_message=str(e))
+
     async def _train_catboost_model(self, model: Any, data: pd.DataFrame, targets: pd.Series) -> TrainingResult:
         """Train CatBoost model with role-specific parameters from YAML config."""
         try:
@@ -1530,6 +1707,15 @@ class ModelTrainer(BaseTrainer):
                 import lightgbm as lgb
                 # Always use Regressor for trading models (predicting continuous values like directional_confidence)
                 return lgb.LGBMRegressor()
+            elif model_type == ModelType.EXTRATREES:
+                from sklearn.ensemble import ExtraTreesRegressor
+                # ExtraTreesRegressor with bootstrap and sqrt max_features
+                return ExtraTreesRegressor(
+                    max_features='sqrt',
+                    bootstrap=True,
+                    random_state=42,
+                    n_jobs=-1
+                )
             elif model_type == ModelType.DEPTHWISE_CNN:
                 # Return None, will be created in training method
                 return None
@@ -1542,7 +1728,7 @@ class ModelTrainer(BaseTrainer):
                 return None
             else:
                 raise ValueError(f"Unsupported model type: {model_type}")
-                
+
         except ImportError as e:
             self.logger.error(f"Failed to import required library: {e}")
             return None

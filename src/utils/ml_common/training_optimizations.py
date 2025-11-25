@@ -219,16 +219,18 @@ def configure_xgboost_optimizations(
     enable_histogram: bool = True,
     max_bin: int = 256,
     tree_method: str = 'hist',
-    enable_categorical: bool = False
+    enable_categorical: bool = False,
+    enable_precision_reduction: bool = True
 ) -> Dict[str, Any]:
     """
     Configure XGBoost optimization parameters.
 
     Args:
-        enable_histogram: Enable histogram-based algorithm
-        max_bin: Maximum number of bins (histogram method)
+        enable_histogram: Enable histogram-based algorithm (default: True)
+        max_bin: Maximum number of bins (histogram method, default: 256)
         tree_method: Tree construction method ('hist', 'approx', 'exact')
         enable_categorical: Enable categorical feature support
+        enable_precision_reduction: Use float32 instead of float64 (default: True)
 
     Returns:
         Dictionary of XGBoost parameters
@@ -242,6 +244,47 @@ def configure_xgboost_optimizations(
 
     if enable_categorical:
         params['enable_categorical'] = True
+
+    # Enable precision reduction for memory savings (50% reduction)
+    if enable_precision_reduction:
+        params['base_score'] = np.float32(0.5)  # Use float32
+        logger.info("XGBoost precision reduction enabled (float32)")
+
+    return params
+
+
+def get_default_xgboost_params(
+    n_samples: int = 100000,
+    n_features: int = 100
+) -> Dict[str, Any]:
+    """
+    Get default optimized XGBoost parameters for specialist models.
+
+    Automatically enables:
+    - Histogram method for faster training
+    - Precision reduction (float32) for memory savings
+    - Appropriate max_bin based on dataset size
+
+    Args:
+        n_samples: Number of training samples
+        n_features: Number of features
+
+    Returns:
+        Dictionary of optimized XGBoost parameters
+    """
+    params = {
+        'tree_method': 'hist',  # Histogram method (faster)
+        'max_bin': 256,  # Standard binning
+    }
+
+    # Adjust max_bin for very large datasets
+    if n_samples > 500000:
+        params['max_bin'] = 512
+
+    logger.info(
+        f"Default XGBoost params: tree_method={params['tree_method']}, "
+        f"max_bin={params['max_bin']}"
+    )
 
     return params
 

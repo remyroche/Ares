@@ -17,6 +17,7 @@ import json
 try:
     import optuna
     from optuna.samplers import TPESampler
+    from optuna.pruners import HyperbandPruner
     OPTUNA_AVAILABLE = True
 except ImportError:
     OPTUNA_AVAILABLE = False
@@ -324,10 +325,16 @@ class AdaptiveGrid:
         # Load current best parameters
         current_best = self.load_best_params(model_id)
 
-        # Create Optuna study
+        # Create Optuna study with TPE sampler and Hyperband pruner
+        # Hyperband aggressively prunes unpromising trials for faster optimization
         study = optuna.create_study(
             direction='maximize',
-            sampler=TPESampler(seed=42)
+            sampler=TPESampler(seed=42),
+            pruner=HyperbandPruner(
+                min_resource=1,
+                max_resource='auto',
+                reduction_factor=3
+            )
         )
 
         def optuna_objective(trial):

@@ -2701,12 +2701,30 @@ class MLPathRegimeStep(BaseStep):
 
         # ========== STEP 7.5: Calculate Data-Driven Risk Scores ==========
         # Learn regime quality from realized path characteristics (direction-agnostic)
-        regime_quality_scores, risk_scores = self._calculate_data_driven_risk_scores(
-            labels=final_labels,
-            features_df=risk_features_clean,
-            posteriors=teacher_probs_full[valid_mask] if teacher_probs_full is not None else None,
-            n_regimes=n_regimes
-        )
+        # NEW: Use XGBoost-driven quality scoring with barrier hit prediction
+        use_xgb_quality = config.get('use_xgb_quality_scoring', True)
+
+        if use_xgb_quality:
+            # Use XGBoost to learn optimal feature weights from barrier hit prediction
+            regime_quality_scores, risk_scores, xgb_metrics = self._calculate_xgboost_driven_quality_scores(
+                labels=final_labels,
+                features_df=risk_features_clean,
+                ohlcv_df=risk_df,  # Original dataframe with OHLCV
+                posteriors=teacher_probs_full[valid_mask] if teacher_probs_full is not None else None,
+                n_regimes=n_regimes,
+                config=config
+            )
+            metrics['xgb_quality_metrics'] = xgb_metrics
+        else:
+            # Fallback to hardcoded weights
+            regime_quality_scores, risk_scores = self._calculate_data_driven_risk_scores(
+                labels=final_labels,
+                features_df=risk_features_clean,
+                posteriors=teacher_probs_full[valid_mask] if teacher_probs_full is not None else None,
+                n_regimes=n_regimes
+            )
+            metrics['xgb_quality_metrics'] = None
+
         metrics['regime_quality_scores'] = regime_quality_scores
         metrics['path_risk_scores'] = risk_scores  # Continuous scores [0, 1]
 
@@ -2718,6 +2736,21 @@ class MLPathRegimeStep(BaseStep):
             tprint_info(f"  Regime {regime_id}: Quality Score = {quality:.4f}")
         tprint_info(f"  Risk Score Range: [{risk_scores.min():.4f}, {risk_scores.max():.4f}]")
         tprint_info(f"  Risk Score Mean: {risk_scores.mean():.4f} ± {risk_scores.std():.4f}")
+
+        # Log XGBoost metrics if available
+        if use_xgb_quality and metrics.get('xgb_quality_metrics') is not None:
+            xgb_m = metrics['xgb_quality_metrics']
+            tprint_info("=" * 80)
+            tprint_info("🤖 XGBOOST QUALITY MODEL METRICS:")
+            tprint_info("=" * 80)
+            tprint_info(f"  Classifier - Val Accuracy: {xgb_m['classifier']['val_accuracy']:.3f}, Val LogLoss: {xgb_m['classifier']['val_logloss']:.4f}")
+            tprint_info(f"  Regressor - Val R²: {xgb_m['regressor']['val_r2']:.3f}, Val RMSE: {xgb_m['regressor']['val_rmse']:.2f} bars")
+            tprint_info(f"  Target Distribution:")
+            tprint_info(f"    Upper Hit: {xgb_m['target_stats']['upper_hit_pct']*100:.1f}%")
+            tprint_info(f"    Noise:     {xgb_m['target_stats']['noise_pct']*100:.1f}%")
+            tprint_info(f"    Lower Hit: {xgb_m['target_stats']['lower_hit_pct']*100:.1f}%")
+            tprint_info(f"  Avg Time-to-Hit: {xgb_m['target_stats']['avg_time_to_hit']:.2f} bars")
+
         tprint_info("=" * 80)
 
         # ========== STEP 8: Persist HMM Model for Direct Inference ==========
@@ -3098,6 +3131,399 @@ class MLPathRegimeStep(BaseStep):
         tprint_success(f"✅ Calculated quality scores for {n_regimes} regimes (range: [{min(regime_quality_scores.values()):.3f}, {max(regime_quality_scores.values()):.3f}])")
 
         return regime_quality_scores, risk_scores_smooth
+
+    def _calculate_xgboost_driven_quality_scores(
+        self,
+        labels: np.ndarray,
+        features_df: pd.DataFrame,
+        ohlcv_df: pd.DataFrame,
+        posteriors: Optional[np.ndarray],
+        n_regimes: int,
+        config: Dict[str, Any]
+    ) -> Tuple[Dict[int, float], np.ndarray, Dict[str, Any]]:
+        """
+        Calculate data-driven quality scores using XGBoost to learn optimal feature weights.
+
+        Instead of hardcoded weights, we:
+        1. Generate barrier hit targets (3-class: +1, -1, 0) based on ATR-normalized price movements
+        2. Train XGBoost classifier to predict barrier hits from quality features
+        3. Train XGBoost regressor to predict time-to-hit (secondary objective)
+        4. Use feature importance as data-driven weights for quality scoring
+        5. Apply variable target multipliers based on volatility regime
+
+        Target Definition:
+        - +1: Upper barrier hit first within 3 hours (12 bars @ 15m)
+        - -1: Lower barrier hit first (soft labels based on barrier ratio)
+        - 0: Time window expired before either barrier (noise)
+
+        Variable Target Multipliers:
+        target_multiplier = base_k * (atr_now / atr_smooth) ** alpha
+        where base_k = 2.5, atr_smooth = 300-bar ATR, alpha = 0.5
+
+        Args:
+            labels: Regime assignments
+            features_df: DataFrame with path features
+            ohlcv_df: DataFrame with OHLCV data for barrier calculation
+            posteriors: HMM posterior probabilities (n_samples, n_regimes)
+            n_regimes: Number of regimes
+            config: Configuration dictionary
+
+        Returns:
+            regime_quality_scores: Dict mapping regime_id -> quality score [0, 1]
+            risk_scores: Array of continuous risk scores [0, 1] for each sample
+            xgb_metrics: Dictionary with XGBoost training metrics and feature importance
+        """
+        import xgboost as xgb
+        from sklearn.model_selection import train_test_split
+        from sklearn.metrics import classification_report, log_loss, mean_squared_error, r2_score
+        from src.utils.feature_common.atr_normalization import calculate_atr
+
+        tprint_info("🎯 Calculating XGBoost-driven regime quality scores...")
+        tprint_info("  Using data-driven feature weights from barrier hit prediction")
+
+        # ========== STEP 1: Calculate ATR for Target Normalization ==========
+        if 'high' not in ohlcv_df.columns or 'low' not in ohlcv_df.columns or 'close' not in ohlcv_df.columns:
+            tprint_warning("  Missing OHLCV data for ATR calculation, falling back to hardcoded weights")
+            return self._calculate_data_driven_risk_scores(labels, features_df, posteriors, n_regimes)
+
+        # Short-term ATR (14 bars ~= 3.5 hours @ 15m)
+        atr_14 = calculate_atr(
+            high=ohlcv_df['high'].values,
+            low=ohlcv_df['low'].values,
+            close=ohlcv_df['close'].values,
+            window=14
+        )
+
+        # Long-term smooth ATR (300 bars ~= 75 hours @ 15m ~= 3 days)
+        atr_300 = calculate_atr(
+            high=ohlcv_df['high'].values,
+            low=ohlcv_df['low'].values,
+            close=ohlcv_df['close'].values,
+            window=300
+        )
+
+        # ========== STEP 2: Calculate Variable Target Multipliers ==========
+        base_k = float(config.get('xgb_quality_base_target_multiplier', 2.5))
+        alpha = float(config.get('xgb_quality_volatility_sensitivity', 0.5))
+
+        # target_multiplier = base_k * (atr_now / atr_smooth) ** alpha
+        if hasattr(atr_14, 'values') and hasattr(atr_300, 'values'):
+            atr_ratio = atr_14.values / (atr_300.values + 1e-9)
+        else:
+            atr_ratio = atr_14 / (atr_300 + 1e-9)
+
+        target_multipliers = base_k * (atr_ratio ** alpha)
+
+        # Calculate min/max properly for Series or ndarray
+        if hasattr(target_multipliers, 'min'):
+            mult_min = target_multipliers.min()
+            mult_max = target_multipliers.max()
+        else:
+            mult_min = np.nanmin(target_multipliers)
+            mult_max = np.nanmax(target_multipliers)
+
+        tprint_info(f"  Target multiplier range: [{mult_min:.3f}, {mult_max:.3f}]")
+        tprint_info(f"  Base multiplier: {base_k:.2f}, Volatility sensitivity: {alpha:.2f}")
+
+        # ========== STEP 3: Generate Barrier Hit Targets (3-class) ==========
+        horizon_bars = int(config.get('xgb_quality_horizon_bars', 12))  # 3 hours @ 15m
+
+        close_prices = ohlcv_df['close'].values
+        high_prices = ohlcv_df['high'].values
+        low_prices = ohlcv_df['low'].values
+
+        # Targets: +1 (upper hit), -1 (lower hit), 0 (no hit)
+        barrier_targets = np.zeros(len(close_prices))
+        time_to_hit = np.full(len(close_prices), horizon_bars, dtype=float)  # Default to max time
+
+        for i in range(len(close_prices) - horizon_bars):
+            entry_price = close_prices[i]
+
+            # Handle ATR access for both Series and ndarray
+            if hasattr(atr_14, 'iloc'):
+                current_atr = atr_14.iloc[i]
+            else:
+                current_atr = atr_14[i]
+
+            if np.isnan(current_atr):
+                # Find first non-NaN ATR value
+                if hasattr(atr_14, 'iloc'):
+                    valid_atr = atr_14.iloc[i+1:].dropna()
+                    current_atr = valid_atr.iloc[0] if len(valid_atr) > 0 else 0.01
+                else:
+                    valid_indices = np.where(~np.isnan(atr_14[i+1:]))[0]
+                    current_atr = atr_14[i+1:][valid_indices[0]] if len(valid_indices) > 0 else 0.01
+
+            # Handle target multipliers access
+            if hasattr(target_multipliers, 'iloc'):
+                multiplier = target_multipliers.iloc[i]
+            else:
+                multiplier = target_multipliers[i]
+
+            if np.isnan(multiplier):
+                multiplier = base_k
+
+            # Upper barrier: entry + (multiplier * ATR)
+            upper_barrier = entry_price + (multiplier * current_atr)
+
+            # Lower barrier: entry - (multiplier / 4 * ATR) for conservative downside
+            # This creates asymmetry: easier to hit lower (noise filter)
+            lower_barrier = entry_price - (multiplier / 4.0 * current_atr)
+
+            # Scan forward window for barrier hits
+            upper_hit_time = None
+            lower_hit_time = None
+
+            for j in range(1, horizon_bars + 1):
+                if i + j >= len(high_prices):
+                    break
+
+                # Check upper barrier (using high of bar)
+                if upper_hit_time is None and high_prices[i + j] >= upper_barrier:
+                    upper_hit_time = j
+
+                # Check lower barrier (using low of bar)
+                if lower_hit_time is None and low_prices[i + j] <= lower_barrier:
+                    lower_hit_time = j
+
+                # Both barriers hit - determine which came first
+                if upper_hit_time is not None and lower_hit_time is not None:
+                    break
+
+            # Assign targets based on which barrier hit first
+            if upper_hit_time is not None and lower_hit_time is not None:
+                if upper_hit_time < lower_hit_time:
+                    barrier_targets[i] = 1.0  # Upper hit first = high quality
+                    time_to_hit[i] = upper_hit_time
+                else:
+                    # Lower hit first - use soft label (closer to 0 for noise)
+                    # Soft label = -0.5 * (lower_hit_time / upper_hit_time)
+                    soft_strength = min(lower_hit_time / (upper_hit_time + 1e-9), 1.0)
+                    barrier_targets[i] = -soft_strength * 0.5  # Range: [-0.5, 0]
+                    time_to_hit[i] = lower_hit_time
+            elif upper_hit_time is not None:
+                # Only upper hit within timeframe = high quality
+                barrier_targets[i] = 1.0
+                time_to_hit[i] = upper_hit_time
+            elif lower_hit_time is not None:
+                # Only lower hit = low quality (soft label)
+                barrier_targets[i] = -0.3  # Negative but not extreme
+                time_to_hit[i] = lower_hit_time
+            else:
+                # No barrier hit = noise
+                barrier_targets[i] = 0.0
+                time_to_hit[i] = horizon_bars
+
+        # Convert to categorical for XGBoost (map to 0, 1, 2)
+        barrier_targets_class = np.zeros(len(barrier_targets), dtype=int)
+        barrier_targets_class[barrier_targets > 0.3] = 2  # Upper hit = class 2
+        barrier_targets_class[barrier_targets < -0.1] = 0  # Lower hit = class 0
+        barrier_targets_class[(barrier_targets >= -0.1) & (barrier_targets <= 0.3)] = 1  # Noise = class 1
+
+        tprint_info(f"  Barrier targets distribution:")
+        tprint_info(f"    Upper hit (class 2): {(barrier_targets_class == 2).sum()} samples ({(barrier_targets_class == 2).mean()*100:.1f}%)")
+        tprint_info(f"    Noise (class 1):     {(barrier_targets_class == 1).sum()} samples ({(barrier_targets_class == 1).mean()*100:.1f}%)")
+        tprint_info(f"    Lower hit (class 0): {(barrier_targets_class == 0).sum()} samples ({(barrier_targets_class == 0).mean()*100:.1f}%)")
+        tprint_info(f"  Time-to-hit range: [{np.nanmin(time_to_hit):.1f}, {np.nanmax(time_to_hit):.1f}] bars")
+
+        # ========== STEP 4: Prepare Features for XGBoost ==========
+        quality_feature_names = [
+            'path_trend_r2',           # Linearity
+            'efficiency_ratio',         # Straightness
+            'impulse_quality',          # Trend strength
+            'body_range_ratio',         # Conviction
+            'traffic_overlap_3h',       # Congestion (inverse)
+        ]
+
+        # Filter available features
+        available_features = [f for f in quality_feature_names if f in features_df.columns]
+
+        if len(available_features) < 3:
+            tprint_warning(f"  Insufficient quality features ({len(available_features)}), falling back to hardcoded weights")
+            return self._calculate_data_driven_risk_scores(labels, features_df, posteriors, n_regimes)
+
+        X = features_df[available_features].copy()
+
+        # Remove samples with NaN targets or features
+        valid_mask = (
+            ~np.isnan(barrier_targets_class) &
+            ~np.isnan(time_to_hit) &
+            X.notna().all(axis=1).values &
+            (labels >= 0)
+        )
+
+        X_clean = X[valid_mask].values
+        y_class_clean = barrier_targets_class[valid_mask]
+        y_time_clean = time_to_hit[valid_mask]
+        labels_clean = labels[valid_mask]
+
+        if len(X_clean) < 100:
+            tprint_warning(f"  Too few valid samples ({len(X_clean)}), falling back to hardcoded weights")
+            return self._calculate_data_driven_risk_scores(labels, features_df, posteriors, n_regimes)
+
+        # ========== STEP 5: Train XGBoost Classifier (Barrier Hit Prediction) ==========
+        tprint_info(f"  Training XGBoost classifier on {len(X_clean)} samples with {len(available_features)} features")
+
+        # Temporal split (80/20)
+        split_idx = int(len(X_clean) * 0.8)
+        X_train, X_val = X_clean[:split_idx], X_clean[split_idx:]
+        y_class_train, y_class_val = y_class_clean[:split_idx], y_class_clean[split_idx:]
+        y_time_train, y_time_val = y_time_clean[:split_idx], y_time_clean[split_idx:]
+
+        # XGBoost classifier
+        clf = xgb.XGBClassifier(
+            n_estimators=200,
+            max_depth=4,
+            learning_rate=0.05,
+            subsample=0.8,
+            colsample_bytree=0.8,
+            objective='multi:softprob',
+            num_class=3,
+            eval_metric='mlogloss',
+            early_stopping_rounds=20,
+            random_state=42,
+            tree_method='hist'
+        )
+
+        clf.fit(
+            X_train, y_class_train,
+            eval_set=[(X_val, y_class_val)],
+            verbose=False
+        )
+
+        # Evaluate classifier
+        y_pred_val = clf.predict(X_val)
+        y_pred_proba_val = clf.predict_proba(X_val)
+
+        val_logloss = log_loss(y_class_val, y_pred_proba_val)
+        val_accuracy = (y_pred_val == y_class_val).mean()
+
+        tprint_info(f"    Classifier validation - Log Loss: {val_logloss:.4f}, Accuracy: {val_accuracy:.3f}")
+
+        # ========== STEP 6: Train XGBoost Regressor (Time-to-Hit Prediction) ==========
+        tprint_info(f"  Training XGBoost regressor for time-to-hit prediction")
+
+        reg = xgb.XGBRegressor(
+            n_estimators=200,
+            max_depth=4,
+            learning_rate=0.05,
+            subsample=0.8,
+            colsample_bytree=0.8,
+            objective='reg:squarederror',
+            eval_metric='rmse',
+            early_stopping_rounds=20,
+            random_state=42,
+            tree_method='hist'
+        )
+
+        reg.fit(
+            X_train, y_time_train,
+            eval_set=[(X_val, y_time_val)],
+            verbose=False
+        )
+
+        # Evaluate regressor
+        y_time_pred_val = reg.predict(X_val)
+        val_rmse = np.sqrt(mean_squared_error(y_time_val, y_time_pred_val))
+        val_r2 = r2_score(y_time_val, y_time_pred_val)
+
+        tprint_info(f"    Regressor validation - RMSE: {val_rmse:.2f} bars, R²: {val_r2:.3f}")
+
+        # ========== STEP 7: Extract Feature Importance as Data-Driven Weights ==========
+        # Combine importance from both models (70% classifier, 30% regressor)
+        clf_importance = clf.feature_importances_
+        reg_importance = reg.feature_importances_
+
+        combined_importance = 0.7 * clf_importance + 0.3 * reg_importance
+        combined_importance = combined_importance / combined_importance.sum()  # Normalize to sum=1
+
+        feature_weights = {feat: imp for feat, imp in zip(available_features, combined_importance)}
+
+        tprint_info("  📊 Data-driven feature weights (from XGBoost):")
+        for feat, weight in sorted(feature_weights.items(), key=lambda x: x[1], reverse=True):
+            tprint_info(f"    {feat:30s}: {weight:.4f} ({weight*100:.1f}%)")
+
+        # ========== STEP 8: Calculate Quality Scores Using Learned Weights ==========
+        regime_quality_scores = {}
+
+        for regime_id in range(n_regimes):
+            regime_mask = (labels == regime_id)
+            regime_samples = np.sum(regime_mask)
+
+            if regime_samples < 10:
+                regime_quality_scores[regime_id] = 0.0
+                tprint_warning(f"  Regime {regime_id}: Insufficient samples ({regime_samples}), quality = 0.0")
+                continue
+
+            regime_data = features_df.iloc[regime_mask]
+
+            # Calculate weighted quality score using learned weights
+            quality_score = 0.0
+            total_weight = 0.0
+
+            for feat, weight in feature_weights.items():
+                if feat in regime_data.columns:
+                    feat_values = regime_data[feat]
+
+                    # Handle inverse features (traffic_overlap_3h)
+                    if feat == 'traffic_overlap_3h':
+                        feat_score = 1.0 - np.clip(feat_values.mean(), 0, 1)
+                    else:
+                        feat_score = feat_values.mean()
+
+                    quality_score += feat_score * weight
+                    total_weight += weight
+
+            if total_weight > 0:
+                quality_score = quality_score / total_weight
+                quality_score = np.clip(quality_score, 0, 1)
+                regime_quality_scores[regime_id] = float(quality_score)
+                tprint_info(f"  Regime {regime_id}: Quality={quality_score:.4f}")
+            else:
+                regime_quality_scores[regime_id] = 0.5
+                tprint_warning(f"  Regime {regime_id}: No weighted features, using neutral 0.5")
+
+        # ========== STEP 9: Generate Continuous Risk Scores ==========
+        if posteriors is not None:
+            risk_scores = np.zeros(len(posteriors))
+            for regime_id in range(n_regimes):
+                regime_quality = regime_quality_scores.get(regime_id, 0.5)
+                risk_scores += posteriors[:, regime_id] * regime_quality
+        else:
+            risk_scores = np.array([regime_quality_scores.get(label, 0.5) for label in labels])
+
+        # Apply temporal smoothing
+        risk_scores_smooth = pd.Series(risk_scores).ewm(span=10, adjust=False).mean().values
+        risk_scores_smooth = np.clip(risk_scores_smooth, 0, 1)
+
+        # ========== STEP 10: Prepare Metrics Dictionary ==========
+        xgb_metrics = {
+            'classifier': {
+                'val_logloss': float(val_logloss),
+                'val_accuracy': float(val_accuracy),
+                'feature_importance': clf_importance.tolist(),
+            },
+            'regressor': {
+                'val_rmse': float(val_rmse),
+                'val_r2': float(val_r2),
+                'feature_importance': reg_importance.tolist(),
+            },
+            'combined_feature_weights': feature_weights,
+            'feature_names': available_features,
+            'target_stats': {
+                'upper_hit_pct': float((barrier_targets_class == 2).mean()),
+                'noise_pct': float((barrier_targets_class == 1).mean()),
+                'lower_hit_pct': float((barrier_targets_class == 0).mean()),
+                'avg_time_to_hit': float(time_to_hit.mean()),
+                'target_multiplier_mean': float(target_multipliers.mean()),
+                'target_multiplier_std': float(target_multipliers.std()),
+            }
+        }
+
+        tprint_success(f"✅ XGBoost-driven quality scores calculated for {n_regimes} regimes")
+        tprint_success(f"   Quality range: [{min(regime_quality_scores.values()):.3f}, {max(regime_quality_scores.values()):.3f}]")
+
+        return regime_quality_scores, risk_scores_smooth, xgb_metrics
 
     def _calculate_forward_returns_and_sharpe(
         self,
@@ -4092,11 +4518,242 @@ class MLPathRegimeStep(BaseStep):
                             )
                         f.write("\n")
 
+                # Add XGBoost Quality Metrics section
+                xgb_quality_metrics = classifier_metrics.get('xgb_quality_metrics') if classifier_metrics else None
+                if xgb_quality_metrics:
+                    f.write("---\n\n")
+                    f.write("## XGBoost Quality Model Metrics\n\n")
+                    f.write("*Data-driven feature weights learned from barrier hit prediction*\n\n")
+
+                    # Overall model performance
+                    f.write("### Model Performance\n\n")
+                    f.write("| Model | Metric | Value |\n")
+                    f.write("|-------|--------|-------|\n")
+
+                    clf_metrics = xgb_quality_metrics.get('classifier', {})
+                    reg_metrics = xgb_quality_metrics.get('regressor', {})
+
+                    f.write(f"| Classifier | Validation Accuracy | {clf_metrics.get('val_accuracy', 0):.3f} |\n")
+                    f.write(f"| Classifier | Validation Log Loss | {clf_metrics.get('val_logloss', 0):.4f} |\n")
+                    f.write(f"| Regressor (Time-to-Hit) | Validation R² | {reg_metrics.get('val_r2', 0):.3f} |\n")
+                    f.write(f"| Regressor (Time-to-Hit) | Validation RMSE | {reg_metrics.get('val_rmse', 0):.2f} bars |\n")
+                    f.write("\n")
+
+                    # Target distribution
+                    target_stats = xgb_quality_metrics.get('target_stats', {})
+                    f.write("### Target Distribution\n\n")
+                    f.write("| Class | Description | Percentage | Details |\n")
+                    f.write("|-------|-------------|------------|----------|\n")
+                    f.write(f"| Upper Hit (Class 2) | Upper barrier hit first within 3h | {target_stats.get('upper_hit_pct', 0)*100:.1f}% | High quality paths |\n")
+                    f.write(f"| Noise (Class 1) | No barrier hit | {target_stats.get('noise_pct', 0)*100:.1f}% | Low signal paths |\n")
+                    f.write(f"| Lower Hit (Class 0) | Lower barrier hit first | {target_stats.get('lower_hit_pct', 0)*100:.1f}% | Low quality paths (soft labels) |\n")
+                    f.write("\n")
+
+                    f.write(f"**Average Time-to-Hit**: {target_stats.get('avg_time_to_hit', 0):.2f} bars\n\n")
+
+                    # Variable target multipliers
+                    f.write("### Variable Target Multipliers (Volatility-Adjusted)\n\n")
+                    f.write("Target barriers are dynamically adjusted based on current volatility regime:\n\n")
+                    f.write("```\n")
+                    f.write("target_multiplier = base_k × (ATR_14 / ATR_300)^α\n")
+                    f.write("where:\n")
+                    f.write("  base_k = 2.5 (configurable)\n")
+                    f.write("  ATR_14 = 14-bar ATR (~3.5 hours @ 15m)\n")
+                    f.write("  ATR_300 = 300-bar ATR (~75 hours @ 15m)\n")
+                    f.write("  α = 0.5 (volatility sensitivity)\n")
+                    f.write("```\n\n")
+                    f.write(f"**Mean Target Multiplier**: {target_stats.get('target_multiplier_mean', 0):.3f}\n\n")
+                    f.write(f"**Std Target Multiplier**: {target_stats.get('target_multiplier_std', 0):.3f}\n\n")
+
+                    # Data-driven feature weights
+                    feature_weights = xgb_quality_metrics.get('combined_feature_weights', {})
+                    feature_names = xgb_quality_metrics.get('feature_names', [])
+
+                    if feature_weights:
+                        f.write("### Data-Driven Feature Weights\n\n")
+                        f.write("*Learned from XGBoost feature importance (70% classifier + 30% regressor)*\n\n")
+                        f.write("| Feature | Weight | Percentage | Interpretation |\n")
+                        f.write("|---------|--------|------------|---------------|\n")
+
+                        # Sort by weight descending
+                        sorted_features = sorted(feature_weights.items(), key=lambda x: x[1], reverse=True)
+
+                        feature_descriptions = {
+                            'path_trend_r2': 'Path Linearity',
+                            'efficiency_ratio': 'Path Straightness',
+                            'impulse_quality': 'Trend Strength',
+                            'body_range_ratio': 'Conviction',
+                            'traffic_overlap_3h': 'Congestion (inverse)'
+                        }
+
+                        for feat, weight in sorted_features:
+                            description = feature_descriptions.get(feat, feat)
+                            f.write(f"| {feat} | {weight:.4f} | {weight*100:.1f}% | {description} |\n")
+                        f.write("\n")
+
+                        f.write("**Note**: These weights replace the previous hardcoded weights:\n")
+                        f.write("- Path Linearity: 30% → **{:.1f}%** (data-driven)\n".format(
+                            feature_weights.get('path_trend_r2', 0) * 100
+                        ))
+                        f.write("- Path Straightness: 25% → **{:.1f}%** (data-driven)\n".format(
+                            feature_weights.get('efficiency_ratio', 0) * 100
+                        ))
+                        f.write("- Trend Strength: 20% → **{:.1f}%** (data-driven)\n".format(
+                            feature_weights.get('impulse_quality', 0) * 100
+                        ))
+                        f.write("- Path Stability: 15% → N/A (not used in barrier prediction)\n")
+                        f.write("- Conviction: 10% → **{:.1f}%** (data-driven)\n\n".format(
+                            feature_weights.get('body_range_ratio', 0) * 100
+                        ))
+
+                    # Individual feature importance breakdown
+                    clf_importance = clf_metrics.get('feature_importance', [])
+                    reg_importance = reg_metrics.get('feature_importance', [])
+
+                    if clf_importance and reg_importance and feature_names:
+                        f.write("### Feature Importance Breakdown\n\n")
+                        f.write("| Feature | Classifier Importance | Regressor Importance | Combined |\n")
+                        f.write("|---------|----------------------|---------------------|----------|\n")
+
+                        for i, feat in enumerate(feature_names):
+                            clf_imp = clf_importance[i] if i < len(clf_importance) else 0
+                            reg_imp = reg_importance[i] if i < len(reg_importance) else 0
+                            combined = feature_weights.get(feat, 0)
+                            f.write(f"| {feat} | {clf_imp:.4f} | {reg_imp:.4f} | {combined:.4f} |\n")
+                        f.write("\n")
+
+                    f.write("### Barrier Configuration\n\n")
+                    f.write("| Parameter | Value | Description |\n")
+                    f.write("|-----------|-------|-------------|\n")
+                    f.write("| Upper Barrier | entry + (multiplier × ATR) | Target for high quality paths |\n")
+                    f.write("| Lower Barrier | entry - (multiplier / 4 × ATR) | Conservative downside (1/4 of upper) |\n")
+                    f.write("| Time Window | 12 bars (3 hours @ 15m) | Maximum time to hit barrier |\n")
+                    f.write("| Soft Labels | Yes | Lower hits use soft labels [-0.5, 0] |\n")
+                    f.write("\n")
+
                 f.write("---\n\n")
                 f.write("*Report generated by ml_path_regime_step with HMM architecture*\n")
 
         except Exception:
             md_path = ""
+
+        # Generate separate CSV for XGBoost quality metrics
+        if xgb_quality_metrics:
+            try:
+                xgb_csv_path = (
+                    f"outcomes/ml_path_regime_xgb_quality_"
+                    f"{symbol_q or 'UNKNOWN'}_{regime_tf_q}_{ts_q}.csv"
+                )
+
+                xgb_rows = []
+
+                # Model performance metrics
+                clf_m = xgb_quality_metrics.get('classifier', {})
+                reg_m = xgb_quality_metrics.get('regressor', {})
+                tgt_stats = xgb_quality_metrics.get('target_stats', {})
+
+                xgb_rows.append({
+                    'category': 'model_performance',
+                    'metric': 'classifier_val_accuracy',
+                    'value': clf_m.get('val_accuracy', 0),
+                    'description': 'Validation accuracy for barrier hit classification'
+                })
+                xgb_rows.append({
+                    'category': 'model_performance',
+                    'metric': 'classifier_val_logloss',
+                    'value': clf_m.get('val_logloss', 0),
+                    'description': 'Validation log loss for barrier hit classification'
+                })
+                xgb_rows.append({
+                    'category': 'model_performance',
+                    'metric': 'regressor_val_r2',
+                    'value': reg_m.get('val_r2', 0),
+                    'description': 'Validation R² for time-to-hit regression'
+                })
+                xgb_rows.append({
+                    'category': 'model_performance',
+                    'metric': 'regressor_val_rmse',
+                    'value': reg_m.get('val_rmse', 0),
+                    'description': 'Validation RMSE (bars) for time-to-hit regression'
+                })
+
+                # Target distribution
+                xgb_rows.append({
+                    'category': 'target_distribution',
+                    'metric': 'upper_hit_pct',
+                    'value': tgt_stats.get('upper_hit_pct', 0),
+                    'description': 'Percentage of samples hitting upper barrier first'
+                })
+                xgb_rows.append({
+                    'category': 'target_distribution',
+                    'metric': 'noise_pct',
+                    'value': tgt_stats.get('noise_pct', 0),
+                    'description': 'Percentage of samples with no barrier hit (noise)'
+                })
+                xgb_rows.append({
+                    'category': 'target_distribution',
+                    'metric': 'lower_hit_pct',
+                    'value': tgt_stats.get('lower_hit_pct', 0),
+                    'description': 'Percentage of samples hitting lower barrier first'
+                })
+                xgb_rows.append({
+                    'category': 'target_distribution',
+                    'metric': 'avg_time_to_hit',
+                    'value': tgt_stats.get('avg_time_to_hit', 0),
+                    'description': 'Average time to hit barrier (bars)'
+                })
+
+                # Variable target multipliers
+                xgb_rows.append({
+                    'category': 'target_multipliers',
+                    'metric': 'target_multiplier_mean',
+                    'value': tgt_stats.get('target_multiplier_mean', 0),
+                    'description': 'Mean volatility-adjusted target multiplier'
+                })
+                xgb_rows.append({
+                    'category': 'target_multipliers',
+                    'metric': 'target_multiplier_std',
+                    'value': tgt_stats.get('target_multiplier_std', 0),
+                    'description': 'Std dev of volatility-adjusted target multiplier'
+                })
+
+                # Feature weights
+                feat_weights = xgb_quality_metrics.get('combined_feature_weights', {})
+                for feat, weight in sorted(feat_weights.items(), key=lambda x: x[1], reverse=True):
+                    xgb_rows.append({
+                        'category': 'feature_weights',
+                        'metric': f'weight_{feat}',
+                        'value': weight,
+                        'description': f'Data-driven weight for {feat}'
+                    })
+
+                # Individual feature importance
+                feat_names = xgb_quality_metrics.get('feature_names', [])
+                clf_imp = clf_m.get('feature_importance', [])
+                reg_imp = reg_m.get('feature_importance', [])
+
+                for i, feat in enumerate(feat_names):
+                    if i < len(clf_imp):
+                        xgb_rows.append({
+                            'category': 'classifier_importance',
+                            'metric': f'importance_{feat}',
+                            'value': clf_imp[i],
+                            'description': f'Classifier feature importance for {feat}'
+                        })
+                    if i < len(reg_imp):
+                        xgb_rows.append({
+                            'category': 'regressor_importance',
+                            'metric': f'importance_{feat}',
+                            'value': reg_imp[i],
+                            'description': f'Regressor feature importance for {feat}'
+                        })
+
+                xgb_df = pd.DataFrame(xgb_rows)
+                xgb_df.to_csv(xgb_csv_path, index=False)
+                tprint_info(f"  ✅ XGBoost quality metrics CSV saved to: {xgb_csv_path}")
+
+            except Exception as xgb_csv_exc:
+                tprint_warning(f"  Failed to generate XGBoost quality CSV: {xgb_csv_exc}")
 
         return csv_path, md_path
 

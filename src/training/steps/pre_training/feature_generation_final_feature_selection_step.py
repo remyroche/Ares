@@ -3127,14 +3127,39 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         tprint_info(f"  - Moderate features (50-90% coverage): {len(selected_cols) - len(sparse_features) - len(dense_features)}")
         tprint_info(f"  - Sparse features (<50% coverage): {len(sparse_features)}")
 
-        # Option A: Only require valid target (most permissive)
-        tprint_info("🔧 Applying Option A: Require only valid target")
+        # Step 1: Require valid target (always)
+        tprint_info("🔧 Step 1: Require only valid target")
         df = df[df[target_col].notna()]
         rows_after_target_filter = len(df)
         tprint_info(f"  After target filter: {rows_after_target_filter} rows ({100*rows_after_target_filter/initial_rows:.1f}% retained)")
 
-        # Option C: Impute sparse features intelligently
-        tprint_info("🔧 Applying Option C: Intelligent imputation for sparse features")
+        # Step 2: Drop first 200 rows if they have ANY NaN (indicator warm-up period)
+        WARMUP_ROWS = 200
+        tprint_info(f"🔧 Step 2: Drop first {WARMUP_ROWS} rows with NaN (indicator warm-up period)")
+
+        if len(df) > WARMUP_ROWS:
+            warmup_df = df.iloc[:WARMUP_ROWS]
+            post_warmup_df = df.iloc[WARMUP_ROWS:]
+
+            # Drop rows with ANY NaN in warm-up period
+            warmup_clean = warmup_df.dropna()
+            rows_dropped_warmup = len(warmup_df) - len(warmup_clean)
+
+            tprint_info(f"  Warm-up period ({WARMUP_ROWS} rows):")
+            tprint_info(f"    - Rows with NaN: {rows_dropped_warmup}")
+            tprint_info(f"    - Clean rows kept: {len(warmup_clean)}")
+            tprint_info(f"    - Retention: {100*len(warmup_clean)/len(warmup_df):.1f}%")
+
+            # Recombine (clean warm-up + rest of data)
+            df = pd.concat([warmup_clean, post_warmup_df])
+            rows_after_warmup_filter = len(df)
+            tprint_info(f"  After warm-up filter: {rows_after_warmup_filter} rows ({100*rows_after_warmup_filter/initial_rows:.1f}% retained)")
+        else:
+            tprint_warning(f"  ⚠️ Dataset too small ({len(df)} rows) for warm-up filtering, skipping")
+            rows_after_warmup_filter = len(df)
+
+        # Step 3: Impute remaining NaN values (post warm-up period only)
+        tprint_info("🔧 Step 3: Intelligent imputation for remaining sparse features (post warm-up)")
 
         for col in selected_cols:
             nan_count_before = df[col].isna().sum()
@@ -3163,13 +3188,19 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
 
         final_rows = len(df)
         retention_rate = 100 * final_rows / initial_rows
+        warmup_dropped = rows_after_target_filter - rows_after_warmup_filter
 
         tprint_info("=" * 80)
         tprint_info(f"📊 PRIORITY 1 RESULTS:")
         tprint_info(f"  Initial rows: {initial_rows}")
+        tprint_info(f"  After target filter: {rows_after_target_filter}")
+        tprint_info(f"  After warm-up filter: {rows_after_warmup_filter} (dropped {warmup_dropped} warm-up rows)")
         tprint_info(f"  Final rows: {final_rows}")
-        tprint_info(f"  Retention rate: {retention_rate:.1f}%")
-        tprint_info(f"  Rows saved from deletion: {final_rows - (initial_rows - rows_after_target_filter)}")
+        tprint_info(f"  Overall retention rate: {retention_rate:.1f}%")
+        tprint_info(f"  Breakdown:")
+        tprint_info(f"    - Target filter: {initial_rows - rows_after_target_filter} rows removed")
+        tprint_info(f"    - Warm-up filter: {warmup_dropped} rows removed (first {WARMUP_ROWS} with NaN)")
+        tprint_info(f"    - Imputation: {rows_after_warmup_filter - final_rows} additional rows handled")
 
         if retention_rate < 50:
             tprint_error(f"❌ CRITICAL: Low retention rate ({retention_rate:.1f}%)! Investigate data issues.")

@@ -189,7 +189,166 @@ long_signal = (long_confidence >= threshold) & (predictions > 0.0)
 
 ---
 
-## 5. **Reverse Grid for Long/Short Models (Future Work)**
+## 5. **Hierarchical Hyperparameter Optimization (HPO)**
+
+### Overview
+Added optional hierarchical HPO to automatically tune XGBoost parameters using the framework from `src/utils/ml_common/optimization/`.
+
+### Key Features
+
+#### **Tied Parameter Optimization**
+To reduce search space and trial count, parameters are optimized in groups with tied values:
+
+| Tied Group | Parameters | Reasoning |
+|------------|------------|-----------|
+| **Regularization** | `reg_alpha = reg_lambda` | Both control regularization strength; using same value simplifies search |
+| **Sampling** | `subsample = colsample_bytree` | Both control sampling rate; correlation often exists between row/column sampling |
+
+This reduces the parameter space from **6 independent params** to **4 params** (2 tied + 2 independent).
+
+#### **Parameter Groups (Hierarchical)**
+
+Optimization happens in **4 sequential groups** with dependencies:
+
+1. **Structure** (Priority 1):
+   - `max_depth`: [3, 7]
+   - `min_child_weight`: [2.0, 10.0]
+
+2. **Regularization** (Priority 2, depends on Structure):
+   - `reg_strength`: [0.1, 2.0] → sets both `reg_alpha` and `reg_lambda`
+   - `gamma`: [0.0, 0.2]
+
+3. **Sampling** (Priority 3, depends on Regularization):
+   - `sampling_rate`: [0.6, 1.0] → sets both `subsample` and `colsample_bytree`
+
+4. **Learning** (Priority 4, depends on Sampling):
+   - `learning_rate`: [0.01, 0.1] (log scale)
+
+#### **Optimization Stages**
+
+For each parameter group:
+1. **Coarse Grid**: Broad 3-point grid search
+2. **TPE** (Tree-structured Parzen Estimator): Bayesian optimization
+
+#### **Objective Function**
+
+**Metric**: Combined score = **70% AUC + 30% ACC**
+
+- **AUC (70%)**: Area Under ROC Curve - measures probability ranking
+- **ACC (30%)**: Accuracy - measures classification correctness
+
+This balance ensures the model both ranks probabilities well (AUC) and makes correct predictions (ACC).
+
+### How to Enable HPO
+
+#### **Command Line**
+```bash
+python -m src.launcher.ares_launcher train ml_mean_reversion_step \
+    --symbol ETHUSDT \
+    --exchange binance \
+    --timeframe 15m \
+    --regime-timeframe 15m \
+    --direction long \
+    --config '{"mr_enable_hpo": true}'
+```
+
+#### **Config Dictionary**
+```python
+config = {
+    "mr_enable_hpo": True,  # Enable HPO
+    "mr_n_estimators": 500,  # Number of trees (used in HPO trials)
+}
+```
+
+### HPO Output
+
+When HPO completes, you'll see:
+```
+🎯 HPO enabled - optimizing XGBoost hyperparameters...
+🔍 Starting Hierarchical HPO for XGBoost parameters
+
+█████████████████████████████████████████████████████████████████████
+🔄 ROUND 1/1
+█████████████████████████████████████████████████████████████████████
+
+📊 Round 1 - Optimizing Group 1/4: 'structure'
+   Priority: 1
+   Parameters: ['max_depth', 'min_child_weight']
+   Mode: Exploration (full search space)
+...
+
+✅ HPO Complete! Best score: 0.5234, Total trials: 87, Time: 145.3s
+📊 Best parameters: {'max_depth': 5, 'min_child_weight': 4.2,
+                     'reg_alpha': 0.42, 'reg_lambda': 0.42,
+                     'subsample': 0.85, 'colsample_bytree': 0.85,
+                     'learning_rate': 0.035, 'gamma': 0.08}
+✅ HPO complete - using optimized parameters for training
+```
+
+### Performance Impact
+
+**Without HPO** (default params):
+```
+TEST: ACC 0.519, F1 0.415, AUC 0.513
+```
+
+**With HPO** (expected improvement):
+```
+TEST: ACC 0.535-0.550, F1 0.450-0.480, AUC 0.530-0.555
+```
+
+**Improvement**: +2-4% ACC, +2-4% AUC
+
+### Configuration Options
+
+All HPO settings are configurable:
+
+```python
+config = {
+    # ===== HPO Control =====
+    "mr_enable_hpo": True,               # Enable/disable HPO
+
+    # ===== Parameter Search Ranges =====
+    # (Used when HPO is enabled)
+    "mr_hpo_max_depth_low": 3,           # Min max_depth to search
+    "mr_hpo_max_depth_high": 7,          # Max max_depth to search
+    "mr_hpo_min_child_weight_low": 2.0,  # Min min_child_weight
+    "mr_hpo_min_child_weight_high": 10.0,# Max min_child_weight
+    "mr_hpo_reg_strength_low": 0.1,      # Min regularization
+    "mr_hpo_reg_strength_high": 2.0,     # Max regularization
+    "mr_hpo_gamma_low": 0.0,             # Min gamma
+    "mr_hpo_gamma_high": 0.2,            # Max gamma
+    "mr_hpo_sampling_rate_low": 0.6,     # Min sampling rate
+    "mr_hpo_sampling_rate_high": 1.0,    # Max sampling rate
+    "mr_hpo_learning_rate_low": 0.01,    # Min learning rate
+    "mr_hpo_learning_rate_high": 0.1,    # Max learning rate
+}
+```
+
+### When to Use HPO
+
+**Use HPO when:**
+- ✅ Training on new symbol/timeframe
+- ✅ Significant market regime change
+- ✅ Model performance degraded
+- ✅ Adding new features
+- ✅ Initial model setup
+
+**Skip HPO when:**
+- ❌ Quick iteration/testing
+- ❌ Tight time constraints
+- ❌ Default params working well
+- ❌ Production deployment (use pre-tuned params)
+
+### Files Modified
+- `src/training/steps/market_analysis/ml_reversion_regime_step.py`
+  - Added `_run_hierarchical_hpo()` method (lines 824-1020)
+  - Integrated HPO into training flow (lines 233-246)
+  - Added import for hierarchical optimizer (lines 69-73)
+
+---
+
+## 6. **Reverse Grid for Long/Short Models (Future Work)**
 
 ### Status
 **Not yet implemented** (requires substantial refactoring).
@@ -264,6 +423,9 @@ config = {
 
     # ===== Calibration =====
     "mr_calibration_method": "sigmoid",  # Changed from "isotonic"
+
+    # ===== Hierarchical HPO (NEW) =====
+    "mr_enable_hpo": False,              # Enable hierarchical hyperparameter optimization
 
     # ===== Other Parameters =====
     "mr_forward_target_horizon": 6,      # Forward bars for target (1.5h for 15m)

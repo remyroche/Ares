@@ -222,22 +222,9 @@ class OptimizedVariantGenerator:
             self.stats['variants_by_type']['base'] += 1
             tprint_info(f"    ✅ Generated base variant for {feature_name}")
             
-            # 2. Volatility-normalized (skip only for volatility features)
-            if category.lower() != 'volatility':
-                if isinstance(ohlcv_data, pd.DataFrame) and 'close' in ohlcv_data.columns:
-                    vol_norm = self._generate_volatility_normalized_optimized(
-                        data[feature_name], ohlcv_data['close'], optimal_lookback
-                    )
-                    if vol_norm is not None:
-                        variants[f"{feature_name}_volnorm"] = vol_norm
-                        self.stats['variants_by_type']['volnorm'] += 1
-                        tprint_info(f"    ✅ Generated volnorm variant for {feature_name}")
-                    else:
-                        skipped_variants.append(f"{feature_name}_volnorm (generation failed)")
-                else:
-                    skipped_variants.append(f"{feature_name}_volnorm (skipped: missing close column)")
-            else:
-                skipped_variants.append(f"{feature_name}_volnorm (skipped: volatility category)")
+            # 2. Volatility-normalized (PRIORITY 3: DISABLED - removed from variant generation)
+            # Volatility normalization has been disabled per Priority 3 requirements
+            skipped_variants.append(f"{feature_name}_volnorm (DISABLED per Priority 3)")
             
             # 3. VWAP-weighted (generate for all features except volume category)
             if category.lower() != 'volume':
@@ -708,28 +695,113 @@ def generate_all_variants_optimized(
 ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
     """
     Generate optimized variants for all selected features.
-    
+
     Args:
         features_df: DataFrame containing all features
         selected_features: List of dicts with keys: feature_name, category, optimal_lookback
         ohlcv_data: DataFrame with OHLCV columns
         max_workers: Maximum number of parallel workers
-        
+
     Returns:
         Tuple of (variants_df, statistics)
     """
+    # PRIORITY 3: Add sparse feature detection and filtering
+    tprint_info("=" * 80)
+    tprint_info("🔍 PRIORITY 3: Sparse Feature Detection and Filtering")
+    tprint_info("=" * 80)
+
+    MIN_COVERAGE_PCT = 95.0  # Require 95% coverage (max 5% NaN/zero)
+    MAX_SPARSE_PCT = 100.0 - MIN_COVERAGE_PCT
+
+    tprint_info(f"📊 Analyzing sparsity for {len(selected_features)} candidate features...")
+    tprint_info(f"📋 Coverage threshold: {MIN_COVERAGE_PCT}% (max {MAX_SPARSE_PCT}% sparse allowed)")
+
+    features_to_process = []
+    features_to_skip = []
+    sparsity_stats = []
+
+    for feature_info in selected_features:
+        feature_name = feature_info['feature_name']
+
+        if feature_name not in features_df.columns:
+            features_to_skip.append(feature_name)
+            tprint_warning(f"  ⚠️ SKIP: '{feature_name}' not found in features_df")
+            continue
+
+        feature_data = features_df[feature_name]
+        total_rows = len(feature_data)
+
+        # Count NaN and zero values
+        nan_count = feature_data.isna().sum()
+        zero_count = (feature_data == 0).sum()
+        sparse_count = nan_count + zero_count
+        sparse_pct = 100 * sparse_count / total_rows
+        coverage_pct = 100 - sparse_pct
+
+        sparsity_stats.append({
+            'feature': feature_name,
+            'coverage_pct': coverage_pct,
+            'sparse_pct': sparse_pct,
+            'nan_count': nan_count,
+            'zero_count': zero_count,
+            'category': feature_info['category']
+        })
+
+        # Check coverage threshold
+        if sparse_pct <= MAX_SPARSE_PCT:
+            features_to_process.append(feature_info)
+            if sparse_pct > 1:  # More than 1% sparse
+                tprint_info(f"  ✅ PROCESS: '{feature_name}' - coverage: {coverage_pct:.1f}% ({nan_count} NaN, {zero_count} zeros)")
+        else:
+            features_to_skip.append(feature_name)
+            tprint_warning(f"  ❌ SKIP: '{feature_name}' - coverage: {coverage_pct:.1f}% (SPARSE! {nan_count} NaN, {zero_count} zeros)")
+
+            # WARNING: Sparse features indicate bugs since we have full market data
+            tprint_error(f"  🚨 BUG INDICATOR: '{feature_name}' is sparse despite full market data coverage!")
+            tprint_error(f"     This suggests a bug in feature generation for category: {feature_info['category']}")
+
+    # Sort by sparsity (worst first)
+    sparsity_stats.sort(key=lambda x: x['coverage_pct'])
+
+    tprint_info("=" * 80)
+    tprint_info("📊 Sparsity Analysis Results:")
+    tprint_info(f"  Total features analyzed: {len(selected_features)}")
+    tprint_info(f"  Features to process (≥{MIN_COVERAGE_PCT}% coverage): {len(features_to_process)}")
+    tprint_info(f"  Features skipped (<{MIN_COVERAGE_PCT}% coverage): {len(features_to_skip)}")
+
+    if features_to_skip:
+        tprint_error(f"🚨 CRITICAL: {len(features_to_skip)} SPARSE FEATURES DETECTED!")
+        tprint_error(f"   This indicates bugs in feature generation - we have full market data!")
+        tprint_error(f"   Sparse features:")
+        for feat in features_to_skip[:10]:  # Show first 10
+            stat = next((s for s in sparsity_stats if s['feature'] == feat), None)
+            if stat:
+                tprint_error(f"    - '{feat}' ({stat['category']}): {stat['coverage_pct']:.1f}% coverage")
+        if len(features_to_skip) > 10:
+            tprint_error(f"    ... and {len(features_to_skip) - 10} more")
+
+    # Show features with worst coverage that will still be processed
+    tprint_info("📊 Features with lowest coverage (but still processing):")
+    processed_stats = [s for s in sparsity_stats if s['feature'] not in features_to_skip]
+    for stat in processed_stats[:5]:  # Show 5 worst
+        tprint_info(f"  - '{stat['feature']}' ({stat['category']}): {stat['coverage_pct']:.1f}% coverage")
+
+    tprint_info("=" * 80)
+
+    # Create generator WITHOUT volatility normalization (Priority 3 requirement)
     generator = OptimizedVariantGenerator()
     all_variants = {}
-    
-    tprint_info(f"🔄 Generating optimized variants for {len(selected_features)} features...")
-    
+
+    tprint_info(f"🔄 Generating optimized variants for {len(features_to_process)} dense features...")
+    tprint_warning(f"⚠️ PRIORITY 3: Volatility normalization DISABLED (removed from variant generation)")
+
     # Use parallel processing if available
-    if max_workers > 1 and len(selected_features) > 10:
+    if max_workers > 1 and len(features_to_process) > 10:
         try:
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
                 futures = []
-                
-                for feature_info in selected_features:
+
+                for feature_info in features_to_process:
                     feature_name = feature_info['feature_name']
                     category = feature_info['category']
                     optimal_lookback = feature_info['optimal_lookback']
@@ -760,15 +832,15 @@ def generate_all_variants_optimized(
         except Exception as e:
             tprint_warning(f"⚠️ Parallel processing failed, falling back to sequential: {e}")
             # Fallback to sequential processing
-            for i, feature_info in enumerate(selected_features):
+            for i, feature_info in enumerate(features_to_process):
                 feature_name = feature_info['feature_name']
                 category = feature_info['category']
                 optimal_lookback = feature_info['optimal_lookback']
-                
+
                 if feature_name not in features_df.columns:
                     tprint_warning(f"⚠️ Feature {feature_name} not found in DataFrame, skipping...")
                     continue
-                
+
                 try:
                     variants = generator.generate_variants(
                         features_df,
@@ -778,25 +850,25 @@ def generate_all_variants_optimized(
                         ohlcv_data
                     )
                     all_variants.update(variants)
-                    
+
                     if (i + 1) % 10 == 0:
-                        tprint_info(f"  Progress: {i+1}/{len(selected_features)} features processed")
-                        
+                        tprint_info(f"  Progress: {i+1}/{len(features_to_process)} features processed")
+
                 except Exception as e:
                     tprint_error(f"❌ Failed to generate variants for {feature_name}: {e}")
                     generator.stats['failed_variants'].append(feature_name)
-    
+
     else:
         # Sequential processing
-        for i, feature_info in enumerate(selected_features):
+        for i, feature_info in enumerate(features_to_process):
             feature_name = feature_info['feature_name']
             category = feature_info['category']
             optimal_lookback = feature_info['optimal_lookback']
-            
+
             if feature_name not in features_df.columns:
                 tprint_warning(f"⚠️ Feature {feature_name} not found in DataFrame, skipping...")
                 continue
-            
+
             try:
                 variants = generator.generate_variants(
                     features_df,
@@ -806,10 +878,10 @@ def generate_all_variants_optimized(
                     ohlcv_data
                 )
                 all_variants.update(variants)
-                
+
                 if (i + 1) % 10 == 0:
-                    tprint_info(f"  Progress: {i+1}/{len(selected_features)} features processed")
-                    
+                    tprint_info(f"  Progress: {i+1}/{len(features_to_process)} features processed")
+
             except Exception as e:
                 tprint_error(f"❌ Failed to generate variants for {feature_name}: {e}")
                 generator.stats['failed_variants'].append(feature_name)
@@ -818,18 +890,19 @@ def generate_all_variants_optimized(
     variants_df = pd.DataFrame(all_variants, index=features_df.index)
     
     stats = generator.get_stats()
-    tprint_success(f"✅ Generated {len(variants_df.columns)} total variants from {len(selected_features)} features")
+    tprint_success(f"✅ Generated {len(variants_df.columns)} total variants from {len(features_to_process)} dense features")
     tprint_info(f"  Breakdown: {stats['variants_by_type']}")
-    
-    # Add detailed expansion analysis
-    expected_max_variants = len(selected_features) * 4
+
+    # Add detailed expansion analysis (note: volnorm disabled, so max is 3x not 4x)
+    expected_max_variants = len(features_to_process) * 3  # base, vwap, trend_adj (volnorm disabled)
     actual_variants = len(variants_df.columns)
-    expansion_ratio = actual_variants / len(selected_features)
-    expansion_percentage = (actual_variants / expected_max_variants) * 100
-    
+    expansion_ratio = actual_variants / len(features_to_process) if len(features_to_process) > 0 else 0
+    expansion_percentage = (actual_variants / expected_max_variants) * 100 if expected_max_variants > 0 else 0
+
     tprint_info(f"📊 VARIANT EXPANSION SUMMARY:")
-    tprint_info(f"  📈 Input features: {len(selected_features)}")
-    tprint_info(f"  📈 Expected maximum variants: {expected_max_variants}")
+    tprint_info(f"  📈 Input features (dense only): {len(features_to_process)}")
+    tprint_info(f"  📈 Sparse features skipped: {len(features_to_skip)}")
+    tprint_info(f"  📈 Expected maximum variants: {expected_max_variants} (3x per feature, volnorm disabled)")
     tprint_info(f"  📈 Actual variants generated: {actual_variants}")
     tprint_info(f"  📈 Expansion ratio: {expansion_ratio:.1f}x")
     tprint_info(f"  📈 Expansion percentage: {expansion_percentage:.1f}%")

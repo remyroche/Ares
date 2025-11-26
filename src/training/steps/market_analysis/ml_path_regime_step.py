@@ -2704,9 +2704,12 @@ class MLPathRegimeStep(BaseStep):
         # NEW: Use XGBoost-driven quality scoring with barrier hit prediction
         use_xgb_quality = config.get('use_xgb_quality_scoring', True)
 
+        xgb_quality_classifier = None
+        xgb_quality_regressor = None
+
         if use_xgb_quality:
             # Use XGBoost to learn optimal feature weights from barrier hit prediction
-            regime_quality_scores, risk_scores, xgb_metrics = self._calculate_xgboost_driven_quality_scores(
+            regime_quality_scores, risk_scores, xgb_metrics, xgb_quality_classifier, xgb_quality_regressor = self._calculate_xgboost_driven_quality_scores(
                 labels=final_labels,
                 features_df=risk_features_clean,
                 ohlcv_df=risk_df,  # Original dataframe with OHLCV
@@ -2744,6 +2747,12 @@ class MLPathRegimeStep(BaseStep):
             tprint_info("🤖 XGBOOST QUALITY MODEL METRICS:")
             tprint_info("=" * 80)
             tprint_info(f"  Classifier - Val Accuracy: {xgb_m['classifier']['val_accuracy']:.3f}, Val LogLoss: {xgb_m['classifier']['val_logloss']:.4f}")
+
+            if xgb_m['classifier'].get('calibration_enabled'):
+                cal_method = xgb_m['classifier'].get('calibration_method', 'unknown')
+                cal_improve = xgb_m['classifier'].get('calibration_improvement', 0.0)
+                tprint_info(f"  Calibration: {cal_method} (improvement: {cal_improve:+.4f})")
+
             tprint_info(f"  Regressor - Val R²: {xgb_m['regressor']['val_r2']:.3f}, Val RMSE: {xgb_m['regressor']['val_rmse']:.2f} bars")
             tprint_info(f"  Target Distribution:")
             tprint_info(f"    Upper Hit: {xgb_m['target_stats']['upper_hit_pct']*100:.1f}%")
@@ -2751,7 +2760,61 @@ class MLPathRegimeStep(BaseStep):
             tprint_info(f"    Lower Hit: {xgb_m['target_stats']['lower_hit_pct']*100:.1f}%")
             tprint_info(f"  Avg Time-to-Hit: {xgb_m['target_stats']['avg_time_to_hit']:.2f} bars")
 
+            if xgb_m['training'].get('hpo_enabled'):
+                tprint_info(f"  HPO: Enabled ({xgb_m['training']['n_train_samples']} train samples)")
+
         tprint_info("=" * 80)
+
+        # ========== STEP 7.75: Save XGBoost Quality Models ==========
+        if use_xgb_quality and xgb_quality_classifier is not None:
+            try:
+                import joblib
+                from pathlib import Path
+
+                symbol_xgb = str(config.get("symbol", "UNKNOWN"))
+                timeframe_xgb = str(config.get("regime_timeframe", config.get("timeframe", "15m")))
+                ts_xgb = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+                # Save calibrated classifier
+                clf_model_path = Path("outcomes") / f"xgb_quality_classifier_{symbol_xgb}_{timeframe_xgb}_{ts_xgb}.joblib"
+                joblib.dump(xgb_quality_classifier, clf_model_path)
+                tprint_info(f"💾 Saved XGBoost quality classifier: {clf_model_path}")
+
+                # Save regressor
+                if xgb_quality_regressor is not None:
+                    reg_model_path = Path("outcomes") / f"xgb_quality_regressor_{symbol_xgb}_{timeframe_xgb}_{ts_xgb}.joblib"
+                    joblib.dump(xgb_quality_regressor, reg_model_path)
+                    tprint_info(f"💾 Saved XGBoost quality regressor: {reg_model_path}")
+
+                # Save feature metadata for warm start
+                metadata_path = Path("outcomes") / f"xgb_quality_metadata_{symbol_xgb}_{timeframe_xgb}_{ts_xgb}.json"
+                metadata = {
+                    'symbol': symbol_xgb,
+                    'timeframe': timeframe_xgb,
+                    'timestamp': ts_xgb,
+                    'feature_names': xgb_m['feature_names'],
+                    'combined_feature_weights': xgb_m['combined_feature_weights'],
+                    'calibration_enabled': xgb_m['classifier'].get('calibration_enabled', False),
+                    'calibration_method': xgb_m['classifier'].get('calibration_method'),
+                    'train_fraction': xgb_m['training']['train_fraction'],
+                    'best_params': xgb_m['training'].get('best_params'),
+                    'target_stats': xgb_m['target_stats'],
+                }
+
+                import json
+                with open(metadata_path, 'w') as f:
+                    json.dump(metadata, f, indent=2)
+                tprint_info(f"💾 Saved XGBoost quality metadata: {metadata_path}")
+
+                # Store paths in metrics for artifact tracking
+                metrics['xgb_quality_model_paths'] = {
+                    'classifier': str(clf_model_path),
+                    'regressor': str(reg_model_path) if xgb_quality_regressor is not None else None,
+                    'metadata': str(metadata_path),
+                }
+
+            except Exception as save_xgb_exc:
+                tprint_warning(f"Failed to save XGBoost quality models: {save_xgb_exc}")
 
         # ========== STEP 8: Persist HMM Model for Direct Inference ==========
         # Save the optimized HMM model and LiveHMM wrapper for production O(1) updates
@@ -3140,16 +3203,20 @@ class MLPathRegimeStep(BaseStep):
         posteriors: Optional[np.ndarray],
         n_regimes: int,
         config: Dict[str, Any]
-    ) -> Tuple[Dict[int, float], np.ndarray, Dict[str, Any]]:
+    ) -> Tuple[Dict[int, float], np.ndarray, Dict[str, Any], Optional[Any], Optional[Any]]:
         """
         Calculate data-driven quality scores using XGBoost to learn optimal feature weights.
 
         Instead of hardcoded weights, we:
         1. Generate barrier hit targets (3-class: +1, -1, 0) based on ATR-normalized price movements
-        2. Train XGBoost classifier to predict barrier hits from quality features
-        3. Train XGBoost regressor to predict time-to-hit (secondary objective)
-        4. Use feature importance as data-driven weights for quality scoring
-        5. Apply variable target multipliers based on volatility regime
+        2. Run HPO using HierarchicalParameterOptimizer for optimal hyperparameters
+        3. Train XGBoost classifier to predict barrier hits from quality features
+        4. Train XGBoost regressor to predict time-to-hit (secondary objective)
+        5. Apply isotonic calibration to classifier predictions
+        6. Use feature importance as data-driven weights for quality scoring
+        7. Apply variable target multipliers based on volatility regime
+        8. Save models for warm-start capability
+        9. Mask training samples from saved probabilities
 
         Target Definition:
         - +1: Upper barrier hit first within 3 hours (12 bars @ 15m)
@@ -3172,11 +3239,20 @@ class MLPathRegimeStep(BaseStep):
             regime_quality_scores: Dict mapping regime_id -> quality score [0, 1]
             risk_scores: Array of continuous risk scores [0, 1] for each sample
             xgb_metrics: Dictionary with XGBoost training metrics and feature importance
+            calibrated_classifier: Calibrated classifier model (for warm start)
+            regressor: Regressor model (for warm start)
         """
         import xgboost as xgb
         from sklearn.model_selection import train_test_split
         from sklearn.metrics import classification_report, log_loss, mean_squared_error, r2_score
+        from sklearn.calibration import CalibratedClassifierCV
         from src.utils.feature_common.atr_normalization import calculate_atr
+        from src.utils.ml_common.optimization import (
+            HierarchicalParameterOptimizer,
+            ParameterGroup,
+            OptimizationStage,
+            create_param_group,
+        )
 
         tprint_info("🎯 Calculating XGBoost-driven regime quality scores...")
         tprint_info("  Using data-driven feature weights from barrier hit prediction")
@@ -3365,40 +3441,160 @@ class MLPathRegimeStep(BaseStep):
         tprint_info(f"  Training XGBoost classifier on {len(X_clean)} samples with {len(available_features)} features")
 
         # Temporal split (80/20)
-        split_idx = int(len(X_clean) * 0.8)
+        train_frac = float(config.get('xgb_quality_train_fraction', 0.8))
+        split_idx = int(len(X_clean) * train_frac)
         X_train, X_val = X_clean[:split_idx], X_clean[split_idx:]
         y_class_train, y_class_val = y_class_clean[:split_idx], y_class_clean[split_idx:]
         y_time_train, y_time_val = y_time_clean[:split_idx], y_time_clean[split_idx:]
 
-        # XGBoost classifier
-        clf = xgb.XGBClassifier(
-            n_estimators=200,
-            max_depth=4,
-            learning_rate=0.05,
-            subsample=0.8,
-            colsample_bytree=0.8,
-            objective='multi:softprob',
-            num_class=3,
-            eval_metric='mlogloss',
-            early_stopping_rounds=20,
-            random_state=42,
-            tree_method='hist'
-        )
+        # Base XGBoost classifier parameters
+        base_clf_params = {
+            'objective': 'multi:softprob',
+            'num_class': 3,
+            'tree_method': 'hist',
+            'n_jobs': -1,
+            'random_state': 42,
+            'eval_metric': 'mlogloss',
+            'early_stopping_rounds': 20,
 
+            # Defaults (can be overridden by HPO)
+            'n_estimators': int(config.get('xgb_quality_n_estimators', 200)),
+            'max_depth': int(config.get('xgb_quality_max_depth', 4)),
+            'learning_rate': float(config.get('xgb_quality_learning_rate', 0.05)),
+            'subsample': float(config.get('xgb_quality_subsample', 0.8)),
+            'colsample_bytree': float(config.get('xgb_quality_colsample_bytree', 0.8)),
+            'min_child_weight': int(config.get('xgb_quality_min_child_weight', 5)),
+            'gamma': float(config.get('xgb_quality_gamma', 0.1)),
+            'reg_alpha': float(config.get('xgb_quality_reg_alpha', 0.1)),
+            'reg_lambda': float(config.get('xgb_quality_reg_lambda', 1.0)),
+        }
+
+        best_clf_params = base_clf_params.copy()
+
+        # Optional HPO for classifier
+        enable_hpo = bool(config.get('xgb_quality_enable_hpo', False))
+        if enable_hpo and len(X_train) >= 200:  # Require minimum samples for HPO
+            try:
+                tprint_info("🔧 Running HPO for barrier hit classifier...")
+
+                # Define parameter groups for hierarchical optimization
+                hpo_param_groups = [
+                    create_param_group(
+                        "structure",
+                        {
+                            'max_depth': [3, 4, 5, 6],
+                            'min_child_weight': [3, 5, 10, 15],
+                        },
+                        stage=OptimizationStage.COARSE
+                    ),
+                    create_param_group(
+                        "learning",
+                        {
+                            'learning_rate': [0.01, 0.03, 0.05, 0.1],
+                            'n_estimators': [100, 200, 300, 400],
+                        },
+                        stage=OptimizationStage.MEDIUM
+                    ),
+                    create_param_group(
+                        "regularization",
+                        {
+                            'subsample': [0.7, 0.8, 0.9],
+                            'colsample_bytree': [0.7, 0.8, 0.9],
+                            'gamma': [0.0, 0.1, 0.5],
+                            'reg_alpha': [0.0, 0.1, 1.0],
+                            'reg_lambda': [0.5, 1.0, 2.0],
+                        },
+                        stage=OptimizationStage.FINE
+                    ),
+                ]
+
+                base_model_for_hpo = xgb.XGBClassifier(**best_clf_params)
+
+                hpo_cv_folds = int(config.get('xgb_quality_hpo_cv_folds', 3))
+                hpo_rounds = int(config.get('xgb_quality_hpo_rounds', 1))
+                hpo_final_trials = int(config.get('xgb_quality_hpo_final_trials', 20))
+                hpo_enable_final = bool(config.get('xgb_quality_hpo_enable_final_refinement', False))
+
+                optimizer = HierarchicalParameterOptimizer(
+                    param_groups=hpo_param_groups,
+                    base_params=best_clf_params,
+                    cv_folds=hpo_cv_folds,
+                    scoring='neg_log_loss',
+                    n_rounds=hpo_rounds,
+                    enable_final_refinement=hpo_enable_final,
+                    final_refinement_trials=hpo_final_trials,
+                    random_state=42,
+                    verbose=bool(config.get('xgb_quality_hpo_verbose', False)),
+                )
+
+                hpo_result = optimizer.optimize(
+                    X=X_train,
+                    y=y_class_train,
+                    model=base_model_for_hpo,
+                )
+
+                if hpo_result and hpo_result.best_params:
+                    best_clf_params.update(hpo_result.best_params)
+                    tprint_info(f"  ✅ HPO completed. Best score: {hpo_result.best_score:.4f}")
+                    tprint_info(f"  Updated params: {hpo_result.best_params}")
+
+            except Exception as hpo_exc:
+                tprint_warning(f"  HPO failed, using default params: {hpo_exc}")
+
+        # Train final classifier with best params
+        clf = xgb.XGBClassifier(**best_clf_params)
         clf.fit(
             X_train, y_class_train,
             eval_set=[(X_val, y_class_val)],
             verbose=False
         )
 
-        # Evaluate classifier
+        # Evaluate uncalibrated classifier
         y_pred_val = clf.predict(X_val)
-        y_pred_proba_val = clf.predict_proba(X_val)
+        y_pred_proba_val_uncal = clf.predict_proba(X_val)
 
-        val_logloss = log_loss(y_class_val, y_pred_proba_val)
+        val_logloss_uncal = log_loss(y_class_val, y_pred_proba_val_uncal)
         val_accuracy = (y_pred_val == y_class_val).mean()
 
-        tprint_info(f"    Classifier validation - Log Loss: {val_logloss:.4f}, Accuracy: {val_accuracy:.3f}")
+        tprint_info(f"    Classifier (uncalibrated) - Log Loss: {val_logloss_uncal:.4f}, Accuracy: {val_accuracy:.3f}")
+
+        # ========== STEP 5.5: Calibrate Classifier (Isotonic) ==========
+        enable_calibration = bool(config.get('xgb_quality_enable_calibration', True))
+        calibration_method = str(config.get('xgb_quality_calibration_method', 'isotonic'))
+
+        if enable_calibration and len(X_val) >= 50:  # Need sufficient validation samples
+            try:
+                tprint_info(f"🔧 Calibrating classifier with {calibration_method} method...")
+
+                clf_calibrated = CalibratedClassifierCV(
+                    clf,
+                    method=calibration_method,  # 'isotonic' or 'sigmoid' (Platt scaling)
+                    cv='prefit'  # Use existing train/val split
+                )
+                clf_calibrated.fit(X_val, y_class_val)
+
+                # Evaluate calibrated classifier
+                y_pred_proba_val_cal = clf_calibrated.predict_proba(X_val)
+                val_logloss_cal = log_loss(y_class_val, y_pred_proba_val_cal)
+
+                improvement = val_logloss_uncal - val_logloss_cal
+                tprint_info(f"    Classifier (calibrated) - Log Loss: {val_logloss_cal:.4f} (improvement: {improvement:+.4f})")
+
+                # Use calibrated model
+                clf_final = clf_calibrated
+                val_logloss = val_logloss_cal
+                y_pred_proba_val = y_pred_proba_val_cal
+
+            except Exception as cal_exc:
+                tprint_warning(f"  Calibration failed, using uncalibrated model: {cal_exc}")
+                clf_final = clf
+                val_logloss = val_logloss_uncal
+                y_pred_proba_val = y_pred_proba_val_uncal
+        else:
+            tprint_info("  Skipping calibration (disabled or insufficient validation samples)")
+            clf_final = clf
+            val_logloss = val_logloss_uncal
+            y_pred_proba_val = y_pred_proba_val_uncal
 
         # ========== STEP 6: Train XGBoost Regressor (Time-to-Hit Prediction) ==========
         tprint_info(f"  Training XGBoost regressor for time-to-hit prediction")
@@ -3496,12 +3692,28 @@ class MLPathRegimeStep(BaseStep):
         risk_scores_smooth = pd.Series(risk_scores).ewm(span=10, adjust=False).mean().values
         risk_scores_smooth = np.clip(risk_scores_smooth, 0, 1)
 
-        # ========== STEP 10: Prepare Metrics Dictionary ==========
+        # ========== STEP 10: Generate Calibrated Probabilities (Train samples masked with NaN) ==========
+        # CRITICAL: Never save probabilities on training samples (periodic re-training pattern)
+        calibrated_probs_full = np.full((len(X_clean), 3), np.nan)  # 3 classes
+
+        # Only predict on validation/test samples (not training)
+        try:
+            calibrated_probs_full[split_idx:] = clf_final.predict_proba(X_clean[split_idx:])
+            tprint_info(f"  ✅ Generated calibrated probabilities for {len(X_clean) - split_idx} validation samples")
+            tprint_info(f"  🔒 Training samples ({split_idx}) masked with NaN (never saved)")
+        except Exception as prob_exc:
+            tprint_warning(f"  Failed to generate calibrated probabilities: {prob_exc}")
+
+        # ========== STEP 11: Prepare Metrics Dictionary ==========
         xgb_metrics = {
             'classifier': {
                 'val_logloss': float(val_logloss),
+                'val_logloss_uncalibrated': float(val_logloss_uncal) if enable_calibration else float(val_logloss),
                 'val_accuracy': float(val_accuracy),
                 'feature_importance': clf_importance.tolist(),
+                'calibration_enabled': enable_calibration,
+                'calibration_method': calibration_method if enable_calibration else None,
+                'calibration_improvement': float(val_logloss_uncal - val_logloss) if enable_calibration else 0.0,
             },
             'regressor': {
                 'val_rmse': float(val_rmse),
@@ -3517,13 +3729,24 @@ class MLPathRegimeStep(BaseStep):
                 'avg_time_to_hit': float(time_to_hit.mean()),
                 'target_multiplier_mean': float(target_multipliers.mean()),
                 'target_multiplier_std': float(target_multipliers.std()),
-            }
+            },
+            'training': {
+                'train_fraction': train_frac,
+                'split_idx': split_idx,
+                'n_train_samples': split_idx,
+                'n_val_samples': len(X_clean) - split_idx,
+                'hpo_enabled': enable_hpo,
+                'best_params': best_clf_params if enable_hpo else None,
+            },
+            'calibrated_probabilities': calibrated_probs_full,  # NaN for training samples
+            'valid_mask': valid_mask,  # Original valid mask for alignment
         }
 
         tprint_success(f"✅ XGBoost-driven quality scores calculated for {n_regimes} regimes")
         tprint_success(f"   Quality range: [{min(regime_quality_scores.values()):.3f}, {max(regime_quality_scores.values()):.3f}]")
 
-        return regime_quality_scores, risk_scores_smooth, xgb_metrics
+        # Return models for persistence and warm start
+        return regime_quality_scores, risk_scores_smooth, xgb_metrics, clf_final, reg
 
     def _calculate_forward_returns_and_sharpe(
         self,
@@ -4534,9 +4757,20 @@ class MLPathRegimeStep(BaseStep):
                     reg_metrics = xgb_quality_metrics.get('regressor', {})
 
                     f.write(f"| Classifier | Validation Accuracy | {clf_metrics.get('val_accuracy', 0):.3f} |\n")
-                    f.write(f"| Classifier | Validation Log Loss | {clf_metrics.get('val_logloss', 0):.4f} |\n")
+                    f.write(f"| Classifier | Validation Log Loss (Calibrated) | {clf_metrics.get('val_logloss', 0):.4f} |\n")
+
+                    if clf_metrics.get('calibration_enabled'):
+                        f.write(f"| Classifier | Validation Log Loss (Uncalibrated) | {clf_metrics.get('val_logloss_uncalibrated', 0):.4f} |\n")
+                        f.write(f"| Classifier | Calibration Method | {clf_metrics.get('calibration_method', 'N/A')} |\n")
+                        f.write(f"| Classifier | Calibration Improvement | {clf_metrics.get('calibration_improvement', 0):+.4f} |\n")
+
                     f.write(f"| Regressor (Time-to-Hit) | Validation R² | {reg_metrics.get('val_r2', 0):.3f} |\n")
                     f.write(f"| Regressor (Time-to-Hit) | Validation RMSE | {reg_metrics.get('val_rmse', 0):.2f} bars |\n")
+
+                    training_info = xgb_quality_metrics.get('training', {})
+                    if training_info.get('hpo_enabled'):
+                        f.write(f"| HPO | Enabled | Yes ({training_info.get('n_train_samples', 0)} train samples) |\n")
+
                     f.write("\n")
 
                     # Target distribution

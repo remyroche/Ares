@@ -164,7 +164,16 @@ class TemporalSplitConfig:
         if not np.isclose(train_pct + val_pct + test_pct, 1.0):
             raise ValueError("Percentages must sum to 1.0")
 
-        total_days = (data_end - data_start).days
+        # Handle numeric indices by converting to synthetic datetime
+        if isinstance(data_start, (int, np.integer)) or isinstance(data_end, (int, np.integer)):
+            samples_per_day = 96  # 15m data
+            n_samples = int(data_end) - int(data_start) + 1
+            total_days = max(1, n_samples // samples_per_day)
+            base_date = datetime(2020, 1, 1)
+            data_start = base_date + timedelta(days=int(data_start) // samples_per_day)
+            data_end = base_date + timedelta(days=int(data_end) // samples_per_day)
+        else:
+            total_days = (data_end - data_start).days
 
         # Calculate burn-in period if specified
         burnin_period = None
@@ -178,23 +187,32 @@ class TemporalSplitConfig:
         # Adjust remaining days after burn-in
         remaining_days = total_days - burnin_days - (embargo_days if burnin_days > 0 else 0)
 
-        # Calculate period durations from remaining days (accounting for embargos)
-        train_days = int(remaining_days * train_pct)
-        val_days = int(remaining_days * val_pct)
-        test_days = remaining_days - train_days - val_days - 2 * embargo_days
+        # Handle very small datasets: reduce embargo and adjust splits
+        if remaining_days < 5:
+            # Very small dataset - no embargos, simple 60/40 train/val, no test
+            embargo_days = 0
+            train_days = max(1, int(remaining_days * 0.6))
+            val_days = max(1, remaining_days - train_days)
+            test_days = 0
+        else:
+            # Calculate period durations from remaining days (accounting for embargos)
+            train_days = int(remaining_days * train_pct)
+            val_days = int(remaining_days * val_pct)
+            test_days = remaining_days - train_days - val_days - 2 * embargo_days
 
         # Calculate period boundaries
         if burnin_days > 0:
             train_start = burnin_end + timedelta(days=embargo_days)
         else:
             train_start = data_start
-        train_end = train_start + timedelta(days=train_days)
+        train_end = train_start + timedelta(days=max(1, train_days))
 
         val_start = train_end + timedelta(days=embargo_days)
-        val_end = val_start + timedelta(days=val_days)
+        val_end = val_start + timedelta(days=max(1, val_days))
 
+        # Ensure test period has at least 1 day
         test_start = val_end + timedelta(days=embargo_days)
-        test_end = data_end
+        test_end = data_end if data_end > test_start else test_start + timedelta(days=1)
 
         return cls(
             training=TemporalPeriod(train_start, train_end, embargo_days, "training"),
@@ -322,21 +340,39 @@ class WalkForwardSplitConfig:
         Returns:
             WalkForwardSplitConfig with expanding window folds
         """
-        total_days = (data_end - data_start).days
+        # Handle numeric indices by converting to synthetic datetime
+        if isinstance(data_start, (int, np.integer)) or isinstance(data_end, (int, np.integer)):
+            samples_per_day = 96  # 15m data
+            n_samples = int(data_end) - int(data_start) + 1
+            total_days = max(1, n_samples // samples_per_day)
+            base_date = datetime(2020, 1, 1)
+            data_start = base_date + timedelta(days=int(data_start) // samples_per_day)
+            data_end = base_date + timedelta(days=int(data_end) // samples_per_day)
+        else:
+            total_days = (data_end - data_start).days
 
         # Calculate fold boundaries
         folds = []
         current_pct = min_train_pct
 
+        # Handle very small datasets
+        if total_days < 5:
+            # Single fold with no embargo for tiny datasets
+            n_folds = 1
+            embargo_days = 0
+            min_train_pct = 0.6
+            val_pct_per_fold = 0.4
+            current_pct = min_train_pct
+
         for i in range(n_folds):
             # Training period: from start to current_pct
             train_start = data_start
-            train_days = int(total_days * current_pct)
+            train_days = max(1, int(total_days * current_pct))
             train_end = train_start + timedelta(days=train_days)
 
             # Validation period: next val_pct_per_fold
             val_start = train_end + timedelta(days=embargo_days)
-            val_days = int(total_days * val_pct_per_fold)
+            val_days = max(1, int(total_days * val_pct_per_fold))
             val_end = val_start + timedelta(days=val_days)
 
             fold = WalkForwardFold(

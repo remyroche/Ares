@@ -2433,12 +2433,56 @@ class EnhancedKlinesProcessingPipeline:
             # Analyze duplicates
             analysis_result = self.duplicate_analyzer.analyze_duplicates(df_with_timestamp, timestamp_column='timestamp_ms')
 
-            # Handle true duplicates (remove them)
+            # Handle true duplicates (remove only records that are truly identical on key OHLCV fields
+            # at the same timestamp). This mirrors the KlinesParquetManager logic and avoids touching
+            # false/mixed duplicates, which require manual review.
             cleaned_df = df.copy()
-            if analysis_result.true_duplicate_groups > 0:
-                cleaned_df = cleaned_df.drop_duplicates(keep='first')
-                if self.enable_logging:
-                    tprint_info(f"🧹 Removed {analysis_result.true_duplicate_groups} groups of true duplicates")
+            true_duplicate_records_removed = 0
+
+            # Prefer high-resolution timestamp_ms when available
+            timestamp_column = 'timestamp_ms' if 'timestamp_ms' in df_with_timestamp.columns else 'timestamp'
+
+            if timestamp_column in df_with_timestamp.columns:
+                ts_series = df_with_timestamp[timestamp_column]
+                duplicate_mask = ts_series.duplicated(keep=False)
+
+                if duplicate_mask.any():
+                    # Define key columns that must match for records to be considered true duplicates
+                    key_columns = ['open', 'high', 'low', 'close', 'volume', 'open_time', 'close_time']
+                    available_key_columns = [col for col in key_columns if col in df_with_timestamp.columns]
+
+                    if available_key_columns:
+                        indices_to_drop: List[Any] = []
+
+                        # Group only records with duplicate timestamps
+                        duplicated_df = df_with_timestamp[duplicate_mask]
+                        for _, group in duplicated_df.groupby(timestamp_column):
+                            if len(group) <= 1:
+                                continue
+
+                            first_record = group.iloc[0]
+                            all_identical = True
+
+                            for i in range(1, len(group)):
+                                current_record = group.iloc[i]
+                                if not all(first_record[col] == current_record[col] for col in available_key_columns):
+                                    all_identical = False
+                                    break
+
+                            if all_identical:
+                                # All records in this timestamp group are identical on key columns:
+                                # keep the last one and drop the rest (true duplicates only).
+                                indices_to_drop.extend(group.index[:-1].tolist())
+
+                        if indices_to_drop:
+                            cleaned_df = cleaned_df.drop(index=list(set(indices_to_drop)))
+                            true_duplicate_records_removed = len(indices_to_drop)
+
+                            if self.enable_logging:
+                                tprint_info(
+                                    f"🧹 Removed {true_duplicate_records_removed} true-duplicate records "
+                                    f"across {analysis_result.true_duplicate_groups} groups"
+                                )
 
             # Warn about false duplicates
             if analysis_result.false_duplicate_groups > 0:
@@ -2451,7 +2495,8 @@ class EnhancedKlinesProcessingPipeline:
             result.data = cleaned_df
             result.metadata = {
                 "total_duplicates": analysis_result.total_duplicates,
-                "true_duplicates_removed": analysis_result.true_duplicate_groups,
+                "true_duplicate_groups": analysis_result.true_duplicate_groups,
+                "true_duplicate_records_removed": true_duplicate_records_removed,
                 "false_duplicates": analysis_result.false_duplicate_groups,
                 "mixed_duplicates": analysis_result.mixed_duplicate_groups
             }

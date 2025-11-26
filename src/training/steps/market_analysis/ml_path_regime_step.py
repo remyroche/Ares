@@ -48,12 +48,15 @@ import re
 from typing import Any, Dict, Optional, Tuple, List, Union
 from dataclasses import asdict, is_dataclass
 from datetime import datetime
+from pathlib import Path
 
+import joblib
 import numpy as np
 import pandas as pd
 from scipy.stats import spearmanr, pearsonr, gaussian_kde, multivariate_normal
 from sklearn.preprocessing import MinMaxScaler, RobustScaler
 from hmmlearn.hmm import GaussianHMM
+from src.utils.ml_common.hmm_warm_start import HMMWarmStarter
 
 from src.training.steps.base_step import BaseStep
 from src.utils.tprint import (
@@ -84,6 +87,9 @@ from src.utils.ml_common.optimization import (
 )
 from src.utils.ml_common.feature_engineering.feature_smoothing import apply_ewm_smoothing
 from src.feature_generation.categories.entropy import PermutationEntropyGenerator
+from src.feature_generation.categories.path_regime_features import (
+    generate_path_regime_features,
+)
 
 # Feature analysis and selection tools
 try:
@@ -1291,232 +1297,14 @@ class MLPathRegimeStep(BaseStep):
         df: pd.DataFrame,
         config: Dict[str, Any],
     ) -> pd.DataFrame:
-        """Generate comprehensive risk features with EWMA smoothing.
-
-        Features are generated with:
-        - Last bar value
-        - EWMA with period 2
-        - EWMA with period 6
-
-        Special metrics (Fragility, Shock, Desperation, Divergence) are NOT smoothed.
-        """
+        """Generate path geometry features via the feature bank."""
         tprint_info("🎯 Generating path-oriented features...")
 
-        result_df = df.copy()
-        required_cols = ['open', 'high', 'low', 'close', 'volume']
-        missing = [c for c in required_cols if c not in result_df.columns]
-        if missing:
-            tprint_warning(f"Missing columns for feature generation: {missing}")
-            return result_df
-
-        # Calculate base 1h returns
-        returns = np.log(result_df['close'] / result_df['close'].shift(1))
-        result_df['returns_1h'] = returns
-
-        # Minimal 3h return and Sharpe-like ratio used downstream and by Path alpha
         try:
-            return_3h = returns.rolling(window=12).sum()
-            result_df['return_3h'] = return_3h
-
-            downside_returns = returns.copy()
-            downside_returns[downside_returns > 0] = 0
-            downside_dev = downside_returns.rolling(window=80).std()
-            sharpe_like_3h = return_3h / (downside_dev + 1e-9)
-            result_df['sharpe_like_3h'] = sharpe_like_3h
-        except Exception as rr_exc:  # pragma: no cover - defensive
-            tprint_warning(
-                f"Path return / Sharpe-like feature generation failed (non-fatal): {rr_exc}"
-            )
-
-        try:
-            ker_window_main = int(config.get("path_ker_window_bars", 3))
-            ker_windows = sorted({ker_window_main, 24})
-            for n in ker_windows:
-                if n > 1:
-                    price_change_n = (result_df["close"] - result_df["close"].shift(n)).abs()
-                    path_length_n = result_df["close"].diff().abs().rolling(window=n, min_periods=2).sum()
-                    ker_series = price_change_n / (path_length_n + 1e-9)
-                    result_df[f"path_ker_{n}h"] = ker_series
-        except Exception as ker_exc:  # pragma: no cover - defensive
-            tprint_warning(f"Path efficiency (KER) feature generation failed (non-fatal): {ker_exc}")
-
-        try:
-            ker_col = f"path_ker_{ker_window_main}h"
-            if ker_col in result_df.columns and "return_3h" in result_df.columns:
-                ker_series_eff = result_df[ker_col]
-                ret_3h_eff = result_df["return_3h"]
-                result_df["path_efficiency_return_3h"] = ker_series_eff * ret_3h_eff
-                result_df["path_directional_eff_3h"] = np.sign(ret_3h_eff) * ker_series_eff
-        except Exception as path_eff_exc:  # pragma: no cover - defensive
-            tprint_warning(
-                f"Path efficiency-return feature generation failed (non-fatal): {path_eff_exc}"
-            )
-
-        try:
-            body = (result_df["close"] - result_df["open"]).abs()
-            range_bar = (result_df["high"] - result_df["low"]).replace(0, np.nan)
-            brr = body / (range_bar + 1e-9)
-            result_df["body_range_ratio"] = brr
-        except Exception as brr_exc:  # pragma: no cover - defensive
-            tprint_warning(f"Body-to-range ratio feature generation failed (non-fatal): {brr_exc}")
-
-        try:
-            range_bar = (result_df["high"] - result_df["low"]).replace(0, np.nan)
-            overlap_high = np.minimum(result_df["high"], result_df["high"].shift(1))
-            overlap_low = np.maximum(result_df["low"], result_df["low"].shift(1))
-            overlap = (overlap_high - overlap_low).clip(lower=0.0)
-            traffic = overlap / (range_bar + 1e-9)
-            result_df["traffic_overlap"] = traffic
-            result_df["traffic_overlap_3h"] = traffic.rolling(window=12, min_periods=1).mean()
-        except Exception as traffic_exc:  # pragma: no cover - defensive
-            tprint_warning(f"Traffic/overlap feature generation failed (non-fatal): {traffic_exc}")
-
-        try:
-            ker_col = f"path_ker_{ker_window_main}h"
-            if ker_col in result_df.columns:
-                trend_window = int(config.get("path_trend_r2_window_bars", ker_window_main * 2))
-
-                def _rolling_r2(arr: np.ndarray) -> float:
-                    mask = np.isfinite(arr)
-                    if mask.sum() < 3:
-                        return np.nan
-                    y = arr[mask]
-                    x = np.arange(len(y), dtype=float)
-                    if y.std() == 0.0 or x.std() == 0.0:
-                        return 0.0
-                    corr = np.corrcoef(x, y)[0, 1]
-                    if not np.isfinite(corr):
-                        return 0.0
-                    return float(corr * corr)
-
-                r2_series = result_df["close"].rolling(
-                    window=trend_window,
-                    min_periods=3,
-                ).apply(_rolling_r2, raw=True)
-                result_df["path_trend_r2"] = r2_series
-        except Exception as r2_exc:  # pragma: no cover - defensive
-            tprint_warning(f"Path trend R2 feature generation failed (non-fatal): {r2_exc}")
-
-        try:
-            perm_window = int(config.get("path_permutation_entropy_window", 20))
-            embedding_dim = int(config.get("path_permutation_embedding_dim", 3))
-            delay = int(config.get("path_permutation_delay", 1))
-            pe_gen = PermutationEntropyGenerator(
-                window=perm_window,
-                embedding_dim=embedding_dim,
-                delay=delay,
-            )
-            pe_series = pe_gen._generate_feature(result_df[["close"]].copy())
-            result_df["path_permutation_entropy"] = pe_series
-        except Exception as pe_exc:  # pragma: no cover - defensive
-            tprint_warning(f"Permutation entropy feature generation failed (non-fatal): {pe_exc}")
-
-        try:
-            fd_window = int(config.get("path_fractal_window_bars", 24))
-
-            def _fractal_window(seq: np.ndarray) -> float:
-                seq = seq[np.isfinite(seq)]
-                if len(seq) < 10:
-                    return 1.0
-
-                # Katz fractal dimension on cumulative returns path
-                path = np.cumsum(seq)
-                diffs = np.diff(path)
-                if len(diffs) == 0:
-                    return 1.0
-
-                total_length = float(np.sum(np.abs(diffs)))
-                if total_length <= 0.0:
-                    return 1.0
-
-                max_dist = float(np.max(np.abs(path - path[0])))
-                if max_dist <= 0.0:
-                    return 1.0
-
-                n = float(len(path))
-                fd = np.log10(n) / (np.log10(n) + np.log10(max_dist / total_length))
-                return float(max(1.0, min(2.0, fd)))
-
-            fd_series = returns.rolling(
-                window=fd_window,
-                min_periods=10,
-            ).apply(_fractal_window, raw=True)
-            result_df["path_fractal_dimension"] = fd_series
-        except Exception as fd_exc:  # pragma: no cover - defensive
-            tprint_warning(f"Fractal dimension feature generation failed (non-fatal): {fd_exc}")
-
-        try:
-            hurst_window = int(config.get("path_hurst_window_bars", 24))
-
-            def _hurst_window(seq: np.ndarray) -> float:
-                if len(seq) < 10:
-                    return 0.5
-                n = len(seq)
-                mean_seq = float(np.mean(seq))
-                deviations = seq - mean_seq
-                cumulative = np.cumsum(deviations)
-                r = float(np.max(cumulative) - np.min(cumulative))
-                s = float(np.std(seq))
-                if s == 0.0 or r <= 0.0:
-                    return 0.5
-                rs = r / s
-                if rs <= 0.0:
-                    return 0.5
-                return float(np.log(rs) / np.log(n))
-
-            hurst_series = returns.rolling(
-                window=hurst_window,
-                min_periods=10,
-            ).apply(_hurst_window, raw=True)
-            result_df["hurst_exponent_path"] = hurst_series
-        except Exception as hurst_exc:  # pragma: no cover - defensive
-            tprint_warning(f"Path Hurst exponent feature generation failed (non-fatal): {hurst_exc}")
-
-        try:
-            ker_col = f"path_ker_{ker_window_main}h"
-            if ker_col in result_df.columns and "return_3h" in result_df.columns:
-                ker_series = result_df[ker_col]
-                ker_diff = ker_series.diff()
-                path_trend_up = (result_df["return_3h"] > 0).astype(int)
-                eff_high_thr = float(config.get("path_efficiency_high_threshold", 0.6))
-                eff_drop_thr = float(config.get("path_efficiency_drop_threshold", 0.05))
-                eff_high = (ker_series >= eff_high_thr).astype(int)
-                eff_dropping = (ker_diff <= -eff_drop_thr).astype(int)
-                alpha_state = np.zeros(len(result_df), dtype=int)
-                hold_mask = (path_trend_up == 1) & (eff_high == 1) & (eff_dropping == 0)
-                tp_mask = (path_trend_up == 1) & (eff_dropping == 1)
-                alpha_state[hold_mask.values] = 1
-                alpha_state[tp_mask.values] = 2
-                result_df["path_trend_up"] = path_trend_up
-                result_df["path_efficiency_high"] = eff_high
-                result_df["path_efficiency_dropping"] = eff_dropping
-                result_df["path_alpha_state"] = alpha_state
-        except Exception as alpha_exc:  # pragma: no cover - defensive
-            tprint_warning(f"Path alpha helper feature generation failed (non-fatal): {alpha_exc}")
-
-        # Restrict outputs to base OHLCV + Path/return features; drop legacy risk/volatility columns
-        base_cols = [c for c in df.columns]
-        path_keep = [
-            "returns_1h",
-            "path_ker_3h",
-            "path_ker_6h",
-            "path_efficiency_return_3h",
-            "path_directional_eff_3h",
-            "body_range_ratio",
-            "traffic_overlap",
-            "traffic_overlap_3h",
-            "path_permutation_entropy",
-            "path_fractal_dimension",
-            "hurst_exponent_path",
-            "path_trend_r2",
-            "path_trend_up",
-            "path_efficiency_high",
-            "path_efficiency_dropping",
-            "path_alpha_state",
-        ]
-        keep_cols = base_cols + [c for c in path_keep if c in result_df.columns]
-        keep_cols = list(dict.fromkeys(keep_cols))
-        result_df = result_df[keep_cols]
+            result_df = generate_path_regime_features(df, config)
+        except Exception as exc:  # pragma: no cover - defensive
+            tprint_warning(f"Path feature generation failed, returning input df: {exc}")
+            return df
 
         tprint_info(
             f"✅ Generated {len([c for c in result_df.columns if c not in df.columns])} path features"
@@ -2492,6 +2280,41 @@ class MLPathRegimeStep(BaseStep):
             f"(warm-start initialization ready)"
         )
 
+        # Optional: HMM warm-start from latest saved model
+        warm_start_enabled = bool(config.get("hmm_enable_warm_start", True))
+        warm_start_model_path = config.get("hmm_warm_start_model_path")
+        previous_hmm: Optional[GaussianHMM] = None
+
+        if warm_start_enabled:
+            try:
+                candidate_paths: List[Path] = []
+                if isinstance(warm_start_model_path, str) and warm_start_model_path:
+                    candidate_paths = [Path(warm_start_model_path)]
+                else:
+                    symbol_ws = str(config.get("symbol", "UNKNOWN"))
+                    timeframe_ws = str(config.get("regime_timeframe", config.get("timeframe", "15m")))
+                    base_dir = Path("versioned_artifacts/regime_models")
+                    pattern = f"path_hmm_{symbol_ws}_{timeframe_ws}_*.pkl"
+                    if base_dir.exists():
+                        candidate_paths = sorted(base_dir.glob(pattern))
+
+                for path in reversed(candidate_paths):
+                    try:
+                        loaded = joblib.load(path)
+                        if isinstance(loaded, dict) and "hmm_model" in loaded:
+                            candidate = loaded["hmm_model"]
+                        else:
+                            candidate = loaded
+                        if isinstance(candidate, GaussianHMM):
+                            previous_hmm = candidate
+                            tprint_info(f"♻️ Using previous HMM for warm-start: {path}")
+                            break
+                    except Exception as load_exc:
+                        tprint_warning(f"HMM warm-start: failed to load {path}: {load_exc}")
+            except Exception as ws_exc:
+                tprint_warning(f"HMM warm-start disabled due to error, falling back to GMM init: {ws_exc}")
+                previous_hmm = None
+
         # ===== OPTIMIZATION 3: HMM Training with GMM Injection =====
         tprint_info(
             f"🧠 Step 2: Training HMM with {n_regimes} regimes "
@@ -2503,28 +2326,47 @@ class MLPathRegimeStep(BaseStep):
         hmm_tol = float(config.get("hmm_tol", 1e-3))
         hmm_min_covar = float(config.get("hmm_min_covar", 0.001))
 
-        # Initialize HMM with user-specified "Magic Number" geometry regimes
-        hmm = GaussianHMM(
-            n_components=n_regimes,          # The "Magic Number" for Geometry
-            covariance_type="full",          # MANDATORY for geometric features
-            n_iter=hmm_n_iter,               # High iteration count for convergence
-            tol=hmm_tol,                     # Stricter tolerance
-            init_params='stmc',              # Initialize all params (Start, Trans, Means, Covs)
-            min_covar=hmm_min_covar,         # Floor to prevent instability
-            random_state=42
-        )
+        hmm: GaussianHMM
 
-        # Inject GMM means into HMM (warm start)
-        hmm.means_ = gmm_means.copy()
-        hmm.init_params = 'stc'  # Only init start, trans, covars (means already set)
+        if (
+            previous_hmm is not None
+            and getattr(previous_hmm, "n_components", None) == n_regimes
+            and getattr(previous_hmm, "n_features", hmm_features_strided.shape[1]) == hmm_features_strided.shape[1]
+        ):
+            warm_starter = HMMWarmStarter()
+            hmm = warm_starter.create_warm_started_hmm(
+                n_components=n_regimes,
+                n_features=hmm_features_strided.shape[1],
+                previous_hmm=previous_hmm,
+                covariance_type="full",
+                n_iter=hmm_n_iter,
+                random_state=42,
+            )
+            try:
+                hmm.min_covar = hmm_min_covar
+            except Exception:
+                pass
+            tprint_info("  ♻️ Warm-starting HMM from previous trained model")
+        else:
+            # Initialize HMM with user-specified "Magic Number" geometry regimes
+            hmm = GaussianHMM(
+                n_components=n_regimes,          # The "Magic Number" for Geometry
+                covariance_type="full",          # MANDATORY for geometric features
+                n_iter=hmm_n_iter,               # High iteration count for convergence
+                tol=hmm_tol,                     # Stricter tolerance
+                init_params='stmc',              # Initialize all params (Start, Trans, Means, Covs)
+                min_covar=hmm_min_covar,         # Floor to prevent instability
+                random_state=42
+            )
+
+            # Inject GMM means into HMM (warm start)
+            hmm.means_ = gmm_means.copy()
+            hmm.init_params = 'stc'  # Only init start, trans, covars (means already set)
 
         tprint_info(
             f"  HMM configuration: n_components={n_regimes}, "
             f"covariance_type='full', n_iter={hmm_n_iter}, "
             f"tol={hmm_tol}, min_covar={hmm_min_covar}"
-        )
-        tprint_info(
-            f"  🔥 GMM means injected into HMM for warm-start initialization"
         )
 
         # Convert to numpy array for HMM (requires shape: [n_samples, n_features])
@@ -2930,7 +2772,7 @@ class MLPathRegimeStep(BaseStep):
                     index=risk_features_clean.columns
                 ).T
 
-                centroid_detector_path = f"versioned_artifacts/regime_models/path_centroid_{symbol_gmm}_{timeframe_gmm}_{ts_gmm}.pkl"
+                centroid_detector_path = f"versioned_artifacts/regime_models/path_centroid_{symbol_hmm}_{timeframe_hmm}_{ts_hmm}.pkl"
 
                 centroid_model_data = {
                     "regime_centroids": centroids_df,
@@ -2968,6 +2810,9 @@ class MLPathRegimeStep(BaseStep):
             f"Flip-Flop Rate={temporal_metrics['flip_flop_rate']:.4f}\n"
             f"   Regime Distribution: {metrics['regime_distribution']}"
         )
+
+        full_labels = np.full(len(risk_df), -1, dtype=int)
+        full_labels[valid_mask] = final_labels
 
         return full_labels, metrics
 

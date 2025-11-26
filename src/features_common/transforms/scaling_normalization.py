@@ -15,6 +15,18 @@ from sklearn.preprocessing import (
 from sklearn.compose import ColumnTransformer
 import logging
 
+from src.utils.feature_common.atr_normalization import (
+    calculate_atr,
+    should_use_atr_normalization,
+)
+
+try:
+    from src.utils.feature_common.volume_transforms import log1p_zscore_normalize
+    VOLUME_TRANSFORMS_AVAILABLE = True
+except ImportError:  # pragma: no cover - optional dependency
+    log1p_zscore_normalize = None  # type: ignore[assignment]
+    VOLUME_TRANSFORMS_AVAILABLE = False
+
 # Import VectorBT components
 try:
     from src.features_common.vectorbt_extensions.unified_manager import UnifiedVectorizationManager
@@ -47,6 +59,7 @@ __all__ = [
     "rolling_zscore_normalize",
     "rolling_winsorized_zscore_normalize",
     "rolling_minmax_normalize",
+    "rolling_adaptive_normalize",
 ]
 
 
@@ -239,6 +252,135 @@ def robust_normalize(
     normalized = normalized.fillna(0.0)
 
     return _restore_output(normalized.astype(float), was_series, data)
+
+
+def _is_volume_feature(
+    feature_name: str,
+    volume_columns: Optional[List[str]] = None,
+) -> bool:
+    """Heuristic check for pure volume features.
+
+    This intentionally focuses on explicit volume naming patterns to avoid
+    catching generic volatility metrics (e.g. "volatility", "vol_of_vol").
+    """
+    if volume_columns and feature_name in volume_columns:
+        return True
+
+    name = feature_name.lower()
+
+    # Avoid double-transforming already log-transformed series such as
+    # 'log_volume' or 'log1p_volume'. These should typically be treated as
+    # generic continuous features and left to the default branch.
+    if name.startswith("log_") or name.startswith("log1p_"):
+        return False
+
+    if name == "volume":
+        return True
+    if name.endswith("_volume") or name.startswith("volume_"):
+        return True
+    return False
+
+
+def rolling_adaptive_normalize(
+    data: Union[pd.DataFrame, pd.Series],
+    window: int,
+    min_periods: Optional[int] = None,
+    ddof: int = 1,
+    lower_quantile: float = 0.01,
+    upper_quantile: float = 0.99,
+    high: Optional[pd.Series] = None,
+    low: Optional[pd.Series] = None,
+    close: Optional[pd.Series] = None,
+    volume_columns: Optional[List[str]] = None,
+    enable_log1p_volume: bool = True,
+    atr_window: int = 14,
+) -> Union[pd.DataFrame, pd.Series]:
+    """Adaptive rolling normalization for feature matrices.
+
+    Routing logic per feature column:
+
+    - If ``enable_log1p_volume`` and the feature is identified as a pure
+      volume feature (via ``_is_volume_feature`` / ``volume_columns``) and
+      ``log1p_zscore_normalize`` is available → apply log1p + rolling
+      z-score normalization from :mod:`volume_transforms`.
+
+    - Else if OHLC data is provided and ``should_use_atr_normalization``
+      returns ``True`` for the feature name → normalize by ATR using a
+      fixed ``atr_window`` (price-distance/level semantics).
+
+    - Else → fall back to ``rolling_winsorized_zscore_normalize`` with the
+      provided rolling window and quantile parameters.
+
+    This keeps winsorized z-score as the default for momentum/speed and
+    general statistical features while giving ATR-normalized behaviour for
+    spatial distance/level features and robust log1p-normalization for
+    pure volume series.
+    """
+    df, was_series = _normalize_input(data)
+
+    if min_periods is None:
+        min_periods = window
+
+    result = pd.DataFrame(index=df.index, columns=df.columns, dtype=float)
+
+    # Pre-compute ATR once if possible and only if any column might use it
+    atr_series: Optional[pd.Series] = None
+    if high is not None and low is not None and close is not None:
+        try:
+            atr_raw = calculate_atr(high, low, close, window=atr_window)
+            if isinstance(atr_raw, pd.Series):
+                atr_series = atr_raw.clip(lower=1e-8)
+            else:
+                atr_series = pd.Series(atr_raw, index=high.index).clip(lower=1e-8)
+        except Exception:
+            atr_series = None
+
+    for col in df.columns:
+        series = df[col]
+        col_name = str(col)
+
+        # 1) Volume-style features → optional log1p + z-score normalization
+        if (
+            enable_log1p_volume
+            and VOLUME_TRANSFORMS_AVAILABLE
+            and log1p_zscore_normalize is not None
+            and _is_volume_feature(col_name, volume_columns)
+        ):
+            try:
+                result[col] = log1p_zscore_normalize(
+                    series,
+                    window=window,
+                    min_periods=min_periods,
+                    ddof=ddof,
+                )
+                continue
+            except Exception:
+                # Fall through to winsorized z-score if robust volume transform fails
+                pass
+
+        # 2) Spatial distance/level features → ATR normalization when OHLC is available
+        if atr_series is not None and should_use_atr_normalization(col_name):
+            try:
+                # Align indices and divide by ATR
+                aligned_series = series.astype(float)
+                normalized = aligned_series.div(atr_series, axis=0)
+                result[col] = normalized.fillna(0.0)
+                continue
+            except Exception:
+                # If ATR route fails, fall back to winsorized z-score
+                pass
+
+        # 3) Default: rolling winsorized z-score normalization
+        result[col] = rolling_winsorized_zscore_normalize(
+            series,
+            window=window,
+            min_periods=min_periods,
+            ddof=ddof,
+            lower_quantile=lower_quantile,
+            upper_quantile=upper_quantile,
+        )
+
+    return _restore_output(result.astype(float), was_series, data)
 
 
 def rank_normalize(

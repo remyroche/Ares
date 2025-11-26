@@ -46,6 +46,11 @@ import numpy as np
 import pandas as pd
 from typing import Dict, Any, Optional, Tuple, List, Callable
 
+try:
+    import polars as pl  # type: ignore[import]
+except Exception:  # pragma: no cover - optional dependency
+    pl = None
+
 from src.training.steps.pre_training.includes.interaction_generation_fallbacks import attach_interaction_generation_fallbacks
 from datetime import datetime
 import time
@@ -119,6 +124,20 @@ def _align_for_label_guided_discovery_helper(
         target_clean = target_fallback
 
     return features_clean, target_clean
+
+
+def _ensure_pandas_dataframe(obj: Any) -> pd.DataFrame:
+    """Coerce Polars DataFrame to pandas for internal use in this step.
+
+    The core implementation of this step is pandas/NumPy/VectorBT-based.
+    This helper allows upstream components to pass pl.DataFrame artifacts
+    while keeping the internal logic unchanged.
+    """
+    if isinstance(obj, pd.DataFrame):
+        return obj
+    if pl is not None and isinstance(obj, pl.DataFrame):  # type: ignore[arg-type]
+        return obj.to_pandas()
+    return obj
 
 # VectorBT imports
 try:
@@ -366,7 +385,7 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         
         # Initialize parallel processing
         if PARALLEL_AVAILABLE:
-            self.max_workers = min(4, cpu_count())
+            self.max_workers = min(3, cpu_count())
             self.thread_pool = ThreadPoolExecutor(max_workers=self.max_workers)
             tprint_info(f"✅ Parallel processing initialized with {self.max_workers} workers")
         else:
@@ -781,60 +800,127 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             tprint_warning(f"⚠️ Optimization initialization partial failure: {e}")
 
     async def _phase0_load_and_select(self, config: Dict[str, Any]) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, Dict]:
-        """
-        Phase 0: Load artifacts and select top 4 features per category.
+        """Phase 0: Load artifacts and select top features per category.
 
-        Returns:
-            Tuple of (lookback_optimization, labeled_data, generated_features, top_features_by_category)
+        This mirrors the artifact-resolution logic from
+        FeatureGenerationPeriodLookbackOptimizationStep._load_generated_features
+        so that we always pull labels from the
+        feature_generation_labeling_integration_step store and features from
+        feature_generation_feature_generation_step, while keeping all original
+        deduplication, light-mode filtering, and selection behaviour.
         """
+
         tprint_info("📊 Loading artifacts via BaseStep artifact manager")
 
-        # Load artifacts
+        # 1) Lookback optimization
         try:
-            raw_lookback_optimization = self._get_artifact('lookback_optimization', 'data')
+            raw_lookback_optimization = self._get_artifact("lookback_optimization", "data")
+            raw_lookback_optimization = _ensure_pandas_dataframe(raw_lookback_optimization)
             lookback_optimization = self._normalize_lookback_optimization(raw_lookback_optimization)
             tprint_success(f"✅ Loaded lookback_optimization: {lookback_optimization.shape}")
             if not lookback_optimization.empty:
                 tprint_structured({"Lookback Optimization": lookback_optimization.head().to_dict()}, level=LogLevel.INFO)
         except Exception as e:
             raise FileNotFoundError(f"Failed to load lookback_optimization artifact: {e}")
-        
+
+        symbol = config.get("symbol", "ETHUSDT")
+        exchange = config.get("exchange", "binance")
+        timeframe = config.get("timeframe", "15m")
+        direction = config.get("direction", "long")
+        model = config.get("model", "analyst")
+
+        # 2) Labeled data: prefer the labeling integration store
         try:
-            # Try the specific artifact name from labeling integration step first
-            artifact_name = f'labeled_data_{config["symbol"]}_{config["timeframe"]}'
-            labeled_data = self._get_artifact(artifact_name, 'data')
+            original_step_name = self.artifact_manager._current_step_name
+            self.artifact_manager.set_context(
+                step_name="feature_generation_labeling_integration_step",
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=timeframe,
+                direction=direction,
+                model=model,
+                datetime=datetime.now(),
+            )
+            artifact_name = f"labeled_data_{symbol}_{timeframe}"
+            labeled_data = self.artifact_manager.get_artifact(
+                artifact_name=artifact_name,
+                artifact_type="data",
+            )
+            labeled_data = _ensure_pandas_dataframe(labeled_data)
+            self.artifact_manager.set_context(
+                step_name=original_step_name,
+                datetime=datetime.now(),
+            )
             tprint_success(f"✅ Loaded labeled_data: {labeled_data.shape}")
             tprint_structured({"Labeled Data": labeled_data.head().to_dict()}, level=LogLevel.INFO)
         except Exception as e:
-            # Fallback to generic name
+            # Fallbacks: direct artifact lookup, then generic name
             try:
-                labeled_data = self._get_artifact('labeled_data', 'data')
-                tprint_success(f"✅ Loaded labeled_data (fallback): {labeled_data.shape}")
-            except Exception as e2:
-                raise FileNotFoundError(f"Failed to load labeled_data artifact: {e} / {e2}")
-        
+                artifact_name = f"labeled_data_{config['symbol']}_{config['timeframe']}"
+                labeled_data = self._get_artifact(artifact_name, "data")
+                labeled_data = _ensure_pandas_dataframe(labeled_data)
+                tprint_success(f"✅ Loaded labeled_data: {labeled_data.shape}")
+                tprint_structured({"Labeled Data": labeled_data.head().to_dict()}, level=LogLevel.INFO)
+            except Exception as inner:
+                try:
+                    labeled_data = self._get_artifact("labeled_data", "data")
+                    labeled_data = _ensure_pandas_dataframe(labeled_data)
+                    tprint_success(f"✅ Loaded labeled_data (fallback): {labeled_data.shape}")
+                except Exception as e2:
+                    raise FileNotFoundError(f"Failed to load labeled_data artifact: {e} / {inner} / {e2}")
+
+        # 3) Generated features: prefer the feature_generation_feature_generation_step store
         try:
-            generated_features = self._get_artifact('generated_features', 'data')
+            original_step_name = self.artifact_manager._current_step_name
+            self.artifact_manager.set_context(
+                step_name="feature_generation_feature_generation_step",
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=timeframe,
+                direction=direction,
+                model=model,
+                datetime=datetime.now(),
+            )
+            features_artifact_name = f"generated_features_{timeframe}"
+            generated_features = self.artifact_manager.get_artifact(
+                artifact_name=features_artifact_name,
+                artifact_type="data",
+            )
+            generated_features = _ensure_pandas_dataframe(generated_features)
+            self.artifact_manager.set_context(
+                step_name=original_step_name,
+                datetime=datetime.now(),
+            )
             tprint_success(f"✅ Loaded generated_features: {generated_features.shape}")
         except Exception as e:
-            raise FileNotFoundError(f"Failed to load generated_features artifact: {e}")
-        
-        # CRITICAL FIX: Deduplicate indices immediately after loading to prevent performance issues
-        # This prevents the data loading layer from spending excessive time processing duplicates
+            try:
+                generated_features = self._get_artifact("generated_features", "data")
+                generated_features = _ensure_pandas_dataframe(generated_features)
+                tprint_success(f"✅ Loaded generated_features: {generated_features.shape}")
+            except Exception as e2:
+                raise FileNotFoundError(f"Failed to load generated_features artifact: {e} / {e2}")
+
+        # 4) Deduplicate indices
         if labeled_data.index.duplicated().any():
             n_dup = labeled_data.index.duplicated().sum()
-            tprint_warning(f"⚠️ Labeled data has {n_dup} duplicate indices ({n_dup/len(labeled_data)*100:.1f}%), deduplicating at load time...")
-            labeled_data = labeled_data[~labeled_data.index.duplicated(keep='first')]
+            tprint_warning(
+                f"⚠️ Labeled data has {n_dup} duplicate indices "
+                f"({n_dup/len(labeled_data)*100:.1f}%), deduplicating at load time..."
+            )
+            labeled_data = labeled_data[~labeled_data.index.duplicated(keep="first")]
             tprint_success(f"✅ Deduplicated labeled_data to {len(labeled_data)} unique indices")
-        
+
         if generated_features.index.duplicated().any():
             n_dup = generated_features.index.duplicated().sum()
-            tprint_warning(f"⚠️ Generated features has {n_dup} duplicate indices ({n_dup/len(generated_features)*100:.1f}%), deduplicating at load time...")
-            generated_features = generated_features[~generated_features.index.duplicated(keep='first')]
+            tprint_warning(
+                f"⚠️ Generated features has {n_dup} duplicate indices "
+                f"({n_dup/len(generated_features)*100:.1f}%), deduplicating at load time..."
+            )
+            generated_features = generated_features[~generated_features.index.duplicated(keep="first")]
             tprint_success(f"✅ Deduplicated generated_features to {len(generated_features)} unique indices")
-        
-        # Apply light mode filtering
-        tprint_info(f"📊 PHASE 0: Initial feature counts before filtering:")
+
+        # 5) Apply light-mode filtering
+        tprint_info("📊 PHASE 0: Initial feature counts before filtering:")
         tprint_info(f"  📈 Generated features: {len(generated_features.columns)} features")
         tprint_info(f"  📈 Labeled data: {len(labeled_data.columns)} features")
         
@@ -890,6 +976,7 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             except Exception:
                 return None
 
+        labeled_data = _ensure_pandas_dataframe(labeled_data)
         if not isinstance(labeled_data, pd.DataFrame) or labeled_data.empty:
             return None
 
@@ -2143,7 +2230,7 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                 targets_df=targets_df,
                 feature_categories=feature_categories,
                 composite_scores=composite_scores,
-                config=OptimizedPruningConfig(),
+                config=OptimizedPruningConfig(max_workers=3),
             )
         except Exception as exc:
             tprint_error(f"❌ Optimized cheap pruning failed: {exc}; returning original features.")
@@ -3482,22 +3569,38 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             tprint_warning("  ⚠️ No valid overlapping samples between features and targets; using uniform composite scores")
             return {col: 0.5 for col in features_df.columns}
 
-        # Remove any features with all NaN or constant values
+        # Remove any features with excessive NaNs or insufficient variation
         # Use relaxed validation for ratio features (like cross-timeframe)
         valid_features = []
+        total_rows = len(features_aligned)
         for col in features_aligned.columns:
             col_data = features_aligned[col]
-            non_nan_count = col_data.notna().sum()
-            
-            # Require at least 10 non-NaN values
-            if non_nan_count < 10:
+            if total_rows == 0:
                 continue
-            
+
+            non_nan_count = col_data.notna().sum()
+            nan_ratio = 1.0 - (non_nan_count / float(total_rows))
+
+            # For cross-timeframe ratio features, use more relaxed thresholds
+            is_ct_ratio = '_3x_ratio' in col or '_6x_ratio' in col or '_9x_ratio' in col or '_27x_ratio' in col
+
+            # Always remove all-NaN, constant, or zero-variance features
+            if non_nan_count == 0 or col_data.nunique() <= 1 or col_data.var() == 0:
+                continue
+
+            # NaN ratio thresholds: stricter for regular features
+            if is_ct_ratio:
+                # Allow up to 20% NaN for cross-timeframe features
+                if nan_ratio > 0.2:
+                    continue
+            else:
+                # Allow up to 10% NaN for regular features
+                if nan_ratio > 0.1:
+                    continue
+
             # Check if feature varies (not constant)
             col_std = col_data.std()
-            
-            # For cross-timeframe ratio features, use more relaxed threshold
-            is_ct_ratio = '_3x_ratio' in col or '_6x_ratio' in col or '_9x_ratio' in col or '_27x_ratio' in col
+
             if is_ct_ratio:
                 # Ratio features can have smaller std, just check they're not ALL the same value
                 if col_std > 1e-10 and col_data.nunique() > 2:  # At least 3 unique values
@@ -3506,14 +3609,11 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                 # Standard validation for other features
                 if col_std > 1e-8:
                     valid_features.append(col)
-        
-        features_for_mi = features_aligned[valid_features].fillna(0)
 
         if len(valid_features) == 0:
             tprint_warning("  ⚠️ No features passed MI validity checks; relaxing thresholds for fallback scoring")
             valid_features = list(features_aligned.columns)
-            features_for_mi = features_aligned.fillna(0)
-        
+
         # Log cross-timeframe validation stats
         ct_features_total = [c for c in features_aligned.columns if '_3x_ratio' in c or '_6x_ratio' in c or '_9x_ratio' in c or '_27x_ratio' in c]
         ct_features_valid = [c for c in valid_features if '_3x_ratio' in c or '_6x_ratio' in c or '_9x_ratio' in c or '_27x_ratio' in c]
@@ -3526,6 +3626,31 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             tprint_error(f"     Validation criteria may be too strict for ratio features")
         elif len(ct_features_valid) < len(ct_features_total) * 0.5:
             tprint_warning(f"  ⚠️ Only {len(ct_features_valid)}/{len(ct_features_total)} CT features valid ({len(ct_features_valid)/len(ct_features_total):.1%})")
+
+        # Temporal subsampling for MI/CMI to reduce matrix size
+        mi_index = features_aligned.index
+        max_mi_samples = 50000
+        if config is not None:
+            try:
+                max_mi_samples = int(config.get('mi_max_samples', max_mi_samples))
+            except Exception:
+                pass
+
+        if len(mi_index) > max_mi_samples:
+            step = max(1, len(mi_index) // max_mi_samples)
+            mi_index = mi_index[::step]
+            tprint_info(
+                f"  📊 MI temporal subsampling: {len(features_aligned)} → {len(mi_index)} rows (step={step})"
+            )
+
+        # Build MI matrix on sampled index and downcast to float32
+        features_for_mi = features_aligned.loc[mi_index, valid_features].fillna(0)
+        try:
+            features_for_mi = features_for_mi.astype(np.float32)
+        except Exception:
+            # Best-effort: keep original dtypes on failure
+            pass
+        target_for_mi = target_aligned.loc[mi_index]
         
         # Calculate MI or CMI scores
         try:
@@ -3535,7 +3660,7 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                 
                 # Create features DataFrame from valid features
                 X_for_cmi = features_for_mi
-                y_for_cmi = target_aligned
+                y_for_cmi = target_for_mi
                 
                 # Score features using CMI
                 cmi_result = self.cmi_scorer.score_features(
@@ -3556,7 +3681,7 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                     # Fallback to MI
                     tprint_warning(f"  ⚠️ CMI result missing scores, falling back to MI")
                     mi_scores = mutual_info_regression(
-                        features_for_mi, target_aligned, random_state=42, n_neighbors=3
+                        features_for_mi, target_for_mi, random_state=42, n_neighbors=3
                     )
                     mi_dict = dict(zip(valid_features, mi_scores))
                 
@@ -3573,7 +3698,7 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                 # Use standard MI (Analyst mode)
                 mi_scores = mutual_info_regression(
                     features_for_mi,
-                    target_aligned,
+                    target_for_mi,
                     random_state=42,
                     n_neighbors=3
                 )

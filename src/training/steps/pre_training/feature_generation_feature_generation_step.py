@@ -624,6 +624,13 @@ class FeatureGenerationFeatureGenerationStep(BaseStep):
             # Need a target variable - prefer binary_label if present, then fused/simplified targets,
             # otherwise create a simple return-based target.
 
+            # First, if labeled_data was saved by feature_generation_labeling_integration_step,
+            # merge those targets into the local features DataFrame using the same artifact
+            # resolution and alignment strategy as the period lookback optimization step.
+            merged = self._attach_labels_for_baseline(features, config)
+            if merged is not None:
+                features = merged
+
             target = None
             direction = str(config.get('direction', 'long')).lower()
 
@@ -713,6 +720,120 @@ class FeatureGenerationFeatureGenerationStep(BaseStep):
 
         except Exception as e:
             self.logger.error(f"Baseline predictive check failed: {e}", exc_info=True)
+            return None
+
+    def _attach_labels_for_baseline(self, features: pd.DataFrame, config: Dict[str, Any]) -> Optional[pd.DataFrame]:
+        """Attach labeled targets to features for baseline checks.
+
+        Loads labeled_data_{symbol}_{timeframe} from the
+        feature_generation_labeling_integration_step store and merges it with
+        the provided features using the same context and alignment heuristics as
+        FeatureGenerationPeriodLookbackOptimizationStep._load_generated_features.
+        Returns a merged DataFrame on success, or None if labels cannot be
+        loaded.
+        """
+
+        try:
+            import pandas as pd
+
+            symbol = config.get('symbol', 'ETHUSDT')
+            exchange = config.get('exchange', 'binance')
+            timeframe = config.get('timeframe', '15m')
+            direction = config.get('direction', 'long')
+            model = config.get('model', 'analyst')
+
+            original_step_name = self.artifact_manager._current_step_name
+            self.artifact_manager.set_context(
+                step_name='feature_generation_labeling_integration_step',
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=timeframe,
+                direction=direction,
+                model=model,
+                datetime=datetime.now(),
+            )
+
+            labeled_data = self.artifact_manager.get_artifact(
+                artifact_name=f'labeled_data_{symbol}_{timeframe}',
+                artifact_type='data',
+            )
+
+            # Restore original context regardless of load success
+            self.artifact_manager.set_context(
+                step_name=original_step_name,
+                datetime=datetime.now(),
+            )
+
+            if labeled_data is None:
+                return None
+
+            labeled_data = labeled_data if isinstance(labeled_data, pd.DataFrame) else pd.DataFrame(labeled_data)
+            if labeled_data.empty:
+                return None
+
+            # Identify target columns from labeled data
+            priority_target_columns = [
+                'binary_label',
+                'target_long_fused',
+                'target_short_fused',
+                'target_long',
+                'target_short',
+                'price_target_vol_normalized',
+                'target_sample_weight',
+                'meta_probability',
+                'r_multiple',
+            ]
+            target_columns = [col for col in priority_target_columns if col in labeled_data.columns]
+            target_columns += [
+                col for col in labeled_data.columns
+                if 'target' in str(col).lower() and col not in target_columns
+            ]
+            if not target_columns:
+                target_columns = labeled_data.columns.tolist()
+
+            features_df = features.copy()
+            targets_df = labeled_data[target_columns].copy()
+
+            # Heuristic 1: if lengths match, align by position
+            if len(features_df) == len(targets_df) and len(features_df) > 0:
+                features_df = features_df.reset_index(drop=True)
+                targets_df = targets_df.reset_index(drop=True)
+                merged = pd.concat([features_df, targets_df], axis=1)
+                return merged
+
+            # Heuristic 2: try to build a datetime index on both sides
+            if not isinstance(features_df.index, pd.DatetimeIndex):
+                try:
+                    features_idx = pd.Index(features_df.index)
+                    if features_idx.dtype == object:
+                        decoded = features_idx.astype(str).str.replace("^b'|'$", "", regex=True)
+                        features_df.index = pd.to_datetime(decoded, errors='coerce')
+                    else:
+                        features_df.index = pd.to_datetime(features_idx, errors='coerce')
+                except Exception:
+                    pass
+
+            if not isinstance(targets_df.index, pd.DatetimeIndex):
+                for time_col in ['open_time', 'close_time']:
+                    if time_col in labeled_data.columns:
+                        try:
+                            targets_df.index = pd.to_datetime(labeled_data[time_col], errors='coerce')
+                            break
+                        except Exception:
+                            continue
+
+            if isinstance(features_df.index, pd.DatetimeIndex):
+                features_df = features_df[features_df.index.notna()]
+            if isinstance(targets_df.index, pd.DatetimeIndex):
+                targets_df = targets_df[targets_df.index.notna()]
+
+            merged = features_df.join(targets_df, how='inner')
+            if merged.empty:
+                return None
+
+            return merged
+
+        except Exception:
             return None
 
     def _add_basic_features(self, features: pd.DataFrame, market_data: pd.DataFrame) -> pd.DataFrame:

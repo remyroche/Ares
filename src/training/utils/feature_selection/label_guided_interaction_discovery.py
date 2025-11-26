@@ -711,6 +711,26 @@ class LabelGuidedInteractionDiscovery:
 
             # Select features with non-zero coefficients
             selected_mask = np.abs(lasso.coef_) > 1e-6
+            n_selected = int(np.sum(selected_mask))
+
+            # If LASSO converged to an all-zero solution, fall back to using
+            # all MI-lift-filtered candidates so that downstream category
+            # limits can still pick a sparse, high-signal subset instead of
+            # returning an empty interaction set.
+            if n_selected == 0:
+                self.logger.warning(
+                    "  ⚠️ LASSO selected 0 interactions; "
+                    "falling back to MI/SHAP-ranked candidates before category limits",
+                )
+                tprint_info(
+                    "  📊 [LGID] LASSO produced an all-zero solution; "
+                    "marking all lift-filtered candidates as selected for "
+                    "category-aware limiting"
+                )
+                for cand in self.candidates:
+                    cand.selected = True
+                return
+
             selected_names = set(candidate_df.columns[selected_mask])
 
             # Mark candidates as selected
@@ -718,7 +738,6 @@ class LabelGuidedInteractionDiscovery:
                 if cand.name in selected_names:
                     cand.selected = True
 
-            n_selected = sum(selected_mask)
             self.logger.info(f"  ✅ LASSO selected {n_selected}/{len(self.candidates)} interactions")
             tprint_info(
                 f"  📊 [LGID] After LASSO: selected {n_selected}/{len(self.candidates)} candidates "

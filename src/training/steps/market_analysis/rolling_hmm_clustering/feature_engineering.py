@@ -44,6 +44,7 @@ from src.features_common.normalization import (
     RollingZScoreGenerator,
     RollingRobustGenerator
 )
+from src.utils.feature_common.volume_transforms import log1p_zscore_normalize
 from src.utils.hardware.unified_hardware_manager import (
     get_unified_hardware_manager,
     WorkloadType,
@@ -759,7 +760,8 @@ class RollingHMMFeatureEngineer:
         close = market_data['close']
 
         # Log volume (stabilizes scale)
-        log_volume = np.log(volume + 1)
+        effective_window = min(ewma_config.long_window, 500)
+        log_volume = log1p_zscore_normalize(volume, window=effective_window)
         features['log_volume'] = log_volume
 
         # Batch all rolling operations on volume

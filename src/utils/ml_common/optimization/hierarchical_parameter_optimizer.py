@@ -916,58 +916,17 @@ class HierarchicalParameterOptimizer:
         
         logger.info(f"    Grid size: {len(grid)} combinations")
         
-        # Evaluate each combination
-        best_score = float('-inf') if self.direction == 'maximize' else float('inf')
-        best_params = {}
-        all_trials = []
-        
-        for i, params in enumerate(grid):
-            # Merge with fixed params
-            full_params = {**fixed_params, **params}
-            
-            # Evaluate
-            score = self._evaluate_params(
-                full_params, X_train, y_train, X_val, y_val, model
-            )
-            
-            if _tprint_available:
-                try:
-                    tprint_info(
-                        f"HPO trial: group={group.name}, stage=coarse_grid, "
-                        f"trial={i + 1}/{len(grid)}, score={float(score):.6f}"
-                    )
-                except Exception:
-                    pass
-            
-            all_trials.append({
-                'params': params,
-                'score': score,
-                'trial_number': i
-            })
-            
-            # Update best
-            is_better = (
-                (self.direction == 'maximize' and score > best_score) or
-                (self.direction == 'minimize' and score < best_score)
-            )
-            
-            if is_better:
-                best_score = score
-                best_params = params.copy()
-            
-            if (i + 1) % 10 == 0:
-                logger.debug(f"    Evaluated {i + 1}/{len(grid)} combinations")
-        
-        logger.info(f"    Coarse grid complete. Best score: {best_score:.6f}")
-        
-        return OptimizationResult(
-            group_name=group.name,
+        return self._evaluate_grid_sequential(
+            grid=grid,
+            group=group,
+            fixed_params=fixed_params,
+            X_train=X_train,
+            y_train=y_train,
+            X_val=X_val,
+            y_val=y_val,
+            model=model,
             stage=OptimizationStage.COARSE_GRID,
-            best_params=best_params,
-            best_score=best_score,
-            n_trials=len(grid),
-            optimization_time=0.0,  # Set by caller
-            all_trials=all_trials
+            current_best_params=None
         )
     
     def _fine_grid_search(
@@ -1012,24 +971,44 @@ class HierarchicalParameterOptimizer:
         
         logger.info(f"    Fine grid size: {len(grid)} combinations")
         
-        # Evaluate each combination
+        return self._evaluate_grid_sequential(
+            grid=grid,
+            group=group,
+            fixed_params=fixed_params,
+            X_train=X_train,
+            y_train=y_train,
+            X_val=X_val,
+            y_val=y_val,
+            model=model,
+            stage=OptimizationStage.FINE_GRID,
+            current_best_params=current_best_params
+        )
+
+    def _evaluate_grid_sequential(
+        self,
+        grid: List[Dict[str, Any]],
+        group: ParameterGroup,
+        fixed_params: Dict[str, Any],
+        X_train: np.ndarray,
+        y_train: np.ndarray,
+        X_val: Optional[np.ndarray],
+        y_val: Optional[np.ndarray],
+        model: Optional[Any],
+        stage: OptimizationStage,
+        current_best_params: Optional[Dict[str, Any]]
+    ) -> OptimizationResult:
         best_score = float('-inf') if self.direction == 'maximize' else float('inf')
-        best_params = current_best_params.copy()
-        all_trials = []
+        best_params = current_best_params.copy() if current_best_params else {}
+        all_trials: List[Dict[str, Any]] = []
         
         for i, params in enumerate(grid):
-            # Merge with fixed params
             full_params = {**fixed_params, **params}
-            
-            # Evaluate
-            score = self._evaluate_params(
-                full_params, X_train, y_train, X_val, y_val, model
-            )
+            score = self._evaluate_params(full_params, X_train, y_train, X_val, y_val, model)
             
             if _tprint_available:
                 try:
                     tprint_info(
-                        f"HPO trial: group={group.name}, stage=fine_grid, "
+                        f"HPO trial: group={group.name}, stage={stage.value}, "
                         f"trial={i + 1}/{len(grid)}, score={float(score):.6f}"
                     )
                 except Exception:
@@ -1041,7 +1020,6 @@ class HierarchicalParameterOptimizer:
                 'trial_number': i
             })
             
-            # Update best
             is_better = (
                 (self.direction == 'maximize' and score > best_score) or
                 (self.direction == 'minimize' and score < best_score)
@@ -1050,12 +1028,15 @@ class HierarchicalParameterOptimizer:
             if is_better:
                 best_score = score
                 best_params = params.copy()
+            
+            if (i + 1) % 10 == 0:
+                logger.debug(f"    Evaluated {i + 1}/{len(grid)} combinations")
         
-        logger.info(f"    Fine grid complete. Best score: {best_score:.6f}")
+        logger.info(f"    {stage.value.replace('_', ' ').title()} complete. Best score: {best_score:.6f}")
         
         return OptimizationResult(
             group_name=group.name,
-            stage=OptimizationStage.FINE_GRID,
+            stage=stage,
             best_params=best_params,
             best_score=best_score,
             n_trials=len(grid),

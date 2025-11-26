@@ -620,6 +620,133 @@ def get_specialist_models_outputs(
     except Exception as e:
         log_warning(f"⚠️ Failed to load ML Risk HMM specialist outputs: {e}")
 
+    # SMC specialist block: scalar regime predictions from MLSMCRegimeStep
+    try:
+        log_info("=" * 80)
+        log_info("📊 LOADING SPECIALIST: SMC REGIME OUTPUTS")
+        log_info("=" * 80)
+
+        smc_context = {
+            "symbol": symbol,
+            "exchange": exchange,
+            "timeframe": regime_timeframe,
+            "direction": direction,
+            "model": "smc_regime",
+            "step_name": "ml_smc_regime_step",
+        }
+
+        smc = artifact_router.load(
+            artifact_name="smc_predictions_with_confidence",
+            artifact_type="data",
+            data_category="predictions",
+            context=smc_context,
+        )
+
+        if smc is not None and not getattr(smc, "empty", True):
+            if not isinstance(smc, pd.DataFrame):
+                smc = pd.DataFrame(smc)
+            smc = _standardize_index(smc)
+
+            if isinstance(smc.index, pd.DatetimeIndex) and len(smc.index) > 0:
+                log_info(
+                    "📊 SMC (smc_predictions_with_confidence) index range: %s → %s (n=%d)"
+                    % (
+                        smc.index.min(),
+                        smc.index.max(),
+                        len(smc.index),
+                    )
+                )
+
+            smc_cols: List[str] = []
+            if "predicted" in smc.columns:
+                smc_cols.append("predicted")
+            extra_smc = [
+                c
+                for c in smc.columns
+                if c != "predicted" and (c.startswith("prob_") or c.startswith("confidence_"))
+            ]
+            smc_cols.extend(extra_smc)
+
+            if smc_cols:
+                before_block = smc[smc_cols].copy()
+                nnz_before = int(before_block.notna().sum().sum())
+                block = before_block.reindex(training_index, method="ffill")
+                block = block.add_prefix("smc_")
+                nnz_after = int(block.notna().sum().sum())
+                blocks.append(block)
+                log_success(
+                    "✅ Added SMC specialist block from 'smc_predictions_with_confidence': "
+                    f"shape={block.shape}, non_null_before={nnz_before}, "
+                    f"non_null_after={nnz_after}"
+                )
+                if nnz_after == 0:
+                    log_warning(
+                        "⚠️ SMC block aligned to training_index is all-NaN. "
+                        "Check SMC timestamps and values."
+                    )
+    except Exception as e:
+        log_warning(f"⚠️ Failed to load SMC specialist outputs: {e}")
+
+    # Mean-reversion specialist block: mr_* features from MLMeanReversionRegimeStep
+    try:
+        log_info("=" * 80)
+        log_info("📈 LOADING SPECIALIST: MEAN-REVERSION OUTPUTS")
+        log_info("=" * 80)
+
+        mr_artifact_name = f"ml_mean_reversion_training_data_{regime_timeframe}"
+        mr_context = {
+            "symbol": symbol,
+            "exchange": exchange,
+            "timeframe": regime_timeframe,
+            "direction": direction,
+            "model": "mean_reversion",
+            "step_name": "ml_mean_reversion_step",
+        }
+
+        mr = artifact_router.load(
+            artifact_name=mr_artifact_name,
+            artifact_type="data",
+            data_category="features",
+            context=mr_context,
+        )
+
+        if mr is not None and not getattr(mr, "empty", True):
+            if not isinstance(mr, pd.DataFrame):
+                mr = pd.DataFrame(mr)
+            mr = _standardize_index(mr)
+
+            if isinstance(mr.index, pd.DatetimeIndex) and len(mr.index) > 0:
+                log_info(
+                    "📈 Mean-reversion (%s) index range: %s → %s (n=%d)"
+                    % (
+                        mr_artifact_name,
+                        mr.index.min(),
+                        mr.index.max(),
+                        len(mr.index),
+                    )
+                )
+
+            mr_cols = [c for c in mr.columns if c.startswith("mr_")]
+
+            if mr_cols:
+                before_block = mr[mr_cols].copy()
+                nnz_before = int(before_block.notna().sum().sum())
+                block = before_block.reindex(training_index, method="ffill")
+                nnz_after = int(block.notna().sum().sum())
+                blocks.append(block)
+                log_success(
+                    f"✅ Added Mean-reversion specialist block from '{mr_artifact_name}': "
+                    f"shape={block.shape}, non_null_before={nnz_before}, "
+                    f"non_null_after={nnz_after}"
+                )
+                if nnz_after == 0:
+                    log_warning(
+                        "⚠️ Mean-reversion block aligned to training_index is all-NaN. "
+                        "Check mean-reversion timestamps and values."
+                    )
+    except Exception as e:
+        log_warning(f"⚠️ Failed to load Mean-reversion specialist outputs: {e}")
+
     if not blocks:
         msg = (
             "❌ No specialist model outputs found (ML Risk / HMM Alpha / Liquidity / Breakout/Bounce). "

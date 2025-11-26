@@ -13,9 +13,9 @@ from datetime import datetime, timedelta, date
 from typing import Any, Dict, List, Optional, Union, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
-
 import pandas as pd
 import numpy as np
+import json
 
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors, traced, log_execution_time
@@ -48,6 +48,7 @@ from ..reporting.dashboard_generator import dashboard_generator, create_trading_
 from ..reporting.daily_recorder import daily_recorder, record_daily_trading_summary
 from ..utils.helpers import prepare_trailing_feature_bundle, TrailingFeatureBundle
 from src.utils.ml_common.uncertainty_calculator import get_global_uncertainty_calculator
+from src.utils.hive_partitioned_predictions import HivePartitionedWriter
 
 logger = system_logger.getChild('TradingOrchestrator')
 
@@ -146,6 +147,9 @@ class TradingOrchestrator:
         self.trading_mode = TradingMode(config.get('trading_mode', 'paper'))
         self.account_balance = config.get('account_balance', 10000.0)
 
+        # Resolve model version from config or model registry (standardized model manager)
+        self.model_version = self._resolve_model_version(self.config.get('model_version'))
+
         # Cross-asset trade coordination
         self.trade_gate = self.config.get('trade_gate')
 
@@ -182,6 +186,60 @@ class TradingOrchestrator:
             default_window=config.get('prediction_window', 8)
         )
         self.uncertainty_calculator = get_global_uncertainty_calculator()
+
+        # Hive-partitioned prediction storage (for live trading)
+        self.enable_hive_predictions = bool(self.config.get('enable_hive_predictions', True))
+        self.hive_prediction_writer: Optional[HivePartitionedWriter] = None
+        if self.enable_hive_predictions:
+            hive_layer = self.config.get('hive_layer', 'meta_layer')
+            try:
+                self.hive_prediction_writer = HivePartitionedWriter(
+                    layer_name=hive_layer,
+                    model_version=self.model_version
+                )
+            except Exception as e:
+                self.logger.warning(
+                    f"Failed to initialize HivePartitionedWriter for {hive_layer}: {e}"
+                )
+
+    def _resolve_model_version(self, explicit_version: Optional[str]) -> str:
+        """Resolve model_version from config or standardized model registry.
+
+        If an explicit version is provided in config, use it. Otherwise, fall back to
+        the latest version found in the standardized model manager registry.
+        """
+        # Prefer explicit configuration when provided
+        if explicit_version:
+            return str(explicit_version)
+
+        try:
+            # Lazy import to avoid circular dependencies at module import time
+            from src.utils.standardized_model_manager import standardized_model_manager
+
+            models_metadata = standardized_model_manager.list_models()
+            if not models_metadata:
+                return "1.0.0"
+
+            # Sort by created_at (ISO string) when available, else by model_id
+            def _sort_key(meta: Dict[str, Any]) -> str:
+                created_at = meta.get("created_at")
+                if isinstance(created_at, str):
+                    return created_at
+                return str(meta.get("model_id", ""))
+
+            latest_meta = sorted(models_metadata, key=_sort_key)[-1]
+            version = latest_meta.get("version")
+            if version:
+                return str(version)
+
+        except Exception as e:
+            # Fall back quietly if registry lookup fails
+            self.logger.warning(
+                f"Failed to resolve model_version from standardized model registry: {e}"
+            )
+
+        # Safe default when nothing else is available
+        return "1.0.0"
 
     @tprint_logged()
     async def initialize(self) -> bool:
@@ -528,19 +586,23 @@ class TradingOrchestrator:
                         tprint_warning(f"⚠️ Decision rejected by Supervisor: {approval.reason}")
                         await self._trigger_trade_callbacks(decision, event="supervisor_rejected")
                         
-                        # Calculate remaining sleep time
-                        elapsed = time.time() - loop_start
-                        remaining_sleep = max(0, polling_interval - elapsed)
-                        await asyncio.sleep(remaining_sleep)
-                        continue
-                    
-                    # Apply confidence modifier if provided
-                    if approval.confidence_modifier != 1.0:
-                        decision.confidence *= approval.confidence_modifier
-                        self.logger.info(
-                            f"📊 Supervisor adjusted confidence: {approval.confidence_modifier:.2f}x"
-                        )
-                
+                        # Apply suggested adjustments if available
+                        if approval.suggested_adjustments:
+                            if approval.suggested_adjustments.get('reduce_position_size'):
+                                reduction_factor = 0.5  # Reduce by 50%
+                                decision.quantity *= reduction_factor
+                                self.logger.info(
+                                    f"📊 Position size reduced by Supervisor: {reduction_factor:.0%}"
+                                )
+                                tprint_info(f"📉 Position size adjusted: {decision.quantity:.4f}")
+                        
+                        # Retry with adjustments or skip
+                        if approval.suggested_adjustments.get('reduce_position_size') and decision.quantity > 0:
+                            # Continue with reduced size
+                            pass
+                        else:
+                            return  # Skip execution entirely
+
                 if decision and market_snapshot:
                     await self._execute_trading_decision(decision, market_snapshot)
                 
@@ -676,11 +738,103 @@ class TradingOrchestrator:
                     }
                 )
     
+                # Persist predictions for live trading sessions
+                self._persist_predictions_to_hive(decision, market_data)
+    
                 return decision
     
             except Exception as e:
                 self.logger.error(f"❌ Trading decision generation failed: {e}")
                 return None
+
+    def _persist_predictions_to_hive(
+        self,
+        decision: TradingDecision,
+        market_data: pd.DataFrame,
+    ) -> None:
+        try:
+            if self.trading_mode is not TradingMode.LIVE:
+                return
+            if not getattr(self, "enable_hive_predictions", False):
+                return
+            if self.hive_prediction_writer is None:
+                return
+            if market_data is None or len(market_data) == 0:
+                return
+
+            ts = decision.timestamp
+            if not isinstance(ts, datetime):
+                return
+
+            index = pd.DatetimeIndex([ts])
+
+            def _safe_json(value: Any) -> Optional[str]:
+                """Safely serialize a value to JSON, returning None on failure."""
+                try:
+                    if value is None:
+                        return None
+                    return json.dumps(value)
+                except Exception:
+                    return None
+
+            data = {
+                "symbol": [self.symbol],
+                "exchange": [self.exchange],
+                "action": [decision.action],
+                "price": [decision.price],
+                "decision_confidence": [decision.confidence],
+                "analyst_confidence": [
+                    getattr(decision.analyst_signal, "confidence_score", None)
+                    if decision.analyst_signal is not None
+                    else None
+                ],
+                "tactician_confidence": [
+                    getattr(decision.tactician_signal, "confidence_score", None)
+                    if decision.tactician_signal is not None
+                    else None
+                ],
+                # Richer context from signal combiner and ML layers (JSON-serialized)
+                "combined_signal_json": [
+                    _safe_json(decision.combined_signal)
+                ],
+                "analyst_ml_predictions_json": [
+                    _safe_json(
+                        getattr(decision.analyst_signal, "ml_predictions", {})
+                        if decision.analyst_signal is not None
+                        else None
+                    )
+                ],
+                "tactician_scenario_predictions_json": [
+                    _safe_json(
+                        getattr(decision.tactician_signal, "scenario_predictions", {})
+                        if decision.tactician_signal is not None
+                        else None
+                    )
+                ],
+            }
+
+            df = pd.DataFrame(data, index=index)
+
+            prediction_date = ts
+            metadata = {
+                "symbol": self.symbol,
+                "exchange": self.exchange,
+                "timeframe": self.config.get("timeframe", "1m"),
+                "trading_mode": self.trading_mode.value,
+                "session_id": self.current_session.session_id
+                if self.current_session
+                else None,
+            }
+
+            self.hive_prediction_writer.write_predictions(
+                df=df,
+                prediction_date=prediction_date,
+                metadata=metadata,
+            )
+        except Exception as e:
+            self.logger.warning(
+                f"Failed to persist predictions to Hive partitions: {e}"
+            )
 
     @tprint_logged
     async def _execute_trading_decision(

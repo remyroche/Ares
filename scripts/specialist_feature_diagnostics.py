@@ -411,12 +411,16 @@ def _infer_model_group(feature_name: str) -> str:
     name = feature_name.lower()
     if name.startswith("risk_regime") or name.startswith("risk_pred") or "risk_regime" in name:
         return "risk"
+    if name.startswith("smc_"):
+        return "smc"
     if "alpha" in name:
         return "alpha"
     if name.startswith("liquidity_regime") or "liquidity" in name:
         return "liquidity"
     if name.startswith("breakout_") or name in {"is_resistance", "is_support"}:
         return "breakout_bounce"
+    if name.startswith("mr_") or "mean_reversion" in name:
+        return "mean_reversion"
     return "other"
 
 

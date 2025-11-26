@@ -20,6 +20,7 @@ from src.feature_generation.core.feature_generator import (
     VectorizedFeatureGenerator,
     FeatureResult
 )
+from src.utils.feature_common.volume_transforms import log1p_zscore_normalize
 
 
 class MultiTimeframeEWMAReturnsGenerator(VectorizedFeatureGenerator):
@@ -281,7 +282,8 @@ class MultiTimeframeEWMAVolumeGenerator(VectorizedFeatureGenerator):
         close = data['close']
 
         # Log volume (stabilizes scale)
-        log_volume = np.log(volume + 1)
+        effective_window = min(max(self.windows), 500)
+        log_volume = log1p_zscore_normalize(volume, window=effective_window)
         features['log_volume'] = log_volume.values
 
         # Calculate returns

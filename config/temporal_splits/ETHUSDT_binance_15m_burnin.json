@@ -1,0 +1,26 @@
+{
+  "training": {
+    "start": "2020-01-03T00:00:00",
+    "end": "2020-01-09T00:00:00",
+    "embargo_days": 1,
+    "name": "training"
+  },
+  "validation": {
+    "start": "2020-01-10T00:00:00",
+    "end": "2020-01-12T00:00:00",
+    "embargo_days": 1,
+    "name": "validation"
+  },
+  "test": {
+    "start": "2020-01-13T00:00:00",
+    "end": "2020-01-14T00:00:00",
+    "embargo_days": 0,
+    "name": "test"
+  },
+  "burnin": {
+    "start": "2020-01-01T00:00:00",
+    "end": "2020-01-02T00:00:00",
+    "embargo_days": 1,
+    "name": "burnin"
+  }
+}

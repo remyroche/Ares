@@ -219,7 +219,16 @@ class UnifiedModelsTrainingStep(BaseStep):
                 # We use 1000 as absolute minimum (10.4 days) for robust validation
                 MIN_SAMPLES = 1000
                 RECOMMENDED_DAYS = 30  # Recommended minimum for good train/val/test split
-                total_days = (data_end - data_start).days
+                
+                # Handle both datetime and numeric indices
+                if hasattr(data_end - data_start, 'days'):
+                    # DatetimeIndex case
+                    total_days = (data_end - data_start).days
+                else:
+                    # Numeric index case: estimate days based on samples and timeframe
+                    timeframe = config.get('timeframe', '15m')
+                    samples_per_day = {'1m': 1440, '5m': 288, '15m': 96, '1h': 24, '4h': 6, '1d': 1}.get(timeframe, 96)
+                    total_days = len(training_data) // samples_per_day
                 
                 if len(training_data) < MIN_SAMPLES:
                     error_msg = (

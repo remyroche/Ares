@@ -30,7 +30,8 @@ try:
         calculate_atr,
         log_volume,
         rolling_median_log_volume,
-        calculate_mad
+        calculate_mad,
+        log1p_zscore_normalize,
     )
     ROBUST_VOLUME_AVAILABLE = True
 except ImportError:
@@ -41,6 +42,7 @@ except ImportError:
     log_volume = None
     rolling_median_log_volume = None
     calculate_mad = None
+    log1p_zscore_normalize = None
     warnings.warn("Robust volume transforms not available. Volume features will use standard normalization.")
 
 # RobustScaler from scikit-learn
@@ -191,8 +193,9 @@ class RegimeVolumeFeatureGenerator(VectorizedFeatureGenerator):
 
     def _calculate_obv(self, close: pd.Series, volume: pd.Series) -> pd.Series:
         """Calculate OBV with robust volume normalization."""
-        if ROBUST_VOLUME_AVAILABLE and robust_z_score is not None:
-            volume_normalized = robust_z_score(volume, window=self.window)
+        if ROBUST_VOLUME_AVAILABLE and log1p_zscore_normalize is not None:
+            effective_window = min(self.window, 500)
+            volume_normalized = log1p_zscore_normalize(volume, window=effective_window)
             # Shift to positive range
             volume_normalized = volume_normalized - volume_normalized.min() + 1.0
         else:
@@ -208,8 +211,9 @@ class RegimeVolumeFeatureGenerator(VectorizedFeatureGenerator):
 
     def _calculate_cmf(self, high: pd.Series, low: pd.Series, close: pd.Series, volume: pd.Series) -> pd.Series:
         """Calculate CMF with robust volume normalization."""
-        if ROBUST_VOLUME_AVAILABLE and robust_z_score is not None:
-            volume_normalized = robust_z_score(volume, window=self.window)
+        if ROBUST_VOLUME_AVAILABLE and log1p_zscore_normalize is not None:
+            effective_window = min(self.window, 500)
+            volume_normalized = log1p_zscore_normalize(volume, window=effective_window)
             # Shift to positive range
             volume_normalized = volume_normalized - volume_normalized.min() + 1.0
         else:
@@ -230,8 +234,9 @@ class RegimeVolumeFeatureGenerator(VectorizedFeatureGenerator):
         """Calculate MFI with robust volume normalization."""
         if VECTORBT_AVAILABLE and MFI is not None:
             try:
-                if ROBUST_VOLUME_AVAILABLE and robust_z_score is not None:
-                    volume_normalized = robust_z_score(volume, window=self.window)
+                if ROBUST_VOLUME_AVAILABLE and log1p_zscore_normalize is not None:
+                    effective_window = min(self.window, 500)
+                    volume_normalized = log1p_zscore_normalize(volume, window=effective_window)
                     # Shift to positive range
                     volume_normalized = volume_normalized - volume_normalized.min() + 1.0
                 else:
@@ -308,8 +313,9 @@ class RegimeVolumeFeatureGenerator(VectorizedFeatureGenerator):
 
     def _calculate_robust_volume_zscore(self, volume: pd.Series) -> pd.Series:
         """Calculate robust z-score for volume."""
-        if ROBUST_VOLUME_AVAILABLE and robust_z_score is not None:
-            return robust_z_score(volume, window=self.window).rename('regime_vol_zscore')
+        if ROBUST_VOLUME_AVAILABLE and log1p_zscore_normalize is not None:
+            effective_window = min(self.window, 500)
+            return log1p_zscore_normalize(volume, window=effective_window).rename('regime_vol_zscore')
         else:
             # Fallback: standard z-score
             vol_mean = volume.rolling(self.window).mean()

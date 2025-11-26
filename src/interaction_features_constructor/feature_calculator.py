@@ -14,6 +14,11 @@ import numpy as np
 from typing import Dict, List, Optional, Any, Union
 from pathlib import Path
 
+try:
+    import polars as pl
+except Exception:
+    pl = None
+
 from src.interaction_features_constructor.feature_decomposer import FeatureDecomposer
 from src.interaction_features_constructor.feature_metadata_store import FeatureMetadataStore
 
@@ -108,11 +113,22 @@ class FeatureCalculator:
         Returns:
             DataFrame or dict with calculated features
         """
-        # Convert base_features to dict if it's a DataFrame
-        if isinstance(base_features, pd.DataFrame):
-            base_features_dict = {col: base_features[col] for col in base_features.columns}
+        # Normalize OHLCV input to pandas DataFrame (supports optional Polars input)
+        if pl is not None and isinstance(ohlcv_data, pl.DataFrame):
+            ohlcv_data_pd = ohlcv_data.to_pandas()
         else:
+            ohlcv_data_pd = ohlcv_data
+
+        # Convert base_features to dict if it's a DataFrame (supports optional Polars input)
+        if isinstance(base_features, dict):
             base_features_dict = base_features
+        else:
+            if pl is not None and isinstance(base_features, pl.DataFrame):
+                base_features_pd = base_features.to_pandas()
+            else:
+                base_features_pd = base_features
+
+            base_features_dict = {col: base_features_pd[col] for col in base_features_pd.columns}
 
         # Storage for calculated features
         calculated_features = {}
@@ -123,7 +139,7 @@ class FeatureCalculator:
                 calculated = self._calculate_single_feature(
                     feature_name,
                     base_features_dict,
-                    ohlcv_data
+                    ohlcv_data_pd
                 )
                 calculated_features[feature_name] = calculated
             except Exception as e:
@@ -131,7 +147,7 @@ class FeatureCalculator:
                 # Create NaN series as placeholder
                 calculated_features[feature_name] = pd.Series(
                     np.nan,
-                    index=ohlcv_data.index if hasattr(ohlcv_data, 'index') else range(len(ohlcv_data))
+                    index=ohlcv_data_pd.index if hasattr(ohlcv_data_pd, 'index') else range(len(ohlcv_data_pd))
                 )
 
         # Return as DataFrame or dict
@@ -400,7 +416,35 @@ class FeatureCalculator:
     def __repr__(self) -> str:
         """String representation."""
         return (
-            f"FeatureCalculator("
-            f"selected_features={len(self.selected_features)}, "
+            f"FeatureCalculator(" \
+            f"selected_features={len(self.selected_features)}, " \
             f"base_features_required={len(self.base_features_required)})"
         )
+
+
+class FeatureCalculatorPolars(FeatureCalculator):
+    def calculate(
+        self,
+        ohlcv_data: "pl.DataFrame",
+        base_features: Union["pl.DataFrame", Dict[str, "pl.Series"]],
+        return_type: str = "dataframe",
+    ):
+        if pl is None:
+            raise RuntimeError("polars is not available")
+
+        ohlcv_pd = ohlcv_data.to_pandas()
+
+        if isinstance(base_features, dict):
+            base_pd = {name: series.to_pandas() for name, series in base_features.items()}
+        else:
+            base_pd = base_features.to_pandas()
+
+        result = super().calculate(ohlcv_pd, base_pd, return_type="dataframe")
+
+        if return_type == "dataframe":
+            return pl.from_pandas(result)
+
+        return {
+            name: pl.Series(name=name, values=series.to_numpy())
+            for name, series in result.items()
+        }

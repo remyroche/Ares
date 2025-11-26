@@ -16,6 +16,11 @@ import pandas as pd
 import numpy as np
 from typing import Union, Optional, Tuple
 
+try:
+    import polars as pl  # type: ignore[import]
+except Exception:  # pragma: no cover - optional dependency
+    pl = None
+
 
 def calculate_atr(
     high: Union[pd.Series, np.ndarray],
@@ -37,6 +42,17 @@ def calculate_atr(
     Returns:
         ATR values
     """
+    if pl is not None and isinstance(high, pl.Series):
+        high_pd = high.to_pandas()
+        low_pd = low.to_pandas() if isinstance(low, pl.Series) else pd.Series(low)
+        close_pd = close.to_pandas() if isinstance(close, pl.Series) else pd.Series(close)
+        atr_pd = calculate_atr(high_pd, low_pd, close_pd, window=window, min_periods=min_periods)
+        if hasattr(atr_pd, "to_numpy"):
+            values = atr_pd.to_numpy()
+        else:
+            values = np.asarray(atr_pd)
+        return pl.Series(name=high.name, values=values)
+
     # Convert to Series if needed
     if not isinstance(high, pd.Series):
         high = pd.Series(high)
@@ -105,36 +121,154 @@ def atr_normalize(
     Examples:
         >>> # Normalize Bollinger Band width by ATR
         >>> bb_width_normalized = atr_normalize(bb_width, high, low, close)
-        >>>
         >>> # Normalize multiple spatial features
         >>> spatial_features = df[['trend_distance', 'bb_width', 'candle_size']]
         >>> normalized = atr_normalize(spatial_features, high, low, close)
     """
+    # Polars-native path: when data and price inputs are Polars objects, compute
+    # TR/ATR without converting to pandas and normalize using Polars operations.
+    if (
+        pl is not None
+        and (isinstance(data, pl.DataFrame) or isinstance(data, pl.Series))  # type: ignore[arg-type]
+        and isinstance(high, pl.Series)  # type: ignore[arg-type]
+        and isinstance(low, pl.Series)   # type: ignore[arg-type]
+        and isinstance(close, pl.Series) # type: ignore[arg-type]
+    ):
+        # Build True Range (TR) components in Polars
+        df_prices = pl.DataFrame({
+            "high": high,
+            "low": low,
+            "close": close,
+        })
+
+        df_prices = df_prices.with_columns([
+            pl.col("close").shift(1).alias("prev_close"),
+        ])
+
+        df_prices = df_prices.with_columns([
+            (pl.col("high") - pl.col("low")).alias("tr1"),
+            (pl.col("high") - pl.col("prev_close")).abs().alias("tr2"),
+            (pl.col("low") - pl.col("prev_close")).abs().alias("tr3"),
+        ])
+
+        # Row-wise maximum of TR components
+        df_prices = df_prices.with_columns(
+            pl.max_horizontal("tr1", "tr2", "tr3").alias("tr")
+        )
+
+        tr_series = df_prices["tr"]
+        tr_values = tr_series.to_numpy()
+
+        # Ensure first TR value is valid by falling back to high-low if needed
+        if tr_values.size > 0 and not np.isfinite(tr_values[0]):
+            high_values = df_prices["high"].to_numpy()
+            low_values = df_prices["low"].to_numpy()
+            tr_values[0] = float(high_values[0] - low_values[0])
+
+        # Compute ATR via exponential moving average (EMA) in NumPy
+        alpha = 2.0 / float(window + 1)
+        atr_values = np.empty_like(tr_values, dtype=float)
+
+        if tr_values.size > 0:
+            atr_values[0] = tr_values[0]
+            for i in range(1, tr_values.size):
+                if not np.isfinite(tr_values[i]):
+                    atr_values[i] = atr_values[i - 1]
+                else:
+                    atr_values[i] = alpha * tr_values[i] + (1.0 - alpha) * atr_values[i - 1]
+
+        # Clip ATR to avoid division issues
+        atr_values = np.clip(atr_values, min_atr, None)
+        atr_series_pl = pl.Series("atr", atr_values)
+
+        # Normalize data using Polars operations
+        if isinstance(data, pl.DataFrame):  # type: ignore[arg-type]
+            normalized_df = data.with_columns([
+                (pl.col(col) / atr_series_pl)
+                .fill_nan(0.0)
+                .fill_null(0.0)
+                .alias(col)
+                for col in data.columns
+            ])
+
+            if return_atr:
+                return normalized_df, atr_series_pl
+            return normalized_df
+
+        # data is a Polars Series
+        data_series_pl = data  # type: ignore[assignment]
+        normalized_series_pl = (
+            (data_series_pl / atr_series_pl)
+            .fill_nan(0.0)
+            .fill_null(0.0)
+        )
+        normalized_series_pl = normalized_series_pl.rename(getattr(data_series_pl, "name", None))
+
+        if return_atr:
+            return normalized_series_pl, atr_series_pl
+        return normalized_series_pl
+
+    # Polars compatibility for mixed inputs: track original types and convert to
+    # pandas for computation when full Polars path is not available.
+    data_is_pl_df = pl is not None and isinstance(data, pl.DataFrame)
+    data_is_pl_series = pl is not None and hasattr(pl, "Series") and isinstance(data, pl.Series)  # type: ignore[arg-type]
+
+    if data_is_pl_df:
+        data_pd = data.to_pandas()
+    elif data_is_pl_series:
+        data_pd = data.to_pandas()
+    else:
+        data_pd = data
+
+    if pl is not None and hasattr(pl, "Series") and isinstance(high, pl.Series):  # type: ignore[arg-type]
+        high_pd = high.to_pandas()
+    else:
+        high_pd = high
+
+    if pl is not None and hasattr(pl, "Series") and isinstance(low, pl.Series):  # type: ignore[arg-type]
+        low_pd = low.to_pandas()
+    else:
+        low_pd = low
+
+    if pl is not None and hasattr(pl, "Series") and isinstance(close, pl.Series):  # type: ignore[arg-type]
+        close_pd = close.to_pandas()
+    else:
+        close_pd = close
+
     # Calculate ATR
-    atr = calculate_atr(high, low, close, window=window)
+    atr = calculate_atr(high_pd, low_pd, close_pd, window=window)
 
     # Ensure ATR is not too small to avoid division issues
     atr_safe = atr.clip(lower=min_atr)
 
-    # Normalize data
-    if isinstance(data, pd.DataFrame):
-        # Normalize each column by ATR
-        normalized = data.div(atr_safe, axis=0)
-        normalized = normalized.fillna(0.0)
-    elif isinstance(data, pd.Series):
-        # Normalize series by ATR
-        normalized = data / atr_safe
-        normalized = normalized.fillna(0.0)
+    # Normalize data using pandas/NumPy
+    if isinstance(data_pd, pd.DataFrame):
+        normalized = data_pd.div(atr_safe, axis=0).fillna(0.0)
+    elif isinstance(data_pd, pd.Series):
+        normalized = (data_pd / atr_safe).fillna(0.0)
     else:
-        # Convert to Series, normalize, then convert back
-        data_series = pd.Series(data)
+        data_series = pd.Series(data_pd)
         normalized_series = data_series / atr_safe
         normalized = normalized_series.fillna(0.0).values
 
-    if return_atr:
-        return normalized, atr
+    # Convert back to Polars if needed
+    if data_is_pl_df:
+        if isinstance(normalized, pd.DataFrame):
+            normalized_out = pl.from_pandas(normalized)
+        else:
+            normalized_out = pl.from_pandas(pd.DataFrame(normalized))
+    elif data_is_pl_series:
+        if isinstance(normalized, pd.Series):
+            normalized_out = pl.Series(name=getattr(data, "name", None), values=normalized.values)
+        else:
+            normalized_out = pl.Series(normalized)
     else:
-        return normalized
+        normalized_out = normalized
+
+    if return_atr:
+        return normalized_out, atr
+    else:
+        return normalized_out
 
 
 def atr_percent_normalize(
@@ -165,38 +299,67 @@ def atr_percent_normalize(
     Returns:
         Normalized data (same type as input)
     """
+    # Polars compatibility: track original types and convert to pandas for computation
+    data_is_pl_df = pl is not None and isinstance(data, pl.DataFrame)
+    data_is_pl_series = pl is not None and hasattr(pl, "Series") and isinstance(data, pl.Series)  # type: ignore[arg-type]
+
+    if data_is_pl_df:
+        data_pd = data.to_pandas()
+    elif data_is_pl_series:
+        data_pd = data.to_pandas()
+    else:
+        data_pd = data
+
+    if pl is not None and hasattr(pl, "Series") and isinstance(close, pl.Series):  # type: ignore[arg-type]
+        close_pd = close.to_pandas()
+    else:
+        close_pd = close
+
+    if pl is not None and hasattr(pl, "Series") and isinstance(high, pl.Series):  # type: ignore[arg-type]
+        high_pd = high.to_pandas()
+    else:
+        high_pd = high
+
+    if pl is not None and hasattr(pl, "Series") and isinstance(low, pl.Series):  # type: ignore[arg-type]
+        low_pd = low.to_pandas()
+    else:
+        low_pd = low
+
     # Calculate ATR
-    atr = calculate_atr(high, low, close, window=window)
+    atr = calculate_atr(high_pd, low_pd, close_pd, window=window)
 
     # Convert close to Series if needed
-    if not isinstance(close, pd.Series):
-        close = pd.Series(close)
+    if not isinstance(close_pd, pd.Series):
+        close_pd = pd.Series(close_pd)
 
     # Calculate ATR as percentage of close
-    close_safe = close.clip(lower=min_close)
+    close_safe = close_pd.clip(lower=min_close)
     atr_percent = atr / close_safe
     atr_percent_safe = atr_percent.clip(lower=min_atr / close_safe.mean())
 
-    # Normalize data
-    if isinstance(data, pd.DataFrame):
-        # Convert data to percentage of close first
-        data_percent = data.div(close_safe, axis=0)
-        # Then normalize by ATR percent
-        normalized = data_percent.div(atr_percent_safe, axis=0)
-        normalized = normalized.fillna(0.0)
-    elif isinstance(data, pd.Series):
-        # Convert to percentage of close
-        data_percent = data / close_safe
-        # Normalize by ATR percent
-        normalized = data_percent / atr_percent_safe
-        normalized = normalized.fillna(0.0)
+    # Normalize data using pandas/NumPy
+    if isinstance(data_pd, pd.DataFrame):
+        data_percent = data_pd.div(close_safe, axis=0)
+        normalized = data_percent.div(atr_percent_safe, axis=0).fillna(0.0)
+    elif isinstance(data_pd, pd.Series):
+        data_percent = data_pd / close_safe
+        normalized = (data_percent / atr_percent_safe).fillna(0.0)
     else:
-        # Convert to Series, normalize, then convert back
-        data_series = pd.Series(data)
+        data_series = pd.Series(data_pd)
         close_safe_series = pd.Series(close_safe)
         data_percent = data_series / close_safe_series
         normalized_series = data_percent / atr_percent_safe
         normalized = normalized_series.fillna(0.0).values
+
+    # Convert back to Polars if needed
+    if data_is_pl_df:
+        if isinstance(normalized, pd.DataFrame):
+            return pl.from_pandas(normalized)
+        return pl.from_pandas(pd.DataFrame(normalized))
+    if data_is_pl_series:
+        if isinstance(normalized, pd.Series):
+            return pl.Series(name=getattr(data, "name", None), values=normalized.values)
+        return pl.Series(normalized)
 
     return normalized
 
@@ -255,6 +418,22 @@ ATR_NORMALIZED_FEATURES = [
     'sr_distance',
     'sr_level',
     'pivot_distance',
+
+    # Volume profile (range)
+    'volume_profile_range',
+]
+
+
+# Explicit prefixes for SR level-style features that should use ATR normalization.
+# Using prefixes avoids accidental matches on unrelated features that merely
+# contain the same substrings.
+ATR_SR_LEVEL_PREFIXES = [
+    'support_level_',
+    'resistance_level_',
+    'pivot_point_',
+    'fibonacci_',
+    'sr_volume_weighted_',
+    'sr_dynamic_',
 ]
 
 
@@ -270,7 +449,12 @@ def should_use_atr_normalization(feature_name: str) -> bool:
     """
     feature_lower = feature_name.lower()
 
-    # Check against known ATR-normalized features
+    # Check explicit SR level-style prefixes first (pattern-safe)
+    for prefix in ATR_SR_LEVEL_PREFIXES:
+        if feature_lower.startswith(prefix):
+            return True
+
+    # Check against known ATR-normalized features (substring match)
     for atr_feature in ATR_NORMALIZED_FEATURES:
         if atr_feature.lower() in feature_lower:
             return True

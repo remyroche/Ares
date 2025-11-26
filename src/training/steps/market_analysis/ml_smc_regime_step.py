@@ -26,9 +26,11 @@ from src.utils.tprint import (
 )
 from src.features_common.transforms.scaling_normalization import (
     winsorized_zscore_normalize,
-    rolling_winsorized_zscore_normalize,
 )
-from src.feature_generation.categories.cross_timeframe import CrossTimeframeFeatureGenerator
+from src.utils.feature_common.volume_transforms import log1p_zscore_normalize
+from src.feature_generation.categories.smc_regime_features import (
+    generate_smc_regime_features,
+)
 from sklearn.isotonic import IsotonicRegression
 from src.utils.versioned_artifacts.temporal_splits import (
     create_temporal_split_config_for_pipeline,
@@ -222,69 +224,15 @@ class MLSMCRegimeStep(BaseStep):
         df: pd.DataFrame,
         config: Dict[str, Any],
     ) -> pd.DataFrame:
-        """Generate all SMC features with proper normalization."""
-        result = df.copy()
+        """Generate all SMC features with proper normalization.
 
-        required_cols = ["open", "high", "low", "close", "volume"]
-        missing = [c for c in required_cols if c not in result.columns]
-        if missing:
-            raise ValueError(f"Missing columns for SMC features: {missing}")
+        Delegates core SMC feature construction to the feature bank
+        (``generate_smc_regime_features``) so that feature definitions
+        are centralized. This method then applies step-specific
+        normalization.
+        """
 
-        if not isinstance(result.index, pd.DatetimeIndex):
-            result.index = pd.to_datetime(result.index)
-        result = result.sort_index()
-
-        o = result["open"].astype(float)
-        h = result["high"].astype(float)
-        l = result["low"].astype(float)
-        c = result["close"].astype(float)
-        v = result["volume"].astype(float)
-
-        # Calculate ATR (core normalization factor for SMC)
-        tr1 = h - l
-        tr2 = (h - c.shift(1)).abs()
-        tr3 = (l - c.shift(1)).abs()
-        true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-        atr_window = int(config.get("smc_atr_window", 14))
-        atr = true_range.rolling(window=atr_window).mean()
-        result["atr"] = atr
-
-        # 1. Liquidity & Reference Point Scalars
-        tprint_info("Generating liquidity & reference point features...")
-        result = self._add_liquidity_features(result, config)
-
-        # 2. Inefficiency (FVG/Gap) Scalars
-        tprint_info("Generating FVG/inefficiency features...")
-        result = self._add_fvg_features(result, config)
-
-        # 3. Premium / Discount & Structure Scalars
-        tprint_info("Generating premium/discount features...")
-        result = self._add_premium_discount_features(result, config)
-
-        # 4. Momentum & Displacement Scalars
-        tprint_info("Generating momentum/displacement features...")
-        result = self._add_momentum_features(result, config)
-
-        # 5. Volatility & Time Scalars
-        tprint_info("Generating volatility/time features...")
-        result = self._add_volatility_time_features(result, config)
-
-        # 6. Multi-Timeframe (MTF) Scalars
-        tprint_info("Generating multi-timeframe features...")
-        result = self._add_mtf_features(result, config)
-
-        # 7. Volume Profile Scalars
-        tprint_info("Generating volume profile features...")
-        result = self._add_volume_profile_features(result, config)
-
-        # 8. Time Categories
-        tprint_info("Generating time category features...")
-        result = self._add_time_categories(result, config)
-
-        # 9. Optional cross-timeframe features from feature_generation categories
-        if bool(config.get("smc_enable_cross_timeframe_features", True)):
-            tprint_info("Generating cross-timeframe features...")
-            result = self._add_cross_timeframe_features(result, config)
+        result = generate_smc_regime_features(df, config)
 
         # Apply normalization to features (except categorical/binary features)
         tprint_info("Normalizing SMC features...")
@@ -752,31 +700,47 @@ class MLSMCRegimeStep(BaseStep):
                 else:
                     continuous_features.append(col)
 
-        # Apply rolling winsorized z-score to continuous features to prevent look-ahead bias
+        # Apply rolling z-score normalization to continuous features to prevent look-ahead bias
         if continuous_features:
             window_size = int(config.get("smc_normalization_window", 500))
-            tprint_info(f"Applying rolling winsorized z-score normalization to {len(continuous_features)} features (window={window_size})")
-            for feat in continuous_features:
-                try:
-                    normalized = rolling_winsorized_zscore_normalize(
-                        df[feat],
-                        window=window_size,
-                        min_periods=window_size // 2,
-                        lower_quantile=0.05,
-                        upper_quantile=0.95
-                    )
-                    df[feat] = normalized
-                except Exception as e:
-                    tprint_warning(f"Failed to normalize {feat}: {e}")
+            tprint_info(
+                f"Applying rolling winsorized z-score normalization to {len(continuous_features)} features (window={window_size})"
+            )
+            try:
+                df[continuous_features] = winsorized_zscore_normalize(
+                    df[continuous_features],
+                    window=window_size,
+                )
+            except Exception as e:
+                tprint_warning(f"Failed to normalize continuous SMC features: {e}")
 
-        # Apply log1p to volume features
+        # Apply log1p + rolling z-score normalization to volume features
         if volume_features:
-            tprint_info(f"Applying log1p transformation to {len(volume_features)} volume features")
-            for feat in volume_features:
-                try:
-                    df[feat] = np.log1p(df[feat].clip(lower=0.0))
-                except Exception as e:
-                    tprint_warning(f"Failed to log1p transform {feat}: {e}")
+            window_size = int(config.get("smc_normalization_window", 500))
+            tprint_info(f"Applying log1p+zscore normalization to {len(volume_features)} volume features")
+            try:
+                df[volume_features] = rolling_adaptive_normalize(
+                    df[volume_features],
+                    window=window_size,
+                    min_periods=window_size // 2,
+                    high=df["high"] if "high" in df.columns else None,
+                    low=df["low"] if "low" in df.columns else None,
+                    close=df["close"] if "close" in df.columns else None,
+                    volume_columns=volume_features,
+                )
+            except Exception as e:
+                tprint_warning(
+                    f"Failed to log1p+zscore normalize SMC volume features via adaptive normalizer: {e}"
+                )
+                for feat in volume_features:
+                    try:
+                        df[feat] = log1p_zscore_normalize(
+                            df[feat].clip(lower=0.0),
+                            window=window_size,
+                            min_periods=window_size // 2,
+                        )
+                    except Exception as inner_e:
+                        tprint_warning(f"Failed to log1p+zscore normalize {feat}: {inner_e}")
 
         return df
 

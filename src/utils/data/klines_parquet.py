@@ -7,6 +7,7 @@ historical klines data stored in optimized parquet format.
 
 import os
 import re
+import shutil
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -609,16 +610,12 @@ class KlinesParquetManager:
                                     range_start = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
                                 except:
                                     range_start = datetime.min
-                            else:
-                                range_start = start_date if start_date else datetime.min
                             
                             if end_date and isinstance(end_date, str):
                                 try:
                                     range_end = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
                                 except:
                                     range_end = datetime.max
-                            else:
-                                range_end = end_date if end_date else datetime.max
                             
                             # Check if partition overlaps with requested range
                             if partition_end >= range_start and partition_start <= range_end:
@@ -1343,9 +1340,19 @@ class KlinesParquetManager:
                 # For processed data, save as partitioned parquet
                 output_path = data_dir / f"{symbol.lower()}_{interval}"
 
-                if output_path.exists() and not overwrite:
-                    self.logger.warning(f"Processed data already exists for {symbol} {interval}")
-                    return False
+                if output_path.exists():
+                    if overwrite:
+                        try:
+                            if output_path.is_dir():
+                                shutil.rmtree(output_path)
+                            else:
+                                output_path.unlink()
+                        except Exception as e:
+                            self.logger.warning(f"⚠️ Failed to remove existing processed data at {output_path}: {e}")
+                            return False
+                    else:
+                        self.logger.warning(f"Processed data already exists for {symbol} {interval}")
+                        return False
 
                 # Optimize data types
                 df_with_partitions = self.data_processor.optimize_feature_engineering_pipeline(
@@ -1410,6 +1417,39 @@ class KlinesParquetManager:
 
         except Exception as e:
             self.logger.exception(f"❌ Failed to update data: {e}")
+            return False
+
+    def consolidate_data(
+        self,
+        symbol: str,
+        interval: str,
+        data_type: str = "processed"
+    ) -> bool:
+        try:
+            df = self.read_data(symbol, interval, data_type=data_type)
+            if df is None or df.empty:
+                self.logger.warning(
+                    "No data found to consolidate for %s %s (%s)", symbol, interval, data_type
+                )
+                return False
+
+            self.logger.info(
+                "Consolidating data for %s %s (%s) with permanent true-duplicate removal",
+                symbol,
+                interval,
+                data_type,
+            )
+
+            return self.write_data(df, symbol, interval, data_type=data_type, overwrite=True)
+
+        except Exception as e:
+            self.logger.exception(
+                "Failed to consolidate data for %s %s (%s): %s",
+                symbol,
+                interval,
+                data_type,
+                e,
+            )
             return False
 
     def delete_data(

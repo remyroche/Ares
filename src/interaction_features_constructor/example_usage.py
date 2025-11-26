@@ -102,7 +102,7 @@ def example_3_calculate_features():
     np.random.seed(42)
     n_candles = 1000
 
-    ohlcv_data = pd.DataFrame({
+    ohlcv_data_pd = pd.DataFrame({
         'timestamp': pd.date_range('2024-01-01', periods=n_candles, freq='15T'),
         'open': 3000 + np.cumsum(np.random.randn(n_candles) * 10),
         'high': 3000 + np.cumsum(np.random.randn(n_candles) * 10) + 5,
@@ -112,7 +112,7 @@ def example_3_calculate_features():
     })
 
     # Create sample base features (these would normally come from feature_bank)
-    base_features = pd.DataFrame({
+    base_features_pd = pd.DataFrame({
         'candlestick_dark_cloud_cover_pattern': np.random.randint(0, 2, n_candles),
         'candlestick_doji_pattern': np.random.randint(0, 2, n_candles),
         'candlestick_engulfing_pattern': np.random.randint(0, 2, n_candles),
@@ -123,7 +123,18 @@ def example_3_calculate_features():
         'vectorbt_enhanced_obv_10': np.cumsum(np.random.randn(n_candles) * 100),
         'volume_price_trend': np.random.randn(n_candles) * 10,
         'wavelet_energy': np.random.randn(n_candles) * 5
-    }, index=ohlcv_data.index)
+    }, index=ohlcv_data_pd.index)
+
+    # Prefer Polars DataFrames when available to exercise Polars → FeatureCalculator path
+    try:
+        import polars as pl  # type: ignore[import]
+
+        ohlcv_data = pl.DataFrame(ohlcv_data_pd)
+        base_features = pl.DataFrame(base_features_pd)
+    except Exception:
+        # Fallback to pandas if Polars is not available
+        ohlcv_data = ohlcv_data_pd
+        base_features = base_features_pd
 
     # Selected features to calculate
     selected_features = [
@@ -140,7 +151,7 @@ def example_3_calculate_features():
     print(f"\nSelected features: {len(selected_features)}")
     print(f"Base features required: {calculator.get_required_base_features()}")
 
-    # Calculate features
+    # Calculate features (FeatureCalculator will internally handle pandas/Polars inputs)
     calculated_features = calculator.calculate(
         ohlcv_data=ohlcv_data,
         base_features=base_features,

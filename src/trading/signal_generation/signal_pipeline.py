@@ -1205,15 +1205,23 @@ class SignalGenerationPipeline:
                         if isinstance(market_data, pd.DataFrame):
                             # Use last row for prediction
                             market_data_row = market_data.iloc[[-1]].copy()
-                            
-                            # Apply shared feature engineering (same as training)
-                            # Extract primary regime probability for feature engineering
-                            primary_regime_prob = max(regime_output.regime_probabilities.values()) if regime_output.regime_probabilities else 0.5
-                            
-                            # Engineer features using shared module
+
+                            # Apply shared feature engineering (same as training).
+                            # Build explicit regime index -> probability mapping so that
+                            # AnalystFeatureEngineer can add regime_confidence_0-3 features.
+                            regime_probs_for_engineer: Dict[int, float] = {}
+                            try:
+                                regime_list = list(RegimeType)
+                                for idx, rt in enumerate(regime_list[:4]):
+                                    regime_probs_for_engineer[idx] = float(
+                                        regime_output.regime_probabilities.get(rt, 0.0)
+                                    )
+                            except Exception:
+                                regime_probs_for_engineer = {}
+
                             engineered_data = self.analyst_feature_engineer.engineer_features(
                                 market_data_row,
-                                regime_probability=primary_regime_prob
+                                regime_probabilities=regime_probs_for_engineer or None,
                             )
                             
                             # Extract all numeric features (including engineered ones)
@@ -1341,11 +1349,21 @@ class SignalGenerationPipeline:
                 market_data_row = market_data.iloc[[-1]].copy()
                 
                 # Apply shared feature engineering (same as training and base models)
-                primary_regime_prob = max(regime_output.regime_probabilities.values()) if regime_output.regime_probabilities else 0.5
-                
+                # Build explicit regime index -> probability mapping so that
+                # AnalystFeatureEngineer can add regime_confidence_0-3 features.
+                regime_probs_for_engineer: Dict[int, float] = {}
+                try:
+                    regime_list = list(RegimeType)
+                    for idx, rt in enumerate(regime_list[:4]):
+                        regime_probs_for_engineer[idx] = float(
+                            regime_output.regime_probabilities.get(rt, 0.0)
+                        )
+                except Exception:
+                    regime_probs_for_engineer = {}
+
                 engineered_data = self.analyst_feature_engineer.engineer_features(
                     market_data_row,
-                    regime_probability=primary_regime_prob
+                    regime_probabilities=regime_probs_for_engineer or None,
                 )
                 
                 # Extract all numeric features (including engineered ones)
@@ -1487,19 +1505,22 @@ class SignalGenerationPipeline:
                         market_data_row = market_data.iloc[[-1]].copy()
                         
                         # Apply shared feature engineering (same as training)
-                        # Extract primary regime probability for feature engineering
-                        primary_regime_prob = max(regime_output.regime_probabilities.values()) if regime_output.regime_probabilities else 0.5
-                        
+                        # Build explicit regime index -> probability mapping so that
+                        # TacticianFeatureEngineer can add regime_confidence_0-3 features.
+                        regime_probs_for_engineer: Dict[int, float] = {}
+                        try:
+                            regime_list = list(RegimeType)
+                            for idx, rt in enumerate(regime_list[:4]):
+                                regime_probs_for_engineer[idx] = float(
+                                    regime_output.regime_probabilities.get(rt, 0.0)
+                                )
+                        except Exception:
+                            regime_probs_for_engineer = {}
+
                         engineered_data = self.tactician_feature_engineer.engineer_features(
                             market_data_row,
-                            regime_probability=primary_regime_prob,
-                            timestamp=timestamp,
-                            analyst_confidence=analyst_confidence,
-                            analyst_outputs={
-                                'analyst_confidence': analyst_confidence,
-                                'market_health_score': analyst_output.market_health_score,
-                                'regime_adjusted_confidence': analyst_output.regime_adjusted_confidence
-                            }
+                            regime_probabilities=regime_probs_for_engineer or None,
+                            analyst_signal_strength=analyst_confidence,
                         )
                         
                         # Extract all numeric features (including engineered ones)

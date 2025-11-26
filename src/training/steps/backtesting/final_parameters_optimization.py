@@ -633,6 +633,15 @@ class FinalParametersOptimizer(BaseStep):
                 self.previous_results
             )
 
+            try:
+                tpsl_adjustments = self._compute_tpsl_regime_adjustments_iterative()
+                if tpsl_adjustments:
+                    optimization_results['_tpsl_regime_adjustments'] = tpsl_adjustments
+                    sanity = self._classify_tpsl_regime_patterns(tpsl_adjustments)
+                    optimization_results['_tpsl_regime_sanity'] = sanity
+            except Exception as e:
+                self.logger.debug(f"TPSL regime post-analysis failed: {e}")
+
             # Count how many parameters were optimized and collect scores
             parameters_optimized = 0
             best_scores: List[float] = []
@@ -830,6 +839,39 @@ class FinalParametersOptimizer(BaseStep):
             if len(trade_returns) == 0:
                 tprint("⚠️  No valid trade returns", "warning")
                 return EvaluationMetrics()
+
+            try:
+                n_trades = len(trade_returns)
+                scalars = self._compute_regime_and_meta_scalars(n_trades)
+                weights = np.ones(n_trades, dtype=float)
+                meta_conf = scalars.get('meta_confidence')
+                disagreement = scalars.get('disagreement_scalar')
+                uncertainty = scalars.get('uncertainty_scalar')
+                risk = scalars.get('risk_scalar')
+                path = scalars.get('path_scalar')
+                trend = scalars.get('trend_scalar')
+                if meta_conf is not None:
+                    m = min(n_trades, len(meta_conf))
+                    weights[:m] *= np.clip(meta_conf[:m], 0.0, 1.0)
+                if disagreement is not None:
+                    m = min(n_trades, len(disagreement))
+                    weights[:m] *= 1.0 - 0.5 * np.clip(disagreement[:m], 0.0, 1.0)
+                if uncertainty is not None:
+                    m = min(n_trades, len(uncertainty))
+                    weights[:m] *= 1.0 - 0.5 * np.clip(uncertainty[:m], 0.0, 1.0)
+                if risk is not None:
+                    m = min(n_trades, len(risk))
+                    weights[:m] *= 0.5 + 0.5 * (1.0 - np.clip(risk[:m], 0.0, 1.0))
+                if path is not None:
+                    m = min(n_trades, len(path))
+                    weights[:m] *= 0.7 + 0.3 * (1.0 - np.clip(path[:m], 0.0, 1.0))
+                if trend is not None:
+                    m = min(n_trades, len(trend))
+                    weights[:m] *= 0.8 + 0.4 * np.clip(trend[:m], 0.0, 1.0)
+                weights = np.clip(weights, 0.0, 1.0)
+                trade_returns = trade_returns * weights
+            except Exception as e:
+                self.logger.debug(f"trade return weighting failed: {e}")
 
             # Use VectorBT optimization for metrics calculation if available
             if self.vectorbt_enabled and self.rolling_optimizer:
@@ -1323,9 +1365,44 @@ class FinalParametersOptimizer(BaseStep):
                 signals = (analyst_conf >= conf_threshold).astype(int)
                 targets = (returns > 0).astype(int)
 
-            simulated_returns = signals * returns
+            n_samples = len(signals)
+            if n_samples > 0:
+                try:
+                    scalars = self._compute_regime_and_meta_scalars(n_samples)
+                    weights = np.ones(n_samples, dtype=float)
+                    meta_conf = scalars.get('meta_confidence')
+                    disagreement = scalars.get('disagreement_scalar')
+                    uncertainty = scalars.get('uncertainty_scalar')
+                    risk = scalars.get('risk_scalar')
+                    path = scalars.get('path_scalar')
+                    trend = scalars.get('trend_scalar')
+                    if meta_conf is not None:
+                        m = min(n_samples, len(meta_conf))
+                        weights[:m] *= np.clip(meta_conf[:m], 0.0, 1.0)
+                    if disagreement is not None:
+                        m = min(n_samples, len(disagreement))
+                        weights[:m] *= 1.0 - 0.5 * np.clip(disagreement[:m], 0.0, 1.0)
+                    if uncertainty is not None:
+                        m = min(n_samples, len(uncertainty))
+                        weights[:m] *= 1.0 - 0.5 * np.clip(uncertainty[:m], 0.0, 1.0)
+                    if risk is not None:
+                        m = min(n_samples, len(risk))
+                        weights[:m] *= 0.5 + 0.5 * (1.0 - np.clip(risk[:m], 0.0, 1.0))
+                    if path is not None:
+                        m = min(n_samples, len(path))
+                        weights[:m] *= 0.7 + 0.3 * (1.0 - np.clip(path[:m], 0.0, 1.0))
+                    if trend is not None:
+                        m = min(n_samples, len(trend))
+                        weights[:m] *= 0.8 + 0.4 * np.clip(trend[:m], 0.0, 1.0)
+                    weights = np.clip(weights, 0.0, 1.0)
+                    simulated_returns = signals * returns * weights
+                except Exception as e:
+                    self.logger.debug(f"hierarchical return weighting failed: {e}")
+                    simulated_returns = signals * returns
+            else:
+                simulated_returns = signals * returns
             predictions = signals.astype(float)
-
+        
             return {
                 'predictions': predictions,
                 'targets': targets,

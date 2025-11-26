@@ -174,7 +174,8 @@ try:
         calculate_atr,
         log_volume,
         rolling_median_log_volume,
-        calculate_mad
+        calculate_mad,
+        log1p_zscore_normalize,
     )
     ROBUST_VOLUME_AVAILABLE = True
 except ImportError:
@@ -185,6 +186,7 @@ except ImportError:
     log_volume = None
     rolling_median_log_volume = None
     calculate_mad = None
+    log1p_zscore_normalize = None
     warnings.warn("Robust volume transforms not available. Volume features will use standard normalization.")
 
 logger = logging.getLogger(__name__)
@@ -2690,8 +2692,9 @@ class VectorBTEnhancedOBVGenerator(VectorBTFeatureGenerator):
                 close, volume = close.align(volume, join='inner')
 
             # Use robust z-score for volume if available
-            if ROBUST_VOLUME_AVAILABLE and robust_z_score is not None:
-                volume_normalized = robust_z_score(volume, window=self.period)
+            if ROBUST_VOLUME_AVAILABLE and log1p_zscore_normalize is not None:
+                effective_window = min(self.period, 500)
+                volume_normalized = log1p_zscore_normalize(volume, window=effective_window)
             else:
                 # Fallback to standard normalization
                 volume_normalized = volume
@@ -3480,8 +3483,9 @@ class CMFGenerator(VectorizedFeatureGenerator):
             return pd.Series(np.full(len(close), np.nan), index=data.index)
 
         # Use robust z-score for volume if available
-        if ROBUST_VOLUME_AVAILABLE and robust_z_score is not None:
-            volume_normalized = robust_z_score(pd.Series(volume, index=data.index), window=self.period).values
+        if ROBUST_VOLUME_AVAILABLE and log1p_zscore_normalize is not None:
+            effective_window = min(self.period, 500)
+            volume_normalized = log1p_zscore_normalize(pd.Series(volume, index=data.index), window=effective_window).values
         else:
             volume_normalized = volume
 
@@ -3865,8 +3869,9 @@ class AdvancedVolumeFeatures(VectorizedFeatureGenerator):
 
         try:
             # Calculate robust volume for use in indicators
-            if ROBUST_VOLUME_AVAILABLE and robust_z_score is not None:
-                volume_robust = robust_z_score(data['volume'], window=20)
+            if ROBUST_VOLUME_AVAILABLE and log1p_zscore_normalize is not None:
+                effective_window = min(20, 500)
+                volume_robust = log1p_zscore_normalize(data['volume'], window=effective_window)
                 # Shift back to positive range for compatibility with indicators
                 volume_robust_shifted = volume_robust - volume_robust.min() + 1.0
             else:

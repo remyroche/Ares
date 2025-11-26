@@ -54,7 +54,12 @@ from src.utils.tprint import (
 )
 from src.features_common.transforms.scaling_normalization import (
     ScalingNormalizer,
-    rolling_winsorized_zscore_normalize,
+    winsorized_zscore_normalize,
+    rolling_adaptive_normalize,
+)
+from src.utils.feature_common.volume_transforms import log1p_zscore_normalize
+from src.feature_generation.categories.liquidity_regime_features import (
+    generate_liquidity_regime_features,
 )
 from src.utils.versioned_artifacts.temporal_splits import (
     create_temporal_split_config_for_pipeline,
@@ -278,7 +283,7 @@ class MLLiquidityRegimeStep(BaseStep):
 
                     tprint_info("📊 HPO trial summary: " + ", ".join(parts))
                 except Exception as log_exc:
-                    tprint_warning(f"⚠️ Failed to log HPO trial summary for config {i+1}: {log_exc}")
+                    tprint_warning(f"Failed to log HPO trial summary for config {i+1}: {log_exc}")
 
                 results.append(quality_metrics)
                 
@@ -1553,10 +1558,10 @@ class MLLiquidityRegimeStep(BaseStep):
             df["reversal_intensity"] if "reversal_intensity" in df.columns else 0.0
         )
         
-        realized_vol_6h_rolling = df["return_1h"].rolling(6, min_periods=2).std()
+        realized_vol_6h_rolling = df["return_1h"].rolling(24, min_periods=2).std()
         df["vol_of_vol"] = (
-            realized_vol_6h_rolling.rolling(12, min_periods=4).std() /
-            (realized_vol_6h_rolling.rolling(12, min_periods=4).mean() + eps)
+            realized_vol_6h_rolling.rolling(48, min_periods=4).std() /
+            (realized_vol_6h_rolling.rolling(48, min_periods=4).mean() + eps)
         )
         
         return df
@@ -1772,67 +1777,8 @@ class MLLiquidityRegimeStep(BaseStep):
 
         eps = 1e-9
 
-        # Basic derived quantities
-        df["range"] = (df["high"] - df["low"]).astype(float)
-        df["range"] = df["range"].replace(0, np.nan)
-        df["return_1h"] = np.log(df["close"] / df["close"].shift(1)).astype(float)
-        df["abs_return_1h"] = df["return_1h"].abs()
-        df["dollar_volume"] = (df["close"] * df["volume"]).astype(float)
-
-        # Relative volume context
-        vol_window_daily = int(config.get("liquidity_rvol_lookback_24", 96))
-        vol_window_weekly = int(config.get("liquidity_rvol_lookback_168", 672))
-
-        df["vol_sma_24"] = df["volume"].rolling(vol_window_daily, min_periods=5).mean()
-        df["vol_sma_168"] = df["volume"].rolling(vol_window_weekly, min_periods=20).mean()
-        df["rvol_24"] = df["volume"] / (df["vol_sma_24"] + eps)
-        df["rvol_168"] = df["volume"] / (df["vol_sma_168"] + eps)
-
-        # RVOL: Relative Volume (rolling 20-bar lookback for regime classification)
-        df["vol_sma_20"] = df["volume"].rolling(80, min_periods=5).mean()
-        df["rvol_20"] = df["volume"] / (df["vol_sma_20"] + eps)
-
-        # VER: Volume-Efficiency Ratio (Volume / Range)
-        # High VER = High volume, small range (Absorption)
-        # Low VER = Low volume, large range (Ghost)
-        df["volume_efficiency_ratio"] = df["volume"] / (df["range"] + eps)
-
-        vol_mean_24 = df["volume"].rolling(vol_window_daily, min_periods=5).mean()
-        vol_std_24 = df["volume"].rolling(vol_window_daily, min_periods=5).std()
-        df["vol_z_24"] = (df["volume"] - vol_mean_24) / (vol_std_24.replace(0, np.nan) + eps)
-
-        df["volume_stddev_stability"] = (
-            df["volume"].rolling(24, min_periods=3).std() /
-            (df["volume"].rolling(24, min_periods=3).mean() + eps)
-        )
-
-        # Additional stability features for regime contrast
-        df["range_stddev_stability"] = (
-            df["range"].rolling(24, min_periods=3).std() /
-            (df["range"].rolling(24, min_periods=3).mean() + eps)
-        )
-        df["return_stddev_stability"] = (
-            df["abs_return_1h"].rolling(24, min_periods=3).std() /
-            (df["abs_return_1h"].rolling(24, min_periods=3).mean() + eps)
-        )
-
-        # Normalized range (Effort)
-        range_std_lookback = int(config.get("liquidity_range_std_lookback", 192))
-        range_std = df["range"].rolling(range_std_lookback, min_periods=10).std()
-        df["normalized_range"] = df["range"] / (range_std.replace(0, np.nan) + eps)
-
-        # Effort vs Result ratios
-        df["normalized_volume"] = np.log1p(df["volume"])  # log volume
-        df["ghost_ratio"] = df["normalized_range"] / (df["normalized_volume"] + eps)
-        df["absorption_ratio"] = df["normalized_volume"] / (df["normalized_range"] + eps)
-
-        # Amihud / Amivest
-        df["amihud_validity"] = df["abs_return_1h"] / (df["dollar_volume"] + eps)
-        df["amivest_efficiency"] = df["dollar_volume"] / (df["abs_return_1h"] + eps)
-
-        # Amihud spike ratio: normalize by rolling baseline to detect illiquidity spikes
-        df["amihud_baseline"] = df["amihud_validity"].rolling(96, min_periods=6).median()
-        df["amihud_spike_ratio"] = df["amihud_validity"] / (df["amihud_baseline"] + eps)
+        # Delegate core OHLCV-derived liquidity features to the feature bank
+        df = generate_liquidity_regime_features(df, config)
 
         # Ease of Movement (EMV)
         mid_price = (df["high"] + df["low"]) / 2.0
@@ -2057,9 +2003,9 @@ class MLLiquidityRegimeStep(BaseStep):
             df["pressure_ratio"].ewm(span=6, adjust=False).mean()
         )
 
-        price_move_pct = df["abs_return_1h"].clip(lower=0.0001)
+        price_move_1pct = df["close"] * 0.01
         df["kyle_lambda_proxy"] = (
-            df["volume"] / price_move_pct
+            df["volume"] / price_move_1pct
         ).rolling(window=24, min_periods=2).mean()
         df["kyle_lambda_proxy_ewm6"] = (
             df["kyle_lambda_proxy"].ewm(span=6, adjust=False).mean()
@@ -2219,58 +2165,57 @@ class MLLiquidityRegimeStep(BaseStep):
         )
 
         # ============================================================================
-        # ROLLING WINSORIZED Z-SCORE SCALING: Core dimensions for regime assignment
-        # Use rolling window to prevent look-ahead bias
+        # ROLLING NORMALIZATION: Core dimensions for regime assignment
+        # Use rolling window to prevent look-ahead bias with canonical window size.
         # ============================================================================
-        window_size = 500  # ~500 bars for 15m data
+        window_size = 500  # ~500 bars for 15m data (canonical normalization window)
         min_periods = window_size // 2
 
-        # Volume dimension
-        df["rvol_24_scaled"] = rolling_winsorized_zscore_normalize(
-            df["rvol_24"],
-            window=window_size,
-            min_periods=min_periods,
-            ddof=0,
-            lower_quantile=0.01,
-            upper_quantile=0.99
-        )
-        df["rvol_168_scaled"] = rolling_winsorized_zscore_normalize(
-            df["rvol_168"],
-            window=window_size,
-            min_periods=min_periods,
-            ddof=0,
-            lower_quantile=0.01,
-            upper_quantile=0.99
-        )
-        df["vol_z_24_scaled"] = rolling_winsorized_zscore_normalize(
+        # Volume dimension: route via adaptive normalizer with explicit volume
+        # column hints so rvol_* axes receive log1p+zscore treatment.
+        volume_axes = [col for col in ["rvol_24", "rvol_168"] if col in df.columns]
+        if volume_axes:
+            try:
+                volume_scaled = rolling_adaptive_normalize(
+                    df[volume_axes],
+                    window=window_size,
+                    min_periods=min_periods,
+                    volume_columns=volume_axes,
+                )
+                for col in volume_axes:
+                    df[f"{col}_scaled"] = volume_scaled[col]
+            except Exception as e:
+                tprint_warning(
+                    f"Failed to apply adaptive normalization for liquidity rvol axes: {e}"
+                )
+                for col in volume_axes:
+                    try:
+                        df[f"{col}_scaled"] = log1p_zscore_normalize(
+                            df[col].clip(lower=0.0),
+                            window=window_size,
+                            min_periods=min_periods,
+                        )
+                    except Exception as inner_e:
+                        tprint_warning(f"Failed to log1p+zscore normalize {col}: {inner_e}")
+
+        # Use generic rolling winsorized z-score normalization for other
+        # continuous, non-pure-volume dimensions.
+        df["vol_z_24_scaled"] = winsorized_zscore_normalize(
             df["vol_z_24"],
             window=window_size,
-            min_periods=min_periods,
-            ddof=0,
-            lower_quantile=0.01,
-            upper_quantile=0.99
         )
 
         # Delta dimension (order flow alignment)
-        df["delta_regime_signal_scaled"] = rolling_winsorized_zscore_normalize(
+        df["delta_regime_signal_scaled"] = winsorized_zscore_normalize(
             df["delta_regime_signal"],
             window=window_size,
-            min_periods=min_periods,
-            ddof=0,
-            lower_quantile=0.01,
-            upper_quantile=0.99
         )
 
         # Amihud dimension (illiquidity/price impact)
-        df["amihud_spike_ratio_scaled"] = rolling_winsorized_zscore_normalize(
+        df["amihud_spike_ratio_scaled"] = winsorized_zscore_normalize(
             df["amihud_spike_ratio"],
             window=window_size,
-            min_periods=min_periods,
-            ddof=0,
-            lower_quantile=0.01,
-            upper_quantile=0.99
         )
-
         return df
 
     def _compute_winsorized_cov_ratio(

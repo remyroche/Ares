@@ -54,7 +54,7 @@ from src.utils.tprint import (
 )
 from src.features_common.transforms.scaling_normalization import (
     winsorized_zscore_normalize,
-    rolling_winsorized_zscore_normalize,
+    rolling_adaptive_normalize,
 )
 from src.training.steps.market_analysis.shared_utils.balanced_feature_extractor import (
     BalancedFeatureExtractor,
@@ -178,11 +178,12 @@ class MLMeanReversionRegimeStep(BaseStep):
             #    1 = price will go down (bearish)
             y_direction_all = self._build_direction_target(market_data, config)
 
-            # Align indices
+            # Align indices and drop any samples without a valid direction label
+            valid_target_idx = y_direction_all.dropna().index
             common_idx = (
                 teacher_score.index
                 .intersection(student_df.index)
-                .intersection(y_direction_all.index)
+                .intersection(valid_target_idx)
                 .sort_values()
             )
             if len(common_idx) < 500:
@@ -192,6 +193,34 @@ class MLMeanReversionRegimeStep(BaseStep):
             y_target_all = y_direction_all.loc[common_idx].astype(int)
             y_teacher_binary = teacher_binary.loc[common_idx].astype(int)
             teacher_score_aligned = teacher_score.loc[common_idx]
+
+            # If we have an explicit temporal split, restrict to the exact
+            # union of train/validation/test windows used by the student model.
+            # This ensures that the length of X_all matches the length of the
+            # concatenated prediction arrays returned by _train_xgb_student.
+            if split_config is not None:
+                train_mask = (
+                    (X_all.index >= split_config.training.start)
+                    & (X_all.index <= split_config.training.effective_end)
+                )
+                val_mask = (
+                    (X_all.index >= split_config.validation.start)
+                    & (X_all.index <= split_config.validation.effective_end)
+                )
+                test_mask = (
+                    (X_all.index >= split_config.test.start)
+                    & (X_all.index <= split_config.test.effective_end)
+                )
+                union_mask = train_mask | val_mask | test_mask
+                if union_mask.sum() < 500:
+                    raise ValueError(
+                        f"Not enough samples within temporal split windows ({union_mask.sum()} < 500)"
+                    )
+
+                X_all = X_all.loc[union_mask]
+                y_target_all = y_target_all.loc[union_mask]
+                y_teacher_binary = y_teacher_binary.loc[union_mask]
+                teacher_score_aligned = teacher_score_aligned.loc[union_mask]
 
             # 5) Train XGB classifier with isotonic calibration using temporal splits
             model, calibrated_model, student_metrics, raw_scores, calibrated_scores = self._train_xgb_student(
@@ -235,7 +264,7 @@ class MLMeanReversionRegimeStep(BaseStep):
                 exchange=exchange,
                 timeframe=regime_timeframe,
                 direction=direction,
-                model="mean_reversion_v2",
+                model="mean_reversion",
             )
 
             artifacts, reports = self._save_artifacts_and_reports(
@@ -404,10 +433,9 @@ class MLMeanReversionRegimeStep(BaseStep):
 
         # Use rolling window normalization to prevent look-ahead bias
         window_size = int(config.get("mr_normalization_window", 500))
-        X = rolling_winsorized_zscore_normalize(
+        X = winsorized_zscore_normalize(
             teacher_df.loc[mask, core_gmm_cols],
             window=window_size,
-            min_periods=window_size // 2
         ).values.astype(float)
         n_comp = int(config.get("mr_teacher_n_components", 3))
         gmm = GaussianMixture(n_components=n_comp, covariance_type="full", random_state=42)
@@ -678,16 +706,26 @@ class MLMeanReversionRegimeStep(BaseStep):
             except Exception as e:  # noqa: BLE001
                 tprint_warning(f"Balanced feature extraction failed: {e}")
 
-        # Normalise most features with rolling winsorized z-score (keep core ones raw)
-        # Use rolling window to prevent look-ahead bias
+        # Normalise most features with adaptive normalization (ATR for spatial
+        # distance/level features, log1p+zscore for pure volume where applicable,
+        # winsorized z-score for the rest). Keep a few core level features raw.
         exclude = {"z_price_ma_slow", "z_price_vwap", "rsi", "bb_width"}
         norm_cols = [c for c in feats.columns if c not in exclude]
         if norm_cols:
             window_size = int(config.get("mr_normalization_window", 500))
-            feats[norm_cols] = rolling_winsorized_zscore_normalize(
+
+            # Restrict OHLC series to the feature index for ATR calculation
+            high = df["high"].reindex(feats.index) if "high" in df.columns else None
+            low = df["low"].reindex(feats.index) if "low" in df.columns else None
+            close = df["close"].reindex(feats.index) if "close" in df.columns else None
+
+            feats[norm_cols] = rolling_adaptive_normalize(
                 feats[norm_cols],
                 window=window_size,
-                min_periods=window_size // 2
+                min_periods=window_size // 2,
+                high=high,
+                low=low,
+                close=close,
             )
         return feats
 

@@ -180,6 +180,75 @@ class TestTradingOrchestrator:
         assert hasattr(decision, 'confidence'), "La décision doit avoir un attribut confidence"
         assert decision.symbol == self.config['symbol'], "Le symbole doit correspondre à celui de la config"
 
+    async def test_hive_predictions_written_for_live_mode(self, mock_market_data):
+        """Vérifie que les prédictions sont écrites dans Hive en mode LIVE."""
+        # Given
+        if not hasattr(TradingOrchestrator, '__call__'):
+            pytest.skip("TradingOrchestrator not implemented")
+
+        from src.trading.execution.trading_orchestrator import (
+            TradingDecision,
+            TradingMode,
+        )
+
+        config = self.config.copy()
+        config.update({
+            'trading_mode': 'live',
+            'enable_hive_predictions': True,
+            'model_version': 'vtest',
+            'hive_layer': 'meta_layer',
+        })
+
+        orchestrator = TradingOrchestrator(config)
+
+        class DummyWriter:
+            def __init__(self):
+                self.calls = []
+
+            def write_predictions(self, df, prediction_date, metadata=None):
+                self.calls.append((df, prediction_date, metadata))
+
+        writer = DummyWriter()
+        orchestrator.hive_prediction_writer = writer
+
+        class DummyAnalyst:
+            def __init__(self, confidence_score: float):
+                self.confidence_score = confidence_score
+
+        class DummyTactician:
+            def __init__(self, confidence_score: float):
+                self.confidence_score = confidence_score
+
+        ts = datetime.now()
+        decision = TradingDecision(
+            timestamp=ts,
+            symbol=config['symbol'],
+            action='buy',
+            quantity=0.1,
+            price=2000.0,
+            confidence=0.9,
+            analyst_signal=DummyAnalyst(0.8),
+            tactician_signal=DummyTactician(0.85),
+            combined_signal={},
+            risk_metrics={},
+            metadata={},
+        )
+
+        # Mode LIVE requis pour l'écriture Hive
+        orchestrator.trading_mode = TradingMode.LIVE
+
+        # When
+        orchestrator._persist_predictions_to_hive(decision, mock_market_data)
+
+        # Then
+        assert len(writer.calls) == 1, "Le writer Hive doit être appelé une fois"
+        df, prediction_date, metadata = writer.calls[0]
+        assert isinstance(df, pd.DataFrame), "Le writer doit recevoir un DataFrame"
+        assert len(df) == 1, "Le DataFrame doit contenir une seule ligne"
+        assert isinstance(df.index, pd.DatetimeIndex), "L'index doit être un DatetimeIndex"
+        assert metadata['symbol'] == config['symbol'], "Le symbole dans les métadonnées doit correspondre"
+        assert metadata['trading_mode'] == TradingMode.LIVE.value, "Le mode de trading doit être LIVE dans les métadonnées"
+
     async def test_generate_trading_decision_no_market_data(self):
         """Test de génération de décision sans données de marché."""
         # Given

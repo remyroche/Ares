@@ -472,6 +472,8 @@ class ModelTrainer(BaseTrainer):
                 result = await self._train_depthwise_cnn_model(model, engineered_data, aligned_targets)
             elif model_type == ModelType.CATBOOST:
                 result = await self._train_catboost_model(model, engineered_data, aligned_targets)
+            elif model_type == ModelType.NGBOOST:
+                result = await self._train_ngboost_model(model, engineered_data, aligned_targets)
             elif model_type == ModelType.NEURAL_NETWORK:
                 result = await self._train_neural_network_model(model, engineered_data, aligned_targets)
             else:
@@ -543,6 +545,172 @@ class ModelTrainer(BaseTrainer):
             self.logger.warning(f"Tactician feature engineering failed: {e}")
             return data
     
+    async def _train_ngboost_model(self, model: Any, data: pd.DataFrame, targets: pd.Series) -> TrainingResult:
+        """Train NGBoost model with YAML-driven hyperparameters."""
+        try:
+            from ngboost import NGBRegressor
+            from ngboost.distns import Normal
+            from ngboost.learners import default_tree_learner
+            from sklearn.model_selection import train_test_split
+            from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+            import yaml
+            from pathlib import Path
+            from src.utils.tprint import tprint_data_preview, tprint_info, tprint_warning, tprint_success
+
+            tprint_info("=" * 80)
+            tprint_info("🌟 MODEL-SPECIFIC TRAINING: NGBoost")
+            tprint_info("=" * 80)
+            tprint_data_preview(
+                data,
+                name="NGBoost Training Data",
+                max_rows=5,
+                max_cols=10,
+                show_dtypes=True,
+                show_shape=True
+            )
+            tprint_data_preview(
+                targets.to_frame() if isinstance(targets, pd.Series) else targets,
+                name="NGBoost Target Data",
+                max_rows=5,
+                max_cols=10,
+                show_dtypes=True,
+                show_shape=True
+            )
+
+            # Temporal 70/15/15 split (no shuffle) to respect ordering
+            X_temp, X_test, y_temp, y_test = train_test_split(
+                data, targets, test_size=0.15, random_state=42, shuffle=False
+            )
+            X_train, X_val, y_train, y_val = train_test_split(
+                X_temp, y_temp, test_size=0.176, random_state=42, shuffle=False
+            )
+
+            tprint_info("   📊 Data splits (temporal order preserved):")
+            tprint_info(f"      Train: {len(X_train)} samples ({len(X_train)/len(data)*100:.1f}%)")
+            tprint_info(f"      Val: {len(X_val)} samples ({len(X_val)/len(data)*100:.1f}%)")
+            tprint_info(f"      Test: {len(X_test)} samples ({len(X_test)/len(data)*100:.1f}%)")
+            tprint_info("=" * 80)
+
+            # Load NGBoost params from YAML (analyst_base_config.yaml) if available
+            model_params: Dict[str, Any] = {}
+            config_path = Path('src/training/steps/model_training/analyst_base_config.yaml')
+            if config_path.exists():
+                try:
+                    with open(config_path) as f:
+                        yaml_config = yaml.safe_load(f)
+                    ngb_cfg = (
+                        yaml_config.get('analyst_config', {})
+                        .get('base_models', {})
+                        .get('ngboost', {})
+                    )
+                    model_params = ngb_cfg.get('params', {}) or {}
+                    if model_params:
+                        tprint_success(f"   ✅ Loaded {len(model_params)} NGBoost params from YAML config")
+                    else:
+                        tprint_warning("   ⚠️ No NGBoost params found in YAML, using defaults")
+                except Exception as yaml_exc:
+                    tprint_warning(f"   ⚠️ Failed to load NGBoost params from YAML: {yaml_exc}")
+
+            n_estimators = int(model_params.get('n_estimators', 500))
+            learning_rate = float(model_params.get('learning_rate', 0.01))
+            minibatch_frac = float(model_params.get('minibatch_frac', 1.0))
+            verbose = bool(model_params.get('verbose', False))
+
+            base_learner_params = model_params.get('base_learner_params', {}) or {}
+            base_max_depth = int(base_learner_params.get('max_depth', 4))
+            base_min_samples_leaf = int(base_learner_params.get('min_samples_leaf', 20))
+
+            base_learner = default_tree_learner(
+                max_depth=base_max_depth,
+                min_samples_leaf=base_min_samples_leaf,
+            )
+
+            ngb = NGBRegressor(
+                Dist=Normal,
+                Base=base_learner,
+                n_estimators=n_estimators,
+                learning_rate=learning_rate,
+                minibatch_frac=minibatch_frac,
+                verbose=verbose,
+                random_state=42,
+            )
+
+            tprint_info(
+                f"Training NGBoost: n_estimators={n_estimators}, lr={learning_rate}, "
+                f"minibatch_frac={minibatch_frac}, max_depth={base_max_depth}, "
+                f"min_samples_leaf={base_min_samples_leaf}"
+            )
+
+            ngb.fit(X_train, y_train)
+
+            # Evaluate on splits
+            train_pred = ngb.predict(X_train)
+            val_pred = ngb.predict(X_val)
+            test_pred = ngb.predict(X_test)
+
+            metrics = {
+                'train_mse': mean_squared_error(y_train, train_pred),
+                'train_mae': mean_absolute_error(y_train, train_pred),
+                'train_r2': r2_score(y_train, train_pred),
+                'train_rmse': np.sqrt(mean_squared_error(y_train, train_pred)),
+                'val_mse': mean_squared_error(y_val, val_pred),
+                'val_mae': mean_absolute_error(y_val, val_pred),
+                'val_r2': r2_score(y_val, val_pred),
+                'val_rmse': np.sqrt(mean_squared_error(y_val, val_pred)),
+                'test_mse': mean_squared_error(y_test, test_pred),
+                'test_mae': mean_absolute_error(y_test, test_pred),
+                'test_r2': r2_score(y_test, test_pred),
+                'test_rmse': np.sqrt(mean_squared_error(y_test, test_pred)),
+            }
+
+            metrics['train_test_r2_gap'] = metrics['train_r2'] - metrics['test_r2']
+            metrics['overfitting_ratio'] = (
+                metrics['train_test_r2_gap'] / max(metrics['train_r2'], 0.01)
+            )
+            metrics['generalization_score'] = (
+                metrics['test_r2'] / max(metrics['train_r2'], 0.01)
+            )
+
+            tprint_success("✅ NGBoost trained")
+            tprint_info(
+                f"   📊 Train R²: {metrics['train_r2']:.4f}, RMSE: {metrics['train_rmse']:.4f}"
+            )
+            tprint_info(
+                f"   📊 Val R²: {metrics['val_r2']:.4f}, RMSE: {metrics['val_rmse']:.4f}"
+            )
+            tprint_info(
+                f"   📊 Test R²: {metrics['test_r2']:.4f}, RMSE: {metrics['test_rmse']:.4f}"
+            )
+            if metrics['overfitting_ratio'] > 0.2:
+                tprint_warning("   ⚠️ HIGH OVERFITTING detected for NGBoost")
+            elif metrics['overfitting_ratio'] > 0.1:
+                tprint_warning("   ⚠️ Moderate overfitting detected for NGBoost")
+            else:
+                tprint_success("   ✅ Good generalization (overfitting ratio < 10%)")
+
+            return TrainingResult(
+                success=True,
+                model=ngb,
+                metrics=metrics,
+                feature_importance=None,
+                metadata={
+                    'n_features': len(data.columns),
+                    'n_samples': len(data),
+                    'test_predictions': test_pred.tolist() if hasattr(test_pred, 'tolist') else list(test_pred),
+                    'train_predictions': train_pred.tolist() if hasattr(train_pred, 'tolist') else list(train_pred),
+                    'val_predictions': val_pred.tolist() if hasattr(val_pred, 'tolist') else list(val_pred),
+                },
+            )
+
+        except ImportError as e:
+            self.logger.error(f"NGBoost training skipped (library not available): {e}")
+            return TrainingResult(success=False, error_message=str(e))
+        except Exception as e:
+            self.logger.error(f"NGBoost training failed: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+            return TrainingResult(success=False, error_message=str(e))
+
     async def _train_lightgbm_model(self, model: Any, data: pd.DataFrame, targets: pd.Series) -> TrainingResult:
         """Train LightGBM model with role-specific parameters from YAML config."""
         try:
@@ -1723,6 +1891,17 @@ class ModelTrainer(BaseTrainer):
                 from catboost import CatBoostRegressor
                 # Always use Regressor for trading models (predicting continuous values)
                 return CatBoostRegressor()
+            elif model_type == ModelType.NGBOOST:
+                try:
+                    from ngboost import NGBRegressor
+                    from ngboost.distns import Normal
+                    from ngboost.learners import default_tree_learner
+
+                    base_learner = default_tree_learner()
+                    return NGBRegressor(Dist=Normal, Base=base_learner, random_state=42)
+                except ImportError as e:
+                    self.logger.error(f"Failed to import NGBoost: {e}")
+                    return None
             elif model_type == ModelType.NEURAL_NETWORK:
                 # Return None, will be created in training method
                 return None

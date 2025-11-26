@@ -39,6 +39,7 @@ from src.utils.tprint import (
 from src.features_common.transforms.scaling_normalization import (
     ScalingNormalizer,
     rolling_winsorized_zscore_normalize,
+    rolling_adaptive_normalize,
 )
 from src.utils.versioned_artifacts.temporal_splits import (
     create_temporal_split_config_for_pipeline,
@@ -1074,6 +1075,176 @@ class HMMMLAlphaStep(BaseStep):
 
         return df
 
+    async def _ensure_hmm_economic_features(
+        self,
+        *,
+        symbol: str,
+        exchange: str,
+        regime_timeframe: str,
+        direction: str,
+        config: Dict[str, Any],
+    ) -> None:
+        try:
+            economic = self._get_artifact(
+                artifact_name="rolling_hmm_economic_features",
+                artifact_type="data",
+            )
+        except Exception as exc:
+            tprint_warning(
+                f"⚠️ Failed to check rolling_hmm_economic_features artifact (non-fatal): {exc}"
+            )
+            return
+        if economic is None:
+            tprint_warning(
+                "No rolling_hmm_economic_features artifact found; proceeding without dedicated economic features"
+            )
+
+    def _load_hmm_artifacts(
+        self,
+        *,
+        symbol: str,
+        exchange: str,
+        timeframe: str,
+        config: Dict[str, Any],
+    ) -> Tuple[pd.DataFrame, Optional[pd.DataFrame], Optional[pd.DataFrame]]:
+        labels = self._get_artifact(
+            artifact_name="rolling_hmm_regime_labels",
+            artifact_type="data",
+        )
+        if labels is None:
+            raise FileNotFoundError(
+                "rolling_hmm_regime_labels artifact not found in versioned store"
+            )
+
+        if not isinstance(labels, pd.DataFrame):
+            labels = pd.DataFrame(labels)
+
+        if "timestamp" in labels.columns:
+            labels = labels.copy()
+            labels["timestamp"] = pd.to_datetime(labels["timestamp"])
+            labels.set_index("timestamp", inplace=True)
+        elif isinstance(labels.index, pd.DatetimeIndex):
+            pass
+        else:
+            raise ValueError(
+                "HMM labels artifact must have a 'timestamp' column or DatetimeIndex"
+            )
+
+        tprint_info(
+            f"✅ Loaded HMM labels: {labels.shape} "
+            f"({labels.index.min()} → {labels.index.max()})"
+        )
+
+        probs = self._get_artifact(
+            artifact_name="rolling_hmm_regime_probabilities",
+            artifact_type="data",
+        )
+        if probs is not None:
+            if not isinstance(probs, pd.DataFrame):
+                probs = pd.DataFrame(probs)
+            if "timestamp" in probs.columns:
+                probs = probs.copy()
+                probs["timestamp"] = pd.to_datetime(probs["timestamp"])
+                probs.set_index("timestamp", inplace=True)
+            elif not isinstance(probs.index, pd.DatetimeIndex):
+                tprint_warning(
+                    "HMM probabilities artifact has no DatetimeIndex; "
+                    "dropping probability features"
+                )
+                probs = None
+
+        if probs is not None and not probs.empty:
+            tprint_info(
+                f"✅ Loaded HMM probabilities: {probs.shape} "
+                f"({probs.index.min()} → {probs.index.max()})"
+            )
+        else:
+            tprint_warning("No HMM probabilities found; proceeding without them")
+            probs = None
+
+        economic = self._get_artifact(
+            artifact_name="rolling_hmm_economic_features",
+            artifact_type="data",
+        )
+        if economic is not None:
+            if not isinstance(economic, pd.DataFrame):
+                economic = pd.DataFrame(economic)
+            if "timestamp" in economic.columns:
+                economic = economic.copy()
+                economic["timestamp"] = pd.to_datetime(economic["timestamp"])
+                economic.set_index("timestamp", inplace=True)
+            elif not isinstance(economic.index, pd.DatetimeIndex):
+                tprint_warning(
+                    "Economic features artifact has no DatetimeIndex; "
+                    "dropping economic features"
+                )
+                economic = None
+
+        if economic is not None and not economic.empty:
+            tprint_info(
+                f"✅ Loaded economic features: {economic.shape} "
+                f"({economic.index.min()} → {economic.index.max()})"
+            )
+        else:
+            tprint_warning("No economic features found; proceeding without them")
+            economic = None
+
+        return labels, probs, economic
+
+    def _align_inputs(
+        self,
+        *,
+        market_data: pd.DataFrame,
+        labels_df: Optional[pd.DataFrame],
+        probs_df: Optional[pd.DataFrame],
+        economic_df: Optional[pd.DataFrame],
+    ) -> pd.DataFrame:
+        def _prepare(df: Optional[pd.DataFrame]) -> Optional[pd.DataFrame]:
+            if df is None:
+                return None
+            if not isinstance(df.index, pd.DatetimeIndex):
+                df = df.copy()
+                df.index = pd.to_datetime(df.index)
+            return df.sort_index()
+
+        market_data = _prepare(market_data)
+        if market_data is None:
+            raise ValueError("Market data is required for alignment")
+
+        frames: List[pd.DataFrame] = []
+
+        base_ohlcv = market_data[[
+            col
+            for col in market_data.columns
+            if col.lower() in {"open", "high", "low", "close", "volume"}
+        ]].rename(columns=lambda c: c.lower())
+        frames.append(base_ohlcv)
+
+        labels_df_prepared = _prepare(labels_df)
+        if labels_df_prepared is not None and not labels_df_prepared.empty:
+            frames.append(labels_df_prepared)
+
+        probs_df_prepared = _prepare(probs_df)
+        if probs_df_prepared is not None and not probs_df_prepared.empty:
+            frames.append(probs_df_prepared)
+
+        economic_df_prepared = _prepare(economic_df)
+        if economic_df_prepared is not None and not economic_df_prepared.empty:
+            frames.append(economic_df_prepared)
+
+        aligned = frames[0]
+        for extra in frames[1:]:
+            aligned = aligned.join(extra, how="inner")
+
+        aligned = aligned.dropna(how="all")
+
+        tprint_info(
+            f"🔗 Aligned dataset shape: {aligned.shape} "
+            f"({aligned.index.min()} → {aligned.index.max()})"
+        )
+
+        return aligned
+
     def _train_alpha_model(
         self,
         alpha_df: pd.DataFrame,
@@ -1298,30 +1469,40 @@ class HMMMLAlphaStep(BaseStep):
             X_val_raw = X.iloc[split_idx:].copy()
             y_val = y.iloc[split_idx:]
 
-        # Apply rolling window normalization to features to prevent look-ahead bias
-        # Use rolling window to ensure calculations at time t use only data available at time t
+        # Apply rolling window normalization to features to prevent look-ahead bias.
+        # Use adaptive routing so spatial distance/level features get ATR normalization,
+        # pure volume series can use log1p+zscore, and the rest keep winsorized z-score.
         window_size = int(config.get("alpha_normalization_window", 500))
+
+        # Use OHLC from alpha_df when available for ATR calculation
+        high = alpha_df["high"] if "high" in alpha_df.columns else None
+        low = alpha_df["low"] if "low" in alpha_df.columns else None
+        close = alpha_df["close"] if "close" in alpha_df.columns else None
+
         try:
-            X_train_scaled = rolling_winsorized_zscore_normalize(
+            X_train_scaled = rolling_adaptive_normalize(
                 X_train_raw,
                 window=window_size,
                 min_periods=window_size // 2,
-                lower_quantile=0.01,
-                upper_quantile=0.99
+                high=high,
+                low=low,
+                close=close,
             )
-            X_val_scaled = rolling_winsorized_zscore_normalize(
+            X_val_scaled = rolling_adaptive_normalize(
                 X_val_raw,
                 window=window_size,
                 min_periods=window_size // 2,
-                lower_quantile=0.01,
-                upper_quantile=0.99
+                high=high,
+                low=low,
+                close=close,
             )
-            X_scaled_full = rolling_winsorized_zscore_normalize(
+            X_scaled_full = rolling_adaptive_normalize(
                 X,
                 window=window_size,
                 min_periods=window_size // 2,
-                lower_quantile=0.01,
-                upper_quantile=0.99
+                high=high,
+                low=low,
+                close=close,
             )
             tprint_info("✅ Applied rolling window normalization to features")
         except Exception as norm_exc:

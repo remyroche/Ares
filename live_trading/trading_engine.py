@@ -9,11 +9,30 @@ from datetime import datetime
 from typing import Dict, List, Optional, Any, Callable, Awaitable
 import logging
 
+import pandas as pd
+
 from .config import TradingConfig, TradingMode
 from .order_manager import OrderManager, Order
 from .data_streamer import DataStreamer, StreamData
 from .risk_manager import RiskManager
 from ..src.interfaces.base_interfaces import TradeDecision, AnalysisResult, StrategyResult, MarketData
+from src.trading.signal_generation import (
+    SignalGenerationPipeline,
+    SignalGenerationResult,
+    setup_signal_generation_pipeline,
+)
+from src.trading.monitoring import (
+    create_regime_monitor,
+    get_regime_monitor,
+    RegimeMonitor,
+)
+from src.trading.config.trading_config import TradingConfig as PipelineTradingConfig, TradingMode as PipelineTradingMode
+from src.trading.sizing import (
+    PositionSizer,
+    LeverageManager,
+    RiskCalculator,
+    setup_sizing_components,
+)
 
 
 class TradingEngine:
@@ -55,6 +74,20 @@ class TradingEngine:
         # Performance tracking
         self.trade_history: List[Dict[str, Any]] = []
         self.performance_metrics: Dict[str, Any] = {}
+
+        # Signal generation pipelines (one per symbol)
+        self.signal_pipelines: Dict[str, SignalGenerationPipeline] = {}
+
+        # Sizing components (one set per symbol, using dampened Kelly stack)
+        self.position_sizers: Dict[str, PositionSizer] = {}
+        self.leverage_managers: Dict[str, LeverageManager] = {}
+        self.sizing_risk_calculators: Dict[str, RiskCalculator] = {}
+
+        # Rolling 1m OHLCV buffers per symbol (for resampling to 15m)
+        self._ohlcv_buffers: Dict[str, pd.DataFrame] = {}
+
+        # Regime monitoring
+        self.regime_monitor: Optional[RegimeMonitor] = None
         
     async def start(self) -> None:
         """Start the trading engine"""
@@ -72,6 +105,12 @@ class TradingEngine:
             await self.order_manager.start()
             await self.data_streamer.start()
             await self.risk_manager.start()
+
+            # Initialize signal generation pipelines and regime monitor
+            await self._initialize_signal_pipelines()
+            
+            # Initialize sizing components (Kelly-based position sizing stack)
+            await self._initialize_sizing_components()
             
             # Register event handlers
             self._register_internal_handlers()
@@ -107,6 +146,104 @@ class TradingEngine:
             await self.exchange_client.close()
         
         self.logger.info("Trading engine stopped")
+
+    async def _initialize_signal_pipelines(self) -> None:
+        """Initialize signal generation pipelines and regime monitor for live trading.
+
+        One pipeline is created per symbol using the new SignalGenerationPipeline
+        that is fully aligned with training artifacts.
+        """
+        try:
+            # Initialize RegimeMonitor once (shared across symbols)
+            if self.regime_monitor is None:
+                monitor_config: Dict[str, Any] = {
+                    "regime_config": {},  # Use default RegimeConfig
+                    "stability_threshold": 0.7,
+                    "transition_threshold": 0.3,
+                    "min_regime_duration_minutes": 30,
+                }
+                try:
+                    self.regime_monitor = await create_regime_monitor(monitor_config)
+                    self.logger.info("✅ RegimeMonitor initialized for live trading")
+                except Exception as exc:
+                    self.logger.warning(f"⚠️ Failed to initialize RegimeMonitor: {exc}")
+                    self.regime_monitor = None
+
+            # Create a dedicated signal pipeline per symbol
+            for symbol in self.config.symbols:
+                if symbol in self.signal_pipelines:
+                    continue
+
+                # Build pipeline trading config aligned with training-time config
+                pipeline_cfg = PipelineTradingConfig()
+                # Attach runtime attributes used by SignalGenerationPipeline
+                pipeline_cfg.symbol = symbol
+                pipeline_cfg.exchange = getattr(self.config, "exchange_name", "binance")
+                pipeline_cfg.direction = "long"
+                pipeline_cfg.timeframe = "15m"
+                pipeline_cfg.analyst_timeframe = "15m"
+                pipeline_cfg.tactician_timeframe = "5m"
+                pipeline_cfg.regime_timeframe = "15m"
+
+                pipeline = await setup_signal_generation_pipeline(pipeline_cfg)
+                if pipeline is None:
+                    self.logger.error(f"❌ Failed to initialize SignalGenerationPipeline for {symbol}")
+                    continue
+
+                self.signal_pipelines[symbol] = pipeline
+                self.logger.info(f"✅ SignalGenerationPipeline initialized for {symbol}")
+
+        except Exception as exc:
+            self.logger.error(f"❌ Failed to initialize signal pipelines: {exc}")
+    
+    async def _initialize_sizing_components(self) -> None:
+        """Initialize Kelly-based sizing components for each symbol.
+
+        This sets up PositionSizer, LeverageManager, and RiskCalculator
+        using the same training-aligned TradingConfig used by the
+        SignalGenerationPipeline, with optimized parameters applied.
+        """
+        try:
+            for symbol in self.config.symbols:
+                # Skip if already initialized
+                if symbol in self.position_sizers:
+                    continue
+
+                pipeline_cfg = PipelineTradingConfig()
+                pipeline_cfg.symbol = symbol
+                pipeline_cfg.exchange = getattr(self.config, "exchange_name", "binance")
+                pipeline_cfg.direction = "long"
+                pipeline_cfg.timeframe = "15m"
+                pipeline_cfg.analyst_timeframe = "15m"
+                pipeline_cfg.tactician_timeframe = "5m"
+                pipeline_cfg.regime_timeframe = "15m"
+
+                try:
+                    sizing_components = await setup_sizing_components(pipeline_cfg)
+                except Exception as exc:
+                    self.logger.warning(f"⚠️ Failed to setup sizing components for {symbol}: {exc}")
+                    continue
+
+                position_sizer = sizing_components.get("position_sizer")
+                leverage_manager = sizing_components.get("leverage_manager")
+                risk_calculator = sizing_components.get("risk_calculator")
+
+                if position_sizer is None:
+                    self.logger.warning(
+                        f"⚠️ PositionSizer not initialized for {symbol} - falling back to inline sizing"
+                    )
+                else:
+                    self.position_sizers[symbol] = position_sizer
+
+                if leverage_manager is not None:
+                    self.leverage_managers[symbol] = leverage_manager
+                if risk_calculator is not None:
+                    self.sizing_risk_calculators[symbol] = risk_calculator
+
+            self.logger.info("✅ Sizing components initialization completed")
+
+        except Exception as exc:
+            self.logger.error(f"❌ Failed to initialize sizing components: {exc}")
     
     def register_handler(self, event_type: str, handler: Callable[[Any], Awaitable[None]]) -> None:
         """Register event handler"""
@@ -203,6 +340,15 @@ class TradingEngine:
         streaming_status = await self.data_streamer.get_streaming_status()
         risk_summary = await self.risk_manager.get_risk_summary()
         
+        # Aggregate signal pipeline metrics per symbol (if available)
+        signal_status: Dict[str, Any] = {}
+        for symbol, pipeline in self.signal_pipelines.items():
+            try:
+                signal_status[symbol] = pipeline.get_performance_metrics()
+            except Exception as exc:
+                self.logger.warning(f"⚠️ Failed to get signal metrics for {symbol}: {exc}")
+                signal_status[symbol] = {"error": str(exc)}
+        
         return {
             "running": self._running,
             "trading_active": self._trading_active,
@@ -211,6 +357,7 @@ class TradingEngine:
             "order_manager": order_status,
             "data_streamer": streaming_status,
             "risk_manager": risk_summary,
+            "signal_generation": signal_status,
             "total_trades": len(self.trade_history),
             "last_update": datetime.now().isoformat()
         }
@@ -499,26 +646,250 @@ class TradingEngine:
     async def _on_kline_data(self, stream_data: StreamData) -> None:
         """Handle kline data"""
         self.logger.debug(f"Kline data received: {stream_data.symbol}")
-        
-        # Convert to MarketData
+        symbol = stream_data.symbol
+
+        # Convert to MarketData (1m bar)
         market_data = MarketData(
-            symbol=stream_data.symbol,
+            symbol=symbol,
             timestamp=stream_data.timestamp,
             open=stream_data.data["open"],
             high=stream_data.data["high"],
             low=stream_data.data["low"],
             close=stream_data.data["close"],
             volume=stream_data.data["volume"],
-            interval=stream_data.data["interval"]
+            interval=stream_data.data["interval"],
         )
-        
-        # Notify handlers
-        await self._notify_handlers("on_data_received", {
-            "type": "kline",
-            "symbol": stream_data.symbol,
-            "market_data": market_data,
-            "timestamp": stream_data.timestamp
-        })
+
+        # Maintain rolling 1m OHLCV buffer per symbol
+        row = pd.DataFrame(
+            {
+                "open": [market_data.open],
+                "high": [market_data.high],
+                "low": [market_data.low],
+                "close": [market_data.close],
+                "volume": [market_data.volume],
+            },
+            index=[market_data.timestamp],
+        )
+
+        buf = self._ohlcv_buffers.get(symbol)
+        if buf is None:
+            buf = row
+        else:
+            buf = pd.concat([buf, row])
+            # Keep a reasonable history window (e.g., last 500 minutes)
+            buf = buf.sort_index().last("500min")
+        self._ohlcv_buffers[symbol] = buf
+
+        # Resample to 15m bars for signal generation
+        try:
+            ohlcv_15m = (
+                buf.sort_index()
+                .resample("15T")
+                .agg({
+                    "open": "first",
+                    "high": "max",
+                    "low": "min",
+                    "close": "last",
+                    "volume": "sum",
+                })
+                .dropna()
+            )
+        except Exception as exc:
+            self.logger.warning(f"⚠️ Failed to resample OHLCV for {symbol}: {exc}")
+            ohlcv_15m = None
+
+        # Notify external handlers with raw kline data (unchanged behavior)
+        await self._notify_handlers(
+            "on_data_received",
+            {
+                "type": "kline",
+                "symbol": symbol,
+                "market_data": market_data,
+                "timestamp": stream_data.timestamp,
+            },
+        )
+
+        # If we have a signal pipeline for this symbol and enough 15m history, generate a live signal
+        pipeline = self.signal_pipelines.get(symbol)
+        if pipeline is None or ohlcv_15m is None or len(ohlcv_15m) < 20:
+            return
+
+        # Only generate a signal when a 15m bar has just closed (minute divisible by 15)
+        if market_data.timestamp.minute % 15 != 0:
+            return
+
+        # Get current account balance for position sizing (best-effort)
+        account_balance: float = 0.0
+        try:
+            account_info = await self.exchange_client.get_account_info()
+            if account_info:
+                account_balance = float(
+                    account_info.get("totalBalance", account_info.get("balance", 0.0))
+                )
+        except Exception as exc:
+            self.logger.warning(f"⚠️ Failed to fetch account balance for sizing: {exc}")
+
+        try:
+            result: SignalGenerationResult = await pipeline.generate_signal(
+                symbol=symbol,
+                market_data=ohlcv_15m,
+                additional_features=None,
+            )
+
+            # Update RegimeMonitor with latest regime probabilities
+            if self.regime_monitor is not None and result and result.hmm_output:
+                try:
+                    await self.regime_monitor.update_regime_state(
+                        regime_probabilities=result.hmm_output.regime_probabilities,
+                        confidence=result.hmm_output.confidence,
+                        market_conditions={
+                            "symbol": symbol,
+                            "timestamp": result.timestamp,
+                        },
+                    )
+                except Exception as exc:
+                    self.logger.warning(f"⚠️ Failed to update RegimeMonitor: {exc}")
+
+            # Map SignalGenerationResult -> TradeDecision and execute it
+            decision = await self._map_signal_to_trade_decision(
+                result,
+                ohlcv_15m,
+                account_balance,
+            )
+            if decision is not None:
+                await self.execute_trade_decision(decision)
+
+        except Exception as exc:
+            self.logger.error(f"❌ Failed to generate or execute signal for {symbol}: {exc}")
+
+    async def _map_signal_to_trade_decision(
+        self,
+        result: SignalGenerationResult,
+        market_data_15m: pd.DataFrame,
+        account_balance: float,
+    ) -> Optional[TradeDecision]:
+        """Convert SignalGenerationResult into a live TradeDecision.
+
+        This adapter ensures that live trades use the same optimization
+        parameters (sizing, leverage, TPSL) as the backtested
+        final_parameters_optimization step, and prefers the Kelly-based
+        PositionSizer when available.
+        """
+        try:
+            if result is None:
+                return None
+
+            action = result.final_signal
+            if action not in {"buy", "sell", "hold", "close"}:
+                self.logger.warning(f"⚠️ Unknown final signal '{action}', treating as 'hold'")
+                return None
+
+            # No trade on hold
+            if action == "hold":
+                return None
+
+            # Current price from latest 15m bar
+            if market_data_15m is None or market_data_15m.empty:
+                return None
+            current_price = float(market_data_15m["close"].iloc[-1])
+            if current_price <= 0:
+                return None
+
+            params = result.optimization_parameters or {}
+
+            # Leverage-independent TPSL levels from optimized parameters
+            stop_loss_pct = float(params.get("stop_loss_pct", 0.03))
+            take_profit_pct = float(params.get("take_profit_pct", 0.06))
+
+            if action in {"buy", "close"}:
+                stop_loss = current_price * (1.0 - stop_loss_pct)
+                take_profit = current_price * (1.0 + take_profit_pct)
+            else:  # sell / short
+                stop_loss = current_price * (1.0 + stop_loss_pct)
+                take_profit = current_price * (1.0 - take_profit_pct)
+
+            # Base confidence-anchored risk score
+            confidence = float(result.final_confidence)
+            risk_score = float(max(0.0, min(1.0, 1.0 - confidence)))
+
+            quantity: float
+            leverage: float
+
+            # Prefer Kelly-based PositionSizer if available and account_balance is valid
+            sizer = self.position_sizers.get(result.symbol)
+            if (
+                sizer is not None
+                and getattr(sizer, "is_initialized", False)
+                and account_balance > 0
+            ):
+                try:
+                    ml_predictions: Dict[str, Any] = {
+                        "combined_confidence": float(
+                            getattr(result.tactician_output, "combined_confidence", confidence)
+                        )
+                    }
+
+                    analyst_conf = float(
+                        getattr(result.analyst_output, "analyst_confidence", confidence)
+                    )
+                    tactician_conf = float(
+                        getattr(result.tactician_output, "tactician_confidence", confidence)
+                    )
+
+                    size_result = await sizer.calculate_position_size(
+                        symbol=result.symbol,
+                        ml_predictions=ml_predictions,
+                        current_price=current_price,
+                        account_balance=account_balance,
+                        analyst_confidence=analyst_conf,
+                        tactician_confidence=tactician_conf,
+                        stop_loss_price=stop_loss,
+                        volatility=None,
+                        market_data=None,
+                    )
+
+                    notional = float(size_result.recommended_size)
+                    quantity = max(notional / current_price, 0.0)
+                    leverage = float(size_result.leverage)
+
+                    # Align risk_score with Kelly confidence if available
+                    kelly_conf = float(getattr(size_result, "confidence", confidence))
+                    risk_score = float(max(0.0, min(1.0, 1.0 - kelly_conf)))
+                except Exception as exc:
+                    self.logger.warning(
+                        f"⚠️ PositionSizer failed for {result.symbol}, falling back to inline sizing: {exc}"
+                    )
+                    sizer = None  # Trigger fallback path
+
+            if (
+                sizer is None
+                or not getattr(sizer, "is_initialized", False)
+                or account_balance <= 0
+            ):
+                # Fallback: basic sizing using optimized parameters and confidence
+                max_notional = float(self.config.max_position_size)
+                sizing_factor = float(params.get("position_sizing_factor", 0.02))
+                notional = max_notional * sizing_factor * confidence
+                quantity = max(notional / current_price, 0.0)
+                leverage = float(params.get("leverage_multiplier", 1.0))
+
+            return TradeDecision(
+                timestamp=result.timestamp,
+                symbol=result.symbol,
+                action=action,
+                quantity=quantity,
+                price=current_price,
+                leverage=leverage,
+                stop_loss=stop_loss,
+                take_profit=take_profit,
+                confidence=confidence,
+                risk_score=risk_score,
+            )
+
+        except Exception as exc:
+            self.logger.error(f"❌ Failed to map SignalGenerationResult to TradeDecision: {exc}")
+            return None
     
     async def _notify_handlers(self, event_type: str, data: Any) -> None:
         """Notify registered handlers"""

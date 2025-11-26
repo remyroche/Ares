@@ -52,6 +52,7 @@ class ModelType(Enum):
     EXTRATREES = "extratrees"  # ExtraTreesRegressor (replaces DepthwiseCNN/TabR)
     DEPTHWISE_CNN = "depthwise_cnn"  # DepthwiseSeparableCNNRegressor (replaces TCN)
     CATBOOST = "catboost"
+    NGBOOST = "ngboost"
     NEURAL_NETWORK = "neural_network"
     ENSEMBLE = "ensemble"
     LINEAR = "linear"

@@ -46,6 +46,7 @@ from src.utils.tprint import (
 from src.features_common.transforms.scaling_normalization import (
     ScalingNormalizer,
     rolling_winsorized_zscore_normalize,
+    rolling_adaptive_normalize,
 )
 from src.utils.versioned_artifacts.temporal_splits import (
     create_temporal_split_config_for_pipeline,
@@ -7017,16 +7018,20 @@ class MLBreakoutBounceRegimeStep(BaseStep):
 
         feat_df = feat_df.replace([np.inf, -np.inf], np.nan)
 
-        # Apply rolling window normalization to features to prevent look-ahead bias
-        # Use rolling window to ensure calculations at time t use only data available at time t
+        # Apply rolling window normalization to features to prevent look-ahead bias.
+        # Use adaptive routing so spatial distance/level features get ATR normalization,
+        # pure volume series can use log1p+zscore, and the rest keep winsorized z-score.
         window_size = int(config.get("breakout_normalization_window", 500))
         try:
-            feat_df = rolling_winsorized_zscore_normalize(
+            feat_df = rolling_adaptive_normalize(
                 feat_df,
                 window=window_size,
                 min_periods=window_size // 2,
                 lower_quantile=0.01,
-                upper_quantile=0.99
+                upper_quantile=0.99,
+                high=df["high"] if "high" in df.columns else None,
+                low=df["low"] if "low" in df.columns else None,
+                close=df["close"] if "close" in df.columns else None,
             )
         except Exception as norm_exc:
             tprint_warning(f"Rolling normalization failed, using raw features: {norm_exc}")
@@ -7674,10 +7679,11 @@ class MLBreakoutBounceRegimeStep(BaseStep):
         class_counts = dict(zip(*np.unique(y, return_counts=True)))
         metrics["class_counts"] = {int(k): int(v) for k, v in class_counts.items()}
 
-        metrics["n_samples_total"] = int(n_samples)
-        metrics["n_train_samples"] = int(len(train_idx))
-        metrics["n_val_samples"] = int(len(val_idx))
-        metrics["n_test_samples"] = int(len(test_idx))
+        total_samples = int(len(X_full)) if X_full is not None else int(len(y))
+        metrics["n_samples_total"] = total_samples
+        metrics["n_train_samples"] = int(len(X_train))
+        metrics["n_val_samples"] = int(len(X_val))
+        metrics["n_test_samples"] = int(X_test.shape[0] if X_test is not None else 0)
 
         if enable_temp and temperature is not None:
             try:

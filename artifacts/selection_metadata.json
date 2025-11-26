@@ -3,12 +3,13 @@
   "feature_set_sizes": [
     60,
     50,
-    40
+    40,
+    30
   ],
   "selection_method": "permutation",
   "scoring_threshold": 0.01,
   "use_tree_based": true,
-  "timestamp": "2025-11-23T17:50:01.082831",
+  "timestamp": "2025-11-26T01:06:03.853069",
   "symbol": "ETHUSDT",
   "exchange": "binance",
   "timeframe": "15m",

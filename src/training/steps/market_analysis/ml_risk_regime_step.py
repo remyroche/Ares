@@ -52,12 +52,14 @@ from typing import Any, Dict, Optional, Tuple, List
 from datetime import datetime
 from pathlib import Path
 
+import joblib
 import numpy as np
 import pandas as pd
 from scipy.stats import multivariate_normal
 from scipy.spatial.distance import mahalanobis
 from sklearn.mixture import GaussianMixture
 from hmmlearn.hmm import GaussianHMM
+from src.utils.ml_common.hmm_warm_start import HMMWarmStarter
 
 from src.training.steps.base_step import BaseStep
 from src.utils.tprint import (
@@ -70,7 +72,9 @@ from src.utils.tprint import (
 from src.features_common.transforms.scaling_normalization import (
     ScalingNormalizer,
     winsorized_zscore_normalize,
-    rolling_winsorized_zscore_normalize,
+)
+from src.feature_generation.categories.risk_regime_features import (
+    generate_risk_regime_features,
 )
 from src.utils.versioned_artifacts.temporal_splits import (
     create_temporal_split_config_for_pipeline,
@@ -348,6 +352,37 @@ class MLRiskRegimeStepHMM(BaseStep):
             risk_df['risk_regime'] = regime_labels
             risk_df['risk_score'] = mahal_distances  # Normalized [0, 1] risk score
 
+            # Persist training data for downstream specialist loaders via versioned artifacts
+            try:
+                self.set_context(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=regime_timeframe,
+                    direction=config.get("direction", "long"),
+                    model="regime_risk_hmm",
+                )
+
+                risk_to_save = risk_df.reset_index().rename(
+                    columns={risk_df.index.name or "index": "timestamp"}
+                )
+                training_metadata = {
+                    "symbol": symbol,
+                    "exchange": exchange,
+                    "timeframe": regime_timeframe,
+                    "safe_state_id": safe_state_id,
+                }
+                risk_hmm_artifact_name = f"ml_risk_hmm_training_data_{regime_timeframe}"
+                self._save_artifact(
+                    data=risk_to_save,
+                    artifact_name=risk_hmm_artifact_name,
+                    artifact_type="data",
+                    metadata=training_metadata,
+                )
+            except Exception as save_exc:
+                tprint_warning(
+                    f"Failed to save ML risk HMM training data artifact (non-fatal): {save_exc}"
+                )
+
             # Calculate forward returns and Sharpe ratios
             forward_metrics = self._calculate_forward_returns_and_sharpe(
                 risk_df, regime_labels, horizons=[4]  # 4x15m = 1h
@@ -454,63 +489,16 @@ class MLRiskRegimeStepHMM(BaseStep):
         return market_data
 
     def _generate_risk_features(self, df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
-        """Generate the 5 core risk features and apply robust scaling.
+        """Generate the 5 core risk features via the feature bank.
 
-        Features (all windows in bars on 1h data):
-        - parkinson_volatility (window: 48 bars = 48h = 2 days)
-        - hurst_exponent (window: 48 bars)
-        - rolling_kurtosis (window: 36 bars = 36h = 1.5 days)
-        - rolling_skewness (window: 36 bars)
-        - volatility_of_volatility (window: 30 bars = 30h = 1.25 days)
+        Delegates to ``generate_risk_regime_features`` in the
+        ``feature_generation.categories`` package so that feature
+        definitions are centralized.
         """
-        tprint_info("📊 Generating 5 core risk features...")
 
         risk_df = df.copy()
 
-        # Extract OHLC as Series so rolling windows preserve the original index
-        if 'high' not in risk_df.columns or 'low' not in risk_df.columns or 'close' not in risk_df.columns:
-            raise ValueError("Market data must contain 'high', 'low', and 'close' columns")
-
-        high = risk_df['high'].astype(float)
-        low = risk_df['low'].astype(float)
-        close = risk_df['close'].astype(float)
-
-        # 1. Parkinson Volatility (window: 48 bars)
-        parkinson_window = int(config.get("risk_parkinson_window", 48))
-        low_safe = low.replace(0, np.nan)
-        log_hl = np.log(high / low_safe)
-        parkinson_vol = log_hl.rolling(
-            window=parkinson_window,
-            min_periods=parkinson_window,
-        ).std() * np.sqrt(1.0 / (4.0 * np.log(2.0)))
-
-        # 2. Hurst Exponent (window: 48 bars)
-        hurst_window = int(config.get("risk_hurst_window", 48))
-        hurst_series = self._calculate_hurst_exponent(close, hurst_window)
-
-        # 3. Rolling Kurtosis (window: 36 bars)
-        kurtosis_window = int(config.get("risk_kurtosis_window", 36))
-        log_returns = np.log(close / close.shift(1))
-        rolling_kurtosis = log_returns.rolling(
-            window=kurtosis_window,
-            min_periods=kurtosis_window,
-        ).kurt()
-
-        # 4. Rolling Skewness (window: 36 bars)
-        skewness_window = int(config.get("risk_skewness_window", 36))
-        rolling_skewness = log_returns.rolling(
-            window=skewness_window,
-            min_periods=skewness_window,
-        ).skew()
-
-        # 5. Volatility of Volatility (window: 30 bars)
-        vol_of_vol_window = int(config.get("risk_vol_of_vol_window", 30))
-        volatility = log_returns.rolling(window=20, min_periods=20).std()
-        vol_of_vol = volatility.rolling(
-            window=vol_of_vol_window,
-            min_periods=vol_of_vol_window,
-        ).std()
-
+        feature_frame = generate_risk_regime_features(risk_df, config)
         feature_cols = [
             'parkinson_volatility',
             'hurst_exponent',
@@ -519,42 +507,9 @@ class MLRiskRegimeStepHMM(BaseStep):
             'volatility_of_volatility',
         ]
 
-        feature_frame = pd.DataFrame(
-            {
-                'parkinson_volatility': parkinson_vol,
-                'hurst_exponent': hurst_series,
-                'rolling_kurtosis': rolling_kurtosis,
-                'rolling_skewness': rolling_skewness,
-                'volatility_of_volatility': vol_of_vol,
-            },
-            index=risk_df.index,
-        )
-
-        tprint_info("🔧 Applying rolling winsorized zscore normalization...")
-        try:
-            # Use rolling window normalization to prevent look-ahead bias
-            window_size = int(config.get("risk_normalization_window", 500))
-            scaled = rolling_winsorized_zscore_normalize(
-                feature_frame,
-                window=window_size,
-                min_periods=window_size // 2,
-                lower_quantile=0.05,
-                upper_quantile=0.95,
-            )
-            # Ensure index matches risk_df for safe assignment
-            if isinstance(scaled, pd.DataFrame) and len(scaled) == len(risk_df):
-                scaled = scaled.reindex(risk_df.index)
-            for col in feature_cols:
-                if col in scaled.columns:
-                    # Assign by position to avoid any residual index alignment issues
-                    risk_df[col] = scaled[col].values
-        except Exception as exc:
-            tprint_warning(
-                f"winsorized zscore normalization failed; keeping raw risk features: {exc}"
-            )
-            for col in feature_cols:
-                if col in feature_frame.columns:
-                    risk_df[col] = feature_frame[col].values
+        for col in feature_cols:
+            if col in feature_frame.columns:
+                risk_df[col] = feature_frame[col].values
 
         tprint_success(f"✅ Generated {len(feature_cols)} risk features with windows 30-50 bars")
 
@@ -671,6 +626,41 @@ class MLRiskRegimeStepHMM(BaseStep):
             f"(warm-start initialization ready)"
         )
 
+        # Optional: HMM warm-start from latest saved model
+        warm_start_enabled = bool(config.get("hmm_enable_warm_start", True))
+        warm_start_model_path = config.get("hmm_warm_start_model_path")
+        previous_hmm: Optional[GaussianHMM] = None
+
+        if warm_start_enabled:
+            try:
+                candidate_paths: List[Path] = []
+                if isinstance(warm_start_model_path, str) and warm_start_model_path:
+                    candidate_paths = [Path(warm_start_model_path)]
+                else:
+                    symbol_ws = str(config.get("symbol", "ETHUSDT"))
+                    timeframe_ws = str(config.get("regime_timeframe", config.get("timeframe", "1h")))
+                    base_dir = Path("versioned_artifacts/risk_regime_models")
+                    pattern = f"risk_hmm_{symbol_ws}_{timeframe_ws}_*.pkl"
+                    if base_dir.exists():
+                        candidate_paths = sorted(base_dir.glob(pattern))
+
+                for path in reversed(candidate_paths):
+                    try:
+                        loaded = joblib.load(path)
+                        if isinstance(loaded, dict) and "hmm_model" in loaded:
+                            candidate = loaded["hmm_model"]
+                        else:
+                            candidate = loaded
+                        if isinstance(candidate, GaussianHMM):
+                            previous_hmm = candidate
+                            tprint_info(f"♻️ Using previous HMM for warm-start: {path}")
+                            break
+                    except Exception as load_exc:
+                        tprint_warning(f"HMM warm-start: failed to load {path}: {load_exc}")
+            except Exception as ws_exc:
+                tprint_warning(f"HMM warm-start disabled due to error, falling back to GMM init: {ws_exc}")
+                previous_hmm = None
+
         # ===== OPTIMIZATION 3: HMM Training with GMM Injection =====
         tprint_info(
             f"🧠 Step 2: Training HMM with {n_regimes} regimes "
@@ -681,27 +671,46 @@ class MLRiskRegimeStepHMM(BaseStep):
         hmm_tol = float(config.get("hmm_tol", 1e-3))
         hmm_min_covar = float(config.get("hmm_min_covar", 0.001))
 
-        hmm = GaussianHMM(
-            n_components=n_regimes,
-            covariance_type="full",
-            n_iter=hmm_n_iter,
-            tol=hmm_tol,
-            init_params='stmc',
-            min_covar=hmm_min_covar,
-            random_state=42
-        )
+        hmm: GaussianHMM
 
-        # Inject GMM means into HMM (warm start)
-        hmm.means_ = gmm_means.copy()
-        hmm.init_params = 'stc'  # Only init start, trans, covars
+        if (
+            previous_hmm is not None
+            and getattr(previous_hmm, "n_components", None) == n_regimes
+            and getattr(previous_hmm, "n_features", risk_features_strided.shape[1]) == risk_features_strided.shape[1]
+        ):
+            warm_starter = HMMWarmStarter()
+            hmm = warm_starter.create_warm_started_hmm(
+                n_components=n_regimes,
+                n_features=risk_features_strided.shape[1],
+                previous_hmm=previous_hmm,
+                covariance_type="full",
+                n_iter=hmm_n_iter,
+                random_state=42,
+            )
+            try:
+                hmm.min_covar = hmm_min_covar
+            except Exception:
+                pass
+            tprint_info("  ♻️ Warm-starting HMM from previous trained model")
+        else:
+            hmm = GaussianHMM(
+                n_components=n_regimes,
+                covariance_type="full",
+                n_iter=hmm_n_iter,
+                tol=hmm_tol,
+                init_params='stmc',
+                min_covar=hmm_min_covar,
+                random_state=42
+            )
+
+            # Inject GMM means into HMM (warm start)
+            hmm.means_ = gmm_means.copy()
+            hmm.init_params = 'stc'  # Only init start, trans, covars
 
         tprint_info(
             f"  HMM configuration: n_components={n_regimes}, "
             f"covariance_type='full', n_iter={hmm_n_iter}, "
             f"tol={hmm_tol}, min_covar={hmm_min_covar}"
-        )
-        tprint_info(
-            f"  🔥 GMM means injected into HMM for warm-start initialization"
         )
 
         # Train HMM

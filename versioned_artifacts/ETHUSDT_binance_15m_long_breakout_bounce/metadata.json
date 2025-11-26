@@ -1,28 +1,5 @@
 {
   "versions": {
-    "ml_breakout_bounce_training_data_15m_20251124_001546_716": {
-      "created_at": "2025-11-24T00:15:46.716093",
-      "num_rows": 25468,
-      "num_columns": 8,
-      "columns": [
-        "timestamp",
-        "breakout_regime_0_prob",
-        "breakout_regime_1_prob",
-        "breakout_regime_2_prob",
-        "breakout_long_edge_score",
-        "breakout_short_edge_score",
-        "is_resistance",
-        "is_support"
-      ],
-      "artifact_name": "ml_breakout_bounce_training_data_15m",
-      "symbol": "ETHUSDT",
-      "exchange": "binance",
-      "timeframe": "1h",
-      "direction": "long",
-      "model": "breakout_bounce",
-      "step_name": "ml_breakout_bounce_regime_step",
-      "source_market_data": "historical_data"
-    },
     "ml_breakout_bounce_training_data_15m_20251124_213406_433": {
       "created_at": "2025-11-24T21:34:06.433406",
       "num_rows": 25468,
@@ -114,9 +91,41 @@
       "model": "breakout_bounce",
       "step_name": "ml_breakout_bounce_regime_step",
       "source_market_data": "historical_data"
+    },
+    "ml_breakout_bounce_training_data_15m_20251126_011124_548": {
+      "created_at": "2025-11-26T01:11:24.548334",
+      "num_rows": 25468,
+      "num_columns": 8,
+      "columns": [
+        "timestamp",
+        "breakout_regime_0_prob",
+        "breakout_regime_1_prob",
+        "breakout_regime_2_prob",
+        "breakout_long_edge_score",
+        "breakout_short_edge_score",
+        "is_resistance",
+        "is_support"
+      ],
+      "artifact_name": "ml_breakout_bounce_training_data_15m",
+      "symbol": "ETHUSDT",
+      "exchange": "binance",
+      "timeframe": "1h",
+      "direction": "long",
+      "model": "breakout_bounce",
+      "step_name": "ml_breakout_bounce_regime_step",
+      "source_market_data": "historical_data",
+      "version": "v2_with_burnin",
+      "training_start": "2022-03-01 22:00:00",
+      "training_end": "2024-05-12 22:00:00",
+      "validation_start": "2024-05-14 22:00:00",
+      "validation_end": "2025-02-05 22:00:00",
+      "test_start": "2025-02-07 22:00:00",
+      "test_end": "2025-10-31 23:00:00",
+      "burnin_start": "2021-10-30 22:00:00",
+      "burnin_end": "2022-02-27 22:00:00"
     }
   },
-  "current_version": "ml_breakout_bounce_training_data_15m_20251125_001510_634",
+  "current_version": "ml_breakout_bounce_training_data_15m_20251126_011124_548",
   "created_at": "2025-11-23T23:05:01.884911",
-  "updated_at": "2025-11-25T00:31:04.960405"
+  "updated_at": "2025-11-26T01:17:45.588747"
 }

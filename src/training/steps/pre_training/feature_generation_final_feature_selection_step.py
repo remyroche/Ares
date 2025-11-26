@@ -36,6 +36,12 @@ from datetime import datetime
 from pathlib import Path
 import json
 
+# Optional Polars support for upstream preprocessing compatibility
+try:
+    import polars as pl  # type: ignore[import]
+except Exception:  # pragma: no cover - optional dependency
+    pl = None
+
 # Import BaseStep and step registry
 from src.training.steps.base_step import BaseStep
 
@@ -1088,6 +1094,23 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         """Combine features from different sources into a single DataFrame with VectorBT optimizations."""
         tprint_error("🔄 CRITICAL DEBUG: Starting _combine_features method")
         
+        # Polars compatibility: normalize any Polars DataFrames to pandas before combining.
+        # This allows upstream steps to operate in Polars while keeping the existing
+        # pandas/VectorBT-based feature selection logic unchanged.
+        if pl is not None:
+            # Normalize labeled_df if it is a Polars DataFrame
+            if isinstance(labeled_df, pl.DataFrame):
+                labeled_df = labeled_df.to_pandas()
+
+            # Normalize DataFrames inside features_data if they are Polars
+            normalized_features_data: Dict[str, Any] = {}
+            for key, data in features_data.items():
+                if isinstance(data, pl.DataFrame):
+                    normalized_features_data[key] = data.to_pandas()
+                else:
+                    normalized_features_data[key] = data
+            features_data = normalized_features_data
+        
         # STEP 0: Log input data sizes
         tprint_error(f"📊 INPUT DATA ANALYSIS:")
         tprint_error(f"   labeled_df shape: {labeled_df.shape}")
@@ -1544,6 +1567,8 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             tprint_info(f"📊 All columns in result_df: {list(result_df.columns)[:20]}...")
 
         # Handle NaN values with optimized operations
+        nan_handling_succeeded = False
+
         if self.vectorization_manager and self.optimization_enabled:
             try:
                 # Use vectorized operations for NaN handling
@@ -1576,11 +1601,80 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                     result_df[numeric_cols_only] = result_df[numeric_cols_only].fillna(medians)
                 
                 tprint_success("✅ NaN handling optimized with sophisticated feature protection")
+                nan_handling_succeeded = True
             except Exception as e:
-                tprint_warning(f"⚠️ Optimized NaN handling failed, using standard method: {e}")
-                result_df = result_df.dropna(axis=1, thresh=int(0.7 * len(result_df)))
-                result_df = result_df.fillna(result_df.median())
-        else:
+                tprint_warning(f"⚠️ Optimized NaN handling failed, falling back: {e}")
+
+        # Polars-optimized NaN handling when vectorization manager is not used
+        if (not nan_handling_succeeded) and pl is not None and self.optimization_enabled:
+            try:
+                tprint_info("🔄 Polars-optimized NaN handling...")
+
+                # Convert pandas result_df to Polars for efficient column-wise operations
+                pl_df = pl.from_pandas(result_df)
+
+                n_rows = len(pl_df)
+                nan_threshold = int(0.5 * n_rows)
+
+                sophisticated_keywords = [
+                    'vectorbt', 'interaction', 'enhanced', 'optimized', 'advanced',
+                    'statistical', 'wavelet', 'entropy', 'ad_line', 'obv',
+                    'volatility', 'order_flow'
+                ]
+
+                valid_cols = []
+                for col in pl_df.columns:
+                    if col in TARGET_COLUMN_NAMES or 'target' in col.lower():
+                        valid_cols.append(col)
+                        tprint_info(f"📊 Keeping target column (Polars path): {col}")
+                        continue
+
+                    # Count non-null values using Polars
+                    non_null_count = pl_df.select(pl.col(col).is_not_null().sum().alias('cnt'))['cnt'][0]
+
+                    if non_null_count >= nan_threshold:
+                        valid_cols.append(col)
+                    else:
+                        # Check if it's a sophisticated feature and be more lenient
+                        if any(keyword in col.lower() for keyword in sophisticated_keywords):
+                            if non_null_count >= int(0.3 * n_rows):
+                                valid_cols.append(col)
+                                tprint_info(f"📊 Keeping sophisticated feature with low data coverage (Polars path): {col}")
+
+                # Filter to valid columns only
+                pl_df = pl_df.select(valid_cols)
+
+                # Fill remaining NaN/null with median for numeric columns only
+                numeric_cols_only = [
+                    c for c, dt in zip(pl_df.columns, pl_df.dtypes)
+                    if dt in (
+                        pl.Float64, pl.Float32,
+                        pl.Int64, pl.Int32, pl.Int16, pl.Int8,
+                        pl.UInt64, pl.UInt32, pl.UInt16, pl.UInt8,
+                    )
+                ]
+
+                if numeric_cols_only:
+                    medians_row = pl_df.select([
+                        pl.col(c).median().alias(c) for c in numeric_cols_only
+                    ]).to_dicts()[0]
+
+                    pl_df = pl_df.with_columns([
+                        pl.col(c)
+                        .fill_nan(medians_row[c])
+                        .fill_null(medians_row[c])
+                        .alias(c)
+                        for c in numeric_cols_only
+                    ])
+
+                # Convert back to pandas for downstream vectorbt/sklearn compatibility
+                result_df = pl_df.to_pandas()
+                nan_handling_succeeded = True
+                tprint_success("✅ NaN handling optimized via Polars")
+            except Exception as e:
+                tprint_warning(f"⚠️ Polars-optimized NaN handling failed, falling back to standard method: {e}")
+
+        if not nan_handling_succeeded:
             # Standard NaN handling - but preserve target columns
             tprint_info("🔄 Standard NaN handling...")
             target_cols_to_preserve = [col for col in result_df.columns if col in TARGET_COLUMN_NAMES or 'target' in col.lower()]

@@ -9,6 +9,11 @@ import pandas as pd
 from typing import Dict, List, Any, Optional
 from pathlib import Path
 
+try:
+    import polars as pl  # type: ignore[import]
+except Exception:  # pragma: no cover - optional dependency
+    pl = None
+
 from src.interaction_features_constructor.feature_calculator import FeatureCalculator
 from src.interaction_features_constructor.feature_metadata_store import FeatureMetadataStore
 
@@ -195,10 +200,30 @@ class LiveTradingIntegration:
         # Load calculator
         calculator = FeatureCalculator.from_metadata_file(metadata_file)
 
+        # If Polars is available, prefer passing Polars DataFrames into FeatureCalculator
+        # so that upstream pipelines can remain Polars-first. FeatureCalculator will
+        # internally normalize inputs back to pandas where necessary.
+        if pl is not None:
+            ohlcv_input: Any
+            feature_bank_input: Any
+
+            if isinstance(ohlcv_data, pd.DataFrame):
+                ohlcv_input = pl.DataFrame(ohlcv_data)
+            else:
+                ohlcv_input = ohlcv_data
+
+            if isinstance(feature_bank, pd.DataFrame):
+                feature_bank_input = pl.DataFrame(feature_bank)
+            else:
+                feature_bank_input = feature_bank
+        else:
+            ohlcv_input = ohlcv_data
+            feature_bank_input = feature_bank
+
         # Calculate features
         calculated_features = calculator.calculate(
-            ohlcv_data,
-            feature_bank,
+            ohlcv_input,
+            feature_bank_input,
             return_type='dataframe'
         )
 

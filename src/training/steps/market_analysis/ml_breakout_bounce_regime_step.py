@@ -128,14 +128,28 @@ class MLPathRegimeStep(BaseStep):
         tprint(f"✅ Initialized {step_name} step", "SUCCESS")
 
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute the alpha label construction from 1h HMM regimes.
+        """Execute breakout/bounce regime classification with meta-labeling.
 
         Expected config keys (minimum):
             - symbol: Trading symbol (e.g., 'ETHUSDT')
             - exchange: Exchange name (e.g., 'binance')
-            - regime_timeframe: Timeframe used for HMM regimes (default: '1h')
+            - regime_timeframe: Timeframe for analysis (default: '15m', recommended)
             - direction: Trading direction (default: 'long')
             - execution_mode: 'full', 'light', 'blank', etc. (used for data loading)
+
+        Regime Labels:
+            - 0 = Bounce: Price bounces off support/resistance level
+            - 1 = Breakout: Price cleanly breaks through level and holds
+            - 2 = Trap: Price breaks through but quickly reverts (false breakout)
+            - 3 = Chop: Price stays very close to level with minimal movement
+
+        Output:
+            - breakout_regime: Predicted regime (0, 1, 2)
+            - breakout_regime_X_prob: Probability of regime X (0.0-1.0, sum to 1.0)
+            - breakout_success_prob: Weighted success probability from meta-labels (0.0-1.0)
+            - breakout_bullish_prob / bearish_prob: Directional edge probabilities
+            - breakout_long_edge_score / short_edge_score: Signed edge scores
+            - breakout_high_conf_signal: Binary flag (1 if success_prob >= threshold)
 
         Optional alpha configuration:
             - alpha_horizon_bars: Forward horizon in bars (default: 1)
@@ -152,6 +166,14 @@ class MLPathRegimeStep(BaseStep):
                 config.get("regime_timeframe", config.get("timeframe", "15m"))
             )
             direction = str(config.get("direction", "long"))
+
+            # Validate timeframe convention (15m is standard for breakout/bounce regimes)
+            if regime_timeframe != "15m":
+                tprint_warning(
+                    f"⚠️  Timeframe is '{regime_timeframe}' but breakout/bounce regime step "
+                    f"is optimized for 15m data. Higher timeframe context is computed as 4-bar "
+                    f"aggregates (e.g., 4×15m = 1h). Consider using timeframe='15m' for best results."
+                )
 
             # Set default alpha-specific configuration if not provided
             # Smoothing defaults are chosen to target ~3–5 bar regime persistence
@@ -6640,10 +6662,36 @@ class MLBreakoutBounceRegimeStep(BaseStep):
                 high_conf_threshold = 0.7
 
             try:
-                if probs_full.shape[1] >= 3:
-                    success_prob = probs_full[:, 0] + probs_full[:, 1] + probs_full[:, 2]
+                # Compute success probability using meta-labels and regime probabilities
+                # For each regime, calculate historical success rate from meta-labels
+                if meta_labels is not None and not meta_labels.dropna().empty:
+                    # Align meta-labels and labels for training data
+                    meta_aligned_train = meta_labels.reindex(labels.index).dropna()
+                    labels_aligned_train = labels.reindex(meta_aligned_train.index)
+
+                    # Calculate success rate per regime from meta-labels
+                    regime_success_rates = {}
+                    for regime_id in sorted(labels_aligned_train.unique()):
+                        regime_mask = labels_aligned_train == regime_id
+                        if regime_mask.sum() > 0:
+                            success_rate = meta_aligned_train[regime_mask].mean()
+                            regime_success_rates[regime_id] = float(success_rate)
+
+                    tprint_info(
+                        f"📊 Regime success rates from meta-labels: "
+                        f"{', '.join(f'regime_{k}={v:.3f}' for k, v in regime_success_rates.items())}"
+                    )
+
+                    # Weight regime probabilities by their historical success rates
+                    # success_prob = Σ(P(regime_i) * success_rate_i)
+                    success_prob = np.zeros(probs_full.shape[0])
+                    for regime_id, success_rate in regime_success_rates.items():
+                        if regime_id < probs_full.shape[1]:
+                            success_prob += probs_full[:, regime_id] * success_rate
                 else:
+                    # Fallback: use maximum probability as confidence (model certainty)
                     success_prob = np.max(probs_full, axis=1)
+
                 success_prob = np.clip(success_prob, 0.0, 1.0)
                 success_prob_series = pd.Series(
                     success_prob,
@@ -6962,6 +7010,13 @@ class MLBreakoutBounceRegimeStep(BaseStep):
         feat_cols["int_test_prominence"] = prim_touch * prim_prom_z
         feat_cols["int_dist_opp_trend"] = dist_to_opp_atr * adx14
 
+        # Additional interaction features for better signal capture
+        feat_cols["int_momentum_adx"] = momentum_divergence * adx14
+        feat_cols["int_prominence_volume"] = prim_prom_z * volume_at_impact
+        feat_cols["int_squeeze_approach"] = squeeze * pd.Series(approach_velocity, index=df.index)
+        feat_cols["int_penetration_volume"] = penetration_depth * volume_at_impact
+        feat_cols["int_age_prominence"] = age_log_hours * prim_prom_z
+
         # ========================================================================
         # NEW FEATURES: Volume Profile + Higher Timeframe Context
         # ========================================================================
@@ -7015,6 +7070,28 @@ class MLBreakoutBounceRegimeStep(BaseStep):
             xtf_aligned = xtf_df.reindex(feat_df.index)
             for col in xtf_aligned.columns:
                 feat_df[col] = xtf_aligned[col]
+
+        # Cross-timeframe interaction features (macro × local signals)
+        if "macro_bullish" in feat_df.columns and "macro_adx" in feat_df.columns:
+            # Macro trend × local momentum
+            if "momentum_divergence" in feat_df.columns:
+                feat_df["int_macro_momentum"] = feat_df["macro_bullish"] * feat_df["momentum_divergence"]
+
+            # Macro trend × local flow
+            if "cumulative_delta_norm" in feat_df.columns:
+                feat_df["int_macro_flow"] = feat_df["macro_bullish"] * feat_df["cumulative_delta_norm"]
+
+            # Macro trend strength × local prominence
+            if "primary_prominence_z_score" in feat_df.columns:
+                feat_df["int_macro_prominence"] = feat_df["macro_adx"] * feat_df["primary_prominence_z_score"]
+
+            # Macro aligned breakout × local squeeze
+            if "macro_aligned_breakout" in feat_df.columns and "bollinger_squeeze" in feat_df.columns:
+                feat_df["int_aligned_squeeze"] = feat_df["macro_aligned_breakout"] * feat_df["bollinger_squeeze"]
+
+            # Macro volatility × local approach
+            if "macro_volatility" in feat_df.columns and "approach_velocity" in feat_df.columns:
+                feat_df["int_macro_vol_approach"] = feat_df["macro_volatility"] * feat_df["approach_velocity"]
 
         feat_df = feat_df.replace([np.inf, -np.inf], np.nan)
 

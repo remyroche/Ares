@@ -72,9 +72,25 @@ def generate_path_regime_features(
             ker_series_eff = result_df[ker_col]
             ret_3h_eff = result_df["return_3h"]
             result_df["path_efficiency_return_3h"] = ker_series_eff * ret_3h_eff
+            # APPROACH 2: Make direction-agnostic by using absolute value
             result_df["path_directional_eff_3h"] = np.sign(ret_3h_eff) * ker_series_eff
+            result_df["path_directional_eff_3h_abs"] = np.abs(result_df["path_directional_eff_3h"])
     except Exception as exc:
         logger.warning("Path efficiency-return feature generation failed: %s", exc)
+
+    # NEW FEATURE: Efficiency Ratio (Net Change / Sum of Absolute Changes)
+    # Measures path straightness: 1.0 = straight line, near 0 = maximum zigzag
+    try:
+        efficiency_window = int(config.get("path_efficiency_ratio_window", 12))
+        net_change = (result_df["close"] - result_df["close"].shift(efficiency_window)).abs()
+        sum_moves = result_df["close"].diff().abs().rolling(
+            window=efficiency_window,
+            min_periods=2
+        ).sum()
+        efficiency_ratio = net_change / (sum_moves + 1e-9)
+        result_df["efficiency_ratio"] = efficiency_ratio.clip(0, 1)
+    except Exception as exc:
+        logger.warning("Efficiency ratio feature generation failed: %s", exc)
 
     # Body / range ratio
     try:
@@ -124,6 +140,15 @@ def generate_path_regime_features(
     except Exception as exc:
         logger.warning("Path trend R2 feature generation failed: %s", exc)
 
+    # NEW FEATURE: Impulse Quality (path_trend_r2 × abs(path_directional_eff_3h))
+    # Combines trend strength with directional efficiency (direction-agnostic)
+    try:
+        if "path_trend_r2" in result_df.columns and "path_directional_eff_3h_abs" in result_df.columns:
+            impulse_quality = result_df["path_trend_r2"] * result_df["path_directional_eff_3h_abs"]
+            result_df["impulse_quality"] = impulse_quality
+    except Exception as exc:
+        logger.warning("Impulse quality feature generation failed: %s", exc)
+
     # Permutation entropy on the price path
     try:
         perm_window = int(config.get("path_permutation_entropy_window", 20))
@@ -139,67 +164,8 @@ def generate_path_regime_features(
     except Exception as exc:
         logger.warning("Permutation entropy feature generation failed: %s", exc)
 
-    # Fractal dimension over rolling windows of returns
-    try:
-        fd_window = int(config.get("path_fractal_window_bars", 24))
-
-        def _fractal_window(seq: np.ndarray) -> float:
-            seq = seq[np.isfinite(seq)]
-            if len(seq) < 10:
-                return 1.0
-
-            path = np.cumsum(seq)
-            diffs = np.diff(path)
-            if len(diffs) == 0:
-                return 1.0
-
-            total_length = float(np.sum(np.abs(diffs)))
-            if total_length <= 0.0:
-                return 1.0
-
-            max_dist = float(np.max(np.abs(path - path[0])))
-            if max_dist <= 0.0:
-                return 1.0
-
-            n = float(len(path))
-            fd = np.log10(n) / (np.log10(n) + np.log10(max_dist / total_length))
-            return float(max(1.0, min(2.0, fd)))
-
-        fd_series = returns.rolling(
-            window=fd_window,
-            min_periods=10,
-        ).apply(_fractal_window, raw=True)
-        result_df["path_fractal_dimension"] = fd_series
-    except Exception as exc:
-        logger.warning("Fractal dimension feature generation failed: %s", exc)
-
-    # Hurst exponent of the return path
-    try:
-        hurst_window = int(config.get("path_hurst_window_bars", 24))
-
-        def _hurst_window(seq: np.ndarray) -> float:
-            if len(seq) < 10:
-                return 0.5
-            n = len(seq)
-            mean_seq = float(np.mean(seq))
-            deviations = seq - mean_seq
-            cumulative = np.cumsum(deviations)
-            r = float(np.max(cumulative) - np.min(cumulative))
-            s = float(np.std(seq))
-            if s == 0.0 or r <= 0.0:
-                return 0.5
-            rs = r / s
-            if rs <= 0.0:
-                return 0.5
-            return float(np.log(rs) / np.log(n))
-
-        hurst_series = returns.rolling(
-            window=hurst_window,
-            min_periods=10,
-        ).apply(_hurst_window, raw=True)
-        result_df["hurst_exponent_path"] = hurst_series
-    except Exception as exc:
-        logger.warning("Path Hurst exponent feature generation failed: %s", exc)
+    # REMOVED: Fractal dimension (poor WCoV: 0.13, weak regime separation)
+    # REMOVED: Hurst exponent (poor WCoV: 0.23, weak regime separation)
 
     # Path alpha helper metrics (trend-up flag, efficiency high/dropping, alpha_state)
     try:
@@ -232,12 +198,15 @@ def generate_path_regime_features(
         "path_ker_6h",
         "path_efficiency_return_3h",
         "path_directional_eff_3h",
+        "path_directional_eff_3h_abs",  # NEW: Direction-agnostic version
+        "efficiency_ratio",              # NEW: Net change / sum of moves
+        "impulse_quality",               # NEW: Trend strength × efficiency
         "body_range_ratio",
         "traffic_overlap",
         "traffic_overlap_3h",
         "path_permutation_entropy",
-        "path_fractal_dimension",
-        "hurst_exponent_path",
+        # "path_fractal_dimension",      # REMOVED: Poor WCoV (0.13)
+        # "hurst_exponent_path",         # REMOVED: Poor WCoV (0.23)
         "path_trend_r2",
         "path_trend_up",
         "path_efficiency_high",

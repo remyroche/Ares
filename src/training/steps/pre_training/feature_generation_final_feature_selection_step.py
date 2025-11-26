@@ -1997,13 +1997,102 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         else:
             tprint_success(f"✅ Target variable is clean (no NaN values)")
         
-        # Also check for NaN values in features and clean if necessary
+        # PRIORITY 2: Add coverage-aware feature filtering before selection
+        # Remove features with less than 95% coverage (more than 5% NaN)
+        tprint_info("=" * 80)
+        tprint_info("🔍 PRIORITY 2: Coverage-Aware Feature Filtering")
+        tprint_info("=" * 80)
+
+        MIN_COVERAGE_PCT = 95.0  # Require at least 95% coverage (max 5% NaN)
+        MAX_NAN_PCT = 100.0 - MIN_COVERAGE_PCT
+
+        tprint_info(f"📊 Analyzing coverage for {len(X.columns)} candidate features...")
+        tprint_info(f"📋 Coverage threshold: {MIN_COVERAGE_PCT}% (max {MAX_NAN_PCT}% NaN allowed)")
+
+        features_to_keep = []
+        features_to_remove = []
+        coverage_stats = []
+
+        for col in X.columns:
+            nan_count = X[col].isna().sum()
+            nan_pct = 100 * nan_count / len(X)
+            coverage_pct = 100 - nan_pct
+
+            coverage_stats.append({
+                'feature': col,
+                'coverage_pct': coverage_pct,
+                'nan_pct': nan_pct,
+                'nan_count': nan_count
+            })
+
+            if nan_pct <= MAX_NAN_PCT:
+                features_to_keep.append(col)
+                if nan_pct > 0:
+                    tprint_info(f"  ✅ KEEP: '{col}' - coverage: {coverage_pct:.1f}% ({nan_count} NaN)")
+            else:
+                features_to_remove.append(col)
+                tprint_warning(f"  ❌ REMOVE: '{col}' - coverage: {coverage_pct:.1f}% (BELOW {MIN_COVERAGE_PCT}% threshold)")
+
+        # Sort coverage stats by coverage percentage (worst first)
+        coverage_stats.sort(key=lambda x: x['coverage_pct'])
+
+        tprint_info("=" * 80)
+        tprint_info("📊 Coverage Filtering Results:")
+        tprint_info(f"  Total features analyzed: {len(X.columns)}")
+        tprint_info(f"  Features kept (≥{MIN_COVERAGE_PCT}% coverage): {len(features_to_keep)}")
+        tprint_info(f"  Features removed (<{MIN_COVERAGE_PCT}% coverage): {len(features_to_remove)}")
+
+        if features_to_remove:
+            tprint_warning(f"⚠️ Removed {len(features_to_remove)} sparse features:")
+            for feat in features_to_remove[:10]:  # Show first 10
+                stat = next(s for s in coverage_stats if s['feature'] == feat)
+                tprint_warning(f"    - '{feat}': {stat['coverage_pct']:.1f}% coverage")
+            if len(features_to_remove) > 10:
+                tprint_warning(f"    ... and {len(features_to_remove) - 10} more")
+
+        # Show features with worst coverage that were kept
+        tprint_info("📊 Features with lowest coverage (but still kept):")
+        kept_stats = [s for s in coverage_stats if s['feature'] in features_to_keep]
+        for stat in kept_stats[:5]:  # Show 5 worst
+            tprint_info(f"  - '{stat['feature']}': {stat['coverage_pct']:.1f}% coverage")
+
+        tprint_info("=" * 80)
+
+        # Filter X to only keep dense features
+        if features_to_remove:
+            X = X[features_to_keep]
+            feature_cols = features_to_keep
+            tprint_success(f"✅ Filtered features: {len(X.columns)} features remain after coverage filtering")
+        else:
+            tprint_success(f"✅ All features meet coverage threshold (≥{MIN_COVERAGE_PCT}%)")
+
+        # Now handle remaining NaN values in the kept features (should be minimal)
         feature_nan_count = X.isna().sum().sum()
         if feature_nan_count > 0:
-            tprint_warning(f"⚠️ Found {feature_nan_count} NaN values in features")
-            # Fill feature NaNs with median (safer than dropping more rows)
-            X = X.fillna(X.median())
-            tprint_success(f"✅ Filled feature NaN values with median")
+            tprint_info(f"🔧 Imputing {feature_nan_count} remaining NaN values in kept features")
+
+            # Intelligent imputation based on feature type
+            for col in X.columns:
+                nan_count = X[col].isna().sum()
+                if nan_count > 0:
+                    # For candlestick patterns and binary indicators: absence = 0
+                    if any(keyword in col.lower() for keyword in ['candlestick', 'pattern', 'signal', 'flag']):
+                        X[col] = X[col].fillna(0)
+                        tprint_info(f"  📍 '{col}': {nan_count} NaNs → 0 (pattern not present)")
+                    # For ratio/cross-timeframe features: forward fill then median
+                    elif any(keyword in col.lower() for keyword in ['ratio', '_x_', 'cross']):
+                        median_val = X[col].median()
+                        X[col] = X[col].fillna(method='ffill').fillna(median_val)
+                        tprint_info(f"  📍 '{col}': {nan_count} NaNs → forward fill + median")
+                    # For continuous features: forward fill then median
+                    else:
+                        median_val = X[col].median()
+                        X[col] = X[col].fillna(method='ffill').fillna(median_val)
+                        tprint_info(f"  📍 '{col}': {nan_count} NaNs → forward fill + median")
+
+            tprint_success(f"✅ Imputed all remaining NaN values")
+        else:
+            tprint_success(f"✅ No NaN values in kept features")
 
         tprint_info(f"🔍 Performing feature selection on {len(feature_cols)} features using permutation importance...")
         tprint_info(f"📊 Final dataset: {len(X)} samples, {len(X.columns)} features")
@@ -3002,9 +3091,127 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             tprint_warning("⚠️ No selected features found for quality CSV report; skipping")
             return
 
-        df = combined_features_df[selected_cols + [target_col]].dropna()
+        # PRIORITY 1 FIX: Handle sparse features properly instead of dropping all rows
+        # Original code: df = combined_features_df[selected_cols + [target_col]].dropna()
+        # This caused 99% data loss when sparse features (like candlestick patterns) were selected
+
+        tprint_info("=" * 80)
+        tprint_info("🔍 PRIORITY 1: Analyzing feature sparsity before filtering")
+        tprint_info("=" * 80)
+
+        df = combined_features_df[selected_cols + [target_col]].copy()
+        initial_rows = len(df)
+        tprint_info(f"📊 Initial dataset: {initial_rows} rows")
+
+        # Analyze NaN patterns for each feature
+        tprint_info(f"📊 Analyzing NaN patterns for {len(selected_cols)} selected features:")
+        sparse_features = []
+        dense_features = []
+
+        for col in selected_cols:
+            nan_count = df[col].isna().sum()
+            nan_pct = 100 * nan_count / len(df)
+            coverage = 100 - nan_pct
+
+            if nan_pct > 50:  # More than 50% NaN
+                sparse_features.append(col)
+                tprint_warning(f"  ⚠️ SPARSE: '{col}' - {nan_pct:.1f}% NaN (coverage: {coverage:.1f}%)")
+            elif nan_pct > 10:  # 10-50% NaN
+                tprint_info(f"  📊 MODERATE: '{col}' - {nan_pct:.1f}% NaN (coverage: {coverage:.1f}%)")
+            else:
+                dense_features.append(col)
+                tprint_success(f"  ✅ DENSE: '{col}' - {nan_pct:.1f}% NaN (coverage: {coverage:.1f}%)")
+
+        tprint_info(f"📊 Sparsity summary:")
+        tprint_info(f"  - Dense features (>90% coverage): {len(dense_features)}")
+        tprint_info(f"  - Moderate features (50-90% coverage): {len(selected_cols) - len(sparse_features) - len(dense_features)}")
+        tprint_info(f"  - Sparse features (<50% coverage): {len(sparse_features)}")
+
+        # Step 1: Require valid target (always)
+        tprint_info("🔧 Step 1: Require only valid target")
+        df = df[df[target_col].notna()]
+        rows_after_target_filter = len(df)
+        tprint_info(f"  After target filter: {rows_after_target_filter} rows ({100*rows_after_target_filter/initial_rows:.1f}% retained)")
+
+        # Step 2: Drop first 200 rows if they have ANY NaN (indicator warm-up period)
+        WARMUP_ROWS = 200
+        tprint_info(f"🔧 Step 2: Drop first {WARMUP_ROWS} rows with NaN (indicator warm-up period)")
+
+        if len(df) > WARMUP_ROWS:
+            warmup_df = df.iloc[:WARMUP_ROWS]
+            post_warmup_df = df.iloc[WARMUP_ROWS:]
+
+            # Drop rows with ANY NaN in warm-up period
+            warmup_clean = warmup_df.dropna()
+            rows_dropped_warmup = len(warmup_df) - len(warmup_clean)
+
+            tprint_info(f"  Warm-up period ({WARMUP_ROWS} rows):")
+            tprint_info(f"    - Rows with NaN: {rows_dropped_warmup}")
+            tprint_info(f"    - Clean rows kept: {len(warmup_clean)}")
+            tprint_info(f"    - Retention: {100*len(warmup_clean)/len(warmup_df):.1f}%")
+
+            # Recombine (clean warm-up + rest of data)
+            df = pd.concat([warmup_clean, post_warmup_df])
+            rows_after_warmup_filter = len(df)
+            tprint_info(f"  After warm-up filter: {rows_after_warmup_filter} rows ({100*rows_after_warmup_filter/initial_rows:.1f}% retained)")
+        else:
+            tprint_warning(f"  ⚠️ Dataset too small ({len(df)} rows) for warm-up filtering, skipping")
+            rows_after_warmup_filter = len(df)
+
+        # Step 3: Impute remaining NaN values (post warm-up period only)
+        tprint_info("🔧 Step 3: Intelligent imputation for remaining sparse features (post warm-up)")
+
+        for col in selected_cols:
+            nan_count_before = df[col].isna().sum()
+            if nan_count_before > 0:
+                # For candlestick patterns and binary indicators: absence = 0
+                if any(keyword in col.lower() for keyword in ['candlestick', 'pattern', 'signal', 'flag']):
+                    df[col] = df[col].fillna(0)
+                    tprint_info(f"  📍 Imputed '{col}': {nan_count_before} NaNs → 0 (pattern not present)")
+                # For ratio/cross-timeframe features: forward fill then 0
+                elif any(keyword in col.lower() for keyword in ['ratio', '_x_', 'cross']):
+                    df[col] = df[col].fillna(method='ffill').fillna(0)
+                    tprint_info(f"  📍 Imputed '{col}': {nan_count_before} NaNs → forward fill + 0")
+                # For continuous features: forward fill then median
+                else:
+                    median_val = df[col].median()
+                    df[col] = df[col].fillna(method='ffill').fillna(median_val)
+                    tprint_info(f"  📍 Imputed '{col}': {nan_count_before} NaNs → forward fill + median ({median_val:.4f})")
+
+        # Final check: verify no NaNs remain
+        remaining_nans = df.isna().sum().sum()
+        if remaining_nans > 0:
+            tprint_warning(f"⚠️ {remaining_nans} NaN values remain after imputation, filling with 0")
+            df = df.fillna(0)
+        else:
+            tprint_success("✅ All NaN values successfully imputed")
+
+        final_rows = len(df)
+        retention_rate = 100 * final_rows / initial_rows
+        warmup_dropped = rows_after_target_filter - rows_after_warmup_filter
+
+        tprint_info("=" * 80)
+        tprint_info(f"📊 PRIORITY 1 RESULTS:")
+        tprint_info(f"  Initial rows: {initial_rows}")
+        tprint_info(f"  After target filter: {rows_after_target_filter}")
+        tprint_info(f"  After warm-up filter: {rows_after_warmup_filter} (dropped {warmup_dropped} warm-up rows)")
+        tprint_info(f"  Final rows: {final_rows}")
+        tprint_info(f"  Overall retention rate: {retention_rate:.1f}%")
+        tprint_info(f"  Breakdown:")
+        tprint_info(f"    - Target filter: {initial_rows - rows_after_target_filter} rows removed")
+        tprint_info(f"    - Warm-up filter: {warmup_dropped} rows removed (first {WARMUP_ROWS} with NaN)")
+        tprint_info(f"    - Imputation: {rows_after_warmup_filter - final_rows} additional rows handled")
+
+        if retention_rate < 50:
+            tprint_error(f"❌ CRITICAL: Low retention rate ({retention_rate:.1f}%)! Investigate data issues.")
+        elif retention_rate < 90:
+            tprint_warning(f"⚠️ Moderate retention rate ({retention_rate:.1f}%). Check target quality.")
+        else:
+            tprint_success(f"✅ Excellent retention rate ({retention_rate:.1f}%)!")
+        tprint_info("=" * 80)
+
         if len(df) < 200:
-            tprint_warning("⚠️ Too few samples for quality report; skipping")
+            tprint_warning(f"⚠️ Too few samples for quality report ({len(df)} < 200); skipping")
             return
 
         X = df[selected_cols].astype(float)

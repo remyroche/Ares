@@ -378,9 +378,9 @@ Examples:
     parser.add_argument('--symbol', type=str, help='Trading symbol (e.g., ETHUSDT)')
     parser.add_argument('--exchange', type=str, default='binance', help='Exchange name')
     parser.add_argument('--timeframe', type=str, default='15m', help='Timeframe for training / base features')
-    # Default regime timeframe to 1h so regime-aware steps (HMM/alpha, regime ensemble,
-    # unified training) do not require an explicit CLI flag in the common 15m/1h setup.
-    parser.add_argument('--regime-timeframe', type=str, default='1h', help='Timeframe used for regime detection/ensemble (default: 1h)')
+    # Default regime timeframe to 15m so regime-aware steps (HMM/alpha, regime ensemble,
+    # unified training) use the same timeframe as base features.
+    parser.add_argument('--regime-timeframe', type=str, default='15m', help='Timeframe used for regime detection/ensemble (default: 15m)')
     parser.add_argument('--direction', type=str, choices=['long', 'short', 'both'], default='long', help='Trading direction')
     parser.add_argument('--execution-mode', type=str, choices=['full', 'light', 'blank'], default='light', help='Execution mode')
     parser.add_argument(
@@ -693,9 +693,9 @@ async def main():
         'timeframe': args.timeframe,
         'direction': args.direction,
         'execution_mode': args.execution_mode,
-        # Ensure regime_timeframe is always populated; default to 1h for regime
+        # Ensure regime_timeframe is always populated; default to 15m for regime
         # discovery/alpha models unless explicitly overridden on the CLI.
-        'regime_timeframe': args.regime_timeframe or '1h',
+        'regime_timeframe': args.regime_timeframe or '15m',
     }
 
     # Optional interaction-generation configuration

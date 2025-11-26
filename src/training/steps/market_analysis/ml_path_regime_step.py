@@ -525,16 +525,25 @@ class MLPathRegimeStep(BaseStep):
                         f"Failed to generate WCoV regime quality report (non-fatal): {wcov_exc}"
                     )
 
-                # 6d) Add HMM labels to dataframe
+                # 6d) Add HMM labels and risk scores to dataframe
                 risk_df['risk_regime'] = regime_labels_optimized
                 regime_col_name = 'risk_regime'
+
+                # Add data-driven risk scores (continuous [0, 1] quality measure)
+                full_risk_scores = label_metrics.get('full_risk_scores', np.full(len(risk_df), np.nan))
+                risk_df['path_risk_score'] = full_risk_scores
+                tprint_info(f"  Added path_risk_score column: range=[{np.nanmin(full_risk_scores):.4f}, {np.nanmax(full_risk_scores):.4f}], mean={np.nanmean(full_risk_scores):.4f}")
 
                 # Extract temporal metrics from label_metrics
                 temporal_metrics = label_metrics.get('temporal_metrics', {})
 
+                # Get regime quality scores for logging
+                regime_quality_scores = label_metrics.get('regime_quality_scores', {})
+                quality_score_str = ", ".join([f"R{k}={v:.3f}" for k, v in regime_quality_scores.items()])
+
                 tprint_success(
                     f"=" * 80 + "\n"
-                    f"✅ HMM REGIME DETECTION COMPLETE (Temporal Structure Learned)\n"
+                    f"✅ HMM REGIME DETECTION COMPLETE (Direction-Agnostic Risk Assessment)\n"
                     f"=" * 80 + "\n"
                     f"  Label Quality Score: {label_metrics.get('quality_score', 0):.3f}\n"
                     f"  Risk CV Ratio: {label_metrics.get('risk_cv_ratio', 0):.3f}\n"
@@ -543,6 +552,8 @@ class MLPathRegimeStep(BaseStep):
                     f"  Avg Duration: {temporal_metrics.get('avg_duration_bars', 0):.2f} bars\n"
                     f"  Flip-Flop Rate: {temporal_metrics.get('flip_flop_rate', 0):.4f}\n"
                     f"  Regime Distribution: {label_metrics.get('regime_distribution', {})}\n"
+                    f"  Data-Driven Quality Scores: [{quality_score_str}]\n"
+                    f"  Path Risk Score: [{np.nanmin(full_risk_scores):.4f}, {np.nanmax(full_risk_scores):.4f}] (mean={np.nanmean(full_risk_scores):.4f})\n"
                     f"=" * 80
                 )
 
@@ -2688,6 +2699,27 @@ class MLPathRegimeStep(BaseStep):
         tprint_info(f"  Regime Stability Score: {temporal_metrics['stability_score']:.4f}")
         tprint_info("=" * 80)
 
+        # ========== STEP 7.5: Calculate Data-Driven Risk Scores ==========
+        # Learn regime quality from realized path characteristics (direction-agnostic)
+        regime_quality_scores, risk_scores = self._calculate_data_driven_risk_scores(
+            labels=final_labels,
+            features_df=risk_features_clean,
+            posteriors=teacher_probs_full[valid_mask] if teacher_probs_full is not None else None,
+            n_regimes=n_regimes
+        )
+        metrics['regime_quality_scores'] = regime_quality_scores
+        metrics['path_risk_scores'] = risk_scores  # Continuous scores [0, 1]
+
+        # Log regime quality scores
+        tprint_info("=" * 80)
+        tprint_info("📊 DATA-DRIVEN REGIME QUALITY SCORES:")
+        tprint_info("=" * 80)
+        for regime_id, quality in regime_quality_scores.items():
+            tprint_info(f"  Regime {regime_id}: Quality Score = {quality:.4f}")
+        tprint_info(f"  Risk Score Range: [{risk_scores.min():.4f}, {risk_scores.max():.4f}]")
+        tprint_info(f"  Risk Score Mean: {risk_scores.mean():.4f} ± {risk_scores.std():.4f}")
+        tprint_info("=" * 80)
+
         # ========== STEP 8: Persist HMM Model for Direct Inference ==========
         # Save the optimized HMM model and LiveHMM wrapper for production O(1) updates
         try:
@@ -2708,9 +2740,25 @@ class MLPathRegimeStep(BaseStep):
                     regime_features = risk_features_clean.iloc[regime_mask]
                     regime_means = regime_features.mean().to_dict()
 
+                    # Generate quality-based regime name (direction-agnostic)
+                    quality_score = regime_quality_scores.get(regime_id, 0.5)
+                    if quality_score >= 0.7:
+                        quality_label = "High Quality"
+                        quality_desc = "Strong trends with efficient, linear paths"
+                    elif quality_score >= 0.5:
+                        quality_label = "Medium Quality"
+                        quality_desc = "Moderate path efficiency with acceptable linearity"
+                    elif quality_score >= 0.3:
+                        quality_label = "Low Quality"
+                        quality_desc = "Choppy paths with poor efficiency"
+                    else:
+                        quality_label = "Very Low Quality"
+                        quality_desc = "Highly volatile, non-linear paths"
+
                     regime_metadata[regime_id] = {
-                        "name": f"Path Regime {regime_id}",
-                        "description": f"Geometric path structure cluster {regime_id}",
+                        "name": f"{quality_label} Path (R{regime_id})",
+                        "description": f"{quality_desc} (Quality: {quality_score:.3f})",
+                        "quality_score": float(quality_score),
                         "count": int(regime_count),
                         "percentage": float(regime_count / len(final_labels) * 100),
                         "feature_means": {k: float(v) for k, v in regime_means.items()},
@@ -2733,6 +2781,7 @@ class MLPathRegimeStep(BaseStep):
                 "hmm_stride": hmm_stride,
                 "transition_matrix": transition_matrix.tolist(),
                 "temporal_metrics": temporal_metrics,
+                "regime_quality_scores": {int(k): float(v) for k, v in regime_quality_scores.items()},
             }
 
             # 1. Save HMM-Direct detector (recommended for production)
@@ -2816,6 +2865,13 @@ class MLPathRegimeStep(BaseStep):
 
         full_labels = np.full(len(risk_df), -1, dtype=int)
         full_labels[valid_mask] = final_labels
+
+        # Create full risk scores array (aligned with risk_df)
+        full_risk_scores = np.full(len(risk_df), np.nan, dtype=float)
+        full_risk_scores[valid_mask] = risk_scores
+
+        # Add risk scores to metrics for return
+        metrics['full_risk_scores'] = full_risk_scores
 
         return full_labels, metrics
 
@@ -2921,6 +2977,127 @@ class MLPathRegimeStep(BaseStep):
             'regime_duration_stats': regime_duration_stats,
             'transition_matrix': transition_matrix.tolist(),
         }
+
+    def _calculate_data_driven_risk_scores(
+        self,
+        labels: np.ndarray,
+        features_df: pd.DataFrame,
+        posteriors: Optional[np.ndarray],
+        n_regimes: int
+    ) -> Tuple[Dict[int, float], np.ndarray]:
+        """
+        Calculate data-driven regime quality scores from realized path characteristics.
+
+        DIRECTION-AGNOSTIC: Scores based on path quality (efficiency, linearity, stability),
+        NOT on directional performance. Works identically for longs and shorts.
+
+        Quality Metrics Used:
+        1. Path Linearity (path_trend_r2): Higher = smoother trend
+        2. Path Straightness (efficiency_ratio): Higher = more direct path
+        3. Trend Strength (impulse_quality): Higher = stronger momentum quality
+        4. Path Stability: Lower volatility = better
+        5. Regime Persistence: Longer durations = better quality
+
+        Args:
+            labels: Regime assignments
+            features_df: DataFrame with path features
+            posteriors: HMM posterior probabilities (n_samples, n_regimes)
+            n_regimes: Number of regimes
+
+        Returns:
+            regime_quality_scores: Dict mapping regime_id -> quality score [0, 1]
+            risk_scores: Array of continuous risk scores [0, 1] for each sample
+        """
+        tprint_info("🎯 Calculating data-driven regime quality scores...")
+
+        regime_quality_scores = {}
+
+        # Core features for quality assessment (direction-agnostic)
+        quality_features = {
+            'path_trend_r2': 1.0,           # Linearity (higher = better)
+            'efficiency_ratio': 1.0,         # Straightness (higher = better)
+            'impulse_quality': 1.0,          # Trend strength (higher abs = better)
+            'body_range_ratio': 1.0,         # Conviction (higher = better)
+            'traffic_overlap_3h': -1.0,      # Congestion (lower = better, so negative weight)
+        }
+
+        # For each regime, calculate quality metrics
+        for regime_id in range(n_regimes):
+            regime_mask = (labels == regime_id)
+            regime_samples = np.sum(regime_mask)
+
+            if regime_samples < 10:  # Too few samples
+                regime_quality_scores[regime_id] = 0.0
+                tprint_warning(f"  Regime {regime_id}: Insufficient samples ({regime_samples}), quality = 0.0")
+                continue
+
+            regime_data = features_df.iloc[regime_mask]
+
+            # Calculate quality components
+            quality_components = []
+
+            # 1. Path Linearity (path_trend_r2)
+            if 'path_trend_r2' in regime_data.columns:
+                linearity = regime_data['path_trend_r2'].mean()
+                quality_components.append(('linearity', linearity, 0.30))  # 30% weight
+
+            # 2. Path Straightness (efficiency_ratio)
+            if 'efficiency_ratio' in regime_data.columns:
+                straightness = regime_data['efficiency_ratio'].mean()
+                quality_components.append(('straightness', straightness, 0.25))  # 25% weight
+
+            # 3. Trend Strength (impulse_quality) - use absolute value
+            if 'impulse_quality' in regime_data.columns:
+                # Normalize impulse_quality to [0, 1] using percentile
+                impulse_values = regime_data['impulse_quality'].abs()
+                impulse_score = np.clip(impulse_values.mean() / (impulse_values.quantile(0.95) + 1e-9), 0, 1)
+                quality_components.append(('trend_strength', impulse_score, 0.20))  # 20% weight
+
+            # 4. Path Stability (inverse of volatility)
+            if 'returns_1h' in regime_data.columns:
+                volatility = regime_data['returns_1h'].std()
+                # Lower volatility = higher quality, normalize to [0, 1]
+                max_vol = features_df['returns_1h'].std() if 'returns_1h' in features_df.columns else 0.01
+                stability = 1.0 - np.clip(volatility / (max_vol + 1e-9), 0, 1)
+                quality_components.append(('stability', stability, 0.15))  # 15% weight
+
+            # 5. Conviction (body_range_ratio)
+            if 'body_range_ratio' in regime_data.columns:
+                conviction = regime_data['body_range_ratio'].mean()
+                quality_components.append(('conviction', conviction, 0.10))  # 10% weight
+
+            # Calculate weighted quality score
+            if quality_components:
+                total_weight = sum(w for _, _, w in quality_components)
+                quality_score = sum(val * w for _, val, w in quality_components) / total_weight
+                quality_score = np.clip(quality_score, 0, 1)
+                regime_quality_scores[regime_id] = float(quality_score)
+
+                # Log components
+                components_str = ", ".join([f"{name}={val:.3f}" for name, val, _ in quality_components])
+                tprint_info(f"  Regime {regime_id}: Quality={quality_score:.4f} ({components_str})")
+            else:
+                regime_quality_scores[regime_id] = 0.5  # Neutral if no features available
+                tprint_warning(f"  Regime {regime_id}: No quality features available, using neutral score 0.5")
+
+        # Generate continuous risk scores for all samples
+        if posteriors is not None:
+            # Use posterior probabilities weighted by regime quality
+            risk_scores = np.zeros(len(posteriors))
+            for regime_id in range(n_regimes):
+                regime_quality = regime_quality_scores.get(regime_id, 0.5)
+                risk_scores += posteriors[:, regime_id] * regime_quality
+        else:
+            # Fallback: use hard labels
+            risk_scores = np.array([regime_quality_scores.get(label, 0.5) for label in labels])
+
+        # Apply temporal smoothing (EMA) to reduce noise
+        risk_scores_smooth = pd.Series(risk_scores).ewm(span=10, adjust=False).mean().values
+        risk_scores_smooth = np.clip(risk_scores_smooth, 0, 1)
+
+        tprint_success(f"✅ Calculated quality scores for {n_regimes} regimes (range: [{min(regime_quality_scores.values()):.3f}, {max(regime_quality_scores.values()):.3f}])")
+
+        return regime_quality_scores, risk_scores_smooth
 
     def _calculate_forward_returns_and_sharpe(
         self,

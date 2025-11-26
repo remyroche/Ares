@@ -133,7 +133,7 @@ class MLPathRegimeStep(BaseStep):
         Expected config keys (minimum):
             - symbol: Trading symbol (e.g., 'ETHUSDT')
             - exchange: Exchange name (e.g., 'binance')
-            - regime_timeframe: Timeframe used for HMM regimes (default: '1h')
+            - regime_timeframe: Timeframe used for HMM regimes (default: '15m')
             - direction: Trading direction (default: 'long')
             - execution_mode: 'full', 'light', 'blank', etc. (used for data loading)
 
@@ -586,7 +586,7 @@ class MLPathRegimeStep(BaseStep):
                     symbol_d = str(config.get("symbol", symbol or ""))
                     exchange_d = str(config.get("exchange", exchange or ""))
                     regime_tf_d = str(
-                        config.get("regime_timeframe", config.get("timeframe", "1h"))
+                        config.get("regime_timeframe", config.get("timeframe", "15m"))
                     )
 
                     diag_path = (
@@ -2488,7 +2488,7 @@ class MLPathRegimeStep(BaseStep):
         try:
             symbol_q = str(config.get("symbol", ""))
             exchange_q = str(config.get("exchange", ""))
-            regime_tf_q = str(config.get("regime_timeframe", config.get("timeframe", "1h")))
+            regime_tf_q = str(config.get("regime_timeframe", config.get("timeframe", "15m")))
 
             quality_row = {
                 "symbol": symbol_q,
@@ -3147,13 +3147,12 @@ class MLPathRegimeStep(BaseStep):
             selected: List[str] = []
 
             regime_tf = str(
-                config.get("regime_timeframe", config.get("timeframe", "1h"))
+                config.get("regime_timeframe", config.get("timeframe", "15m"))
             ).lower()
 
             if regime_tf in ("1h", "60m"):
                 # 1 bar ≈ 1h → 30m–3h ≈ 0.5–3 bars.
                 # Use target ~3 bars with a slightly wider band [2, 8]
-                # to capture both slightly shorter and longer horizons.
                 default_target = 3
                 default_min = 2
                 default_max = 8
@@ -3613,7 +3612,7 @@ class MLPathRegimeStep(BaseStep):
                 symbol_q = str(config.get("symbol", ""))
                 exchange_q = str(config.get("exchange", ""))
                 regime_tf_q = str(
-                    config.get("regime_timeframe", config.get("timeframe", "1h"))
+                    config.get("regime_timeframe", config.get("timeframe", "15m"))
                 )
                 lambda_wcov = float(config.get("risk_hpo_wcov_weight", 1.0))
 
@@ -6640,11 +6639,31 @@ class MLBreakoutBounceRegimeStep(BaseStep):
                 high_conf_threshold = 0.7
 
             try:
-                if probs_full.shape[1] >= 3:
-                    success_prob = probs_full[:, 0] + probs_full[:, 1] + probs_full[:, 2]
-                else:
-                    success_prob = np.max(probs_full, axis=1)
+                # Calculate success probability as weighted average of regime probabilities
+                # using empirical meta-label success rates per regime
+                success_weights = np.ones(probs_full.shape[1]) * 0.5  # Default: 50% success rate
+
+                if meta_labels is not None and labels is not None:
+                    # Compute empirical success rate for each regime from training data
+                    meta_aligned_train = meta_labels.reindex(labels.index).dropna()
+                    labels_aligned = labels.reindex(meta_aligned_train.index)
+
+                    if len(meta_aligned_train) > 0 and len(labels_aligned) > 0:
+                        for regime_idx in range(probs_full.shape[1]):
+                            regime_mask = labels_aligned == regime_idx
+                            if regime_mask.sum() > 0:
+                                regime_meta = meta_aligned_train[regime_mask]
+                                success_rate = (regime_meta == 1).sum() / len(regime_meta)
+                                success_weights[regime_idx] = success_rate
+                                tprint_info(
+                                    f"📊 Regime {regime_idx} empirical success rate: {success_rate:.3f} "
+                                    f"({(regime_meta == 1).sum()}/{len(regime_meta)} samples)"
+                                )
+
+                # Weighted sum: success_prob[i] = sum(prob[i, k] * weight[k])
+                success_prob = np.sum(probs_full * success_weights[np.newaxis, :], axis=1)
                 success_prob = np.clip(success_prob, 0.0, 1.0)
+
                 success_prob_series = pd.Series(
                     success_prob,
                     index=feat_df.index,
@@ -6654,7 +6673,8 @@ class MLBreakoutBounceRegimeStep(BaseStep):
                 output_df["breakout_high_conf_signal"] = (
                     output_df["breakout_success_prob"] >= high_conf_threshold
                 ).astype(int)
-            except Exception:
+            except Exception as exc:
+                tprint_warning(f"Failed to compute breakout success probability: {exc}")
                 pass
 
             # Add directional edge features (long/short, strength-weighted by default)
@@ -6962,6 +6982,12 @@ class MLBreakoutBounceRegimeStep(BaseStep):
         feat_cols["int_test_prominence"] = prim_touch * prim_prom_z
         feat_cols["int_dist_opp_trend"] = dist_to_opp_atr * adx14
 
+        # Additional key interactions based on drivers
+        feat_cols["int_prom_volatility"] = prim_prom_z * vol_compression
+        feat_cols["int_approach_squeeze"] = pd.Series(approach_velocity, index=df.index) * squeeze
+        feat_cols["int_proximity_volume"] = pd.Series(close_proximity, index=df.index) * volume_at_impact
+        feat_cols["int_trend_squeeze"] = adx14 * squeeze
+
         # ========================================================================
         # NEW FEATURES: Volume Profile + Higher Timeframe Context
         # ========================================================================
@@ -6984,7 +7010,7 @@ class MLBreakoutBounceRegimeStep(BaseStep):
             tprint_warning(f"Failed to compute higher timeframe context: {htf_exc}")
 
         # Optional cross-timeframe features (momentum/volatility/volume) for breakout context
-        xtf_enabled = bool(config.get("breakout_enable_cross_timeframe", False))
+        xtf_enabled = bool(config.get("breakout_enable_cross_timeframe", True))
         xtf_df = None
         if xtf_enabled:
             try:
@@ -7015,6 +7041,23 @@ class MLBreakoutBounceRegimeStep(BaseStep):
             xtf_aligned = xtf_df.reindex(feat_df.index)
             for col in xtf_aligned.columns:
                 feat_df[col] = xtf_aligned[col]
+
+        # Add cross-feature interactions between macro/flow and local features
+        # These interactions capture regime-dependent behavior
+        if "macro_bullish" in feat_df.columns and "cumulative_delta_norm" in feat_df.columns:
+            feat_df["int_macro_flow"] = feat_df["macro_bullish"] * feat_df["cumulative_delta_norm"]
+
+        if "macro_bullish" in feat_df.columns and "int_primary_prom_squeeze" in feat_df.columns:
+            feat_df["int_macro_prom_squeeze"] = feat_df["macro_bullish"] * feat_df["int_primary_prom_squeeze"]
+
+        if "cumulative_delta_norm" in feat_df.columns and "primary_prominence_z_score" in feat_df.columns:
+            feat_df["int_flow_prominence"] = feat_df["cumulative_delta_norm"] * feat_df["primary_prominence_z_score"]
+
+        if "cumulative_delta_norm" in feat_df.columns and "bollinger_squeeze" in feat_df.columns:
+            feat_df["int_flow_squeeze"] = feat_df["cumulative_delta_norm"] * feat_df["bollinger_squeeze"]
+
+        if "macro_adx" in feat_df.columns and "volume_profile_strength" in feat_df.columns:
+            feat_df["int_macro_trend_volume"] = feat_df["macro_adx"] * feat_df["volume_profile_strength"]
 
         feat_df = feat_df.replace([np.inf, -np.inf], np.nan)
 
@@ -8268,6 +8311,34 @@ class MLBreakoutBounceRegimeStep(BaseStep):
             lines.append(f"- Direction: **{direction}**")
             lines.append(f"- Horizon (bars): **{horizon}**")
             lines.append(f"- Samples (training window): **{len(analysis_df)}**")
+            lines.append("")
+
+            # Model output explanation
+            lines.append("## Model Output Explanation")
+            lines.append("")
+            lines.append("The model predicts one of three regimes for each support/resistance level approach:")
+            lines.append("")
+            lines.append("- **Regime 0 (Bounce)**: Price bounces off the level without breaking through")
+            lines.append("  - Resistance: Price bounces down")
+            lines.append("  - Support: Price bounces up")
+            lines.append("")
+            lines.append("- **Regime 1 (Breakout)**: Price breaks cleanly through the level and holds")
+            lines.append("  - Resistance: Price breaks up and sustains above")
+            lines.append("  - Support: Price breaks down and sustains below")
+            lines.append("")
+            lines.append("- **Regime 2 (Trap/Fakeout)**: Price briefly breaks through but quickly reverses")
+            lines.append("  - False breakout that traps traders on the wrong side")
+            lines.append("")
+            lines.append("**Model outputs** are probability distributions over these three regimes:")
+            lines.append("- `breakout_regime_0_prob`: Probability of bounce (0.0 to 1.0)")
+            lines.append("- `breakout_regime_1_prob`: Probability of breakout (0.0 to 1.0)")
+            lines.append("- `breakout_regime_2_prob`: Probability of trap (0.0 to 1.0)")
+            lines.append("")
+            lines.append("The predicted regime is the one with the highest probability (argmax).")
+            lines.append("")
+            lines.append("**Success probability** (`breakout_success_prob`) is a weighted average of regime probabilities")
+            lines.append("using empirical meta-label success rates. Values closer to 1.0 indicate higher confidence")
+            lines.append("in profitable trade outcomes based on historical triple-barrier labeling.")
             lines.append("")
 
             # HPO-style global metrics

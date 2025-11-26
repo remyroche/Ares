@@ -173,6 +173,9 @@ class MLMeanReversionRegimeStep(BaseStep):
             # 3) Student features (ENHANCED with momentum divergence, reversion speed, persistence)
             student_df = self._build_student_features(market_data, config)
 
+            # 3.5) Calculate dynamic ATR-based TPSL multipliers
+            atr_14, atr_300, dynamic_tp_sl_multiplier = self._calculate_atr_multipliers(market_data, config)
+
             # 4) Build classification target: forward price direction
             #    0 = price will go up (bullish)
             #    1 = price will go down (bearish)
@@ -243,6 +246,10 @@ class MLMeanReversionRegimeStep(BaseStep):
             output_df.loc[X_all.index, "mr_raw_score"] = raw_scores
             output_df.loc[X_all.index, "mr_probability"] = calibrated_scores
             output_df.loc[X_all.index, "mr_direction_target"] = y_target_all.values
+            # Add ATR data for dynamic TPSL
+            output_df["mr_atr_14"] = atr_14
+            output_df["mr_atr_300"] = atr_300
+            output_df["mr_dynamic_tpsl_multiplier"] = dynamic_tp_sl_multiplier
 
             # Forward-return diagnostics at multiple horizons
             horizons_cfg = config.get("mr_forward_horizons", [2, 4, 8, 12])  # 30m to 3h for 15m bars
@@ -760,6 +767,55 @@ class MLMeanReversionRegimeStep(BaseStep):
 
         return pd.Series(y_direction, index=df.index)
 
+    def _calculate_atr_multipliers(
+        self, df: pd.DataFrame, config: Dict[str, Any]
+    ) -> Tuple[pd.Series, pd.Series, pd.Series]:
+        """Calculate dynamic ATR-based TPSL multipliers.
+
+        Formula: target_multiplier = (ATR_14 / ATR_300)^α
+        where α = 0.5 (configurable)
+
+        Returns:
+            - ATR_14: 14-bar ATR series
+            - ATR_300: 300-bar ATR series
+            - dynamic_tp_sl_multiplier: Multiplier series to apply to base TPSL
+        """
+        high = df["high"].astype(float)
+        low = df["low"].astype(float)
+        close = df["close"].astype(float)
+
+        # Calculate True Range
+        tr = pd.DataFrame({
+            'hl': high - low,
+            'hc': (high - close.shift(1)).abs(),
+            'lc': (low - close.shift(1)).abs()
+        }).max(axis=1)
+
+        # Calculate ATR with different windows
+        atr_14_window = int(config.get("mr_atr_short_window", 14))
+        atr_300_window = int(config.get("mr_atr_long_window", 300))
+        alpha = float(config.get("mr_atr_multiplier_alpha", 0.5))
+
+        atr_14 = tr.rolling(atr_14_window, min_periods=atr_14_window // 2).mean()
+        atr_300 = tr.rolling(atr_300_window, min_periods=atr_300_window // 2).mean()
+
+        # Calculate dynamic multiplier: (ATR_14 / ATR_300)^α
+        # When ATR_14 > ATR_300 (higher recent volatility), multiplier > 1 (wider TPSL)
+        # When ATR_14 < ATR_300 (lower recent volatility), multiplier < 1 (tighter TPSL)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            ratio = atr_14 / atr_300.replace(0.0, np.nan)
+            dynamic_tp_sl_multiplier = ratio ** alpha
+
+        # Clip multiplier to reasonable range (0.5x to 2.0x)
+        min_mult = float(config.get("mr_atr_multiplier_min", 0.5))
+        max_mult = float(config.get("mr_atr_multiplier_max", 2.0))
+        dynamic_tp_sl_multiplier = dynamic_tp_sl_multiplier.clip(lower=min_mult, upper=max_mult)
+
+        # Fill NaN values with 1.0 (no adjustment)
+        dynamic_tp_sl_multiplier = dynamic_tp_sl_multiplier.fillna(1.0)
+
+        return atr_14, atr_300, dynamic_tp_sl_multiplier
+
     def _train_xgb_student(
         self,
         X: pd.DataFrame,
@@ -848,20 +904,36 @@ class MLMeanReversionRegimeStep(BaseStep):
 
             tprint_warning("Using legacy percentage-based splits - consider using temporal split config for better results")
 
-        # Train base XGBoost classifier
+        # Calculate class weights for better balance
+        # If classes are imbalanced, adjust scale_pos_weight to balance predictions
+        n_neg = (y_train_np == 0).sum()
+        n_pos = (y_train_np == 1).sum()
+        if n_pos > 0:
+            auto_scale_pos_weight = float(n_neg / n_pos)
+        else:
+            auto_scale_pos_weight = 1.0
+
+        # IMPROVED: Reduced regularization to allow more diverse predictions
+        # Previous settings were too conservative, leading to compressed probabilities
         params = dict(
             tree_method="hist",
-            learning_rate=float(config.get("mr_learning_rate", 0.02)),
-            max_depth=int(config.get("mr_max_depth", 4)),
-            min_child_weight=float(config.get("mr_min_child_weight", 10.0)),
-            subsample=float(config.get("mr_subsample", 0.7)),
-            colsample_bytree=float(config.get("mr_colsample_bytree", 0.6)),
-            gamma=float(config.get("mr_gamma", 0.1)),
-            reg_alpha=float(config.get("mr_reg_alpha", 1.0)),
-            reg_lambda=float(config.get("mr_reg_lambda", 1.0)),
+            learning_rate=float(config.get("mr_learning_rate", 0.03)),  # Increased from 0.02
+            max_depth=int(config.get("mr_max_depth", 5)),  # Increased from 4 for more complexity
+            min_child_weight=float(config.get("mr_min_child_weight", 5.0)),  # Reduced from 10.0
+            subsample=float(config.get("mr_subsample", 0.8)),  # Increased from 0.7
+            colsample_bytree=float(config.get("mr_colsample_bytree", 0.8)),  # Increased from 0.6
+            gamma=float(config.get("mr_gamma", 0.05)),  # Reduced from 0.1
+            reg_alpha=float(config.get("mr_reg_alpha", 0.5)),  # Reduced from 1.0
+            reg_lambda=float(config.get("mr_reg_lambda", 0.5)),  # Reduced from 1.0
             n_estimators=int(config.get("mr_n_estimators", 500)),
-            scale_pos_weight=float(config.get("mr_scale_pos_weight", 1.0)),
+            # Use auto-calculated scale_pos_weight for class balance
+            scale_pos_weight=float(config.get("mr_scale_pos_weight", auto_scale_pos_weight)),
             eval_metric="logloss",
+        )
+
+        tprint_info(
+            f"📊 XGBoost class balance: n_neg={n_neg}, n_pos={n_pos}, "
+            f"scale_pos_weight={params['scale_pos_weight']:.3f}"
         )
 
         model = xgb.XGBClassifier(**params, random_state=42)
@@ -877,10 +949,12 @@ class MLMeanReversionRegimeStep(BaseStep):
         raw_val = model.predict_proba(X_val_np)[:, 1]
         raw_test = model.predict_proba(X_test_np)[:, 1]
 
-        # Calibrate on validation set using isotonic regression
-        calibration_method = config.get("mr_calibration_method", "isotonic")
+        # Calibrate on validation set
+        # IMPROVED: Default to sigmoid calibration for better probability distribution
+        # Isotonic can be too aggressive and compress probabilities to narrow range
+        calibration_method = config.get("mr_calibration_method", "sigmoid")
         if calibration_method not in ["isotonic", "sigmoid"]:
-            calibration_method = "isotonic"
+            calibration_method = "sigmoid"
 
         calibrated_model = CalibratedClassifierCV(
             model,
@@ -1401,7 +1475,7 @@ class MLMeanReversionRegimeStep(BaseStep):
                 index=idx,
             )
 
-            # Attempt to load meta-labeling HPO parameters
+            # Attempt to load meta-labeling HPO parameters and apply dynamic ATR multiplier
             tp_override = None
             sl_override = None
             try:
@@ -1429,9 +1503,26 @@ class MLMeanReversionRegimeStep(BaseStep):
                     profit_thr = float(params.get("profit_thr_base")) if params.get("profit_thr_base") is not None else None
                     stop_ratio = float(params.get("stop_to_profit_ratio")) if params.get("stop_to_profit_ratio") is not None else None
                     if profit_thr is not None and stop_ratio is not None:
-                        tp_override = max(0.0005, profit_thr)
-                        sl_override = max(0.0005, profit_thr * stop_ratio)
-            except Exception:
+                        # Base TPSL values
+                        tp_base = max(0.0005, profit_thr)
+                        sl_base = max(0.0005, profit_thr * stop_ratio)
+
+                        # Apply dynamic ATR multiplier (use mean multiplier across the test period)
+                        # Get multiplier for the backtest period
+                        multiplier_series = output_df.loc[idx, "mr_dynamic_tpsl_multiplier"].astype(float)
+                        mean_multiplier = float(multiplier_series.mean())
+
+                        # Apply multiplier to base TPSL
+                        tp_override = tp_base * mean_multiplier
+                        sl_override = sl_base * mean_multiplier
+
+                        tprint_info(
+                            f"📊 Dynamic TPSL: Base TP={tp_base*100:.3f}%, SL={sl_base*100:.3f}% | "
+                            f"Multiplier={mean_multiplier:.3f} | "
+                            f"Adjusted TP={tp_override*100:.3f}%, SL={sl_override*100:.3f}%"
+                        )
+            except Exception as e:
+                tprint_warning(f"Failed to load HPO params or apply ATR multiplier: {e}")
                 tp_override = None
                 sl_override = None
 

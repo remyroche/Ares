@@ -3,8 +3,8 @@ ML SMC Regime Step
 
 Smart Money Concepts (SMC) step that consumes 15m OHLCV data to construct
 SMC-based features (liquidity scalars, FVG/inefficiency, premium/discount,
-displacement, volume profile, time categories) and trains an XGBoost regressor
-to predict future price position (target ratio) with conformal prediction calibration.
+displacement, volume profile, time categories) and trains an XGBoost classifier
+to predict ATR-normalized forward returns with conformal prediction calibration.
 """
 import logging
 import time
@@ -769,36 +769,41 @@ class MLSMCRegimeStep(BaseStep):
             metrics["smc_xgb_early_exit_reason"] = "missing_price_columns"
             return metrics, artifacts
 
-        # Create target ratio
+        # Create ATR-normalized forward return target (more predictive than noisy 0-1 ratio)
         lookahead = int(config.get("smc_lookahead", 16))
 
         future_close = df["close"].shift(-lookahead)
-        current_range = (df["high"] - df["low"]).replace(0, 0.0001)
-        target_ratio = (future_close - df["low"]) / current_range
+        current_close = df["close"]
+        atr = df["atr"].replace(0, 0.0001)  # Ensure non-zero ATR
+
+        # Target: ATR-normalized forward return
+        # This captures actual price movement scaled by volatility, more predictive than position-in-range
+        target_atr_return = (future_close - current_close) / atr
 
         df_with_target = df.copy()
-        df_with_target["target_ratio"] = target_ratio
+        df_with_target["target_atr_return"] = target_atr_return
 
         # Calculate actual forward returns for metrics
-        df_with_target["forward_return"] = (future_close / df["close"] - 1.0)
+        df_with_target["forward_return"] = (future_close / current_close - 1.0)
 
-        df_with_target = df_with_target.dropna(subset=["target_ratio", "forward_return"])
+        df_with_target = df_with_target.dropna(subset=["target_atr_return", "forward_return"])
 
         tprint_info(
-            f"SMC XGB: target ratio stats - mean: {df_with_target['target_ratio'].mean():.3f}, "
-            f"std: {df_with_target['target_ratio'].std():.3f}"
+            f"SMC XGB: target ATR-normalized return stats - mean: {df_with_target['target_atr_return'].mean():.3f}, "
+            f"std: {df_with_target['target_atr_return'].std():.3f}, "
+            f"range: [{df_with_target['target_atr_return'].min():.3f}, {df_with_target['target_atr_return'].max():.3f}]"
         )
 
         # Derive 3-class labels: 0=breakdown, 1=neutral, 2=breakout
-        # More conservative defaults: require stronger moves for breakout/breakdown.
-        breakout_threshold = float(config.get("smc_breakout_threshold", 1.50))
-        breakdown_threshold = float(config.get("smc_breakdown_threshold", -0.50))
+        # Use ATR multiples as thresholds (e.g., ±0.5 ATR)
+        breakout_threshold = float(config.get("smc_breakout_threshold", 0.5))
+        breakdown_threshold = float(config.get("smc_breakdown_threshold", -0.5))
 
-        ratio_clean = df_with_target["target_ratio"]
+        target_clean = df_with_target["target_atr_return"]
         target_class = np.where(
-            ratio_clean > breakout_threshold,
+            target_clean > breakout_threshold,
             2,
-            np.where(ratio_clean < breakdown_threshold, 0, 1),
+            np.where(target_clean < breakdown_threshold, 0, 1),
         ).astype(np.int32)
         df_with_target["target_class"] = target_class
 
@@ -814,7 +819,7 @@ class MLSMCRegimeStep(BaseStep):
 
         # Select features
         exclude_cols = [
-            "target_ratio",
+            "target_atr_return",
             "forward_return",
             "target_class",
             "smc_pdh",
@@ -832,11 +837,11 @@ class MLSMCRegimeStep(BaseStep):
 
         max_features = int(config.get("smc_xgb_max_features", 48))
         if len(feature_cols) > max_features:
-            ratio_for_corr = df_with_target["target_ratio"]
+            target_for_corr = df_with_target["target_atr_return"]
             corr_scores: List[Tuple[str, float]] = []
             for col in feature_cols:
                 try:
-                    corr_val = numeric_df[col].corr(ratio_for_corr)
+                    corr_val = numeric_df[col].corr(target_for_corr)
                 except Exception:
                     corr_val = 0.0
                 if corr_val is None or not np.isfinite(corr_val):
@@ -846,12 +851,12 @@ class MLSMCRegimeStep(BaseStep):
             selected = [name for name, _ in corr_scores[:max_features]]
             tprint_info(
                 "SMC XGB: reducing feature set from "
-                f"{len(feature_cols)} to {len(selected)} based on correlation with target_ratio"
+                f"{len(feature_cols)} to {len(selected)} based on correlation with target_atr_return"
             )
             feature_cols = selected
 
         X = numeric_df[feature_cols].astype(np.float32)
-        y_ratio = df_with_target["target_ratio"].astype(np.float32)
+        y_atr_return = df_with_target["target_atr_return"].astype(np.float32)
         y_class = df_with_target["target_class"].astype(np.int32)
         forward_returns = df_with_target["forward_return"].astype(np.float32)
 
@@ -878,9 +883,9 @@ class MLSMCRegimeStep(BaseStep):
         X_val = X.loc[val_mask]
         X_test = X.loc[test_mask]
 
-        y_train_ratio = y_ratio.loc[train_mask]
-        y_val_ratio = y_ratio.loc[val_mask]
-        y_test_ratio = y_ratio.loc[test_mask]
+        y_train_atr_return = y_atr_return.loc[train_mask]
+        y_val_atr_return = y_atr_return.loc[val_mask]
+        y_test_atr_return = y_atr_return.loc[test_mask]
 
         y_train_cls = y_class.loc[train_mask]
         y_val_cls = y_class.loc[val_mask]
@@ -946,24 +951,24 @@ class MLSMCRegimeStep(BaseStep):
         y_val_pred_cls = np.argmax(proba_val, axis=1) if len(X_val) > 0 else np.array([], dtype=np.int32)
         y_test_pred_cls = np.argmax(proba_test, axis=1) if len(X_test) > 0 else np.array([], dtype=np.int32)
 
-        # Regression-style metrics vs continuous target_ratio for continuity
-        train_rmse = np.sqrt(mean_squared_error(y_train_ratio, y_train_pred))
-        train_mae = mean_absolute_error(y_train_ratio, y_train_pred)
-        train_r2 = r2_score(y_train_ratio, y_train_pred)
+        # Regression-style metrics vs continuous ATR-normalized target for predictive power
+        train_rmse = np.sqrt(mean_squared_error(y_train_atr_return, y_train_pred))
+        train_mae = mean_absolute_error(y_train_atr_return, y_train_pred)
+        train_r2 = r2_score(y_train_atr_return, y_train_pred)
 
         if len(X_val) > 0:
-            val_rmse = np.sqrt(mean_squared_error(y_val_ratio, y_val_pred))
-            val_mae = mean_absolute_error(y_val_ratio, y_val_pred)
-            val_r2 = r2_score(y_val_ratio, y_val_pred)
+            val_rmse = np.sqrt(mean_squared_error(y_val_atr_return, y_val_pred))
+            val_mae = mean_absolute_error(y_val_atr_return, y_val_pred)
+            val_r2 = r2_score(y_val_atr_return, y_val_pred)
         else:
             val_rmse = float("nan")
             val_mae = float("nan")
             val_r2 = float("nan")
 
         if len(X_test) > 0:
-            test_rmse = np.sqrt(mean_squared_error(y_test_ratio, y_test_pred))
-            test_mae = mean_absolute_error(y_test_ratio, y_test_pred)
-            test_r2 = r2_score(y_test_ratio, y_test_pred)
+            test_rmse = np.sqrt(mean_squared_error(y_test_atr_return, y_test_pred))
+            test_mae = mean_absolute_error(y_test_atr_return, y_test_pred)
+            test_r2 = r2_score(y_test_atr_return, y_test_pred)
         else:
             test_rmse = float("nan")
             test_mae = float("nan")
@@ -1188,7 +1193,7 @@ class MLSMCRegimeStep(BaseStep):
             df_with_target,
             model,
             X,
-            y_ratio,
+            y_atr_return,
             forward_returns,
             feature_cols,
             calibration_results,
@@ -1261,9 +1266,9 @@ class MLSMCRegimeStep(BaseStep):
         predictions_list = []
         index_array = df_with_target.index
 
-        n_train_samples = len(y_train_ratio)
-        n_val_samples = len(y_val_ratio)
-        n_test_samples = len(y_test_ratio)
+        n_train_samples = len(y_train_atr_return)
+        n_val_samples = len(y_val_atr_return)
+        n_test_samples = len(y_test_atr_return)
 
         for i in range(n_train_samples):
             idx = i
@@ -1309,7 +1314,7 @@ class MLSMCRegimeStep(BaseStep):
         try:
             wf_metrics = self._run_smc_walkforward_validation(
                 X,
-                y_ratio,
+                y_atr_return,
                 best_params,
                 config,
             )

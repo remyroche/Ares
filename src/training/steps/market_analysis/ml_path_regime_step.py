@@ -25,17 +25,18 @@ Computational Optimizations:
 
 Responsibilities:
 - Load 15m OHLCV market data
-- Generate 7 core path geometry features:
-  * hurst_exponent_path (Roughness)
-  * path_trend_r2 (Linearity)
-  * path_efficiency_return_3h (Directness)
-  * quadratic_fit_curvature (Shape/Bend)
-  * linear_reg_slope (Steepness)
-  * path_center_of_gravity (Timing)
-  * body_range_ratio (Morphology)
+- Generate 7 direction-agnostic path geometry features:
+  * path_trend_r2 (Linearity - best performer, WCoV: 0.80)
+  * efficiency_ratio (Path straightness - NEW)
+  * impulse_quality (Trend strength × efficiency - NEW)
+  * path_directional_eff_3h_abs (Efficiency magnitude - direction-agnostic)
+  * body_range_ratio (Morphology/Conviction)
+  * traffic_overlap_3h (Market congestion)
+  * path_permutation_entropy (Complexity)
+  NOTE: Removed hurst_exponent_path (WCoV: 0.23) and path_fractal_dimension (WCoV: 0.13)
 - Create optimal regime labels using HMM with temporal structure
 - Calculate temporal metrics (transition matrix, flip-flop rate, duration)
-- Calculate forward returns and Sharpe ratios per regime (15m, 1h, 3h)
+- Output data-driven risk scores (learned from regime characteristics)
 - Persist HMM model and LiveHMM wrapper for live trading
 - Generate comprehensive regime quality and temporal reports
 - Save regime outputs to versioned_artifacts
@@ -2087,16 +2088,18 @@ class MLPathRegimeStep(BaseStep):
         n_regimes = int(config.get("risk_n_regimes", 4))
         scaler: Optional[RobustScaler] = None
 
-        # Core 7 Path Geometry Features (user-specified)
-        # These are the ONLY features used for GMM regime detection
+        # Core 7 Direction-Agnostic Path Geometry Features
+        # These are the ONLY features used for HMM regime detection
         primary_risk_cols = [
-            "hurst_exponent_path",         # Roughness
-            "path_trend_r2",               # Linearity
-            "path_efficiency_return_3h",   # Directness
-            "quadratic_fit_curvature",     # Shape/Bend
-            "linear_reg_slope",            # Steepness
-            "path_center_of_gravity",      # Timing
-            "body_range_ratio",            # Morphology
+            "path_trend_r2",                    # Linearity (best performer, WCoV: 0.80)
+            "efficiency_ratio",                 # NEW: Path straightness
+            "impulse_quality",                  # NEW: Trend strength × efficiency
+            "path_directional_eff_3h_abs",      # Efficiency magnitude (direction-agnostic)
+            "body_range_ratio",                 # Morphology/Conviction
+            "traffic_overlap_3h",               # Market congestion
+            "path_permutation_entropy",         # Complexity
+            # REMOVED: "hurst_exponent_path" (poor WCoV: 0.23)
+            # REMOVED: "path_fractal_dimension" (poor WCoV: 0.13)
         ]
 
         # Filter to available primary risk columns
@@ -3024,15 +3027,16 @@ class MLPathRegimeStep(BaseStep):
         Returns:
             Dict with feature impact metrics
         """
-        # Get the features used in GMM
+        # Get the features used in HMM
         primary_features = [
-            "hurst_exponent_path",
-            "path_trend_r2",
-            "path_efficiency_return_3h",
-            "quadratic_fit_curvature",
-            "linear_reg_slope",
-            "path_center_of_gravity",
-            "body_range_ratio",
+            "path_trend_r2",                 # Linearity
+            "efficiency_ratio",              # NEW: Straightness
+            "impulse_quality",               # NEW: Trend × efficiency
+            "path_directional_eff_3h_abs",   # Efficiency magnitude
+            "body_range_ratio",              # Morphology
+            "traffic_overlap_3h",            # Congestion
+            "path_permutation_entropy",      # Complexity
+            # REMOVED: "hurst_exponent_path", "path_fractal_dimension"
         ]
 
         available_features = [f for f in primary_features if f in risk_df.columns]
@@ -3480,10 +3484,12 @@ class MLPathRegimeStep(BaseStep):
             "path_ker_6h",
             "body_range_ratio",
             "traffic_overlap_3h",
-            "path_fractal_dimension",
-            "hurst_exponent_path",
+            # REMOVED: "path_fractal_dimension", "hurst_exponent_path"
+            "efficiency_ratio",              # NEW
+            "impulse_quality",               # NEW
             "path_efficiency_return_3h",
             "path_directional_eff_3h",
+            "path_directional_eff_3h_abs",   # NEW
             "path_trend_r2",
             "path_trend_up",
             "path_efficiency_dropping",
@@ -3656,14 +3662,16 @@ class MLPathRegimeStep(BaseStep):
                 per_regime_df = report_df[report_df["scope"] == "REGIME"].copy()
                 core_metric_candidates = [
                     "path_directional_eff_3h",
+                    "path_directional_eff_3h_abs",   # NEW
                     "path_efficiency_return_3h",
+                    "efficiency_ratio",              # NEW
+                    "impulse_quality",               # NEW
                     "path_trend_up",
                     "path_ker_3h",
                     "path_ker_6h",
                     "body_range_ratio",
                     "traffic_overlap_3h",
-                    "hurst_exponent_path",
-                    "path_fractal_dimension",
+                    # REMOVED: "hurst_exponent_path", "path_fractal_dimension"
                     "path_efficiency_dropping",
                     "path_alpha_state",
                     "path_trend_r2",
@@ -4233,12 +4241,15 @@ class MLPathRegimeStep(BaseStep):
             "path_ker_6h",
             "body_range_ratio",
             "traffic_overlap_3h",
-            "path_fractal_dimension",
-            "hurst_exponent_path",
+            # REMOVED: "path_fractal_dimension" (poor WCoV: 0.13)
+            # REMOVED: "hurst_exponent_path" (poor WCoV: 0.23)
             "path_trend_r2",
+            "efficiency_ratio",                # NEW: Path straightness
+            "impulse_quality",                 # NEW: Trend × efficiency
+            "path_directional_eff_3h",         # Original directional
+            "path_directional_eff_3h_abs",     # NEW: Direction-agnostic version
             "returns_1h",
             "path_efficiency_return_3h",
-            "path_directional_eff_3h",
             # Legacy return-based helpers kept for backward compatibility if present
             "return_3h",
             "sharpe_like_3h",
@@ -4393,16 +4404,17 @@ class MLPathRegimeStep(BaseStep):
             min_window = int(config.get("risk_quadrant_min_window_bars", default_min))
             max_window = int(config.get("risk_quadrant_max_window_bars", default_max))
 
-            # Core 7 Path Geometry Features (user-specified)
-            # These are the ONLY features used for GMM regime detection
+            # Core 7 Direction-Agnostic Path Geometry Features
+            # These are the ONLY features used for HMM regime detection
             path_priority = [
-                "hurst_exponent_path",         # Roughness
-                "path_trend_r2",               # Linearity
-                "path_efficiency_return_3h",   # Directness
-                "quadratic_fit_curvature",     # Shape/Bend
-                "linear_reg_slope",            # Steepness
-                "path_center_of_gravity",      # Timing
-                "body_range_ratio",            # Morphology
+                "path_trend_r2",                    # Linearity (best performer)
+                "efficiency_ratio",                 # NEW: Straightness
+                "impulse_quality",                  # NEW: Trend × efficiency
+                "path_directional_eff_3h_abs",      # Efficiency magnitude
+                "body_range_ratio",                 # Morphology/Conviction
+                "traffic_overlap_3h",               # Congestion
+                "path_permutation_entropy",         # Complexity
+                # REMOVED: "hurst_exponent_path", "path_fractal_dimension"
             ]
 
             path_candidates: List[str] = [

@@ -2768,30 +2768,13 @@ class MLPathRegimeStep(BaseStep):
         # ========== STEP 7.75: Save XGBoost Quality Models ==========
         if use_xgb_quality and xgb_quality_classifier is not None:
             try:
-                import joblib
-                from pathlib import Path
-
                 symbol_xgb = str(config.get("symbol", "UNKNOWN"))
                 timeframe_xgb = str(config.get("regime_timeframe", config.get("timeframe", "15m")))
-                ts_xgb = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-                # Save calibrated classifier
-                clf_model_path = Path("outcomes") / f"xgb_quality_classifier_{symbol_xgb}_{timeframe_xgb}_{ts_xgb}.joblib"
-                joblib.dump(xgb_quality_classifier, clf_model_path)
-                tprint_info(f"💾 Saved XGBoost quality classifier: {clf_model_path}")
-
-                # Save regressor
-                if xgb_quality_regressor is not None:
-                    reg_model_path = Path("outcomes") / f"xgb_quality_regressor_{symbol_xgb}_{timeframe_xgb}_{ts_xgb}.joblib"
-                    joblib.dump(xgb_quality_regressor, reg_model_path)
-                    tprint_info(f"💾 Saved XGBoost quality regressor: {reg_model_path}")
-
-                # Save feature metadata for warm start
-                metadata_path = Path("outcomes") / f"xgb_quality_metadata_{symbol_xgb}_{timeframe_xgb}_{ts_xgb}.json"
-                metadata = {
+                # Prepare metadata for all XGB quality artifacts
+                xgb_metadata = {
                     'symbol': symbol_xgb,
                     'timeframe': timeframe_xgb,
-                    'timestamp': ts_xgb,
                     'feature_names': xgb_m['feature_names'],
                     'combined_feature_weights': xgb_m['combined_feature_weights'],
                     'calibration_enabled': xgb_m['classifier'].get('calibration_enabled', False),
@@ -2801,16 +2784,32 @@ class MLPathRegimeStep(BaseStep):
                     'target_stats': xgb_m['target_stats'],
                 }
 
-                import json
-                with open(metadata_path, 'w') as f:
-                    json.dump(metadata, f, indent=2)
-                tprint_info(f"💾 Saved XGBoost quality metadata: {metadata_path}")
+                # Save calibrated classifier using BaseStep artifact system
+                clf_model_path = self._save_artifact(
+                    data=xgb_quality_classifier,
+                    artifact_name="xgb_quality_classifier",
+                    artifact_type="model",
+                    data_category="models",
+                    metadata=xgb_metadata,
+                )
+                tprint_info(f"💾 Saved XGBoost quality classifier: {clf_model_path}")
+
+                # Save regressor using BaseStep artifact system
+                reg_model_path = None
+                if xgb_quality_regressor is not None:
+                    reg_model_path = self._save_artifact(
+                        data=xgb_quality_regressor,
+                        artifact_name="xgb_quality_regressor",
+                        artifact_type="model",
+                        data_category="models",
+                        metadata=xgb_metadata,
+                    )
+                    tprint_info(f"💾 Saved XGBoost quality regressor: {reg_model_path}")
 
                 # Store paths in metrics for artifact tracking
                 metrics['xgb_quality_model_paths'] = {
                     'classifier': str(clf_model_path),
-                    'regressor': str(reg_model_path) if xgb_quality_regressor is not None else None,
-                    'metadata': str(metadata_path),
+                    'regressor': str(reg_model_path) if reg_model_path is not None else None,
                 }
 
             except Exception as save_xgb_exc:
@@ -3471,13 +3470,30 @@ class MLPathRegimeStep(BaseStep):
 
         best_clf_params = base_clf_params.copy()
 
-        # Optional HPO for classifier
-        enable_hpo = bool(config.get('xgb_quality_enable_hpo', False))
+        # Periodic Retraining Pattern Support
+        # - Training samples are always masked with NaN in saved predictions (line ~3710)
+        # - For periodic PARTIAL retraining: set xgb_quality_enable_hpo=False (uses saved best params)
+        # - For periodic FULL retraining: set xgb_quality_enable_hpo=True (runs full HPO)
+        # - Models saved via BaseStep artifact system support warm-start loading
+        retraining_mode = str(config.get('xgb_quality_retraining_mode', 'full')).lower()
+        if retraining_mode == 'partial':
+            enable_hpo = False
+            tprint_info("🔄 Periodic PARTIAL retraining mode: HPO disabled, using saved best params")
+        elif retraining_mode == 'full':
+            enable_hpo = True
+            tprint_info("🔄 Periodic FULL retraining mode: HPO enabled")
+        else:
+            # Default behavior: check config flag
+            enable_hpo = bool(config.get('xgb_quality_enable_hpo', False))
         if enable_hpo and len(X_train) >= 200:  # Require minimum samples for HPO
             try:
                 tprint_info("🔧 Running HPO for barrier hit classifier...")
 
                 # Define parameter groups for hierarchical optimization
+                # Regularization strategy: optimize subsample and reg_alpha, derive colsample_bytree and reg_lambda via multipliers
+                colsample_multiplier = float(config.get('xgb_quality_colsample_multiplier', 1.0))
+                reg_lambda_multiplier = float(config.get('xgb_quality_reg_lambda_multiplier', 2.0))
+
                 hpo_param_groups = [
                     create_param_group(
                         "structure",
@@ -3498,11 +3514,9 @@ class MLPathRegimeStep(BaseStep):
                     create_param_group(
                         "regularization",
                         {
-                            'subsample': [0.7, 0.8, 0.9],
-                            'colsample_bytree': [0.7, 0.8, 0.9],
+                            'subsample': [0.6, 0.7, 0.8, 0.9],
                             'gamma': [0.0, 0.1, 0.5],
-                            'reg_alpha': [0.0, 0.1, 1.0],
-                            'reg_lambda': [0.5, 1.0, 2.0],
+                            'reg_alpha': [0.0, 0.1, 0.5, 1.0, 2.0],
                         },
                         stage=OptimizationStage.FINE
                     ),
@@ -3535,13 +3549,26 @@ class MLPathRegimeStep(BaseStep):
 
                 if hpo_result and hpo_result.best_params:
                     best_clf_params.update(hpo_result.best_params)
+
+                    # Apply multipliers to derive colsample_bytree and reg_lambda from optimized subsample and reg_alpha
+                    if 'subsample' in best_clf_params:
+                        best_clf_params['colsample_bytree'] = min(1.0, best_clf_params['subsample'] * colsample_multiplier)
+                    if 'reg_alpha' in best_clf_params:
+                        best_clf_params['reg_lambda'] = best_clf_params['reg_alpha'] * reg_lambda_multiplier
+
                     tprint_info(f"  ✅ HPO completed. Best score: {hpo_result.best_score:.4f}")
                     tprint_info(f"  Updated params: {hpo_result.best_params}")
+                    tprint_info(f"  Derived params: colsample_bytree={best_clf_params.get('colsample_bytree', 'N/A'):.3f}, "
+                               f"reg_lambda={best_clf_params.get('reg_lambda', 'N/A'):.3f}")
 
             except Exception as hpo_exc:
                 tprint_warning(f"  HPO failed, using default params: {hpo_exc}")
 
         # Train final classifier with best params
+        # Ensure early stopping is enabled
+        early_stopping_rounds = int(config.get('xgb_quality_early_stopping_rounds', 20))
+        best_clf_params['early_stopping_rounds'] = early_stopping_rounds
+
         clf = xgb.XGBClassifier(**best_clf_params)
         clf.fit(
             X_train, y_class_train,

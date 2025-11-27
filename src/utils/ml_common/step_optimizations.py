@@ -402,7 +402,7 @@ class OptimizedHMMConfig:
     """Optimized HMM configuration."""
     n_components: int = 4
     covariance_type: str = 'diag'  # 'diag' is 5-10x faster than 'full'
-    n_iter: int = 50  # Reduced from 100-200
+    n_iter: int = 100  # Reduced from 200
     tol: float = 1e-3  # Less strict tolerance
     min_covar: float = 1e-3
     random_state: int = 42
@@ -433,13 +433,13 @@ def get_optimized_hmm_config(
     
     # Reduce iterations based on task
     if task == "regime_detection":
-        config.n_iter = 50
+        config.n_iter = 100
         config.n_components = 4
     elif task == "macro_trend":
-        config.n_iter = 75
+        config.n_iter = 100
         config.n_components = 3
     elif task == "alpha":
-        config.n_iter = 50
+        config.n_iter = 100
         config.n_components = 4
     
     # Adjust tolerance based on sample size

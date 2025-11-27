@@ -2341,8 +2341,8 @@ class MLPathRegimeStep(BaseStep):
         )
 
         # HMM configuration optimized for 30m-3h trading timeframes
-        # OPTIMIZED: Reduced n_iter from 200 to 50 for faster training
-        hmm_n_iter = int(config.get("hmm_n_iter", 50))  # Reduced from 200
+        # OPTIMIZED: Reduced n_iter from 200 to 100 for faster training
+        hmm_n_iter = int(config.get("hmm_n_iter", 100))  # Reduced from 200
         hmm_tol = float(config.get("hmm_tol", 1e-3))
         hmm_min_covar = float(config.get("hmm_min_covar", 0.001))
 

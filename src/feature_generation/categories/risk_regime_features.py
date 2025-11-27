@@ -26,6 +26,9 @@ def generate_risk_regime_features(
     feature bank. The returned DataFrame contains the five core risk
     features already normalized with a rolling winsorized z-score.
 
+    OPTIMIZED: Uses EWM instead of rolling for volatility features.
+    EWM is O(1) per update vs O(window) for rolling windows.
+
     Args:
         df: Input market data with at least ``high``, ``low`` and ``close``
             columns on the risk timeframe (typically 1h).
@@ -42,24 +45,35 @@ def generate_risk_regime_features(
     if not {"high", "low", "close"}.issubset(df.columns):
         raise ValueError("Market data must contain 'high', 'low', and 'close' columns")
 
-    high = df["high"].astype(float)
-    low = df["low"].astype(float)
-    close = df["close"].astype(float)
+    # Use float32 for memory efficiency
+    use_ewm = config.get("risk_use_ewm", True)  # OPTIMIZED: Use EWM by default
+    
+    high = df["high"].astype(np.float32)
+    low = df["low"].astype(np.float32)
+    close = df["close"].astype(np.float32)
 
     # 1. Parkinson Volatility (window: 48 bars by default)
+    # OPTIMIZED: Use EWM instead of rolling for faster computation
     parkinson_window = int(config.get("risk_parkinson_window", 48))
     low_safe = low.replace(0, np.nan)
     log_hl = np.log(high / low_safe)
-    parkinson_vol = log_hl.rolling(
-        window=parkinson_window,
-        min_periods=parkinson_window,
-    ).std() * np.sqrt(1.0 / (4.0 * np.log(2.0)))
+    
+    if use_ewm:
+        # EWM std is O(1) per point vs O(window) for rolling
+        parkinson_vol = log_hl.ewm(span=parkinson_window, adjust=False).std() * np.sqrt(1.0 / (4.0 * np.log(2.0)))
+    else:
+        parkinson_vol = log_hl.rolling(
+            window=parkinson_window,
+            min_periods=parkinson_window,
+        ).std() * np.sqrt(1.0 / (4.0 * np.log(2.0)))
 
     # 2. Hurst Exponent (window: 48 bars by default)
+    # Note: Hurst is inherently rolling-based, keep as is
     hurst_window = int(config.get("risk_hurst_window", 48))
     hurst_series = _calculate_hurst_exponent(close, hurst_window)
 
     # 3. Rolling Kurtosis (window: 36 bars by default)
+    # Note: Kurtosis requires rolling for proper calculation
     kurtosis_window = int(config.get("risk_kurtosis_window", 36))
     log_returns = np.log(close / close.shift(1))
     rolling_kurtosis = log_returns.rolling(
@@ -68,6 +82,7 @@ def generate_risk_regime_features(
     ).kurt()
 
     # 4. Rolling Skewness (window: 36 bars by default)
+    # Note: Skewness requires rolling for proper calculation
     skewness_window = int(config.get("risk_skewness_window", 36))
     rolling_skewness = log_returns.rolling(
         window=skewness_window,
@@ -75,12 +90,19 @@ def generate_risk_regime_features(
     ).skew()
 
     # 5. Volatility of Volatility (window: 30 bars by default)
+    # OPTIMIZED: Use EWM for both volatility and vol-of-vol
     vol_of_vol_window = int(config.get("risk_vol_of_vol_window", 30))
-    volatility = log_returns.rolling(window=20, min_periods=20).std()
-    vol_of_vol = volatility.rolling(
-        window=vol_of_vol_window,
-        min_periods=vol_of_vol_window,
-    ).std()
+    
+    if use_ewm:
+        # Use EWM for volatility calculation - O(1) per point
+        volatility = log_returns.ewm(span=20, adjust=False).std()
+        vol_of_vol = volatility.ewm(span=vol_of_vol_window, adjust=False).std()
+    else:
+        volatility = log_returns.rolling(window=20, min_periods=20).std()
+        vol_of_vol = volatility.rolling(
+            window=vol_of_vol_window,
+            min_periods=vol_of_vol_window,
+        ).std()
 
     feature_frame = pd.DataFrame(
         {

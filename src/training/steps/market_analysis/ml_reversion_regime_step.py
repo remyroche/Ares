@@ -1135,6 +1135,33 @@ class MLMeanReversionRegimeStep(BaseStep):
         """
         tprint_info("🔍 Starting Hierarchical HPO for XGBoost parameters")
 
+        # ====================================================================
+        # OPTIMIZATIONS: Warm start and dynamic subsampling for HPO
+        # ====================================================================
+        try:
+            from src.utils.ml_common.training_efficiency import WarmStartManager, DynamicSubsampler
+            
+            # Setup warm start
+            symbol = config.get('symbol', 'UNKNOWN')
+            timeframe = config.get('timeframe', '15m')
+            model_id = f"{symbol}_{timeframe}_reversion_regime"
+            warm_manager = WarmStartManager(model_id=model_id, model_type='reversion_xgb')
+            warm_params = warm_manager.load_params()
+            
+            if warm_params:
+                tprint_info(f"🔄 Loaded warm start params for reversion: {list(warm_params.keys())}")
+            
+            # Dynamic subsampling for HPO
+            subsampler = DynamicSubsampler()
+            warm_start_enabled = True
+        except ImportError:
+            tprint_warning("training_efficiency module not available")
+            warm_params = None
+            warm_manager = None
+            subsampler = None
+            warm_start_enabled = False
+        # ====================================================================
+
         # Use temporal split if available
         if split_config is not None:
             train_mask = (X.index >= split_config.training.start) & (X.index <= split_config.training.effective_end)
@@ -1153,10 +1180,26 @@ class MLMeanReversionRegimeStep(BaseStep):
             y_train = y.iloc[:n_train]
             y_val = y.iloc[n_train:]
 
-        # Convert to numpy
-        X_train_np = X_train.astype(np.float32).values
+        # Apply dynamic subsampling for HPO (10-50% based on data size)
+        if subsampler is not None:
+            sample_info = subsampler.get_subsample_info(len(X_train))
+            if sample_info['will_subsample']:
+                X_train_hpo, y_train_hpo = subsampler.sample(X_train, y_train, stratify=True)
+                tprint_info(
+                    f"🎯 Dynamic subsampling for HPO: {sample_info['original_samples']} -> "
+                    f"{len(X_train_hpo)} ({sample_info['sample_pct']:.1%})"
+                )
+            else:
+                X_train_hpo = X_train
+                y_train_hpo = y_train
+        else:
+            X_train_hpo = X_train
+            y_train_hpo = y_train
+
+        # Convert to numpy with float32 for memory efficiency
+        X_train_np = X_train_hpo.astype(np.float32).values
         X_val_np = X_val.astype(np.float32).values
-        y_train_np = y_train.astype(np.int32).values
+        y_train_np = y_train_hpo.astype(np.int32).values
         y_val_np = y_val.astype(np.int32).values
 
         # Calculate class balance
@@ -1313,6 +1356,14 @@ class MLMeanReversionRegimeStep(BaseStep):
         )
         tprint_info(f"📊 Best parameters: {best_params}")
 
+        # Save best params for future warm start
+        if warm_start_enabled and warm_manager is not None:
+            try:
+                warm_manager.save_params(best_params, metrics={'best_score': result.best_score})
+                tprint_info("💾 Saved best params for future warm start")
+            except Exception as e:
+                tprint_warning(f"Failed to save warm start params: {e}")
+
         return best_params
 
     def _train_xgb_student(
@@ -1438,14 +1489,14 @@ class MLMeanReversionRegimeStep(BaseStep):
 
         tprint_info(f"🤖 Training base XGBoost model ({params['n_estimators']} trees)...")
         xgb_start = time.time()
-        model = xgb.XGBClassifier(**params, random_state=42)
+        model = xgb.XGBClassifier(**params, random_state=42, early_stopping_rounds=30)
         model.fit(
             X_train_np,
             y_train_np,
             eval_set=[(X_val_np, y_val_np)],
             verbose=False
         )
-        tprint_info(f"✅ Base XGBoost trained in {time.time() - xgb_start:.2f}s")
+        tprint_info(f"✅ Base XGBoost trained in {time.time() - xgb_start:.2f}s (early_stopping_rounds=30)")
 
         # Get raw predictions (uncalibrated) for all splits
         tprint_info("📊 Generating raw (uncalibrated) predictions...")

@@ -51,9 +51,12 @@ def generate_path_regime_features(
         logger.warning("Path return / Sharpe-like feature generation failed: %s", exc)
 
     # KER (path efficiency) over different horizons
+    # OPTIMIZED: Reduced lookback from 200+ to max 48 for faster computation
     try:
         ker_window_main = int(config.get("path_ker_window_bars", 3))
-        ker_windows = sorted({ker_window_main, 24})
+        # Cap maximum window at 48 bars for efficiency
+        max_window = min(int(config.get("path_max_lookback", 48)), 48)
+        ker_windows = sorted({ker_window_main, min(24, max_window)})
         for n in ker_windows:
             if n > 1:
                 price_change_n = (result_df["close"] - result_df["close"].shift(n)).abs()

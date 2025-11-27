@@ -1055,7 +1055,13 @@ class MLSMCRegimeStep(BaseStep):
         y_train: pd.Series,
         config: Dict[str, Any],
     ) -> Dict[str, Any]:
-        """Run Bayesian TPE hyperparameter optimization for multi-class classification."""
+        """Run Bayesian TPE hyperparameter optimization for multi-class classification.
+        
+        Enhanced with:
+        - Warm start from previous best params
+        - Dynamic subsampling based on dataset size
+        - Saving best params for future runs
+        """
         try:
             import optuna
             from optuna.samplers import TPESampler
@@ -1077,13 +1083,53 @@ class MLSMCRegimeStep(BaseStep):
                 "n_jobs": -1,
             }
 
+        # ================================================================
+        # Warm Start and Dynamic Subsampling Integration
+        # ================================================================
+        try:
+            from src.utils.ml_common.training_efficiency import WarmStartManager, DynamicSubsampler
+            
+            # Setup warm start manager
+            symbol = config.get('symbol', 'UNKNOWN')
+            timeframe = config.get('timeframe', '15m')
+            model_id = f"{symbol}_{timeframe}_smc_regime"
+            warm_manager = WarmStartManager(model_id=model_id, model_type='smc_xgb')
+            warm_params = warm_manager.load_params()
+            
+            # Dynamic subsampling for HPO (use 10-50% of data based on size)
+            subsampler = DynamicSubsampler()
+            n_original = len(X_train)
+            X_hpo, y_hpo = subsampler.sample(X_train, y_train, stratify=True)
+            sample_info = subsampler.get_subsample_info(n_original)
+            
+            if sample_info['will_subsample']:
+                tprint_info(
+                    f"🎯 Dynamic subsampling: {sample_info['original_samples']} -> "
+                    f"{sample_info['sampled_size']} ({sample_info['sample_pct']:.1%}) for HPO"
+                )
+            
+            if warm_params:
+                tprint_info(f"🔄 Loaded warm start params: {list(warm_params.keys())}")
+        except ImportError:
+            tprint_warning("training_efficiency module not available, skipping warm start/subsampling")
+            X_hpo = X_train
+            y_hpo = y_train
+            warm_params = None
+            warm_manager = None
+        except Exception as e:
+            tprint_warning(f"Warm start/subsampling setup failed: {e}")
+            X_hpo = X_train
+            y_hpo = y_train
+            warm_params = None
+            warm_manager = None
+
         # Split for validation
         val_frac = 0.2
-        split_idx = int(len(X_train) * (1 - val_frac))
-        X_tr = X_train.iloc[:split_idx]
-        y_tr = y_train.iloc[:split_idx]
-        X_val = X_train.iloc[split_idx:]
-        y_val = y_train.iloc[split_idx:]
+        split_idx = int(len(X_hpo) * (1 - val_frac))
+        X_tr = X_hpo.iloc[:split_idx]
+        y_tr = y_hpo.iloc[:split_idx]
+        X_val = X_hpo.iloc[split_idx:]
+        y_val = y_hpo.iloc[split_idx:]
 
         def objective(trial):
             import xgboost as xgb
@@ -1147,6 +1193,19 @@ class MLSMCRegimeStep(BaseStep):
         sampler = TPESampler(seed=42)
         study = optuna.create_study(direction='minimize', sampler=sampler)
 
+        # Enqueue warm start params as first trial if available
+        if warm_params:
+            try:
+                # Filter to only include HPO parameters
+                hpo_param_names = ['n_estimators', 'learning_rate', 'max_depth', 'subsample', 
+                                   'colsample_bytree', 'gamma', 'reg_alpha', 'reg_lambda', 'min_child_weight']
+                warm_trial = {k: v for k, v in warm_params.items() if k in hpo_param_names}
+                if warm_trial:
+                    study.enqueue_trial(warm_trial)
+                    tprint_info(f"🔄 Enqueued warm start trial with {len(warm_trial)} params")
+            except Exception as e:
+                tprint_warning(f"Failed to enqueue warm start trial: {e}")
+
         study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
 
         tprint_info(f"HPO completed: best objective value={study.best_value:.4f}")
@@ -1160,6 +1219,14 @@ class MLSMCRegimeStep(BaseStep):
                 "n_jobs": -1,
             }
         )
+
+        # Save best params for future warm start
+        if warm_manager is not None:
+            try:
+                warm_manager.save_params(best_params, metrics={'best_value': study.best_value})
+                tprint_info("💾 Saved best params for future warm start")
+            except Exception as e:
+                tprint_warning(f"Failed to save warm start params: {e}")
 
         return best_params
 

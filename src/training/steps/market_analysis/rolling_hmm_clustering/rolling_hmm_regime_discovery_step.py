@@ -107,14 +107,14 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
         # Hardware manager
         self.hardware_manager = None
 
-        tprint(f"✅ Initialized {step_name} step", "SUCCESS")
+        tprint(f"Ă˘ÂÂ Initialized {step_name} step", "SUCCESS")
 
     @property
     def quality_assessor(self) -> ClusterQualityAssessor:
         """Lazy property for quality assessor."""
-        tprint_debug("🔍 Accessing quality assessor instance")
+        tprint_debug("ÄÂÂÂ Accessing quality assessor instance")
         if self._quality_assessor is None:
-            tprint_info("  → Initializing ClusterQualityAssessor")
+            tprint_info("  Ă˘ÂÂ Initializing ClusterQualityAssessor")
             self._quality_assessor = ClusterQualityAssessor(
                 artifact_manager=self.artifact_manager,
                 enable_hardware_optimization=True,
@@ -167,18 +167,18 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
         # Override to regime_timeframe
         if timeframe != regime_timeframe:
             tprint(
-                f"⏰ Using regime_timeframe={regime_timeframe} for Rolling HMM "
+                f"Ă˘ÂÂ° Using regime_timeframe={regime_timeframe} for Rolling HMM "
                 f"(overriding timeframe={timeframe})",
                 "INFO"
             )
             timeframe = regime_timeframe
         
         tprint(
-            f"🚀 Starting Rolling HMM Regime Discovery for {symbol} on {exchange} "
+            f"ÄÂÂÂ Starting Rolling HMM Regime Discovery for {symbol} on {exchange} "
             f"(timeframe: {timeframe})",
             "INFO"
         )
-        tprint_debug("🧠 Enhanced Features: EWMA rolling (8+16 to 12+24), Returns/Vol/Trend/Volume, PCA (3-5), Sticky HMM, VectorBT+M1")
+        tprint_debug("ÄÂÂ§Â  Enhanced Features: EWMA rolling (8+16 to 12+24), Returns/Vol/Trend/Volume, PCA (3-5), Sticky HMM, VectorBT+M1")
         
         try:
             # Initialize hardware optimization
@@ -194,26 +194,26 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             )
             
             # Load market data
-            tprint("📥 Loading market data...", "INFO")
+            tprint("ÄÂÂÄ˝ Loading market data...", "INFO")
 
             market_data = self._load_market_data(symbol, exchange, timeframe, config)
 
             if market_data is None or market_data.empty:
-                tprint_error(f"❌ No market data available for {symbol} on {timeframe}")
+                tprint_error(f"Ă˘ÂÂ No market data available for {symbol} on {timeframe}")
                 raise ValueError(f"No market data available for {symbol} on {timeframe}")
 
-            tprint(f"🐛 DEBUG: [STEP 1] market_data after _load_market_data: {market_data.shape}", "INFO")
-            tprint(f"🐛 DEBUG: [STEP 1] Index range: {market_data.index.min()} to {market_data.index.max()}", "INFO")
-            tprint(f"✅ Loaded {len(market_data)} samples of market data", "SUCCESS")
+            tprint(f"ÄÂÂÂ DEBUG: [STEP 1] market_data after _load_market_data: {market_data.shape}", "INFO")
+            tprint(f"ÄÂÂÂ DEBUG: [STEP 1] Index range: {market_data.index.min()} to {market_data.index.max()}", "INFO")
+            tprint(f"Ă˘ÂÂ Loaded {len(market_data)} samples of market data", "SUCCESS")
 
             try:
                 if self.hardware_manager is not None and hasattr(self.hardware_manager, 'memory_optimizer'):
                     optimizer = self.hardware_manager.memory_optimizer
                     if hasattr(optimizer, 'optimize_dataframe_memory'):
                         market_data = optimizer.optimize_dataframe_memory(market_data)
-                        tprint_debug("🧠 Applied M1 memory optimization to market_data")
+                        tprint_debug("ÄÂÂ§Â  Applied M1 memory optimization to market_data")
             except Exception as e:
-                tprint_debug(f"⚠️ M1 memory optimization skipped due to error: {e}")
+                tprint_debug(f"Ă˘ÂÂ ÄÂ¸Â M1 memory optimization skipped due to error: {e}")
 
             # Check execution mode and if HPO is enabled
             execution_mode = config.get('execution_mode', 'full')
@@ -221,17 +221,17 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             hpo_results: Optional[Dict[str, Any]] = None
             best_params: Optional[Dict[str, Any]] = None
 
-            tprint_info(f"🔧 Configuration check: execution_mode={execution_mode}, enable_auto_tuning={enable_auto_tuning}")
+            tprint_info(f"ÄÂÂÂ§ Configuration check: execution_mode={execution_mode}, enable_auto_tuning={enable_auto_tuning}")
 
             # Check if manual params are provided
             has_manual_params = 'rolling_hmm_params' in config and config['rolling_hmm_params']
             if has_manual_params:
-                tprint_info(f"📋 Manual params found: {list(config['rolling_hmm_params'].keys())}")
+                tprint_info(f"ÄÂÂÂ Manual params found: {list(config['rolling_hmm_params'].keys())}")
 
             # Apply execution mode data limits (blank=20d, light=20d, full=all)
             market_data = self._apply_execution_mode_filter(market_data, execution_mode, timeframe)
-            tprint(f"🐛 DEBUG: [STEP 2] market_data after _apply_execution_mode_filter: {market_data.shape}", "INFO")
-            tprint(f"   → After execution mode filter ({execution_mode}): {len(market_data)} samples")
+            tprint(f"ÄÂÂÂ DEBUG: [STEP 2] market_data after _apply_execution_mode_filter: {market_data.shape}", "INFO")
+            tprint(f"   Ă˘ÂÂ After execution mode filter ({execution_mode}): {len(market_data)} samples")
             
             # Initialize feature engineer
             feature_config = self._get_feature_config(
@@ -246,26 +246,26 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             # Pre-compute ALL features for ALL EWMA windows ONCE (cached for HPO)
             if enable_auto_tuning:
                 tprint("")
-                tprint("🔄 Pre-computing features for HPO efficiency")
+                tprint("ÄÂÂÂ Pre-computing features for HPO efficiency")
                 all_cached_features = feature_engineer.precompute_all_features(market_data)
-                tprint(f"✅ Cached features for {len(all_cached_features)} EWMA configurations")
+                tprint(f"Ă˘ÂÂ Cached features for {len(all_cached_features)} EWMA configurations")
                 tprint("")
             
             # Only skip if user provided manual params AND explicitly disabled auto-tuning
             if 'rolling_hmm_params' in config and config['rolling_hmm_params']:
                 if config.get('enable_auto_tuning') is False:
                     enable_auto_tuning = False
-                    tprint_info("ℹ️  Manual params provided with enable_auto_tuning=False, skipping HPO")
+                    tprint_info("Ă˘ÂĹĄÄÂ¸Â  Manual params provided with enable_auto_tuning=False, skipping HPO")
                 else:
-                    tprint_info("ℹ️  Manual params provided but enable_auto_tuning=True (default), running HPO")
+                    tprint_info("Ă˘ÂĹĄÄÂ¸Â  Manual params provided but enable_auto_tuning=True (default), running HPO")
             
             # Show execution mode info
             if enable_auto_tuning and execution_mode in ['light', 'blank']:
-                tprint_info(f"ℹ️  HPO enabled in '{execution_mode}' mode (will use reduced trials for speed)")
+                tprint_info(f"Ă˘ÂĹĄÄÂ¸Â  HPO enabled in '{execution_mode}' mode (will use reduced trials for speed)")
             
             if enable_auto_tuning:
                 tprint("", "INFO")
-                tprint("🎯 HPO Enabled - Finding Optimal Hyperparameters", "INFO")
+                tprint("ÄÂÂĹť HPO Enabled - Finding Optimal Hyperparameters", "INFO")
                 tprint("=" * 80, "INFO")
 
                 # Run HPO synchronously
@@ -276,19 +276,19 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
                 # Update config with best parameters
                 if hpo_results and best_params:
                     tprint("", "INFO")
-                    tprint("✅ HPO Complete - Using Optimal Parameters", "SUCCESS")
+                    tprint("Ă˘ÂÂ HPO Complete - Using Optimal Parameters", "SUCCESS")
                     self._log_best_params(best_params)
                     if 'rolling_hmm_params' not in config:
                         config['rolling_hmm_params'] = {}
                     config['rolling_hmm_params'].update(best_params)
                 else:
-                    tprint_warning("⚠️  HPO did not complete, using default parameters")
+                    tprint_warning("Ă˘ÂÂ ÄÂ¸Â  HPO did not complete, using default parameters")
                 
                 tprint("=" * 80, "INFO")
                 tprint("", "INFO")
             
             # Run clustering
-            tprint("🔍 Running Rolling HMM clustering...", "INFO")
+            tprint("ÄÂÂÂ Running Rolling HMM clustering...", "INFO")
             result = await self._run_clustering(
                 market_data,
                 feature_engineer,
@@ -322,7 +322,7 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             execution_time = time.time() - start_time
             
             tprint("", "SUCCESS")
-            tprint(f"✅ Rolling HMM Regime Discovery completed in {execution_time:.2f}s", "SUCCESS")
+            tprint(f"Ă˘ÂÂ Rolling HMM Regime Discovery completed in {execution_time:.2f}s", "SUCCESS")
             tprint(f"   - Identified {result.get('n_regimes', 0)} regimes", "SUCCESS")
             tprint(f"   - Quality score: {result.get('quality_metrics', {}).get('quality_score', 0):.4f}", "SUCCESS")
             
@@ -376,27 +376,27 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             expected_min_samples = lookback_days * samples_per_day
             actual_samples = len(external_data)
 
-            tprint(f"🔍 [REGIME_DISCOVERY] Validating config market_data:", "INFO")
-            tprint(f"   → Execution mode: {execution_mode}", "INFO")
-            tprint(f"   → Timeframe: {timeframe}", "INFO")
-            tprint(f"   → Lookback days for mode: {lookback_days}", "INFO")
-            tprint(f"   → Expected min samples ({lookback_days} days): {expected_min_samples:,}", "INFO")
-            tprint(f"   → Actual samples in config: {actual_samples:,}", "INFO")
+            tprint(f"ÄÂÂÂ [REGIME_DISCOVERY] Validating config market_data:", "INFO")
+            tprint(f"   Ă˘ÂÂ Execution mode: {execution_mode}", "INFO")
+            tprint(f"   Ă˘ÂÂ Timeframe: {timeframe}", "INFO")
+            tprint(f"   Ă˘ÂÂ Lookback days for mode: {lookback_days}", "INFO")
+            tprint(f"   Ă˘ÂÂ Expected min samples ({lookback_days} days): {expected_min_samples:,}", "INFO")
+            tprint(f"   Ă˘ÂÂ Actual samples in config: {actual_samples:,}", "INFO")
 
             if actual_samples < expected_min_samples * 0.3:  # Allow 30% tolerance
                 tprint(
-                    f"❌ [REGIME_DISCOVERY] CRITICAL: config['market_data'] has only {actual_samples:,} samples!\n"
+                    f"Ă˘ÂÂ [REGIME_DISCOVERY] CRITICAL: config['market_data'] has only {actual_samples:,} samples!\n"
                     f"   Expected at least {int(expected_min_samples * 0.3):,} samples (30% of {lookback_days} days)\n"
                     f"   This data appears TRUNCATED - bypassing config and loading from historical storage instead!",
                     "ERROR"
                 )
                 # Fall through to normal loading to get full dataset
             else:
-                tprint(f"✅ Using market data from config ({len(external_data)} samples)", "SUCCESS")
+                tprint(f"Ă˘ÂÂ Using market data from config ({len(external_data)} samples)", "SUCCESS")
                 return external_data
 
         # Load using KlinesParquetManager (same method as regime_models_training)
-        tprint(f"📥 [REGIME_DISCOVERY] Loading fresh data for {symbol} from historical storage", "INFO")
+        tprint(f"ÄÂÂÄ˝ [REGIME_DISCOVERY] Loading fresh data for {symbol} from historical storage", "INFO")
 
         try:
             from src.utils.kline_parquet import KlinesParquetManager, StorageConfig
@@ -411,7 +411,7 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             
             # Use the smart last_n_days parameter to load only the period we need
             # This automatically finds the latest available data and loads the configured lookback period
-            tprint(f"📥 [REGIME_DISCOVERY] Loading last {lookback_days} days from latest available data (mode: {execution_mode})", "INFO")
+            tprint(f"ÄÂÂÄ˝ [REGIME_DISCOVERY] Loading last {lookback_days} days from latest available data (mode: {execution_mode})", "INFO")
             
             fresh_data = klines_manager.load_klines(
                 symbol=symbol,
@@ -421,39 +421,39 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             )
             
             if fresh_data is None or len(fresh_data) == 0:
-                tprint(f"❌ [REGIME_DISCOVERY] No data found in historical storage", "ERROR")
+                tprint(f"Ă˘ÂÂ [REGIME_DISCOVERY] No data found in historical storage", "ERROR")
                 raise ValueError(f"No historical data found for {symbol} {exchange} {timeframe}")
 
-            tprint(f"🐛 DEBUG: KlinesParquetManager returned data: {fresh_data.shape if fresh_data is not None else 'None'}", "INFO")
+            tprint(f"ÄÂÂÂ DEBUG: KlinesParquetManager returned data: {fresh_data.shape if fresh_data is not None else 'None'}", "INFO")
 
             if fresh_data is not None and len(fresh_data) > 0:
-                tprint(f"✅ [REGIME_DISCOVERY] Loaded {len(fresh_data):,} rows from historical storage (last {lookback_days} days)", "SUCCESS")
+                tprint(f"Ă˘ÂÂ [REGIME_DISCOVERY] Loaded {len(fresh_data):,} rows from historical storage (last {lookback_days} days)", "SUCCESS")
 
                 # Check for and remove duplicate index labels
                 if fresh_data.index.duplicated().any():
                     n_duplicates = fresh_data.index.duplicated().sum()
-                    tprint(f"⚠️ [REGIME_DISCOVERY] Found {n_duplicates} duplicate timestamps, removing duplicates", "WARNING")
+                    tprint(f"Ă˘ÂÂ ÄÂ¸Â [REGIME_DISCOVERY] Found {n_duplicates} duplicate timestamps, removing duplicates", "WARNING")
                     fresh_data = fresh_data[~fresh_data.index.duplicated(keep='first')]
-                    tprint(f"✅ [REGIME_DISCOVERY] After deduplication: {len(fresh_data):,} rows", "SUCCESS")
+                    tprint(f"Ă˘ÂÂ [REGIME_DISCOVERY] After deduplication: {len(fresh_data):,} rows", "SUCCESS")
 
                 # Validate sample count
                 expected_samples_per_day = 24 if timeframe == '1h' else (24 * 4 if timeframe == '15m' else 24)
                 expected_samples = lookback_days * expected_samples_per_day
                 actual_samples = len(fresh_data)
 
-                tprint(f"📊 [REGIME_DISCOVERY] Data validation: Expected ~{expected_samples:,} samples for {lookback_days} days of {timeframe} data", "INFO")
-                tprint(f"📊 [REGIME_DISCOVERY] Data validation: Actual samples: {actual_samples:,}", "INFO")
+                tprint(f"ÄÂÂÂ [REGIME_DISCOVERY] Data validation: Expected ~{expected_samples:,} samples for {lookback_days} days of {timeframe} data", "INFO")
+                tprint(f"ÄÂÂÂ [REGIME_DISCOVERY] Data validation: Actual samples: {actual_samples:,}", "INFO")
 
                 if actual_samples < expected_samples * 0.5:
-                    tprint(f"⚠️ [REGIME_DISCOVERY] WARNING: Only {actual_samples:,} samples available (expected ~{expected_samples:,})", "WARNING")
+                    tprint(f"Ă˘ÂÂ ÄÂ¸Â [REGIME_DISCOVERY] WARNING: Only {actual_samples:,} samples available (expected ~{expected_samples:,})", "WARNING")
 
-                tprint(f"📅 [REGIME_DISCOVERY] Date range: {fresh_data.index.min()} to {fresh_data.index.max()}", "INFO")
+                tprint(f"ÄÂÂÂ [REGIME_DISCOVERY] Date range: {fresh_data.index.min()} to {fresh_data.index.max()}", "INFO")
                 return fresh_data
 
         except Exception as e:
-            tprint(f"❌ [REGIME_DISCOVERY] Failed to load from KlinesParquetManager: {e}", "ERROR")
+            tprint(f"Ă˘ÂÂ [REGIME_DISCOVERY] Failed to load from KlinesParquetManager: {e}", "ERROR")
             import traceback
-            tprint(f"❌ [REGIME_DISCOVERY] Traceback: {traceback.format_exc()}", "ERROR")
+            tprint(f"Ă˘ÂÂ [REGIME_DISCOVERY] Traceback: {traceback.format_exc()}", "ERROR")
             self.logger.error(f"Failed to load from KlinesParquetManager: {e}", exc_info=True)
 
         # Fall back to artifact sources
@@ -480,12 +480,12 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
                         artifact_type='data',
                     )
                     
-                    tprint(f"🐛 DEBUG: Artifact {step_name}/{artifact_name} returned: {market_data.shape if market_data is not None and hasattr(market_data, 'shape') else 'None/Invalid'}", "INFO")
+                    tprint(f"ÄÂÂÂ DEBUG: Artifact {step_name}/{artifact_name} returned: {market_data.shape if market_data is not None and hasattr(market_data, 'shape') else 'None/Invalid'}", "INFO")
 
                     if market_data is not None and not market_data.empty:
                         # Log data size but don't reject it - let the pipeline handle insufficient data
                         actual_samples = len(market_data)
-                        tprint(f"✅ Loaded market data from {step_name}/{artifact_name} ({actual_samples:,} samples)", "SUCCESS")
+                        tprint(f"Ă˘ÂÂ Loaded market data from {step_name}/{artifact_name} ({actual_samples:,} samples)", "SUCCESS")
                         
                         # Warn if data seems insufficient but still use it
                         samples_per_day_map = {'1m': 1440, '3m': 480, '5m': 288, '15m': 96, '30m': 48, '1h': 24, '4h': 6, '1d': 1}
@@ -494,7 +494,7 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
                         
                         if actual_samples < expected_min_samples * 0.5:
                             tprint(
-                                f"⚠️ [REGIME_DISCOVERY] WARNING: Only {actual_samples:,} samples available\n"
+                                f"Ă˘ÂÂ ÄÂ¸Â [REGIME_DISCOVERY] WARNING: Only {actual_samples:,} samples available\n"
                                 f"   (expected ~{expected_min_samples:,} for 180 days of {timeframe} data)\n"
                                 f"   Proceeding anyway - results may be suboptimal",
                                 "WARNING"
@@ -509,7 +509,7 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             self.artifact_manager.set_context(**original_context)
 
         tprint(
-            f"⚠️ Could not load market data for {symbol} on {timeframe} from artifacts",
+            f"Ă˘ÂÂ ÄÂ¸Â Could not load market data for {symbol} on {timeframe} from artifacts",
             "WARNING",
         )
 
@@ -520,7 +520,7 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
 
     def _initialize_hardware_optimization(self):
         """Initialize hardware optimization for M1."""
-        tprint_info("⚡ Initializing hardware optimization for M1")
+        tprint_info("Ă˘ÂÄ Initializing hardware optimization for M1")
 
         self.hardware_manager = get_unified_hardware_manager()
         self.hardware_manager.optimize_for_workload(
@@ -641,9 +641,9 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
                     cap = min(cap, int(total_samples * float(sample_fraction)))
                 if cap < total_samples and cap > 0:
                     hpo_market_data = market_data.tail(cap)
-                    tprint_info(f"🔧 HPO using subsample of {len(hpo_market_data)} rows out of {total_samples} (rolling_hmm_params cap)")
+                    tprint_info(f"ÄÂÂÂ§ HPO using subsample of {len(hpo_market_data)} rows out of {total_samples} (rolling_hmm_params cap)")
             except Exception as e:
-                tprint_debug(f"⚠️ HPO subsampling disabled due to error: {e}")
+                tprint_debug(f"Ă˘ÂÂ ÄÂ¸Â HPO subsampling disabled due to error: {e}")
 
             # Create optimizer
             optimizer = RollingHMMOptimizer(hpo_config)
@@ -669,11 +669,11 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
 
                 return result, best_params
             else:
-                tprint_warning("⚠️  HPO returned no results")
+                tprint_warning("Ă˘ÂÂ ÄÂ¸Â  HPO returned no results")
                 return None, None
 
         except Exception as e:
-            tprint_error(f"❌ HPO failed: {e}")
+            tprint_error(f"Ă˘ÂÂ HPO failed: {e}")
             self.logger.error(f"HPO failed: {e}", exc_info=True)
             return None, None
 
@@ -697,13 +697,13 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             ewma_config_idx = params.get('ewma_config_idx', 0)
             ewma_config = DEFAULT_EWMA_CONFIGS[int(ewma_config_idx)]
 
-            tprint_info(f"  → Using EWMA config: {ewma_config.name}")
+            tprint_info(f"  Ă˘ÂÂ Using EWMA config: {ewma_config.name}")
 
             # Generate features
-            tprint(f"🐛 DEBUG: [STEP 3] market_data before feature generation: {market_data.shape}", "INFO")
+            tprint(f"ÄÂÂÂ DEBUG: [STEP 3] market_data before feature generation: {market_data.shape}", "INFO")
             features = feature_engineer.generate_features(market_data, ewma_config)
-            tprint(f"🐛 DEBUG: [STEP 4] features after generation: {features.shape}", "INFO")
-            tprint(f"🐛 DEBUG: [STEP 4] features index range: {features.index.min()} to {features.index.max()}", "INFO")
+            tprint(f"ÄÂÂÂ DEBUG: [STEP 4] features after generation: {features.shape}", "INFO")
+            tprint(f"ÄÂÂÂ DEBUG: [STEP 4] features index range: {features.index.min()} to {features.index.max()}", "INFO")
 
             if len(features) < 50:
                 raise ValueError(f"Insufficient data after feature engineering: {len(features)} samples")
@@ -714,9 +714,9 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
                 market_data,
                 ewma_config
             )
-            tprint(f"🐛 DEBUG: [STEP 5] features_economic after extraction: {features_economic.shape}", "INFO")
-            tprint(f"🐛 DEBUG: [STEP 5] features_economic index range: {features_economic.index.min()} to {features_economic.index.max()}", "INFO")
-            tprint(f"🐛 DEBUG: [STEP 5] Economic features: {list(features_economic.columns)}", "INFO")
+            tprint(f"ÄÂÂÂ DEBUG: [STEP 5] features_economic after extraction: {features_economic.shape}", "INFO")
+            tprint(f"ÄÂÂÂ DEBUG: [STEP 5] features_economic index range: {features_economic.index.min()} to {features_economic.index.max()}", "INFO")
+            tprint(f"ÄÂÂÂ DEBUG: [STEP 5] Economic features: {list(features_economic.columns)}", "INFO")
 
             # Apply PCA on compact economic feature set for HMM emissions
             features_pca, pca_model, pca_explained = feature_engineer.apply_pca(
@@ -724,27 +724,30 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
                 use_cache=True,
                 cache_key=f"economic_{ewma_config.name}",
             )
-            tprint_info(f"  → PCA explained variance (economic features): {pca_explained:.2%}")
+            tprint_info(f"  Ă˘ÂÂ PCA explained variance (economic features): {pca_explained:.2%}")
 
             # Create HMM config
             n_components = params.get('n_components', 5)
             min_covar = params.get('min_covar', 1e-3)
             kappa = params.get('kappa', 10.0)
 
+            # OPTIMIZED: Reduced n_iter from 200 to 100 for faster convergence
+            # Using diag covariance (already set) for speed
+            # Relaxed tol from 1e-4 to 1e-3 for faster convergence
             hmm_config = StickyHMMConfig(
                 n_components=int(n_components),
                 min_covar=float(min_covar),
                 kappa=float(kappa),
-                n_iter=params.get('n_iter', 200),
-                tol=params.get('tol', 1e-4),
-                covariance_type='diag',
+                n_iter=params.get('n_iter', 100),  # Reduced from 200 for faster training
+                tol=params.get('tol', 1e-3),  # Relaxed from 1e-4
+                covariance_type='diag',  # 5-10x faster than 'full'
                 kmeans_init=True,
                 use_sticky_priors=True,
                 post_fit_regularization=True,
                 random_state=params.get('random_state', 42)
             )
 
-            tprint_info(f"  → HMM config: n_components={n_components}, kappa={kappa}, min_covar={min_covar}")
+            tprint_info(f"  Ă˘ÂÂ HMM config: n_components={n_components}, kappa={kappa}, min_covar={min_covar}")
 
             # Fit HMM model using PCA-transformed economic features
             hmm_model = StickyHMMModel(hmm_config)
@@ -757,8 +760,8 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             # Predict regime labels
             regime_labels = hmm_model.predict(features_pca.values)
             regime_probs = hmm_model.predict_proba(features_pca.values)
-            tprint(f"🐛 DEBUG: [STEP 6] regime_labels after HMM predict: shape={regime_labels.shape}, unique={np.unique(regime_labels)}", "INFO")
-            tprint(f"🐛 DEBUG: [STEP 6] regime_probs after HMM predict: {regime_probs.shape}", "INFO")
+            tprint(f"ÄÂÂÂ DEBUG: [STEP 6] regime_labels after HMM predict: shape={regime_labels.shape}, unique={np.unique(regime_labels)}", "INFO")
+            tprint(f"ÄÂÂÂ DEBUG: [STEP 6] regime_probs after HMM predict: {regime_probs.shape}", "INFO")
 
             # Get model summary
             model_summary = hmm_model.get_model_summary()
@@ -768,12 +771,12 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             forward_returns = forward_returns.loc[features_economic.index]
 
             # Assess quality
-            tprint_info("  → Assessing regime quality")
+            tprint_info("  Ă˘ÂÂ Assessing regime quality")
 
             # Diagnostic: Check regime transitions
             unique_regimes = np.unique(regime_labels)
             regime_transitions = np.sum(regime_labels[1:] != regime_labels[:-1])
-            tprint_info(f"  → Found {len(unique_regimes)} unique regimes, {regime_transitions} transitions in {len(regime_labels)} samples")
+            tprint_info(f"  Ă˘ÂÂ Found {len(unique_regimes)} unique regimes, {regime_transitions} transitions in {len(regime_labels)} samples")
 
             metrics = self.quality_assessor.assess_hmm_regime_quality(
                 regime_labels=regime_labels,
@@ -812,7 +815,7 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             return result
 
         except Exception as e:
-            tprint_error(f"❌ Clustering failed: {e}")
+            tprint_error(f"Ă˘ÂÂ Clustering failed: {e}")
             self.logger.error(f"Clustering failed: {e}", exc_info=True)
             raise
 
@@ -826,10 +829,10 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
     ) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """Save clustering results as artifacts."""
         try:
-            tprint(f"🐛 DEBUG: [STEP 7] _save_results called", "INFO")
-            tprint(f"🐛 DEBUG: [STEP 7] result['timestamps'] length: {len(result['timestamps'])}", "INFO")
-            tprint(f"🐛 DEBUG: [STEP 7] result['regime_labels'] length: {len(result['regime_labels'])}", "INFO")
-            tprint(f"🐛 DEBUG: [STEP 7] result['regime_probs'] shape: {result['regime_probs'].shape}", "INFO")
+            tprint(f"ÄÂÂÂ DEBUG: [STEP 7] _save_results called", "INFO")
+            tprint(f"ÄÂÂÂ DEBUG: [STEP 7] result['timestamps'] length: {len(result['timestamps'])}", "INFO")
+            tprint(f"ÄÂÂÂ DEBUG: [STEP 7] result['regime_labels'] length: {len(result['regime_labels'])}", "INFO")
+            tprint(f"ÄÂÂÂ DEBUG: [STEP 7] result['regime_probs'] shape: {result['regime_probs'].shape}", "INFO")
 
             # Create labels DataFrame (raw Viterbi regimes)
             labels_df = pd.DataFrame({
@@ -894,8 +897,8 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             except Exception:
                 # Fall back gracefully if anything goes wrong
                 labels_df['regime_label_ml'] = labels_df['regime_label']
-            tprint(f"🐛 DEBUG: [STEP 8] labels_df shape after creation: {labels_df.shape}", "INFO")
-            tprint(f"🐛 DEBUG: [STEP 8] labels_df index range: {labels_df.index.min()} to {labels_df.index.max()}", "INFO")
+            tprint(f"ÄÂÂÂ DEBUG: [STEP 8] labels_df shape after creation: {labels_df.shape}", "INFO")
+            tprint(f"ÄÂÂÂ DEBUG: [STEP 8] labels_df index range: {labels_df.index.min()} to {labels_df.index.max()}", "INFO")
 
             # Create probabilities DataFrame
             probs_columns = [f'regime_{i}_prob' for i in range(result['n_regimes'])]
@@ -906,10 +909,10 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
                 timestamps = pd.to_datetime(timestamps)
             
             # Debug: Check timestamps before creating DataFrame
-            tprint_info(f"  → Creating probs_df with {len(timestamps)} timestamps")
-            tprint_info(f"  → Timestamp type: {type(timestamps)}, dtype: {timestamps.dtype if hasattr(timestamps, 'dtype') else 'N/A'}")
-            tprint_info(f"  → Timestamp range: {timestamps.min()} to {timestamps.max()}")
-            tprint_info(f"  → Regime probs shape: {result['regime_probs'].shape}")
+            tprint_info(f"  Ă˘ÂÂ Creating probs_df with {len(timestamps)} timestamps")
+            tprint_info(f"  Ă˘ÂÂ Timestamp type: {type(timestamps)}, dtype: {timestamps.dtype if hasattr(timestamps, 'dtype') else 'N/A'}")
+            tprint_info(f"  Ă˘ÂÂ Timestamp range: {timestamps.min()} to {timestamps.max()}")
+            tprint_info(f"  Ă˘ÂÂ Regime probs shape: {result['regime_probs'].shape}")
             
             probs_df = pd.DataFrame(
                 result['regime_probs'],
@@ -918,9 +921,9 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             )
             
             # Debug: Verify DataFrame after creation
-            tprint_info(f"  → probs_df shape: {probs_df.shape}")
-            tprint_info(f"  → probs_df index type: {type(probs_df.index)}")
-            tprint_info(f"  → probs_df index range: {probs_df.index.min()} to {probs_df.index.max()}")
+            tprint_info(f"  Ă˘ÂÂ probs_df shape: {probs_df.shape}")
+            tprint_info(f"  Ă˘ÂÂ probs_df index type: {type(probs_df.index)}")
+            tprint_info(f"  Ă˘ÂÂ probs_df index range: {probs_df.index.min()} to {probs_df.index.max()}")
 
             try:
                 probs_values = probs_df.to_numpy(copy=False)
@@ -981,15 +984,15 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             labels_df_to_save = labels_df.reset_index()
             labels_df_to_save.rename(columns={'index': 'timestamp'}, inplace=True)
             
-            tprint(f"🐛 DEBUG: [STEP 9] About to save labels_df to HDF5: {labels_df_to_save.shape}", "INFO")
-            tprint(f"🐛 DEBUG: [STEP 9] labels_df columns: {list(labels_df_to_save.columns)}", "INFO")
+            tprint(f"ÄÂÂÂ DEBUG: [STEP 9] About to save labels_df to HDF5: {labels_df_to_save.shape}", "INFO")
+            tprint(f"ÄÂÂÂ DEBUG: [STEP 9] labels_df columns: {list(labels_df_to_save.columns)}", "INFO")
             self._save_artifact(
                 data=labels_df_to_save,
                 artifact_name='rolling_hmm_regime_labels',
                 artifact_type='data',
                 metadata={'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe}
             )
-            tprint(f"✅ DEBUG: [STEP 9] Successfully saved rolling_hmm_regime_labels", "SUCCESS")
+            tprint(f"Ă˘ÂÂ DEBUG: [STEP 9] Successfully saved rolling_hmm_regime_labels", "SUCCESS")
 
             # Save probabilities
             # CRITICAL: Reset index to ensure it's saved correctly in HDF5
@@ -997,8 +1000,8 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             probs_df_to_save = probs_df.reset_index()
             probs_df_to_save.rename(columns={'index': 'timestamp'}, inplace=True)
             
-            tprint_info(f"  → Saving probs_df with {len(probs_df_to_save)} rows")
-            tprint_info(f"  → Columns: {list(probs_df_to_save.columns)}")
+            tprint_info(f"  Ă˘ÂÂ Saving probs_df with {len(probs_df_to_save)} rows")
+            tprint_info(f"  Ă˘ÂÂ Columns: {list(probs_df_to_save.columns)}")
             
             self._save_artifact(
                 data=probs_df_to_save,
@@ -1039,7 +1042,7 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             return labels_df, probs_df
 
         except Exception as e:
-            tprint_error(f"❌ Failed to save results: {e}")
+            tprint_error(f"Ă˘ÂÂ Failed to save results: {e}")
             self.logger.error(f"Failed to save results: {e}", exc_info=True)
             raise
 
@@ -1059,7 +1062,7 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             # Print summary
             tprint("", "INFO")
             tprint("=" * 80, "INFO")
-            tprint("📊 Rolling HMM Clustering Quality Report", "INFO")
+            tprint("ÄÂÂÂ Rolling HMM Clustering Quality Report", "INFO")
             tprint("=" * 80, "INFO")
             tprint(f"Symbol: {symbol} | Exchange: {exchange} | Timeframe: {timeframe}", "INFO")
             tprint(f"Number of Regimes: {result['n_regimes']}", "INFO")
@@ -1142,21 +1145,21 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             
             # Debug: Check HPO results more thoroughly
             if hpo_results is None:
-                tprint("⚠️ No HPO results found in result or config", "WARNING")
+                tprint("Ă˘ÂÂ ÄÂ¸Â No HPO results found in result or config", "WARNING")
             elif not hpo_results:
-                tprint("⚠️ HPO results found but empty dictionary", "WARNING")
+                tprint("Ă˘ÂÂ ÄÂ¸Â HPO results found but empty dictionary", "WARNING")
             elif not isinstance(hpo_results, dict):
-                tprint(f"⚠️ HPO results found but wrong type: {type(hpo_results)}", "WARNING")
+                tprint(f"Ă˘ÂÂ ÄÂ¸Â HPO results found but wrong type: {type(hpo_results)}", "WARNING")
                 hpo_results = None  # Reset to None to avoid further issues
             
             if hpo_results:
-                tprint(f"📋 Found HPO results with keys: {list(hpo_results.keys())}", "INFO")
+                tprint(f"ÄÂÂÂ Found HPO results with keys: {list(hpo_results.keys())}", "INFO")
                 trial_keys = ['coarse_results', 'fine_results', 'refinement_results', 'second_round_results']
                 all_trials = []
                 for key in trial_keys:
                     trials = hpo_results.get(key)
                     if isinstance(trials, list):
-                        tprint(f"📋 Processing {len(trials)} trials from {key}", "INFO")
+                        tprint(f"ÄÂÂÂ Processing {len(trials)} trials from {key}", "INFO")
                         for trial in trials:
                             if isinstance(trial, dict):
                                 params = trial.get('params', {})
@@ -1184,21 +1187,21 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
                                 trial_dict['score'] = score
                                 all_trials.append(trial_dict)
                     else:
-                        tprint(f"📋 No trials found for key {key} (type: {type(trials)})", "INFO")
+                        tprint(f"ÄÂÂÂ No trials found for key {key} (type: {type(trials)})", "INFO")
             else:
-                tprint("⚠️ No HPO results found in result or config", "WARNING")
+                tprint("Ă˘ÂÂ ÄÂ¸Â No HPO results found in result or config", "WARNING")
                 # Debug: check what keys are available
                 available_keys = list(result.keys()) if result else []
                 if available_keys:
-                    tprint(f"📋 Available result keys: {available_keys}", "INFO")
+                    tprint(f"ÄÂÂÂ Available result keys: {available_keys}", "INFO")
                 config_keys = list(config.keys()) if config else []
                 if config_keys:
-                    tprint(f"📋 Available config keys: {config_keys}", "INFO")
+                    tprint(f"ÄÂÂÂ Available config keys: {config_keys}", "INFO")
 
             if all_trials:
-                tprint(f"📋 Passing {len(all_trials)} trials to comprehensive CSV report generation", "INFO")
+                tprint(f"ÄÂÂÂ Passing {len(all_trials)} trials to comprehensive CSV report generation", "INFO")
             else:
-                tprint("⚠️ No trials available for all-trials CSV export", "WARNING")
+                tprint("Ă˘ÂÂ ÄÂ¸Â No trials available for all-trials CSV export", "WARNING")
             self.quality_assessor.generate_comprehensive_csv_report(
                 metrics_obj,
                 all_trials=all_trials,
@@ -1209,7 +1212,7 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             # Generate Economic Relevance Analysis
             tprint("", "INFO")
             tprint("=" * 80, "INFO")
-            tprint("💰 Generating Economic Relevance Analysis", "INFO")
+            tprint("ÄÂÂÂ° Generating Economic Relevance Analysis", "INFO")
             tprint("=" * 80, "INFO")
 
             try:
@@ -1247,13 +1250,13 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
                         if fallback_types:
                             regime_types = fallback_types
                             tprint_info(
-                                f"  → Fallback regime classification inferred from returns: {regime_types}"
+                                f"  Ă˘ÂÂ Fallback regime classification inferred from returns: {regime_types}"
                             )
                         else:
                             detected_types = None
                     if regime_types:
                         tprint_info(
-                            f"  → Using regime type mapping for economic analysis: {regime_types}"
+                            f"  Ă˘ÂÂ Using regime type mapping for economic analysis: {regime_types}"
                         )
 
                 # Initialize economic analyzer (use 100 permutations for broad-strokes significance)
@@ -1265,7 +1268,7 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
                     n_permutations=100
                 )
 
-                tprint_info("  → Evaluating trading strategies based on regimes")
+                tprint_info("  Ă˘ÂÂ Evaluating trading strategies based on regimes")
 
                 # Evaluate strategies
                 strategies = economic_analyzer.evaluate_strategies(
@@ -1279,11 +1282,11 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
                 economic_analyzer.perform_significance_test(strategies)
 
             except Exception as e:
-                tprint_warning(f"⚠️  Economic relevance analysis failed: {e}")
+                tprint_warning(f"Ă˘ÂÂ ÄÂ¸Â  Economic relevance analysis failed: {e}")
                 self.logger.warning(f"Economic relevance analysis failed: {e}", exc_info=True)
 
         except Exception as e:
-            tprint_warning(f"⚠️  Failed to generate reports: {e}")
+            tprint_warning(f"Ă˘ÂÂ ÄÂ¸Â  Failed to generate reports: {e}")
             self.logger.warning(f"Failed to generate reports: {e}", exc_info=True)
 
     def _infer_regime_types_from_metrics(self, metrics_dict: Dict[str, Any]) -> Dict[int, str]:
@@ -1330,7 +1333,7 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
         negative_sharpe_threshold = min(sharpe_p50, -0.02)
 
         tprint_debug(
-            "  [RegimeType] Thresholds → "
+            "  [RegimeType] Thresholds Ă˘ÂÂ "
             f"mean_p70={mean_p70:.6f}, mean_p30={mean_p30:.6f}, "
             f"vol_p70={vol_p70:.6f}, sharpe_p50={sharpe_p50:.4f}, "
             f"high_vol_abs={high_vol_threshold:.6f}"
@@ -1344,7 +1347,7 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             sharpe_val = r["sharpe"]
 
             tprint_debug(
-                "  [RegimeType] Regime {} → mean={:.6f}, vol={:.6f}, sharpe={:.4f}".format(
+                "  [RegimeType] Regime {} Ă˘ÂÂ mean={:.6f}, vol={:.6f}, sharpe={:.4f}".format(
                     rid, mean_ret, vol_val, sharpe_val
                 )
             )
@@ -1398,7 +1401,7 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             f"Rolling HMM execution failed: {error_msg}",
             exc_info=True,
         )
-        tprint(f"❌ Rolling HMM Regime Discovery failed: {error_msg}", "ERROR")
+        tprint(f"Ă˘ÂÂ Rolling HMM Regime Discovery failed: {error_msg}", "ERROR")
 
         return {
             'success': False,
@@ -1440,7 +1443,7 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
 
         # Full mode: no filtering
         if exec_mode == 'full':
-            tprint_info("  → Full mode: Using all available data (no filtering)")
+            tprint_info("  Ă˘ÂÂ Full mode: Using all available data (no filtering)")
             return data
 
         # Determine days limit based on centralized execution mode configuration
@@ -1456,31 +1459,31 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             days_limit = None
 
         if days_limit is None:
-            tprint_info(f"  → {exec_mode.capitalize()} mode: No explicit day limit configured, using all available data")
+            tprint_info(f"  Ă˘ÂÂ {exec_mode.capitalize()} mode: No explicit day limit configured, using all available data")
             return data
 
         if exec_mode == 'blank':
-            tprint_info(f"  → Blank mode: Using {days_limit} days of data (centralized config)")
+            tprint_info(f"  Ă˘ÂÂ Blank mode: Using {days_limit} days of data (centralized config)")
         elif exec_mode == 'light':
-            tprint_info(f"  → Light mode: Using {days_limit} days of data (centralized config)")
+            tprint_info(f"  Ă˘ÂÂ Light mode: Using {days_limit} days of data (centralized config)")
         else:
-            tprint_info(f"  → {exec_mode.capitalize()} mode: Using {days_limit} days of data (centralized config)")
+            tprint_info(f"  Ă˘ÂÂ {exec_mode.capitalize()} mode: Using {days_limit} days of data (centralized config)")
 
         # Calculate sample limit
         samples_per_day = samples_per_day_map.get(timeframe, 24)
         limit = days_limit * samples_per_day
         
-        tprint_info(f"  → Data filtering: {days_limit} days × {samples_per_day} samples/day = {limit} samples limit")
+        tprint_info(f"  Ă˘ÂÂ Data filtering: {days_limit} days ÄÂ {samples_per_day} samples/day = {limit} samples limit")
 
         # Apply filter
         if len(data) > limit:
             filtered = data.tail(limit).copy()  # Keep most recent data
-            tprint_info(f"  → {execution_mode.capitalize()} mode: Filtered to {days_limit} days ({limit} samples)")
-            tprint_info(f"  → Filtered data range: {filtered.index.min()} to {filtered.index.max()}")
+            tprint_info(f"  Ă˘ÂÂ {execution_mode.capitalize()} mode: Filtered to {days_limit} days ({limit} samples)")
+            tprint_info(f"  Ă˘ÂÂ Filtered data range: {filtered.index.min()} to {filtered.index.max()}")
             return filtered
 
-        tprint_info(f"  → {execution_mode.capitalize()} mode: Data size ({len(data)}) within limit ({limit} samples)")
-        tprint_info(f"  → Data range: {data.index.min()} to {data.index.max()}")
+        tprint_info(f"  Ă˘ÂÂ {execution_mode.capitalize()} mode: Data size ({len(data)}) within limit ({limit} samples)")
+        tprint_info(f"  Ă˘ÂÂ Data range: {data.index.min()} to {data.index.max()}")
         return data
 
     def _validate_config(self, config: Dict[str, Any]):

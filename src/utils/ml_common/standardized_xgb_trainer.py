@@ -74,14 +74,23 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class XGBTrainingConfig:
-    """Configuration for standardized XGBoost training."""
+    """Configuration for standardized XGBoost training.
+
+    IMPORTANT: The retraining schedule (retrain_interval_days, hpo_interval_days) refers
+    to HISTORICAL DATA windows, not real-time retraining. During historical training:
+    - Create OOF prediction windows every 10 days of historical data
+    - Run HPO every 30 days of historical data (every 3rd window)
+
+    For live/production retraining, use the RetrainingManager separately to check
+    if real-time retraining is needed based on actual elapsed time.
+    """
 
     # Model identification
     model_id: str  # Unique ID for the model (e.g., "ETHUSDT_binance_15m_mean_reversion")
 
-    # Retraining schedule
-    retrain_interval_days: int = 10  # Retrain every 10 days
-    hpo_interval_days: int = 30  # Full HPO every 30 days
+    # Historical data retraining schedule (for OOF windows)
+    retrain_interval_days: int = 10  # Create OOF window every 10 days of historical data
+    hpo_interval_days: int = 30  # Run HPO every 30 days of historical data
     burnin_pct: float = 1/12  # 3 months burn-in (1/12 of year)
     min_samples_for_training: int = 1000
 
@@ -722,12 +731,16 @@ class StandardizedXGBTrainer:
             return None
 
     def _save_warm_start_params(self, params: Dict[str, Any]):
-        """Save parameters for warm start in future HPO runs."""
+        """Save parameters for warm start in future HPO runs.
+
+        IMPORTANT: Parameters are saved per model_id to ensure each step has its own
+        warm start history (e.g., mean_reversion warm start != smc warm start).
+        """
         warm_start_path = self.config.hpo_cache_dir / f"{self.model_id}_warm_start.json"
 
         try:
             with open(warm_start_path, 'w') as f:
                 json.dump(params, f, indent=2)
-            logger.debug(f"Saved warm start parameters to {warm_start_path}")
+            logger.debug(f"Saved warm start parameters to {warm_start_path} (per-step storage)")
         except Exception as e:
             logger.warning(f"Failed to save warm start parameters: {e}")

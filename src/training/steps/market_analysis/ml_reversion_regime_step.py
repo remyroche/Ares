@@ -44,6 +44,12 @@ try:
 except ImportError:  # pragma: no cover
     XGBOOST_AVAILABLE = False
 
+try:
+    import numba
+    NUMBA_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    NUMBA_AVAILABLE = False
+
 from src.training.steps.base_step import BaseStep
 from src.utils.tprint import (
     tprint,
@@ -74,8 +80,144 @@ from src.utils.ml_common.optimization.hierarchical_parameter_optimizer import (
     ParameterGroup,
     OptimizationStage,
 )
+from src.utils.ml_common.standardized_xgb_trainer import (
+    StandardizedXGBTrainer,
+    XGBTrainingConfig,
+    XGBTrainingResults,
+)
 
 logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# Optimized teacher feature calculations (Numba-compiled when available)
+# ============================================================================
+
+def _rolling_hurst_python(series: np.ndarray, window: int) -> np.ndarray:
+    """Python fallback for rolling Hurst exponent calculation."""
+    h = np.full(len(series), np.nan)
+    for i in range(window, len(series)):
+        x = series[i - window : i]
+        x = x[~np.isnan(x)]
+        if len(x) < 10:
+            continue
+        r = np.diff(x)
+        if len(r) < 5:
+            continue
+        n = len(r)
+        mean_r = r.mean()
+        dev = r - mean_r
+        cum = np.cumsum(dev)
+        R = cum.max() - cum.min()
+        S = r.std()
+        if S <= 0 or R <= 0:
+            h[i] = 0.5
+        else:
+            h[i] = max(0.0, min(1.0, np.log(R / S) / np.log(n)))
+    return h
+
+
+def _rolling_ou_params_python(series: np.ndarray, window: int) -> Tuple[np.ndarray, np.ndarray]:
+    """Python fallback for rolling OU parameters calculation."""
+    half = np.full(len(series), np.nan)
+    theta = np.full(len(series), np.nan)
+    for i in range(window, len(series)):
+        x = series[i - window : i]
+        x = x[~np.isnan(x)]
+        if len(x) < 10:
+            continue
+        x0, x1 = x[:-1], x[1:]
+        x0c = x0 - x0.mean()
+        x1c = x1 - x1.mean()
+        denom = np.dot(x0c, x0c)
+        if denom <= 0:
+            continue
+        phi = float(np.dot(x0c, x1c) / denom)
+        if phi <= 0 or phi >= 1:
+            continue
+        hl = -np.log(2.0) / np.log(phi)
+        half[i] = hl
+        theta[i] = 1.0 / max(hl, 1e-6)
+    return half, theta
+
+
+if NUMBA_AVAILABLE:
+    @numba.jit(nopython=True, cache=True)
+    def _rolling_hurst_numba(series: np.ndarray, window: int) -> np.ndarray:
+        """Numba-optimized rolling Hurst exponent calculation."""
+        n_samples = len(series)
+        h = np.full(n_samples, np.nan)
+
+        for i in range(window, n_samples):
+            # Extract window, removing NaNs
+            x = series[i - window : i]
+            # Remove NaN values
+            valid_mask = ~np.isnan(x)
+            x_clean = x[valid_mask]
+
+            if len(x_clean) < 10:
+                continue
+
+            # Compute returns
+            r = np.diff(x_clean)
+            if len(r) < 5:
+                continue
+
+            n = len(r)
+            mean_r = np.mean(r)
+            dev = r - mean_r
+            cum = np.cumsum(dev)
+            R = np.max(cum) - np.min(cum)
+            S = np.std(r)
+
+            if S <= 0 or R <= 0:
+                h[i] = 0.5
+            else:
+                hurst_val = np.log(R / S) / np.log(n)
+                h[i] = max(0.0, min(1.0, hurst_val))
+
+        return h
+
+    @numba.jit(nopython=True, cache=True)
+    def _rolling_ou_params_numba(series: np.ndarray, window: int) -> Tuple[np.ndarray, np.ndarray]:
+        """Numba-optimized rolling OU parameters calculation."""
+        n_samples = len(series)
+        half = np.full(n_samples, np.nan)
+        theta = np.full(n_samples, np.nan)
+
+        for i in range(window, n_samples):
+            # Extract window, removing NaNs
+            x = series[i - window : i]
+            # Remove NaN values
+            valid_mask = ~np.isnan(x)
+            x_clean = x[valid_mask]
+
+            if len(x_clean) < 10:
+                continue
+
+            x0 = x_clean[:-1]
+            x1 = x_clean[1:]
+            x0c = x0 - np.mean(x0)
+            x1c = x1 - np.mean(x1)
+            denom = np.dot(x0c, x0c)
+
+            if denom <= 0:
+                continue
+
+            phi = np.dot(x0c, x1c) / denom
+
+            if phi <= 0 or phi >= 1:
+                continue
+
+            hl = -np.log(2.0) / np.log(phi)
+            half[i] = hl
+            theta[i] = 1.0 / max(hl, 1e-6)
+
+        return half, theta
+else:
+    # If Numba not available, point to Python versions
+    _rolling_hurst_numba = _rolling_hurst_python
+    _rolling_ou_params_numba = _rolling_ou_params_python
 
 
 class MLMeanReversionRegimeStep(BaseStep):
@@ -90,10 +232,15 @@ class MLMeanReversionRegimeStep(BaseStep):
         self._cached_market_data: Optional[pd.DataFrame] = None
         self._cached_market_source: Optional[str] = None
         self._cached_market_cache_key: Optional[Tuple[str, str, str, str]] = None
-        tprint(f"✅ Initialized {step_name} step (IMPROVED with classification)", "SUCCESS")
+        numba_status = "✅ ENABLED (Numba-optimized)" if NUMBA_AVAILABLE else "⚠️  DISABLED (Python fallback)"
+        tprint(f"✅ Initialized {step_name} step (IMPROVED with classification, Teacher features: {numba_status})", "SUCCESS")
 
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:  # type: ignore[override]
         start_time = time.time()
+        tprint_info("=" * 80)
+        tprint_info("🎯 MLMeanReversionRegimeStep.execute() - START")
+        tprint_info("=" * 80)
+
         if not XGBOOST_AVAILABLE:
             raise ImportError("xgboost is required for MLMeanReversionRegimeStep")
 
@@ -107,10 +254,13 @@ class MLMeanReversionRegimeStep(BaseStep):
 
             tprint_info(
                 f"🚀 Starting {self.step_name} for {symbol} on {exchange} "
-                f"(regime_timeframe={regime_timeframe})"
+                f"(regime_timeframe={regime_timeframe}, direction={direction})"
             )
+            tprint_info(f"⏱️  Step start time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
             # 1) Load OHLCV (no light-mode filter, with caching)
+            tprint_info("📊 [1/9] Loading market data...")
+            load_start = time.time()
             exec_mode_cfg = str(config.get("execution_mode", "")).lower()
             cache_key = (symbol, exchange, regime_timeframe, exec_mode_cfg)
             if self._cached_market_data is not None and self._cached_market_cache_key == cache_key:
@@ -128,6 +278,7 @@ class MLMeanReversionRegimeStep(BaseStep):
                 self._cached_market_data = market_data.copy() if isinstance(market_data, pd.DataFrame) else market_data
                 self._cached_market_source = market_source
                 self._cached_market_cache_key = cache_key
+            tprint_info(f"✅ Market data loaded in {time.time() - load_start:.2f}s")
 
             if not isinstance(market_data, pd.DataFrame) or market_data.empty:
                 raise ValueError("Loaded market data is empty or not a DataFrame")
@@ -150,6 +301,8 @@ class MLMeanReversionRegimeStep(BaseStep):
                 raise ValueError(f"Market data missing OHLCV columns: {missing}")
 
             # Create temporal split config with 6-month burn-in for indicator stabilization
+            tprint_info("📊 Creating temporal split configuration...")
+            split_start = time.time()
             split_config = create_temporal_split_config_for_pipeline(
                 symbol=symbol,
                 exchange=exchange,
@@ -160,7 +313,7 @@ class MLMeanReversionRegimeStep(BaseStep):
                 # Use default burnin_pct=1/12 (3 months)
             )
             tprint_info(
-                f"📊 Temporal split config created with burn-in: "
+                f"📊 Temporal split config created in {time.time() - split_start:.2f}s with burn-in: "
                 f"Burn-in {split_config.burnin.start if split_config.burnin else 'N/A'} → "
                 f"{split_config.burnin.effective_end if split_config.burnin else 'N/A'}, "
                 f"Train {split_config.training.start} → {split_config.training.effective_end}, "
@@ -169,7 +322,12 @@ class MLMeanReversionRegimeStep(BaseStep):
             )
 
             # 2) Teacher features + GMM labels + continuous reversion score
+            tprint_info("🧮 [2/9] Building teacher features (Hurst, OU, variance ratio, ADF)...")
+            teacher_start = time.time()
             teacher_df = self._build_teacher_features(market_data, config)
+            tprint_info(f"✅ Teacher features built in {time.time() - teacher_start:.2f}s (shape={teacher_df.shape})")
+            tprint_info("🎓 [3/9] Training teacher GMM (Gaussian Mixture Model)...")
+            gmm_start = time.time()
             (
                 gmm,
                 teacher_clusters,
@@ -177,17 +335,27 @@ class MLMeanReversionRegimeStep(BaseStep):
                 teacher_score,
                 teacher_metrics,
             ) = self._train_teacher_gmm(teacher_df, config)
+            tprint_info(f"✅ Teacher GMM trained in {time.time() - gmm_start:.2f}s (positive_rate={teacher_metrics.get('teacher_positive_rate', 0):.4f})")
 
             # 3) Student features (ENHANCED with momentum divergence, reversion speed, persistence)
+            tprint_info("🎓 [4/9] Building student features (enhanced with momentum divergence, reversion speed, persistence)...")
+            student_start = time.time()
             student_df = self._build_student_features(market_data, config)
+            tprint_info(f"✅ Student features built in {time.time() - student_start:.2f}s (shape={student_df.shape})")
 
             # 3.5) Calculate dynamic ATR-based TPSL multipliers
+            tprint_info("📏 [5/9] Calculating dynamic ATR-based TPSL multipliers...")
+            atr_start = time.time()
             atr_14, atr_300, dynamic_tp_sl_multiplier = self._calculate_atr_multipliers(market_data, config)
+            tprint_info(f"✅ ATR multipliers calculated in {time.time() - atr_start:.2f}s")
 
             # 4) Build classification target: forward price direction
             #    0 = price will go up (bullish)
             #    1 = price will go down (bearish)
+            tprint_info("🎯 [6/9] Building classification target (forward price direction)...")
+            target_start = time.time()
             y_direction_all = self._build_direction_target(market_data, config)
+            tprint_info(f"✅ Target built in {time.time() - target_start:.2f}s")
 
             # Align indices and drop any samples without a valid direction label
             valid_target_idx = y_direction_all.dropna().index
@@ -236,19 +404,27 @@ class MLMeanReversionRegimeStep(BaseStep):
             # 5) Run HPO if enabled
             hpo_enabled = bool(config.get("mr_enable_hpo", False))
             if hpo_enabled:
-                tprint_info("🎯 HPO enabled - optimizing XGBoost hyperparameters...")
-                hpo_best_params = self._run_hierarchical_hpo(
-                    X_all,
-                    y_target_all,
-                    config,
-                    split_config=split_config,
-                )
-                # Merge HPO results into config for training
-                for key, value in hpo_best_params.items():
-                    config[f"mr_{key}"] = value
-                tprint_success("✅ HPO complete - using optimized parameters for training")
+                tprint_info("🎯 [7/9] HPO enabled - optimizing XGBoost hyperparameters...")
+                hpo_start = time.time()
+                try:
+                    hpo_best_params = self._run_hierarchical_hpo(
+                        X_all,
+                        y_target_all,
+                        config,
+                        split_config=split_config,
+                    )
+                    # Merge HPO results into config for training
+                    for key, value in hpo_best_params.items():
+                        config[f"mr_{key}"] = value
+                    tprint_success(f"✅ HPO complete in {time.time() - hpo_start:.2f}s - using optimized parameters for training")
+                except Exception as hpo_exc:
+                    tprint_error(f"❌ HPO failed after {time.time() - hpo_start:.2f}s: {hpo_exc}")
+                    raise
+            else:
+                tprint_info("⏭️  [7/9] HPO disabled (mr_enable_hpo=False) - using default parameters")
 
             # 6) Train XGB classifier and generate artifacts per direction
+            tprint_info("🤖 [8/9] Training XGBoost classifier and generating artifacts...")
             direction_lower = direction.lower()
             if direction_lower == "both":
                 directions_to_run: List[str] = ["long", "short"]
@@ -257,24 +433,53 @@ class MLMeanReversionRegimeStep(BaseStep):
             else:
                 directions_to_run = [direction]
 
+            tprint_info(f"📋 Processing {len(directions_to_run)} direction(s): {directions_to_run}")
+
             all_artifacts: Dict[str, Dict[str, str]] = {}
             all_reports: Dict[str, Dict[str, str]] = {}
             all_student_metrics: Dict[str, Dict[str, Any]] = {}
             all_fwd_metrics: Dict[str, Dict[Any, Any]] = {}
 
-            for dir_ in directions_to_run:
+            for idx, dir_ in enumerate(directions_to_run):
+                tprint_info(f"🔄 Processing direction {idx+1}/{len(directions_to_run)}: {dir_}")
+                dir_start = time.time()
                 if dir_ == "short":
                     y_dir = (1 - y_target_all).astype(int)
                 else:
                     y_dir = y_target_all.copy()
 
-                model, calibrated_model, student_metrics, raw_scores, calibrated_scores = self._train_xgb_student(
-                    X_all,
-                    y_dir,
-                    config,
-                    split_config=split_config,
-                    y_teacher=y_teacher_binary,
-                )
+                tprint_info(f"  🎓 Training XGBoost with OOF predictions for {dir_} direction...")
+                train_start = time.time()
+                try:
+                    # Use new OOF trainer (no data leakage!)
+                    oof_results = self._train_xgb_oof(
+                        X_all,
+                        y_dir,
+                        config,
+                        market_data,
+                        direction=dir_
+                    )
+                    tprint_info(f"  ✅ XGBoost OOF training complete in {time.time() - train_start:.2f}s")
+
+                    # Extract OOF predictions
+                    oof_predictions = oof_results.oof_predictions
+
+                    # Create student metrics from OOF metadata
+                    student_metrics = {
+                        "oof_windows": len(oof_results.metadata),
+                        "hpo_runs": sum(1 for m in oof_results.metadata if m.get('used_hpo', False)),
+                        "total_oof_predictions": len(oof_predictions),
+                        "prediction_method": "oof",  # IMPORTANT: Mark as OOF
+                    }
+                    if oof_results.metadata:
+                        student_metrics.update({
+                            "first_window": oof_results.metadata[0],
+                            "last_window": oof_results.metadata[-1],
+                        })
+
+                except Exception as train_exc:
+                    tprint_error(f"  ❌ XGBoost OOF training failed after {time.time() - train_start:.2f}s: {train_exc}")
+                    raise
 
                 # Attach outputs to main frame for this direction
                 output_df = market_data.copy()
@@ -285,14 +490,27 @@ class MLMeanReversionRegimeStep(BaseStep):
                 output_df["mr_teacher_score"] = teacher_score
                 for c in student_df.columns:
                     output_df[c] = student_df[c]
-                output_df.loc[X_all.index, "mr_raw_score"] = raw_scores
-                output_df.loc[X_all.index, "mr_probability"] = calibrated_scores
-                output_df.loc[X_all.index, "mr_direction_target"] = y_dir.values
+
+                # Join OOF predictions (only OOF, no training set!)
+                # This will have NaN for non-OOF periods
+                output_df = output_df.join(oof_predictions.rename(columns={'probability': 'mr_probability'}), how='left')
+
+                # Mark which samples are OOF vs. filled
+                output_df['mr_is_oof'] = ~output_df['mr_probability'].isna()
+
+                # Add target for OOF samples only
+                output_df.loc[oof_predictions.index, "mr_direction_target"] = y_dir.loc[oof_predictions.index].values
+
+                # For backward compatibility, also add mr_raw_score (same as mr_probability for OOF)
+                output_df['mr_raw_score'] = output_df['mr_probability']
+
                 output_df["mr_atr_14"] = atr_14
                 output_df["mr_atr_300"] = atr_300
                 output_df["mr_dynamic_tpsl_multiplier"] = dynamic_tp_sl_multiplier
 
                 # Forward-return diagnostics at multiple horizons
+                tprint_info(f"  📊 Computing forward-return diagnostics for {dir_} direction...")
+                fwd_start = time.time()
                 horizons_cfg = config.get("mr_forward_horizons", [2, 4, 8, 12])
                 fwd_metrics: Dict[int, Dict[str, Any]] = {}
                 for h in horizons_cfg:
@@ -308,42 +526,56 @@ class MLMeanReversionRegimeStep(BaseStep):
                     )
                     if m:
                         fwd_metrics[h_int] = m
+                tprint_info(f"  ✅ Forward metrics computed in {time.time() - fwd_start:.2f}s for {len(fwd_metrics)} horizons")
 
                 # Persist artifacts + reports for this direction
-                self.set_context(
-                    symbol=symbol,
-                    exchange=exchange,
-                    timeframe=regime_timeframe,
-                    direction=dir_,
-                    model="mean_reversion",
-                )
+                tprint_info(f"  💾 Saving artifacts and reports for {dir_} direction...")
+                save_start = time.time()
+                try:
+                    self.set_context(
+                        symbol=symbol,
+                        exchange=exchange,
+                        timeframe=regime_timeframe,
+                        direction=dir_,
+                        model="mean_reversion",
+                    )
 
-                artifacts, reports = self._save_artifacts_and_reports(
-                    output_df=output_df,
-                    X_all=X_all,
-                    y_target=y_dir,
-                    y_teacher=y_teacher_binary,
-                    model=model,
-                    calibrated_model=calibrated_model,
-                    teacher_metrics=teacher_metrics,
-                    student_metrics=student_metrics,
-                    fwd_metrics=fwd_metrics,
-                    split_config=split_config,
-                    symbol=symbol,
-                    exchange=exchange,
-                    timeframe=regime_timeframe,
-                    market_source=str(market_source),
-                )
+                    artifacts, reports = self._save_artifacts_and_reports(
+                        output_df=output_df,
+                        X_all=X_all,
+                        y_target=y_dir,
+                        y_teacher=y_teacher_binary,
+                        model=oof_results.models[-1] if oof_results.models else None,  # Use last trained model
+                        calibrated_model=None,  # OOF trainer doesn't use separate calibrated model
+                        teacher_metrics=teacher_metrics,
+                        student_metrics=student_metrics,
+                        fwd_metrics=fwd_metrics,
+                        split_config=split_config,
+                        symbol=symbol,
+                        exchange=exchange,
+                        timeframe=regime_timeframe,
+                        market_source=str(market_source),
+                        oof_metadata=oof_results.metadata,  # Pass OOF metadata
+                    )
 
-                all_artifacts[dir_] = artifacts
-                all_reports[dir_] = reports
-                all_student_metrics[dir_] = student_metrics
-                all_fwd_metrics[dir_] = fwd_metrics
+                    all_artifacts[dir_] = artifacts
+                    all_reports[dir_] = reports
+                    all_student_metrics[dir_] = student_metrics
+                    all_fwd_metrics[dir_] = fwd_metrics
+                    tprint_info(f"  ✅ Artifacts saved in {time.time() - save_start:.2f}s")
+                except Exception as save_exc:
+                    tprint_error(f"  ❌ Failed to save artifacts after {time.time() - save_start:.2f}s: {save_exc}")
+                    raise
+
+                tprint_success(f"✅ Direction {dir_} completed in {time.time() - dir_start:.2f}s")
 
             exec_time = time.time() - start_time
+            tprint_info("=" * 80)
             tprint_success(
-                f"✅ {self.step_name} completed in {exec_time:.2f}s with {len(X_all)} samples"
+                f"✅ {self.step_name} completed in {exec_time:.2f}s ({exec_time/60:.2f} minutes) with {len(X_all)} samples"
             )
+            tprint_info(f"⏱️  Step end time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            tprint_info("=" * 80)
 
             if len(directions_to_run) == 1:
                 dir_key = directions_to_run[0]
@@ -383,12 +615,18 @@ class MLMeanReversionRegimeStep(BaseStep):
             }
 
         except Exception as exc:  # noqa: BLE001
-            tprint_error(f"❌ {self.step_name} failed: {exc}")
+            exec_time = time.time() - start_time
+            tprint_error("=" * 80)
+            tprint_error(f"❌ {self.step_name} FAILED after {exec_time:.2f}s ({exec_time/60:.2f} minutes)")
+            tprint_error(f"❌ Error: {exc}")
+            tprint_error(f"⏱️  Failed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            tprint_error("=" * 80)
             logger.exception("Mean reversion step failed")
-            return {"success": False, "error": str(exc)}
+            return {"success": False, "error": str(exc), "execution_time": exec_time}
 
     # ---------------- Teacher -----------------
     def _build_teacher_features(self, df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
+        tprint_info("  🔢 Computing log price and returns...")
         close = df["close"].astype(float)
         log_price = np.log(close.replace(0.0, np.nan)).ffill()
         returns = log_price.diff().fillna(0.0)
@@ -398,10 +636,19 @@ class MLMeanReversionRegimeStep(BaseStep):
         vr_window = int(config.get("mr_variance_ratio_window", 200))
         vr_h = int(config.get("mr_variance_ratio_horizon", 5))
 
+        tprint_info(f"  📊 Computing Hurst exponent (window={hurst_window})...")
+        hurst_start = time.time()
         hurst = self._rolling_hurst(log_price.values, hurst_window)
+        tprint_info(f"  ✅ Hurst computed in {time.time() - hurst_start:.2f}s")
+
+        tprint_info(f"  📊 Computing OU parameters (window={ou_window})...")
+        ou_start = time.time()
         ou_half_life, ou_theta = self._rolling_ou_params(log_price.values, ou_window)
+        tprint_info(f"  ✅ OU parameters computed in {time.time() - ou_start:.2f}s")
 
         # Simple rolling variance ratio VR(k) using log returns
+        tprint_info(f"  📊 Computing variance ratio (window={vr_window}, horizon={vr_h})...")
+        vr_start = time.time()
         vr = np.full(len(returns), np.nan)
         if vr_window > vr_h + 5:
             for i in range(vr_window, len(returns)):
@@ -418,9 +665,12 @@ class MLMeanReversionRegimeStep(BaseStep):
                 if not np.isfinite(var_k) or var_k <= 0:
                     continue
                 vr[i] = var_k / (vr_h * var1)
+        tprint_info(f"  ✅ Variance ratio computed in {time.time() - vr_start:.2f}s")
 
         adf_p = np.full(len(close), np.nan)
         if STATIONARITY_AVAILABLE:
+            tprint_info(f"  📊 Computing ADF p-values...")
+            adf_start = time.time()
             adf_w = int(config.get("mr_adf_window", 200))
             for i in range(adf_w, len(returns)):
                 seg = returns.iloc[i - adf_w : i]
@@ -428,6 +678,9 @@ class MLMeanReversionRegimeStep(BaseStep):
                     adf_p[i] = float(adfuller(seg.values, maxlag=0, autolag=None)[1])
                 except Exception:
                     adf_p[i] = np.nan
+            tprint_info(f"  ✅ ADF p-values computed in {time.time() - adf_start:.2f}s")
+        else:
+            tprint_warning("  ⚠️  Statsmodels not available, skipping ADF p-values")
         teacher_df = pd.DataFrame(
             {
                 "mr_hurst": hurst,
@@ -442,49 +695,25 @@ class MLMeanReversionRegimeStep(BaseStep):
 
     @staticmethod
     def _rolling_hurst(series: np.ndarray, window: int) -> np.ndarray:
-        h = np.full(len(series), np.nan)
-        for i in range(window, len(series)):
-            x = series[i - window : i]
-            x = x[~np.isnan(x)]
-            if len(x) < 10:
-                continue
-            r = np.diff(x)
-            if len(r) < 5:
-                continue
-            n = len(r)
-            mean_r = r.mean()
-            dev = r - mean_r
-            cum = np.cumsum(dev)
-            R = cum.max() - cum.min()
-            S = r.std()
-            if S <= 0 or R <= 0:
-                h[i] = 0.5
-            else:
-                h[i] = max(0.0, min(1.0, np.log(R / S) / np.log(n)))
-        return h
+        """Compute rolling Hurst exponent.
+
+        Uses vectorized Numba version if available, otherwise falls back to Python loop.
+        """
+        if NUMBA_AVAILABLE:
+            return _rolling_hurst_numba(series, window)
+        else:
+            return _rolling_hurst_python(series, window)
 
     @staticmethod
     def _rolling_ou_params(series: np.ndarray, window: int) -> Tuple[np.ndarray, np.ndarray]:
-        half = np.full(len(series), np.nan)
-        theta = np.full(len(series), np.nan)
-        for i in range(window, len(series)):
-            x = series[i - window : i]
-            x = x[~np.isnan(x)]
-            if len(x) < 10:
-                continue
-            x0, x1 = x[:-1], x[1:]
-            x0c = x0 - x0.mean()
-            x1c = x1 - x1.mean()
-            denom = np.dot(x0c, x0c)
-            if denom <= 0:
-                continue
-            phi = float(np.dot(x0c, x1c) / denom)
-            if phi <= 0 or phi >= 1:
-                continue
-            hl = -np.log(2.0) / np.log(phi)
-            half[i] = hl
-            theta[i] = 1.0 / max(hl, 1e-6)
-        return half, theta
+        """Compute rolling Ornstein-Uhlenbeck parameters (half-life and theta).
+
+        Uses vectorized Numba version if available, otherwise falls back to Python loop.
+        """
+        if NUMBA_AVAILABLE:
+            return _rolling_ou_params_numba(series, window)
+        else:
+            return _rolling_ou_params_python(series, window)
 
     def _train_teacher_gmm(
         self, teacher_df: pd.DataFrame, config: Dict[str, Any]
@@ -1146,6 +1375,7 @@ class MLMeanReversionRegimeStep(BaseStep):
             )
         else:
             # Fallback to percentage-based splits (legacy behavior)
+            tprint_warning("⚠️  Using legacy percentage-based splits - consider using temporal split config for better results")
             X_np_full = X.astype(np.float32).values
             y_np_full = y.astype(np.int32).values
             n = len(X_np_full)
@@ -1172,7 +1402,7 @@ class MLMeanReversionRegimeStep(BaseStep):
             y_val_np = y_np_full[idx_val]
             y_test_np = y_np_full[idx_test]
 
-            tprint_warning("Using legacy percentage-based splits - consider using temporal split config for better results")
+            tprint_info(f"✅ Percentage splits prepared in {time.time() - split_start:.2f}s: Train {n_train}, Val {n_val}, Test {n_test}")
 
         # Calculate class weights for better balance
         # If classes are imbalanced, adjust scale_pos_weight to balance predictions
@@ -1206,6 +1436,8 @@ class MLMeanReversionRegimeStep(BaseStep):
             f"scale_pos_weight={params['scale_pos_weight']:.3f}"
         )
 
+        tprint_info(f"🤖 Training base XGBoost model ({params['n_estimators']} trees)...")
+        xgb_start = time.time()
         model = xgb.XGBClassifier(**params, random_state=42)
         model.fit(
             X_train_np,
@@ -1213,11 +1445,15 @@ class MLMeanReversionRegimeStep(BaseStep):
             eval_set=[(X_val_np, y_val_np)],
             verbose=False
         )
+        tprint_info(f"✅ Base XGBoost trained in {time.time() - xgb_start:.2f}s")
 
         # Get raw predictions (uncalibrated) for all splits
+        tprint_info("📊 Generating raw (uncalibrated) predictions...")
+        pred_start = time.time()
         raw_train = model.predict_proba(X_train_np)[:, 1]  # Probability of class 1 (bearish)
         raw_val = model.predict_proba(X_val_np)[:, 1]
         raw_test = model.predict_proba(X_test_np)[:, 1]
+        tprint_info(f"✅ Raw predictions generated in {time.time() - pred_start:.2f}s")
 
         # Calibrate on validation set
         # IMPROVED: Default to sigmoid calibration for better probability distribution
@@ -1226,17 +1462,23 @@ class MLMeanReversionRegimeStep(BaseStep):
         if calibration_method not in ["isotonic", "sigmoid"]:
             calibration_method = "sigmoid"
 
+        tprint_info(f"🎯 Calibrating model with {calibration_method} method on validation set...")
+        calib_start = time.time()
         calibrated_model = CalibratedClassifierCV(
             model,
             method=calibration_method,
             cv="prefit"
         )
         calibrated_model.fit(X_val_np, y_val_np)
+        tprint_info(f"✅ Calibration complete in {time.time() - calib_start:.2f}s")
 
         # Get calibrated predictions for all splits
+        tprint_info("📊 Generating calibrated predictions...")
+        calib_pred_start = time.time()
         calib_train = calibrated_model.predict_proba(X_train_np)[:, 1]
         calib_val = calibrated_model.predict_proba(X_val_np)[:, 1]
         calib_test = calibrated_model.predict_proba(X_test_np)[:, 1]
+        tprint_info(f"✅ Calibrated predictions generated in {time.time() - calib_pred_start:.2f}s")
 
         def _metrics(y_true, y_pred_proba, prefix="") -> Dict[str, float]:
             y_pred_binary = (y_pred_proba >= 0.5).astype(int)
@@ -1278,6 +1520,7 @@ class MLMeanReversionRegimeStep(BaseStep):
 
         # Walk-forward validation for OOF calibration (using concatenated data)
         # Combine train+val+test back for walk-forward analysis
+        tprint_info("🔄 [9/9] Running walk-forward validation for stability assessment...")
         X_full_np = np.vstack([X_train_np, X_val_np, X_test_np])
         y_full_np = np.concatenate([y_train_np, y_val_np, y_test_np])
 
@@ -1291,13 +1534,98 @@ class MLMeanReversionRegimeStep(BaseStep):
             if wf_metrics:
                 metrics["walkforward"] = wf_metrics
         except Exception as e:
-            tprint_warning(f"Walk-forward validation failed: {e}")
+            tprint_warning(f"⚠️  Walk-forward validation failed: {e}")
 
         # Combine predictions back into full arrays (in temporal order)
         raw_proba_full = np.concatenate([raw_train, raw_val, raw_test])
         calibrated_proba_full = np.concatenate([calib_train, calib_val, calib_test])
 
         return model, calibrated_model, metrics, raw_proba_full, calibrated_proba_full
+
+    def _train_xgb_oof(
+        self,
+        X: pd.DataFrame,
+        y: pd.Series,
+        config: Dict[str, Any],
+        market_data: pd.DataFrame,
+        direction: str = "long"
+    ) -> XGBTrainingResults:
+        """Train XGBoost with OOF predictions using standardized trainer.
+
+        This replaces the old _train_xgb_student method with proper OOF predictions.
+        No data leakage - only returns predictions on data the model hasn't seen.
+
+        Args:
+            X: Feature dataframe with DatetimeIndex
+            y: Target series with DatetimeIndex
+            config: Configuration dictionary
+            market_data: Original market data for date range
+            direction: Trading direction (long/short)
+
+        Returns:
+            XGBTrainingResults with OOF predictions, models, and metadata
+        """
+        # Create model ID
+        symbol = config.get("symbol", "ETHUSDT")
+        exchange = config.get("exchange", "binance")
+        timeframe = config.get("regime_timeframe", config.get("timeframe", "15m"))
+        model_id = f"{symbol}_{exchange}_{timeframe}_mean_reversion_{direction}"
+
+        tprint_info(f"🚀 Using StandardizedXGBTrainer for OOF predictions (model_id={model_id})")
+
+        # Create custom config
+        training_config = XGBTrainingConfig(
+            model_id=model_id,
+            retrain_interval_days=10,  # OOF window every 10 days of historical data
+            hpo_interval_days=30,  # HPO every 30 days of historical data
+            burnin_pct=1/12,  # 3 months
+            min_samples_for_training=1000,
+
+            # XGBoost parameters
+            tree_method="hist",
+            n_estimators=int(config.get("mr_n_estimators", 500)),
+            learning_rate=float(config.get("mr_learning_rate", 0.03)),
+            max_depth=int(config.get("mr_max_depth", 5)),
+            min_child_weight=float(config.get("mr_min_child_weight", 5.0)),
+            subsample=float(config.get("mr_subsample", 0.8)),
+            colsample_bytree=float(config.get("mr_colsample_bytree", 0.8)),
+            gamma=float(config.get("mr_gamma", 0.05)),
+            reg_lambda=float(config.get("mr_reg_lambda", 0.5)),
+            early_stopping_rounds=20,
+
+            # HPO config
+            hpo_n_estimators=300,
+            hpo_n_trials=50,
+            enable_warm_start=True,
+
+            # Sparse matrices
+            enable_sparse_matrices=True,
+            sparsity_threshold=0.5,
+        )
+
+        # Create trainer
+        trainer = StandardizedXGBTrainer(
+            model_id=model_id,
+            config=training_config
+        )
+
+        # Train and get OOF predictions
+        results = trainer.train_and_predict(
+            X=X,
+            y=y,
+            data_start=market_data.index.min(),
+            data_end=market_data.index.max(),
+            eval_metric="logloss",
+            verbose=True
+        )
+
+        tprint_success(
+            f"✅ OOF training complete: {len(results.oof_predictions)} predictions, "
+            f"{len(results.models)} models, "
+            f"{sum(1 for m in results.metadata if m.get('used_hpo', False))} HPO runs"
+        )
+
+        return results
 
     def _run_walkforward_validation(
         self,
@@ -1317,17 +1645,23 @@ class MLMeanReversionRegimeStep(BaseStep):
         if n < 600:
             return {}
 
-        n_folds = int(config.get("mr_walkforward_folds", 5))
+        n_folds = int(config.get("mr_walkforward_folds", 3))  # Reduced from 5 to 3
         if n_folds < 2:
+            tprint_warning(f"⚠️  Walk-forward validation requires at least 2 folds (got {n_folds}), skipping")
             return {}
 
         min_train = int(config.get("mr_walkforward_min_train_size", max(200, n // 4)))
         if min_train >= n - 100:
+            tprint_warning(f"⚠️  Insufficient data for walk-forward validation (min_train={min_train}, n={n}), skipping")
             return {}
 
         step = (n - min_train) // n_folds
         if step < 50:
+            tprint_warning(f"⚠️  Step size too small for walk-forward validation (step={step}), skipping")
             return {}
+
+        tprint_info(f"🔄 Starting {n_folds}-fold walk-forward validation (n_samples={n}, min_train={min_train}, step={step})")
+        tprint_info(f"⚠️  NOTE: The LAST fold will take 2-3x longer as it trains on the largest window (~75-80% of data)")
 
         acc_list: List[float] = []
         f1_list: List[float] = []
@@ -1335,16 +1669,23 @@ class MLMeanReversionRegimeStep(BaseStep):
         logloss_list: List[float] = []
 
         base_estimators = int(config.get("mr_n_estimators", 500))
-        wf_estimators = max(200, min(base_estimators, 400))
+        wf_estimators = max(100, min(base_estimators, 200))  # Reduced from 400 to 200
+        tprint_info(f"📊 Using {wf_estimators} estimators per fold (reduced from base {base_estimators} for speed)")
 
+        wf_start = time.time()
         for fold in range(n_folds):
+            fold_start = time.time()
+            tprint_info(f"  🔄 [Fold {fold+1}/{n_folds}] Starting walk-forward validation fold...")
             train_end = min_train + fold * step
             val_size = min(100, train_end // 10)
             val_start = train_end - val_size
             test_start = train_end
             test_end = min(train_end + step, n)
             if test_end - test_start < 50:
+                tprint_warning(f"    ⚠️  Fold {fold+1} skipped: insufficient test samples ({test_end - test_start} < 50)")
                 continue
+
+            tprint_info(f"    📊 Fold {fold+1} data splits: train={val_start}, val={val_size}, test={test_end-test_start}")
 
             X_tr = X[:val_start]
             y_tr = y[:val_start]
@@ -1367,29 +1708,52 @@ class MLMeanReversionRegimeStep(BaseStep):
                 eval_metric="logloss",
             )
             try:
+                tprint_info(f"    🤖 Training XGBoost model ({wf_estimators} trees, train_size={len(X_tr)})...")
+                train_start_fold = time.time()
                 model = xgb.XGBClassifier(**params, random_state=42)
                 model.fit(X_tr, y_tr, eval_set=[(X_val, y_val)], verbose=False)
+                tprint_info(f"    ✅ XGBoost trained in {time.time() - train_start_fold:.2f}s")
 
                 # Calibrate on val set
+                tprint_info(f"    🎯 Calibrating with {calibration_method} method...")
+                calib_start = time.time()
                 calibrated = CalibratedClassifierCV(model, method=calibration_method, cv="prefit")
                 calibrated.fit(X_val, y_val)
+                tprint_info(f"    ✅ Calibration complete in {time.time() - calib_start:.2f}s")
 
                 # Predict on test set
                 y_pred_proba = calibrated.predict_proba(X_te)[:, 1]
                 y_pred = (y_pred_proba >= 0.5).astype(int)
-            except Exception:
+            except Exception as fold_exc:
+                tprint_error(f"    ❌ Fold {fold+1} FAILED after {time.time() - fold_start:.2f}s: {fold_exc}")
                 continue
 
             try:
-                acc_list.append(float(accuracy_score(y_te, y_pred)))
-                f1_list.append(float(f1_score(y_te, y_pred, zero_division=0.0)))
-                auc_list.append(float(roc_auc_score(y_te, y_pred_proba)))
-                logloss_list.append(float(log_loss(y_te, y_pred_proba)))
-            except Exception:
+                acc = float(accuracy_score(y_te, y_pred))
+                f1 = float(f1_score(y_te, y_pred, zero_division=0.0))
+                auc = float(roc_auc_score(y_te, y_pred_proba))
+                ll = float(log_loss(y_te, y_pred_proba))
+
+                acc_list.append(acc)
+                f1_list.append(f1)
+                auc_list.append(auc)
+                logloss_list.append(ll)
+
+                fold_time = time.time() - fold_start
+                tprint_success(
+                    f"  ✅ [Fold {fold+1}/{n_folds}] Complete in {fold_time:.2f}s - "
+                    f"ACC={acc:.4f}, F1={f1:.4f}, AUC={auc:.4f}, LogLoss={ll:.4f}"
+                )
+            except Exception as metric_exc:
+                tprint_error(f"    ❌ Failed to compute metrics for fold {fold+1}: {metric_exc}")
                 pass
 
+        total_wf_time = time.time() - wf_start
         if not acc_list:
+            tprint_warning(f"⚠️  Walk-forward validation produced no valid results after {total_wf_time:.2f}s")
             return {}
+
+        tprint_success(f"✅ Walk-forward validation complete in {total_wf_time:.2f}s ({len(acc_list)}/{n_folds} folds succeeded)")
 
         return {
             "folds": len(acc_list),
@@ -1461,8 +1825,8 @@ class MLMeanReversionRegimeStep(BaseStep):
         X_all: pd.DataFrame,
         y_target: pd.Series,
         y_teacher: pd.Series,
-        model: xgb.XGBClassifier,
-        calibrated_model: CalibratedClassifierCV,
+        model: Optional[xgb.XGBClassifier],
+        calibrated_model: Optional[CalibratedClassifierCV],
         teacher_metrics: Dict[str, Any],
         student_metrics: Dict[str, Any],
         fwd_metrics: Dict[Any, Any],
@@ -1471,6 +1835,7 @@ class MLMeanReversionRegimeStep(BaseStep):
         exchange: str,
         timeframe: str,
         market_source: str,
+        oof_metadata: Optional[List[Dict[str, Any]]] = None,
     ) -> Tuple[Dict[str, str], Dict[str, str]]:
         """Save artifacts and generate comprehensive reports with improved diagnostics and burn-in metadata."""
         artifacts: Dict[str, str] = {}
@@ -1504,6 +1869,11 @@ class MLMeanReversionRegimeStep(BaseStep):
                 "validation_end": str(split_config.validation.effective_end),
                 "test_start": str(split_config.test.start),
                 "test_end": str(split_config.test.effective_end),
+                "prediction_method": "oof" if oof_metadata else "traditional",
+                "oof_windows": len(oof_metadata) if oof_metadata else 0,
+                "hpo_runs": sum(1 for m in oof_metadata if m.get('used_hpo', False)) if oof_metadata else 0,
+                "retrain_interval_days": 10,
+                "hpo_interval_days": 30,
             }
             if split_config.burnin is not None:
                 metadata["burnin_start"] = str(split_config.burnin.start)

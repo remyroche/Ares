@@ -36,6 +36,11 @@ from src.utils.versioned_artifacts.temporal_splits import (
     create_temporal_split_config_for_pipeline,
     TemporalSplitConfig,
 )
+from src.utils.ml_common.standardized_xgb_trainer import (
+    StandardizedXGBTrainer,
+    XGBTrainingConfig,
+    XGBTrainingResults,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -149,7 +154,7 @@ class MLSMCRegimeStep(BaseStep):
             # Train XGBoost model if enabled
             if bool(config.get("smc_xgb_enable_training", True)):
                 try:
-                    xgb_metrics, xgb_artifacts = self._train_smc_xgb_model(
+                    xgb_metrics, xgb_artifacts = self._train_smc_xgb_oof(
                         smc_df,
                         config,
                         split_config,
@@ -162,7 +167,7 @@ class MLSMCRegimeStep(BaseStep):
                     if xgb_artifacts:
                         artifacts.extend(xgb_artifacts)
                 except Exception as xgb_exc:
-                    tprint_error(f"SMC XGB training failed: {xgb_exc}")
+                    tprint_error(f"SMC XGB OOF training failed: {xgb_exc}")
                     raise
 
             # Save SMC features using BaseStep pattern
@@ -743,6 +748,271 @@ class MLSMCRegimeStep(BaseStep):
                         tprint_warning(f"Failed to log1p+zscore normalize {feat}: {inner_e}")
 
         return df
+
+    def _train_smc_xgb_oof(
+        self,
+        df: pd.DataFrame,
+        config: Dict[str, Any],
+        split_config: TemporalSplitConfig,
+        symbol: str,
+        exchange: str,
+        regime_timeframe: str,
+    ) -> Tuple[Dict[str, Any], List[str]]:
+        """Train XGBoost classifier with OOF predictions using standardized trainer.
+
+        This replaces the old _train_smc_xgb_model with proper OOF predictions.
+        No data leakage - only returns predictions on data the model hasn't seen.
+        """
+        metrics: Dict[str, Any] = {}
+        artifacts: List[str] = []
+
+        try:
+            import xgboost as xgb
+        except Exception:
+            tprint_warning("xgboost not installed, skipping SMC XGB training")
+            metrics["smc_xgb_early_exit_reason"] = "xgboost_not_installed"
+            return metrics, artifacts
+
+        if "close" not in df.columns or "high" not in df.columns or "low" not in df.columns:
+            tprint_warning("SMC XGB: missing price columns; skipping training")
+            metrics["smc_xgb_early_exit_reason"] = "missing_price_columns"
+            return metrics, artifacts
+
+        # Create ATR-normalized forward return target
+        lookahead = int(config.get("smc_lookahead", 16))
+
+        future_close = df["close"].shift(-lookahead)
+        current_close = df["close"]
+        atr = df["atr"].replace(0, 0.0001)
+
+        target_atr_return = (future_close - current_close) / atr
+        atr_clip = float(config.get("smc_target_atr_clip", 3.0))
+        if atr_clip > 0.0:
+            target_atr_return = target_atr_return.clip(-atr_clip, atr_clip)
+
+        df_with_target = df.copy()
+        df_with_target["target_atr_return"] = target_atr_return
+        df_with_target["forward_return"] = (future_close / current_close - 1.0)
+        df_with_target = df_with_target.dropna(subset=["target_atr_return", "forward_return"])
+
+        tprint_info(
+            f"SMC XGB: target ATR-normalized return stats - mean: {df_with_target['target_atr_return'].mean():.3f}, "
+            f"std: {df_with_target['target_atr_return'].std():.3f}, "
+            f"range: [{df_with_target['target_atr_return'].min():.3f}, {df_with_target['target_atr_return'].max():.3f}]"
+        )
+
+        # Derive 3-class labels: 0=breakdown, 1=neutral, 2=breakout
+        breakout_threshold = float(config.get("smc_breakout_threshold", 0.5))
+        breakdown_threshold = float(config.get("smc_breakdown_threshold", -0.5))
+
+        target_clean = df_with_target["target_atr_return"]
+        target_class = np.where(
+            target_clean > breakout_threshold,
+            2,
+            np.where(target_clean < breakdown_threshold, 0, 1),
+        ).astype(np.int32)
+        df_with_target["target_class"] = target_class
+
+        class_counts = {
+            "breakdown": int((target_class == 0).sum()),
+            "neutral": int((target_class == 1).sum()),
+            "breakout": int((target_class == 2).sum()),
+        }
+        tprint_info(
+            "SMC XGB: class distribution (0=breakdown,1=neutral,2=breakout): "
+            f"{class_counts}"
+        )
+
+        # Select features
+        exclude_cols = [
+            "target_atr_return",
+            "forward_return",
+            "target_class",
+            "smc_pdh",
+            "smc_pdl",
+            "smc_day_open",
+            "smc_week_open",
+        ]
+        numeric_df = df_with_target.select_dtypes(include=[np.number])
+        feature_cols = [col for col in numeric_df.columns if col not in exclude_cols and col.startswith("smc_")]
+
+        if len(feature_cols) < 5:
+            tprint_warning(f"SMC XGB: insufficient features (n={len(feature_cols)})")
+            metrics["smc_xgb_early_exit_reason"] = f"insufficient_features_{len(feature_cols)}"
+            return metrics, artifacts
+
+        max_features = int(config.get("smc_xgb_max_features", 48))
+        if len(feature_cols) > max_features:
+            target_for_corr = df_with_target["target_atr_return"]
+            corr_scores: List[Tuple[str, float]] = []
+            for col in feature_cols:
+                try:
+                    corr_val = numeric_df[col].corr(target_for_corr)
+                except Exception:
+                    corr_val = 0.0
+                if corr_val is None or not np.isfinite(corr_val):
+                    corr_val = 0.0
+                corr_scores.append((col, float(abs(corr_val))))
+            corr_scores.sort(key=lambda x: x[1], reverse=True)
+            selected = [name for name, _ in corr_scores[:max_features]]
+            tprint_info(
+                "SMC XGB: reducing feature set from "
+                f"{len(feature_cols)} to {len(selected)} based on correlation with target_atr_return"
+            )
+            feature_cols = selected
+
+        X = numeric_df[feature_cols].astype(np.float32)
+        y_class = df_with_target["target_class"].astype(np.int32)
+
+        # Handle infinities and NaNs
+        X = X.replace([np.inf, -np.inf], np.nan)
+        X = X.fillna(0.0)
+
+        min_samples = int(config.get("smc_xgb_min_samples", 800))
+        if len(X) < min_samples:
+            tprint_warning(f"SMC XGB: insufficient samples (n={len(X)}, min={min_samples})")
+            metrics["smc_xgb_early_exit_reason"] = f"insufficient_samples_{len(X)}"
+            return metrics, artifacts
+
+        tprint_info(
+            f"📊 Training SMC XGB with OOF predictions: {len(X)} samples, {len(feature_cols)} features"
+        )
+
+        # Create model ID
+        model_id = f"{symbol}_{exchange}_{regime_timeframe}_smc"
+
+        # Create training config
+        training_config = XGBTrainingConfig(
+            model_id=model_id,
+            retrain_interval_days=10,
+            hpo_interval_days=30,
+            burnin_pct=1/12,
+            n_estimators=500,
+            hpo_n_estimators=300,
+            early_stopping_rounds=20,
+            # Classification-specific params
+            tree_method="hist",
+        )
+
+        # Create trainer
+        trainer = StandardizedXGBTrainer(model_id=model_id, config=training_config)
+
+        # Train and get OOF predictions
+        # Note: For multi-class, we need to configure the trainer
+        # The StandardizedXGBTrainer defaults to binary classification
+        # We'll need to pass objective and num_class through eval_metric for now
+        # or extend the trainer to support multiclass natively
+
+        # For now, use binary classification on breakout (class 2) vs. rest
+        y_binary = (y_class == 2).astype(np.int32)
+
+        tprint_info("Training XGBoost with StandardizedXGBTrainer (binary: breakout vs. rest)...")
+        results = trainer.train_and_predict(
+            X=X,
+            y=y_binary,
+            data_start=df_with_target.index.min(),
+            data_end=df_with_target.index.max(),
+            eval_metric="logloss",
+            verbose=True
+        )
+
+        # Extract OOF predictions
+        oof_predictions = results.oof_predictions
+        oof_models = results.models
+        oof_metadata = results.metadata
+
+        # Calculate metrics on OOF predictions
+        tprint_info(f"Calculating metrics on {len(oof_predictions)} OOF predictions...")
+
+        # Align predictions with targets
+        aligned_df = pd.DataFrame(index=df_with_target.index)
+        aligned_df["y_true"] = y_binary
+        aligned_df = aligned_df.join(oof_predictions, how='left')
+
+        # Only calculate metrics on OOF samples (where we have predictions)
+        oof_mask = ~aligned_df["probability"].isna()
+        n_oof = oof_mask.sum()
+
+        if n_oof > 0:
+            y_true_oof = aligned_df.loc[oof_mask, "y_true"]
+            y_pred_oof = aligned_df.loc[oof_mask, "probability"]
+
+            from sklearn.metrics import (
+                accuracy_score,
+                f1_score,
+                log_loss,
+                brier_score_loss,
+            )
+
+            y_pred_cls_oof = (y_pred_oof > 0.5).astype(int)
+
+            oof_accuracy = accuracy_score(y_true_oof, y_pred_cls_oof)
+            oof_f1 = f1_score(y_true_oof, y_pred_cls_oof, average="binary")
+            oof_logloss = log_loss(y_true_oof, y_pred_oof)
+            oof_brier = brier_score_loss(y_true_oof, y_pred_oof)
+
+            metrics.update({
+                "smc_xgb_oof_accuracy": float(oof_accuracy),
+                "smc_xgb_oof_f1": float(oof_f1),
+                "smc_xgb_oof_logloss": float(oof_logloss),
+                "smc_xgb_oof_brier": float(oof_brier),
+                "smc_xgb_oof_samples": int(n_oof),
+                "smc_xgb_oof_windows": len(oof_metadata),
+                "smc_xgb_hpo_runs": sum(1 for m in oof_metadata if m.get('used_hpo', False)),
+            })
+
+            tprint_success(
+                f"✅ SMC XGB OOF metrics: accuracy={oof_accuracy:.4f}, f1={oof_f1:.4f}, "
+                f"logloss={oof_logloss:.4f}, brier={oof_brier:.4f}"
+            )
+        else:
+            tprint_warning("No OOF predictions available for metric calculation")
+
+        # Save model
+        model_metadata = {
+            "symbol": symbol,
+            "exchange": exchange,
+            "timeframe": regime_timeframe,
+            "n_features": len(feature_cols),
+            "prediction_method": "oof",
+            "oof_windows": len(oof_metadata),
+            "hpo_runs": sum(1 for m in oof_metadata if m.get('used_hpo', False)),
+            "retrain_interval_days": 10,
+            "hpo_interval_days": 30,
+            "training_start": str(split_config.training.start),
+            "training_end": str(split_config.training.effective_end),
+            "validation_start": str(split_config.validation.start),
+            "validation_end": str(split_config.validation.effective_end),
+            "test_start": str(split_config.test.start),
+            "test_end": str(split_config.test.effective_end),
+        }
+        if split_config.burnin is not None:
+            model_metadata["burnin_start"] = str(split_config.burnin.start)
+            model_metadata["burnin_end"] = str(split_config.burnin.effective_end)
+
+        model_path = self._save_artifact(
+            data=oof_models[-1] if oof_models else None,
+            artifact_name="smc_xgb_model",
+            artifact_type="model",
+            data_category="models",
+            metadata=model_metadata,
+        )
+        artifacts.append(model_path)
+
+        # Save OOF predictions
+        predictions_df = oof_predictions.reset_index().rename(columns={oof_predictions.index.name or "index": "timestamp"})
+        predictions_df = predictions_df.rename(columns={"probability": "predicted"})
+
+        predictions_path = self._save_artifact(
+            data=predictions_df,
+            artifact_name="smc_predictions_with_confidence",
+            artifact_type="data",
+            data_category="predictions",
+            metadata=model_metadata,
+        )
+        artifacts.append(predictions_path)
+
+        return metrics, artifacts
 
     def _train_smc_xgb_model(
         self,

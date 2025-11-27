@@ -5148,15 +5148,22 @@ class MLBreakoutBounceRegimeStep(BaseStep):
             # Persist a compact breakout/bounce training artifact exposing only the
             # core regime probabilities, directional edge scores, and side flags
             # for downstream consumers (meta-labeling, feature selection, etc.).
+            # Core columns for artifact - new scalar format per migration plan
             core_cols = [
                 "timestamp",
-                "breakout_regime_0_prob",
-                "breakout_regime_1_prob",
-                "breakout_regime_2_prob",
-                "breakout_long_edge_score",
-                "breakout_short_edge_score",
+                "breakout_regime_0_prob",  # bounce probability
+                "breakout_regime_1_prob",  # break probability
+                "breakout_regime_2_prob",  # trap probability
+                # New scalar output: 0=certain breakout, 0.5=trap/chop, 1=certain bounce
+                "resistance_scalar",
+                "support_scalar",
+                # Legacy names for backward compatibility
                 "breakout_scalar_resistance",
                 "breakout_scalar_support",
+                # Edge scores
+                "breakout_long_edge_score",
+                "breakout_short_edge_score",
+                # Side indicators
                 "is_resistance",
                 "is_support",
             ]
@@ -5877,9 +5884,27 @@ class MLBreakoutBounceRegimeStep(BaseStep):
         out["breakout_long_edge_score"] = long_edge_unw * level_strength
         out["breakout_short_edge_score"] = short_edge_unw * level_strength
 
+        # ========================================================================
+        # NEW SCALAR OUTPUT FORMAT (per migration plan)
+        # resistance_scalar & support_scalar:
+        #   0 = certain breakout
+        #   0.5 = trap/chop (uncertain)
+        #   1 = certain bounce
+        # Stronger values (close to 0 or 1) = more confidence/stronger magnitude
+        # NaN if on opposite side (not within x2 ATR)
+        # ========================================================================
+
+        # Calculate scalar: bounce probability + 0.5 * trap probability
+        # This gives: high bounce = close to 1, high break = close to 0
         base_scalar = p0 + 0.5 * p2
-        out["breakout_scalar_resistance"] = np.where(is_res, base_scalar, np.nan)
-        out["breakout_scalar_support"] = np.where(is_sup, base_scalar, np.nan)
+
+        # Apply to appropriate side (NaN for opposite side)
+        out["resistance_scalar"] = np.where(is_res, base_scalar, np.nan)
+        out["support_scalar"] = np.where(is_sup, base_scalar, np.nan)
+
+        # Keep legacy column names for backward compatibility during transition
+        out["breakout_scalar_resistance"] = out["resistance_scalar"]
+        out["breakout_scalar_support"] = out["support_scalar"]
 
         return out
 
@@ -7652,3 +7677,419 @@ class MLBreakoutBounceRegimeStep(BaseStep):
         else:
             tprint_warning("HPO did not improve params, using defaults")
             return base_params
+
+    # =========================================================================
+    # 2-STAGE BREAKOUT CLASSIFIER using StandardizedXGBTrainer
+    # =========================================================================
+
+    def _train_breakout_classifier(
+        self,
+        feat_df: pd.DataFrame,
+        labels: pd.Series,
+        config: Dict[str, Any],
+        split_config: Optional[TemporalSplitConfig] = None,
+        optimal_cpus: int = -1,
+    ) -> Tuple[Any, Dict[str, Any], np.ndarray, np.ndarray]:
+        """Train 2-stage breakout classifier using StandardizedXGBTrainer with OOF.
+
+        Stage 1: Binary classification (break=1 vs bounce=0)
+        Stage 2: Regression (quality/forward returns)
+
+        Output scalars:
+        - resistance_scalar: 0 = certain breakout, 0.5 = trap/chop, 1 = certain bounce
+        - support_scalar: same logic
+        - NaN if not within 2x ATR of the level
+
+        Args:
+            feat_df: Feature dataframe with DatetimeIndex
+            labels: Multi-class labels (0=bounce, 1=break, 2=trap, 3=chop)
+            config: Configuration dict
+            split_config: Optional temporal split configuration
+            optimal_cpus: Number of CPUs to use (-1 for all)
+
+        Returns:
+            (model, metrics_dict, probabilities, class_predictions)
+        """
+        import xgboost as xgb
+        from sklearn.metrics import accuracy_score, log_loss, f1_score, classification_report
+        from sklearn.calibration import CalibratedClassifierCV
+
+        tprint_info("🎯 Training 2-stage breakout classifier using StandardizedXGBTrainer with OOF")
+
+        # Prepare data
+        X = feat_df.astype(np.float32)
+        X = X.replace([np.inf, -np.inf], np.nan).fillna(0.0)
+
+        # Ensure labels align with features
+        common_idx = X.index.intersection(labels.index)
+        if len(common_idx) == 0:
+            raise ValueError("No common indices between features and labels")
+
+        X = X.loc[common_idx]
+        y = labels.loc[common_idx].astype(int)
+
+        n_samples = len(X)
+        n_classes = int(y.max() + 1)
+        tprint_info(f"📊 Training data: {n_samples} samples, {X.shape[1]} features, {n_classes} classes")
+
+        # Create model ID for StandardizedXGBTrainer
+        symbol = config.get("symbol", "ETHUSDT")
+        exchange = config.get("exchange", "binance")
+        timeframe = config.get("regime_timeframe", config.get("timeframe", "15m"))
+        model_id = f"{symbol}_{exchange}_{timeframe}_breakout_bounce_2stage"
+
+        # Convert labels to binary: break (1) vs bounce/other (0)
+        # Label 1 = break, Labels 0,2,3 = not-break (bounce/trap/chop)
+        y_binary = (y == 1).astype(np.int32)
+        break_ratio = y_binary.mean()
+        tprint_info(f"📊 Binary label distribution: break={break_ratio:.3f}, bounce={1-break_ratio:.3f}")
+
+        # ========================================================================
+        # SPLIT HANDLING: Try temporal split_config, fallback to percentage-based
+        # ========================================================================
+        train_mask = None
+        val_mask = None
+        test_mask = None
+        use_temporal_splits = False
+
+        if split_config is not None:
+            try:
+                # Convert split_config dates to TZ-naive timestamps
+                train_start = pd.Timestamp(split_config.training.start)
+                train_end = pd.Timestamp(split_config.training.effective_end)
+                val_start = pd.Timestamp(split_config.validation.start)
+                val_end = pd.Timestamp(split_config.validation.effective_end)
+                test_start = pd.Timestamp(split_config.test.start)
+                test_end = pd.Timestamp(split_config.test.effective_end)
+
+                # Make TZ-naive if needed
+                if train_start.tz is not None:
+                    train_start = train_start.tz_convert(None)
+                    train_end = train_end.tz_convert(None)
+                    val_start = val_start.tz_convert(None)
+                    val_end = val_end.tz_convert(None)
+                    test_start = test_start.tz_convert(None)
+                    test_end = test_end.tz_convert(None)
+
+                # Ensure data index is TZ-naive
+                data_index = X.index
+                if hasattr(data_index, 'tz') and data_index.tz is not None:
+                    data_index = data_index.tz_convert(None)
+                    X.index = data_index
+                    y.index = data_index
+                    y_binary.index = data_index
+
+                # Apply temporal masks
+                train_mask = (data_index >= train_start) & (data_index < train_end)
+                val_mask = (data_index >= val_start) & (data_index < val_end)
+                test_mask = (data_index >= test_start) & (data_index <= test_end)
+
+                n_train = train_mask.sum()
+                n_val = val_mask.sum()
+                n_test = test_mask.sum()
+
+                tprint_info(f"📅 Temporal splits: train={n_train}, val={n_val}, test={n_test}")
+
+                if n_train < 100 or n_val < 50:
+                    tprint_warning(f"⚠️ Temporal splits too small (train={n_train}, val={n_val}), falling back to percentage-based")
+                    train_mask = val_mask = test_mask = None
+                else:
+                    use_temporal_splits = True
+
+            except Exception as split_exc:
+                tprint_warning(f"⚠️ Failed to apply temporal split_config: {split_exc}, falling back to percentage-based")
+                train_mask = val_mask = test_mask = None
+
+        # Fallback to percentage-based split
+        if not use_temporal_splits:
+            tprint_info("📊 Using percentage-based train/val/test split")
+            train_frac = float(config.get("breakout_train_fraction", 0.7))
+            val_frac = float(config.get("breakout_val_fraction", 0.15))
+
+            train_end_idx = int(n_samples * train_frac)
+            val_end_idx = int(n_samples * (train_frac + val_frac))
+
+            train_mask = pd.Series(False, index=X.index)
+            val_mask = pd.Series(False, index=X.index)
+            test_mask = pd.Series(False, index=X.index)
+
+            train_mask.iloc[:train_end_idx] = True
+            val_mask.iloc[train_end_idx:val_end_idx] = True
+            test_mask.iloc[val_end_idx:] = True
+
+            tprint_info(f"📊 Percentage splits: train={train_mask.sum()}, val={val_mask.sum()}, test={test_mask.sum()}")
+
+        # Extract train/val/test sets
+        X_train = X[train_mask]
+        y_train = y_binary[train_mask]
+        X_val = X[val_mask]
+        y_val = y_binary[val_mask]
+        X_test = X[test_mask] if test_mask.sum() > 0 else None
+        y_test = y_binary[test_mask] if test_mask.sum() > 0 else None
+
+        # ========================================================================
+        # STAGE 1: Binary Classification (break vs bounce) using StandardizedXGBTrainer
+        # ========================================================================
+        tprint_info("🔄 Stage 1/2: Training binary classifier (break vs bounce) with StandardizedXGBTrainer")
+
+        # Configure StandardizedXGBTrainer for binary classification
+        stage1_config = XGBTrainingConfig(
+            model_id=f"{model_id}_stage1_binary",
+            retrain_interval_days=10,
+            hpo_interval_days=30,
+            burnin_pct=1/12,
+            n_estimators=500,
+            learning_rate=0.03,
+            max_depth=4,
+            min_child_weight=50,
+            subsample=0.70,
+            colsample_bytree=0.75,
+            gamma=1.2,
+            reg_lambda=1.0,
+            early_stopping_rounds=20,
+            tree_method="hist",
+            task_type="classification",
+            objective="binary:logistic",
+        )
+
+        stage1_trainer = StandardizedXGBTrainer(
+            model_id=f"{model_id}_stage1_binary",
+            config=stage1_config
+        )
+
+        # Train Stage 1 with OOF predictions
+        stage1_results = stage1_trainer.train_and_predict(
+            X=X_train,
+            y=pd.Series(y_train.values, index=X_train.index),
+            data_start=X_train.index.min(),
+            data_end=X_train.index.max(),
+            eval_metric="logloss",
+            verbose=True
+        )
+
+        # Get OOF predictions for training set
+        stage1_oof = stage1_results.oof_predictions
+        stage1_models = stage1_results.models
+
+        # Make predictions on val/test using last trained model
+        stage1_model = stage1_models[-1] if stage1_models else None
+        if stage1_model is None:
+            raise ValueError("Stage 1 training failed - no models produced")
+
+        # Create DMatrix for predictions
+        from scipy import sparse
+
+        def create_dmatrix(X_df):
+            X_arr = X_df.values.astype(np.float32)
+            return xgb.DMatrix(X_arr, feature_names=X_df.columns.tolist())
+
+        dval = create_dmatrix(X_val)
+        stage1_val_probs = stage1_model.predict(dval)
+
+        if X_test is not None:
+            dtest = create_dmatrix(X_test)
+            stage1_test_probs = stage1_model.predict(dtest)
+        else:
+            stage1_test_probs = None
+
+        # Stage 1 metrics
+        val_preds = (stage1_val_probs >= 0.5).astype(int)
+        val_accuracy = accuracy_score(y_val, val_preds)
+
+        try:
+            val_log_loss = log_loss(y_val, stage1_val_probs)
+        except Exception:
+            val_log_loss = float("nan")
+
+        tprint_success(f"✅ Stage 1 Val: accuracy={val_accuracy:.4f}, log_loss={val_log_loss:.4f}")
+
+        # ========================================================================
+        # STAGE 2: Regression (quality/forward returns) using StandardizedXGBTrainer
+        # ========================================================================
+        tprint_info("🔄 Stage 2/2: Training quality regression with StandardizedXGBTrainer")
+
+        # Compute forward returns for regression target
+        horizon = int(config.get("breakout_horizon_bars", 96))
+        if "close" in feat_df.columns:
+            close = feat_df["close"]
+            fwd_returns = close.shift(-horizon) / close - 1.0
+        else:
+            # Fallback: use label magnitude as proxy
+            fwd_returns = pd.Series(0.0, index=feat_df.index)
+
+        fwd_returns_train = fwd_returns.loc[X_train.index].replace([np.inf, -np.inf], np.nan).fillna(0.0)
+
+        # Configure StandardizedXGBTrainer for regression
+        stage2_config = XGBTrainingConfig(
+            model_id=f"{model_id}_stage2_regression",
+            retrain_interval_days=10,
+            hpo_interval_days=30,
+            burnin_pct=1/12,
+            n_estimators=500,
+            learning_rate=0.03,
+            max_depth=3,
+            min_child_weight=30,
+            subsample=0.75,
+            colsample_bytree=0.80,
+            gamma=0.5,
+            reg_lambda=2.0,
+            early_stopping_rounds=20,
+            tree_method="hist",
+            task_type="regression",
+            objective="reg:squarederror",
+        )
+
+        stage2_trainer = StandardizedXGBTrainer(
+            model_id=f"{model_id}_stage2_regression",
+            config=stage2_config
+        )
+
+        # Weight samples by stage1 confidence (more confident = higher weight)
+        confidence_weights = np.abs(stage1_oof["probability"].reindex(X_train.index).fillna(0.5) - 0.5) * 2
+        confidence_weights = confidence_weights.values
+
+        # Train Stage 2 with OOF predictions
+        stage2_results = stage2_trainer.train_and_predict(
+            X=X_train,
+            y=pd.Series(fwd_returns_train.values, index=X_train.index),
+            data_start=X_train.index.min(),
+            data_end=X_train.index.max(),
+            sample_weight=confidence_weights,
+            eval_metric="rmse",
+            verbose=True
+        )
+
+        stage2_models = stage2_results.models
+        stage2_model = stage2_models[-1] if stage2_models else None
+
+        if stage2_model is not None:
+            stage2_val_preds = stage2_model.predict(dval)
+            if X_test is not None:
+                stage2_test_preds = stage2_model.predict(dtest)
+            else:
+                stage2_test_preds = None
+
+            # Normalize stage2 predictions to [0, 1]
+            stage2_min = np.nanmin(stage2_val_preds)
+            stage2_max = np.nanmax(stage2_val_preds)
+            stage2_range = stage2_max - stage2_min
+
+            if stage2_range > 0:
+                stage2_val_norm = (stage2_val_preds - stage2_min) / stage2_range
+            else:
+                stage2_val_norm = np.full_like(stage2_val_preds, 0.5)
+
+            stage2_val_norm = np.clip(stage2_val_norm, 0.0, 1.0)
+        else:
+            stage2_val_norm = np.full(len(X_val), 0.5)
+            stage2_test_preds = None
+            stage2_min = 0.0
+            stage2_max = 1.0
+            stage2_range = 1.0
+
+        # ========================================================================
+        # COMBINE STAGES: Final probabilities and scalars
+        # ========================================================================
+        # Final score = weighted combination of stage1 (direction) and stage2 (quality)
+        alpha = 0.6  # Weight for stage 1 (direction)
+        beta = 0.4   # Weight for stage 2 (quality)
+
+        # For validation set
+        val_final_probs = alpha * stage1_val_probs + beta * stage2_val_norm
+        val_final_probs = np.clip(val_final_probs, 0.0, 1.0)
+
+        # ========================================================================
+        # GENERATE FULL PROBABILITIES (3-class output for compatibility)
+        # ========================================================================
+        # Map to 3-class format: 0=bounce, 1=break, 2=trap
+        # Using binary probs and quality to infer trap probability
+
+        # Create full predictions on entire dataset
+        dfull = create_dmatrix(X)
+        full_stage1_probs = stage1_model.predict(dfull)
+
+        if stage2_model is not None:
+            full_stage2_preds = stage2_model.predict(dfull)
+            if stage2_range > 0:
+                full_stage2_norm = (full_stage2_preds - stage2_min) / stage2_range
+            else:
+                full_stage2_norm = np.full_like(full_stage2_preds, 0.5)
+            full_stage2_norm = np.clip(full_stage2_norm, 0.0, 1.0)
+        else:
+            full_stage2_norm = np.full(len(X), 0.5)
+
+        # Final combined probability (P(break))
+        full_final_probs = alpha * full_stage1_probs + beta * full_stage2_norm
+        full_final_probs = np.clip(full_final_probs, 0.0, 1.0)
+
+        # Convert to 3-class probabilities (bounce, break, trap)
+        # P(bounce) = 1 - P(break) when quality is high
+        # P(trap) = inferred from uncertainty (when quality is low but direction uncertain)
+        uncertainty = 1 - np.abs(full_stage1_probs - 0.5) * 2  # High when near 0.5
+        trap_prob = uncertainty * (1 - full_stage2_norm)  # High uncertainty + low quality = trap
+
+        p_break = full_final_probs * (1 - trap_prob * 0.5)  # Reduce break prob if trap-like
+        p_bounce = (1 - full_final_probs) * (1 - trap_prob * 0.5)  # Reduce bounce prob if trap-like
+        p_trap = np.clip(trap_prob, 0.0, 0.4)  # Cap trap probability
+
+        # Normalize to sum to 1
+        total = p_bounce + p_break + p_trap
+        total = np.where(total > 0, total, 1.0)
+        p_bounce = p_bounce / total
+        p_break = p_break / total
+        p_trap = p_trap / total
+
+        probs_full = np.column_stack([p_bounce, p_break, p_trap])
+
+        # Class predictions
+        classes_full = np.argmax(probs_full, axis=1)
+
+        # ========================================================================
+        # COMPILE METRICS
+        # ========================================================================
+        metrics = {
+            "val_accuracy": float(val_accuracy),
+            "val_log_loss": float(val_log_loss),
+            "n_train_samples": int(train_mask.sum()),
+            "n_val_samples": int(val_mask.sum()),
+            "n_test_samples": int(test_mask.sum()) if test_mask is not None else 0,
+            "stage1_oof_samples": len(stage1_oof),
+            "stage1_n_windows": len(stage1_results.metadata),
+            "stage2_n_windows": len(stage2_results.metadata) if stage2_results else 0,
+            "binary_break_ratio": float(break_ratio),
+            "class_counts": dict(pd.Series(y.values).value_counts()),
+            "use_temporal_splits": use_temporal_splits,
+        }
+
+        # Test metrics if available
+        if X_test is not None and y_test is not None and stage1_test_probs is not None:
+            test_preds = (stage1_test_probs >= 0.5).astype(int)
+            test_accuracy = accuracy_score(y_test, test_preds)
+            try:
+                test_log_loss = log_loss(y_test, stage1_test_probs)
+            except Exception:
+                test_log_loss = float("nan")
+
+            metrics["test_accuracy"] = float(test_accuracy)
+            metrics["test_log_loss"] = float(test_log_loss)
+            metrics["generalization_gap_log_loss"] = float(test_log_loss - val_log_loss)
+
+            tprint_success(f"✅ Test: accuracy={test_accuracy:.4f}, log_loss={test_log_loss:.4f}")
+
+        # F1 scores
+        try:
+            val_f1_macro = f1_score(y_val, val_preds, average="macro", zero_division=0)
+            val_f1_weighted = f1_score(y_val, val_preds, average="weighted", zero_division=0)
+            metrics["f1_macro"] = float(val_f1_macro)
+            metrics["f1_weighted"] = float(val_f1_weighted)
+        except Exception:
+            pass
+
+        tprint_success(
+            f"✅ 2-Stage Breakout Classifier Complete:\n"
+            f"   Val Accuracy: {val_accuracy:.4f}\n"
+            f"   Val Log Loss: {val_log_loss:.4f}\n"
+            f"   OOF Samples: {len(stage1_oof)}"
+        )
+
+        return stage1_model, metrics, probs_full, classes_full

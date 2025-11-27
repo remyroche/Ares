@@ -100,7 +100,7 @@ class HMMMLAlphaStep(BaseStep):
         """Initialize the HMM ML alpha step with versioned artifacts enabled."""
         super().__init__(step_name, use_versioned_artifacts=True)
         self.logger = logger.getChild("HMMMLAlphaStep") if hasattr(logger, "getChild") else logger
-        tprint(f"✅ Initialized {step_name} step", "SUCCESS")
+        tprint(f"ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Initialized {step_name} step", "SUCCESS")
 
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Execute the alpha label construction from 1h HMM regimes.
@@ -129,13 +129,13 @@ class HMMMLAlphaStep(BaseStep):
             direction = str(config.get("direction", "long"))
 
             # Set default alpha-specific configuration if not provided
-            # Smoothing defaults are chosen to target ~3–5 bar regime persistence
+            # Smoothing defaults are chosen to target ~3ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ5 bar regime persistence
             # while allowing overrides via config/CLI when needed.
             alpha_defaults: Dict[str, Any] = {
                 "alpha_target_smoothing_method": "ewm",
-                "alpha_target_smoothing_window": 5,
+                "alpha_target_smoothing_window": 8,  # Adjusted for 4-8h regimes (was 5)
                 "alpha_score_smoothing_method": "ewm",
-                "alpha_score_smoothing_window": 8,
+                "alpha_score_smoothing_window": 10,  # Adjusted for 4-8h regimes (was 8)
                 # Keep HPO opt-in; these defaults are used when explicitly enabled
                 "alpha_enable_hpo": False,
                 "alpha_hpo_cv_folds": 3,
@@ -145,14 +145,14 @@ class HMMMLAlphaStep(BaseStep):
                 "alpha_enable_expectation_calibration": True,
                 "alpha_expectation_positive_threshold": 0.0,
                 "alpha_expectation_min_samples": 200,
-                "alpha_expectation_ema_period": 4,
-                "alpha_expectation_ema_weight_recent": None,
-                "alpha_target_vol_window": 320,
+                "alpha_expectation_ema_period": 6,  # Adjusted for 4-8h regimes (was 4)
+                "alpha_expectation_ema_weight_recent": 0.15,  # Moderate EMA for 4-8h regimes (was None ~0.4)
+                "alpha_target_vol_window": 400,  # Adjusted rolling window (was 320)
                 # Enable trend feature engineering on aligned market data
                 "alpha_enable_trend_features": True,
-                "alpha_trend_ema_fast_window": 48,
-                "alpha_trend_ema_slow_window": 104,
-                "alpha_trend_slope_window": 80,
+                "alpha_trend_ema_fast_window": 56,  # Adjusted for 4-8h regimes (was 48)
+                "alpha_trend_ema_slow_window": 120,  # Adjusted for 4-8h regimes (was 104)
+                "alpha_trend_slope_window": 96,  # Adjusted for 4-8h regimes (was 80)
                 # Auto-pruning experiment enabled by default with a small R^2 threshold
                 "alpha_enable_auto_prune_rerun": True,
                 "alpha_auto_prune_min_delta": 0.0005,
@@ -160,6 +160,11 @@ class HMMMLAlphaStep(BaseStep):
                 # Try slightly more aggressive thresholds; still require a small
                 # positive improvement in validation R^2 before adopting.
                 "alpha_auto_prune_quantiles": [0.15, 0.25, 0.35, 0.45],
+                # Minimum run length for regime persistence (NOT scaled)
+                # Target: 4-8 hours at 15m bars = 16-32 bars
+                "alpha_regime_min_run_bars": 20,  # Set for 4-8h target
+                # Enable quality report generation
+                "alpha_enable_quality_report": True,
             }
             for k, v in alpha_defaults.items():
                 config.setdefault(k, v)
@@ -169,15 +174,15 @@ class HMMMLAlphaStep(BaseStep):
             for key, default in [
                 ("alpha_max_horizon_bars", 3),
                 ("alpha_horizon_bars", 1),
-                ("alpha_target_smoothing_window", 5),
-                ("alpha_score_smoothing_window", 8),
-                ("alpha_target_vol_window", 320),
-                ("alpha_expectation_ema_period", 4),
+                ("alpha_target_smoothing_window", 8),  # Updated for 4-8h regimes
+                ("alpha_score_smoothing_window", 10),  # Updated for 4-8h regimes
+                ("alpha_target_vol_window", 400),  # Updated for 4-8h regimes
+                ("alpha_expectation_ema_period", 6),  # Updated for 4-8h regimes
                 ("alpha_normalization_window", 500),
                 ("alpha_vol_of_vol_window", 10),
-                ("alpha_trend_ema_fast_window", 48),
-                ("alpha_trend_ema_slow_window", 104),
-                ("alpha_trend_slope_window", 80),
+                ("alpha_trend_ema_fast_window", 56),  # Updated for 4-8h regimes
+                ("alpha_trend_ema_slow_window", 120),  # Updated for 4-8h regimes
+                ("alpha_trend_slope_window", 96),  # Updated for 4-8h regimes
             ]:
                 value = config.get(key, default)
                 try:
@@ -208,7 +213,7 @@ class HMMMLAlphaStep(BaseStep):
                 raise ValueError("Config must include 'symbol' and 'exchange'")
 
             tprint_info(
-                f"🚀 Starting {self.step_name} for {symbol} on {exchange} "
+                f"ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Starting {self.step_name} for {symbol} on {exchange} "
                 f"(regime_timeframe={regime_timeframe})"
             )
 
@@ -280,8 +285,8 @@ class HMMMLAlphaStep(BaseStep):
                     ) from exc
 
             tprint_info(
-                f"✅ Loaded market data from {market_source}: {market_data.shape} "
-                f"({market_data.index.min()} → {market_data.index.max()})"
+                f"ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Loaded market data from {market_source}: {market_data.shape} "
+                f"({market_data.index.min()} ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ {market_data.index.max()})"
             )
 
             # Create temporal split config with 6-month burn-in for indicator stabilization
@@ -295,12 +300,12 @@ class HMMMLAlphaStep(BaseStep):
                 # Use default burnin_pct=1/12 (3 months)
             )
             tprint_info(
-                f"📅 Temporal split config: "
-                f"burn-in={split_config.burnin.start if split_config.burnin else 'None'} → "
+                f"ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Temporal split config: "
+                f"burn-in={split_config.burnin.start if split_config.burnin else 'None'} ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ "
                 f"{split_config.burnin.effective_end if split_config.burnin else 'None'}, "
-                f"train={split_config.training.start} → {split_config.training.effective_end}, "
-                f"val={split_config.validation.start} → {split_config.validation.effective_end}, "
-                f"test={split_config.test.start} → {split_config.test.effective_end}"
+                f"train={split_config.training.start} ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ {split_config.training.effective_end}, "
+                f"val={split_config.validation.start} ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ {split_config.validation.effective_end}, "
+                f"test={split_config.test.start} ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ {split_config.test.effective_end}"
             )
 
             # ------------------------------------------------------------------
@@ -370,7 +375,7 @@ class HMMMLAlphaStep(BaseStep):
                                     sum_y = np.convolve(y, kernel_ones, mode="valid")
                                     sum_xy = np.convolve(y, x, mode="valid")
 
-                                    # Covariance numerator: Σ(x*y) - x_mean * Σ(y)
+                                    # Covariance numerator: ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂÄÂÄšÄÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ(x*y) - x_mean * ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂÄÂÄšÄÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ(y)
                                     num = sum_xy - x_mean * sum_y
                                     slope_core = num / denom_loc
 
@@ -942,6 +947,26 @@ class HMMMLAlphaStep(BaseStep):
                         f"Failed to save alpha regime statistics artifact: {save_stats_exc}"
                     )
 
+            # ------------------------------------------------------------------
+            # Generate comprehensive quality report if enabled
+            # ------------------------------------------------------------------
+            if config.get("alpha_enable_quality_report", True):
+                try:
+                    report_result = self._generate_hmm_alpha_quality_report(
+                        alpha_df=alpha_df,
+                        regime_col=regime_col_name,
+                        symbol=symbol,
+                        exchange=exchange,
+                        timeframe=regime_timeframe,
+                        training_metrics=training_metrics,
+                        config=config,
+                    )
+                    if report_result is not None:
+                        csv_path, md_path = report_result
+                        tprint_info(f"📄 Generated HMM alpha quality report: {md_path}")
+                except Exception as report_exc:
+                    tprint_warning(f"Failed to generate HMM alpha quality report: {report_exc}")
+
             execution_time = time.time() - start_time
             tprint_info(
                 f" {self.step_name} completed in {execution_time:.2f}s "
@@ -973,7 +998,7 @@ class HMMMLAlphaStep(BaseStep):
         """Compute forward-return-based alpha labels on the aligned dataset.
 
         For regression:
-            - Compute forward returns for horizons 1–3h.
+            - Compute forward returns for horizons 1ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ3h.
             - Use the average of these horizons as a smoother macro alpha target.
 
         For classification:
@@ -1036,7 +1061,7 @@ class HMMMLAlphaStep(BaseStep):
                 )
 
         if target_type == "regression":
-            # Average of 1–3h forward returns as macro target
+            # Average of 1ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ3h forward returns as macro target
             horizon_keys = [h for h in fwd_cols.keys() if 1 <= h <= max_h]
             fwd_stack = [df[fwd_cols[h]] for h in horizon_keys]
             multi_target = pd.concat(fwd_stack, axis=1).mean(axis=1)
@@ -1081,12 +1106,12 @@ class HMMMLAlphaStep(BaseStep):
                         t_high = float(tgt_clean.quantile(target_q_upper))
                         alpha_target = alpha_target.clip(t_low, t_high)
                         tprint_info(
-                            f"🔧 Winsorizing alpha_target at {target_q_lower:.1%}/{target_q_upper:.1%}: "
+                            f"ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ§ Winsorizing alpha_target at {target_q_lower:.1%}/{target_q_upper:.1%}: "
                             f"[{t_low:.6f}, {t_high:.6f}]"
                         )
                 except Exception as tgt_wins_exc:
                     tprint_warning(
-                        f"⚠️ Failed to winsorize alpha_target (vol-normalized): {tgt_wins_exc}"
+                        f"ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ¸ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Failed to winsorize alpha_target (vol-normalized): {tgt_wins_exc}"
                     )
 
             df["alpha_target"] = alpha_target
@@ -1109,7 +1134,7 @@ class HMMMLAlphaStep(BaseStep):
             )
 
         tprint_info(
-            f"🎯 Alpha label dataset shape: {df.shape} "
+            f"ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂÄÂÄšÄÄÂĂÂĂÂĂÂĂĹĄĂÂĂÂĂÂÄÂĂÂ Alpha label dataset shape: {df.shape} "
             f"(target_type={target_type}, effective_horizon={effective_horizon}, return_type={return_type})"
         )
 
@@ -1131,7 +1156,7 @@ class HMMMLAlphaStep(BaseStep):
             )
         except Exception as exc:
             tprint_warning(
-                f"⚠️ Failed to check rolling_hmm_economic_features artifact (non-fatal): {exc}"
+                f"ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ¸ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Failed to check rolling_hmm_economic_features artifact (non-fatal): {exc}"
             )
             return
         if economic is None:
@@ -1171,8 +1196,8 @@ class HMMMLAlphaStep(BaseStep):
             )
 
         tprint_info(
-            f"✅ Loaded HMM labels: {labels.shape} "
-            f"({labels.index.min()} → {labels.index.max()})"
+            f"ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Loaded HMM labels: {labels.shape} "
+            f"({labels.index.min()} ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ {labels.index.max()})"
         )
 
         probs = self._get_artifact(
@@ -1195,8 +1220,8 @@ class HMMMLAlphaStep(BaseStep):
 
         if probs is not None and not probs.empty:
             tprint_info(
-                f"✅ Loaded HMM probabilities: {probs.shape} "
-                f"({probs.index.min()} → {probs.index.max()})"
+                f"ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Loaded HMM probabilities: {probs.shape} "
+                f"({probs.index.min()} ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ {probs.index.max()})"
             )
         else:
             tprint_warning("No HMM probabilities found; proceeding without them")
@@ -1222,8 +1247,8 @@ class HMMMLAlphaStep(BaseStep):
 
         if economic is not None and not economic.empty:
             tprint_info(
-                f"✅ Loaded economic features: {economic.shape} "
-                f"({economic.index.min()} → {economic.index.max()})"
+                f"ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Loaded economic features: {economic.shape} "
+                f"({economic.index.min()} ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ {economic.index.max()})"
             )
         else:
             tprint_warning("No economic features found; proceeding without them")
@@ -1279,8 +1304,8 @@ class HMMMLAlphaStep(BaseStep):
         aligned = aligned.dropna(how="all")
 
         tprint_info(
-            f"🔗 Aligned dataset shape: {aligned.shape} "
-            f"({aligned.index.min()} → {aligned.index.max()})"
+            f"ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Aligned dataset shape: {aligned.shape} "
+            f"({aligned.index.min()} ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ {aligned.index.max()})"
         )
 
         return aligned
@@ -1465,7 +1490,7 @@ class HMMMLAlphaStep(BaseStep):
         ]
         if regime_prob_cols:
             tprint_info(
-                f"ℹ️ Excluding regime probability columns from alpha features: {regime_prob_cols}"
+                f"ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂÄÂÄšÄÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ¸ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Excluding regime probability columns from alpha features: {regime_prob_cols}"
             )
             feature_cols = [c for c in feature_cols if c not in regime_prob_cols]
 
@@ -1494,7 +1519,7 @@ class HMMMLAlphaStep(BaseStep):
             y_val = y.loc[val_mask]
 
             tprint_info(
-                f"📊 Temporal splits: train={len(X_train_raw)}, val={len(X_val_raw)}"
+                f"ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Temporal splits: train={len(X_train_raw)}, val={len(X_val_raw)}"
             )
         else:
             # Fallback to percentage-based split if no split_config provided
@@ -1544,7 +1569,7 @@ class HMMMLAlphaStep(BaseStep):
                 low=low,
                 close=close,
             )
-            tprint_info("✅ Applied rolling window normalization to features")
+            tprint_info("ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Applied rolling window normalization to features")
         except Exception as norm_exc:
             tprint_warning(f"Rolling normalization failed, using ScalingNormalizer fallback: {norm_exc}")
             # Fallback to ScalingNormalizer
@@ -1759,7 +1784,7 @@ class HMMMLAlphaStep(BaseStep):
 
                 if regression_calibration_enabled and IsotonicRegression is not None:
                     try:
-                        tprint_info(f"🔧 Starting regression calibration (Isotonic Regression) on {len(y_val)} validation samples...")
+                        tprint_info(f"ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ§ Starting regression calibration (Isotonic Regression) on {len(y_val)} validation samples...")
                         calibrator = IsotonicRegression(out_of_bounds="clip")
                         calibrator.fit(val_pred, y_val.to_numpy(dtype=float, copy=False))
 
@@ -1775,9 +1800,9 @@ class HMMMLAlphaStep(BaseStep):
                             # Log calibration improvement
                             if rmse_uncal is not None and rmse_cal is not None:
                                 improvement = ((rmse_uncal - rmse_cal) / rmse_uncal) * 100 if rmse_uncal > 0 else 0.0
-                                tprint_info(f"  ✓ Regression calibration complete: RMSE {rmse_uncal:.6f} → {rmse_cal:.6f} (improvement: {improvement:.2f}%)")
+                                tprint_info(f"  ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Regression calibration complete: RMSE {rmse_uncal:.6f} ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ {rmse_cal:.6f} (improvement: {improvement:.2f}%)")
                             else:
-                                tprint_info(f"  ✓ Regression calibration complete")
+                                tprint_info(f"  ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Regression calibration complete")
 
                         training_metrics["regression_calibration_method"] = "isotonic_regression"
                         training_metrics["regression_calibration_used"] = True
@@ -1786,13 +1811,13 @@ class HMMMLAlphaStep(BaseStep):
                         training_metrics["regression_calibration_used"] = False
                         training_metrics["regression_calibration_failed"] = True
                         training_metrics["regression_calibration_error"] = str(calib_err)
-                        tprint_warning(f"⚠️ Regression calibration failed: {calib_err}")
+                        tprint_warning(f"ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ¸ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Regression calibration failed: {calib_err}")
                 elif not regression_calibration_enabled:
                     training_metrics["regression_calibration_used"] = False
-                    tprint_info("ℹ️  Regression calibration disabled (alpha_enable_regression_calibration=False)")
+                    tprint_info("ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂÄÂÄšÄÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ¸ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ  Regression calibration disabled (alpha_enable_regression_calibration=False)")
                 elif IsotonicRegression is None:
                     training_metrics["regression_calibration_used"] = False
-                    tprint_warning("⚠️ Regression calibration unavailable (IsotonicRegression not imported)")
+                    tprint_warning("ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ¸ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Regression calibration unavailable (IsotonicRegression not imported)")
 
             if calibrator is not None:
                 full_raw_pred = model.predict(X_scaled_full)
@@ -1842,7 +1867,7 @@ class HMMMLAlphaStep(BaseStep):
                     model.fit(X_val, y_val)
 
                     tprint_info(
-                        f"✅ Probability calibration (Isotonic Regression) fitted on {len(X_val)} validation samples"
+                        f"ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Probability calibration (Isotonic Regression) fitted on {len(X_val)} validation samples"
                     )
 
                     # Evaluate calibration improvement
@@ -1920,7 +1945,7 @@ class HMMMLAlphaStep(BaseStep):
                     if wfv_metrics:
                         training_metrics.update(wfv_metrics)
                         tprint_info(
-                            f"📊 Walk-Forward Validation completed: "
+                            f"ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Walk-Forward Validation completed: "
                             f"avg_val_accuracy={wfv_metrics.get('wfv_avg_val_accuracy', 0.0):.3f}, "
                             f"avg_test_accuracy={wfv_metrics.get('wfv_avg_test_accuracy', 0.0):.3f}, "
                             f"accuracy_degradation={wfv_metrics.get('wfv_accuracy_degradation', 0.0):.3f}"
@@ -1972,7 +1997,7 @@ class HMMMLAlphaStep(BaseStep):
                 tprint_warning(f"Alpha SHAP analysis failed (ignored): {shap_exc}")
 
         tprint_info(
-            f"🤖 Trained LightGBM alpha model ({training_metrics.get('model_type', 'unknown')}) "
+            f"ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ¤ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Trained LightGBM alpha model ({training_metrics.get('model_type', 'unknown')}) "
             f"on {len(X_train)} train / {len(X_val)} val samples"
         )
 
@@ -1995,7 +2020,7 @@ class HMMMLAlphaStep(BaseStep):
             )
             if feature_analysis.get("feature_analysis_completed"):
                 training_metrics.update(feature_analysis)
-                tprint_info(f"✅ Comprehensive feature analysis completed and integrated into metrics")
+                tprint_info(f"ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Comprehensive feature analysis completed and integrated into metrics")
 
                 # Optional auto-prune experiment: try multiple quantile-based thresholds
                 # over permutation importance and adopt the best pruned model if it
@@ -2173,13 +2198,13 @@ class HMMMLAlphaStep(BaseStep):
                                         )
 
                                     tprint_info(
-                                        "🔍 Auto-prune ADOPTED: quantile="
+                                        "ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Auto-prune ADOPTED: quantile="
                                         f"{best_quantile}, dropped {len(best_drop_features)} features | "
-                                        f"val_r2 {baseline_val_r2 if baseline_val_r2 is not None else 'N/A'} → {best_val_r2:.6f}"
+                                        f"val_r2 {baseline_val_r2 if baseline_val_r2 is not None else 'N/A'} ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ {best_val_r2:.6f}"
                                     )
                                 else:
                                     tprint_info(
-                                        "🔍 Auto-prune experiment completed: "
+                                        "ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Auto-prune experiment completed: "
                                         f"baseline val_r2={baseline_val_r2 if baseline_val_r2 is not None else 'N/A'}, "
                                         f"best_pruned_val_r2={best_val_r2 if best_val_r2 is not None else 'N/A'} (no adoption)"
                                     )
@@ -2417,7 +2442,7 @@ class HMMMLAlphaStep(BaseStep):
             # Lightweight iteration progress (log every 10 iterations and first/last)
             if iteration == 1 or iteration == max_iterations or iteration % 10 == 0:
                 tprint_info(
-                    f"    ↪ regime boundary optimization iter={iteration}/{max_iterations} "
+                    f"    ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂÄÂÄšÄÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ regime boundary optimization iter={iteration}/{max_iterations} "
                     f"(current_best_WCV_ratio={best_score:.4f})"
                 )
 
@@ -2586,7 +2611,7 @@ class HMMMLAlphaStep(BaseStep):
                         .mean()
                     )
                 tprint_info(
-                    f"🧹 Applied {score_smoothing_method} smoothing to alpha scores "
+                    f"ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ§ÄÂĂÂÄÂĂÂÄÂÄšÄÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Applied {score_smoothing_method} smoothing to alpha scores "
                     f"(window={score_smoothing_window}) before regime binning"
                 )
             except Exception as score_smooth_exc:
@@ -2626,7 +2651,7 @@ class HMMMLAlphaStep(BaseStep):
         # Multi-regime competition: test multiple regime counts
         if use_flexible_regimes:
             tprint_info(
-                f"🔍 Testing flexible regime optimization for {regime_counts_to_test} regime counts "
+                f"ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Testing flexible regime optimization for {regime_counts_to_test} regime counts "
                 f"(min_bin={min_bin_pct*100:.0f}%, max_bin={max_bin_pct*100:.0f}%)"
             )
 
@@ -2673,7 +2698,7 @@ class HMMMLAlphaStep(BaseStep):
                         best_metrics = metrics
 
                     tprint_info(
-                        f"  → {n_regimes} regimes: WCV Ratio={score:.4f}, "
+                        f"  ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ {n_regimes} regimes: WCV Ratio={score:.4f}, "
                         f"CV Ratio={metrics.get('cv_ratio', 0.0):.4f}, "
                         f"iterations={metrics.get('optimization_iterations', 0)}"
                     )
@@ -2689,7 +2714,7 @@ class HMMMLAlphaStep(BaseStep):
                 num_bins = best_n_regimes
                 bucket_codes = pd.Series(best_labels, index=common_idx)
                 tprint_info(
-                    f"✅ Selected {num_bins} regimes with WCV Ratio={best_score:.4f} "
+                    f"ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Selected {num_bins} regimes with WCV Ratio={best_score:.4f} "
                     f"(Between WCV={best_metrics.get('between_wcv', 0.0):.4f}, "
                     f"Within WCV={best_metrics.get('within_wcv', 0.0):.4f})"
                 )
@@ -2715,7 +2740,7 @@ class HMMMLAlphaStep(BaseStep):
                 ranks = aligned_scores.rank(method="first")
                 bucket_codes = pd.qcut(ranks, q=num_bins, labels=False)
                 tprint_info(
-                    f"📊 Using simple quantile binning with {num_bins} equal-sized regimes"
+                    f"ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Using simple quantile binning with {num_bins} equal-sized regimes"
                 )
             except ValueError as e:
                 tprint_warning(f"Failed to compute quantile-based alpha regimes: {e}")
@@ -2864,13 +2889,13 @@ class HMMMLAlphaStep(BaseStep):
                 regime_stats_df[key] = value
 
         tprint_info(
-            f"📊 Computed alpha regime statistics for {len(regime_stats_df)} regimes "
+            f"ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Computed alpha regime statistics for {len(regime_stats_df)} regimes "
             f"(bins={num_bins})"
         )
 
         if use_flexible_regimes and best_metrics is not None:
             tprint_info(
-                f"📈 Overall Economic Metrics: "
+                f"ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Overall Economic Metrics: "
                 f"CV Ratio={best_metrics.get('cv_ratio', 0.0):.4f}, "
                 f"WCV Ratio={best_metrics.get('wcv_ratio', 0.0):.4f}, "
                 f"Between WCV={best_metrics.get('between_wcv', 0.0):.4f}, "
@@ -2903,7 +2928,7 @@ class HMMMLAlphaStep(BaseStep):
 
         Returns:
             Dictionary with:
-            - thresholds: Dict mapping regime → {min_score, max_score}
+            - thresholds: Dict mapping regime ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ {min_score, max_score}
             - thresholds_by_quantile: Percentile-based thresholds
             - regime_counts: How many samples per regime
             - sortable_thresholds: Sorted list for efficient lookup in production
@@ -2971,7 +2996,7 @@ class HMMMLAlphaStep(BaseStep):
             threshold_data["percentile_thresholds"] = percentile_thresholds
 
             tprint_info(
-                f"✅ Regime thresholds extracted: {len(unique_regimes)} regimes, "
+                f"ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Regime thresholds extracted: {len(unique_regimes)} regimes, "
                 f"min_score={min(alpha_scores):.6f}, max_score={max(alpha_scores):.6f}"
             )
 
@@ -3090,7 +3115,7 @@ class HMMMLAlphaStep(BaseStep):
                     hits = (np.sign(y_pred) == np.sign(y_full_vals)).mean()
                     feature_analysis_results["ic_hit_rate"] = float(hits)
 
-                tprint_info(f"✅ Information Coefficient (IC) calculated: Pearson r={ic_pearson_corr:.4f}, Spearman r={ic_spearman_corr:.4f}")
+                tprint_info(f"ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Information Coefficient (IC) calculated: Pearson r={ic_pearson_corr:.4f}, Spearman r={ic_spearman_corr:.4f}")
             except Exception as ic_err:
                 tprint_warning(f"IC calculation failed: {ic_err}")
 
@@ -3114,7 +3139,7 @@ class HMMMLAlphaStep(BaseStep):
                         reverse=True
                     )[:10]
 
-                    tprint_info(f"✅ LGBM importance calculated for {len(feature_names)} features")
+                    tprint_info(f"ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ LGBM importance calculated for {len(feature_names)} features")
             except Exception as lgbm_err:
                 tprint_warning(f"LGBM importance calculation failed: {lgbm_err}")
 
@@ -3153,7 +3178,7 @@ class HMMMLAlphaStep(BaseStep):
                             {"feature_name": name, "importance_mean": imp} for name, imp in top_features
                         ]
 
-                        tprint_info(f"✅ Permutation importance calculated in {perm_results.get('execution_time', 0.0):.3f}s")
+                        tprint_info(f"ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Permutation importance calculated in {perm_results.get('execution_time', 0.0):.3f}s")
                 except Exception as perm_err:
                     tprint_warning(f"Permutation importance calculation failed: {perm_err}")
 
@@ -3179,7 +3204,7 @@ class HMMMLAlphaStep(BaseStep):
                     feature_analysis_results["mrmr_relevance_scores"] = mrmr_results.get("relevance_scores", {})
                     feature_analysis_results["mrmr_execution_time"] = mrmr_results.get("execution_time", 0.0)
 
-                    tprint_info(f"✅ mRMR selected {feature_analysis_results['mrmr_n_selected']} features (ratio: {feature_analysis_results['mrmr_n_selected']/len(feature_names):.2%})")
+                    tprint_info(f"ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ mRMR selected {feature_analysis_results['mrmr_n_selected']} features (ratio: {feature_analysis_results['mrmr_n_selected']/len(feature_names):.2%})")
                 except Exception as mrmr_err:
                     tprint_warning(f"mRMR analysis failed: {mrmr_err}")
 
@@ -3217,7 +3242,7 @@ class HMMMLAlphaStep(BaseStep):
                         "recommendations": lc_result.recommendations,
                     }
 
-                    tprint_info(f"✅ Learning curve analysis completed: {lc_result.learning_rate} learning rate, {lc_result.overfitting_risk} overfitting risk")
+                    tprint_info(f"ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Learning curve analysis completed: {lc_result.learning_rate} learning rate, {lc_result.overfitting_risk} overfitting risk")
                 except Exception as lc_err:
                     tprint_warning(f"Learning curve analysis failed: {lc_err}")
 
@@ -3253,7 +3278,7 @@ class HMMMLAlphaStep(BaseStep):
                     feature_analysis_results["shap_importance"] = shap_data
                     feature_analysis_results["shap_top_features"] = sorted(shap_data, key=lambda x: x["shap_importance"], reverse=True)[:10]
 
-                    tprint_info(f"✅ SHAP importance calculated for {len(feature_names)} features")
+                    tprint_info(f"ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ SHAP importance calculated for {len(feature_names)} features")
                 except Exception as shap_err:
                     tprint_warning(f"SHAP analysis failed (SHAP may have issues with this data): {shap_err}")
 
@@ -3601,3 +3626,282 @@ class HMMMLAlphaStep(BaseStep):
             quality_path = None
 
         return metrics, quality_path
+
+    def _generate_hmm_alpha_quality_report(
+        self,
+        *,
+        alpha_df: pd.DataFrame,
+        regime_col: Optional[str],
+        symbol: str,
+        exchange: str,
+        timeframe: str,
+        training_metrics: Dict[str, Any],
+        config: Dict[str, Any],
+    ) -> Optional[Tuple[str, str]]:
+        """Generate comprehensive quality report for HMM ML alpha regimes.
+        
+        Creates CSV and Markdown reports in outcomes/ with:
+        - Per-regime metrics: returns on different timeframes, Sharpe, temporal smoothness
+        - Per-quantile (based on 0-1 scalar) metrics
+        - Global metrics: transition matrix, overall Sharpe, regime duration stats
+        
+        Args:
+            alpha_df: DataFrame with regime assignments and alpha_score_continuous
+            regime_col: Name of the regime column
+            symbol: Trading symbol
+            exchange: Exchange name
+            timeframe: Timeframe string
+            training_metrics: Dict of training metrics from model
+            config: Configuration dictionary
+            
+        Returns:
+            Tuple of (csv_path, md_path) or None if generation fails
+        """
+        import os
+        from datetime import datetime
+        
+        if regime_col is None or regime_col not in alpha_df.columns:
+            tprint_warning("No regime column for quality report generation")
+            return None
+        
+        try:
+            os.makedirs("outcomes", exist_ok=True)
+            now_str = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+            base_name = f"hmm_ml_alpha_quality_{symbol}_{timeframe}_{now_str}"
+            csv_path = os.path.join("outcomes", base_name + ".csv")
+            md_path = os.path.join("outcomes", base_name + ".md")
+            
+            regime_series = alpha_df[regime_col].dropna().astype(int)
+            if regime_series.empty:
+                tprint_warning("No valid regime labels for quality report")
+                return None
+            
+            # ================================================================
+            # 1. Per-Regime Metrics
+            # ================================================================
+            regime_metrics_list = []
+            fwd_cols = [c for c in alpha_df.columns if c.startswith("alpha_forward_return_")]
+            score_col = "alpha_score_continuous" if "alpha_score_continuous" in alpha_df.columns else None
+            
+            for regime_id in sorted(regime_series.unique()):
+                regime_mask = alpha_df[regime_col] == regime_id
+                regime_data = alpha_df[regime_mask]
+                
+                if len(regime_data) == 0:
+                    continue
+                
+                # Duration statistics
+                run_lengths = []
+                in_run = False
+                run_start = None
+                for i, (idx, val) in enumerate(regime_series.items()):
+                    if val == regime_id:
+                        if not in_run:
+                            in_run = True
+                            run_start = i
+                    else:
+                        if in_run:
+                            run_lengths.append(i - run_start)
+                            in_run = False
+                if in_run:
+                    run_lengths.append(len(regime_series) - run_start)
+                
+                mean_duration = np.mean(run_lengths) if run_lengths else 0
+                median_duration = np.median(run_lengths) if run_lengths else 0
+                
+                # Return metrics for multiple timeframes
+                ret_metrics = {}
+                for fwd_col in fwd_cols[:3]:  # Limit to first 3 forward return columns
+                    horizon = fwd_col.split("_")[-1]
+                    ret = regime_data[fwd_col].dropna().astype(float)
+                    if len(ret) > 0:
+                        mean_ret = float(ret.mean())
+                        std_ret = float(ret.std()) if len(ret) > 1 else 0.0
+                        sharpe = mean_ret / (std_ret + 1e-8) if std_ret > 0 else 0.0
+                        ret_metrics[f"mean_return_{horizon}"] = mean_ret
+                        ret_metrics[f"sharpe_{horizon}"] = sharpe
+                
+                # Score distribution
+                score_mean = float(regime_data[score_col].mean()) if score_col else 0.0
+                score_std = float(regime_data[score_col].std()) if score_col and len(regime_data) > 1 else 0.0
+                
+                regime_metrics = {
+                    "regime_id": int(regime_id),
+                    "n_samples": len(regime_data),
+                    "n_runs": len(run_lengths),
+                    "mean_duration_bars": mean_duration,
+                    "median_duration_bars": median_duration,
+                    "mean_duration_hours": mean_duration * 0.25,  # 15m bars
+                    "median_duration_hours": median_duration * 0.25,
+                    "score_mean": score_mean,
+                    "score_std": score_std,
+                    **ret_metrics
+                }
+                regime_metrics_list.append(regime_metrics)
+            
+            regime_df = pd.DataFrame(regime_metrics_list)
+            
+            # ================================================================
+            # 2. Per-Quantile Metrics (based on 0-1 scalar)
+            # ================================================================
+            quantile_metrics_list = []
+            if score_col and score_col in alpha_df.columns:
+                score_series = alpha_df[score_col].dropna()
+                if len(score_series) > 0:
+                    quantiles = [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
+                    for i in range(len(quantiles) - 1):
+                        q_low = quantiles[i]
+                        q_high = quantiles[i + 1]
+                        q_mask = (score_series >= q_low) & (score_series < q_high)
+                        if i == len(quantiles) - 2:  # Include upper bound for last quantile
+                            q_mask = (score_series >= q_low) & (score_series <= q_high)
+                        
+                        q_data = alpha_df.loc[q_mask.index[q_mask]]
+                        if len(q_data) == 0:
+                            continue
+                        
+                        q_metrics = {
+                            "quantile_range": f"{q_low:.1f}-{q_high:.1f}",
+                            "n_samples": len(q_data),
+                        }
+                        
+                        # Returns by quantile
+                        for fwd_col in fwd_cols[:3]:
+                            horizon = fwd_col.split("_")[-1]
+                            ret = q_data[fwd_col].dropna().astype(float)
+                            if len(ret) > 0:
+                                q_metrics[f"mean_return_{horizon}"] = float(ret.mean())
+                                q_metrics[f"sharpe_{horizon}"] = float(ret.mean() / (ret.std() + 1e-8)) if len(ret) > 1 else 0.0
+                        
+                        quantile_metrics_list.append(q_metrics)
+            
+            quantile_df = pd.DataFrame(quantile_metrics_list) if quantile_metrics_list else pd.DataFrame()
+            
+            # ================================================================
+            # 3. Global Metrics
+            # ================================================================
+            # Transition matrix
+            transition_counts = pd.crosstab(
+                regime_series.iloc[:-1].values,
+                regime_series.iloc[1:].values,
+                normalize='index'
+            )
+            
+            # Overall duration stats
+            all_run_lengths = []
+            current_regime = regime_series.iloc[0]
+            run_start = 0
+            for i in range(1, len(regime_series)):
+                if regime_series.iloc[i] != current_regime:
+                    all_run_lengths.append(i - run_start)
+                    run_start = i
+                    current_regime = regime_series.iloc[i]
+            all_run_lengths.append(len(regime_series) - run_start)
+            
+            global_metrics = {
+                "n_regimes": len(regime_series.unique()),
+                "total_samples": len(regime_series),
+                "mean_run_length_bars": np.mean(all_run_lengths),
+                "median_run_length_bars": np.median(all_run_lengths),
+                "mean_run_length_hours": np.mean(all_run_lengths) * 0.25,
+                "median_run_length_hours": np.median(all_run_lengths) * 0.25,
+                "n_regime_changes": len(all_run_lengths) - 1,
+            }
+            
+            # Temporal smoothness (1 - normalized transition frequency)
+            regime_change_rate = (len(all_run_lengths) - 1) / len(regime_series) if len(regime_series) > 0 else 0
+            global_metrics["temporal_smoothness"] = 1.0 - regime_change_rate
+            
+            # ================================================================
+            # 4. Save CSV
+            # ================================================================
+            with open(csv_path, 'w') as f:
+                f.write("# HMM ML Alpha Quality Report\n")
+                f.write(f"# Symbol: {symbol}, Exchange: {exchange}, Timeframe: {timeframe}\n")
+                f.write(f"# Generated: {now_str}\n\n")
+                
+                f.write("## Global Metrics\n")
+                for key, value in global_metrics.items():
+                    f.write(f"{key},{value}\n")
+                f.write("\n")
+                
+                f.write("## Per-Regime Metrics\n")
+                regime_df.to_csv(f, index=False)
+                f.write("\n")
+                
+                if not quantile_df.empty:
+                    f.write("## Per-Quantile Metrics\n")
+                    quantile_df.to_csv(f, index=False)
+                    f.write("\n")
+                
+                f.write("## Transition Matrix\n")
+                transition_counts.to_csv(f)
+            
+            # ================================================================
+            # 5. Save Markdown Report
+            # ================================================================
+            with open(md_path, 'w') as f:
+                f.write("# HMM ML Alpha Quality Report\n\n")
+                f.write(f"**Symbol**: {symbol} | **Exchange**: {exchange} | **Timeframe**: {timeframe}\n\n")
+                f.write(f"**Generated**: {now_str}\n\n")
+                f.write("---\n\n")
+                
+                # Global metrics
+                f.write("## Global Metrics\n\n")
+                f.write("| Metric | Value |\n")
+                f.write("|--------|-------|\n")
+                for key, value in global_metrics.items():
+                    if isinstance(value, float):
+                        f.write(f"| {key} | {value:.4f} |\n")
+                    else:
+                        f.write(f"| {key} | {value} |\n")
+                f.write("\n")
+                
+                # Regime duration interpretation
+                f.write("### Regime Duration Analysis\n\n")
+                mean_hours = global_metrics['mean_run_length_hours']
+                median_hours = global_metrics['median_run_length_hours']
+                f.write(f"- **Mean run length**: {global_metrics['mean_run_length_bars']:.1f} bars â {mean_hours:.2f}h\n")
+                f.write(f"- **Median run length**: {global_metrics['median_run_length_bars']:.1f} bars â {median_hours:.2f}h\n")
+                
+                target_min, target_max = 4, 8  # Target for hmm_ml_alpha_step
+                if target_min <= mean_hours <= target_max:
+                    f.write(f"- â **Target achieved**: {target_min}-{target_max}h regime duration\n")
+                else:
+                    f.write(f"- â ď¸ **Off target**: Current {mean_hours:.1f}h vs target {target_min}-{target_max}h\n")
+                f.write("\n")
+                
+                # Per-regime table
+                f.write("## Per-Regime Metrics\n\n")
+                if not regime_df.empty:
+                    f.write(regime_df.to_markdown(index=False))
+                    f.write("\n\n")
+                
+                # Per-quantile table
+                if not quantile_df.empty:
+                    f.write("## Per-Quantile Metrics (0-1 Scalar)\n\n")
+                    f.write(quantile_df.to_markdown(index=False))
+                    f.write("\n\n")
+                
+                # Transition matrix
+                f.write("## Transition Matrix\n\n")
+                f.write("Probability of transitioning from row regime to column regime:\n\n")
+                f.write(transition_counts.to_markdown())
+                f.write("\n\n")
+                
+                # Training metrics summary
+                if training_metrics:
+                    f.write("## Training Metrics Summary\n\n")
+                    for key, value in training_metrics.items():
+                        if isinstance(value, (int, float)):
+                            f.write(f"- **{key}**: {value}\n")
+                f.write("\n")
+            
+            tprint_info(f"đ Generated HMM ML alpha quality report: {md_path}")
+            return csv_path, md_path
+            
+        except Exception as e:
+            tprint_warning(f"Failed to generate HMM ML alpha quality report: {e}")
+            import traceback
+            traceback.print_exc()
+            return None

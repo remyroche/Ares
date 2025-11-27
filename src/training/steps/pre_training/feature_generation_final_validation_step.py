@@ -341,6 +341,33 @@ class FeatureGenerationFinalValidationStep(BaseStep):
             tprint_warning(f"⚠️ Error determining execution mode from artifacts: {e}")
             return 'analyst'  # Default fallback
 
+    def _subsample_rows_for_validation(self, dataset: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
+        """Subsample rows (~33%) for expensive validation checks.
+
+        Keeps the full dataset for cheap vectorized statistics, but reduces
+        sample size for cross-validation, baseline models, and heavy
+        distribution/statistical checks.
+        """
+
+        n_samples = len(dataset)
+        if n_samples == 0:
+            return dataset
+
+        # Use ~33% of rows with a minimum floor for stability
+        frac = 0.33
+        min_samples = int(config.get("final_validation_min_samples", 5000))
+        if n_samples <= min_samples:
+            return dataset
+
+        n_sub = max(min_samples, int(n_samples * frac))
+
+        # Preserve temporal structure when timestamp is available
+        if "timestamp" in dataset.columns:
+            dataset_sorted = dataset.sort_values("timestamp")
+            return dataset_sorted.iloc[-n_sub:]
+
+        return dataset.sample(n=n_sub, replace=False, random_state=42)
+
     def _perform_comprehensive_validation(self, datasets: Dict[str, pd.DataFrame], config: Dict[str, Any]) -> Dict[str, Any]:
         """Perform comprehensive validation of all datasets."""
         validation_results = {}
@@ -364,28 +391,31 @@ class FeatureGenerationFinalValidationStep(BaseStep):
             'validations': {}
         }
 
-        # Basic data quality validation
+        # Basic data quality validation on full dataset
         validation['validations']['data_quality'] = self._validate_data_quality(dataset, config)
 
+        # Use a subsampled view for heavy statistical checks
+        dataset_sub = self._subsample_rows_for_validation(dataset, config)
+
         # Feature distribution validation
-        validation['validations']['feature_distributions'] = self._validate_feature_distributions(dataset, config)
+        validation['validations']['feature_distributions'] = self._validate_feature_distributions(dataset_sub, config)
 
         # Target relationship validation
-        validation['validations']['target_relationships'] = self._validate_target_relationships(dataset, config)
+        validation['validations']['target_relationships'] = self._validate_target_relationships(dataset_sub, config)
 
         # Cross-validation readiness
-        validation['validations']['cv_readiness'] = self._validate_cv_readiness(dataset, config)
+        validation['validations']['cv_readiness'] = self._validate_cv_readiness(dataset_sub, config)
 
         # Statistical validation
-        validation['validations']['statistical'] = self._validate_statistical_properties(dataset, config)
+        validation['validations']['statistical'] = self._validate_statistical_properties(dataset_sub, config)
 
-        # Filter normalization validation
+        # Filter normalization validation (use full dataset for precise grade checks)
         validation['validations']['filter_normalization'] = self._validate_filter_normalization(dataset, config)
 
         # Baseline predictive check
         if config.get('run_baseline_check', True):  # Default: enabled
             tprint_info(f"🔍 Running baseline predictive check for {dataset_name}...")
-            validation['validations']['baseline_predictive_check'] = self._run_baseline_predictive_check(dataset, config)
+            validation['validations']['baseline_predictive_check'] = self._run_baseline_predictive_check(dataset_sub, config)
 
         # Overall assessment
         validation['overall_assessment'] = self._assess_dataset_quality(validation['validations'], config, dataset)

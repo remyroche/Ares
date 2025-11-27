@@ -413,6 +413,8 @@ def _infer_model_group(feature_name: str) -> str:
         return "risk"
     if name.startswith("smc_"):
         return "smc"
+    if name.startswith("macro_alpha") or (name.startswith("macro_") and "alpha" in name):
+        return "macro_alpha"
     if "alpha" in name:
         return "alpha"
     if name.startswith("liquidity_regime") or "liquidity" in name:

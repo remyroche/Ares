@@ -1731,7 +1731,7 @@ class MLPathRegimeStep(BaseStep):
 
         # Compare all pairs of regimes
         for i, regime_i in enumerate(unique_regimes):
-            for regime_j in enumerate(unique_regimes[i+1:]):
+            for regime_j in unique_regimes[i+1:]:
                 mask_i = regime_labels == regime_i
                 mask_j = regime_labels == regime_j
 
@@ -2709,7 +2709,7 @@ class MLPathRegimeStep(BaseStep):
 
         if use_xgb_quality:
             # Use XGBoost to learn optimal feature weights from barrier hit prediction
-            regime_quality_scores, risk_scores, xgb_metrics, xgb_quality_classifier, xgb_quality_regressor = self._calculate_xgboost_driven_quality_scores(
+            regime_quality_scores, quality_scores, xgb_metrics, xgb_quality_classifier, xgb_quality_regressor = self._calculate_xgboost_driven_quality_scores(
                 labels=final_labels,
                 features_df=risk_features_clean,
                 ohlcv_df=risk_df,  # Original dataframe with OHLCV
@@ -2720,7 +2720,7 @@ class MLPathRegimeStep(BaseStep):
             metrics['xgb_quality_metrics'] = xgb_metrics
         else:
             # Fallback to hardcoded weights
-            regime_quality_scores, risk_scores = self._calculate_data_driven_risk_scores(
+            regime_quality_scores, quality_scores = self._calculate_data_driven_risk_scores(
                 labels=final_labels,
                 features_df=risk_features_clean,
                 posteriors=teacher_probs_full[valid_mask] if teacher_probs_full is not None else None,
@@ -2728,17 +2728,36 @@ class MLPathRegimeStep(BaseStep):
             )
             metrics['xgb_quality_metrics'] = None
 
-        metrics['regime_quality_scores'] = regime_quality_scores
-        metrics['path_risk_scores'] = risk_scores  # Continuous scores [0, 1]
+        # Interpret the posterior-weighted scores as path QUALITY in [0, 1] and
+        # derive a corresponding RISK scalar as 1 - quality (0 = least risk, 1 = highest).
+        path_quality_scores = np.asarray(quality_scores, dtype=float)
+        path_quality_scores = np.clip(path_quality_scores, 0.0, 1.0)
 
-        # Log regime quality scores
+        path_risk_scores = 1.0 - path_quality_scores
+        path_risk_scores = np.clip(path_risk_scores, 0.0, 1.0)
+
+        metrics['regime_quality_scores'] = regime_quality_scores
+        metrics['path_quality_scores'] = path_quality_scores
+        metrics['path_risk_scores'] = path_risk_scores
+
+        # Log regime quality and risk score ranges
         tprint_info("=" * 80)
         tprint_info("📊 DATA-DRIVEN REGIME QUALITY SCORES:")
         tprint_info("=" * 80)
         for regime_id, quality in regime_quality_scores.items():
             tprint_info(f"  Regime {regime_id}: Quality Score = {quality:.4f}")
-        tprint_info(f"  Risk Score Range: [{risk_scores.min():.4f}, {risk_scores.max():.4f}]")
-        tprint_info(f"  Risk Score Mean: {risk_scores.mean():.4f} ± {risk_scores.std():.4f}")
+        tprint_info(
+            f"  Path QUALITY Score Range: [{path_quality_scores.min():.4f}, {path_quality_scores.max():.4f}] "
+        )
+        tprint_info(
+            f"  Path QUALITY Mean: {path_quality_scores.mean():.4f} ± {path_quality_scores.std():.4f}"
+        )
+        tprint_info(
+            f"  Path RISK Score Range: [{path_risk_scores.min():.4f}, {path_risk_scores.max():.4f}] "
+        )
+        tprint_info(
+            f"  Path RISK Mean: {path_risk_scores.mean():.4f} ± {path_risk_scores.std():.4f}"
+        )
 
         # Log XGBoost metrics if available
         if use_xgb_quality and metrics.get('xgb_quality_metrics') is not None:
@@ -2961,9 +2980,10 @@ class MLPathRegimeStep(BaseStep):
         full_labels = np.full(len(risk_df), -1, dtype=int)
         full_labels[valid_mask] = final_labels
 
-        # Create full risk scores array (aligned with risk_df)
+        # Create full risk scores array (aligned with risk_df) using the
+        # posterior-weighted path RISK scalar in [0, 1].
         full_risk_scores = np.full(len(risk_df), np.nan, dtype=float)
-        full_risk_scores[valid_mask] = risk_scores
+        full_risk_scores[valid_mask] = path_risk_scores
 
         # Add risk scores to metrics for return
         metrics['full_risk_scores'] = full_risk_scores

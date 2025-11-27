@@ -549,3 +549,56 @@ def run_simple_long_grid_backtest(
         return pd.DataFrame(columns=["grid_config"])
 
     return pd.DataFrame(rows)
+
+
+def run_simple_short_grid_backtest(
+    close: pd.Series,
+    high: pd.Series,
+    low: pd.Series,
+    raw_returns: pd.Series,
+    predictions: pd.Series,
+    confidence: pd.Series,
+    ml_df: pd.DataFrame,
+    timeframe: str,
+    fee_rate: float = 0.0015,
+    regime_col: Optional[str] = None,
+    max_holding_bars: int = 6,
+    tp_values: Optional[List[float]] = None,
+    sl_values: Optional[List[float]] = None,
+) -> pd.DataFrame:
+    index = close.index
+    close = close.reindex(index).astype(float)
+    high = high.reindex(index).astype(float)
+    low = low.reindex(index).astype(float)
+    raw_returns = raw_returns.reindex(index).fillna(0.0).astype(float)
+    predictions = predictions.reindex(index).astype(float)
+    confidence = confidence.reindex(index).fillna(0.0).astype(float)
+    ml_df = ml_df.reindex(index)
+
+    close_inv = 1.0 / close.replace(0.0, np.nan)
+    high_inv = 1.0 / low.replace(0.0, np.nan)
+    low_inv = 1.0 / high.replace(0.0, np.nan)
+
+    close_inv = close_inv.replace([np.inf, -np.inf], np.nan).ffill().bfill()
+    high_inv = high_inv.replace([np.inf, -np.inf], np.nan).ffill().bfill()
+    low_inv = low_inv.replace([np.inf, -np.inf], np.nan).ffill().bfill()
+
+    raw_returns_inv = close_inv.pct_change().fillna(0.0)
+
+    predictions_long = -predictions
+
+    return run_simple_long_grid_backtest(
+        close=close_inv,
+        high=high_inv,
+        low=low_inv,
+        raw_returns=raw_returns_inv,
+        predictions=predictions_long,
+        confidence=confidence,
+        ml_df=ml_df,
+        timeframe=timeframe,
+        fee_rate=fee_rate,
+        regime_col=regime_col,
+        max_holding_bars=max_holding_bars,
+        tp_values=tp_values,
+        sl_values=sl_values,
+    )

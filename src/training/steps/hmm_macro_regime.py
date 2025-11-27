@@ -1,9 +1,9 @@
 """
-HMM ML Alpha Step
+HMM Macro Trend Step
 
 This step consumes 1h Rolling HMM regime outputs plus OHLCV data to
-construct forward-return-based alpha labels and a cleaned training
-DataFrame for downstream models (e.g., regime-aware 15m models).
+construct forward-return-based macro trend alpha labels and a cleaned
+DataFrame for downstream models focused on higher timeframes.
 
 Responsibilities (initial version):
 - Load 1h HMM artifacts from versioned HDF5 (labels, probabilities,
@@ -93,13 +93,13 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-class HMMMLAlphaStep(BaseStep):
-    """Pipeline step to construct alpha labels from 1h Rolling HMM regimes."""
+class HMMMLMacroTrendStep(BaseStep):
+    """Pipeline step to construct macro-trend alpha labels from 1h Rolling HMM regimes."""
 
-    def __init__(self, step_name: str = "hmm_ml_alpha_step"):
-        """Initialize the HMM ML alpha step with versioned artifacts enabled."""
+    def __init__(self, step_name: str = "hmm_macro_regime"):
+        """Initialize the HMM macro trend step with versioned artifacts enabled."""
         super().__init__(step_name, use_versioned_artifacts=True)
-        self.logger = logger.getChild("HMMMLAlphaStep") if hasattr(logger, "getChild") else logger
+        self.logger = logger.getChild("HMMMLMacroTrendStep") if hasattr(logger, "getChild") else logger
         tprint(f"✅ Initialized {step_name} step", "SUCCESS")
 
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
@@ -160,11 +160,12 @@ class HMMMLAlphaStep(BaseStep):
                 # Try slightly more aggressive thresholds; still require a small
                 # positive improvement in validation R^2 before adopting.
                 "alpha_auto_prune_quantiles": [0.15, 0.25, 0.35, 0.45],
+                "alpha_regime_min_run_bars": 40,
             }
             for k, v in alpha_defaults.items():
                 config.setdefault(k, v)
 
-            alpha_scaling_factor = 4
+            macro_scaling_factor = 3
 
             for key, default in [
                 ("alpha_max_horizon_bars", 3),
@@ -173,15 +174,10 @@ class HMMMLAlphaStep(BaseStep):
                 ("alpha_score_smoothing_window", 8),
                 ("alpha_target_vol_window", 320),
                 ("alpha_expectation_ema_period", 4),
-                ("alpha_normalization_window", 500),
-                ("alpha_vol_of_vol_window", 10),
-                ("alpha_trend_ema_fast_window", 48),
-                ("alpha_trend_ema_slow_window", 104),
-                ("alpha_trend_slope_window", 80),
             ]:
                 value = config.get(key, default)
                 try:
-                    config[key] = int(value) * alpha_scaling_factor
+                    config[key] = int(value) * macro_scaling_factor
                 except Exception:
                     config[key] = value
 
@@ -191,13 +187,13 @@ class HMMMLAlphaStep(BaseStep):
                     scaled: List[int] = []
                     for p in raw:
                         try:
-                            scaled.append(int(p) * alpha_scaling_factor)
+                            scaled.append(int(p) * macro_scaling_factor)
                         except Exception:
                             scaled.append(p)  # type: ignore[arg-type]
                     config[name] = scaled
                 else:
                     try:
-                        config[name] = int(raw) * alpha_scaling_factor
+                        config[name] = int(raw) * macro_scaling_factor
                     except Exception:
                         config[name] = raw
 
@@ -208,7 +204,7 @@ class HMMMLAlphaStep(BaseStep):
                 raise ValueError("Config must include 'symbol' and 'exchange'")
 
             tprint_info(
-                f"🚀 Starting {self.step_name} for {symbol} on {exchange} "
+                f"Starting {self.step_name} for {symbol} on {exchange} "
                 f"(regime_timeframe={regime_timeframe})"
             )
 
@@ -805,7 +801,7 @@ class HMMMLAlphaStep(BaseStep):
 
                             regime_thresholds_path = self._save_artifact(
                                 data=regime_thresholds_for_save,
-                                artifact_name="hmm_alpha_regime_thresholds_15m",
+                                artifact_name="hmm_macro_trend_regime_thresholds_15m",
                                 artifact_type="model",
                                 data_category="config",
                                 metadata={
@@ -875,7 +871,7 @@ class HMMMLAlphaStep(BaseStep):
 
             training_data_path = self._save_artifact(
                 data=alpha_to_save,
-                artifact_name="hmm_alpha_training_data_15m",
+                artifact_name="hmm_macro_trend_training_data_15m",
                 artifact_type="data",
                 metadata=metadata,
             )
@@ -899,7 +895,7 @@ class HMMMLAlphaStep(BaseStep):
 
                     model_path = self._save_artifact(
                         data=model,
-                        artifact_name="hmm_alpha_model_15m",
+                        artifact_name="hmm_macro_trend_model_15m",
                         artifact_type="model",
                         metadata=model_metadata,
                     )
@@ -911,7 +907,7 @@ class HMMMLAlphaStep(BaseStep):
                 try:
                     feature_pipeline_path = self._save_artifact(
                         data=feature_pipeline_artifacts,
-                        artifact_name="hmm_alpha_feature_pipeline_15m",
+                        artifact_name="hmm_macro_trend_feature_pipeline_15m",
                         artifact_type="model",
                         metadata={
                             "symbol": symbol,
@@ -929,7 +925,7 @@ class HMMMLAlphaStep(BaseStep):
                     regime_stats_to_save = regime_stats_df.reset_index()
                     regime_stats_path = self._save_artifact(
                         data=regime_stats_to_save,
-                        artifact_name="hmm_alpha_regime_stats_15m",
+                        artifact_name="hmm_macro_trend_regime_stats_15m",
                         artifact_type="data",
                         metadata={
                             "symbol": symbol,
@@ -1960,7 +1956,7 @@ class HMMMLAlphaStep(BaseStep):
                     X_train=X_train_arr,
                     X_test=X_test_arr,
                     feature_names=extended_feature_names,
-                    model_name="hmm_alpha_model",
+                    model_name="hmm_macro_trend_model",
                     config=shap_cfg,
                 )
 
@@ -2723,6 +2719,45 @@ class HMMMLAlphaStep(BaseStep):
 
         bucket_col = f"alpha_regime_bucket_{num_bins}"
         alpha_df[bucket_col] = bucket_codes.reindex(alpha_df.index)
+
+        min_run_bars = int(config.get("alpha_regime_min_run_bars", 0))
+        if min_run_bars > 1:
+            try:
+                series = alpha_df[bucket_col]
+                vals = series.to_numpy(copy=True)
+                n = len(vals)
+
+                i = 0
+                while i < n:
+                    v = vals[i]
+                    if pd.isna(v):
+                        i += 1
+                        continue
+
+                    j = i + 1
+                    while j < n and not pd.isna(vals[j]) and vals[j] == v:
+                        j += 1
+
+                    run_len = j - i
+                    if run_len < min_run_bars:
+                        prev_v = vals[i - 1] if i > 0 else np.nan
+                        next_v = vals[j] if j < n else np.nan
+
+                        repl = prev_v if not pd.isna(prev_v) else next_v
+                        if not pd.isna(repl):
+                            for k in range(i, j):
+                                vals[k] = repl
+
+                    i = j
+
+                alpha_df[bucket_col] = vals
+                tprint_info(
+                    f"🧱 Enforced minimum run length on alpha regimes (min_run_bars={min_run_bars})"
+                )
+            except Exception as rl_exc:
+                tprint_warning(
+                    f"Failed to enforce minimum run length on alpha regimes: {rl_exc}"
+                )
 
         # Compute comprehensive regime statistics with CV and WCV metrics
         fwd_col = fwd_cols[0]
@@ -3590,7 +3625,7 @@ class HMMMLAlphaStep(BaseStep):
         try:
             quality_path = self._save_artifact(
                 data=quality_df,
-                artifact_name="hmm_alpha_regime_quality_1h",
+                artifact_name="hmm_macro_trend_regime_quality_1h",
                 artifact_type="data",
                 metadata={
                     "min_regime_size": min_regime_size,

@@ -331,6 +331,82 @@ def get_specialist_models_outputs(
     except Exception as e:
         log_warning(f"⚠️ Failed to load HMM Alpha specialist outputs: {e}")
 
+    # Insert HMM Macro specialist block (macro alpha from hmm_macro_regime)
+    try:
+        macro_context = {
+            "symbol": symbol,
+            "exchange": exchange,
+            "timeframe": regime_timeframe,
+            "direction": direction,
+            "model": "regime_alpha",
+            "step_name": "hmm_macro_regime",
+        }
+        macro_training = artifact_router.load(
+            artifact_name="hmm_macro_trend_training_data_15m",
+            artifact_type="data",
+            data_category="features",
+            context=macro_context,
+        )
+
+        if macro_training is not None and not getattr(macro_training, "empty", True):
+            if not isinstance(macro_training, pd.DataFrame):
+                macro_training = pd.DataFrame(macro_training)
+            macro_training = _standardize_index(macro_training)
+
+            if isinstance(macro_training.index, pd.DatetimeIndex) and len(macro_training.index) > 0:
+                log_info(
+                    "📈 HMM Macro (hmm_macro_trend_training_data_15m) index range: %s → %s (n=%d)"
+                    % (
+                        macro_training.index.min(),
+                        macro_training.index.max(),
+                        len(macro_training.index),
+                    )
+                )
+
+            macro_cols: List[str] = []
+
+            if "alpha_score_continuous" in macro_training.columns:
+                macro_cols.append("alpha_score_continuous")
+
+                macro_ewm_cols = [
+                    c
+                    for c in macro_training.columns
+                    if c.startswith("alpha_score_continuous_ewm_")
+                ]
+                if macro_ewm_cols:
+                    macro_cols.extend(sorted(macro_ewm_cols))
+            else:
+                macro_legacy_cols = [
+                    c
+                    for c in macro_training.columns
+                    if c.startswith("alpha_pred_")
+                ]
+                if macro_legacy_cols:
+                    macro_cols.append(macro_legacy_cols[0])
+
+            if macro_cols:
+                before_block = macro_training[macro_cols].copy()
+                before_block = before_block.rename(
+                    columns={c: f"macro_{c}" for c in before_block.columns}
+                )
+                nnz_before = int(before_block.notna().sum().sum())
+                block = before_block.shift(1).fillna(method="ffill")
+                block = block.reindex(training_index, method="ffill")
+                nnz_after = int(block.notna().sum().sum())
+                blocks.append(block)
+                log_success(
+                    "✅ Added HMM Macro specialist block from 'hmm_macro_trend_training_data_15m': "
+                    f"shape={block.shape}, non_null_before={nnz_before}, "
+                    f"non_null_after={nnz_after}"
+                )
+                if nnz_after == 0:
+                    log_warning(
+                        "⚠️ HMM Macro block aligned to training_index is all-NaN. "
+                        "Check macro_training timestamps and values."
+                    )
+    except Exception as e:
+        log_warning(f"⚠️ Failed to load HMM Macro specialist outputs: {e}")
+
     # ------------------------------------------------------------------
     # 3) Liquidity regimes – 15m probabilities
     # ------------------------------------------------------------------

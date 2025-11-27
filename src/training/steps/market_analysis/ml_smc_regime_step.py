@@ -779,6 +779,9 @@ class MLSMCRegimeStep(BaseStep):
         # Target: ATR-normalized forward return
         # This captures actual price movement scaled by volatility, more predictive than position-in-range
         target_atr_return = (future_close - current_close) / atr
+        atr_clip = float(config.get("smc_target_atr_clip", 3.0))
+        if atr_clip > 0.0:
+            target_atr_return = target_atr_return.clip(-atr_clip, atr_clip)
 
         df_with_target = df.copy()
         df_with_target["target_atr_return"] = target_atr_return
@@ -895,6 +898,15 @@ class MLSMCRegimeStep(BaseStep):
         forward_returns_val = forward_returns.loc[val_mask]
         forward_returns_test = forward_returns.loc[test_mask]
 
+        if len(X_train) == 0 or len(X_test) == 0:
+            tprint_warning(
+                f"SMC XGB: empty temporal split detected (train={len(X_train)}, val={len(X_val)}, test={len(X_test)}); skipping training"
+            )
+            metrics["smc_xgb_early_exit_reason"] = (
+                f"empty_splits_train={len(X_train)}_val={len(X_val)}_test={len(X_test)}"
+            )
+            return metrics, artifacts
+
         tprint_info(
             f"📊 Using temporal splits: Train {len(X_train)} samples "
             f"({split_config.training.start} → {split_config.training.effective_end}), "
@@ -938,10 +950,14 @@ class MLSMCRegimeStep(BaseStep):
         )
 
         proba_train = model.predict_proba(X_train)
-        proba_val = model.predict_proba(X_val) if len(X_val) > 0 else np.empty((0, 3), dtype=np.float32)
-        proba_test = model.predict_proba(X_test) if len(X_test) > 0 else np.empty((0, 3), dtype=np.float32)
+        proba_val = model.predict_proba(X_val) if len(X_val) > 0 else np.empty((0, 0), dtype=np.float32)
+        proba_test = model.predict_proba(X_test) if len(X_test) > 0 else np.empty((0, 0), dtype=np.float32)
 
-        class_to_scalar = np.array([0.0, 0.5, 1.0], dtype=np.float32)
+        n_classes = proba_train.shape[1] if proba_train.ndim == 2 else 0
+        if n_classes <= 1:
+            class_to_scalar = np.array([0.0], dtype=np.float32)
+        else:
+            class_to_scalar = np.linspace(0.0, 1.0, num=n_classes, dtype=np.float32)
 
         y_train_pred = proba_train.dot(class_to_scalar)
         y_val_pred = proba_val.dot(class_to_scalar) if len(X_val) > 0 else np.array([], dtype=np.float32)
@@ -1087,6 +1103,10 @@ class MLSMCRegimeStep(BaseStep):
             f"val_directional_ic={val_ic:.4f}"
         )
 
+        # Default isotonic-calibrated metrics (may remain NaN if calibration is disabled or insufficient data)
+        iso_test_rmse = float("nan")
+        iso_test_r2 = float("nan")
+
         if model_accepted and bool(config.get("smc_enable_isotonic_calibration", True)):
             try:
                 scalar_train = y_train_pred
@@ -1131,6 +1151,8 @@ class MLSMCRegimeStep(BaseStep):
                             except Exception:
                                 iso_r2 = float("nan")
 
+                    iso_test_rmse = iso_rmse
+                    iso_test_r2 = iso_r2
                     metrics["smc_iso_test_rmse"] = iso_rmse
                     metrics["smc_iso_test_r2"] = iso_r2
 
@@ -1209,6 +1231,8 @@ class MLSMCRegimeStep(BaseStep):
             train_brier,
             val_brier,
             test_brier,
+            iso_test_rmse,
+            iso_test_r2,
             len(X_train),
             len(X_val),
             len(X_test),
@@ -1619,6 +1643,8 @@ class MLSMCRegimeStep(BaseStep):
         train_brier: float,
         val_brier: float,
         test_brier: float,
+        iso_test_rmse: float,
+        iso_test_r2: float,
         n_train: int,
         n_val: int,
         n_test: int,
@@ -1691,6 +1717,15 @@ class MLSMCRegimeStep(BaseStep):
         )
         md_lines.append(f"| Features | {len(feature_cols)} | {len(feature_cols)} | {len(feature_cols)} |")
         md_lines.append("")
+
+        if np.isfinite(iso_test_rmse) or np.isfinite(iso_test_r2):
+            md_lines.append("### Isotonic-Calibrated Performance (Test)")
+            md_lines.append("")
+            md_lines.append("| Metric | Value |")
+            md_lines.append("| --- | --- |")
+            md_lines.append(f"| Iso RMSE | {iso_test_rmse:.4f} |")
+            md_lines.append(f"| Iso R² | {iso_test_r2:.4f} |")
+            md_lines.append("")
 
         # Mean returns by signal
         if y_pred_class is not None:

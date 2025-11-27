@@ -173,16 +173,18 @@ class TemporalSplitConfig:
             data_start = base_date + timedelta(days=int(data_start) // samples_per_day)
             data_end = base_date + timedelta(days=int(data_end) // samples_per_day)
         else:
-            total_days = (data_end - data_start).days
+            delta = data_end - data_start
+            total_days = max(1, delta.days)
 
         # Calculate burn-in period if specified
         burnin_period = None
         burnin_days = 0
         if burnin_pct > 0:
             burnin_days = int(total_days * burnin_pct)
-            burnin_start = data_start
-            burnin_end = burnin_start + timedelta(days=burnin_days)
-            burnin_period = TemporalPeriod(burnin_start, burnin_end, embargo_days, "burnin")
+            if burnin_days > 0:
+                burnin_start = data_start
+                burnin_end = burnin_start + timedelta(days=burnin_days)
+                burnin_period = TemporalPeriod(burnin_start, burnin_end, embargo_days, "burnin")
 
         # Adjust remaining days after burn-in
         remaining_days = total_days - burnin_days - (embargo_days if burnin_days > 0 else 0)
@@ -491,7 +493,47 @@ def create_temporal_split_config_for_pipeline(
 
     # Try to load existing config
     if config_path.exists():
-        return TemporalSplitConfig.load(config_path)
+        config = TemporalSplitConfig.load(config_path)
+
+        # If data range is provided, ensure the config meaningfully overlaps it.
+        # If there is no overlap at all (e.g., legacy synthetic 2020 dates vs 2022+ data),
+        # regenerate the config based on the current data range.
+        if data_start is not None and data_end is not None:
+            cfg_starts = [
+                config.training.start,
+                config.validation.start,
+                config.test.start,
+            ]
+            if config.burnin is not None:
+                cfg_starts.append(config.burnin.start)
+
+            cfg_ends = [
+                config.training.effective_end,
+                config.validation.effective_end,
+                config.test.effective_end,
+            ]
+            if config.burnin is not None:
+                cfg_ends.append(config.burnin.effective_end)
+
+            cfg_start = min(cfg_starts)
+            cfg_end = max(cfg_ends)
+
+            overlap_start = max(data_start, cfg_start)
+            overlap_end = min(data_end, cfg_end)
+
+            if overlap_end <= overlap_start:
+                config = TemporalSplitConfig.create_from_data(
+                    data_start=data_start,
+                    data_end=data_end,
+                    train_pct=0.6,
+                    val_pct=0.2,
+                    test_pct=0.2,
+                    embargo_days=1,
+                    burnin_pct=burnin_pct if enable_burnin else 0.0,
+                )
+                config.save(config_path)
+
+        return config
 
     # Create new config if data range provided
     if data_start is None or data_end is None:

@@ -363,6 +363,7 @@ Examples:
     regime_group.add_argument('--rolling-hmm-regime-discovery', action='store_true', help='Run Rolling HMM regime discovery with EWMA features and HPO')
     regime_group.add_argument('--regime-models-training', action='store_true', help='Train machine learning models for regime classification')
     regime_group.add_argument('--regime-ensemble-training', action='store_true', help='Train ensemble models for regime classification using meta-learning')
+    regime_group.add_argument('--hmm-macro-regime', action='store_true', help='Run HMM macro alpha / macro regime step from Rolling HMM outputs')
 
     # Feature generation step shortcuts
     feature_group = parser.add_argument_group('Feature generation step shortcuts')
@@ -672,7 +673,8 @@ async def main():
         args.train_tactician_base, args.train_tactician_ensemble,
         args.run_tactician_interaction, args.run_analyst_interaction, args.run_both_interaction_modes,
         args.rolling_hmm_regime_discovery,
-        args.regime_models_training, args.regime_ensemble_training
+        args.regime_models_training, args.regime_ensemble_training,
+        args.hmm_macro_regime,
     ])
 
     if not has_execution_mode:
@@ -805,6 +807,7 @@ async def main():
                 step_name = 'analyst_base_training'
                 training_type = 'analyst_base'
                 config['execution_context'] = 'analyst'
+                config['feature_set_size'] = 40
                 # For analyst base, also run simple analyst_base_backtest step afterwards
                 run_backtest_after_training = True
             elif args.train_analyst_ensemble:
@@ -840,6 +843,11 @@ async def main():
             config['enable_auto_tuning'] = True
             result = await launcher.run_step('rolling_hmm_regime_discovery', config)
             print(f"Rolling HMM regime discovery completed: {'✅ Success' if result.get('success') else '❌ Failed'}")
+
+        elif args.hmm_macro_regime:
+            logger.info("Running HMM macro regime alpha step from Rolling HMM outputs")
+            result = await launcher.run_step('hmm_macro_regime', config)
+            print(f"HMM macro regime step completed: {'✅ Success' if result.get('success') else '❌ Failed'}")
 
         elif args.regime_models_training:
             # Regime models training execution

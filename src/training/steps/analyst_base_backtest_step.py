@@ -19,7 +19,10 @@ import pandas as pd
 from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_error
-from src.utils.ml_common.trading_grid_backtester import run_simple_long_grid_backtest
+from src.utils.ml_common.trading_grid_backtester import (
+    run_simple_long_grid_backtest,
+    run_simple_short_grid_backtest,
+)
 from src.utils.ml_common.confidence_metrics import apply_risk_adjusted_confidence
 from src.utils.versioned_artifacts.temporal_splits import TemporalSplitConfig
 
@@ -449,7 +452,7 @@ class AnalystBaseBacktestStep(BaseStep):
             grid_n_trades: int | None = None
             grid_total_return_with_fees: float | None = None
 
-            if direction == "long":
+            if direction in ("long", "short"):
                 regime_col = None
                 try:
                     regime_candidates = [c for c in ml_df.columns if "regime" in c.lower()]
@@ -461,19 +464,34 @@ class AnalystBaseBacktestStep(BaseStep):
                 except Exception:
                     regime_col = None
 
-                grid_summary = run_simple_long_grid_backtest(
-                    close=close,
-                    high=high,
-                    low=low,
-                    raw_returns=raw_returns,
-                    predictions=predictions,
-                    confidence=confidence,
-                    ml_df=ml_df,
-                    timeframe=timeframe,
-                    fee_rate=0.0015,
-                    regime_col=regime_col,
-                    max_holding_bars=6,
-                )
+                if direction == "short":
+                    grid_summary = run_simple_short_grid_backtest(
+                        close=close,
+                        high=high,
+                        low=low,
+                        raw_returns=raw_returns,
+                        predictions=predictions,
+                        confidence=confidence,
+                        ml_df=ml_df,
+                        timeframe=timeframe,
+                        fee_rate=0.0015,
+                        regime_col=regime_col,
+                        max_holding_bars=6,
+                    )
+                else:
+                    grid_summary = run_simple_long_grid_backtest(
+                        close=close,
+                        high=high,
+                        low=low,
+                        raw_returns=raw_returns,
+                        predictions=predictions,
+                        confidence=confidence,
+                        ml_df=ml_df,
+                        timeframe=timeframe,
+                        fee_rate=0.0015,
+                        regime_col=regime_col,
+                        max_holding_bars=6,
+                    )
 
                 csv_path = filepath.with_suffix(".csv")
                 grid_summary.to_csv(csv_path, index=False)

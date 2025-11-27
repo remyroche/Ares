@@ -61,7 +61,10 @@ from src.training.steps.market_analysis.shared_utils.balanced_feature_extractor 
     BalancedFeatureConfig,
     FeatureCategory as BFCategory,
 )
-from src.utils.ml_common.trading_grid_backtester import run_simple_long_grid_backtest
+from src.utils.ml_common.trading_grid_backtester import (
+    run_simple_long_grid_backtest,
+    run_simple_short_grid_backtest,
+)
 from src.utils.versioned_artifacts.temporal_splits import (
     create_temporal_split_config_for_pipeline,
     TemporalSplitConfig,
@@ -243,76 +246,122 @@ class MLMeanReversionRegimeStep(BaseStep):
                 # Merge HPO results into config for training
                 for key, value in hpo_best_params.items():
                     config[f"mr_{key}"] = value
-                tprint_success(f"✅ HPO complete - using optimized parameters for training")
+                tprint_success("✅ HPO complete - using optimized parameters for training")
 
-            # 6) Train XGB classifier with isotonic calibration using temporal splits
-            model, calibrated_model, student_metrics, raw_scores, calibrated_scores = self._train_xgb_student(
-                X_all,
-                y_target_all,
-                config,
-                split_config=split_config,
-                y_teacher=y_teacher_binary,
-            )
+            # 6) Train XGB classifier and generate artifacts per direction
+            direction_lower = direction.lower()
+            if direction_lower == "both":
+                directions_to_run: List[str] = ["long", "short"]
+            elif direction_lower in {"long", "short"}:
+                directions_to_run = [direction_lower]
+            else:
+                directions_to_run = [direction]
 
-            # 6) Attach outputs to main frame
-            output_df = market_data.copy()
-            for c in teacher_df.columns:
-                output_df[c] = teacher_df[c]
-            output_df["mr_teacher_cluster"] = teacher_clusters
-            output_df["mr_teacher_mean_reversion"] = teacher_binary
-            output_df["mr_teacher_score"] = teacher_score
-            for c in student_df.columns:
-                output_df[c] = student_df[c]
-            output_df.loc[X_all.index, "mr_raw_score"] = raw_scores
-            output_df.loc[X_all.index, "mr_probability"] = calibrated_scores
-            output_df.loc[X_all.index, "mr_direction_target"] = y_target_all.values
-            # Add ATR data for dynamic TPSL
-            output_df["mr_atr_14"] = atr_14
-            output_df["mr_atr_300"] = atr_300
-            output_df["mr_dynamic_tpsl_multiplier"] = dynamic_tp_sl_multiplier
+            all_artifacts: Dict[str, Dict[str, str]] = {}
+            all_reports: Dict[str, Dict[str, str]] = {}
+            all_student_metrics: Dict[str, Dict[str, Any]] = {}
+            all_fwd_metrics: Dict[str, Dict[Any, Any]] = {}
 
-            # Forward-return diagnostics at multiple horizons
-            horizons_cfg = config.get("mr_forward_horizons", [2, 4, 8, 12])  # 30m to 3h for 15m bars
-            fwd_metrics: Dict[int, Dict[str, Any]] = {}
-            for h in horizons_cfg:
-                try:
-                    h_int = int(h)
-                except (TypeError, ValueError):
-                    continue
-                m = self._compute_forward_metrics(
-                    output_df, prob_col="mr_probability", horizon=h_int, target_col="mr_direction_target"
+            for dir_ in directions_to_run:
+                if dir_ == "short":
+                    y_dir = (1 - y_target_all).astype(int)
+                else:
+                    y_dir = y_target_all.copy()
+
+                model, calibrated_model, student_metrics, raw_scores, calibrated_scores = self._train_xgb_student(
+                    X_all,
+                    y_dir,
+                    config,
+                    split_config=split_config,
+                    y_teacher=y_teacher_binary,
                 )
-                if m:
-                    fwd_metrics[h_int] = m
 
-            # 7) Persist artifacts + reports
-            self.set_context(
-                symbol=symbol,
-                exchange=exchange,
-                timeframe=regime_timeframe,
-                direction=direction,
-                model="mean_reversion",
-            )
+                # Attach outputs to main frame for this direction
+                output_df = market_data.copy()
+                for c in teacher_df.columns:
+                    output_df[c] = teacher_df[c]
+                output_df["mr_teacher_cluster"] = teacher_clusters
+                output_df["mr_teacher_mean_reversion"] = teacher_binary
+                output_df["mr_teacher_score"] = teacher_score
+                for c in student_df.columns:
+                    output_df[c] = student_df[c]
+                output_df.loc[X_all.index, "mr_raw_score"] = raw_scores
+                output_df.loc[X_all.index, "mr_probability"] = calibrated_scores
+                output_df.loc[X_all.index, "mr_direction_target"] = y_dir.values
+                output_df["mr_atr_14"] = atr_14
+                output_df["mr_atr_300"] = atr_300
+                output_df["mr_dynamic_tpsl_multiplier"] = dynamic_tp_sl_multiplier
 
-            artifacts, reports = self._save_artifacts_and_reports(
-                output_df=output_df,
-                X_all=X_all,
-                y_target=y_target_all,
-                y_teacher=y_teacher_binary,
-                model=model,
-                calibrated_model=calibrated_model,
-                teacher_metrics=teacher_metrics,
-                student_metrics=student_metrics,
-                fwd_metrics=fwd_metrics,
-                split_config=split_config,
-                symbol=symbol,
-                exchange=exchange,
-                timeframe=regime_timeframe,
-                market_source=str(market_source),
-            )
+                # Forward-return diagnostics at multiple horizons
+                horizons_cfg = config.get("mr_forward_horizons", [2, 4, 8, 12])
+                fwd_metrics: Dict[int, Dict[str, Any]] = {}
+                for h in horizons_cfg:
+                    try:
+                        h_int = int(h)
+                    except (TypeError, ValueError):
+                        continue
+                    m = self._compute_forward_metrics(
+                        output_df,
+                        prob_col="mr_probability",
+                        horizon=h_int,
+                        target_col="mr_direction_target",
+                    )
+                    if m:
+                        fwd_metrics[h_int] = m
+
+                # Persist artifacts + reports for this direction
+                self.set_context(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=regime_timeframe,
+                    direction=dir_,
+                    model="mean_reversion",
+                )
+
+                artifacts, reports = self._save_artifacts_and_reports(
+                    output_df=output_df,
+                    X_all=X_all,
+                    y_target=y_dir,
+                    y_teacher=y_teacher_binary,
+                    model=model,
+                    calibrated_model=calibrated_model,
+                    teacher_metrics=teacher_metrics,
+                    student_metrics=student_metrics,
+                    fwd_metrics=fwd_metrics,
+                    split_config=split_config,
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=regime_timeframe,
+                    market_source=str(market_source),
+                )
+
+                all_artifacts[dir_] = artifacts
+                all_reports[dir_] = reports
+                all_student_metrics[dir_] = student_metrics
+                all_fwd_metrics[dir_] = fwd_metrics
 
             exec_time = time.time() - start_time
-            tprint_success(f"✅ {self.step_name} completed in {exec_time:.2f}s with {len(X_all)} samples")
+            tprint_success(
+                f"✅ {self.step_name} completed in {exec_time:.2f}s with {len(X_all)} samples"
+            )
+
+            if len(directions_to_run) == 1:
+                dir_key = directions_to_run[0]
+                return {
+                    "success": True,
+                    "symbol": symbol,
+                    "exchange": exchange,
+                    "timeframe": regime_timeframe,
+                    "n_samples": int(len(X_all)),
+                    "metrics": {
+                        "teacher": teacher_metrics,
+                        "student": all_student_metrics.get(dir_key, {}),
+                        "forward": all_fwd_metrics.get(dir_key, {}),
+                    },
+                    "artifacts": all_artifacts.get(dir_key, {}),
+                    "reports": all_reports.get(dir_key, {}),
+                    "execution_time": exec_time,
+                }
 
             return {
                 "success": True,
@@ -321,12 +370,15 @@ class MLMeanReversionRegimeStep(BaseStep):
                 "timeframe": regime_timeframe,
                 "n_samples": int(len(X_all)),
                 "metrics": {
-                    "teacher": teacher_metrics,
-                    "student": student_metrics,
-                    "forward": fwd_metrics,
+                    dir_: {
+                        "teacher": teacher_metrics,
+                        "student": all_student_metrics.get(dir_, {}),
+                        "forward": all_fwd_metrics.get(dir_, {}),
+                    }
+                    for dir_ in directions_to_run
                 },
-                "artifacts": artifacts,
-                "reports": reports,
+                "artifacts": all_artifacts,
+                "reports": all_reports,
                 "execution_time": exec_time,
             }
 
@@ -1424,6 +1476,10 @@ class MLMeanReversionRegimeStep(BaseStep):
         artifacts: Dict[str, str] = {}
         reports: Dict[str, str] = {}
 
+        # Use current context direction (long/short) for naming and grid behaviour
+        direction = str(self._current_context.get("direction", "long"))
+        suffix = f"_{direction}" if direction in {"long", "short"} else ""
+
         # Save training data with all scores
         to_save = output_df[[
             "mr_teacher_cluster",
@@ -1466,7 +1522,7 @@ class MLMeanReversionRegimeStep(BaseStep):
         try:
             artifacts["model_base"] = self._save_artifact(
                 data=model,
-                artifact_name=f"ml_mean_reversion_model_base_{timeframe}",
+                artifact_name=f"ml_mean_reversion_model_base_{timeframe}{suffix}",
                 artifact_type="model",
                 metadata={
                     "symbol": symbol,
@@ -1483,7 +1539,7 @@ class MLMeanReversionRegimeStep(BaseStep):
         try:
             artifacts["model_calibrated"] = self._save_artifact(
                 data=calibrated_model,
-                artifact_name=f"ml_mean_reversion_model_calibrated_{timeframe}",
+                artifact_name=f"ml_mean_reversion_model_calibrated_{timeframe}{suffix}",
                 artifact_type="model",
                 metadata={
                     "symbol": symbol,
@@ -1505,7 +1561,7 @@ class MLMeanReversionRegimeStep(BaseStep):
                     "student": student_metrics,
                     "forward": fwd_metrics,
                 },
-                artifact_name=f"ml_mean_reversion_metrics_{timeframe}",
+                artifact_name=f"ml_mean_reversion_metrics_{timeframe}{suffix}",
                 artifact_type="metadata",
                 metadata={
                     "symbol": symbol,
@@ -1520,7 +1576,7 @@ class MLMeanReversionRegimeStep(BaseStep):
         # Generate comprehensive Markdown report
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         try:
-            md_path = f"outcomes/ml_mean_reversion_summary_{symbol}_{timeframe}_{ts}.md"
+            md_path = f"outcomes/ml_mean_reversion_summary_{symbol}_{timeframe}_{direction}_{ts}.md"
             with open(md_path, "w", encoding="utf-8") as f:
                 f.write(f"# ML Mean-Reversion (v2) Summary for {symbol} ({timeframe})\n\n")
                 f.write("**Model Type**: XGBoost Classifier with Isotonic Calibration\n")
@@ -1648,7 +1704,7 @@ class MLMeanReversionRegimeStep(BaseStep):
                     "close": output_df.loc[X_all.index, "close"],
                 }
             )
-            csv_path = f"outcomes/ml_mean_reversion_probabilities_{symbol}_{timeframe}_{ts}.csv"
+            csv_path = f"outcomes/ml_mean_reversion_probabilities_{symbol}_{timeframe}_{direction}_{ts}.csv"
             csv_df.to_csv(csv_path, index=False)
             reports["probabilities_csv"] = csv_path
             tprint_success(f"✅ Saved probabilities CSV: {csv_path}")
@@ -1665,23 +1721,35 @@ class MLMeanReversionRegimeStep(BaseStep):
 
             prob = output_df.loc[idx, "mr_probability"].astype(float)
 
-            # SIMPLIFIED: Use continuous probability directly
-            # For long-only strategy:
-            # - High bearish prob (close to 1) = avoid/short
-            # - Low bearish prob (close to 0) = strong long signal
-            # Transform: long_confidence = 1 - prob
-            long_confidence = 1.0 - prob
-
-            # Gate by position relative to mean for mean-reversion context
+            # SIMPLIFIED: Use continuous probability directly.
+            # For long strategy:
+            #   - High bearish prob (close to 1) = avoid/short
+            #   - Low bearish prob (close to 0) = strong long signal
+            #   → long_confidence = 1 - prob
+            # For short strategy (reverse grid):
+            #   - High bearish prob (close to 1) = strong short signal
+            #   → short_confidence = prob
             z_ma = output_df.loc[idx, "z_price_ma_slow"].astype(float)
             z_vwap = output_df.loc[idx, "z_price_vwap"].astype(float)
 
-            # Boost confidence when oversold (below mean) for mean-reversion longs
-            oversold = ((z_ma < -0.01) | (z_vwap < -0.01)).astype(float)
-            confidence_boost = 1.0 + oversold * 0.5
-
-            preds = long_confidence * confidence_boost
-            preds = preds.clip(0, 1)  # Normalize back to [0, 1]
+            if direction == "short":
+                base_confidence = prob
+                # Boost confidence when overbought (above mean) for mean-reversion shorts
+                overbought = ((z_ma > 0.01) | (z_vwap > 0.01)).astype(float)
+                confidence_boost = 1.0 + overbought * 0.5
+                preds = -base_confidence * confidence_boost
+                preds = preds.clip(-1, 0)
+                grid_confidence = base_confidence
+                grid_fn = run_simple_short_grid_backtest
+            else:
+                base_confidence = 1.0 - prob
+                # Boost confidence when oversold (below mean) for mean-reversion longs
+                oversold = ((z_ma < -0.01) | (z_vwap < -0.01)).astype(float)
+                confidence_boost = 1.0 + oversold * 0.5
+                preds = base_confidence * confidence_boost
+                preds = preds.clip(0, 1)
+                grid_confidence = base_confidence
+                grid_fn = run_simple_long_grid_backtest
 
             ml_df_grid = pd.DataFrame(
                 {
@@ -1745,13 +1813,13 @@ class MLMeanReversionRegimeStep(BaseStep):
                 sl_override = None
 
             if tp_override is not None and sl_override is not None:
-                grid_df = run_simple_long_grid_backtest(
+                grid_df = grid_fn(
                     close=close,
                     high=high,
                     low=low,
                     raw_returns=raw_returns,
                     predictions=preds,
-                    confidence=long_confidence,
+                    confidence=grid_confidence,
                     ml_df=ml_df_grid,
                     timeframe=timeframe,
                     regime_col="mr_teacher_mean_reversion",
@@ -1759,20 +1827,20 @@ class MLMeanReversionRegimeStep(BaseStep):
                     sl_values=[sl_override],
                 )
             else:
-                grid_df = run_simple_long_grid_backtest(
+                grid_df = grid_fn(
                     close=close,
                     high=high,
                     low=low,
                     raw_returns=raw_returns,
                     predictions=preds,
-                    confidence=long_confidence,
+                    confidence=grid_confidence,
                     ml_df=ml_df_grid,
                     timeframe=timeframe,
                     regime_col="mr_teacher_mean_reversion",
                 )
 
             if isinstance(grid_df, pd.DataFrame):
-                grid_path = f"outcomes/ml_mean_reversion_grid_backtest_{symbol}_{timeframe}_{ts}.csv"
+                grid_path = f"outcomes/ml_mean_reversion_grid_backtest_{symbol}_{timeframe}_{direction}_{ts}.csv"
                 tprint_info(
                     f"Writing grid backtest CSV with shape={grid_df.shape} to {grid_path}"
                 )

@@ -72,7 +72,7 @@ class LabelGuidedInteractionConfig:
     # Regularization
     use_lasso: bool = True
     use_group_lasso: bool = False  # Group LASSO for category-based selection
-    lasso_alpha: Optional[float] = None  # None = use CV
+    lasso_alpha: Optional[float] = 1e-3  # None = use CV
     lasso_cv_folds: int = 5
     lasso_max_iter: int = 1000
 
@@ -143,15 +143,21 @@ class LabelGuidedInteractionDiscovery:
         Returns:
             interaction_df: DataFrame of selected interaction features
             metadata: Dictionary with discovery statistics
-        """
+            """
         self.logger.info("🔍 Starting label-guided interaction discovery...")
 
         # Clean inputs
         features_clean, target_clean = self._clean_inputs(features, target)
 
+        # Subsample rows for LGID to reduce runtime
+        features_sub, target_sub = self._subsample_rows(features_clean, target_clean)
+
+        # Pre-filter base features before LGID
+        features_reduced = self._preselect_features(features_sub, target_sub, feature_categories)
+
         # Generate or validate feature pairs
         if feature_pairs is None:
-            feature_pairs = self._generate_feature_pairs(features_clean, feature_categories)
+            feature_pairs = self._generate_feature_pairs(features_reduced, feature_categories)
         else:
             feature_pairs = self._filter_feature_pairs(feature_pairs, feature_categories)
 
@@ -159,7 +165,7 @@ class LabelGuidedInteractionDiscovery:
         # present in the cleaned feature matrix. This prevents the subsequent
         # candidate-generation step from silently producing zero candidates
         # because of stale or mismatched feature names.
-        valid_cols = set(features_clean.columns)
+        valid_cols = set(features_reduced.columns)
         original_pair_count = len(feature_pairs)
         feature_pairs = [
             (f1, f2)
@@ -183,27 +189,27 @@ class LabelGuidedInteractionDiscovery:
                 "  ⚠️ No valid feature pairs remain after alignment; "
                 "falling back to automatic pair generation"
             )
-            feature_pairs = self._generate_feature_pairs(features_clean, feature_categories)
+            feature_pairs = self._generate_feature_pairs(features_reduced, feature_categories)
 
         self.logger.info(f"  📊 Testing {len(feature_pairs)} feature pairs")
 
         # Calculate base feature scores for lift comparison
-        self._calculate_base_scores(features_clean, target_clean)
+        self._calculate_base_scores(features_reduced, target_sub)
 
         # Generate interaction candidates
-        self._generate_candidates(features_clean, target_clean, feature_pairs, feature_categories)
+        self._generate_candidates(features_reduced, target_sub, feature_pairs, feature_categories)
 
         self.logger.info(f"  📊 Generated {len(self.candidates)} interaction candidates")
 
         # Score candidates using MI and/or SHAP
-        self._score_candidates(features_clean, target_clean)
+        self._score_candidates(features_reduced, target_sub)
 
         # Filter candidates by lift requirements
         self._filter_by_lift()
 
         # Apply regularized selection (LASSO)
         if self.config.use_lasso:
-            self._apply_lasso_selection(features_clean, target_clean)
+            self._apply_lasso_selection(features_reduced, target_sub)
 
         # Apply category-based limits
         self._apply_category_limits()
@@ -282,6 +288,78 @@ class LabelGuidedInteractionDiscovery:
             target_clean = target_fallback
 
         return features_clean, target_clean
+
+    def _subsample_rows(
+        self,
+        features: pd.DataFrame,
+        target: pd.Series
+    ) -> Tuple[pd.DataFrame, pd.Series]:
+        """Subsample rows for LGID to reduce runtime."""
+        n_samples = len(features)
+        if n_samples == 0 or len(target) == 0:
+            return features, target
+
+        # Use ~33% of rows with a minimum floor to keep stability
+        frac = 0.33
+        min_samples = 5000
+        if n_samples <= min_samples:
+            return features, target
+
+        n_sub = max(min_samples, int(n_samples * frac))
+
+        sampled_index = features.sample(
+            n=n_sub,
+            replace=False,
+            random_state=self.config.random_state,
+        ).index
+
+        features_sub = features.loc[sampled_index]
+        target_sub = target.loc[sampled_index]
+        return features_sub, target_sub
+
+    def _preselect_features(
+        self,
+        features: pd.DataFrame,
+        target: pd.Series,
+        feature_categories: Dict[str, str],
+    ) -> pd.DataFrame:
+        """Pre-filter base features before LGID to reduce dimensionality."""
+        n_features = features.shape[1]
+        if n_features == 0:
+            return features
+
+        max_global = min(80, n_features)
+        max_per_category = 10
+        if n_features <= max_global:
+            return features
+
+        try:
+            corr = features.corrwith(target).abs()
+        except Exception:
+            corr = pd.Series(0.0, index=features.columns)
+
+        corr = corr.replace(np.nan, 0.0)
+
+        # Group by category
+        cat_to_cols: Dict[str, List[str]] = {}
+        for col in features.columns:
+            cat = feature_categories.get(col, 'unknown')
+            if cat not in cat_to_cols:
+                cat_to_cols[cat] = []
+            cat_to_cols[cat].append(col)
+
+        selected: Set[str] = set()
+        for cat, cols in cat_to_cols.items():
+            sub = corr[cols].sort_values(ascending=False)
+            keep = list(sub.index[:max_per_category])
+            selected.update(keep)
+
+        selected_list = list(selected)
+        if len(selected_list) > max_global:
+            selected_corr = corr[selected_list].sort_values(ascending=False)
+            selected_list = list(selected_corr.index[:max_global])
+
+        return features[selected_list]
 
     def _generate_feature_pairs(
         self,
@@ -710,8 +788,40 @@ class LabelGuidedInteractionDiscovery:
             lasso.fit(candidate_df, target)
 
             # Select features with non-zero coefficients
-            selected_mask = np.abs(lasso.coef_) > 1e-6
+            coef_ = np.asarray(lasso.coef_)
+            selected_mask = np.abs(coef_) > 1e-6
             n_selected = int(np.sum(selected_mask))
+
+            if n_selected == 0:
+                try:
+                    if isinstance(lasso, LassoCV):
+                        alpha_base = float(getattr(lasso, "alpha_", 0.0) or 0.0)
+                        if alpha_base <= 0.0 and len(lasso.alphas_) > 0:
+                            alpha_base = float(np.min(lasso.alphas_))
+                    else:
+                        alpha_base = float(getattr(lasso, "alpha", 0.0) or 0.0)
+
+                    if alpha_base > 0.0:
+                        alpha_fallback = alpha_base * 0.1
+                        self.logger.warning(
+                            "  ⚠️ LASSO selected 0 interactions; retrying with weaker regularization (alpha=%.6f)",
+                            alpha_fallback,
+                        )
+                        tprint_info(
+                            "  📊 [LGID] LASSO produced an all-zero solution; "
+                            "retrying with weaker alpha before falling back to MI/SHAP ranking"
+                        )
+                        lasso_fallback = Lasso(
+                            alpha=alpha_fallback,
+                            max_iter=self.config.lasso_max_iter,
+                            random_state=self.config.random_state,
+                        )
+                        lasso_fallback.fit(candidate_df, target)
+                        coef_ = np.asarray(lasso_fallback.coef_)
+                        selected_mask = np.abs(coef_) > 1e-6
+                        n_selected = int(np.sum(selected_mask))
+                except Exception as e:
+                    self.logger.warning("  ⚠️ LASSO fallback selection failed: %s", e)
 
             # If LASSO converged to an all-zero solution, fall back to using
             # all MI-lift-filtered candidates so that downstream category

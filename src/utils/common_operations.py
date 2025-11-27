@@ -10,6 +10,10 @@ import psutil
 import os
 from contextlib import contextmanager
 from itertools import islice
+from src.utils.base_utilities import (
+    create_fallback_decorator as _base_create_fallback_decorator,
+    create_directory_safe as _base_create_directory_safe,
+)
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -1892,9 +1896,35 @@ def format_datetime(dt: Any) -> str:
     except Exception:
         return str(dt)
 
-def create_fallback_logger(name: str) -> logging.Logger:
+def create_fallback_logger(logger_or_name: Any, name: Optional[str] = None) -> logging.Logger:
     """Create fallback logger."""
-    return logging.getLogger(name)
+    # Support legacy signatures:
+    #   create_fallback_logger("logger.name")
+    #   create_fallback_logger(existing_logger, "logger.name")
+    #   create_fallback_logger(None, "logger.name")
+    base_logger = logger_or_name if isinstance(logger_or_name, logging.Logger) else None
+
+    if name is not None:
+        logger_name = name
+    elif isinstance(logger_or_name, logging.Logger):
+        logger_name = logger_or_name.name
+    elif logger_or_name is not None:
+        logger_name = str(logger_or_name)
+    else:
+        logger_name = "root"
+
+    logger_instance = logging.getLogger(logger_name)
+
+    # Ensure logger has at least a basic handler in fallback scenarios.
+    if not logger_instance.handlers:
+        handler = logging.StreamHandler()
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        handler.setFormatter(formatter)
+        logger_instance.addHandler(handler)
+        logger_instance.setLevel(logging.INFO)
+
+    # If a base logger was provided, we rely on the resolved name/handlers above.
+    return logger_instance
 
 def get_logger(name: str) -> logging.Logger:
     """Get logger instance."""
@@ -2032,6 +2062,12 @@ def integrate_with_m1_optimizers() -> Dict[str, Any]:
         'memory_optimizer': get_m1_memory_optimizer(),
         'cpu_optimizer': get_m1_cpu_optimizer()
     }
+
+def create_directory_safe(path: str, parents: bool = True) -> bool:
+    return _base_create_directory_safe(path, parents=parents)
+
+def create_fallback_decorator(func: Callable) -> Callable:
+    return _base_create_fallback_decorator(func)
 
 # Missing functions for backward compatibility
 def safe_merge_dataframes(left: pd.DataFrame, right: pd.DataFrame, **kwargs) -> pd.DataFrame:
@@ -2503,6 +2539,7 @@ __all__ = [
     'get_current_datetime',
     'format_datetime',
     'create_fallback_logger',
+    'create_fallback_decorator',
     'get_logger',
     'cleanup_m1_optimizers',
     'get_m1_gpu_manager',
@@ -2536,5 +2573,6 @@ __all__ = [
     'get_file_size',
     'create_summary_statistics',
     'validate_file_size',
-    'with_tracing_span'
+    'with_tracing_span',
+    'create_directory_safe'
 ]

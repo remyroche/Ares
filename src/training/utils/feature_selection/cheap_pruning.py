@@ -24,7 +24,33 @@ from scipy.sparse import csr_matrix
 from sklearn.feature_selection import mutual_info_regression
 from sklearn.preprocessing import KBinsDiscretizer
 from sklearn.model_selection import TimeSeriesSplit
-from statsmodels.stats.multitest import multipletests
+try:
+    from statsmodels.stats.multitest import multipletests
+except Exception:
+    def multipletests(pvals, alpha=0.05, method="fdr_bh"):
+        pvals_arr = np.asarray(pvals, dtype=float)
+        n = pvals_arr.size
+        if n == 0:
+            return np.array([], dtype=bool), pvals_arr, None, None
+        order = np.argsort(pvals_arr)
+        ranked = pvals_arr[order]
+        thresh = alpha * np.arange(1, n + 1) / n
+        reject = ranked <= thresh
+        if not reject.any():
+            reject = np.zeros_like(ranked, dtype=bool)
+        adj = np.empty_like(ranked)
+        cumulative = 1.0
+        for i in range(n - 1, -1, -1):
+            val = ranked[i] * n / float(i + 1)
+            if val < cumulative:
+                cumulative = val
+            adj[i] = cumulative
+        adj = np.minimum(adj, 1.0)
+        pvals_corrected = np.empty_like(adj)
+        pvals_corrected[order] = adj
+        reject_sorted = np.empty_like(reject)
+        reject_sorted[order] = reject
+        return reject_sorted, pvals_corrected, None, None
 
 # VectorBT imports
 try:

@@ -35,11 +35,9 @@ from ..core.feature_generator import (
 # Import normalization utilities
 try:
     from src.features_common.normalization import NormalizationFeatureGenerator
-    from src.features_common.transforms.scaling_normalization import ScalingNormalizer
     NORMALIZATION_AVAILABLE = True
 except ImportError:
     NORMALIZATION_AVAILABLE = False
-    warnings.warn("Normalization utilities not available")
 
 # VectorBT for performance
 try:

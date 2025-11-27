@@ -3592,7 +3592,7 @@ class MLPathRegimeStep(BaseStep):
                 quadrant_quality = {}
 
         val_accuracy = accuracy_score(y_val, y_val_pred)
-        val_log_loss = log_loss(y_val, y_val_probs)
+        val_log_loss = self._safe_log_loss(y_val, y_val_probs, labels=list(range(n_regimes)))
 
         training_metrics = {
             'val_accuracy': float(val_accuracy),
@@ -6639,30 +6639,53 @@ class MLBreakoutBounceRegimeStep(BaseStep):
                 high_conf_threshold = 0.7
 
             try:
-                # Calculate success probability as weighted average of regime probabilities
-                # using empirical meta-label success rates per regime
-                success_weights = np.ones(probs_full.shape[1]) * 0.5  # Default: 50% success rate
+                n_regimes = int(probs_full.shape[1])
+                success_weights = np.ones(n_regimes, dtype=float) * 0.5
+                global_success_rate = float("nan")
 
                 if meta_labels is not None and labels is not None:
-                    # Compute empirical success rate for each regime from training data
                     meta_aligned_train = meta_labels.reindex(labels.index).dropna()
                     labels_aligned = labels.reindex(meta_aligned_train.index)
 
                     if len(meta_aligned_train) > 0 and len(labels_aligned) > 0:
-                        for regime_idx in range(probs_full.shape[1]):
+                        global_success_rate = float(
+                            (meta_aligned_train == 1).sum() / float(len(meta_aligned_train))
+                        )
+                        for regime_idx in range(n_regimes):
                             regime_mask = labels_aligned == regime_idx
                             if regime_mask.sum() > 0:
                                 regime_meta = meta_aligned_train[regime_mask]
-                                success_rate = (regime_meta == 1).sum() / len(regime_meta)
+                                success_rate = (regime_meta == 1).sum() / float(len(regime_meta))
                                 success_weights[regime_idx] = success_rate
                                 tprint_info(
                                     f"📊 Regime {regime_idx} empirical success rate: {success_rate:.3f} "
                                     f"({(regime_meta == 1).sum()}/{len(regime_meta)} samples)"
                                 )
 
-                # Weighted sum: success_prob[i] = sum(prob[i, k] * weight[k])
-                success_prob = np.sum(probs_full * success_weights[np.newaxis, :], axis=1)
-                success_prob = np.clip(success_prob, 0.0, 1.0)
+                if not np.isfinite(global_success_rate):
+                    global_success_rate = float(np.nanmean(success_weights))
+
+                raw_success_prob = np.sum(probs_full * success_weights[np.newaxis, :], axis=1)
+                raw_success_prob = np.asarray(raw_success_prob, dtype=float)
+
+                finite_mask = np.isfinite(raw_success_prob)
+                if finite_mask.any():
+                    sp = raw_success_prob[finite_mask]
+                    q_low = float(np.nanquantile(sp, 0.05))
+                    q_high = float(np.nanquantile(sp, 0.95))
+
+                    if q_high > q_low:
+                        scaled = (raw_success_prob - q_low) / (q_high - q_low)
+                        scaled = np.clip(scaled, 0.0, 1.0)
+                    else:
+                        max_prob = np.max(probs_full, axis=1)
+                        scaled = np.clip(max_prob * global_success_rate, 0.0, 1.0)
+
+                    success_prob = scaled
+                else:
+                    fill_val = global_success_rate if np.isfinite(global_success_rate) else 0.5
+                    success_prob = np.full_like(raw_success_prob, fill_value=fill_val, dtype=float)
+                    success_prob = np.clip(success_prob, 0.0, 1.0)
 
                 success_prob_series = pd.Series(
                     success_prob,
@@ -6705,7 +6728,11 @@ class MLBreakoutBounceRegimeStep(BaseStep):
                 model="breakout_bounce",
             )
 
-            to_save = output_df.reset_index().rename(columns={output_df.index.name or "index": "timestamp"})
+            to_save = output_df.copy()
+            if "timestamp" in to_save.columns:
+                to_save = to_save.drop(columns=["timestamp"])
+            to_save["timestamp"] = to_save.index
+            to_save = to_save.reset_index(drop=True)
 
             # Persist a compact breakout/bounce training artifact exposing only the
             # core regime probabilities, directional edge scores, and side flags
@@ -6717,6 +6744,8 @@ class MLBreakoutBounceRegimeStep(BaseStep):
                 "breakout_regime_2_prob",
                 "breakout_long_edge_score",
                 "breakout_short_edge_score",
+                "breakout_scalar_resistance",
+                "breakout_scalar_support",
                 "is_resistance",
                 "is_support",
             ]
@@ -7493,8 +7522,24 @@ class MLBreakoutBounceRegimeStep(BaseStep):
                     f"Breakout/bounce classifier HPO failed; proceeding with default params: {hpo_exc}"
                 )
 
+        class_weight_cfg = config.get("breakout_class_weight")
+        if isinstance(class_weight_cfg, dict) and class_weight_cfg:
+            class_weight_map = {int(k): float(v) for k, v in class_weight_cfg.items()}
+        else:
+            try:
+                class_counts = pd.Series(y_train).value_counts()
+                n_classes = len(class_counts)
+                total = float(len(y_train)) if len(y_train) > 0 else 1.0
+                class_weight_map = {
+                    int(cls): (total / (n_classes * float(cnt)))
+                    for cls, cnt in class_counts.items()
+                    if cnt > 0
+                }
+            except Exception:
+                class_weight_map = {0: 2.0, 1: 5.0, 2: 5.0, 3: 1.0}
+
         weights = compute_sample_weight(
-            class_weight={0: 2.0, 1: 5.0, 2: 5.0, 3: 1.0},
+            class_weight=class_weight_map,
             y=y_train,
         )
 
@@ -7518,8 +7563,10 @@ class MLBreakoutBounceRegimeStep(BaseStep):
         temperature: Optional[float] = None
 
         try:
-            metrics["val_log_loss_uncalibrated"] = float(
-                log_loss(y_val, val_probs, labels=[0, 1, 2, 3])
+            metrics["val_log_loss_uncalibrated"] = self._safe_log_loss(
+                y_val,
+                val_probs,
+                labels=[0, 1, 2, 3],
             )
         except Exception:
             metrics["val_log_loss_uncalibrated"] = float("nan")
@@ -7537,14 +7584,20 @@ class MLBreakoutBounceRegimeStep(BaseStep):
                 temperature = None
 
         try:
-            metrics["val_log_loss"] = float(log_loss(y_val, val_probs, labels=[0, 1, 2, 3]))
+            metrics["val_log_loss"] = self._safe_log_loss(
+                y_val,
+                val_probs,
+                labels=[0, 1, 2, 3],
+            )
         except Exception:
             metrics["val_log_loss"] = float("nan")
 
         if enable_temp and temperature is not None:
             try:
-                metrics["val_log_loss_calibrated"] = float(
-                    log_loss(y_val, val_probs, labels=[0, 1, 2, 3])
+                metrics["val_log_loss_calibrated"] = self._safe_log_loss(
+                    y_val,
+                    val_probs,
+                    labels=[0, 1, 2, 3],
                 )
             except Exception:
                 metrics["val_log_loss_calibrated"] = float("nan")
@@ -7586,8 +7639,10 @@ class MLBreakoutBounceRegimeStep(BaseStep):
                 test_pred = np.argmax(test_probs, axis=1)
 
                 try:
-                    metrics["test_log_loss"] = float(
-                        log_loss(y_test, test_probs, labels=[0, 1, 2, 3])
+                    metrics["test_log_loss"] = self._safe_log_loss(
+                        y_test,
+                        test_probs,
+                        labels=[0, 1, 2, 3],
                     )
                 except Exception:
                     metrics["test_log_loss"] = float("nan")
@@ -7717,6 +7772,45 @@ class MLBreakoutBounceRegimeStep(BaseStep):
             except Exception:
                 pass
 
+        full_probs = np.asarray(full_probs, dtype=float)
+        n_samples_full = int(X_full.shape[0])
+        n_regimes_expected = int(xgb_params.get("num_class", 4))
+
+        if full_probs.ndim == 1:
+            flat = full_probs.reshape(-1)
+            if n_samples_full > 0 and flat.size >= n_samples_full * n_regimes_expected:
+                flat = flat[: n_samples_full * n_regimes_expected]
+                full_probs = flat.reshape(n_samples_full, n_regimes_expected)
+            elif n_samples_full > 0:
+                full_probs = flat.reshape(n_samples_full, -1)
+                n_regimes_expected = full_probs.shape[1]
+        elif full_probs.ndim == 2:
+            if full_probs.shape[0] == n_samples_full and full_probs.shape[1] == n_regimes_expected:
+                pass
+            elif full_probs.shape[0] == n_regimes_expected and full_probs.shape[1] == n_samples_full:
+                full_probs = full_probs.T
+            elif full_probs.shape[0] == n_samples_full:
+                n_regimes_expected = full_probs.shape[1]
+            elif full_probs.shape[1] == n_samples_full:
+                full_probs = full_probs.T
+                n_regimes_expected = full_probs.shape[1]
+            else:
+                flat = full_probs.reshape(-1)
+                if n_samples_full > 0 and flat.size >= n_samples_full * n_regimes_expected:
+                    flat = flat[: n_samples_full * n_regimes_expected]
+                    full_probs = flat.reshape(n_samples_full, n_regimes_expected)
+                elif n_samples_full > 0:
+                    full_probs = flat.reshape(n_samples_full, -1)
+                    n_regimes_expected = full_probs.shape[1]
+        else:
+            flat = full_probs.reshape(-1)
+            if n_samples_full > 0 and flat.size >= n_samples_full * n_regimes_expected:
+                flat = flat[: n_samples_full * n_regimes_expected]
+                full_probs = flat.reshape(n_samples_full, n_regimes_expected)
+            elif n_samples_full > 0:
+                full_probs = flat.reshape(n_samples_full, -1)
+                n_regimes_expected = full_probs.shape[1]
+
         full_pred = np.argmax(full_probs, axis=1)
 
         class_counts = dict(zip(*np.unique(y, return_counts=True)))
@@ -7735,6 +7829,48 @@ class MLBreakoutBounceRegimeStep(BaseStep):
                 pass
 
         return model, metrics, full_probs, full_pred
+
+    def _safe_log_loss(
+        self,
+        y_true: Any,
+        probs: np.ndarray,
+        labels: Optional[List[int]] = None,
+    ) -> float:
+        """Robust multi-class log-loss with defensive normalization.
+
+        Ensures probabilities are finite, row-normalised, and clipped to (0, 1)
+        before delegating to sklearn.metrics.log_loss. Returns NaN on failure.
+        """
+
+        arr = np.asarray(probs, dtype=float)
+        if arr.size == 0:
+            return float("nan")
+
+        y_arr = np.asarray(y_true)
+        if y_arr.size == 0:
+            return float("nan")
+
+        # Replace NaN/Inf and renormalise rows to sum to 1.
+        arr = np.nan_to_num(arr, nan=0.0, posinf=0.0, neginf=0.0)
+        row_sum = arr.sum(axis=1, keepdims=True)
+        row_sum[row_sum <= 0.0] = 1.0
+        arr = arr / row_sum
+
+        # Clip to a safe open interval and renormalise again.
+        eps = 1e-12
+        arr = np.clip(arr, eps, 1.0 - eps)
+        row_sum = arr.sum(axis=1, keepdims=True)
+        row_sum[row_sum <= 0.0] = 1.0
+        arr = arr / row_sum
+
+        try:
+            return float(log_loss(y_arr, arr, labels=labels))
+        except Exception as exc:  # pragma: no cover - defensive
+            try:
+                tprint_warning(f"Log-loss computation failed; returning NaN: {exc}")
+            except Exception:
+                pass
+            return float("nan")
 
     def _apply_temperature(self, probs: np.ndarray, temperature: float) -> np.ndarray:
         arr = np.asarray(probs, dtype=float)
@@ -7769,9 +7905,8 @@ class MLBreakoutBounceRegimeStep(BaseStep):
         best_scaled = arr
         for t in candidate_temps:
             scaled = self._apply_temperature(arr, float(t))
-            try:
-                loss = log_loss(y_array, scaled, labels=[0, 1, 2, 3])
-            except Exception:
+            loss = self._safe_log_loss(y_array, scaled, labels=[0, 1, 2, 3])
+            if not np.isfinite(loss):
                 continue
             if loss < best_loss:
                 best_loss = loss
@@ -7912,6 +8047,10 @@ class MLBreakoutBounceRegimeStep(BaseStep):
 
         out["breakout_long_edge_score"] = long_edge_unw * level_strength
         out["breakout_short_edge_score"] = short_edge_unw * level_strength
+
+        base_scalar = p0 + 0.5 * p2
+        out["breakout_scalar_resistance"] = np.where(is_res, base_scalar, np.nan)
+        out["breakout_scalar_support"] = np.where(is_sup, base_scalar, np.nan)
 
         return out
 

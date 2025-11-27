@@ -1,0 +1,95 @@
+{
+  "data": {
+    "individual_feature_results": {},
+    "lookback_optimization": {
+      "category_optimizations": {}
+    }
+  },
+  "metadata": {
+    "symbol": "ETHUSDT",
+    "exchange": "binance",
+    "timeframe": "15m",
+    "execution_mode": "full",
+    "created_at": "2025-11-26T23:40:00.607852",
+    "step_name": "feature_generation_period_lookback_optimization_step",
+    "step_version": "1.0.0",
+    "optimization_method": "data_driven_cross_validation",
+    "cv_folds": 5,
+    "categories_optimized": 0,
+    "total_categories": 5,
+    "feature_count": 417,
+    "data_rows": 173439,
+    "optimization_score": 0.0,
+    "performance_score": 0.0,
+    "stability_score": 0.0,
+    "lookback_periods_tested": 0,
+    "system_info": {
+      "platform": "Darwin",
+      "python_version": "3.11.0",
+      "cpu_count": 8,
+      "memory_total_gb": 16.0,
+      "memory_available_gb": 7.09
+    },
+    "optimization_results": {
+      "momentum_features": {
+        "optimal_lookback": 0,
+        "performance": "N/A"
+      },
+      "trend_features": {
+        "optimal_lookback": 0,
+        "performance": "N/A"
+      },
+      "volatility_features": {
+        "optimal_lookback": 0,
+        "performance": "N/A"
+      },
+      "volume_features": {
+        "optimal_lookback": 0,
+        "performance": "N/A"
+      },
+      "oscillator_features": {
+        "optimal_lookback": 0,
+        "performance": "N/A"
+      }
+    },
+    "data_lineage": {
+      "source_step": "feature_generation_labeling_integration_step",
+      "source_artifact": "labeled_data",
+      "target_columns_used": "auto_detected",
+      "feature_categories": [],
+      "optimization_range": "1-50",
+      "step_size": 1
+    },
+    "quality_metrics": {
+      "success_rate": 0.0,
+      "data_quality": "high",
+      "optimization_quality": "medium",
+      "stability_quality": "medium"
+    },
+    "dependencies": {
+      "required_steps": [
+        "feature_generation_labeling_integration_step"
+      ],
+      "required_artifacts": [
+        "labeled_data"
+      ],
+      "optional_artifacts": [
+        "feature_metadata",
+        "target_metadata"
+      ]
+    },
+    "usage_instructions": {
+      "next_steps": [
+        "Use optimized lookback periods in feature generation",
+        "Apply optimized lookbacks to subsequent steps",
+        "Validate results with out-of-sample testing"
+      ],
+      "integration_notes": [
+        "Lookback periods are optimized for current market conditions",
+        "Consider regime-aware adaptation for different market states",
+        "Monitor performance across different timeframes"
+      ]
+    }
+  },
+  "saved_at": "2025-11-26T23:40:00.608913"
+}

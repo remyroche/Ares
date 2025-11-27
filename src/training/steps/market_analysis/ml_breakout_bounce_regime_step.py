@@ -3149,6 +3149,1769 @@ class MLPathRegimeStep(BaseStep):
 
         return model, regime_probs_full, training_metrics
 
+    def _train_regime_classifier(
+        self,
+        risk_df: pd.DataFrame,
+        regime_labels: np.ndarray,
+        config: Dict[str, Any],
+        label_metrics: Optional[Dict[str, Any]] = None,
+    ) -> Tuple[Any, np.ndarray, Dict[str, Any]]:
+        """
+        Train XGBoost multi-class classifier to predict regimes with probabilities.
+        Uses RAW features (no EWMA smoothing).
+
+        Args:
+            risk_df: Feature dataframe
+            regime_labels: Target regime labels (0-3, -1 for invalid)
+            config: Configuration dict
+
+        Returns:
+            model: Trained XGBoost classifier
+            regime_probs: Predicted probabilities (n_samples x 4)
+            training_metrics: Performance metrics
+        """
+        import xgboost as xgb
+        from sklearn.metrics import classification_report, log_loss, accuracy_score
+
+        # Filter valid samples
+        valid_mask = regime_labels >= 0
+        df_clean = risk_df[valid_mask].copy()
+        y = regime_labels[valid_mask]
+
+        teacher_probs = None
+        teacher_conf_all = None
+        if label_metrics is not None and "teacher_probs" in label_metrics:
+            try:
+                teacher_array = np.asarray(label_metrics["teacher_probs"])
+                if teacher_array.shape[0] == len(regime_labels):
+                    teacher_probs = teacher_array[valid_mask]
+            except Exception as teacher_exc:
+                tprint_warning(f"Teacher probabilities unavailable; skipping distillation helpers: {teacher_exc}")
+                teacher_probs = None
+
+        if teacher_probs is not None:
+            try:
+                teacher_conf_all = teacher_probs.max(axis=1)
+            except Exception:
+                teacher_conf_all = None
+
+        # Select features (Path-only allowlist, with basic returns/helpers; fallback to generic numeric)
+        numeric_df = df_clean.select_dtypes(include=[np.number])
+
+        path_feature_allowlist: List[str] = [
+            "path_ker_3h",
+            "path_ker_6h",
+            "body_range_ratio",
+            "traffic_overlap_3h",
+            "path_permutation_entropy",
+            "path_fractal_dimension",
+            "hurst_exponent_path",
+            "path_trend_r2",
+            "returns_1h",
+            "return_3h",
+            "sharpe_like_3h",
+            "path_trend_up",
+            "path_efficiency_high",
+            "path_efficiency_dropping",
+            "path_alpha_state",
+        ]
+
+        feature_cols = [
+            col for col in path_feature_allowlist
+            if col in numeric_df.columns
+        ]
+
+        if not feature_cols:
+            feature_cols = [
+                col for col in numeric_df.columns
+                if not col.startswith("risk_target")
+                and not col.startswith("risk_regime")
+                and not col.startswith("alpha_")
+            ]
+
+        X = numeric_df[feature_cols]
+
+        tprint_info(f"🤖 Training XGBoost classifier on {len(feature_cols)} RAW features")
+
+        # Chronological split
+        train_frac = float(config.get("risk_train_fraction", 0.8))
+        split_idx = int(len(X) * train_frac)
+
+        X_train_raw, y_train = X.iloc[:split_idx], y[:split_idx]
+        X_val_raw, y_val = X.iloc[split_idx:], y[split_idx:]
+
+        teacher_conf_train = None
+        if teacher_conf_all is not None and len(teacher_conf_all) == len(y):
+            teacher_conf_train = teacher_conf_all[:split_idx]
+
+        # Robust scaling ONLY (no EWMA smoothing)
+        from src.features_common.transforms.scaling_normalization import ScalingNormalizer
+
+        normalizer_config = {
+            "default_strategy": "robust",
+            "auto_select": False,
+            "handle_outliers": True,
+            "outlier_threshold": 3.0,
+            "use_vectorbt": False,
+        }
+        scaler = ScalingNormalizer(normalizer_config)
+
+        X_train = scaler.fit_transform(X_train_raw, strategy="robust")
+        X_val = scaler.transform(X_val_raw)
+        X_full = scaler.transform(X)
+
+        # Define monotonic constraints for risk features
+        monotone_constraints = []
+        for feat in X_full.columns:
+            feat_lower = feat.lower()
+            if any(kw in feat_lower for kw in [
+                'vol', 'cvar', 'drawdown', 'jump', 'acceleration',
+                'fragility', 'shock', 'tail', 'kurtosis', 'correlation'
+            ]):
+                monotone_constraints.append(1)  # Risk-increasing
+            else:
+                monotone_constraints.append(0)  # No constraint
+
+        # Convert to XGBoost-compatible monotone constraints string
+        monotone_constraints_param = "(" + ",".join(str(c) for c in monotone_constraints) + ")"
+
+        # XGBoost Classifier Parameters
+        n_regimes = int(regime_labels.max() + 1)
+
+        base_params = {
+            'objective': 'multi:softprob',
+            'num_class': n_regimes,
+            'tree_method': 'hist',
+            'n_jobs': -1,
+
+            # Structure (shallower trees for classification)
+            'max_depth': int(config.get("risk_classifier_max_depth", 5)),
+            'min_child_weight': int(config.get("risk_classifier_min_child_weight", 30)),
+
+            # Learning dynamics
+            'learning_rate': float(config.get("risk_classifier_learning_rate", 0.05)),
+            'n_estimators': int(config.get("risk_classifier_n_estimators", 800)),
+
+            # Regularization (stronger for classification)
+            'subsample': float(config.get("risk_classifier_subsample", 0.7)),
+            'colsample_bytree': float(config.get("risk_classifier_colsample_bytree", 0.7)),
+            'gamma': float(config.get("risk_classifier_gamma", 2.0)),
+            'reg_alpha': float(config.get("risk_classifier_reg_alpha", 1.0)),
+            'reg_lambda': float(config.get("risk_classifier_reg_lambda", 2.0)),
+
+            # Monotonic constraints
+            'monotone_constraints': monotone_constraints_param,
+
+            # Evaluation
+            'eval_metric': 'mlogloss',
+            'early_stopping_rounds': 50,
+
+            'random_state': 42,
+        }
+
+        best_params = base_params.copy()
+
+        # Optional high-confidence training configuration
+        enable_high_conf = bool(config.get("risk_enable_high_confidence_training", False))
+        high_conf_threshold = float(config.get("risk_high_confidence_threshold", 0.7))
+        min_high_conf_fraction = float(config.get("risk_min_high_conf_fraction", 0.3))
+        min_high_conf_per_regime = int(config.get("risk_min_high_conf_per_regime", 30))
+
+        def _select_quadrant_feature_cols(all_cols: List[str]) -> List[str]:
+            selected: List[str] = []
+
+            regime_tf = str(
+                config.get("regime_timeframe", config.get("timeframe", "15m"))
+            ).lower()
+
+            if regime_tf in ("1h", "60m"):
+                # 1 bar ≈ 1h → 30m–3h ≈ 0.5–3 bars.
+                # Use target ~3 bars with a slightly wider band [2, 8]
+                default_target = 3
+                default_min = 2
+                default_max = 8
+            elif regime_tf in ("30m", "0.5h"):
+                # 1 bar ≈ 30m → 30m–3h ≈ 1–6 bars → target ~4, band [2, 8]
+                default_target = 4
+                default_min = 2
+                default_max = 8
+            elif regime_tf in ("15m",):
+                # 1 bar ≈ 15m → 30m–3h ≈ 2–12 bars → target ~8, band [4, 16]
+                default_target = 8
+                default_min = 4
+                default_max = 16
+            else:
+                # Fallback: generic intraday windows
+                default_target = 12
+                default_min = 6
+                default_max = 24
+
+            target_window = int(
+                config.get("risk_quadrant_target_window_bars", default_target)
+            )
+            min_window = int(config.get("risk_quadrant_min_window_bars", default_min))
+            max_window = int(config.get("risk_quadrant_max_window_bars", default_max))
+
+            path_priority = [
+                "path_ker_3h",
+                "path_ker_6h",
+                "body_range_ratio",
+                "traffic_overlap_3h",
+                "path_permutation_entropy",
+                "path_fractal_dimension",
+                "hurst_exponent_path",
+                "return_3h",
+                "sharpe_like_3h",
+                "path_trend_r2",
+            ]
+
+            path_candidates: List[str] = [
+                col for col in path_priority
+                if col in all_cols
+            ]
+
+            if path_candidates:
+                return list(dict.fromkeys(path_candidates))
+            return []
+
+        enable_hpo = bool(config.get("risk_enable_hpo", False) or config.get("enable_hpo", False))
+        enable_quadrant_objective = bool(
+            config.get("risk_hpo_enable_quadrant_objective", True)
+        )
+
+        # Make HPO mode-aware: in blank execution mode, keep HPO enabled by
+        # default, but allow explicit opt-out via risk_disable_hpo_in_blank.
+        exec_mode_cfg = str(config.get("execution_mode", "")).lower()
+        if exec_mode_cfg == "blank" and bool(config.get("risk_disable_hpo_in_blank", False)):
+            enable_hpo = False
+
+        if enable_hpo:
+            try:
+                hpo_param_groups = [
+                    create_param_group(
+                        name="structure",
+                        params={
+                            # Allow slightly deeper trees and smaller child
+                            # weights so the classifier can carve out sharper
+                            # quadrants when the data supports it.
+                            "max_depth": {"type": "int", "low": 4, "high": 8},
+                            "min_child_weight": {"type": "int", "low": 5, "high": 80},
+                            "n_estimators": {"type": "int", "low": 300, "high": 1600},
+                        },
+                        priority=1,
+                        description="Tree depth, leaf size, and capacity",
+                    ),
+                    create_param_group(
+                        name="learning",
+                        params={
+                            # Slightly wider learning-rate range; HPO will
+                            # settle on stable values based on WCoV objective.
+                            "learning_rate": {"type": "float", "low": 0.01, "high": 0.20},
+                        },
+                        priority=2,
+                        depends_on=["structure"],
+                        description="Learning rate",
+                    ),
+                    create_param_group(
+                        name="regularization",
+                        params={
+                            "gamma": {"type": "float", "low": 0.0, "high": 7.0},
+                            "reg_alpha": {"type": "float", "low": 1e-6, "high": 20.0, "log": True},
+                            "reg_lambda": {"type": "float", "low": 0.05, "high": 20.0},
+                        },
+                        priority=3,
+                        depends_on=["structure"],
+                        description="Regularization strength",
+                    ),
+                    create_param_group(
+                        name="sampling",
+                        params={
+                            # Allow a broader range of subsampling so HPO can
+                            # find robust yet expressive models.
+                            "subsample": {"type": "float", "low": 0.7, "high": 0.95},
+                            "colsample_bytree": {"type": "float", "low": 0.7, "high": 0.95},
+                        },
+                        priority=4,
+                        depends_on=["regularization"],
+                        description="Row/feature subsampling ratios",
+                    ),
+                ]
+
+                base_model_for_hpo = xgb.XGBClassifier(**base_params)
+
+                hpo_cv_folds = int(config.get("risk_hpo_cv_folds", 3))
+                hpo_rounds = int(config.get("risk_hpo_rounds", 1))
+                hpo_final_trials = int(config.get("risk_hpo_final_trials", 20))
+                hpo_enable_final = bool(config.get("risk_hpo_enable_final_refinement", False))
+
+                scoring_metric = str(config.get("risk_hpo_scoring_metric", "neg_log_loss"))
+
+                quadrant_cols = _select_quadrant_feature_cols(feature_cols)
+
+                # Log which quadrant features will actually drive WCoV HPO and
+                # pruning, and warn if no suitable path features are present in
+                # the classifier feature set.
+                if quadrant_cols:
+                    tprint_info(
+                        f"🧭 Quadrant features selected for WCoV HPO/pruning: {quadrant_cols}"
+                    )
+                else:
+                    tprint_warning(
+                        "No quadrant features found in classifier features; WCoV "
+                        "HPO/pruning will have no effect. Ensure the core Path "
+                        "features (KER, body/range, traffic, entropy, fractal, "
+                        "path Hurst, 3h returns) are present in the feature set."
+                    )
+
+                def quadrant_objective(
+                    params: Dict[str, Any],
+                    X_train: np.ndarray,
+                    y_train: np.ndarray,
+                    X_val: Optional[np.ndarray] = None,
+                    y_val: Optional[np.ndarray] = None,
+                    model: Optional[Any] = None,
+                    cv_folds: int = 5,
+                    scoring_metric: str = "neg_log_loss",
+                    **kwargs: Any,
+                ) -> float:
+                    """Pure WCoV-based HPO objective on quadrant features.
+
+                    Classifier validation metrics are deliberately ignored; HPO
+                    optimizes only for between/within separation on RSI, vol-of-
+                    vol, Parkinson volatility, and autocorr features.
+                    """
+                    try:
+                        if X_val is None or y_val is None:
+                            return float("-inf")
+
+                        base_model = model if model is not None else xgb.XGBClassifier(**base_params)
+                        base_model.set_params(**params)
+
+                        # Ensure early stopping has a validation set when enabled.
+                        # XGBoost's sklearn API expects at least one eval_set
+                        # whenever early_stopping_rounds > 0. Also silence
+                        # per-iteration logging during HPO for cleaner output.
+                        if X_val is not None and y_val is not None:
+                            base_model.fit(
+                                X_train,
+                                y_train,
+                                eval_set=[(X_val, y_val)],
+                                verbose=False,
+                            )
+                        else:
+                            base_model.fit(
+                                X_train,
+                                y_train,
+                                verbose=False,
+                            )
+
+                        val_probs = base_model.predict_proba(X_val)
+                        val_pred = np.argmax(val_probs, axis=1)
+
+                        # Previous classifier-based component (disabled: WCoV-only HPO)
+                        # metric_name = (scoring_metric or "neg_log_loss").lower()
+                        # if metric_name == "neg_log_loss":
+                        #     try:
+                        #         clf_score = -log_loss(y_val, val_probs, labels=np.arange(n_regimes))
+                        #     except Exception:
+                        #         clf_score = 0.0
+                        # elif metric_name in ("accuracy", "acc"):
+                        #     clf_score = accuracy_score(y_val, val_pred)
+                        # else:
+                        #     clf_score = accuracy_score(y_val, val_pred)
+
+                        wcov_bonus = 0.0
+                        if quadrant_cols:
+                            try:
+                                val_df = pd.DataFrame(X_val, columns=feature_cols)
+                                quad_df = val_df[quadrant_cols]
+                                wcov_between = self._calculate_winsorized_cv_between(
+                                    val_pred,
+                                    quad_df,
+                                )
+                                wcov_within = self._calculate_winsorized_cv_within(
+                                    val_pred,
+                                    quad_df,
+                                )
+                                wcov_ratio = wcov_between / (wcov_within + 1e-8)
+                                wcov_norm = float(np.clip(wcov_ratio, 0.0, 0.5) / 0.5)
+                                wcov_bonus = wcov_norm
+                            except Exception:
+                                wcov_bonus = 0.0
+
+                        # Predicted-regime balance term: discourage models that
+                        # collapse almost all samples into a single regime while
+                        # still primarily optimizing for WCoV separation.
+                        balance_bonus = 1.0
+                        try:
+                            if val_pred is not None:
+                                counts = np.bincount(val_pred, minlength=n_regimes)
+                                total = float(counts.sum()) if counts.sum() > 0 else 0.0
+                                if total > 0.0:
+                                    p = counts.astype(float) / total
+                                    min_pct = float(p.min())
+                                    max_pct = float(p.max())
+
+                                    # Default band for HPO: aim for each
+                                    # regime to have at least ~3% and at most
+                                    # ~75% of samples, unless overridden via
+                                    # config.
+                                    min_target = float(config.get("risk_hpo_min_regime_pct", 0.05))
+                                    max_target = float(config.get("risk_hpo_max_regime_pct", 0.65))
+
+                                    violation_low = max(0.0, min_target - min_pct)
+                                    violation_high = max(0.0, max_pct - max_target)
+                                    total_violation = violation_low + violation_high
+
+                                    # Stronger default penalty on imbalance so
+                                    # HPO meaningfully prefers more balanced
+                                    # predicted regime distributions. Default
+                                    # increased from 8.0 to 12.0 so that HPO
+                                    # more aggressively avoids extreme
+                                    # collapse/vanishing regimes unless
+                                    # explicitly overridden via config.
+                                    balance_strength = float(
+                                        config.get("risk_hpo_balance_strength", 12.0)
+                                    )
+                                    # Exponential decay from 1.0 toward 0.0 as
+                                    # imbalance grows; no violation -> 1.0.
+                                    balance_bonus = float(
+                                        np.exp(-balance_strength * total_violation)
+                                    )
+                        except Exception as balance_exc:  # pragma: no cover - defensive
+                            tprint_warning(
+                                f"Quadrant HPO balance term failed (non-fatal): {balance_exc}"
+                            )
+                            balance_bonus = 1.0
+
+                        lambda_wcov = float(config.get("risk_hpo_wcov_weight", 1.0))
+                        return float(lambda_wcov * wcov_bonus * balance_bonus)
+                    except Exception as obj_exc:
+                        tprint_warning(f"Quadrant-aware HPO objective failed: {obj_exc}")
+                        return float("-inf")
+
+                objective_func = (
+                    quadrant_objective if enable_quadrant_objective else default_objective_function
+                )
+
+                optimizer = HierarchicalParameterOptimizer(
+                    param_groups=hpo_param_groups,
+                    objective_func=objective_func,
+                    cv_folds=hpo_cv_folds,
+                    scoring_metric=scoring_metric,
+                    direction="maximize",
+                    n_rounds=hpo_rounds,
+                    enable_final_refinement=hpo_enable_final,
+                    final_refinement_trials=hpo_final_trials,
+                    cache_dir=None,
+                    random_state=42,
+                    verbose=bool(config.get("risk_hpo_verbose", False)),
+                    use_custom_balanced_score=False,
+                )
+
+                X_train_np = X_train.values if hasattr(X_train, "values") else X_train
+                y_train_np = y_train
+                X_val_np = X_val.values if hasattr(X_val, "values") else X_val
+                y_val_np = y_val
+
+                hpo_result = optimizer.optimize(
+                    X_train=X_train_np,
+                    y_train=y_train_np,
+                    X_val=X_val_np,
+                    y_val=y_val_np,
+                    model=base_model_for_hpo,
+                    initial_params=base_params,
+                )
+
+                best_params.update(hpo_result.best_params or {})
+            except Exception as hpo_exc:
+                tprint_warning(f"Classifier HPO failed; proceeding with default params: {hpo_exc}")
+
+        enable_regime_weighting = bool(config.get("risk_enable_regime_weighting", True))
+
+        base_sample_weight = np.ones_like(y_train, dtype=float)
+        if enable_regime_weighting:
+            try:
+                class_counts = pd.Series(y_train).value_counts()
+                n_classes = len(class_counts)
+                total = float(len(y_train)) if len(y_train) > 0 else 1.0
+                class_weight = {
+                    int(cls): (total / (n_classes * float(cnt)))
+                    for cls, cnt in class_counts.items()
+                    if cnt > 0
+                }
+                base_sample_weight = np.array(
+                    [class_weight.get(int(lbl), 1.0) for lbl in y_train],
+                    dtype=float,
+                )
+
+                if teacher_conf_train is not None:
+                    lambda_conf = float(config.get("risk_teacher_confidence_weight", 0.5))
+                    centered = teacher_conf_train - float(teacher_conf_train.mean())
+                    base_sample_weight *= (1.0 + lambda_conf * centered)
+            except Exception as weight_exc:
+                tprint_warning(
+                    f"Regime-aware weighting failed; using uniform weights: {weight_exc}"
+                )
+                base_sample_weight = np.ones_like(y_train, dtype=float)
+
+        base_sample_weight = np.maximum(base_sample_weight, 0.0)
+        if float(base_sample_weight.mean()) > 0.0:
+            base_sample_weight = base_sample_weight / float(base_sample_weight.mean())
+
+        # Train classifier (optionally with high-confidence filtering)
+        X_train_final = X_train
+        y_train_final = y_train
+        sample_weight_final = base_sample_weight
+
+        if enable_high_conf:
+            try:
+                temp_model = xgb.XGBClassifier(**best_params)
+                temp_model.fit(
+                    X_train,
+                    y_train,
+                    sample_weight=base_sample_weight,
+                    eval_set=[(X_val, y_val)],
+                    verbose=False,
+                )
+
+                train_probs = temp_model.predict_proba(X_train)
+                max_conf = train_probs.max(axis=1)
+                high_conf_mask = max_conf >= high_conf_threshold
+
+                n_high_conf = int(high_conf_mask.sum())
+                frac_high_conf = (
+                    float(n_high_conf) / float(len(y_train)) if len(y_train) > 0 else 0.0
+                )
+
+                if n_high_conf > 0:
+                    y_train_high_conf = y_train[high_conf_mask]
+                    per_regime_counts = (
+                        pd.Series(y_train_high_conf).value_counts().to_dict()
+                    )
+                else:
+                    per_regime_counts = {}
+
+                min_required = int(len(y_train) * min_high_conf_fraction)
+                regime_ok = (
+                    all(
+                        count >= min_high_conf_per_regime
+                        for count in per_regime_counts.values()
+                    )
+                    if per_regime_counts
+                    else False
+                )
+
+                if n_high_conf >= max(min_required, n_regimes) and regime_ok:
+                    X_train_final = X_train.iloc[high_conf_mask]
+                    y_train_final = y_train_high_conf
+                    sample_weight_final = base_sample_weight[high_conf_mask]
+                    tprint_info(
+                        f"🧪 High-confidence training enabled: using {n_high_conf} / {len(y_train)} "
+                        f"samples ({frac_high_conf:.1%}), min_per_regime>={min_high_conf_per_regime}"
+                    )
+                else:
+                    tprint_info(
+                        "🧪 High-confidence filter skipped (insufficient high-confidence points or "
+                        "per-regime counts too small); training on full dataset instead."
+                    )
+            except Exception as high_conf_exc:  # pragma: no cover - defensive
+                tprint_warning(
+                    f"High-confidence training path failed; falling back to full dataset: {high_conf_exc}"
+                )
+                X_train_final = X_train
+                y_train_final = y_train
+                sample_weight_final = base_sample_weight
+
+        # Final classifier trained on either full or high-confidence subset (baseline model)
+        model = xgb.XGBClassifier(**best_params)
+        model.fit(
+            X_train_final,
+            y_train_final,
+            sample_weight=sample_weight_final,
+            eval_set=[(X_val, y_val)],
+            verbose=False,
+        )
+
+        regime_probs = model.predict_proba(X_full)
+        y_val_pred = model.predict(X_val)
+        y_val_probs = model.predict_proba(X_val)
+
+        # Quadrant WCoV quality metrics (teacher vs predicted regimes)
+        regime_pred_all = np.argmax(regime_probs, axis=1)
+        quadrant_quality: Dict[str, Any] = {}
+        if quadrant_cols:
+            try:
+                full_df = pd.DataFrame(X_full, columns=feature_cols)
+                quad_full = full_df[quadrant_cols]
+
+                teacher_between = self._calculate_winsorized_cv_between(y, quad_full)
+                teacher_within = self._calculate_winsorized_cv_within(y, quad_full)
+                pred_between = self._calculate_winsorized_cv_between(regime_pred_all, quad_full)
+                pred_within = self._calculate_winsorized_cv_within(regime_pred_all, quad_full)
+
+                quadrant_quality = {
+                    "quadrant_features": list(quadrant_cols),
+                    "teacher_cv_between": float(teacher_between),
+                    "teacher_cv_within": float(teacher_within),
+                    "teacher_cv_ratio": float(teacher_between / (teacher_within + 1e-8)),
+                    "pred_cv_between": float(pred_between),
+                    "pred_cv_within": float(pred_within),
+                    "pred_cv_ratio": float(pred_between / (pred_within + 1e-8)),
+                }
+            except Exception as quad_exc:
+                tprint_warning(
+                    f"Quadrant WCoV quality computation failed (non-fatal): {quad_exc}"
+                )
+                quadrant_quality = {}
+
+        val_accuracy = accuracy_score(y_val, y_val_pred)
+        val_log_loss = self._safe_log_loss(y_val, y_val_probs, labels=list(range(n_regimes)))
+
+        training_metrics = {
+            'val_accuracy': float(val_accuracy),
+            'val_log_loss': float(val_log_loss),
+            'n_regimes': n_regimes,
+            'feature_names': list(X_full.columns),
+            'scaler': scaler,
+            'monotone_constraints': monotone_constraints,
+            'n_features': len(X_full.columns),
+        }
+
+        if quadrant_quality:
+            training_metrics['quadrant_quality'] = quadrant_quality
+
+            # Persist a dedicated quadrant WCoV quality summary reflecting HPO goals.
+            try:
+                symbol_q = str(config.get("symbol", ""))
+                exchange_q = str(config.get("exchange", ""))
+                regime_tf_q = str(
+                    config.get("regime_timeframe", config.get("timeframe", "15m"))
+                )
+                lambda_wcov = float(config.get("risk_hpo_wcov_weight", 1.0))
+
+                quality_row = {
+                    "symbol": symbol_q,
+                    "exchange": exchange_q,
+                    "timeframe": regime_tf_q,
+                    "risk_hpo_wcov_weight": lambda_wcov,
+                    "quadrant_teacher_cv_ratio": quadrant_quality["teacher_cv_ratio"],
+                    "quadrant_teacher_cv_between": quadrant_quality["teacher_cv_between"],
+                    "quadrant_teacher_cv_within": quadrant_quality["teacher_cv_within"],
+                    "quadrant_pred_cv_ratio": quadrant_quality["pred_cv_ratio"],
+                    "quadrant_pred_cv_between": quadrant_quality["pred_cv_between"],
+                    "quadrant_pred_cv_within": quadrant_quality["pred_cv_within"],
+                }
+
+                try:
+                    quality_row["quadrant_features"] = json.dumps(
+                        quadrant_quality["quadrant_features"]
+                    )
+                except Exception:
+                    quality_row["quadrant_features"] = str(
+                        quadrant_quality.get("quadrant_features", [])
+                    )
+
+                ts_q = datetime.now().strftime("%Y%m%d_%H%M%S")
+                quadrant_quality_path = (
+                    f"outcomes/ml_risk_quadrant_quality_"
+                    f"{symbol_q or 'UNKNOWN'}_{regime_tf_q}_{ts_q}.csv"
+                )
+                pd.DataFrame([quality_row]).to_csv(quadrant_quality_path, index=False)
+                tprint_info(
+                    f"💾 Saved quadrant WCoV quality summary: {quadrant_quality_path}"
+                )
+            except Exception as quad_csv_exc:  # pragma: no cover - defensive
+                tprint_warning(
+                    f"Failed to persist quadrant WCoV quality summary (non-fatal): {quad_csv_exc}"
+                )
+
+        tprint_info("🔍 Calculating comprehensive feature importance (weight, gain, cover)...")
+
+        importance_data = self._calculate_comprehensive_feature_importance(
+            model=model,
+            X=X_full,
+            y=y,
+            feature_names=list(X_full.columns)
+        )
+
+        training_metrics['feature_importance_detailed'] = {
+            'global': importance_data['global'].to_dict('records'),
+            'per_regime': {
+                regime_id: df.to_dict('records')
+                for regime_id, df in importance_data['per_regime'].items()
+            }
+        }
+
+        global_imp = importance_data['global'].head(15)
+        tprint_success("📊 Top 15 Global Feature Importance:")
+        for idx, row in global_imp.iterrows():
+            tprint_info(
+                f"  {row['feature'][:40]:40s} | "
+                f"Weight: {row['weight_norm']:.3f} | "
+                f"Gain: {row['gain_norm']:.3f} | "
+                f"Cover: {row['cover_norm']:.3f} | "
+                f"Combined: {row['combined_score']:.3f}"
+            )
+
+        tprint_success("📊 Per-Regime Feature Importance (Top 10 per regime):")
+        for regime_id, regime_df in importance_data['per_regime'].items():
+            tprint_info(f"\n  === Regime {regime_id} ===")
+            top_regime_features = regime_df.head(10)
+            for idx, row in top_regime_features.iterrows():
+                tprint_info(
+                    f"    {row['feature'][:35]:35s} | "
+                    f"MeanSep: {row['mean_separation']:6.2f} | "
+                    f"CVRatio: {row['cv_ratio']:6.2f} | "
+                    f"Gain: {row['global_gain']:.3f} | "
+                    f"RegImp: {row['regime_importance']:7.2f}"
+                )
+
+        tprint_success(
+            f"✅ XGBoost Classifier trained (baseline):\n"
+            f"   Val Accuracy={val_accuracy:.3f}, Val LogLoss={val_log_loss:.4f}\n"
+            f"   Best Iteration={model.best_iteration}, Features={len(X_full.columns)}"
+        )
+
+        report = classification_report(
+            y_val, y_val_pred,
+            target_names=[f'Regime_{i}' for i in range(n_regimes)],
+            output_dict=True,
+            zero_division=0
+        )
+        training_metrics['classification_report'] = report
+
+        regime_calibration = {}
+        try:
+            for regime_id in range(n_regimes):
+                mask_regime = y_val == regime_id
+                if mask_regime.sum() == 0:
+                    continue
+                probs_k = y_val_probs[:, regime_id]
+                mean_pred = float(np.mean(probs_k[mask_regime]))
+                empirical_freq = float(mask_regime.mean())
+                regime_calibration[int(regime_id)] = {
+                    'mean_predicted': mean_pred,
+                    'empirical_freq': empirical_freq,
+                }
+        except Exception as calib_exc:
+            tprint_warning(f"Regime calibration summary failed: {calib_exc}")
+
+        if regime_calibration:
+            training_metrics['regime_calibration'] = regime_calibration
+
+        for regime_id in range(n_regimes):
+            regime_report = report.get(f'Regime_{regime_id}', {})
+            precision = regime_report.get('precision', 0)
+            recall = regime_report.get('recall', 0)
+            f1 = regime_report.get('f1-score', 0)
+            tprint_info(
+                f"  Regime {regime_id}: Precision={precision:.3f}, "
+                f"Recall={recall:.3f}, F1={f1:.3f}"
+            )
+
+        baseline_model = model
+        baseline_regime_probs = regime_probs
+        baseline_training_metrics = dict(training_metrics)
+
+        noise_feature_table = None
+        noisy_features = []
+
+        try:
+            global_df = importance_data['global'].copy()
+            eps = 1e-8
+
+            distinctiveness_records = []
+            regime_ids = sorted(np.unique(y))
+
+            for feat in feature_cols:
+                if feat not in numeric_df.columns:
+                    continue
+                series = numeric_df[feat]
+                if series.isna().all():
+                    continue
+
+                regime_means = []
+                within_covs = []
+
+                for rid in regime_ids:
+                    rid_mask = y == rid
+                    vals = series[rid_mask].dropna()
+                    if len(vals) < 10:
+                        continue
+                    _, wcv = self._calculate_winsorized_cv(vals)
+                    within_covs.append(wcv)
+                    regime_means.append(vals.mean())
+
+                if not within_covs or len(regime_means) < 2:
+                    continue
+
+                overall_mean = float(np.mean(regime_means))
+                between_std = float(np.std(regime_means))
+                if abs(overall_mean) > eps:
+                    between_cov = abs(between_std / (overall_mean + eps))
+                else:
+                    between_cov = 0.0
+
+                within_cov = float(np.mean(within_covs))
+                if within_cov > 0.0:
+                    distinctiveness = float(between_cov / (within_cov + eps))
+                else:
+                    distinctiveness = 0.0
+
+                distinctiveness_records.append(
+                    {
+                        'feature': feat,
+                        'between_cov': between_cov,
+                        'within_cov': within_cov,
+                        'wcov_distinctiveness': distinctiveness,
+                    }
+                )
+
+            if distinctiveness_records:
+                distinctiveness_df = pd.DataFrame(distinctiveness_records)
+                noise_df = global_df.merge(distinctiveness_df, on='feature', how='left')
+            else:
+                noise_df = global_df.copy()
+                noise_df['between_cov'] = np.nan
+                noise_df['within_cov'] = np.nan
+                noise_df['wcov_distinctiveness'] = np.nan
+
+            conf = baseline_regime_probs.max(axis=1)
+            high_conf_thr = float(config.get("risk_diagnostics_high_conf_threshold", 0.8))
+            low_conf_thr = float(config.get("risk_diagnostics_low_conf_threshold", 0.5))
+
+            high_mask = conf >= high_conf_thr
+            low_mask = conf <= low_conf_thr
+
+            var_ratios = []
+            for feat in feature_cols:
+                if feat not in numeric_df.columns:
+                    continue
+                vals = numeric_df[feat].values
+                if len(vals) != len(conf):
+                    continue
+
+                hi_vals = vals[high_mask]
+                lo_vals = vals[low_mask]
+
+                if len(hi_vals) < 10 or len(lo_vals) < 10:
+                    var_ratios.append((feat, np.nan, np.nan, np.nan))
+                    continue
+
+                sigma_hi = float(np.std(hi_vals))
+                sigma_lo = float(np.std(lo_vals))
+                var_ratio = (sigma_lo + eps) / (sigma_hi + eps)
+                var_ratios.append((feat, sigma_hi, sigma_lo, var_ratio))
+
+            var_df = pd.DataFrame(
+                var_ratios,
+                columns=['feature', 'sigma_high_conf', 'sigma_low_conf', 'var_ratio_confidence'],
+            )
+
+            noise_df = noise_df.merge(var_df, on='feature', how='left')
+
+            correct_mask = y_val_pred == y_val
+            wrong_mask = ~correct_mask
+
+            misclass_records = []
+            for feat in feature_cols:
+                if feat not in X_val_raw.columns:
+                    continue
+                vals = X_val_raw[feat].values
+
+                corr_vals = vals[correct_mask]
+                wrong_vals = vals[wrong_mask]
+
+                if len(corr_vals) < 10 or len(wrong_vals) < 10:
+                    misclass_records.append(
+                        (feat, np.nan, np.nan, np.nan, np.nan)
+                    )
+                    continue
+
+                mu_corr = float(np.mean(corr_vals))
+                mu_wrong = float(np.mean(wrong_vals))
+                sigma_corr = float(np.std(corr_vals))
+                sigma_wrong = float(np.std(wrong_vals))
+                pooled = np.sqrt(
+                    (sigma_corr ** 2 + sigma_wrong ** 2) / 2.0
+                )
+                if pooled > 0.0:
+                    effect_size = abs(mu_wrong - mu_corr) / (pooled + eps)
+                else:
+                    effect_size = 0.0
+
+                misclass_records.append(
+                    (feat, mu_corr, mu_wrong, pooled, effect_size)
+                )
+
+            misclass_df = pd.DataFrame(
+                misclass_records,
+                columns=[
+                    'feature',
+                    'mean_correct',
+                    'mean_wrong',
+                    'pooled_std',
+                    'misclass_effect_size',
+                ],
+            )
+
+            noise_df = noise_df.merge(misclass_df, on='feature', how='left')
+
+            noise_df['gain_norm'] = noise_df['gain_norm'].fillna(0.0)
+            noise_df['wcov_distinctiveness'] = noise_df['wcov_distinctiveness'].fillna(0.0)
+            noise_df['var_ratio_confidence'] = noise_df['var_ratio_confidence'].fillna(0.0)
+            noise_df['misclass_effect_size'] = noise_df['misclass_effect_size'].fillna(0.0)
+
+            # ------------------------------------------------------------------
+            # Collapse-driver and clarity-enhancer diagnostics
+            #
+            # Idea: identify features that strongly drive assignment into a
+            # single dominant predicted regime (collapse-drivers) vs features
+            # that are structurally distinctive across teacher regimes without
+            # just feeding the dominant state (clarity-enhancers).
+            # ------------------------------------------------------------------
+            clarity_protect: List[str] = []
+            try:
+                # Use hard predictions on the full dataset to detect the
+                # dominant regime under the student (XGB) classifier.
+                baseline_pred = np.argmax(baseline_regime_probs, axis=1)
+                dom_counts = np.bincount(baseline_pred, minlength=n_regimes)
+                dominant_regime = int(dom_counts.argmax())
+
+                dom_mask = baseline_pred == dominant_regime
+                other_mask = ~dom_mask
+
+                collapse_records = []
+                for feat in feature_cols:
+                    if feat not in numeric_df.columns:
+                        continue
+
+                    vals = numeric_df[feat].values
+                    if len(vals) != len(baseline_pred):
+                        continue
+
+                    valid_dom = dom_mask & np.isfinite(vals)
+                    valid_other = other_mask & np.isfinite(vals)
+                    dom_vals = vals[valid_dom]
+                    other_vals = vals[valid_other]
+
+                    if len(dom_vals) < 10 or len(other_vals) < 10:
+                        effect_dom = 0.0
+                    else:
+                        mu_dom = float(np.mean(dom_vals))
+                        mu_other = float(np.mean(other_vals))
+                        sigma_dom = float(np.std(dom_vals))
+                        sigma_other = float(np.std(other_vals))
+                        pooled = np.sqrt((sigma_dom ** 2 + sigma_other ** 2) / 2.0)
+                        if pooled > 0.0:
+                            effect_dom = float(abs(mu_dom - mu_other) / (pooled + eps))
+                        else:
+                            effect_dom = 0.0
+
+                    collapse_records.append((feat, effect_dom))
+
+                if collapse_records:
+                    collapse_df = pd.DataFrame(
+                        collapse_records,
+                        columns=["feature", "collapse_effect_size"],
+                    )
+                    noise_df = noise_df.merge(collapse_df, on="feature", how="left")
+                else:
+                    noise_df["collapse_effect_size"] = 0.0
+
+                # Derive collapse-driver and clarity-enhancer scores using
+                # teacher distinctiveness (wcov_distinctiveness) and the
+                # collapse effect size.
+                wcov_vals = noise_df["wcov_distinctiveness"].values.astype(float)
+                gain_vals = noise_df["gain_norm"].values.astype(float)
+                collapse_vals = (
+                    noise_df["collapse_effect_size"].fillna(0.0).values.astype(float)
+                )
+
+                wcov_max = float(np.nanmax(wcov_vals)) if np.isfinite(np.nanmax(wcov_vals)) and np.nanmax(wcov_vals) > 0.0 else 0.0
+                collapse_max = float(np.nanmax(collapse_vals)) if np.isfinite(np.nanmax(collapse_vals)) and np.nanmax(collapse_vals) > 0.0 else 0.0
+
+                if collapse_max > 0.0:
+                    collapse_norm = collapse_vals / (collapse_max + eps)
+                else:
+                    collapse_norm = np.zeros_like(collapse_vals)
+
+                if wcov_max > 0.0:
+                    teacher_norm = wcov_vals / (wcov_max + eps)
+                else:
+                    teacher_norm = np.zeros_like(wcov_vals)
+
+                # High collapse-driver score: important for XGB, low teacher
+                # distinctiveness, and strongly associated with the dominant
+                # regime.
+                teacher_lowness = 1.0 / (1.0 + wcov_vals)
+                collapse_driver_score = gain_vals * teacher_lowness * collapse_norm
+                noise_df["collapse_driver_score"] = collapse_driver_score
+
+                # High clarity score: structurally distinctive across teacher
+                # regimes but not primarily a collapse-driver.
+                clarity_score = teacher_norm * (1.0 - collapse_norm)
+                noise_df["clarity_enhancer_score"] = clarity_score
+
+                top_k = int(config.get("risk_noise_protect_top_clarity", 12))
+                if top_k > 0 and len(noise_df) > 0:
+                    order = np.argsort(-clarity_score)
+                    top_idx = order[: min(top_k, len(order))]
+                    clarity_protect = (
+                        noise_df["feature"].iloc[top_idx].dropna().astype(str).tolist()
+                    )
+            except Exception as clarity_exc:
+                tprint_warning(
+                    f"Collapse/clarity diagnostics failed (non-fatal); continuing without them: {clarity_exc}"
+                )
+                if "collapse_driver_score" not in noise_df.columns:
+                    noise_df["collapse_driver_score"] = 0.0
+                if "clarity_enhancer_score" not in noise_df.columns:
+                    noise_df["clarity_enhancer_score"] = 0.0
+                clarity_protect = []
+
+            # Safety guard: always keep at least 15 features and ~30% of originals
+            min_keep = max(15, int(len(feature_cols) * 0.3))
+
+            # Base thresholds (slightly more permissive defaults so we naturally
+            # surface candidates on smaller samples)
+            base_gain_min = float(config.get("risk_noise_gain_min", 0.005))
+            base_wcov_max = float(config.get("risk_noise_wcov_max", 1.3))
+            base_var_ratio_min = float(config.get("risk_noise_var_ratio_min", 1.5))
+            base_eff_size_min = float(config.get("risk_noise_effect_size_min", 0.4))
+
+            noise_hpo_enable = bool(config.get("risk_noise_hpo_enable", False))
+            noise_hpo_max_trials = int(config.get("risk_noise_hpo_max_trials", 0))
+            if noise_hpo_enable and noise_hpo_max_trials < 2:
+                noise_hpo_max_trials = 2
+
+            def _compute_flags(gain_min: float, wcov_max: float, var_ratio_min: float, eff_size_min: float):
+                flags_importance = noise_df['gain_norm'] >= gain_min
+                flags_wcov = noise_df['wcov_distinctiveness'] <= wcov_max
+                flags_conf = noise_df['var_ratio_confidence'] >= var_ratio_min
+                flags_misclass = noise_df['misclass_effect_size'] >= eff_size_min
+                is_noisy = (
+                    flags_importance
+                    & (
+                        (flags_wcov & flags_conf)
+                        | (flags_wcov & flags_misclass)
+                    )
+                )
+                noisy_list = noise_df.loc[is_noisy, 'feature'].dropna().tolist()
+
+                # Never treat quadrant-defining features (RSI, vol_of_vol,
+                # Parkinson volatility, autocorr) as noisy, even if their
+                # diagnostics would flag them. This ensures the core axes of
+                # the quadrant system remain present for both HPO and pruning.
+                protect = set()
+                if 'quadrant_cols' in locals() and quadrant_cols:
+                    protect.update(quadrant_cols)
+                if 'clarity_protect' in locals() and clarity_protect:
+                    protect.update(clarity_protect)
+                if protect:
+                    noisy_list = [f for f in noisy_list if f not in protect]
+
+                kept_list = [f for f in feature_cols if f not in noisy_list]
+                return is_noisy, noisy_list, kept_list
+
+            def _structural_score(is_noisy_mask: pd.Series, noisy_list, kept_list) -> float:
+                """Score a candidate purely on structure; min_keep is enforced later.
+
+                We allow candidates that would keep < min_keep features here so that
+                we can later cap the number of removed features to satisfy min_keep
+                while still pruning the worst offenders.
+                """
+                if len(kept_list) == len(feature_cols) or not noisy_list:
+                    return float('-inf')
+
+                subset = noise_df.loc[is_noisy_mask]
+                if subset.empty:
+                    return float('-inf')
+
+                wcov_penalty = np.maximum(0.0, 1.5 - subset['wcov_distinctiveness'].values)
+                raw = (
+                    subset['gain_norm'].values
+                    * subset['var_ratio_confidence'].values
+                    * subset['misclass_effect_size'].values
+                    * wcov_penalty
+                )
+
+                n_noisy = len(noisy_list)
+                total = len(feature_cols)
+                frac_noisy = n_noisy / float(total) if total > 0 else 0.0
+
+                coverage_weight = 1.0
+                if frac_noisy <= 0.0:
+                    coverage_weight = 0.0
+                elif frac_noisy < 0.1:
+                    coverage_weight = 0.5
+                elif frac_noisy < 0.4:
+                    coverage_weight = 1.0 + frac_noisy
+                elif frac_noisy <= 0.6:
+                    coverage_weight = 1.4
+                else:
+                    coverage_weight = 0.8
+
+                base_score = float(raw.mean()) if len(raw) > 0 else float('-inf')
+                if not np.isfinite(base_score) or coverage_weight <= 0.0:
+                    return float('-inf')
+                return base_score * coverage_weight
+
+            # Start from base thresholds
+            best_gain_min = base_gain_min
+            best_wcov_max = base_wcov_max
+            best_var_ratio_min = base_var_ratio_min
+            best_eff_size_min = base_eff_size_min
+
+            best_is_noisy, best_noisy_features, best_kept_features = _compute_flags(
+                best_gain_min, best_wcov_max, best_var_ratio_min, best_eff_size_min
+            )
+            best_score = _structural_score(best_is_noisy, best_noisy_features, best_kept_features)
+
+            # Optional lightweight HPO over noise thresholds (structure-based, no extra model fits)
+            if noise_hpo_enable and noise_hpo_max_trials > 1:
+                rng = np.random.RandomState(int(config.get("risk_noise_hpo_random_state", 42)))
+
+                gain_min_low = max(0.0005, base_gain_min * 0.2)
+                gain_min_high = max(gain_min_low * 1.1, base_gain_min * 3.0)
+                wcov_max_low = max(0.5, base_wcov_max * 0.5)
+                wcov_max_high = max(wcov_max_low * 1.1, base_wcov_max * 2.0)
+                var_ratio_min_low = max(1.0, base_var_ratio_min * 0.3)
+                var_ratio_min_high = max(var_ratio_min_low * 1.2, base_var_ratio_min * 2.0)
+                eff_size_min_low = max(0.1, base_eff_size_min * 0.5)
+                eff_size_min_high = max(eff_size_min_low * 1.2, base_eff_size_min * 2.0)
+
+                for _ in range(noise_hpo_max_trials - 1):
+                    cand_gain = float(rng.uniform(gain_min_low, gain_min_high))
+                    cand_wcov = float(rng.uniform(wcov_max_low, wcov_max_high))
+                    cand_var_ratio = float(rng.uniform(var_ratio_min_low, var_ratio_min_high))
+                    cand_eff_size = float(rng.uniform(eff_size_min_low, eff_size_min_high))
+
+                    cand_is_noisy, cand_noisy_features, cand_kept_features = _compute_flags(
+                        cand_gain, cand_wcov, cand_var_ratio, cand_eff_size
+                    )
+                    cand_score = _structural_score(
+                        cand_is_noisy, cand_noisy_features, cand_kept_features
+                    )
+
+                    if cand_score > best_score:
+                        best_score = cand_score
+                        best_gain_min = cand_gain
+                        best_wcov_max = cand_wcov
+                        best_var_ratio_min = cand_var_ratio
+                        best_eff_size_min = cand_eff_size
+                        best_is_noisy = cand_is_noisy
+                        best_noisy_features = cand_noisy_features
+                        best_kept_features = cand_kept_features
+
+                if best_score == float('-inf'):
+                    best_noisy_features = []
+                    best_kept_features = feature_cols
+
+                if best_noisy_features:
+                    tprint_info(
+                        f"🧪 Noise-HPO selected thresholds: "
+                        f"gain_min={best_gain_min:.4f}, "
+                        f"wcov_max={best_wcov_max:.3f}, "
+                        f"var_ratio_min={best_var_ratio_min:.2f}, "
+                        f"eff_size_min={best_eff_size_min:.2f}; "
+                        f"removed={len(best_noisy_features)} features, "
+                        f"kept={len(best_kept_features)}"
+                    )
+
+            # Apply best thresholds to noise_df for diagnostics and downstream pruning
+            if best_noisy_features:
+                noise_df['flag_importance'] = noise_df['gain_norm'] >= best_gain_min
+                noise_df['flag_wcov'] = noise_df['wcov_distinctiveness'] <= best_wcov_max
+                noise_df['flag_conf'] = noise_df['var_ratio_confidence'] >= best_var_ratio_min
+                noise_df['flag_misclass'] = noise_df['misclass_effect_size'] >= best_eff_size_min
+                noise_df['is_noisy_feature'] = best_is_noisy
+
+                noisy_features = best_noisy_features
+                kept_features = best_kept_features
+
+                tprint_success(
+                    f"🧹 Identified {len(noisy_features)} noisy / ambiguity-driving features "
+                    f"out of {len(feature_cols)} candidates (pre min_keep cap)"
+                )
+                top_noisy = noise_df[noise_df['is_noisy_feature']].sort_values(
+                    ['gain_norm'], ascending=False
+                ).head(15)
+                for _, row in top_noisy.iterrows():
+                    tprint_info(
+                        f"  NOISY {row['feature'][:40]:40s} | "
+                        f"Gain={row['gain_norm']:.3f} | "
+                        f"WCoV={row['wcov_distinctiveness']:.3f} | "
+                        f"VarRatio={row['var_ratio_confidence']:.2f} | "
+                        f"MisclassEff={row['misclass_effect_size']:.2f}"
+                    )
+            else:
+                tprint_info("🧹 Noise feature diagnostics found no strong pruning candidates")
+                noisy_features = []
+                kept_features = feature_cols
+
+            noise_feature_table = noise_df
+        except Exception as noise_exc:
+            tprint_warning(f"Noise feature diagnostics failed; skipping pruning: {noise_exc}")
+            noisy_features = []
+            noise_feature_table = None
+
+        final_model = baseline_model
+        final_regime_probs = baseline_regime_probs
+
+        final_training_metrics = dict(baseline_training_metrics)
+        final_training_metrics['baseline_classifier'] = baseline_training_metrics
+
+        # Record selected noise thresholds (even if HPO disabled)
+        final_training_metrics['noise_hpo_selected_thresholds'] = {
+            'gain_min': float(best_gain_min) if 'best_gain_min' in locals() else None,
+            'wcov_max': float(best_wcov_max) if 'best_wcov_max' in locals() else None,
+            'var_ratio_min': float(best_var_ratio_min) if 'best_var_ratio_min' in locals() else None,
+            'eff_size_min': float(best_eff_size_min) if 'best_eff_size_min' in locals() else None,
+            'min_keep': int(min_keep),
+            'n_noisy_features_initial': int(len(noisy_features)),
+            'n_features_total': int(len(feature_cols)),
+        }
+
+        best_model = final_model
+        best_regime_probs_local = final_regime_probs
+        best_training_metrics = dict(final_training_metrics)
+
+        # Baseline quadrant separation quality from the full model, if available.
+        baseline_quadrant_quality = best_training_metrics.get("quadrant_quality", {}) or {}
+        best_quadrant_pred_cv_ratio = float(
+            baseline_quadrant_quality.get("pred_cv_ratio", 0.0)
+            if isinstance(baseline_quadrant_quality, dict)
+            else 0.0
+        )
+
+        baseline_report_full = best_training_metrics.get("classification_report", {}) or {}
+        baseline_macro_f1 = (
+            baseline_report_full.get("macro avg", {}).get("f1-score", 0.0)
+            if isinstance(baseline_report_full, dict)
+            else 0.0
+        )
+        best_macro_f1 = float(baseline_macro_f1)
+        best_log_loss_local = float(best_training_metrics.get("val_log_loss", val_log_loss))
+
+        if noisy_features and noise_feature_table is not None:
+            candidate_df = noise_feature_table.copy()
+            if "is_noisy_feature" in candidate_df.columns:
+                candidate_df = candidate_df[candidate_df["is_noisy_feature"]]
+
+            if not candidate_df.empty:
+                wcov_penalty_all = np.maximum(
+                    0.0, 1.5 - candidate_df["wcov_distinctiveness"].values
+                )
+
+                base_severity = (
+                    candidate_df["gain_norm"].values
+                    * candidate_df["var_ratio_confidence"].values
+                    * candidate_df["misclass_effect_size"].values
+                    * wcov_penalty_all
+                )
+
+                collapse_vals = (
+                    candidate_df.get("collapse_driver_score", 0.0)
+                    .fillna(0.0)
+                    .values.astype(float)
+                )
+                clarity_vals = (
+                    candidate_df.get("clarity_enhancer_score", 0.0)
+                    .fillna(0.0)
+                    .values.astype(float)
+                )
+
+                collapse_max = float(np.nanmax(np.abs(collapse_vals))) if np.isfinite(np.nanmax(np.abs(collapse_vals))) and np.nanmax(np.abs(collapse_vals)) > 0.0 else 0.0
+                clarity_max = float(np.nanmax(np.abs(clarity_vals))) if np.isfinite(np.nanmax(np.abs(clarity_vals))) and np.nanmax(np.abs(clarity_vals)) > 0.0 else 0.0
+
+                if collapse_max > 0.0:
+                    collapse_norm = collapse_vals / (collapse_max + eps)
+                else:
+                    collapse_norm = np.zeros_like(collapse_vals)
+
+                if clarity_max > 0.0:
+                    clarity_norm = clarity_vals / (clarity_max + eps)
+                else:
+                    clarity_norm = np.zeros_like(clarity_vals)
+
+                collapse_boost = 1.0 + 2.0 * collapse_norm
+                clarity_penalty = 1.0 / (1.0 + 2.0 * clarity_norm)
+
+                candidate_df["severity"] = (
+                    base_severity * collapse_boost * clarity_penalty
+                )
+                candidate_df = candidate_df.sort_values("severity", ascending=False)
+                candidate_features_order = (
+                    candidate_df["feature"].dropna().tolist()
+                )
+            else:
+                candidate_features_order = []
+        else:
+            candidate_features_order = []
+
+        removed_features_iter: List[str] = []
+
+        def _train_candidate_with_features(kept: List[str]) -> Tuple[Any, np.ndarray, Dict[str, Any]]:
+            X_train_pruned = X_train[kept]
+            X_val_pruned = X_val[kept]
+            X_full_pruned = X_full[kept]
+
+            monotone_pruned = []
+            for feat in X_full_pruned.columns:
+                feat_lower = feat.lower()
+                if any(kw in feat_lower for kw in [
+                    'vol', 'cvar', 'drawdown', 'jump', 'acceleration',
+                    'fragility', 'shock', 'tail', 'kurtosis', 'correlation'
+                ]):
+                    monotone_pruned.append(1)
+                else:
+                    monotone_pruned.append(0)
+
+            monotone_constraints_param_pruned = "(" + ",".join(
+                str(c) for c in monotone_pruned
+            ) + ")"
+
+            pruned_params = best_params.copy()
+            pruned_params['monotone_constraints'] = monotone_constraints_param_pruned
+
+            X_train_use = X_train_pruned
+            y_train_use = y_train
+            sample_weight_use = base_sample_weight
+
+            if enable_high_conf:
+                try:
+                    temp_model_pruned = xgb.XGBClassifier(**pruned_params)
+                    temp_model_pruned.fit(
+                        X_train_pruned,
+                        y_train,
+                        sample_weight=base_sample_weight,
+                        eval_set=[(X_val_pruned, y_val)],
+                        verbose=False,
+                    )
+
+                    train_probs_pruned = temp_model_pruned.predict_proba(X_train_pruned)
+                    max_conf_pruned = train_probs_pruned.max(axis=1)
+                    high_conf_mask_pruned = max_conf_pruned >= high_conf_threshold
+
+                    n_high_conf_pruned = int(high_conf_mask_pruned.sum())
+                    frac_high_conf_pruned = (
+                        float(n_high_conf_pruned) / float(len(y_train)) if len(y_train) > 0 else 0.0
+                    )
+
+                    if n_high_conf_pruned > 0:
+                        y_train_high_conf_pruned = y_train[high_conf_mask_pruned]
+                        per_regime_counts_pruned = pd.Series(
+                            y_train_high_conf_pruned
+                        ).value_counts().to_dict()
+                    else:
+                        per_regime_counts_pruned = {}
+
+                    min_required_pruned = int(len(y_train) * min_high_conf_fraction)
+                    regime_ok_pruned = (
+                        all(
+                            count >= min_high_conf_per_regime
+                            for count in per_regime_counts_pruned.values()
+                        )
+                        if per_regime_counts_pruned
+                        else False
+                    )
+
+                    if n_high_conf_pruned >= max(min_required_pruned, n_regimes) and regime_ok_pruned:
+                        X_train_use = X_train_pruned.iloc[high_conf_mask_pruned]
+                        y_train_use = y_train_high_conf_pruned
+                        sample_weight_use = base_sample_weight[high_conf_mask_pruned]
+                        tprint_info(
+                            f"🧪 High-confidence training (iterative pruned) enabled: using "
+                            f"{n_high_conf_pruned} / {len(y_train)} samples "
+                            f"({frac_high_conf_pruned:.1%}), "
+                            f"min_per_regime>={min_high_conf_per_regime}"
+                        )
+                    else:
+                        tprint_info(
+                            "🧪 High-confidence filter (iterative pruned) skipped (insufficient "
+                            "high-confidence points or per-regime counts too small); "
+                            "training on full dataset instead."
+                        )
+                except Exception as high_conf_exc_pruned:
+                    tprint_warning(
+                        f"High-confidence training path (iterative pruned) failed; "
+                        f"falling back to full dataset: {high_conf_exc_pruned}"
+                    )
+                    X_train_use = X_train_pruned
+                    y_train_use = y_train
+                    sample_weight_use = base_sample_weight
+
+            model_candidate = xgb.XGBClassifier(**pruned_params)
+            model_candidate.fit(
+                X_train_use,
+                y_train_use,
+                sample_weight=sample_weight_use,
+                eval_set=[(X_val_pruned, y_val)],
+                verbose=False,
+            )
+
+            regime_probs_candidate = model_candidate.predict_proba(X_full_pruned)
+            y_val_pred_candidate = model_candidate.predict(X_val_pruned)
+            y_val_probs_candidate = model_candidate.predict_proba(X_val_pruned)
+
+            val_accuracy_candidate = accuracy_score(y_val, y_val_pred_candidate)
+            val_log_loss_candidate = log_loss(y_val, y_val_probs_candidate)
+
+            tprint_success(
+                f"✅ XGBoost Classifier trained (iterative noise-pruned):\n"
+                f"   Val Accuracy={val_accuracy_candidate:.3f} (baseline {val_accuracy:.3f})\n"
+                f"   Val LogLoss={val_log_loss_candidate:.4f} (baseline {val_log_loss:.4f})\n"
+                f"   Features={len(kept)} (baseline {len(feature_cols)})"
+            )
+
+            report_candidate = classification_report(
+                y_val,
+                y_val_pred_candidate,
+                target_names=[f'Regime_{i}' for i in range(n_regimes)],
+                output_dict=True,
+                zero_division=0,
+            )
+
+            importance_data_candidate = self._calculate_comprehensive_feature_importance(
+                model=model_candidate,
+                X=X_full_pruned,
+                y=y,
+                feature_names=list(X_full_pruned.columns),
+            )
+
+            candidate_metrics = {
+                'val_accuracy': float(val_accuracy_candidate),
+                'val_log_loss': float(val_log_loss_candidate),
+                'n_regimes': n_regimes,
+                'feature_names': list(X_full_pruned.columns),
+                'scaler': scaler,
+                'monotone_constraints': monotone_pruned,
+                'n_features': len(X_full_pruned.columns),
+                'feature_importance_detailed': {
+                    'global': importance_data_candidate['global'].to_dict('records'),
+                    'per_regime': {
+                        regime_id: df.to_dict('records')
+                        for regime_id, df in importance_data_candidate['per_regime'].items()
+                    },
+                },
+                'classification_report': report_candidate,
+                'baseline_classifier': baseline_training_metrics,
+            }
+
+            # Quadrant WCoV quality for the pruned candidate (predicted regimes
+            # on the full feature set restricted to pruned columns).
+            if quadrant_cols:
+                try:
+                    candidate_quadrant_cols = [
+                        c for c in quadrant_cols if c in X_full_pruned.columns
+                    ]
+                    if candidate_quadrant_cols:
+                        full_pruned_df = pd.DataFrame(
+                            X_full_pruned, columns=X_full_pruned.columns
+                        )
+                        quad_full_pruned = full_pruned_df[candidate_quadrant_cols]
+
+                        regime_pred_all_pruned = np.argmax(regime_probs_candidate, axis=1)
+
+                        teacher_between_pruned = self._calculate_winsorized_cv_between(
+                            y, quad_full_pruned
+                        )
+                        teacher_within_pruned = self._calculate_winsorized_cv_within(
+                            y, quad_full_pruned
+                        )
+                        pred_between_pruned = self._calculate_winsorized_cv_between(
+                            regime_pred_all_pruned, quad_full_pruned
+                        )
+                        pred_within_pruned = self._calculate_winsorized_cv_within(
+                            regime_pred_all_pruned, quad_full_pruned
+                        )
+
+                        quadrant_quality_candidate = {
+                            "quadrant_features": list(candidate_quadrant_cols),
+                            "teacher_cv_between": float(teacher_between_pruned),
+                            "teacher_cv_within": float(teacher_within_pruned),
+                            "teacher_cv_ratio": float(
+                                teacher_between_pruned / (teacher_within_pruned + 1e-8)
+                            ),
+                            "pred_cv_between": float(pred_between_pruned),
+                            "pred_cv_within": float(pred_within_pruned),
+                            "pred_cv_ratio": float(
+                                pred_between_pruned / (pred_within_pruned + 1e-8)
+                            ),
+                        }
+                        candidate_metrics["quadrant_quality"] = quadrant_quality_candidate
+                except Exception as quad_prune_exc:
+                    tprint_warning(
+                        f"Quadrant WCoV quality (iterative pruned) failed (non-fatal): {quad_prune_exc}"
+                    )
+
+            return model_candidate, regime_probs_candidate, candidate_metrics
+
+        epsilon_quadrant = float(config.get('risk_iterative_prune_min_delta_quadrant', 0.0))
+        max_rounds = int(config.get('risk_iterative_prune_max_rounds', 10))
+
+        # Minimum improvement thresholds for the two components that drive the
+        # combined objective below; these are applied after normalization so
+        # they are effectively in [0, 1] space.
+        epsilon_balance = float(config.get("risk_iterative_prune_min_delta_balance", 0.0))
+        lambda_quadrant = float(config.get("risk_iterative_prune_weight_quadrant", 0.5))
+        lambda_balance = float(config.get("risk_iterative_prune_weight_balance", 0.5))
+        if lambda_quadrant < 0.0:
+            lambda_quadrant = 0.0
+        if lambda_balance < 0.0:
+            lambda_balance = 0.0
+        if lambda_quadrant + lambda_balance <= 0.0:
+            lambda_quadrant, lambda_balance = 0.5, 0.5
+
+        best_balance_score: Optional[float] = None
+        try:
+            base_pred_full = np.argmax(best_regime_probs_local, axis=1)
+            base_counts = np.bincount(base_pred_full, minlength=n_regimes)
+            base_total = float(base_counts.sum()) if base_counts.sum() > 0 else 0.0
+            if base_total > 0.0:
+                p_base = base_counts.astype(float) / base_total
+                best_balance_score = float(p_base.max() - p_base.min())
+        except Exception as base_balance_exc:  # pragma: no cover - defensive
+            tprint_warning(
+                f"Iterative pruning baseline balance diagnostics failed (non-fatal): {base_balance_exc}"
+            )
+            best_balance_score = None
+
+        for round_idx in range(max_rounds):
+            remaining = [f for f in candidate_features_order if f not in removed_features_iter]
+            if not remaining:
+                break
+
+            chunk = remaining[:5]
+            candidate_removed = removed_features_iter + chunk
+            kept_round = [f for f in feature_cols if f not in candidate_removed]
+
+            if len(kept_round) < min_keep:
+                tprint_warning(
+                    f"🧹 Iterative pruning stopped due to min_keep={min_keep}: "
+                    f"attempted kept={len(kept_round)}"
+                )
+                break
+
+            tprint_info(
+                f"🧪 Iterative pruning round {round_idx + 1}: testing removal of "
+                f"{len(chunk)} features (total removed would be {len(candidate_removed)})"
+            )
+
+            cand_model, cand_probs, cand_metrics = _train_candidate_with_features(kept_round)
+
+            cand_report_full = cand_metrics.get('classification_report', {}) or {}
+            cand_macro_f1 = (
+                cand_report_full.get('macro avg', {}).get('f1-score', 0.0)
+                if isinstance(cand_report_full, dict)
+                else 0.0
+            )
+            cand_log_loss = float(cand_metrics.get('val_log_loss', best_log_loss_local))
+
+            # Quadrant separation quality for the candidate
+            cand_quadrant_quality = cand_metrics.get('quadrant_quality', {}) or {}
+            cand_quadrant_pred_cv_ratio = float(
+                cand_quadrant_quality.get('pred_cv_ratio', best_quadrant_pred_cv_ratio)
+                if isinstance(cand_quadrant_quality, dict)
+                else best_quadrant_pred_cv_ratio
+            )
+
+            cand_balance_score = None
+            try:
+                cand_pred_full = np.argmax(cand_probs, axis=1)
+                counts = np.bincount(cand_pred_full, minlength=n_regimes)
+                total = float(counts.sum()) if counts.sum() > 0 else 0.0
+                if total > 0.0:
+                    p = counts.astype(float) / total
+                    cand_min_pct = float(p.min())
+                    cand_max_pct = float(p.max())
+                    cand_balance_score = float(cand_max_pct - cand_min_pct)
+
+                    # Soft band diagnostics: report when regime shares fall
+                    # outside the preferred range, but do not enforce a hard
+                    # rejection. The actual acceptance decision is driven by
+                    # the combined score and improvement thresholds below.
+                    max_pref = float(
+                        config.get("risk_prune_max_regime_pct", 0.6)
+                    )
+                    min_pref = float(
+                        config.get("risk_prune_min_regime_pct", 0.03)
+                    )
+
+                    if cand_max_pct > max_pref or cand_min_pct < min_pref:
+                        tprint_info(
+                            "🧹 Iterative pruning candidate outside preferred "
+                            f"regime share band: min_pct={cand_min_pct:.3f}, "
+                            f"max_pct={cand_max_pct:.3f}"
+                        )
+            except Exception as dist_exc:  # pragma: no cover - defensive
+                tprint_warning(
+                    f"Iterative pruning balance diagnostics failed (non-fatal): {dist_exc}"
+                )
+
+            # Normalized improvements for a combined scalar objective.
+            #
+            # Quadrant term: prefer larger increases in pred_cv_ratio.
+            quad_gain_raw = (
+                cand_quadrant_pred_cv_ratio - best_quadrant_pred_cv_ratio
+            )
+            quad_gain_norm = max(0.0, quad_gain_raw)
+
+            # Balance term: prefer *reductions* in max-min spread
+            # (smaller is better). Map into a positive direction where
+            # improvements are positive.
+            if (
+                cand_balance_score is not None
+                and best_balance_score is not None
+                and best_balance_score > 0.0
+            ):
+                balance_gain_raw = best_balance_score - cand_balance_score
+                balance_gain_norm = max(0.0, balance_gain_raw)
+            else:
+                balance_gain_norm = 0.0
+
+            # Simple weighted sum; both components are non-negative after the
+            # max(0, ·) clamps. Users can tilt toward structure (quadrant) or
+            # distribution (balance) via config weights.
+            combined_score = (
+                lambda_quadrant * quad_gain_norm
+                + lambda_balance * balance_gain_norm
+            )
+
+            improved = (
+                quad_gain_norm > epsilon_quadrant
+                or balance_gain_norm > epsilon_balance
+                or combined_score > 0.0
+            )
+
+            if improved:
+                removed_features_iter = candidate_removed
+                best_model = cand_model
+                best_regime_probs_local = cand_probs
+                best_training_metrics = cand_metrics
+                best_macro_f1 = cand_macro_f1
+                best_log_loss_local = cand_log_loss
+                best_quadrant_pred_cv_ratio = cand_quadrant_pred_cv_ratio
+                if cand_balance_score is not None:
+                    best_balance_score = cand_balance_score
+                tprint_success(
+                    f"🧹 Iterative pruning round {round_idx + 1} accepted: "
+                    f"macroF1={cand_macro_f1:.3f}, "
+                    f"logLoss={cand_log_loss:.4f}, "
+                    f"quadrant_pred_cv_ratio={cand_quadrant_pred_cv_ratio:.3f}"
+                )
+            else:
+                tprint_info(
+                    "🧹 Iterative pruning did not improve metrics; "
+                    "stopping further removals."
+                )
+                break
+
+        if removed_features_iter:
+            best_training_metrics['removed_noisy_features'] = list(removed_features_iter)
+
+        final_model = best_model
+        final_regime_probs = best_regime_probs_local
+        final_training_metrics = best_training_metrics
+
+        if noise_feature_table is not None and 'noise_feature_diagnostics' not in final_training_metrics:
+            final_training_metrics['noise_feature_diagnostics'] = noise_feature_table.to_dict('records')
+
+        try:
+            symbol = str(config.get("symbol", "UNKNOWN"))
+            exchange = str(config.get("exchange", "UNKNOWN"))
+            regime_timeframe = str(config.get("regime_timeframe", config.get("timeframe", "15m")))
+
+            # Build compact summary row from training_metrics
+            baseline = final_training_metrics.get("baseline_classifier", {}) or {}
+            baseline_report = baseline.get("classification_report", {}) or {}
+            baseline_macro_f1 = (
+                baseline_report.get("macro avg", {}).get("f1-score", 0.0)
+                if isinstance(baseline_report, dict)
+                else 0.0
+            )
+
+            final_report = final_training_metrics.get("classification_report", {}) or {}
+            final_macro_f1 = (
+                final_report.get("macro avg", {}).get("f1-score", 0.0)
+                if isinstance(final_report, dict)
+                else 0.0
+            )
+
+            removed_features = final_training_metrics.get("removed_noisy_features", [])
+            if isinstance(removed_features, (list, tuple, set)):
+                n_removed_features = len(removed_features)
+            else:
+                n_removed_features = 0
+
+            row = {
+                "symbol": symbol,
+                "exchange": exchange,
+                "timeframe": regime_timeframe,
+                "val_accuracy_final": final_training_metrics.get("val_accuracy"),
+                "val_log_loss_final": final_training_metrics.get("val_log_loss"),
+                "macro_f1_final": final_macro_f1,
+                "val_accuracy_baseline": baseline.get("val_accuracy"),
+                "val_log_loss_baseline": baseline.get("val_log_loss"),
+                "macro_f1_baseline": baseline_macro_f1,
+                "n_features_final": final_training_metrics.get("n_features"),
+                "n_features_baseline": baseline.get("n_features"),
+                "n_removed_noisy_features": n_removed_features,
+            }
+
+            metrics_df = pd.DataFrame([row])
+
+            # 1) Always emit a compact, human-readable CSV summary in outcomes/
+            try:
+                ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                metrics_report_path = (
+                    f"outcomes/ml_risk_classifier_metrics_"
+                    f"{symbol}_{regime_timeframe}_{ts}.csv"
+                )
+                metrics_df.to_csv(metrics_report_path, index=False)
+                final_training_metrics["metrics_report_path"] = metrics_report_path
+            except Exception as human_exc:  # pragma: no cover - defensive
+                tprint_warning(
+                    f"Failed to write human-readable risk classifier metrics report (non-fatal): {human_exc}"
+                )
+
+            # 2) Optionally save the same summary via artifact router for programmatic use
+            try:
+                metrics_artifact_name = f"ml_risk_classifier_metrics_{regime_timeframe}"
+                metrics_artifact_path = self._save_artifact(
+                    data=metrics_df,
+                    artifact_name=metrics_artifact_name,
+                    artifact_type="data",
+                    data_category="analysis",
+                    metadata={
+                        "symbol": symbol,
+                        "exchange": exchange,
+                        "timeframe": regime_timeframe,
+                        "n_regimes": n_regimes,
+                        "n_features_final": final_training_metrics.get("n_features", len(feature_cols)),
+                        "n_features_baseline": baseline.get("n_features"),
+                        "has_baseline_classifier": "baseline_classifier" in final_training_metrics,
+                        "has_noise_diagnostics": "noise_feature_diagnostics" in final_training_metrics,
+                    },
+                )
+                final_training_metrics["metrics_artifact_path"] = metrics_artifact_path
+            except Exception as metrics_save_exc:  # pragma: no cover - defensive
+                tprint_warning(
+                    f"Failed to save compact risk classifier metrics artifact (non-fatal): {metrics_save_exc}"
+                )
+
+        except Exception as outer_metrics_exc:  # pragma: no cover - defensive
+            tprint_warning(
+                f"Risk classifier metrics persistence encountered a non-fatal error: {outer_metrics_exc}"
+            )
+
+        full_probs = np.full((len(risk_df), n_regimes), np.nan)
+        full_probs[valid_mask] = final_regime_probs
+
+        return final_model, full_probs, final_training_metrics
+
     def _calculate_iqr_winsorization_percentiles(
         self, data: pd.Series
     ) -> Tuple[float, float]:
@@ -5658,6 +7421,588 @@ class MLBreakoutBounceRegimeStep(BaseStep):
         meta_labels = meta_df["label"].astype(int)
         meta_labels = meta_labels.reindex(labels.index).dropna().astype(int)
         return meta_labels
+
+    def _train_breakout_classifier(
+        self,
+        feat_df: pd.DataFrame,
+        labels: pd.Series,
+        config: Dict[str, Any],
+        split_config: Optional[TemporalSplitConfig] = None,
+        optimal_cpus: int = -1,
+    ) -> Tuple[Any, Dict[str, Any], np.ndarray, np.ndarray]:
+        import xgboost as xgb
+
+        # Base feature matrix and labels (chronologically ordered)
+        X_raw = feat_df.astype(np.float32)
+        y = labels.loc[X_raw.index].astype(int)
+
+        if y.nunique() < 2:
+            raise ValueError("Not enough classes for breakout/bounce classifier")
+
+        # ------------------------------------------------------------------
+        # Temporal train / validation / test split using split_config
+        # ------------------------------------------------------------------
+        if split_config is not None:
+            # Use temporal split config for proper train/val/test separation
+            train_mask = (X_raw.index >= split_config.training.start) & \
+                         (X_raw.index <= split_config.training.effective_end)
+            val_mask = (X_raw.index >= split_config.validation.start) & \
+                       (X_raw.index <= split_config.validation.effective_end)
+            test_mask = (X_raw.index >= split_config.test.start) & \
+                        (X_raw.index <= split_config.test.effective_end)
+
+            X_train_raw = X_raw.loc[train_mask]
+            y_train = y.loc[train_mask]
+            X_val_raw = X_raw.loc[val_mask]
+            y_val = y.loc[val_mask]
+            X_test_raw = X_raw.loc[test_mask]
+            y_test = y.loc[test_mask]
+
+            tprint_info(
+                f"📊 Temporal splits: train={len(X_train_raw)}, val={len(X_val_raw)}, test={len(X_test_raw)}"
+            )
+        else:
+            # Fallback to percentage-based split if no split_config provided
+            tprint_warning("No split_config provided, using percentage-based split (legacy fallback)")
+            n_samples = len(X_raw)
+            train_frac = float(config.get("breakout_train_fraction", 0.7))
+            val_frac = float(config.get("breakout_val_fraction", 0.15))
+
+            train_frac = float(np.clip(train_frac, 0.5, 0.9))
+            val_frac = float(np.clip(val_frac, 0.05, 0.4))
+            if train_frac + val_frac >= 0.95:
+                val_frac = max(0.05, 0.95 - train_frac)
+
+            train_end = int(n_samples * train_frac)
+            val_end = int(n_samples * (train_frac + val_frac))
+
+            if train_end <= 0 or val_end <= train_end or val_end >= n_samples:
+                split_idx = int(n_samples * 0.8)
+                train_idx = np.arange(0, split_idx)
+                val_idx = np.arange(split_idx, n_samples)
+                test_idx = np.array([], dtype=int)
+            else:
+                train_idx = np.arange(0, train_end)
+                val_idx = np.arange(train_end, val_end)
+                test_idx = np.arange(val_end, n_samples)
+
+            X_train_raw = X_raw.iloc[train_idx]
+            y_train = y.iloc[train_idx]
+            X_val_raw = X_raw.iloc[val_idx]
+            y_val = y.iloc[val_idx]
+            X_test_raw = X_raw.iloc[test_idx] if len(test_idx) > 0 else pd.DataFrame()
+            y_test = y.iloc[test_idx] if len(test_idx) > 0 else pd.Series()
+
+        # ------------------------------------------------------------------
+        # Feature normalization (optional, since features are pre-normalized)
+        # Apply minimal scaling if features are already rolling-normalized
+        # ------------------------------------------------------------------
+        skip_normalization = bool(config.get("breakout_skip_normalization", False))
+
+        if skip_normalization:
+            # Features are already rolling-normalized, skip additional normalization
+            X_train = X_train_raw
+            X_val = X_val_raw
+            X_full = X_raw
+            X_test = X_test_raw if X_test_raw is not None and not X_test_raw.empty else None
+            tprint_info("⏩ Skipping additional normalization (features pre-normalized with rolling window)")
+        else:
+            # Apply ScalingNormalizer (legacy behavior)
+            scaling_strategy = str(config.get("breakout_scaling_strategy", "winsorized_zscore"))
+            normalizer_config = {
+                "default_strategy": scaling_strategy,
+                "auto_select": False,
+                "handle_outliers": True,
+                "use_vectorbt": False,
+            }
+
+            scaler = ScalingNormalizer(normalizer_config)
+            X_train = scaler.fit_transform(X_train_raw)
+            X_val = scaler.transform(X_val_raw)
+            X_full = scaler.transform(X_raw)
+            X_test = scaler.transform(X_test_raw) if X_test_raw is not None and not X_test_raw.empty else None
+
+        # ------------------------------------------------------------------
+        # Monotone constraints and XGBoost configuration
+        # ------------------------------------------------------------------
+        constraint_map = {
+            "approach_velocity": 1,
+            "bollinger_squeeze": -1,
+            "test_count": 1,
+            "age_log_hours": -1,
+            "rejection_wick_ratio": -1,
+            "volume_at_impact": 1,
+        }
+
+        feature_names = list(X_full.columns)
+        constraints = [int(constraint_map.get(name, 0)) for name in feature_names]
+        monotone_constraints_param = "(" + ",".join(str(c) for c in constraints) + ")"
+
+        n_jobs = int(optimal_cpus) if isinstance(optimal_cpus, (int, np.integer)) and optimal_cpus > 0 else -1
+
+        xgb_params: Dict[str, Any] = {
+            "booster": "gbtree",
+            "objective": "multi:softprob",
+            "num_class": 4,
+            "tree_method": "hist",
+            "n_jobs": n_jobs,
+            "max_depth": 4,
+            "min_child_weight": 50,
+            "learning_rate": 0.03,
+            "n_estimators": 2000,
+            "subsample": 0.65,
+            "colsample_bytree": 0.70,
+            "gamma": 1.5,
+            "reg_alpha": 1.0,
+            "reg_lambda": 1.0,
+            "monotone_constraints": monotone_constraints_param,
+        }
+
+        # ------------------------------------------------------------------
+        # Optional hierarchical HPO targeting macro F1 over 4 classes
+        # ------------------------------------------------------------------
+        best_params: Dict[str, Any] = dict(xgb_params)
+
+        enable_hpo = bool(config.get("breakout_enable_hpo", False) or config.get("enable_hpo", False))
+        if enable_hpo:
+            try:
+                hpo_param_groups = [
+                    create_param_group(
+                        name="structure",
+                        params={
+                            "max_depth": {"type": "int", "low": 3, "high": 8},
+                            "min_child_weight": {"type": "int", "low": 5, "high": 80},
+                            "n_estimators": {"type": "int", "low": 300, "high": 1600},
+                        },
+                        priority=1,
+                        description="Tree depth, leaf size, and capacity",
+                    ),
+                    create_param_group(
+                        name="learning",
+                        params={
+                            "learning_rate": {"type": "float", "low": 0.01, "high": 0.20},
+                        },
+                        priority=2,
+                        depends_on=["structure"],
+                        description="Learning rate",
+                    ),
+                    create_param_group(
+                        name="regularization",
+                        params={
+                            "gamma": {"type": "float", "low": 0.0, "high": 7.0},
+                            "reg_alpha": {"type": "float", "low": 1e-6, "high": 20.0, "log": True},
+                            "reg_lambda": {"type": "float", "low": 0.05, "high": 20.0},
+                        },
+                        priority=3,
+                        depends_on=["structure"],
+                        description="Regularization strength",
+                    ),
+                    create_param_group(
+                        name="sampling",
+                        params={
+                            "subsample": {"type": "float", "low": 0.6, "high": 0.95},
+                            "colsample_bytree": {"type": "float", "low": 0.6, "high": 0.95},
+                        },
+                        priority=4,
+                        depends_on=["regularization"],
+                        description="Row/feature subsampling ratios",
+                    ),
+                ]
+
+                base_model_for_hpo = xgb.XGBClassifier(**best_params)
+
+                hpo_cv_folds = int(config.get("breakout_hpo_cv_folds", 3))
+                hpo_rounds = int(config.get("breakout_hpo_rounds", 1))
+                hpo_final_trials = int(config.get("breakout_hpo_final_trials", 20))
+                hpo_enable_final = bool(config.get("breakout_hpo_enable_final_refinement", False))
+
+                scoring_metric = "f1_macro"
+
+                def macro_f1_objective(
+                    params: Dict[str, Any],
+                    X_train: np.ndarray,
+                    y_train: np.ndarray,
+                    X_val: Optional[np.ndarray] = None,
+                    y_val: Optional[np.ndarray] = None,
+                    model: Optional[Any] = None,
+                    cv_folds: int = 3,
+                    scoring_metric: str = "f1_macro",
+                    **kwargs: Any,
+                ) -> float:
+                    try:
+                        if X_val is None or y_val is None:
+                            return float("-inf")
+
+                        base_model = model if model is not None else xgb.XGBClassifier(**best_params)
+                        base_model.set_params(**params)
+                        base_model.fit(
+                            X_train,
+                            y_train,
+                            eval_set=[(X_val, y_val)],
+                            verbose=False,
+                        )
+
+                        val_pred_local = base_model.predict(X_val)
+                        report_local = classification_report(
+                            y_val,
+                            val_pred_local,
+                            output_dict=True,
+                            zero_division=0,
+                        )
+                        if "macro avg" in report_local:
+                            return float(report_local["macro avg"].get("f1-score", 0.0))
+                        return 0.0
+                    except Exception as obj_exc:
+                        tprint_warning(
+                            f"Breakout HPO macro-F1 objective failed (non-fatal): {obj_exc}"
+                        )
+                        return float("-inf")
+
+                optimizer = HierarchicalParameterOptimizer(
+                    param_groups=hpo_param_groups,
+                    objective_func=macro_f1_objective,
+                    cv_folds=hpo_cv_folds,
+                    scoring_metric=scoring_metric,
+                    direction="maximize",
+                    n_rounds=hpo_rounds,
+                    enable_final_refinement=hpo_enable_final,
+                    final_refinement_trials=hpo_final_trials,
+                    cache_dir=None,
+                    random_state=42,
+                    verbose=bool(config.get("breakout_hpo_verbose", False)),
+                    use_custom_balanced_score=False,
+                )
+
+                X_train_np = X_train.values if hasattr(X_train, "values") else X_train
+                y_train_np = (
+                    y_train.to_numpy() if hasattr(y_train, "to_numpy") else np.asarray(y_train)
+                )
+                X_val_np = X_val.values if hasattr(X_val, "values") else X_val
+                y_val_np = y_val.to_numpy() if hasattr(y_val, "to_numpy") else np.asarray(y_val)
+
+                hpo_result = optimizer.optimize(
+                    X_train=X_train_np,
+                    y_train=y_train_np,
+                    X_val=X_val_np,
+                    y_val=y_val_np,
+                    model=base_model_for_hpo,
+                    initial_params=best_params,
+                )
+
+                if hpo_result is not None and getattr(hpo_result, "best_params", None):
+                    best_params.update(hpo_result.best_params)
+            except Exception as hpo_exc:
+                tprint_warning(
+                    f"Breakout/bounce classifier HPO failed; proceeding with default params: {hpo_exc}"
+                )
+
+        class_weight_cfg = config.get("breakout_class_weight")
+        if isinstance(class_weight_cfg, dict) and class_weight_cfg:
+            class_weight_map = {int(k): float(v) for k, v in class_weight_cfg.items()}
+        else:
+            try:
+                class_counts = pd.Series(y_train).value_counts()
+                n_classes = len(class_counts)
+                total = float(len(y_train)) if len(y_train) > 0 else 1.0
+                class_weight_map = {
+                    int(cls): (total / (n_classes * float(cnt)))
+                    for cls, cnt in class_counts.items()
+                    if cnt > 0
+                }
+            except Exception:
+                class_weight_map = {0: 2.0, 1: 5.0, 2: 5.0, 3: 1.0}
+
+        weights = compute_sample_weight(
+            class_weight=class_weight_map,
+            y=y_train,
+        )
+
+        model = xgb.XGBClassifier(**best_params)
+        model.fit(
+            X_train,
+            y_train,
+            sample_weight=weights,
+            eval_set=[(X_val, y_val)],
+            verbose=False,
+        )
+
+        # ------------------------------------------------------------------
+        # Validation metrics + temperature scaling (calibration)
+        # ------------------------------------------------------------------
+        val_probs = model.predict_proba(X_val)
+        val_pred = np.argmax(val_probs, axis=1)
+
+        metrics: Dict[str, Any] = {}
+        enable_temp = bool(config.get("breakout_enable_temperature_scaling", True))
+        temperature: Optional[float] = None
+
+        try:
+            metrics["val_log_loss_uncalibrated"] = self._safe_log_loss(
+                y_val,
+                val_probs,
+                labels=[0, 1, 2, 3],
+            )
+        except Exception:
+            metrics["val_log_loss_uncalibrated"] = float("nan")
+
+        if enable_temp and len(X_val) > 0:
+            try:
+                temperature, val_probs_cal = self._fit_temperature_scaling(val_probs, y_val)
+                if np.isfinite(temperature) and temperature > 0.0:
+                    val_probs = val_probs_cal
+                    val_pred = np.argmax(val_probs, axis=1)
+                    metrics["temperature"] = float(temperature)
+                else:
+                    temperature = None
+            except Exception:
+                temperature = None
+
+        try:
+            metrics["val_log_loss"] = self._safe_log_loss(
+                y_val,
+                val_probs,
+                labels=[0, 1, 2, 3],
+            )
+        except Exception:
+            metrics["val_log_loss"] = float("nan")
+
+        if enable_temp and temperature is not None:
+            try:
+                metrics["val_log_loss_calibrated"] = self._safe_log_loss(
+                    y_val,
+                    val_probs,
+                    labels=[0, 1, 2, 3],
+                )
+            except Exception:
+                metrics["val_log_loss_calibrated"] = float("nan")
+
+        try:
+            val_report = classification_report(y_val, val_pred, output_dict=True)
+            metrics["classification_report"] = val_report
+            if "1" in val_report:
+                metrics["precision_breakout"] = float(val_report["1"].get("precision", 0.0))
+            if "macro avg" in val_report:
+                macro_avg = val_report["macro avg"]
+                metrics["precision_macro"] = float(macro_avg.get("precision", 0.0))
+                metrics["recall_macro"] = float(macro_avg.get("recall", 0.0))
+                metrics["f1_macro"] = float(macro_avg.get("f1-score", 0.0))
+            if "weighted avg" in val_report:
+                weighted_avg = val_report["weighted avg"]
+                metrics["f1_weighted"] = float(weighted_avg.get("f1-score", 0.0))
+        except Exception:
+            metrics["classification_report"] = {}
+
+        try:
+            metrics["val_auc_macro_ovr"] = float(
+                roc_auc_score(y_val, val_probs, multi_class="ovr", average="macro")
+            )
+        except Exception:
+            metrics["val_auc_macro_ovr"] = float("nan")
+
+        # ------------------------------------------------------------------
+        # Test / out-of-sample metrics on the final holdout segment
+        # ------------------------------------------------------------------
+        if X_test is not None and X_test.shape[0] > 0:
+            try:
+                test_probs = model.predict_proba(X_test)
+                if enable_temp and temperature is not None:
+                    try:
+                        test_probs = self._apply_temperature(test_probs, temperature)
+                    except Exception:
+                        pass
+                test_pred = np.argmax(test_probs, axis=1)
+
+                try:
+                    metrics["test_log_loss"] = self._safe_log_loss(
+                        y_test,
+                        test_probs,
+                        labels=[0, 1, 2, 3],
+                    )
+                except Exception:
+                    metrics["test_log_loss"] = float("nan")
+
+                try:
+                    test_report = classification_report(y_test, test_pred, output_dict=True)
+                    if "macro avg" in test_report:
+                        macro_avg_test = test_report["macro avg"]
+                        metrics["test_f1_macro"] = float(macro_avg_test.get("f1-score", 0.0))
+                    if "weighted avg" in test_report:
+                        weighted_avg_test = test_report["weighted avg"]
+                        metrics["test_f1_weighted"] = float(weighted_avg_test.get("f1-score", 0.0))
+                except Exception:
+                    metrics.setdefault("test_f1_macro", float("nan"))
+                    metrics.setdefault("test_f1_weighted", float("nan"))
+
+                try:
+                    metrics["test_auc_macro_ovr"] = float(
+                        roc_auc_score(y_test, test_probs, multi_class="ovr", average="macro")
+                    )
+                except Exception:
+                    metrics["test_auc_macro_ovr"] = float("nan")
+            except Exception:
+                metrics.setdefault("test_log_loss", float("nan"))
+                metrics.setdefault("test_f1_macro", float("nan"))
+                metrics.setdefault("test_f1_weighted", float("nan"))
+                metrics.setdefault("test_auc_macro_ovr", float("nan"))
+
+        # Simple generalization diagnostics (validation vs test)
+        if "val_log_loss" in metrics and "test_log_loss" in metrics:
+            try:
+                metrics["generalization_gap_log_loss"] = float(
+                    metrics["test_log_loss"] - metrics["val_log_loss"]
+                )
+            except Exception:
+                metrics["generalization_gap_log_loss"] = float("nan")
+
+        if "f1_macro" in metrics and "test_f1_macro" in metrics:
+            try:
+                metrics["generalization_gap_f1_macro"] = float(
+                    metrics["test_f1_macro"] - metrics["f1_macro"]
+                )
+            except Exception:
+                metrics["generalization_gap_f1_macro"] = float("nan")
+
+        # ------------------------------------------------------------------
+        # Optional multi-fold walk-forward validation for robustness
+        # ------------------------------------------------------------------
+        if bool(config.get("breakout_enable_walkforward_validation", False)):
+            try:
+                wf_config = RegimeValidationConfig(
+                    n_outer_folds=int(config.get("breakout_wf_n_folds", 5)),
+                    n_inner_folds=int(config.get("breakout_wf_inner_folds", 3)),
+                    embargo_pct=float(config.get("breakout_wf_embargo_pct", 0.05)),
+                    min_train_samples=int(config.get("breakout_wf_min_train_samples", 100)),
+                    min_val_samples=int(config.get("breakout_wf_min_val_samples", 30)),
+                    min_regime_samples=int(config.get("breakout_wf_min_regime_samples", 10)),
+                    test_size=float(config.get("breakout_wf_test_size", 0.3)),
+                    gap_size=int(config.get("breakout_wf_gap_size", 1)),
+                )
+                wf_validator = RegimeWalkForwardValidator(wf_config)
+
+                X_np = X_full.to_numpy()
+                y_np = y.to_numpy()
+
+                fold_results: List[Dict[str, float]] = []
+                fold_idx = 0
+
+                for train_idx_f, val_idx_f in wf_validator.outer_cv.split(X_np):
+                    fold_idx += 1
+
+                    embargo_size = int(len(val_idx_f) * wf_config.embargo_pct)
+                    if embargo_size > 0:
+                        val_idx_f = val_idx_f[embargo_size:]
+                    if len(val_idx_f) < wf_config.min_val_samples:
+                        continue
+
+                    X_train_f = X_np[train_idx_f]
+                    X_val_f = X_np[val_idx_f]
+                    y_train_f = y_np[train_idx_f]
+                    y_val_f = y_np[val_idx_f]
+
+                    if not wf_validator._check_regime_distribution(y_train_f, y_val_f):
+                        continue
+
+                    fold_model = xgb.XGBClassifier(**xgb_params)
+                    fold_weights = compute_sample_weight(
+                        class_weight={0: 2.0, 1: 5.0, 2: 5.0, 3: 1.0},
+                        y=y_train_f,
+                    )
+                    fold_model.fit(
+                        X_train_f,
+                        y_train_f,
+                        sample_weight=fold_weights,
+                        eval_set=[(X_val_f, y_val_f)],
+                        verbose=False,
+                    )
+
+                    y_pred_f = fold_model.predict(X_val_f)
+                    try:
+                        y_proba_f = fold_model.predict_proba(X_val_f)
+                    except Exception:
+                        y_proba_f = None
+
+                    fold_metrics = wf_validator._calculate_fold_metrics(
+                        y_true=y_val_f,
+                        y_pred=y_pred_f,
+                        y_pred_proba=y_proba_f,
+                        fold_idx=fold_idx,
+                    )
+                    fold_results.append(fold_metrics)
+
+                if fold_results:
+                    wf_aggregated = wf_validator._aggregate_fold_metrics(fold_results)
+                    metrics["walkforward_validation"] = wf_aggregated
+            except Exception as wf_exc:
+                metrics["walkforward_validation_error"] = str(wf_exc)
+
+        # ------------------------------------------------------------------
+        # Full-sample probabilities for downstream artifacts
+        # ------------------------------------------------------------------
+        full_probs = model.predict_proba(X_full)
+
+        if enable_temp and temperature is not None:
+            try:
+                full_probs = self._apply_temperature(full_probs, temperature)
+            except Exception:
+                pass
+
+        full_probs = np.asarray(full_probs, dtype=float)
+        n_samples_full = int(X_full.shape[0])
+        n_regimes_expected = int(xgb_params.get("num_class", 4))
+
+        if full_probs.ndim == 1:
+            flat = full_probs.reshape(-1)
+            if n_samples_full > 0 and flat.size >= n_samples_full * n_regimes_expected:
+                flat = flat[: n_samples_full * n_regimes_expected]
+                full_probs = flat.reshape(n_samples_full, n_regimes_expected)
+            elif n_samples_full > 0:
+                full_probs = flat.reshape(n_samples_full, -1)
+                n_regimes_expected = full_probs.shape[1]
+        elif full_probs.ndim == 2:
+            if full_probs.shape[0] == n_samples_full and full_probs.shape[1] == n_regimes_expected:
+                pass
+            elif full_probs.shape[0] == n_regimes_expected and full_probs.shape[1] == n_samples_full:
+                full_probs = full_probs.T
+            elif full_probs.shape[0] == n_samples_full:
+                n_regimes_expected = full_probs.shape[1]
+            elif full_probs.shape[1] == n_samples_full:
+                full_probs = full_probs.T
+                n_regimes_expected = full_probs.shape[1]
+            else:
+                flat = full_probs.reshape(-1)
+                if n_samples_full > 0 and flat.size >= n_samples_full * n_regimes_expected:
+                    flat = flat[: n_samples_full * n_regimes_expected]
+                    full_probs = flat.reshape(n_samples_full, n_regimes_expected)
+                elif n_samples_full > 0:
+                    full_probs = flat.reshape(n_samples_full, -1)
+                    n_regimes_expected = full_probs.shape[1]
+        else:
+            flat = full_probs.reshape(-1)
+            if n_samples_full > 0 and flat.size >= n_samples_full * n_regimes_expected:
+                flat = flat[: n_samples_full * n_regimes_expected]
+                full_probs = flat.reshape(n_samples_full, n_regimes_expected)
+            elif n_samples_full > 0:
+                full_probs = flat.reshape(n_samples_full, -1)
+                n_regimes_expected = full_probs.shape[1]
+
+        full_pred = np.argmax(full_probs, axis=1)
+
+        class_counts = dict(zip(*np.unique(y, return_counts=True)))
+        metrics["class_counts"] = {int(k): int(v) for k, v in class_counts.items()}
+
+        total_samples = int(len(X_full)) if X_full is not None else int(len(y))
+        metrics["n_samples_total"] = total_samples
+        metrics["n_train_samples"] = int(len(X_train))
+        metrics["n_val_samples"] = int(len(X_val))
+        metrics["n_test_samples"] = int(X_test.shape[0] if X_test is not None else 0)
+
+        if enable_temp and temperature is not None:
+            try:
+                setattr(model, "temperature_", float(temperature))
+            except Exception:
+                pass
+
+        return model, metrics, full_probs, full_pred
 
     def _safe_log_loss(
         self,

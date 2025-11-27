@@ -80,6 +80,11 @@ from src.utils.ml_common.optimization.hierarchical_parameter_optimizer import (
     ParameterGroup,
     OptimizationStage,
 )
+from src.utils.ml_common.standardized_xgb_trainer import (
+    StandardizedXGBTrainer,
+    XGBTrainingConfig,
+    XGBTrainingResults,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -443,19 +448,37 @@ class MLMeanReversionRegimeStep(BaseStep):
                 else:
                     y_dir = y_target_all.copy()
 
-                tprint_info(f"  🎓 Training XGBoost student model for {dir_} direction...")
+                tprint_info(f"  🎓 Training XGBoost with OOF predictions for {dir_} direction...")
                 train_start = time.time()
                 try:
-                    model, calibrated_model, student_metrics, raw_scores, calibrated_scores = self._train_xgb_student(
+                    # Use new OOF trainer (no data leakage!)
+                    oof_results = self._train_xgb_oof(
                         X_all,
                         y_dir,
                         config,
-                        split_config=split_config,
-                        y_teacher=y_teacher_binary,
+                        market_data,
+                        direction=dir_
                     )
-                    tprint_info(f"  ✅ XGBoost training complete in {time.time() - train_start:.2f}s")
+                    tprint_info(f"  ✅ XGBoost OOF training complete in {time.time() - train_start:.2f}s")
+
+                    # Extract OOF predictions
+                    oof_predictions = oof_results.oof_predictions
+
+                    # Create student metrics from OOF metadata
+                    student_metrics = {
+                        "oof_windows": len(oof_results.metadata),
+                        "hpo_runs": sum(1 for m in oof_results.metadata if m.get('used_hpo', False)),
+                        "total_oof_predictions": len(oof_predictions),
+                        "prediction_method": "oof",  # IMPORTANT: Mark as OOF
+                    }
+                    if oof_results.metadata:
+                        student_metrics.update({
+                            "first_window": oof_results.metadata[0],
+                            "last_window": oof_results.metadata[-1],
+                        })
+
                 except Exception as train_exc:
-                    tprint_error(f"  ❌ XGBoost training failed after {time.time() - train_start:.2f}s: {train_exc}")
+                    tprint_error(f"  ❌ XGBoost OOF training failed after {time.time() - train_start:.2f}s: {train_exc}")
                     raise
 
                 # Attach outputs to main frame for this direction
@@ -467,9 +490,20 @@ class MLMeanReversionRegimeStep(BaseStep):
                 output_df["mr_teacher_score"] = teacher_score
                 for c in student_df.columns:
                     output_df[c] = student_df[c]
-                output_df.loc[X_all.index, "mr_raw_score"] = raw_scores
-                output_df.loc[X_all.index, "mr_probability"] = calibrated_scores
-                output_df.loc[X_all.index, "mr_direction_target"] = y_dir.values
+
+                # Join OOF predictions (only OOF, no training set!)
+                # This will have NaN for non-OOF periods
+                output_df = output_df.join(oof_predictions.rename(columns={'probability': 'mr_probability'}), how='left')
+
+                # Mark which samples are OOF vs. filled
+                output_df['mr_is_oof'] = ~output_df['mr_probability'].isna()
+
+                # Add target for OOF samples only
+                output_df.loc[oof_predictions.index, "mr_direction_target"] = y_dir.loc[oof_predictions.index].values
+
+                # For backward compatibility, also add mr_raw_score (same as mr_probability for OOF)
+                output_df['mr_raw_score'] = output_df['mr_probability']
+
                 output_df["mr_atr_14"] = atr_14
                 output_df["mr_atr_300"] = atr_300
                 output_df["mr_dynamic_tpsl_multiplier"] = dynamic_tp_sl_multiplier
@@ -511,8 +545,8 @@ class MLMeanReversionRegimeStep(BaseStep):
                         X_all=X_all,
                         y_target=y_dir,
                         y_teacher=y_teacher_binary,
-                        model=model,
-                        calibrated_model=calibrated_model,
+                        model=oof_results.models[-1] if oof_results.models else None,  # Use last trained model
+                        calibrated_model=None,  # OOF trainer doesn't use separate calibrated model
                         teacher_metrics=teacher_metrics,
                         student_metrics=student_metrics,
                         fwd_metrics=fwd_metrics,
@@ -521,6 +555,7 @@ class MLMeanReversionRegimeStep(BaseStep):
                         exchange=exchange,
                         timeframe=regime_timeframe,
                         market_source=str(market_source),
+                        oof_metadata=oof_results.metadata,  # Pass OOF metadata
                     )
 
                     all_artifacts[dir_] = artifacts
@@ -1507,6 +1542,91 @@ class MLMeanReversionRegimeStep(BaseStep):
 
         return model, calibrated_model, metrics, raw_proba_full, calibrated_proba_full
 
+    def _train_xgb_oof(
+        self,
+        X: pd.DataFrame,
+        y: pd.Series,
+        config: Dict[str, Any],
+        market_data: pd.DataFrame,
+        direction: str = "long"
+    ) -> XGBTrainingResults:
+        """Train XGBoost with OOF predictions using standardized trainer.
+
+        This replaces the old _train_xgb_student method with proper OOF predictions.
+        No data leakage - only returns predictions on data the model hasn't seen.
+
+        Args:
+            X: Feature dataframe with DatetimeIndex
+            y: Target series with DatetimeIndex
+            config: Configuration dictionary
+            market_data: Original market data for date range
+            direction: Trading direction (long/short)
+
+        Returns:
+            XGBTrainingResults with OOF predictions, models, and metadata
+        """
+        # Create model ID
+        symbol = config.get("symbol", "ETHUSDT")
+        exchange = config.get("exchange", "binance")
+        timeframe = config.get("regime_timeframe", config.get("timeframe", "15m"))
+        model_id = f"{symbol}_{exchange}_{timeframe}_mean_reversion_{direction}"
+
+        tprint_info(f"🚀 Using StandardizedXGBTrainer for OOF predictions (model_id={model_id})")
+
+        # Create custom config
+        training_config = XGBTrainingConfig(
+            model_id=model_id,
+            retrain_interval_days=10,  # OOF window every 10 days of historical data
+            hpo_interval_days=30,  # HPO every 30 days of historical data
+            burnin_pct=1/12,  # 3 months
+            min_samples_for_training=1000,
+
+            # XGBoost parameters
+            tree_method="hist",
+            n_estimators=int(config.get("mr_n_estimators", 500)),
+            learning_rate=float(config.get("mr_learning_rate", 0.03)),
+            max_depth=int(config.get("mr_max_depth", 5)),
+            min_child_weight=float(config.get("mr_min_child_weight", 5.0)),
+            subsample=float(config.get("mr_subsample", 0.8)),
+            colsample_bytree=float(config.get("mr_colsample_bytree", 0.8)),
+            gamma=float(config.get("mr_gamma", 0.05)),
+            reg_lambda=float(config.get("mr_reg_lambda", 0.5)),
+            early_stopping_rounds=20,
+
+            # HPO config
+            hpo_n_estimators=300,
+            hpo_n_trials=50,
+            enable_warm_start=True,
+
+            # Sparse matrices
+            enable_sparse_matrices=True,
+            sparsity_threshold=0.5,
+        )
+
+        # Create trainer
+        trainer = StandardizedXGBTrainer(
+            model_id=model_id,
+            config=training_config
+        )
+
+        # Train and get OOF predictions
+        results = trainer.train_and_predict(
+            X=X,
+            y=y,
+            data_start=market_data.index.min(),
+            data_end=market_data.index.max(),
+            eval_metric="logloss",
+            verbose=True
+        )
+
+        tprint_success(
+            f"✅ OOF training complete: {len(results.oof_predictions)} predictions, "
+            f"{len(results.models)} models, "
+            f"{sum(1 for m in results.metadata if m.get('used_hpo', False))} HPO runs"
+        )
+
+        return results
+
     def _run_walkforward_validation(
         self,
         X: np.ndarray,
@@ -1705,8 +1825,8 @@ class MLMeanReversionRegimeStep(BaseStep):
         X_all: pd.DataFrame,
         y_target: pd.Series,
         y_teacher: pd.Series,
-        model: xgb.XGBClassifier,
-        calibrated_model: CalibratedClassifierCV,
+        model: Optional[xgb.XGBClassifier],
+        calibrated_model: Optional[CalibratedClassifierCV],
         teacher_metrics: Dict[str, Any],
         student_metrics: Dict[str, Any],
         fwd_metrics: Dict[Any, Any],
@@ -1715,6 +1835,7 @@ class MLMeanReversionRegimeStep(BaseStep):
         exchange: str,
         timeframe: str,
         market_source: str,
+        oof_metadata: Optional[List[Dict[str, Any]]] = None,
     ) -> Tuple[Dict[str, str], Dict[str, str]]:
         """Save artifacts and generate comprehensive reports with improved diagnostics and burn-in metadata."""
         artifacts: Dict[str, str] = {}
@@ -1748,6 +1869,11 @@ class MLMeanReversionRegimeStep(BaseStep):
                 "validation_end": str(split_config.validation.effective_end),
                 "test_start": str(split_config.test.start),
                 "test_end": str(split_config.test.effective_end),
+                "prediction_method": "oof" if oof_metadata else "traditional",
+                "oof_windows": len(oof_metadata) if oof_metadata else 0,
+                "hpo_runs": sum(1 for m in oof_metadata if m.get('used_hpo', False)) if oof_metadata else 0,
+                "retrain_interval_days": 10,
+                "hpo_interval_days": 30,
             }
             if split_config.burnin is not None:
                 metadata["burnin_start"] = str(split_config.burnin.start)

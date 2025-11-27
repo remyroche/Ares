@@ -106,6 +106,11 @@ class XGBTrainingConfig:
     reg_lambda: float = 1.5
     early_stopping_rounds: int = 20
 
+    # Task type and objective
+    task_type: str = "classification"  # "classification" or "regression"
+    objective: str = "binary:logistic"  # "binary:logistic", "multi:softprob", or "reg:squarederror"
+    num_class: Optional[int] = None  # Required for multi:softprob, ignored for binary/regression
+
     # HPO configuration
     hpo_n_estimators: int = 300  # Use 300 trees during HPO
     hpo_n_trials: int = 50  # Number of HPO trials
@@ -456,8 +461,12 @@ class StandardizedXGBTrainer:
             'gamma': self.config.gamma,
             'lambda': self.config.reg_lambda,
             'eval_metric': eval_metric,
-            'objective': 'binary:logistic',
+            'objective': self.config.objective,
         }
+
+        # Add num_class for multiclass classification
+        if self.config.num_class is not None:
+            params['num_class'] = self.config.num_class
 
         evals = [(dtrain, 'train'), (dval, 'val')]
 
@@ -575,8 +584,12 @@ class StandardizedXGBTrainer:
                 'gamma': float(params.get("gamma", 5.0)),
                 'lambda': float(params.get("lambda", 1.5)),
                 'eval_metric': eval_metric,
-                'objective': 'binary:logistic',
+                'objective': self.config.objective,
             }
+
+            # Add num_class for multiclass classification
+            if self.config.num_class is not None:
+                xgb_params['num_class'] = self.config.num_class
 
             try:
                 model = xgb.train(
@@ -647,8 +660,12 @@ class StandardizedXGBTrainer:
             'gamma': float(best_params.get("gamma", 5.0)),
             'lambda': float(best_params.get("lambda", 1.5)),
             'eval_metric': eval_metric,
-            'objective': 'binary:logistic',
+            'objective': self.config.objective,
         }
+
+        # Add num_class for multiclass classification
+        if self.config.num_class is not None:
+            final_params['num_class'] = self.config.num_class
 
         evals = [(dtrain, 'train'), (dval, 'val')]
 
@@ -709,10 +726,24 @@ class StandardizedXGBTrainer:
         # Generate predictions
         predictions = model.predict(dpred)
 
-        # Return as DataFrame
-        result = pd.DataFrame({
-            'probability': predictions
-        }, index=pred_data.index)
+        # Handle different prediction types
+        if self.config.task_type == "regression":
+            # Regression: return single prediction value
+            result = pd.DataFrame({
+                'prediction': predictions
+            }, index=pred_data.index)
+        elif predictions.ndim == 2:
+            # Multi-class classification: return all class probabilities
+            result = pd.DataFrame(
+                predictions,
+                index=pred_data.index,
+                columns=[f'prob_class_{i}' for i in range(predictions.shape[1])]
+            )
+        else:
+            # Binary classification: return single probability
+            result = pd.DataFrame({
+                'probability': predictions
+            }, index=pred_data.index)
 
         return result
 

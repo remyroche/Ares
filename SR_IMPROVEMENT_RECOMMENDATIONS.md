@@ -191,25 +191,20 @@ def _add_sr_strength_features(self, df: pd.DataFrame) -> pd.DataFrame:
     out["sr_volume_score"] = np.clip(out["sr_volume_depth_ratio"] / 2.0, 0, 1)
     out["sr_prominence_score"] = np.clip(out["sr_prominence"] / 2.0, 0, 1)
 
-    # 4. Combined strength score (existing logic, now explicit)
+    # 4. Combined strength score (gradual, weighted average of components)
+    # Weights adjusted based on empirical break vs bounce analysis
+    # Touch count: Most predictive (higher touches = more reliable level)
+    # Volume: Strong institutional confirmation
+    # Prominence: Visual significance
     out["sr_combined_strength"] = (
         0.40 * out["sr_touch_score"] +
         0.35 * out["sr_volume_score"] +
         0.25 * out["sr_prominence_score"]
     )
 
-    # 5. Confidence flags
-    out["sr_high_confidence"] = (
-        (out["sr_touch_count"] >= 3) &
-        (out["sr_volume_depth_ratio"] >= 1.0) &
-        (out["sr_prominence"] >= 0.7)
-    ).astype(int)
-
-    out["sr_low_confidence"] = (
-        (out["sr_touch_count"] < 2) |
-        (out["sr_volume_depth_ratio"] < 0.6) |
-        (out["sr_prominence"] < 0.3)
-    ).astype(int)
+    # Note: Binary flags (sr_high_confidence, sr_low_confidence) have been replaced
+    # with the gradual sr_combined_strength metric above (range 0-1).
+    # Use quantile analysis from the breakout/bounce report to adjust weights.
 
     return out
 ```

@@ -2841,14 +2841,96 @@ class UnifiedModelsTrainingStep(BaseStep):
                     training_data = training_data.drop(columns=excluded_ohlcv_features)
                     tprint_success(f"✅ Removed {len(excluded_ohlcv_features)} raw OHLCV features. New shape: {training_data.shape}")
             
+            # ========================================================================
+            # CRITICAL: RESTORE PROPER DATETIMEINDEX FOR SPECIALIST ALIGNMENT
+            # ========================================================================
+            # The training_data loaded from HDF5 artifacts may have an integer-based
+            # index (epoch microseconds from 1970) instead of a proper DatetimeIndex.
+            # This causes specialist features to become all-NaN after alignment.
+            # Fix: Assign the DatetimeIndex from labeled_data to training_data.
+            tprint_info("=" * 80)
+            tprint_info("🕐 RESTORING PROPER DATETIMEINDEX FOR SPECIALIST ALIGNMENT")
+            tprint_info("=" * 80)
+
+            # Check current index type
+            tprint_info(f"📋 Current training_data index type: {type(training_data.index).__name__}")
+            tprint_info(f"   Index range: {training_data.index.min()} → {training_data.index.max()}")
+
+            # Load labeled_data to get the canonical DatetimeIndex
+            labeled_data_for_index = None
+            symbol_cfg = config.get('symbol', 'ETHUSDT')
+            timeframe_cfg = config.get('timeframe', '15m')
+
+            for artifact_name in [
+                f"labeled_data_{symbol_cfg}_{timeframe_cfg}",
+                'labeled_data',
+            ]:
+                try:
+                    labeled_data_for_index = self._get_artifact(artifact_name, 'data')
+                    if labeled_data_for_index is not None and isinstance(labeled_data_for_index, pd.DataFrame):
+                        tprint_info(f"✅ Loaded labeled_data from '{artifact_name}' for index remapping")
+                        break
+                except Exception as e:
+                    self.logger.debug(f"Could not load '{artifact_name}': {e}")
+                    continue
+
+            # Attempt to remap index if labeled_data is available
+            if labeled_data_for_index is not None and isinstance(labeled_data_for_index, pd.DataFrame):
+                labeled_idx = labeled_data_for_index.index
+
+                tprint_info(f"📋 labeled_data index type: {type(labeled_idx).__name__}")
+                tprint_info(f"   Index length: {len(labeled_idx)}")
+                tprint_info(f"   Index range: {labeled_idx.min()} → {labeled_idx.max()}")
+
+                # Check if labeled_data has a proper DatetimeIndex
+                if isinstance(labeled_idx, pd.DatetimeIndex):
+                    # Check if lengths match (same number of samples)
+                    if len(training_data) == len(labeled_idx):
+                        tprint_info("✅ Length match detected - assigning DatetimeIndex to training_data")
+
+                        # Assign the DatetimeIndex from labeled_data to training_data
+                        training_data.index = labeled_idx
+
+                        # Also update target indices if they exist
+                        if analyst_targets is not None:
+                            analyst_targets.index = labeled_idx
+                            tprint_info("✅ Updated analyst_targets index")
+                        if tactician_targets is not None:
+                            tactician_targets.index = labeled_idx
+                            tprint_info("✅ Updated tactician_targets index")
+
+                        tprint_success(f"✅ Successfully remapped training_data index to DatetimeIndex")
+                        tprint_info(f"   New index type: {type(training_data.index).__name__}")
+                        tprint_info(f"   New index range: {training_data.index.min()} → {training_data.index.max()}")
+                        tprint_info(f"   🎯 Training index will now align properly with specialist blocks!")
+                    else:
+                        tprint_warning(
+                            f"⚠️ Length mismatch: training_data={len(training_data)}, labeled_data={len(labeled_idx)}\n"
+                            f"   Cannot safely remap index by position. Specialist alignment may fail."
+                        )
+                else:
+                    tprint_warning(
+                        f"⚠️ labeled_data index is not DatetimeIndex (type={type(labeled_idx).__name__})\n"
+                        f"   Cannot remap training_data index. Specialist alignment may fail."
+                    )
+            else:
+                tprint_warning(
+                    "⚠️ Could not load labeled_data for index remapping.\n"
+                    "   Specialist alignment may fail if training_data index is not a DatetimeIndex."
+                )
+
+            tprint_info("=" * 80)
+
             # Log summary
             tprint_info("📊 Training Data Summary:")
             tprint_info(f"   Features: {training_data.shape[0]} samples × {training_data.shape[1]} features")
+            tprint_info(f"   Index type: {type(training_data.index).__name__}")
+            tprint_info(f"   Index range: {training_data.index.min()} → {training_data.index.max()}")
             if analyst_targets is not None:
                 tprint_info(f"   Analyst Targets: {len(analyst_targets)} samples")
             if tactician_targets is not None:
                 tprint_info(f"   Tactician Targets: {len(tactician_targets)} samples")
-            
+
             return training_data, analyst_targets, tactician_targets
             
         except Exception as e:

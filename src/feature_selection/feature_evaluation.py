@@ -95,6 +95,14 @@ class FeatureCandidate:
     regime_stability: float = 0.0
     regime_scores: Dict[str, float] = field(default_factory=dict)
 
+    # Stage 3.5 - Redundancy Analysis
+    cluster_id: int = -1  # Hierarchical cluster assignment
+    cluster_size: int = 1  # Number of features in same cluster
+    uniqueness_score: float = 1.0  # 1.0 = unique, 0.0 = highly redundant
+    max_corr_with_better: float = 0.0  # Max correlation with higher-scored features
+    redundancy_penalty: float = 0.0  # Penalty applied to final score
+    cluster_representative: bool = False  # Is this the best feature in its cluster?
+
     # Stage 4 - Final Score
     final_score: float = 0.0
 
@@ -124,6 +132,12 @@ class EvaluationConfig:
     # Stage 3 - Robustness
     n_cv_splits: int = 5
     embargo_bars: int = 1
+
+    # Stage 3.5 - Redundancy Analysis
+    redundancy_corr_threshold: float = 0.70  # Features with corr > threshold are redundant
+    redundancy_cluster_threshold: float = 0.50  # Distance threshold for hierarchical clustering
+    redundancy_penalty_weight: float = 0.15  # Weight for redundancy penalty in final score
+    enable_redundancy_analysis: bool = True  # Enable/disable redundancy analysis
 
     # Stage 4 - Final Selection
     top_k_per_feature: int = 3
@@ -1014,6 +1028,15 @@ class FeatureSelectionPipeline:
             self.logger.info("No candidates survived Stage 3")
             return []
 
+        # Stage 3.5: Redundancy Analysis (on subsampled data for speed)
+        if self.config.enable_redundancy_analysis:
+            start = time.time()
+            candidates = self._stage3_5_redundancy_analysis(
+                subsampled_data, candidates
+            )
+            self.stage_times['stage3_5'] = time.time() - start
+            self.candidates_per_stage['after_stage3_5'] = len(candidates)
+
         # Stage 4: Final Selection
         start = time.time()
         candidates = self._stage4_final_selection_features(candidates, return_all_scores)
@@ -1391,6 +1414,205 @@ class FeatureSelectionPipeline:
 
         return candidates
 
+    def _stage3_5_redundancy_analysis(
+        self,
+        data: pd.DataFrame,
+        candidates: List[FeatureCandidate]
+    ) -> List[FeatureCandidate]:
+        """
+        Stage 3.5: Redundancy Analysis using correlation-based hierarchical clustering.
+
+        This stage:
+        1. Computes pairwise correlations between features (cheap proxy for MI)
+        2. Uses hierarchical clustering to group similar features
+        3. Assigns uniqueness scores and redundancy penalties
+        4. Marks cluster representatives (best feature in each cluster)
+
+        The goal is to avoid selecting features that provide the same information.
+
+        Returns:
+            Candidates with redundancy metrics populated
+        """
+        if len(candidates) < 2:
+            return candidates
+
+        # Get feature names and their current scores for ranking
+        feature_names = [c.feature_name for c in candidates]
+        feature_to_candidate = {c.feature_name: c for c in candidates}
+
+        # Filter to features that exist in data
+        valid_features = [f for f in feature_names if f in data.columns and f != '_target_']
+        if len(valid_features) < 2:
+            return candidates
+
+        # Compute correlation matrix (cheap proxy for mutual information)
+        feature_data = data[valid_features].copy()
+
+        # Fill NaN with median for correlation computation
+        for col in feature_data.columns:
+            feature_data[col] = feature_data[col].fillna(feature_data[col].median())
+
+        try:
+            corr_matrix = feature_data.corr(method='pearson').abs()
+        except Exception as e:
+            self.logger.warning(f"Failed to compute correlation matrix: {e}")
+            return candidates
+
+        # Replace NaN correlations with 0
+        corr_matrix = corr_matrix.fillna(0)
+
+        # Convert correlation to distance (1 - |corr|) for clustering
+        distance_matrix = 1 - corr_matrix
+
+        # Perform hierarchical clustering using linkage
+        try:
+            from scipy.cluster.hierarchy import linkage, fcluster
+            from scipy.spatial.distance import squareform
+
+            # Convert to condensed distance matrix
+            condensed_dist = squareform(distance_matrix.values, checks=False)
+
+            # Handle any NaN/inf values
+            condensed_dist = np.nan_to_num(condensed_dist, nan=1.0, posinf=1.0, neginf=0.0)
+
+            # Perform hierarchical clustering (average linkage)
+            linkage_matrix = linkage(condensed_dist, method='average')
+
+            # Cut the dendrogram at threshold to form clusters
+            cluster_labels = fcluster(
+                linkage_matrix,
+                t=self.config.redundancy_cluster_threshold,
+                criterion='distance'
+            )
+
+            # Map cluster IDs to features
+            feature_clusters = {f: int(c) for f, c in zip(valid_features, cluster_labels)}
+
+        except ImportError:
+            self.logger.warning("scipy not available, using simple correlation-based clustering")
+            # Fallback: simple correlation-based grouping
+            feature_clusters = self._simple_correlation_clustering(
+                corr_matrix, valid_features
+            )
+        except Exception as e:
+            self.logger.warning(f"Hierarchical clustering failed: {e}, using fallback")
+            feature_clusters = self._simple_correlation_clustering(
+                corr_matrix, valid_features
+            )
+
+        # Count cluster sizes
+        cluster_sizes = {}
+        for f, c in feature_clusters.items():
+            cluster_sizes[c] = cluster_sizes.get(c, 0) + 1
+
+        # Sort candidates by a preliminary score (ic_tstat + cv_score) for ranking
+        def prelim_score(c: FeatureCandidate) -> float:
+            return c.ic_tstat * 0.5 + c.cv_score * 0.5
+
+        sorted_candidates = sorted(candidates, key=prelim_score, reverse=True)
+
+        # Track which clusters have a representative selected
+        cluster_representatives = {}  # cluster_id -> best feature name
+
+        # Process candidates in order of score
+        for rank, candidate in enumerate(sorted_candidates):
+            fname = candidate.feature_name
+            if fname not in feature_clusters:
+                # Feature not in correlation analysis
+                candidate.cluster_id = -1
+                candidate.cluster_size = 1
+                candidate.uniqueness_score = 1.0
+                candidate.max_corr_with_better = 0.0
+                candidate.redundancy_penalty = 0.0
+                candidate.cluster_representative = True
+                continue
+
+            cluster_id = feature_clusters[fname]
+            candidate.cluster_id = cluster_id
+            candidate.cluster_size = cluster_sizes.get(cluster_id, 1)
+
+            # Check if this is the first (best) feature in its cluster
+            if cluster_id not in cluster_representatives:
+                cluster_representatives[cluster_id] = fname
+                candidate.cluster_representative = True
+                candidate.uniqueness_score = 1.0
+                candidate.redundancy_penalty = 0.0
+            else:
+                candidate.cluster_representative = False
+
+                # Compute max correlation with better-scored features
+                max_corr = 0.0
+                for better_candidate in sorted_candidates[:rank]:
+                    better_fname = better_candidate.feature_name
+                    if better_fname in corr_matrix.columns and fname in corr_matrix.index:
+                        corr_val = abs(corr_matrix.loc[fname, better_fname])
+                        if not np.isnan(corr_val):
+                            max_corr = max(max_corr, corr_val)
+
+                candidate.max_corr_with_better = max_corr
+
+                # Uniqueness score: 1 - max_corr (higher = more unique)
+                candidate.uniqueness_score = 1.0 - max_corr
+
+                # Redundancy penalty: scaled by correlation strength
+                if max_corr > self.config.redundancy_corr_threshold:
+                    # Strong penalty for highly correlated features
+                    candidate.redundancy_penalty = (
+                        (max_corr - self.config.redundancy_corr_threshold) /
+                        (1.0 - self.config.redundancy_corr_threshold)
+                    ) * self.config.redundancy_penalty_weight
+                else:
+                    candidate.redundancy_penalty = 0.0
+
+        # Log cluster statistics
+        n_clusters = len(set(feature_clusters.values()))
+        avg_cluster_size = np.mean(list(cluster_sizes.values())) if cluster_sizes else 1.0
+        n_representatives = sum(1 for c in candidates if c.cluster_representative)
+
+        self.logger.info(
+            f"Stage 3.5: Redundancy analysis - {len(valid_features)} features, "
+            f"{n_clusters} clusters, avg size {avg_cluster_size:.1f}, "
+            f"{n_representatives} unique representatives"
+        )
+
+        return candidates
+
+    def _simple_correlation_clustering(
+        self,
+        corr_matrix: pd.DataFrame,
+        feature_names: List[str]
+    ) -> Dict[str, int]:
+        """
+        Simple fallback clustering using correlation threshold.
+
+        Groups features that are highly correlated (above threshold).
+        """
+        threshold = self.config.redundancy_corr_threshold
+        n_features = len(feature_names)
+
+        # Initialize each feature in its own cluster
+        clusters = {f: i for i, f in enumerate(feature_names)}
+        next_cluster = n_features
+
+        # Merge highly correlated features
+        for i, f1 in enumerate(feature_names):
+            for j, f2 in enumerate(feature_names[i+1:], i+1):
+                if f1 in corr_matrix.index and f2 in corr_matrix.columns:
+                    corr = abs(corr_matrix.loc[f1, f2])
+                    if not np.isnan(corr) and corr > threshold:
+                        # Merge clusters
+                        c1, c2 = clusters[f1], clusters[f2]
+                        if c1 != c2:
+                            # Reassign all features in c2's cluster to c1's cluster
+                            for f in feature_names:
+                                if clusters[f] == c2:
+                                    clusters[f] = c1
+
+        # Renumber clusters to be contiguous
+        unique_clusters = sorted(set(clusters.values()))
+        cluster_map = {old: new for new, old in enumerate(unique_clusters)}
+        return {f: cluster_map[c] for f, c in clusters.items()}
+
     def _stage4_final_selection_features(
         self, candidates: List[FeatureCandidate], return_all: bool = False
     ) -> List[FeatureCandidate]:
@@ -1403,6 +1625,7 @@ class FeatureSelectionPipeline:
         - CV score (30%)
         - Regime stability (15%)
         - MI proxy (5%)
+        - Minus redundancy penalty (from Stage 3.5)
 
         Returns top K candidates sorted by final score (or all if return_all=True).
 
@@ -1426,6 +1649,7 @@ class FeatureSelectionPipeline:
         cv_scores = [c.cv_score for c in candidates]
         regime_stabilities = [c.regime_stability for c in candidates]
         mi_proxies = [c.mi_proxy for c in candidates]
+        uniqueness_scores = [c.uniqueness_score for c in candidates]
 
         # Normalize
         norm_ic_tstat = normalize(ic_tstats)
@@ -1433,17 +1657,26 @@ class FeatureSelectionPipeline:
         norm_cv_score = normalize(cv_scores)
         norm_regime_stability = normalize(regime_stabilities)
         norm_mi_proxy = normalize(mi_proxies)
+        norm_uniqueness = normalize(uniqueness_scores)
 
-        # Compute final scores
+        # Compute final scores with redundancy penalty
         weights = self.config.weights
         for i, candidate in enumerate(candidates):
-            candidate.final_score = (
+            # Base score from predictive power and robustness
+            base_score = (
                 weights['ic_tstat'] * norm_ic_tstat[i] +
                 weights['ic_autocorr'] * norm_ic_autocorr[i] +
                 weights['cv_score'] * norm_cv_score[i] +
                 weights['regime_stability'] * norm_regime_stability[i] +
                 weights['mi_proxy'] * norm_mi_proxy[i]
             )
+
+            # Apply redundancy penalty (subtract from score)
+            # Also add small bonus for uniqueness
+            uniqueness_bonus = self.config.redundancy_penalty_weight * 0.5 * norm_uniqueness[i]
+            redundancy_penalty = candidate.redundancy_penalty
+
+            candidate.final_score = max(0, base_score + uniqueness_bonus - redundancy_penalty)
             candidate.survived_stage = 4
 
         # Sort by final score (descending)
@@ -1615,6 +1848,264 @@ class FeatureSelectionPipeline:
             'total_time': sum(self.stage_times.values()),
             'cache_size': len(self._rolling_cache)
         }
+
+    def export_feature_metrics_csv(
+        self,
+        candidates: List[FeatureCandidate],
+        output_dir: str = "outcomes",
+        prefix: str = "feature_selection"
+    ) -> str:
+        """
+        Export per-feature metrics to CSV with datetime in filename.
+
+        Args:
+            candidates: List of FeatureCandidate objects with computed metrics
+            output_dir: Directory to save CSV (default: "outcomes")
+            prefix: Filename prefix (default: "feature_selection")
+
+        Returns:
+            Path to the generated CSV file
+        """
+        import os
+        from datetime import datetime
+
+        # Create output directory if it doesn't exist
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Generate filename with datetime
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"{prefix}_metrics_{timestamp}.csv"
+        filepath = os.path.join(output_dir, filename)
+
+        # Build rows with all per-feature metrics
+        rows = []
+        for c in candidates:
+            row = {
+                # Feature identification
+                'feature_name': c.feature_name,
+                'survived_stage': c.survived_stage,
+                'final_score': round(c.final_score, 6),
+
+                # Stage 1 - Fast Screening
+                'variance': round(c.variance, 6),
+                'price_corr': round(c.price_corr, 6),
+                'future_corr': round(c.future_corr, 6),
+
+                # Stage 2 - Predictive Power
+                'ic_mean': round(c.ic_mean, 6),
+                'ic_std': round(c.ic_std, 6),
+                'ic_tstat': round(c.ic_tstat, 6),
+                'ic_autocorr': round(c.ic_autocorr, 6),
+                'mi_proxy': round(c.mi_proxy, 6),
+
+                # Stage 3 - Robustness
+                'cv_score': round(c.cv_score, 6),
+                'regime_stability': round(c.regime_stability, 6),
+
+                # Stage 3.5 - Redundancy Analysis
+                'cluster_id': c.cluster_id,
+                'cluster_size': c.cluster_size,
+                'uniqueness_score': round(c.uniqueness_score, 6),
+                'max_corr_with_better': round(c.max_corr_with_better, 6),
+                'redundancy_penalty': round(c.redundancy_penalty, 6),
+                'cluster_representative': c.cluster_representative,
+            }
+
+            # Add regime-specific scores
+            if hasattr(c, 'regime_scores') and c.regime_scores:
+                for regime_name, regime_score in c.regime_scores.items():
+                    row[f'regime_{regime_name}'] = round(regime_score, 6)
+
+            rows.append(row)
+
+        # Create DataFrame and save to CSV
+        df = pd.DataFrame(rows)
+
+        # Sort by final_score descending
+        df = df.sort_values('final_score', ascending=False)
+
+        # Add rank column
+        df.insert(0, 'rank', range(1, len(df) + 1))
+
+        # Save to CSV
+        df.to_csv(filepath, index=False)
+
+        self.logger.info(f"📊 Exported {len(candidates)} feature metrics to: {filepath}")
+
+        return filepath
+
+    def evaluate_features_with_report(
+        self,
+        features: pd.DataFrame,
+        target: pd.Series,
+        target_column_name: str = 'close',
+        return_all_scores: bool = False,
+        output_dir: str = "outcomes",
+        prefix: str = "feature_selection"
+    ) -> Tuple[List[FeatureCandidate], str]:
+        """
+        Evaluate features and automatically generate CSV report.
+
+        This is a convenience method that combines evaluate_features()
+        with export_feature_metrics_csv().
+
+        Args:
+            features: DataFrame of features
+            target: Target variable
+            target_column_name: Name of price column for regime analysis
+            return_all_scores: If True, return all candidates
+            output_dir: Directory to save CSV report
+            prefix: Filename prefix for CSV
+
+        Returns:
+            Tuple of (candidates, csv_filepath)
+        """
+        # Run the 4-stage evaluation
+        candidates = self.evaluate_features(
+            features=features,
+            target=target,
+            target_column_name=target_column_name,
+            return_all_scores=True  # Get all candidates for reporting
+        )
+
+        # Export to CSV
+        csv_path = self.export_feature_metrics_csv(
+            candidates=candidates,
+            output_dir=output_dir,
+            prefix=prefix
+        )
+
+        # Return only top-k if requested
+        if not return_all_scores:
+            candidates = candidates[:self.config.top_k_per_feature]
+
+        return candidates, csv_path
+
+    def generate_summary_report(
+        self,
+        candidates: List[FeatureCandidate],
+        output_dir: str = "outcomes",
+        prefix: str = "feature_selection"
+    ) -> str:
+        """
+        Generate a human-readable summary report of feature selection.
+
+        Args:
+            candidates: List of FeatureCandidate objects
+            output_dir: Directory to save report
+            prefix: Filename prefix
+
+        Returns:
+            Path to the generated report file
+        """
+        import os
+        from datetime import datetime
+
+        os.makedirs(output_dir, exist_ok=True)
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"{prefix}_summary_{timestamp}.txt"
+        filepath = os.path.join(output_dir, filename)
+
+        lines = [
+            "=" * 80,
+            "FEATURE SELECTION PIPELINE - SUMMARY REPORT",
+            f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            "=" * 80,
+            "",
+            "PIPELINE PERFORMANCE:",
+            "-" * 40,
+        ]
+
+        # Performance summary
+        perf = self.get_performance_summary()
+        lines.append(f"  Total Time: {perf.get('total_time', 0):.2f}s")
+        for stage, time_s in perf.get('stage_times', {}).items():
+            lines.append(f"    {stage}: {time_s:.2f}s")
+
+        lines.append("")
+        lines.append("CANDIDATES PER STAGE:")
+        lines.append("-" * 40)
+        for stage, count in perf.get('candidates_per_stage', {}).items():
+            lines.append(f"  {stage}: {count}")
+
+        lines.append("")
+        lines.append("TOP 20 FEATURES BY FINAL SCORE:")
+        lines.append("-" * 40)
+        lines.append(f"{'Rank':<6}{'Feature':<50}{'Score':<10}{'IC_tstat':<10}{'CV':<10}")
+        lines.append("-" * 86)
+
+        for i, c in enumerate(candidates[:20], 1):
+            name = c.feature_name[:48] if len(c.feature_name) > 48 else c.feature_name
+            lines.append(
+                f"{i:<6}{name:<50}{c.final_score:.4f}    {c.ic_tstat:.4f}    {c.cv_score:.4f}"
+            )
+
+        lines.append("")
+        lines.append("STAGE SURVIVAL DISTRIBUTION:")
+        lines.append("-" * 40)
+        stage_counts = {}
+        for c in candidates:
+            stage = c.survived_stage
+            stage_counts[stage] = stage_counts.get(stage, 0) + 1
+        for stage in sorted(stage_counts.keys()):
+            lines.append(f"  Stage {stage}: {stage_counts[stage]} candidates")
+
+        lines.append("")
+        lines.append("REDUNDANCY ANALYSIS:")
+        lines.append("-" * 40)
+
+        # Compute cluster statistics
+        cluster_ids = [c.cluster_id for c in candidates if c.cluster_id >= 0]
+        if cluster_ids:
+            n_clusters = len(set(cluster_ids))
+            cluster_sizes = {}
+            for c in candidates:
+                if c.cluster_id >= 0:
+                    cluster_sizes[c.cluster_id] = cluster_sizes.get(c.cluster_id, 0) + 1
+
+            n_representatives = sum(1 for c in candidates if c.cluster_representative)
+            n_penalized = sum(1 for c in candidates if c.redundancy_penalty > 0)
+            avg_uniqueness = np.mean([c.uniqueness_score for c in candidates])
+            max_cluster_size = max(cluster_sizes.values()) if cluster_sizes else 0
+
+            lines.append(f"  Total Clusters: {n_clusters}")
+            lines.append(f"  Cluster Representatives: {n_representatives}")
+            lines.append(f"  Features with Redundancy Penalty: {n_penalized}")
+            lines.append(f"  Average Uniqueness Score: {avg_uniqueness:.4f}")
+            lines.append(f"  Largest Cluster Size: {max_cluster_size}")
+
+            # Show cluster distribution
+            lines.append("")
+            lines.append("  Cluster Size Distribution:")
+            size_dist = {}
+            for size in cluster_sizes.values():
+                size_dist[size] = size_dist.get(size, 0) + 1
+            for size in sorted(size_dist.keys()):
+                lines.append(f"    Size {size}: {size_dist[size]} clusters")
+
+            # Show top penalized features
+            penalized = [(c.feature_name, c.redundancy_penalty, c.max_corr_with_better)
+                        for c in candidates if c.redundancy_penalty > 0]
+            if penalized:
+                penalized.sort(key=lambda x: x[1], reverse=True)
+                lines.append("")
+                lines.append("  Top 5 Most Penalized Features:")
+                for name, penalty, max_corr in penalized[:5]:
+                    short_name = name[:40] if len(name) > 40 else name
+                    lines.append(f"    {short_name}: penalty={penalty:.4f}, max_corr={max_corr:.4f}")
+        else:
+            lines.append("  Redundancy analysis not performed or no clusters found")
+
+        lines.append("")
+        lines.append("=" * 80)
+
+        with open(filepath, 'w') as f:
+            f.write('\n'.join(lines))
+
+        self.logger.info(f"📋 Generated summary report: {filepath}")
+
+        return filepath
 
 
 def create_feature_selection_pipeline(

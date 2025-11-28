@@ -36,6 +36,21 @@ try:
     SHAP_AVAILABLE = True
 except ImportError:
     SHAP_AVAILABLE = False
+
+# Import FeatureSelectionPipeline for 4-stage feature evaluation (replaces cheap pruning + MI + stability)
+try:
+    from src.feature_selection.feature_evaluation import (
+        FeatureSelectionPipeline,
+        EvaluationConfig,
+        create_feature_selection_pipeline
+    )
+    FEATURE_SELECTION_PIPELINE_AVAILABLE = True
+except ImportError:
+    FEATURE_SELECTION_PIPELINE_AVAILABLE = False
+    FeatureSelectionPipeline = None
+    EvaluationConfig = None
+    create_feature_selection_pipeline = None
+
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint
 
@@ -157,7 +172,17 @@ class FinalFeatureSelectionComponent:
         feature_names: Optional[List[str]] = None
     ) -> List[str]:
         """
-        Select final features based on the configuration.
+        Select final features using a clean 2-stage pipeline:
+        
+        Stage 1: FeatureSelectionPipeline (4-stage evaluation)
+            - Subsampling, fast screening, predictive power, robustness
+            - Outputs candidates for LGBM/SHAP
+        
+        Stage 2: LGBM/SHAP final ranking
+            - Tree-based importance for final feature ranking
+            - Select top N features
+        
+        NO intermediary steps between stages.
 
         Args:
             X: Feature matrix
@@ -192,251 +217,157 @@ class FinalFeatureSelectionComponent:
                 self.logger.warning(f"⚠️ Input X contains {X_nan_count} NaN values. Filling with median...")
                 X = X.fillna(X.median())
             
-            self.logger.info(f"✅ Input validation passed: X shape={X.shape}, y shape={y.shape}, no NaN values")
+            self.logger.info(f"✅ Input validation passed: X shape={X.shape}, y shape={y.shape}")
             
-            # Apply feature combination with duplicate detection
-            self.logger.info("Applying feature combination with duplicate detection...")
+            # Remove exact duplicate columns
             X = self._combine_features(X)
             feature_names = list(X.columns)
-
-            # CRITICAL: Re-check for target columns after feature combination
-            self.logger.info("🔍 Re-checking for target column leakage after feature combination...")
+            
+            # Re-check for target columns after combination
             feature_names, X = self._filter_target_columns(feature_names, X)
             if len(feature_names) == 0:
-                self.logger.error("❌ No features left after filtering target columns post-combination!")
+                self.logger.error("❌ No features left after filtering target columns!")
                 return []
 
-            # CRITICAL FIX: Remove constant/low-variance features BEFORE correlation
-            self.logger.info("🔍 Filtering low-variance features...")
-            variance_threshold = 0.01
-            variances = X.var()
-            high_variance_features = variances[variances > variance_threshold].index.tolist()
-            removed_count = len(feature_names) - len(high_variance_features)
-            if removed_count > 0:
-                self.logger.info(f"📊 Removed {removed_count} low-variance features (variance < {variance_threshold})")
-                X = X[high_variance_features]
-                feature_names = high_variance_features
-            
-            # Pre-LGBM multi-criteria clustering stage (MI proxy + stability + redundancy)
-            pre_lgbm_target = getattr(self.config, "pre_lgbm_target_features", None)
-            if pre_lgbm_target is not None and pre_lgbm_target > 0 and len(feature_names) > pre_lgbm_target:
-                self.logger.info(
-                    f"📊 Pre-LGBM multi-criteria filtering before LGBM/SHAP "
-                    f"({len(feature_names)} -> {pre_lgbm_target})"
-                )
-                X, feature_names = self._pre_lgbm_multi_criteria_filter(
-                    cast(pd.DataFrame, X), y, list(feature_names)
-                )
-            
-            # Ensure we don't select more features than available
             max_features = min(self.config.max_features, len(feature_names))
-            min_features = min(self.config.min_features, max_features)
-            
             if max_features <= 0:
                 self.logger.warning("No features to select")
                 return []
             
-            # Select features based on method
-            if self.config.selection_method == "mutual_info":
-                selector = SelectKBest(
-                    score_func=mutual_info_regression,
-                    k=max_features
-                )
-            elif self.config.selection_method == "f_regression":
-                selector = SelectKBest(
-                    score_func=f_regression,
-                    k=max_features
-                )
+            self.logger.info("=" * 80)
+            self.logger.info("🚀 STAGE 1: FeatureSelectionPipeline (4-stage evaluation)")
+            self.logger.info("=" * 80)
+            
+            # ================================================================
+            # STAGE 1: FeatureSelectionPipeline - NO pre-selection
+            # ================================================================
+            # Target: reduce to 2-3x final count for LGBM/SHAP
+            pre_lgbm_target = max(max_features * 3, 100)  # At least 100 or 3x target
+            pre_lgbm_target = min(pre_lgbm_target, len(feature_names))  # Don't exceed available
+            
+            self.logger.info(f"📊 Input features: {len(feature_names)}")
+            self.logger.info(f"📊 Target for Stage 1: {pre_lgbm_target} features")
+            self.logger.info(f"📊 Final target: {max_features} features")
+            
+            # Use FeatureSelectionPipeline for complete 4-stage evaluation
+            if FEATURE_SELECTION_PIPELINE_AVAILABLE and FeatureSelectionPipeline is not None:
+                try:
+                    pipeline_config = EvaluationConfig(
+                        subsample_ratio=0.20,
+                        n_chunks=6,
+                        variance_quantile_threshold=0.20,
+                        price_corr_quantile_threshold=0.20,
+                        future_corr_quantile_threshold=0.20,
+                        ic_tstat_threshold=1.5,
+                        ic_autocorr_threshold=0.0,
+                        mi_proxy_threshold=0.02,
+                        n_cv_splits=5,
+                        embargo_bars=1,
+                        top_k_per_feature=pre_lgbm_target,
+                        use_parallel=False,
+                        n_workers=1,
+                        weights={
+                            'ic_tstat': 0.30,
+                            'ic_autocorr': 0.20,
+                            'cv_score': 0.30,
+                            'regime_stability': 0.15,
+                            'mi_proxy': 0.05
+                        }
+                    )
+                    
+                    pipeline = FeatureSelectionPipeline(pipeline_config)
+                    
+                    # Run 4-stage evaluation with full scores for reporting
+                    all_candidates = pipeline.evaluate_features(
+                        features=X[feature_names],
+                        target=y,
+                        target_column_name='close' if 'close' in X.columns else 'target',
+                        return_all_scores=True  # Get all for CSV export
+                    )
+                    
+                    # Export per-feature metrics to CSV
+                    if all_candidates and len(all_candidates) > 0:
+                        try:
+                            csv_path = pipeline.export_feature_metrics_csv(
+                                candidates=all_candidates,
+                                output_dir="outcomes",
+                                prefix="final_feature_selection"
+                            )
+                            self.logger.info(f"📊 Exported feature metrics to: {csv_path}")
+                        except Exception as csv_exc:
+                            self.logger.warning(f"⚠️ Failed to export CSV: {csv_exc}")
+                    
+                    # Select top-k candidates
+                    candidates = all_candidates[:pre_lgbm_target] if all_candidates else []
+                    
+                    if candidates and len(candidates) > 0:
+                        stage1_features = [c.feature_name for c in candidates]
+                        stage1_features = [f for f in stage1_features if f in X.columns]
+                        
+                        # Store pipeline scores for reporting
+                        self.feature_scores = {c.feature_name: c.final_score for c in candidates}
+                        
+                        self.logger.info(f"✅ Stage 1 complete: {len(feature_names)} → {len(stage1_features)} features")
+                    else:
+                        self.logger.warning("⚠️ Pipeline returned no candidates, using all features")
+                        stage1_features = feature_names
+                        
+                except Exception as e:
+                    self.logger.warning(f"⚠️ FeatureSelectionPipeline failed: {e}")
+                    self.logger.info("📊 Falling back to legacy pre-LGBM filtering")
+                    X_filtered, stage1_features = self._pre_lgbm_multi_criteria_filter_legacy(
+                        X, y, feature_names
+                    )
             else:
-                # Default to mutual info
-                selector = SelectKBest(
-                    score_func=mutual_info_regression,
-                    k=max_features
-                )
-            
-            # Fit selector
-            X_selected = selector.fit_transform(X, y)
-            selected_indices = selector.get_support(indices=True)
-            selected_features = [feature_names[i] for i in selected_indices]
-            
-            # Store feature scores
-            if hasattr(selector, 'scores_'):
-                self.feature_scores = {
-                    feature_names[i]: selector.scores_[i]
-                    for i in selected_indices
-                }
-            
-            # Apply tree-based selection if enabled to rank ALL features
-            if self.config.use_tree_based:
-                # This will rank ALL features by permutation/SHAP importance
-                # No diversity filtering happens here - just ranking
-                ranked_features = self._apply_tree_based_selection(
+                self.logger.info("📊 FeatureSelectionPipeline not available, using legacy filtering")
+                X_filtered, stage1_features = self._pre_lgbm_multi_criteria_filter_legacy(
                     X, y, feature_names
                 )
-            else:
-                # Fallback: use feature_names as-is
-                ranked_features = feature_names
             
-            # CRITICAL FIX: Restructure flow - hierarchical is PRE-FILTER, SHAP is FINAL selection
-            # Step 1: Pre-filter with hierarchical clustering (reduce to 2-3x target)
-            prefilter_count = min(max_features * 3, len(feature_names))
-            self.logger.info(f"📊 Step 1: Pre-filtering with hierarchical clustering ({len(feature_names)} -> {prefilter_count})")
+            if len(stage1_features) == 0:
+                self.logger.error("❌ No features after Stage 1!")
+                return []
             
-            if len(feature_names) > prefilter_count:
-                prefiltered_features = self._reduce_redundancy_hierarchical(
-                    X,
-                    feature_names,
-                    target_count=prefilter_count,
-                    correlation_threshold=0.75
+            self.logger.info("=" * 80)
+            self.logger.info("🚀 STAGE 2: LGBM/SHAP Final Ranking")
+            self.logger.info("=" * 80)
+            
+            # ================================================================
+            # STAGE 2: LGBM/SHAP - NO intermediary steps
+            # ================================================================
+            X_stage2 = X[stage1_features]
+            
+            self.logger.info(f"📊 Input to LGBM/SHAP: {len(stage1_features)} features")
+            
+            # Apply LGBM/SHAP ranking
+            if self.config.use_tree_based:
+                ranked_features = self._apply_tree_based_selection(
+                    X_stage2, y, stage1_features
                 )
-                X_prefiltered = X[prefiltered_features]
-                self.logger.info(f"✅ Pre-filtered to {len(prefiltered_features)} features")
             else:
-                X_prefiltered = X
-                prefiltered_features = feature_names
-                self.logger.info(f"✅ Skipping pre-filter (already {len(feature_names)} features)")
+                ranked_features = stage1_features
             
-            # Step 2: Apply SHAP/permutation on pre-filtered features
-            self.logger.info(f"📊 Step 2: Applying SHAP/permutation importance on {len(prefiltered_features)} pre-filtered features")
-            ranked_features = self._apply_tree_based_selection(
-                X_prefiltered, y, prefiltered_features
-            )
-            
-            # Step 3: Filter out zero-importance features
+            # Filter zero-importance features (SHAP can produce zeros)
             if self.config.use_permutation_importance and self.all_permutation_importances:
-                self.logger.info(f"📊 Step 3: Filtering zero-importance features")
-                
-                # Sort by importance and filter zeros
                 sorted_features = sorted(
                     self.all_permutation_importances.items(),
                     key=lambda x: x[1],
                     reverse=True
                 )
-                
-                # Filter out zero importance
-                nonzero_features = [(feat, imp) for feat, imp in sorted_features if imp > 0]
-                zero_count = len(sorted_features) - len(nonzero_features)
-                
-                if zero_count > 0:
-                    self.logger.info(f"📊 Filtered {zero_count} features with zero SHAP importance")
-                
-                # Get ranked feature list (non-zero only)
-                ranked_features = [feat for feat, _ in nonzero_features]
-                
-                self.logger.info(f"✅ Final ranking: {len(ranked_features)} features with non-zero importance")
-                self.logger.info(f"Top 5 features: {ranked_features[:5] if len(ranked_features) >= 5 else ranked_features}")
+                nonzero_features = [(f, imp) for f, imp in sorted_features if imp > 0]
+                if nonzero_features:
+                    ranked_features = [f for f, _ in nonzero_features]
+                    self.logger.info(f"📊 Filtered to {len(ranked_features)} features with non-zero SHAP importance")
             
-            # Step 3.5: Apply stability-weighted ranking if enabled
-            stability_weight = getattr(self.config, 'stability_weight', 0.0)
-            if stability_weight > 0 and len(ranked_features) > 0:
-                self.logger.info(f"📊 Step 3.5: Applying stability-weighted ranking (weight={stability_weight})")
-                ranked_features = self._apply_stability_weighted_ranking(
-                    X_prefiltered, y, ranked_features, stability_weight
-                )
-            
-            # Step 3.75: Apply hard stability gating before final top-N selection
-            try:
-                self.logger.info("📊 Step 3.75: Applying hard stability gating before top-N selection")
-
-                # Use temporal stability and MI-stability as pre-filters on the ranked pool
-                stability_analysis = self.analyze_feature_stability(
-                    X_prefiltered, y, ranked_features, n_windows=5
-                )
-                mi_analysis = self.calculate_mi_stability(
-                    X_prefiltered, y, ranked_features, cv_folds=5
-                )
-
-                stable_features = (
-                    stability_analysis.get('stable_features', [])
-                    if isinstance(stability_analysis, dict) else []
-                )
-                mi_stable_features = (
-                    mi_analysis.get('stable_mi_features', [])
-                    if isinstance(mi_analysis, dict) else []
-                )
-                high_mi_features = (
-                    mi_analysis.get('high_mi_features', [])
-                    if isinstance(mi_analysis, dict) else []
-                )
-
-                # Strict intersection: temporally stable, MI-stable, and sufficiently strong MI
-                strict_candidates = [
-                    f for f in ranked_features
-                    if f in stable_features and f in mi_stable_features and f in high_mi_features
-                ]
-
-                # Fallback union: stable by at least one criterion
-                union_candidates = [
-                    f for f in ranked_features
-                    if f in stable_features or f in mi_stable_features
-                ]
-
-                # Require a sufficiently large stable pool so that SHAP/LGBM can still
-                # select down to the requested max_features from a richer candidate set.
-                # For final selection (e.g. 60 features), we want at least 100 stable
-                # candidates before applying any hard gating.
-                min_stable_pool = max(100, max_features)
-
-                # Prefer candidates that can still supply the full stable pool size
-                if strict_candidates and len(strict_candidates) >= min_stable_pool:
-                    self.logger.info(
-                        f"📊 Stability gating: using strict intersection of stability criteria "
-                        f"({len(strict_candidates)} candidates, min_stable_pool={min_stable_pool})"
-                    )
-                    ranked_features = [f for f in ranked_features if f in strict_candidates]
-                elif union_candidates and len(union_candidates) >= min_stable_pool:
-                    self.logger.info(
-                        f"📊 Stability gating: using union of stability criteria "
-                        f"({len(union_candidates)} candidates, min_stable_pool={min_stable_pool})"
-                    )
-                    ranked_features = [f for f in ranked_features if f in union_candidates]
-                else:
-                    self.logger.warning(
-                        "⚠️ Stability gating skipped: not enough stable features to maintain "
-                        f"a pool of at least {min_stable_pool} candidates"
-                    )
-            except Exception as e:
-                self.logger.warning(f"⚠️ Stability gating failed, continuing without hard filter: {e}")
-
-            # Step 3.9: Apply CV-based selection frequency filtering if enabled
-            enable_cv_filter = getattr(self.config, 'enable_cv_frequency_filter', True)
-            min_freq = getattr(self.config, 'min_selection_frequency', 0.1)
-            cv_folds = getattr(self.config, 'cv_frequency_folds', 5)
-
-            if enable_cv_filter and len(ranked_features) > 0:
-                self.logger.info(
-                    f"📊 Step 3.9: Applying CV-based selection frequency filter "
-                    f"(min_frequency={min_freq}, cv_folds={cv_folds})"
-                )
-                ranked_features = self._filter_by_cv_selection_frequency(
-                    X_prefiltered, y, ranked_features, min_frequency=min_freq, cv_folds=cv_folds
-                )
-
-                if len(ranked_features) == 0:
-                    self.logger.error("❌ No features left after CV frequency filtering!")
-                    return []
-
-                self.logger.info(f"✅ After CV frequency filter: {len(ranked_features)} features remaining")
-            else:
-                if not enable_cv_filter:
-                    self.logger.info("⏭️ CV frequency filtering is disabled")
-
-            # Step 4: Select top N features by SHAP importance (or stability-weighted score)
-            expected_count = min(max_features, len(ranked_features))
-            selected_features = ranked_features[:expected_count]
-
-            self.logger.info(f"📊 Step 4: Selected top {len(selected_features)} features by SHAP importance")
+            # Select top N
+            selected_features = ranked_features[:max_features]
             
             self.selected_features = selected_features
-            importance_method = "permutation" if self.config.use_permutation_importance else "Gini"
-            self.logger.info(f"Final selection: {len(selected_features)} features using {importance_method} importance")
-            self.logger.info(f"Selected {len(selected_features)} non-redundant features from {len(feature_names)} total")
+            self.logger.info(f"✅ Stage 2 complete: {len(stage1_features)} → {len(selected_features)} features")
+            self.logger.info(f"✅ Final selection: {len(selected_features)} features")
             
-            # Validate exact count
-            if len(selected_features) == expected_count:
-                self.logger.info(f"✅ Successfully selected exactly {expected_count} features as requested")
-            else:
-                self.logger.error(f"❌ Feature count mismatch: expected {expected_count}, got {len(selected_features)}")
+            if len(selected_features) >= 5:
+                self.logger.info(f"📊 Top 5: {selected_features[:5]}")
             
             return selected_features
             
@@ -802,6 +733,103 @@ class FinalFeatureSelectionComponent:
         y: pd.Series,
         feature_names: List[str],
     ) -> Tuple[pd.DataFrame, List[str]]:
+        """
+        Pre-LGBM feature filtering using 4-stage FeatureSelectionPipeline.
+        
+        This method replaces the previous MI + stability + correlation filtering
+        with a unified 4-stage evaluation pipeline:
+        - Stage 0: Subsampling (20% stratified by regime)
+        - Stage 1: Fast screening (variance, correlation filters)
+        - Stage 2: Predictive power (IC, MI proxy, IC autocorrelation)
+        - Stage 3: Robustness (walk-forward CV, regime stability)
+        - Stage 4: Final weighted scoring
+        
+        LGBM/SHAP selection is NOT replaced - this is pre-filtering only.
+        """
+        try:
+            if not feature_names:
+                return X, feature_names
+            feature_names = list(feature_names)
+            n_features = len(feature_names)
+            pre_lgbm_target = int(getattr(self.config, "pre_lgbm_target_features", 0) or 0)
+            if pre_lgbm_target <= 0 or n_features <= pre_lgbm_target:
+                return X, feature_names
+            
+            self.logger.info(f"📊 Pre-LGBM filtering: {n_features} → {pre_lgbm_target} features using 4-stage pipeline")
+            
+            # Use FeatureSelectionPipeline if available
+            if FEATURE_SELECTION_PIPELINE_AVAILABLE and FeatureSelectionPipeline is not None:
+                try:
+                    # Configure pipeline for pre-LGBM filtering
+                    pipeline_config = EvaluationConfig(
+                        subsample_ratio=0.20,  # 20% subsample for stages 1-2
+                        n_chunks=6,
+                        variance_quantile_threshold=0.20,  # Less aggressive for pre-filtering
+                        price_corr_quantile_threshold=0.20,
+                        future_corr_quantile_threshold=0.20,
+                        ic_tstat_threshold=1.5,  # Moderate IC filtering
+                        ic_autocorr_threshold=0.0,
+                        mi_proxy_threshold=0.02,
+                        n_cv_splits=5,
+                        embargo_bars=1,
+                        top_k_per_feature=pre_lgbm_target,  # Return target number of features
+                        use_parallel=False,
+                        n_workers=1,
+                        weights={
+                            'ic_tstat': 0.30,
+                            'ic_autocorr': 0.20,
+                            'cv_score': 0.30,
+                            'regime_stability': 0.15,
+                            'mi_proxy': 0.05
+                        }
+                    )
+                    
+                    pipeline = FeatureSelectionPipeline(pipeline_config)
+                    
+                    # Subset to only requested features
+                    X_subset = cast(pd.DataFrame, X[feature_names])
+                    
+                    # Evaluate features using the pipeline
+                    candidates = pipeline.evaluate_features(
+                        features=X_subset,
+                        target=y,
+                        target_column_name='close' if 'close' in X_subset.columns else 'target',
+                        return_all_scores=False  # Only return top-k
+                    )
+                    
+                    if candidates and len(candidates) > 0:
+                        selected_features = [c.feature_name for c in candidates]
+                        
+                        # Validate selected features exist in original data
+                        valid_selected = [f for f in selected_features if f in X.columns]
+                        
+                        if len(valid_selected) > 0:
+                            X_selected = X[valid_selected]
+                            self.logger.info(f"  ✅ 4-stage pipeline pre-filtering: {n_features} → {len(valid_selected)} features")
+                            return X_selected, valid_selected
+                        else:
+                            self.logger.warning("  ⚠️ No valid features from pipeline, falling back to legacy")
+                    else:
+                        self.logger.warning("  ⚠️ No candidates from pipeline, falling back to legacy")
+                        
+                except Exception as e:
+                    self.logger.warning(f"  ⚠️ FeatureSelectionPipeline failed: {e}, falling back to legacy")
+            
+            # Fallback to legacy MI + stability + correlation filtering
+            self.logger.info("  📊 Using legacy MI + stability filtering (pipeline unavailable)")
+            return self._pre_lgbm_multi_criteria_filter_legacy(X, y, feature_names)
+            
+        except Exception as e:
+            self.logger.error(f"Error in pre-LGBM multi-criteria filter: {e}")
+            return X, feature_names
+    
+    def _pre_lgbm_multi_criteria_filter_legacy(
+        self,
+        X: pd.DataFrame,
+        y: pd.Series,
+        feature_names: List[str],
+    ) -> Tuple[pd.DataFrame, List[str]]:
+        """Legacy pre-LGBM filtering using MI + stability + correlation (fallback)."""
         try:
             if not feature_names:
                 return X, feature_names
@@ -921,7 +949,7 @@ class FinalFeatureSelectionComponent:
             X_selected = X[selected_pool_features]
             return X_selected, selected_pool_features
         except Exception as e:
-            self.logger.error(f"Error in pre-LGBM multi-criteria filter: {e}")
+            self.logger.error(f"Error in legacy pre-LGBM multi-criteria filter: {e}")
             return X, feature_names
     
     def get_feature_scores(self) -> Dict[str, float]:

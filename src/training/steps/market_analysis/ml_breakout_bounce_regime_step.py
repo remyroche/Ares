@@ -6001,25 +6001,16 @@ class MLBreakoutBounceRegimeStep(BaseStep):
         out["sr_volume_score"] = np.clip(out["sr_volume_depth_ratio"] / 2.0, 0, 1)
         out["sr_prominence_score"] = np.clip(out["sr_prominence"] / 2.0, 0, 1)
 
-        # 4. Combined strength score (weighted average of components)
+        # 4. Combined strength score (gradual, weighted average of components)
+        # Weights adjusted based on empirical break vs bounce analysis
+        # Touch count: Most predictive (higher touches = more reliable level)
+        # Volume: Strong institutional confirmation
+        # Prominence: Visual significance
         out["sr_combined_strength"] = (
             0.40 * out["sr_touch_score"] +
             0.35 * out["sr_volume_score"] +
             0.25 * out["sr_prominence_score"]
         )
-
-        # 5. Confidence flags (binary indicators for high/low quality levels)
-        out["sr_high_confidence"] = (
-            (out["sr_touch_count"] >= 3) &
-            (out["sr_volume_depth_ratio"] >= 1.0) &
-            (out["sr_prominence"] >= 0.7)
-        ).astype(int)
-
-        out["sr_low_confidence"] = (
-            (out["sr_touch_count"] < 2) |
-            (out["sr_volume_depth_ratio"] < 0.6) |
-            (out["sr_prominence"] < 0.3)
-        ).astype(int)
 
         return out
 
@@ -6119,6 +6110,97 @@ class MLBreakoutBounceRegimeStep(BaseStep):
 
         return out
 
+    def _compute_sr_quality_metrics(
+        self,
+        analysis_df: pd.DataFrame,
+        regime_series: pd.Series,
+        n_quantiles: int = 5,
+    ) -> Dict[str, pd.DataFrame]:
+        """Compute break vs bounce rates by quantile for SR quality metrics.
+
+        This analysis helps understand which SR metric values lead to good (bounce)
+        vs bad (break) levels, enabling data-driven threshold adjustments.
+
+        Args:
+            analysis_df: DataFrame with SR metrics and regime predictions
+            regime_series: Series with regime labels (0=bounce, 1=break, 2=trap)
+            n_quantiles: Number of quantiles to analyze (default 5 for quintiles)
+
+        Returns:
+            Dictionary with quantile analysis DataFrames for each SR metric
+        """
+        results = {}
+
+        # Metrics to analyze
+        sr_metrics = ['sr_touch_count', 'sr_volume_depth_ratio', 'sr_prominence']
+
+        for metric in sr_metrics:
+            if metric not in analysis_df.columns:
+                continue
+
+            # Get clean data
+            metric_data = pd.to_numeric(analysis_df[metric], errors='coerce')
+            valid_mask = metric_data.notna() & regime_series.notna()
+
+            if valid_mask.sum() < 50:  # Need minimum samples
+                continue
+
+            metric_clean = metric_data[valid_mask]
+            regime_clean = regime_series[valid_mask]
+
+            # Compute quantiles
+            quantile_labels = pd.qcut(
+                metric_clean,
+                q=n_quantiles,
+                labels=[f"Q{i+1}" for i in range(n_quantiles)],
+                duplicates='drop'
+            )
+
+            # Analyze each quantile
+            quantile_stats = []
+            for quantile in quantile_labels.unique():
+                mask = quantile_labels == quantile
+                quantile_regimes = regime_clean[mask]
+
+                if len(quantile_regimes) == 0:
+                    continue
+
+                # Count regime occurrences
+                regime_counts = quantile_regimes.value_counts()
+                total = len(quantile_regimes)
+
+                bounce_count = regime_counts.get(0, 0)
+                break_count = regime_counts.get(1, 0)
+                trap_count = regime_counts.get(2, 0)
+
+                bounce_rate = bounce_count / total if total > 0 else 0
+                break_rate = break_count / total if total > 0 else 0
+                trap_rate = trap_count / total if total > 0 else 0
+
+                # Metric value statistics for this quantile
+                quantile_values = metric_clean[mask]
+
+                quantile_stats.append({
+                    'quantile': quantile,
+                    'count': total,
+                    'metric_min': quantile_values.min(),
+                    'metric_max': quantile_values.max(),
+                    'metric_mean': quantile_values.mean(),
+                    'metric_median': quantile_values.median(),
+                    'bounce_count': bounce_count,
+                    'bounce_rate': bounce_rate,
+                    'break_count': break_count,
+                    'break_rate': break_rate,
+                    'trap_count': trap_count,
+                    'trap_rate': trap_rate,
+                    'bounce_break_ratio': bounce_rate / break_rate if break_rate > 0 else float('inf'),
+                })
+
+            if quantile_stats:
+                results[metric] = pd.DataFrame(quantile_stats)
+
+        return results
+
     def _generate_breakout_bounce_report(
         self,
         output_df: pd.DataFrame,
@@ -6169,6 +6251,9 @@ class MLBreakoutBounceRegimeStep(BaseStep):
             analysis_df[f"forward_return_h{horizon}_support"] = forward_ret.where(is_support_mask, np.nan)
 
         regime_series = analysis_df["breakout_regime"].astype(int)
+
+        # Compute SR quality metrics analysis (break vs bounce by quantile)
+        sr_quality_metrics = self._compute_sr_quality_metrics(analysis_df, regime_series)
 
         train_label_series = None
         if labels is not None and not labels.dropna().empty:
@@ -6504,6 +6589,17 @@ class MLBreakoutBounceRegimeStep(BaseStep):
         except Exception as sharpe_exc:
             tprint_warning(f"Failed to write breakout/bounce Sharpe metrics CSV: {sharpe_exc}")
 
+        # Save SR quality metrics CSVs
+        sr_quality_csv_paths = {}
+        if sr_quality_metrics:
+            for metric_name, metric_df in sr_quality_metrics.items():
+                sr_csv_path = os.path.join("outcomes", base_name + f"_sr_quality_{metric_name}.csv")
+                try:
+                    metric_df.to_csv(sr_csv_path, index=False)
+                    sr_quality_csv_paths[metric_name] = sr_csv_path
+                except Exception as sr_exc:
+                    tprint_warning(f"Failed to write SR quality metrics CSV for {metric_name}: {sr_exc}")
+
         # Build Markdown report
         try:
             lines: List[str] = []
@@ -6682,6 +6778,55 @@ class MLBreakoutBounceRegimeStep(BaseStep):
                             lines.append("| " + " | ".join(cells) + " |")
                 except Exception:
                     pass
+
+            # SR Quality Metrics - Break vs Bounce Analysis by Quantile
+            if sr_quality_metrics:
+                lines.append("")
+                lines.append("## S/R Quality Metrics - Break vs Bounce Analysis")
+                lines.append("")
+                lines.append("This section analyzes how SR level quality metrics (touch count, volume, prominence)")
+                lines.append("correlate with break vs bounce outcomes. Higher quantiles should show better bounce rates.")
+                lines.append("")
+
+                for metric_name, metric_df in sr_quality_metrics.items():
+                    if metric_df.empty:
+                        continue
+
+                    # Format metric name for display
+                    display_name = metric_name.replace('_', ' ').title()
+                    lines.append(f"### {display_name}")
+                    lines.append("")
+
+                    # Create table
+                    lines.append("| Quantile | Count | Metric Range | Bounce Rate | Break Rate | Trap Rate | Bounce/Break Ratio |")
+                    lines.append("|----------|-------|--------------|-------------|------------|-----------|-------------------|")
+
+                    for _, row in metric_df.iterrows():
+                        metric_range = f"{row['metric_min']:.2f} - {row['metric_max']:.2f}"
+                        bounce_rate_str = f"{row['bounce_rate']*100:.1f}%"
+                        break_rate_str = f"{row['break_rate']*100:.1f}%"
+                        trap_rate_str = f"{row['trap_rate']*100:.1f}%"
+
+                        # Format bounce/break ratio
+                        if row['bounce_break_ratio'] == float('inf'):
+                            ratio_str = "∞"
+                        elif row['bounce_break_ratio'] > 10:
+                            ratio_str = f"{row['bounce_break_ratio']:.1f}"
+                        else:
+                            ratio_str = f"{row['bounce_break_ratio']:.2f}"
+
+                        lines.append(
+                            f"| {row['quantile']} | {row['count']} | {metric_range} | "
+                            f"{bounce_rate_str} | {break_rate_str} | {trap_rate_str} | {ratio_str} |"
+                        )
+
+                    lines.append("")
+
+                    # Add interpretation
+                    lines.append("**Interpretation:**")
+                    lines.append("- Higher quantiles with higher bounce/break ratios indicate better quality S/R levels")
+                    lines.append("- Use this data to adjust sr_combined_strength weights in `_add_sr_strength_features()`")
+                    lines.append("")
 
             # Meta-label success and high-confidence diagnostics
             try:

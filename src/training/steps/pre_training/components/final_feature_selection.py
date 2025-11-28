@@ -36,6 +36,21 @@ try:
     SHAP_AVAILABLE = True
 except ImportError:
     SHAP_AVAILABLE = False
+
+# Import FeatureSelectionPipeline for 4-stage feature evaluation (replaces cheap pruning + MI + stability)
+try:
+    from src.feature_selection.feature_evaluation import (
+        FeatureSelectionPipeline,
+        EvaluationConfig,
+        create_feature_selection_pipeline
+    )
+    FEATURE_SELECTION_PIPELINE_AVAILABLE = True
+except ImportError:
+    FEATURE_SELECTION_PIPELINE_AVAILABLE = False
+    FeatureSelectionPipeline = None
+    EvaluationConfig = None
+    create_feature_selection_pipeline = None
+
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint
 
@@ -802,6 +817,103 @@ class FinalFeatureSelectionComponent:
         y: pd.Series,
         feature_names: List[str],
     ) -> Tuple[pd.DataFrame, List[str]]:
+        """
+        Pre-LGBM feature filtering using 4-stage FeatureSelectionPipeline.
+        
+        This method replaces the previous MI + stability + correlation filtering
+        with a unified 4-stage evaluation pipeline:
+        - Stage 0: Subsampling (20% stratified by regime)
+        - Stage 1: Fast screening (variance, correlation filters)
+        - Stage 2: Predictive power (IC, MI proxy, IC autocorrelation)
+        - Stage 3: Robustness (walk-forward CV, regime stability)
+        - Stage 4: Final weighted scoring
+        
+        LGBM/SHAP selection is NOT replaced - this is pre-filtering only.
+        """
+        try:
+            if not feature_names:
+                return X, feature_names
+            feature_names = list(feature_names)
+            n_features = len(feature_names)
+            pre_lgbm_target = int(getattr(self.config, "pre_lgbm_target_features", 0) or 0)
+            if pre_lgbm_target <= 0 or n_features <= pre_lgbm_target:
+                return X, feature_names
+            
+            self.logger.info(f"📊 Pre-LGBM filtering: {n_features} → {pre_lgbm_target} features using 4-stage pipeline")
+            
+            # Use FeatureSelectionPipeline if available
+            if FEATURE_SELECTION_PIPELINE_AVAILABLE and FeatureSelectionPipeline is not None:
+                try:
+                    # Configure pipeline for pre-LGBM filtering
+                    pipeline_config = EvaluationConfig(
+                        subsample_ratio=0.20,  # 20% subsample for stages 1-2
+                        n_chunks=6,
+                        variance_quantile_threshold=0.20,  # Less aggressive for pre-filtering
+                        price_corr_quantile_threshold=0.20,
+                        future_corr_quantile_threshold=0.20,
+                        ic_tstat_threshold=1.5,  # Moderate IC filtering
+                        ic_autocorr_threshold=0.0,
+                        mi_proxy_threshold=0.02,
+                        n_cv_splits=5,
+                        embargo_bars=1,
+                        top_k_per_feature=pre_lgbm_target,  # Return target number of features
+                        use_parallel=False,
+                        n_workers=1,
+                        weights={
+                            'ic_tstat': 0.30,
+                            'ic_autocorr': 0.20,
+                            'cv_score': 0.30,
+                            'regime_stability': 0.15,
+                            'mi_proxy': 0.05
+                        }
+                    )
+                    
+                    pipeline = FeatureSelectionPipeline(pipeline_config)
+                    
+                    # Subset to only requested features
+                    X_subset = cast(pd.DataFrame, X[feature_names])
+                    
+                    # Evaluate features using the pipeline
+                    candidates = pipeline.evaluate_features(
+                        features=X_subset,
+                        target=y,
+                        target_column_name='close' if 'close' in X_subset.columns else 'target',
+                        return_all_scores=False  # Only return top-k
+                    )
+                    
+                    if candidates and len(candidates) > 0:
+                        selected_features = [c.feature_name for c in candidates]
+                        
+                        # Validate selected features exist in original data
+                        valid_selected = [f for f in selected_features if f in X.columns]
+                        
+                        if len(valid_selected) > 0:
+                            X_selected = X[valid_selected]
+                            self.logger.info(f"  ✅ 4-stage pipeline pre-filtering: {n_features} → {len(valid_selected)} features")
+                            return X_selected, valid_selected
+                        else:
+                            self.logger.warning("  ⚠️ No valid features from pipeline, falling back to legacy")
+                    else:
+                        self.logger.warning("  ⚠️ No candidates from pipeline, falling back to legacy")
+                        
+                except Exception as e:
+                    self.logger.warning(f"  ⚠️ FeatureSelectionPipeline failed: {e}, falling back to legacy")
+            
+            # Fallback to legacy MI + stability + correlation filtering
+            self.logger.info("  📊 Using legacy MI + stability filtering (pipeline unavailable)")
+            return self._pre_lgbm_multi_criteria_filter_legacy(X, y, feature_names)
+            
+        except Exception as e:
+            self.logger.error(f"Error in pre-LGBM multi-criteria filter: {e}")
+            return X, feature_names
+    
+    def _pre_lgbm_multi_criteria_filter_legacy(
+        self,
+        X: pd.DataFrame,
+        y: pd.Series,
+        feature_names: List[str],
+    ) -> Tuple[pd.DataFrame, List[str]]:
+        """Legacy pre-LGBM filtering using MI + stability + correlation (fallback)."""
         try:
             if not feature_names:
                 return X, feature_names
@@ -921,7 +1033,7 @@ class FinalFeatureSelectionComponent:
             X_selected = X[selected_pool_features]
             return X_selected, selected_pool_features
         except Exception as e:
-            self.logger.error(f"Error in pre-LGBM multi-criteria filter: {e}")
+            self.logger.error(f"Error in legacy pre-LGBM multi-criteria filter: {e}")
             return X, feature_names
     
     def get_feature_scores(self) -> Dict[str, float]:

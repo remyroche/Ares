@@ -238,6 +238,22 @@ except ImportError as e:
     LABEL_GUIDED_AVAILABLE = False
     tprint_warning(f"⚠️ Feature selection utilities not available: {e}")
 
+# Import FeatureSelectionPipeline for 4-stage feature evaluation (replaces cheap pruning + MI + stability)
+try:
+    from src.feature_selection.feature_evaluation import (
+        FeatureSelectionPipeline,
+        EvaluationConfig,
+        create_feature_selection_pipeline
+    )
+    FEATURE_SELECTION_PIPELINE_AVAILABLE = True
+    tprint_info("✅ FeatureSelectionPipeline loaded for 4-stage feature evaluation")
+except ImportError as e:
+    FEATURE_SELECTION_PIPELINE_AVAILABLE = False
+    FeatureSelectionPipeline = None
+    EvaluationConfig = None
+    create_feature_selection_pipeline = None
+    tprint_warning(f"⚠️ FeatureSelectionPipeline not available: {e}")
+
 # Import overfitting prevention utilities
 try:
     from src.utils.ml_common.validation.unified_cv import temporal_cross_validation, TimeSeriesSplit
@@ -2217,12 +2233,19 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         lookback_optimization: pd.DataFrame,
         config: Dict[str, Any],
     ) -> Tuple[pd.DataFrame, Dict[str, Any], pd.DataFrame]:
-        """Phase 2: Cheap pruning wrapper.
+        """Phase 2: Feature pruning using 4-stage FeatureSelectionPipeline.
 
-        Applies OptimizedCheapPruningPipeline via apply_optimized_cheap_pruning,
-        using composite scores from _calculate_composite_scores and feature
-        categories from _get_feature_categories_from_bank. Returns
-        (pruned_features, pruning_stats, targets_df).
+        This method replaces the old cheap pruning + MI selection + stability selection
+        with a unified 4-stage evaluation pipeline from FeatureSelectionPipeline.
+        
+        The pipeline performs:
+        - Stage 0: Subsampling (20% stratified by regime)
+        - Stage 1: Fast screening (variance, correlation filters)
+        - Stage 2: Predictive power (IC, MI proxy, IC autocorrelation)
+        - Stage 3: Robustness (walk-forward CV, regime stability)
+        - Stage 4: Final weighted scoring
+        
+        Returns (pruned_features, pruning_stats, targets_df).
         """
 
         # Select target(s) for pruning
@@ -2261,9 +2284,140 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                 col: self._infer_feature_category(col) for col in variant_features.columns
             }
 
-        # Composite scores for pruning
+        initial_feature_count = len(variant_features.columns)
+        tprint_info(f"📊 Phase 2: Pruning {initial_feature_count} features using 4-stage FeatureSelectionPipeline...")
+
+        # Use FeatureSelectionPipeline for feature pruning (replaces cheap pruning + MI + stability)
+        if FEATURE_SELECTION_PIPELINE_AVAILABLE and FeatureSelectionPipeline is not None:
+            try:
+                # Target ~40-50% reduction, aim for keeping best features
+                # Calculate target features: keep 50-60% for Phase 3 LGBM/SHAP
+                target_feature_count = max(50, int(initial_feature_count * 0.55))
+                
+                tprint_info(f"  📊 Target feature count after pruning: {target_feature_count}")
+                
+                # Configure pipeline for pruning (stricter thresholds)
+                pipeline_config = EvaluationConfig(
+                    subsample_ratio=0.20,  # 20% subsample for stages 1-2
+                    n_chunks=6,
+                    variance_quantile_threshold=0.25,  # Filter bottom 25% by variance
+                    price_corr_quantile_threshold=0.25,
+                    future_corr_quantile_threshold=0.25,
+                    ic_tstat_threshold=1.5,  # Moderate IC filtering
+                    ic_autocorr_threshold=0.0,
+                    mi_proxy_threshold=0.02,
+                    n_cv_splits=5,
+                    embargo_bars=1,
+                    top_k_per_feature=target_feature_count,  # Return top N features
+                    use_parallel=False,
+                    n_workers=1,
+                    weights={
+                        'ic_tstat': 0.30,
+                        'ic_autocorr': 0.20,
+                        'cv_score': 0.30,
+                        'regime_stability': 0.15,
+                        'mi_proxy': 0.05
+                    }
+                )
+                
+                pipeline = FeatureSelectionPipeline(pipeline_config)
+                
+                # Align features and target
+                target = targets_df[targets_df.columns[0]]
+                features_aligned, target_aligned = _align_for_label_guided_discovery_helper(
+                    variant_features,
+                    target,
+                )
+                
+                if features_aligned.empty or target_aligned.empty:
+                    tprint_warning("  ⚠️ No valid samples after alignment; skipping pipeline pruning")
+                    return variant_features.copy(), {"skipped": True, "reason": "alignment_failed"}, targets_df
+                
+                # Run the 4-stage pipeline
+                candidates = pipeline.evaluate_features(
+                    features=features_aligned,
+                    target=target_aligned,
+                    target_column_name='close' if 'close' in features_aligned.columns else targets_df.columns[0],
+                    return_all_scores=False  # Only return top-k
+                )
+                
+                # Extract selected features
+                if candidates:
+                    selected_features = [c.feature_name for c in candidates]
+                    
+                    # Ensure category coverage: add back missing categories if needed
+                    categories_in_selection = {feature_categories.get(f, 'unknown') for f in selected_features}
+                    all_categories = set(feature_categories.values())
+                    missing_categories = all_categories - categories_in_selection
+                    
+                    if missing_categories:
+                        tprint_info(f"  📊 Adding features to cover missing categories: {missing_categories}")
+                        # Add top-scoring feature from each missing category
+                        all_candidates_scores = {c.feature_name: c.final_score for c in candidates}
+                        # Evaluate remaining features for missing categories
+                        remaining_features = [f for f in variant_features.columns if f not in selected_features]
+                        for cat in missing_categories:
+                            cat_features = [f for f in remaining_features if feature_categories.get(f) == cat]
+                            if cat_features:
+                                # Just add the first one (could improve by scoring)
+                                selected_features.append(cat_features[0])
+                    
+                    # Subset the features
+                    valid_selected = [f for f in selected_features if f in variant_features.columns]
+                    pruned_df = variant_features[valid_selected].copy()
+                    
+                    # Get performance summary
+                    perf_summary = pipeline.get_performance_summary()
+                    
+                    stats = {
+                        "method": "4_stage_feature_selection_pipeline",
+                        "initial_features": initial_feature_count,
+                        "final_features": len(valid_selected),
+                        "reduction_rate": 1.0 - len(valid_selected) / initial_feature_count if initial_feature_count > 0 else 0.0,
+                        "pipeline_time_seconds": perf_summary.get('total_time', 0),
+                        "candidates_per_stage": perf_summary.get('candidates_per_stage', {}),
+                        "stage_times": perf_summary.get('stage_times', {})
+                    }
+                    
+                    tprint_success(f"  ✅ 4-stage pipeline pruning completed: {initial_feature_count} → {len(valid_selected)} features")
+                    tprint_info(f"  📊 Reduction rate: {stats['reduction_rate']:.1%}")
+                    
+                else:
+                    tprint_warning("  ⚠️ No candidates from pipeline, falling back to legacy pruning")
+                    return self._phase2_cheap_pruning_legacy(
+                        variant_features, labeled_data, lookback_optimization, config,
+                        targets_df, feature_categories
+                    )
+                
+            except Exception as exc:
+                tprint_warning(f"  ⚠️ FeatureSelectionPipeline failed: {exc}; falling back to legacy pruning")
+                return self._phase2_cheap_pruning_legacy(
+                    variant_features, labeled_data, lookback_optimization, config,
+                    targets_df, feature_categories
+                )
+        else:
+            tprint_warning("  ⚠️ FeatureSelectionPipeline not available; using legacy pruning")
+            return self._phase2_cheap_pruning_legacy(
+                variant_features, labeled_data, lookback_optimization, config,
+                targets_df, feature_categories
+            )
+
+        return pruned_df, stats, targets_df
+    
+    async def _phase2_cheap_pruning_legacy(
+        self,
+        variant_features: pd.DataFrame,
+        labeled_data: pd.DataFrame,
+        lookback_optimization: pd.DataFrame,
+        config: Dict[str, Any],
+        targets_df: pd.DataFrame,
+        feature_categories: Dict[str, str],
+    ) -> Tuple[pd.DataFrame, Dict[str, Any], pd.DataFrame]:
+        """Legacy Phase 2 cheap pruning using OptimizedCheapPruningPipeline (fallback)."""
+        
+        # Composite scores for pruning (use legacy method)
         try:
-            composite_scores = self._calculate_composite_scores(
+            composite_scores = self._calculate_composite_scores_legacy(
                 variant_features,
                 targets_df,
                 feature_categories,
@@ -3578,10 +3732,17 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         config: Optional[Dict[str, Any]] = None
     ) -> Dict[str, float]:
         """
-        Calculate composite scores for features based on MI/CMI and stability.
+        Calculate composite scores for features using 4-stage FeatureSelectionPipeline.
         
-        In Tactician mode, uses CMI (Conditional Mutual Information) instead of MI
-        to select features complementary to Analyst outputs.
+        This method replaces the previous cheap pruning + MI selection + stability selection
+        with a unified 4-stage evaluation pipeline:
+        - Stage 0: Subsampling (20% stratified by regime)
+        - Stage 1: Fast screening (variance, correlation filters)
+        - Stage 2: Predictive power (IC, MI proxy, IC autocorrelation)
+        - Stage 3: Robustness (walk-forward CV, regime stability)
+        - Stage 4: Final weighted scoring
+        
+        In Tactician mode, CMI scoring is applied as an overlay.
         
         Args:
             features_df: DataFrame with features
@@ -3592,7 +3753,6 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         Returns:
             Dict mapping feature names to composite scores
         """
-        from sklearn.feature_selection import mutual_info_regression
         import numpy as np
         
         # Check if Tactician mode and CMI available
@@ -3602,15 +3762,9 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             analyst_side_info = self._extract_analyst_side_info(config, features_df)
             use_cmi = analyst_side_info is not None
             if use_cmi:
-                tprint_info("🎯 Using CMI-based composite scoring (Tactician mode)")
-            else:
-                tprint_info("📊 Using MI-based composite scoring (CMI unavailable)")
-        else:
-            tprint_info("📊 Using MI-based composite scoring (Analyst mode)")
+                tprint_info("🎯 Using CMI-based composite scoring overlay (Tactician mode)")
         
-        tprint_info(f"  📊 Calculating MI scores for {len(features_df.columns)} features...")
-        
-        # Use first target for MI calculation
+        # Use first target for evaluation
         target_col = targets_df.columns[0]
         target = targets_df[target_col]
 
@@ -3623,199 +3777,118 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             tprint_warning("  ⚠️ No valid overlapping samples between features and targets; using uniform composite scores")
             return {col: 0.5 for col in features_df.columns}
 
-        # Remove any features with excessive NaNs or insufficient variation
-        # Use relaxed validation for ratio features (like cross-timeframe)
-        valid_features = []
-        total_rows = len(features_aligned)
-        for col in features_aligned.columns:
-            col_data = features_aligned[col]
-            if total_rows == 0:
-                continue
-
-            non_nan_count = col_data.notna().sum()
-            nan_ratio = 1.0 - (non_nan_count / float(total_rows))
-
-            # For cross-timeframe ratio features, use more relaxed thresholds
-            is_ct_ratio = '_3x_ratio' in col or '_6x_ratio' in col or '_9x_ratio' in col or '_27x_ratio' in col
-
-            # Always remove all-NaN, constant, or zero-variance features
-            if non_nan_count == 0 or col_data.nunique() <= 1 or col_data.var() == 0:
-                continue
-
-            # NaN ratio thresholds: stricter for regular features
-            if is_ct_ratio:
-                # Allow up to 20% NaN for cross-timeframe features
-                if nan_ratio > 0.2:
-                    continue
-            else:
-                # Allow up to 10% NaN for regular features
-                if nan_ratio > 0.1:
-                    continue
-
-            # Check if feature varies (not constant)
-            col_std = col_data.std()
-
-            if is_ct_ratio:
-                # Ratio features can have smaller std, just check they're not ALL the same value
-                if col_std > 1e-10 and col_data.nunique() > 2:  # At least 3 unique values
-                    valid_features.append(col)
-            else:
-                # Standard validation for other features
-                if col_std > 1e-8:
-                    valid_features.append(col)
-
-        if len(valid_features) == 0:
-            tprint_warning("  ⚠️ No features passed MI validity checks; relaxing thresholds for fallback scoring")
-            valid_features = list(features_aligned.columns)
-
-        # Log cross-timeframe validation stats
-        ct_features_total = [c for c in features_aligned.columns if '_3x_ratio' in c or '_6x_ratio' in c or '_9x_ratio' in c or '_27x_ratio' in c]
-        ct_features_valid = [c for c in valid_features if '_3x_ratio' in c or '_6x_ratio' in c or '_9x_ratio' in c or '_27x_ratio' in c]
+        tprint_info(f"  📊 Running 4-stage FeatureSelectionPipeline on {len(features_aligned.columns)} features...")
         
-        tprint_info(f"  📊 Valid features for MI: {len(valid_features)}/{len(features_df.columns)}")
-        tprint_info(f"  📊 Cross-timeframe features: {len(ct_features_valid)}/{len(ct_features_total)} valid")
-        
-        if len(ct_features_total) > 0 and len(ct_features_valid) == 0:
-            tprint_error(f"  ❌ ALL {len(ct_features_total)} cross-timeframe features marked invalid!")
-            tprint_error(f"     Validation criteria may be too strict for ratio features")
-        elif len(ct_features_valid) < len(ct_features_total) * 0.5:
-            tprint_warning(f"  ⚠️ Only {len(ct_features_valid)}/{len(ct_features_total)} CT features valid ({len(ct_features_valid)/len(ct_features_total):.1%})")
-
-        # Temporal subsampling for MI/CMI to reduce matrix size
-        mi_index = features_aligned.index
-        max_mi_samples = 50000
-        if config is not None:
+        # Use FeatureSelectionPipeline if available
+        if FEATURE_SELECTION_PIPELINE_AVAILABLE and FeatureSelectionPipeline is not None:
             try:
-                max_mi_samples = int(config.get('mi_max_samples', max_mi_samples))
-            except Exception:
-                pass
-
-        if len(mi_index) > max_mi_samples:
-            step = max(1, len(mi_index) // max_mi_samples)
-            mi_index = mi_index[::step]
-            tprint_info(
-                f"  📊 MI temporal subsampling: {len(features_aligned)} → {len(mi_index)} rows (step={step})"
-            )
-
-        # Build MI matrix on sampled index and downcast to float32
-        features_for_mi = features_aligned.loc[mi_index, valid_features].fillna(0)
-        try:
-            features_for_mi = features_for_mi.astype(np.float32)
-        except Exception:
-            # Best-effort: keep original dtypes on failure
-            pass
-        target_for_mi = target_aligned.loc[mi_index]
-        
-        # Calculate MI or CMI scores
-        try:
-            if use_cmi and analyst_side_info:
-                # Use CMI scoring (Tactician mode)
-                tprint_info(f"  🎯 Calculating CMI scores for {len(valid_features)} features...")
+                # Configure the pipeline - return all candidates with scores (don't pre-filter)
+                pipeline_config = EvaluationConfig(
+                    subsample_ratio=0.20,  # 20% subsample for stages 1-2
+                    n_chunks=6,
+                    variance_quantile_threshold=0.20,  # Less aggressive filtering (was 0.30)
+                    price_corr_quantile_threshold=0.20,
+                    future_corr_quantile_threshold=0.20,
+                    ic_tstat_threshold=1.5,  # Slightly relaxed (was 1.96)
+                    ic_autocorr_threshold=0.0,
+                    mi_proxy_threshold=0.02,  # Slightly relaxed (was 0.05)
+                    n_cv_splits=5,
+                    embargo_bars=1,
+                    top_k_per_feature=len(features_aligned.columns),  # Return all with scores
+                    use_parallel=False,  # Sequential for stability
+                    n_workers=1,
+                    weights={
+                        'ic_tstat': 0.30,
+                        'ic_autocorr': 0.20,
+                        'cv_score': 0.30,
+                        'regime_stability': 0.15,
+                        'mi_proxy': 0.05
+                    }
+                )
                 
-                # Create features DataFrame from valid features
-                X_for_cmi = features_for_mi
-                y_for_cmi = target_for_mi
+                pipeline = FeatureSelectionPipeline(pipeline_config)
+                
+                # Evaluate all features
+                candidates = pipeline.evaluate_features(
+                    features=features_aligned,
+                    target=target_aligned,
+                    target_column_name='close' if 'close' in features_aligned.columns else target_col,
+                    return_all_scores=True  # Get all candidates with scores
+                )
+                
+                # Extract composite scores from candidates
+                composite_scores = {}
+                if candidates:
+                    for candidate in candidates:
+                        composite_scores[candidate.feature_name] = candidate.final_score
+                    
+                    # Log pipeline performance
+                    perf_summary = pipeline.get_performance_summary()
+                    tprint_info(f"  ✅ 4-stage pipeline completed in {perf_summary.get('total_time', 0):.2f}s")
+                    tprint_info(f"  📊 Candidates per stage: {perf_summary.get('candidates_per_stage', {})}")
+                    
+                    # Ensure all features have scores (default 0.01 for filtered-out features)
+                    for col in features_df.columns:
+                        if col not in composite_scores:
+                            composite_scores[col] = 0.01
+                else:
+                    tprint_warning("  ⚠️ No candidates from pipeline, falling back to uniform scores")
+                    composite_scores = {col: 0.5 for col in features_df.columns}
+                
+            except Exception as e:
+                tprint_warning(f"  ⚠️ FeatureSelectionPipeline failed: {e}, falling back to legacy scoring")
+                composite_scores = self._calculate_composite_scores_legacy(
+                    features_df, targets_df, feature_categories, config
+                )
+        else:
+            tprint_warning("  ⚠️ FeatureSelectionPipeline not available, using legacy scoring")
+            composite_scores = self._calculate_composite_scores_legacy(
+                features_df, targets_df, feature_categories, config
+            )
+        
+        # Apply CMI overlay for Tactician mode
+        if use_cmi and analyst_side_info and self.cmi_scorer is not None:
+            try:
+                tprint_info("  🎯 Applying CMI complementarity overlay (Tactician mode)...")
                 
                 # Score features using CMI
                 cmi_result = self.cmi_scorer.score_features(
-                    features=X_for_cmi,
-                    targets=y_for_cmi,
+                    features=features_aligned.fillna(0),
+                    targets=target_aligned,
                     analyst_outputs=analyst_side_info.analyst_outputs,
                     regime_labels=analyst_side_info.regime_labels
                 )
                 
-                # Extract scores from result
+                # Extract CMI scores
+                cmi_scores = {}
                 if hasattr(cmi_result, 'complementarity_scores'):
-                    mi_dict = cmi_result.complementarity_scores
-                    tprint_info(f"  ✅ CMI complementarity scores calculated")
+                    cmi_scores = cmi_result.complementarity_scores
                 elif hasattr(cmi_result, 'feature_scores'):
-                    mi_dict = cmi_result.feature_scores
-                    tprint_info(f"  ✅ CMI feature scores calculated")
-                else:
-                    # Fallback to MI
-                    tprint_warning(f"  ⚠️ CMI result missing scores, falling back to MI")
-                    mi_scores = mutual_info_regression(
-                        features_for_mi, target_for_mi, random_state=42, n_neighbors=3
-                    )
-                    mi_dict = dict(zip(valid_features, mi_scores))
+                    cmi_scores = cmi_result.feature_scores
                 
-                # Normalize scores to 0-1
-                if len(mi_dict) > 0:
-                    mi_values = np.array(list(mi_dict.values()))
-                    if mi_values.max() > 0:
-                        mi_max = mi_values.max()
-                        mi_dict = {k: v / mi_max for k, v in mi_dict.items()}
-                
-                tprint_info(f"      Min: {min(mi_dict.values()):.4f}, Max: {max(mi_dict.values()):.4f}, Mean: {np.mean(list(mi_dict.values())):.4f}")
-                
-            else:
-                # Use standard MI (Analyst mode)
-                mi_scores = mutual_info_regression(
-                    features_for_mi,
-                    target_for_mi,
-                    random_state=42,
-                    n_neighbors=3
-                )
-                mi_dict = dict(zip(valid_features, mi_scores))
-                
-                # Normalize MI scores to 0-1
-                if len(mi_scores) > 0 and mi_scores.max() > 0:
-                    mi_max = mi_scores.max()
-                    mi_dict = {k: v / mi_max for k, v in mi_dict.items()}
-                
-                tprint_info(f"  ✅ MI scores calculated")
-                tprint_info(f"      Min: {min(mi_dict.values()):.4f}, Max: {max(mi_dict.values()):.4f}, Mean: {np.mean(list(mi_dict.values())):.4f}")
-            
-        except Exception as e:
-            tprint_warning(f"  ⚠️ MI/CMI calculation failed: {e}")
-            mi_dict = {col: 0.5 for col in valid_features}
+                if cmi_scores:
+                    # Normalize CMI scores
+                    cmi_values = np.array(list(cmi_scores.values()))
+                    if cmi_values.max() > 0:
+                        cmi_max = cmi_values.max()
+                        cmi_scores = {k: v / cmi_max for k, v in cmi_scores.items()}
+                    
+                    # Blend: 60% pipeline score + 40% CMI score
+                    for col in composite_scores:
+                        if col in cmi_scores:
+                            composite_scores[col] = 0.6 * composite_scores[col] + 0.4 * cmi_scores[col]
+                    
+                    tprint_info(f"  ✅ CMI overlay applied to {len(cmi_scores)} features")
+                    
+            except Exception as e:
+                tprint_warning(f"  ⚠️ CMI overlay failed: {e}")
         
-        # Calculate stability scores (variance over time windows)
-        tprint_info(f"  📊 Calculating stability scores...")
-        stability_dict = {}
-        
+        # Persist raw scores for downstream reporting
         try:
-            window_size = min(100, len(features_aligned) // 5)
-            for col in valid_features:
-                feature_data = features_aligned[col].fillna(method='ffill').fillna(0)
-                
-                # Calculate rolling mean and std
-                rolling_mean = feature_data.rolling(window=window_size, min_periods=10).mean()
-                rolling_std = feature_data.rolling(window=window_size, min_periods=10).std()
-                
-                # Stability = 1 - (coefficient of variation of rolling means)
-                if rolling_mean.std() > 1e-8:
-                    cv = rolling_std.mean() / (abs(rolling_mean.mean()) + 1e-8)
-                    stability = 1.0 / (1.0 + cv)  # Higher stability for lower CV
-                else:
-                    stability = 0.5
-                
-                stability_dict[col] = max(0.0, min(1.0, stability))
-            
-            tprint_info(f"  ✅ Stability scores calculated")
-            tprint_info(f"      Min: {min(stability_dict.values()):.4f}, Max: {max(stability_dict.values()):.4f}, Mean: {np.mean(list(stability_dict.values())):.4f}")
-            
-        except Exception as e:
-            tprint_warning(f"  ⚠️ Stability calculation failed: {e}")
-            stability_dict = {col: 0.5 for col in valid_features}
-        
-        # Persist raw MI and stability scores for downstream reporting (Phase 4 CSV)
-        try:
-            self._last_mi_scores = dict(mi_dict)
-            self._last_stability_scores = dict(stability_dict)
+            self._last_mi_scores = {k: v for k, v in composite_scores.items()}
+            self._last_stability_scores = {}  # Stability is now embedded in pipeline score
         except Exception:
-            # Best-effort only; do not break scoring if caching fails
             pass
-        
-        # Combine MI and stability into composite score
-        composite_scores = {}
-        for col in features_df.columns:
-            if col in mi_dict and col in stability_dict:
-                # Weighted average: 60% MI, 40% stability
-                composite_scores[col] = 0.6 * mi_dict[col] + 0.4 * stability_dict[col]
-            else:
-                # Default score for invalid features
-                composite_scores[col] = 0.01  # Very low score
         
         # Analyze cross-timeframe scores
         ct_features = [f for f in composite_scores.keys() if 
@@ -3826,7 +3899,7 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             all_scores = list(composite_scores.values())
             
             tprint_info("="*80)
-            tprint_info("📊 CROSS-TIMEFRAME COMPOSITE SCORE ANALYSIS")
+            tprint_info("📊 CROSS-TIMEFRAME COMPOSITE SCORE ANALYSIS (4-STAGE PIPELINE)")
             tprint_info("="*80)
             tprint_info(f"  📊 Cross-timeframe features: {len(ct_features)}")
             tprint_info(f"  📊 CT score stats: Min={min(ct_scores):.4f}, Max={max(ct_scores):.4f}, Mean={np.mean(ct_scores):.4f}")
@@ -3840,6 +3913,86 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         
         tprint_info(f"  ✅ Composite scores calculated for {len(composite_scores)} features")
         
+        return composite_scores
+    
+    def _calculate_composite_scores_legacy(
+        self,
+        features_df: pd.DataFrame,
+        targets_df: pd.DataFrame,
+        feature_categories: Dict[str, str],
+        config: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, float]:
+        """
+        Legacy composite scoring using MI + stability (fallback when FeatureSelectionPipeline unavailable).
+        """
+        from sklearn.feature_selection import mutual_info_regression
+        import numpy as np
+        
+        # Use first target for MI calculation
+        target_col = targets_df.columns[0]
+        target = targets_df[target_col]
+
+        features_aligned, target_aligned = _align_for_label_guided_discovery_helper(
+            features_df,
+            target,
+        )
+
+        if features_aligned.empty or target_aligned.empty:
+            return {col: 0.5 for col in features_df.columns}
+
+        # Filter valid features
+        valid_features = []
+        for col in features_aligned.columns:
+            col_data = features_aligned[col]
+            if col_data.notna().sum() > 0 and col_data.nunique() > 1 and col_data.var() > 0:
+                valid_features.append(col)
+
+        if not valid_features:
+            valid_features = list(features_aligned.columns)
+
+        # Subsample for efficiency
+        max_samples = config.get('mi_max_samples', 50000) if config else 50000
+        if len(features_aligned) > max_samples:
+            step = max(1, len(features_aligned) // max_samples)
+            features_aligned = features_aligned.iloc[::step]
+            target_aligned = target_aligned.iloc[::step]
+
+        # Calculate MI scores
+        try:
+            features_for_mi = features_aligned[valid_features].fillna(0).astype(np.float32)
+            mi_scores = mutual_info_regression(features_for_mi, target_aligned, random_state=42, n_neighbors=3)
+            mi_dict = dict(zip(valid_features, mi_scores))
+            if mi_scores.max() > 0:
+                mi_max = mi_scores.max()
+                mi_dict = {k: v / mi_max for k, v in mi_dict.items()}
+        except Exception:
+            mi_dict = {col: 0.5 for col in valid_features}
+
+        # Calculate stability scores
+        stability_dict = {}
+        try:
+            window_size = min(100, len(features_aligned) // 5)
+            for col in valid_features:
+                feature_data = features_aligned[col].ffill().fillna(0)
+                rolling_mean = feature_data.rolling(window=window_size, min_periods=10).mean()
+                rolling_std = feature_data.rolling(window=window_size, min_periods=10).std()
+                if rolling_mean.std() > 1e-8:
+                    cv = rolling_std.mean() / (abs(rolling_mean.mean()) + 1e-8)
+                    stability = 1.0 / (1.0 + cv)
+                else:
+                    stability = 0.5
+                stability_dict[col] = max(0.0, min(1.0, stability))
+        except Exception:
+            stability_dict = {col: 0.5 for col in valid_features}
+
+        # Combine scores
+        composite_scores = {}
+        for col in features_df.columns:
+            if col in mi_dict and col in stability_dict:
+                composite_scores[col] = 0.6 * mi_dict[col] + 0.4 * stability_dict[col]
+            else:
+                composite_scores[col] = 0.01
+
         return composite_scores
 
     def _get_feature_categories_from_bank(self, feature_names: List[str], lookback_optimization: Dict) -> Dict[str, str]:

@@ -5739,9 +5739,10 @@ class MLBreakoutBounceRegimeStep(BaseStep):
         best_t = 1.0
         best_loss = float("inf")
         best_scaled = arr
+        labels = list(range(arr.shape[1]))
         for t in candidate_temps:
             scaled = self._apply_temperature(arr, float(t))
-            loss = self._safe_log_loss(y_array, scaled, labels=[0, 1, 2, 3])
+            loss = self._safe_log_loss(y_array, scaled, labels=labels)
             if not np.isfinite(loss):
                 continue
             if loss < best_loss:
@@ -8017,6 +8018,22 @@ class MLBreakoutBounceRegimeStep(BaseStep):
         val_final_probs = alpha * stage1_val_probs + beta * stage2_val_norm
         val_final_probs = np.clip(val_final_probs, 0.0, 1.0)
 
+        # Derive 3-class probabilities for validation (bounce, break, trap)
+        val_uncertainty = 1.0 - np.abs(stage1_val_probs - 0.5) * 2.0
+        val_trap_prob = val_uncertainty * (1.0 - stage2_val_norm)
+
+        val_p_break = val_final_probs * (1.0 - val_trap_prob * 0.5)
+        val_p_bounce = (1.0 - val_final_probs) * (1.0 - val_trap_prob * 0.5)
+        val_p_trap = np.clip(val_trap_prob, 0.0, 0.4)
+
+        val_total = val_p_bounce + val_p_break + val_p_trap
+        val_total = np.where(val_total > 0.0, val_total, 1.0)
+        val_p_bounce = val_p_bounce / val_total
+        val_p_break = val_p_break / val_total
+        val_p_trap = val_p_trap / val_total
+
+        val_probs = np.column_stack([val_p_bounce, val_p_break, val_p_trap])
+
         # ========================================================================
         # GENERATE FULL PROBABILITIES (3-class output for compatibility)
         # ========================================================================
@@ -8059,6 +8076,15 @@ class MLBreakoutBounceRegimeStep(BaseStep):
         p_trap = p_trap / total
 
         probs_full = np.column_stack([p_bounce, p_break, p_trap])
+
+        # Temperature scaling calibration on validation set (multi-class)
+        y_val_multi = y[val_mask]
+        calib_mask = y_val_multi.isin([0, 1, 2])
+        if calib_mask.any():
+            y_val_cal = y_val_multi[calib_mask]
+            val_probs_cal = val_probs[calib_mask.values, :]
+            best_temperature, _ = self._fit_temperature_scaling(val_probs_cal, y_val_cal)
+            probs_full = self._apply_temperature(probs_full, best_temperature)
 
         # Class predictions
         classes_full = np.argmax(probs_full, axis=1)

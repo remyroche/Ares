@@ -562,6 +562,66 @@ class MLPathRegimeStep(BaseStep):
                     f"=" * 80
                 )
 
+                # Directional overlay and targeted bad-path labels based on
+                # forward 3h path returns. This does not affect the underlying
+                # HMM regimes but exposes richer diagnostics.
+                try:
+                    direction_horizon = int(config.get("path_direction_horizon_bars", 12))
+                    # Derive 3h forward log-returns using close prices, aligned
+                    # with the HMM index.
+                    if "close" in risk_df.columns and direction_horizon > 0:
+                        fwd_ret_3h = np.log(
+                            risk_df["close"].shift(-direction_horizon) / risk_df["close"]
+                        )
+                        risk_df["forward_return_3h"] = fwd_ret_3h
+
+                        neutral_band = float(config.get("path_direction_neutral_band", 0.001))
+                        dir_sign = np.sign(fwd_ret_3h).astype(float)
+                        dir_sign = dir_sign.where(fwd_ret_3h.abs() > neutral_band, 0.0)
+                        risk_df["path_direction_sign_3h"] = dir_sign.astype("Int64")
+
+                        # Combine base regime id with directional sign to
+                        # expose directional regimes without altering HMM.
+                        try:
+                            base_reg = risk_df[regime_col_name].astype(int)
+                            # Map sign in {-1,0,1} to {0,1,2} then build
+                            # directional code = regime*3 + sign_bucket.
+                            sign_bucket = (dir_sign.fillna(0.0).astype(int) + 1)
+                            risk_df["risk_regime_directional"] = (
+                                base_reg * 3 + sign_bucket
+                            ).astype(int)
+                            tprint_info(
+                                "  Added directional regimes column 'risk_regime_directional' "
+                                "(3h forward-return overlay)."
+                            )
+                        except Exception as dir_reg_exc:
+                            tprint_warning(
+                                f"Failed to derive directional regimes (non-fatal): {dir_reg_exc}"
+                            )
+
+                        # Targeted bad-path label: strongly adverse 3h outcome,
+                        # optionally gated by low path efficiency.
+                        bad_ret_thr = float(config.get("path_bad_return_threshold", -0.01))
+                        eff_col = risk_df.get("efficiency_ratio")
+                        eff_thr = float(config.get("path_bad_efficiency_threshold", 0.15))
+
+                        bad_ret_mask = fwd_ret_3h <= bad_ret_thr
+                        if eff_col is not None:
+                            eff_bad = eff_col < eff_thr
+                            bad_path_mask = bad_ret_mask & eff_bad
+                        else:
+                            bad_path_mask = bad_ret_mask
+
+                        risk_df["bad_path_flag_3h"] = bad_path_mask.astype("Int64")
+                        tprint_info(
+                            "  Added 'forward_return_3h', 'path_direction_sign_3h', "
+                            "and 'bad_path_flag_3h' diagnostics."
+                        )
+                except Exception as dir_exc:
+                    tprint_warning(
+                        f"Failed to compute directional/bad-path diagnostics (non-fatal): {dir_exc}"
+                    )
+
                 # Calculate regime statistics using a Path-based score proxy
                 # Prefer KER and path straightness; fall back to a constant score.
                 if "path_ker_3h" in risk_df.columns:
@@ -3517,13 +3577,25 @@ class MLPathRegimeStep(BaseStep):
         # Calculate validation metrics on OOF predictions
         prob_cols = [c for c in clf_oof_predictions.columns if c.startswith('prob_class_')]
         if len(prob_cols) != 3:
-            raise ValueError(f"Expected 3 class probabilities for classifier, got {len(prob_cols)}")
+            tprint_warning(
+                f"    Classifier produced {len(prob_cols)} probability columns (expected 3); "
+                f"falling back to hardcoded quality scoring"
+            )
+            regime_quality_scores, quality_scores = self._calculate_data_driven_risk_scores(
+                labels=labels,
+                features_df=features_df,
+                posteriors=posteriors,
+                n_regimes=n_regimes,
+            )
+            return regime_quality_scores, quality_scores, None, None, None
 
         # Calculate metrics on non-burnin samples
         oof_mask = ~clf_oof_predictions[prob_cols].isna().any(axis=1)
         if oof_mask.sum() > 0:
-            y_oof = y_clf_series[oof_mask]
-            y_pred_proba_oof = clf_oof_predictions.loc[oof_mask, prob_cols].values
+            # Align OOF mask with label index using the prediction index
+            common_idx = clf_oof_predictions.index[oof_mask]
+            y_oof = y_clf_series.loc[common_idx]
+            y_pred_proba_oof = clf_oof_predictions.loc[common_idx, prob_cols].values
             y_pred_oof = np.argmax(y_pred_proba_oof, axis=1)
 
             oof_logloss = log_loss(y_oof, y_pred_proba_oof)
@@ -3586,8 +3658,10 @@ class MLPathRegimeStep(BaseStep):
         # Calculate validation metrics on OOF predictions
         oof_mask_reg = ~reg_oof_predictions['prediction'].isna()
         if oof_mask_reg.sum() > 0:
-            y_time_oof = y_reg_series[oof_mask_reg]
-            y_time_pred_oof = reg_oof_predictions.loc[oof_mask_reg, 'prediction'].values
+            # Align OOF mask with target index using the prediction index
+            common_idx_reg = reg_oof_predictions.index[oof_mask_reg]
+            y_time_oof = y_reg_series.loc[common_idx_reg]
+            y_time_pred_oof = reg_oof_predictions.loc[common_idx_reg, 'prediction'].values
 
             oof_rmse = np.sqrt(mean_squared_error(y_time_oof, y_time_pred_oof))
             oof_r2 = r2_score(y_time_oof, y_time_pred_oof)
@@ -3598,17 +3672,39 @@ class MLPathRegimeStep(BaseStep):
             tprint_warning("    No OOF predictions available for regressor metrics")
 
         # ========== STEP 7: Extract Feature Importance as Data-Driven Weights ==========
-        # Extract feature importance from StandardizedXGBTrainer results
-        # Combine importance from both models (70% classifier, 30% regressor)
-        clf_importance = clf_results.feature_importance
-        reg_importance = reg_results.feature_importance
+        # Extract feature importance directly from underlying XGBoost models and
+        # combine importance from both models (70% classifier, 30% regressor).
+
+        def _extract_model_importance(models, feature_names):
+            if not models:
+                return None
+            try:
+                # Use the last trained model as representative and extract gain-based importance
+                model = models[-1]
+                scores = model.get_score(importance_type="gain") if hasattr(model, "get_score") else {}
+                if not scores:
+                    return None
+                imp = np.array([float(scores.get(f, 0.0)) for f in feature_names], dtype=float)
+                if not np.isfinite(imp).any() or imp.sum() <= 0:
+                    return None
+                return imp
+            except Exception as imp_exc:
+                tprint_warning(f"  Failed to extract feature importance from XGBoost model: {imp_exc}")
+                return None
+
+        clf_importance = _extract_model_importance(clf_results.models, available_features)
+        reg_importance = _extract_model_importance(reg_results.models, available_features)
 
         if clf_importance is None or reg_importance is None:
-            tprint_warning("  Feature importance not available from trainers, falling back to hardcoded weights")
+            tprint_warning("  Feature importance not available from XGB models, falling back to hardcoded weights")
             return self._calculate_data_driven_risk_scores(labels, features_df, posteriors, n_regimes)
 
         combined_importance = 0.7 * clf_importance + 0.3 * reg_importance
-        combined_importance = combined_importance / combined_importance.sum()  # Normalize to sum=1
+        total_imp = float(combined_importance.sum())
+        if not np.isfinite(total_imp) or total_imp <= 0:
+            tprint_warning("  Combined feature importance invalid, falling back to hardcoded weights")
+            return self._calculate_data_driven_risk_scores(labels, features_df, posteriors, n_regimes)
+        combined_importance = combined_importance / total_imp  # Normalize to sum=1
 
         feature_weights = {feat: imp for feat, imp in zip(available_features, combined_importance)}
 
@@ -8450,6 +8546,36 @@ class MLPathRegimeStep(BaseStep):
                 if len(regime_returns) > 0:
                     stats["mean_return"] = float(regime_returns.mean())
                     stats["std_return"] = float(regime_returns.std())
+
+            # 3h forward-return statistics if directional diagnostics were
+            # computed.
+            if 'forward_return_3h' in df.columns:
+                fwd3 = df.loc[regime_mask, 'forward_return_3h'].dropna()
+                if len(fwd3) > 0:
+                    stats["mean_forward_return_3h"] = float(fwd3.mean())
+                    stats["std_forward_return_3h"] = float(fwd3.std())
+
+            # Fraction of bad-path outcomes for this regime (3h horizon).
+            if 'bad_path_flag_3h' in df.columns:
+                bad_mask = df.loc[regime_mask, 'bad_path_flag_3h']
+                if len(bad_mask) > 0:
+                    try:
+                        stats["bad_path_fraction_3h"] = float(
+                            pd.Series(bad_mask).fillna(0).astype(float).mean()
+                        )
+                    except Exception:
+                        pass
+
+            # Directional distribution for this regime based on 3h overlay.
+            if 'path_direction_sign_3h' in df.columns:
+                dir_series = (
+                    df.loc[regime_mask, 'path_direction_sign_3h']
+                    .dropna()
+                    .astype(float)
+                )
+                if len(dir_series) > 0:
+                    stats["direction_up_fraction_3h"] = float((dir_series > 0).mean())
+                    stats["direction_down_fraction_3h"] = float((dir_series < 0).mean())
 
             stats_records.append(stats)
 

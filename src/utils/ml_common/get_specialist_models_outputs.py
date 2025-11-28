@@ -621,80 +621,85 @@ def get_specialist_models_outputs(
     # ------------------------------------------------------------------
     # 6) ML Risk HMM regimes – optional second risk flavor
     # ------------------------------------------------------------------
-    try:
-        log_info("=" * 80)
-        log_info("📐 LOADING SPECIALIST: ML RISK HMM OUTPUTS")
-        log_info("=" * 80)
+    if config.get("enable_risk_hmm_specialist", False):
+        try:
+            log_info("=" * 80)
+            log_info("📐 LOADING SPECIALIST: ML RISK HMM OUTPUTS")
+            log_info("=" * 80)
 
-        risk_hmm_context = {
-            "symbol": symbol,
-            "exchange": exchange,
-            "timeframe": regime_timeframe,
-            "direction": direction,
-            "model": "regime_risk_hmm",
-            "step_name": "ml_risk_regime_step_hmm",
-        }
+            risk_hmm_context = {
+                "symbol": symbol,
+                "exchange": exchange,
+                "timeframe": regime_timeframe,
+                "direction": direction,
+                "model": "regime_risk_hmm",
+                "step_name": "ml_risk_regime_step_hmm",
+            }
 
-        risk_hmm_name = f"ml_risk_hmm_training_data_{regime_timeframe}"
-        risk_hmm_training = artifact_router.load(
-            artifact_name=risk_hmm_name,
-            artifact_type="data",
-            data_category="features",
-            context=risk_hmm_context,
-        )
+            risk_hmm_name = f"ml_risk_hmm_training_data_{regime_timeframe}"
+            risk_hmm_training = artifact_router.load(
+                artifact_name=risk_hmm_name,
+                artifact_type="data",
+                data_category="features",
+                context=risk_hmm_context,
+            )
 
-        if risk_hmm_training is not None and not getattr(risk_hmm_training, "empty", True):
-            if not isinstance(risk_hmm_training, pd.DataFrame):
-                risk_hmm_training = pd.DataFrame(risk_hmm_training)
-            risk_hmm_training = _standardize_index(risk_hmm_training)
+            if risk_hmm_training is not None and not getattr(risk_hmm_training, "empty", True):
+                if not isinstance(risk_hmm_training, pd.DataFrame):
+                    risk_hmm_training = pd.DataFrame(risk_hmm_training)
+                risk_hmm_training = _standardize_index(risk_hmm_training)
 
-            if isinstance(risk_hmm_training.index, pd.DatetimeIndex) and len(risk_hmm_training.index) > 0:
-                log_info(
-                    "📈 ML Risk HMM (%s) index range: %s → %s (n=%d)"
-                    % (
-                        risk_hmm_name,
-                        risk_hmm_training.index.min(),
-                        risk_hmm_training.index.max(),
-                        len(risk_hmm_training.index),
+                if isinstance(risk_hmm_training.index, pd.DatetimeIndex) and len(risk_hmm_training.index) > 0:
+                    log_info(
+                        "📈 ML Risk HMM (%s) index range: %s → %s (n=%d)"
+                        % (
+                            risk_hmm_name,
+                            risk_hmm_training.index.min(),
+                            risk_hmm_training.index.max(),
+                            len(risk_hmm_training.index),
+                        )
                     )
-                )
 
-            # Extract HMM-based regimes / distances and give them distinct
-            # column names to avoid collisions with the primary ML Risk block.
-            risk_hmm_cols: List[str] = []
-            for c in risk_hmm_training.columns:
-                if c in ("risk_regime", "mahal_distance_log") or c.startswith("risk_regime_"):
-                    risk_hmm_cols.append(c)
+                # Extract HMM-based regimes / distances and give them distinct
+                # column names to avoid collisions with the primary ML Risk block.
+                risk_hmm_cols: List[str] = []
+                for c in risk_hmm_training.columns:
+                    if c in ("risk_regime", "mahal_distance_log") or c.startswith("risk_regime_"):
+                        risk_hmm_cols.append(c)
 
-            if risk_hmm_cols:
-                before_block = risk_hmm_training[risk_hmm_cols].copy()
-                rename_map: Dict[str, str] = {}
-                for c in before_block.columns:
-                    if c == "risk_regime":
-                        rename_map[c] = "risk_regime_hmm"
-                    elif c == "mahal_distance_log":
-                        rename_map[c] = "risk_mahal_distance_log_hmm"
+                if risk_hmm_cols:
+                    before_block = risk_hmm_training[risk_hmm_cols].copy()
+                    rename_map: Dict[str, str] = {}
+                    for c in before_block.columns:
+                        if c == "risk_regime":
+                            rename_map[c] = "risk_regime_hmm"
+                        elif c == "mahal_distance_log":
+                            rename_map[c] = "risk_mahal_distance_log_hmm"
+                        else:
+                            rename_map[c] = f"{c}_hmm"
+
+                    before_block = before_block.rename(columns=rename_map)
+                    nnz_before = int(before_block.notna().sum().sum())
+                    block = before_block.shift(1).fillna(method="ffill")
+                    block = block.reindex(training_index, method="ffill")
+                    nnz_after = int(block.notna().sum().sum())
+
+                    if nnz_after == 0:
+                        log_warning(
+                            "⚠️ ML Risk HMM block aligned to training_index is all-NaN. "
+                            "Dropping ML Risk HMM specialist features for this run; check timestamps and values."
+                        )
                     else:
-                        rename_map[c] = f"{c}_hmm"
-
-                before_block = before_block.rename(columns=rename_map)
-                nnz_before = int(before_block.notna().sum().sum())
-                block = before_block.shift(1).fillna(method="ffill")
-                block = block.reindex(training_index, method="ffill")
-                nnz_after = int(block.notna().sum().sum())
-                blocks.append(block)
-                log_success(
-                    f"✅ Added ML Risk HMM specialist block from '{risk_hmm_name}': "
-                    f"shape={block.shape}, non_null_before={nnz_before}, "
-                    f"non_null_after={nnz_after}"
-                )
-                if nnz_after == 0:
-                    log_warning(
-                        "⚠️ ML Risk HMM block aligned to training_index is all-NaN. "
-                        "Check risk_hmm_training timestamps and values."
-                    )
-    except Exception as e:
-        log_warning(f"⚠️ Failed to load ML Risk HMM specialist outputs: {e}")
+                        blocks.append(block)
+                        log_success(
+                            f"✅ Added ML Risk HMM specialist block from '{risk_hmm_name}': "
+                            f"shape={block.shape}, non_null_before={nnz_before}, "
+                            f"non_null_after={nnz_after}"
+                        )
+        except Exception as e:
+            log_warning(f"⚠️ Failed to load ML Risk HMM specialist outputs: {e}")
+    else:
+        log_info("ℹ️ Skipping ML Risk HMM specialist outputs (enable_risk_hmm_specialist=False)")
 
     # SMC specialist block: scalar regime predictions from MLSMCRegimeStep
     try:
@@ -749,16 +754,22 @@ def get_specialist_models_outputs(
                 block = before_block.reindex(training_index, method="ffill")
                 block = block.add_prefix("smc_")
                 nnz_after = int(block.notna().sum().sum())
+                # Always keep the SMC block, even if currently all-NaN, so that
+                # downstream consumers can see the feature structure and we can
+                # debug alignment issues based on warnings instead of silently
+                # discarding this specialist source.
                 blocks.append(block)
-                log_success(
-                    "✅ Added SMC specialist block from 'smc_predictions_with_confidence': "
-                    f"shape={block.shape}, non_null_before={nnz_before}, "
-                    f"non_null_after={nnz_after}"
-                )
                 if nnz_after == 0:
                     log_warning(
                         "⚠️ SMC block aligned to training_index is all-NaN. "
-                        "Check SMC timestamps and values."
+                        "Keeping SMC specialist features, but they will be effectively missing; "
+                        "check SMC timestamps, index alignment, and values."
+                    )
+                else:
+                    log_success(
+                        "✅ Added SMC specialist block from 'smc_predictions_with_confidence': "
+                        f"shape={block.shape}, non_null_before={nnz_before}, "
+                        f"non_null_after={nnz_after}"
                     )
     except Exception as e:
         log_warning(f"⚠️ Failed to load SMC specialist outputs: {e}")
@@ -809,16 +820,21 @@ def get_specialist_models_outputs(
                 nnz_before = int(before_block.notna().sum().sum())
                 block = before_block.reindex(training_index, method="ffill")
                 nnz_after = int(block.notna().sum().sum())
+                # Always keep the mean-reversion block, even if currently all-NaN,
+                # mirroring the SMC behavior so we don't silently lose this
+                # specialist source when alignment is misconfigured.
                 blocks.append(block)
-                log_success(
-                    f"✅ Added Mean-reversion specialist block from '{mr_artifact_name}': "
-                    f"shape={block.shape}, non_null_before={nnz_before}, "
-                    f"non_null_after={nnz_after}"
-                )
                 if nnz_after == 0:
                     log_warning(
                         "⚠️ Mean-reversion block aligned to training_index is all-NaN. "
-                        "Check mean-reversion timestamps and values."
+                        "Keeping mean-reversion specialist features, but they will be effectively missing; "
+                        "check mean-reversion timestamps, index alignment, and values."
+                    )
+                else:
+                    log_success(
+                        f"✅ Added Mean-reversion specialist block from '{mr_artifact_name}': "
+                        f"shape={block.shape}, non_null_before={nnz_before}, "
+                        f"non_null_after={nnz_after}"
                     )
     except Exception as e:
         log_warning(f"⚠️ Failed to load Mean-reversion specialist outputs: {e}")

@@ -129,13 +129,13 @@ class HMMMLMacroTrendStep(BaseStep):
             direction = str(config.get("direction", "long"))
 
             # Set default alpha-specific configuration if not provided
-            # Smoothing defaults are chosen to target ~3ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ5 bar regime persistence
+            # Smoothing defaults are chosen to target longer 10–16h macro regimes
             # while allowing overrides via config/CLI when needed.
             alpha_defaults: Dict[str, Any] = {
                 "alpha_target_smoothing_method": "ewm",
                 "alpha_target_smoothing_window": 12,  # Increased for 10-16h regimes (was 5)
                 "alpha_score_smoothing_method": "ewm",
-                "alpha_score_smoothing_window": 16,  # Increased for 10-16h regimes (was 8)
+                "alpha_score_smoothing_window": 32,  # Further increased window for smoother 10-16h regimes (was 28)
                 # Keep HPO opt-in; these defaults are used when explicitly enabled
                 "alpha_enable_hpo": False,
                 "alpha_hpo_cv_folds": 3,
@@ -145,7 +145,7 @@ class HMMMLMacroTrendStep(BaseStep):
                 "alpha_enable_expectation_calibration": True,
                 "alpha_expectation_positive_threshold": 0.0,
                 "alpha_expectation_min_samples": 200,
-                "alpha_expectation_ema_period": 8,  # Increased for 10-16h regimes (was 4)
+                "alpha_expectation_ema_period": 12,  # Slightly slower EMA for 10-16h regimes
                 "alpha_expectation_ema_weight_recent": 0.08,  # Slower EMA for longer regimes (was None ~0.4)
                 "alpha_target_vol_window": 480,  # Increased rolling window (was 320)
                 # Enable trend feature engineering on aligned market data
@@ -161,10 +161,14 @@ class HMMMLMacroTrendStep(BaseStep):
                 # positive improvement in validation R^2 before adopting.
                 "alpha_auto_prune_quantiles": [0.15, 0.25, 0.35, 0.45],
                 # Minimum run length for regime persistence (NOT scaled)
-                # Target: 10-16 hours at 15m bars = 40-64 bars
-                "alpha_regime_min_run_bars": 48,  # Adjusted for 10-16h target (was 40)
+                # Leave at 0 by default; prefer HMM/smoothing to control persistence
+                "alpha_regime_min_run_bars": 0,
                 # Enable quality report generation
                 "alpha_enable_quality_report": True,
+                # Regime configuration: macro trend should use fewer, smoother
+                # regimes. Default to 3 bins and explore 2–4 in experiments.
+                "alpha_regime_counts": [2, 3, 4],
+                "alpha_regime_bins": 3,
             }
             for k, v in alpha_defaults.items():
                 config.setdefault(k, v)
@@ -175,7 +179,7 @@ class HMMMLMacroTrendStep(BaseStep):
                 ("alpha_max_horizon_bars", 3),
                 ("alpha_horizon_bars", 1),
                 ("alpha_target_smoothing_window", 12),  # Updated default for 10-16h regimes
-                ("alpha_score_smoothing_window", 16),  # Updated default for 10-16h regimes
+                ("alpha_score_smoothing_window", 32),  # Updated default for smoother 10-16h regimes
                 ("alpha_target_vol_window", 480),  # Updated default for longer analysis
                 ("alpha_expectation_ema_period", 8),  # Updated default for 10-16h regimes
             ]:
@@ -399,6 +403,7 @@ class HMMMLMacroTrendStep(BaseStep):
             model = None
             alpha_scores = None
             training_metrics: Dict[str, Any] = {}
+            training_metrics["alpha_fallback_used"] = False
             regime_stats_df: Optional[pd.DataFrame] = None
             model_path: Optional[str] = None
             regime_stats_path: Optional[str] = None
@@ -422,6 +427,9 @@ class HMMMLMacroTrendStep(BaseStep):
                     config,
                     split_config=split_config,
                 )
+
+                # Mark successful model training in metrics for downstream diagnostics
+                training_metrics["alpha_model_training_failed"] = 0
 
                 tprint_info(
                     f" Alpha model training complete: model_type="
@@ -630,9 +638,22 @@ class HMMMLMacroTrendStep(BaseStep):
 
                     alpha_df, regime_stats_df, regime_col_name = self._assign_alpha_regimes(
                         alpha_df,
-                        alpha_scores,
+                        alpha_df["alpha_score_continuous"],
                         config,
                     )
+
+                    # Record whether primary regime assignment produced a usable regime column
+                    if regime_col_name is not None and regime_col_name in alpha_df.columns:
+                        try:
+                            n_regimes_primary = int(
+                                pd.Series(alpha_df[regime_col_name].dropna().astype(int)).nunique()
+                            )
+                        except Exception:
+                            n_regimes_primary = -1
+                        training_metrics["alpha_primary_regimes_success"] = 1
+                        training_metrics["alpha_primary_regimes_n_regimes"] = n_regimes_primary
+                    else:
+                        training_metrics["alpha_primary_regimes_success"] = 0
             except ImportError as lgb_err:
                 tprint_warning(
                     f"LightGBM not available; skipping alpha model training: {lgb_err}"
@@ -641,8 +662,12 @@ class HMMMLMacroTrendStep(BaseStep):
                 tprint_warning(
                     f"Alpha model training failed; continuing with labels only: {model_exc}"
                 )
+                training_metrics["alpha_model_training_failed"] = 1
 
-            if alpha_scores is None or regime_col_name is None:
+            # Only trigger fallback if we genuinely have no regime column.
+            # This keeps alpha_fallback_used=False for healthy runs where
+            # primary regime assignment succeeded.
+            if regime_col_name is None or regime_col_name not in alpha_df.columns:
                 try:
                     forward_ret_cols = [
                         col
@@ -679,7 +704,7 @@ class HMMMLMacroTrendStep(BaseStep):
                                 pass
                             alpha_df, regime_stats_df, regime_col_name = self._assign_alpha_regimes(
                                 alpha_df,
-                                alpha_scores,
+                                alpha_df["alpha_score_continuous"],
                                 config,
                             )
                             training_metrics["alpha_fallback_used"] = True
@@ -1539,6 +1564,18 @@ class HMMMLMacroTrendStep(BaseStep):
         low = alpha_df["low"] if "low" in alpha_df.columns else None
         close = alpha_df["close"] if "close" in alpha_df.columns else None
 
+        # Prepare robust-scaling configuration up front so it is always defined
+        outlier_threshold = float(config.get("alpha_outlier_threshold", 3.0))
+        normalizer_config: Dict[str, Any] = {
+            "default_strategy": "robust",
+            "auto_select": False,
+            "handle_outliers": True,
+            "outlier_threshold": outlier_threshold,
+            "use_vectorbt": False,
+        }
+        scaler = ScalingNormalizer(normalizer_config)
+        scaling_strategy = "rolling_window"
+
         try:
             X_train_scaled = rolling_adaptive_normalize(
                 X_train_raw,
@@ -1568,15 +1605,7 @@ class HMMMLMacroTrendStep(BaseStep):
         except Exception as norm_exc:
             tprint_warning(f"Rolling normalization failed, using ScalingNormalizer fallback: {norm_exc}")
             # Fallback to ScalingNormalizer
-            outlier_threshold = float(config.get("alpha_outlier_threshold", 3.0))
-            normalizer_config: Dict[str, Any] = {
-                "default_strategy": "robust",
-                "auto_select": False,
-                "handle_outliers": True,
-                "outlier_threshold": outlier_threshold,
-                "use_vectorbt": False,
-            }
-            scaler = ScalingNormalizer(normalizer_config)
+            scaling_strategy = "robust"
             X_train_scaled = scaler.fit_transform(X_train_raw, strategy="robust")
             X_val_scaled = scaler.transform(X_val_raw)
             X_scaled_full = scaler.transform(X)
@@ -1635,8 +1664,15 @@ class HMMMLMacroTrendStep(BaseStep):
                 )
 
                 X_features_full = features_df
-                X_train = X_features_full.iloc[:split_idx].copy()
-                X_val = X_features_full.iloc[split_idx:].copy()
+                # Preserve temporal split semantics: with a TemporalSplitConfig we
+                # respect the train/val masks; otherwise we fall back to the
+                # legacy percentage-based split via split_idx.
+                if split_config is not None:
+                    X_train = X_features_full.loc[X_train_raw.index].copy()
+                    X_val = X_features_full.loc[X_val_raw.index].copy()
+                else:
+                    X_train = X_features_full.iloc[:split_idx].copy()
+                    X_val = X_features_full.iloc[split_idx:].copy()
                 X_scaled_full = X_features_full
                 extended_feature_names = feature_names_seq
             else:
@@ -1650,7 +1686,7 @@ class HMMMLMacroTrendStep(BaseStep):
             extended_feature_names = list(X_scaled_full.columns)
 
         training_metrics: Dict[str, Any] = {}
-        training_metrics["scaling_strategy"] = "robust"
+        training_metrics["scaling_strategy"] = scaling_strategy
         training_metrics["alpha_outlier_threshold"] = outlier_threshold
         training_metrics["alpha_use_ewm_features"] = use_ewm_features
         training_metrics["alpha_ewm_periods"] = ewma_periods
@@ -2570,16 +2606,24 @@ class HMMMLMacroTrendStep(BaseStep):
         """
         # Get configuration for regime optimization
         use_flexible_regimes = bool(config.get("alpha_use_flexible_regimes", True))
-        regime_counts_to_test = config.get("alpha_regime_counts", [4, 5, 6])
+        regime_counts_to_test = config.get("alpha_regime_counts", [2, 3, 4])
         min_bin_pct = float(config.get("alpha_min_bin_pct", 0.15))
         max_bin_pct = float(config.get("alpha_max_bin_pct", 0.35))
 
-        # Validate regime counts
+        # Validate regime counts within compact 2–4 range
         if isinstance(regime_counts_to_test, int):
             regime_counts_to_test = [regime_counts_to_test]
-        regime_counts_to_test = [n for n in regime_counts_to_test if 3 <= n <= 6]
+        regime_counts_to_test = [n for n in regime_counts_to_test if 2 <= n <= 4]
         if not regime_counts_to_test:
-            regime_counts_to_test = [5]  # Fallback to default
+            regime_counts_to_test = [3]  # Fallback to 3 regimes for macro
+
+        tprint_info(
+            "HMM macro regime assignment starting: "
+            f"samples={len(alpha_scores)}, "
+            f"alpha_df_rows={len(alpha_df)}, "
+            f"use_flexible_regimes={use_flexible_regimes}, "
+            f"regime_counts_to_test={regime_counts_to_test}"
+        )
 
         # Optional smoothing of alpha scores before constructing regimes
         score_smoothing_method = str(
@@ -2590,8 +2634,12 @@ class HMMMLMacroTrendStep(BaseStep):
         if score_smoothing_method != "none" and score_smoothing_window > 1:
             try:
                 if score_smoothing_method == "ewm":
+                    # Use halflife-based EWM so that older samples retain more weight
+                    # than with the default span-based formulation.
+                    halflife = float(max(score_smoothing_window, 1))
                     scores_for_binning = scores_for_binning.ewm(
-                        span=score_smoothing_window, adjust=False
+                        halflife=halflife,
+                        adjust=False,
                     ).mean()
                 elif score_smoothing_method == "rolling_median":
                     scores_for_binning = (
@@ -2621,12 +2669,74 @@ class HMMMLMacroTrendStep(BaseStep):
             tprint_warning(
                 f"Not enough valid alpha scores ({len(valid_scores)}) to define regimes"
             )
+            tprint_info(
+                "HMM macro regime assignment diagnostics: "
+                f"total_scores={len(alpha_scores)}, "
+                f"non_nan_scores={len(valid_scores)}, "
+                f"nan_scores={int(len(alpha_scores) - len(valid_scores))}"
+            )
             return alpha_df, None, None
+
+        # ------------------------------------------------------------------
+        # SIMPLE SCORE-ONLY REGIME ASSIGNMENT (robust default)
+        # ------------------------------------------------------------------
+        try:
+            num_bins_simple = int(config.get("alpha_regime_bins", 3))
+        except Exception:
+            num_bins_simple = 3
+        # Clamp to a compact 2–4 regime range to avoid overly fragmented regimes
+        num_bins_simple = max(2, min(num_bins_simple, 4))
+
+        if len(valid_scores) < num_bins_simple:
+            if len(valid_scores) >= 3:
+                num_bins_simple = len(valid_scores)
+                tprint_warning(
+                    f"Reducing alpha regime bins to {num_bins_simple} due to limited samples "
+                    "for score-only regimes"
+                )
+            else:
+                tprint_warning(
+                    f"Not enough valid alpha scores ({len(valid_scores)}) to define score-only regimes"
+                )
+                return alpha_df, None, None
+
+        ranks_simple = valid_scores.rank(method="first")
+        try:
+            bucket_codes_simple = pd.qcut(
+                ranks_simple,
+                q=num_bins_simple,
+                labels=False,
+                duplicates="drop",
+            )
+            effective_bins_simple = int(pd.Series(bucket_codes_simple).nunique())
+            if effective_bins_simple < 2:
+                median_rank = ranks_simple.median()
+                bucket_codes_simple = (ranks_simple > median_rank).astype(int)
+                num_bins_simple = 2
+        except ValueError as e:
+            tprint_warning(
+                f"Failed to compute score-only quantile alpha regimes with qcut: {e}; "
+                "falling back to binary median split"
+            )
+            median_rank = ranks_simple.median()
+            bucket_codes_simple = (ranks_simple > median_rank).astype(int)
+            num_bins_simple = 2
+
+        bucket_col_simple = f"alpha_regime_bucket_{num_bins_simple}"
+        alpha_df[bucket_col_simple] = bucket_codes_simple.reindex(alpha_df.index)
+
+        # For now, skip regime_stats_df from this simplified path; downstream
+        # consumers already guard on regime_stats_df being None.
+        return alpha_df, None, bucket_col_simple
 
         # Get forward returns for optimization
         fwd_cols = [col for col in alpha_df.columns if col.startswith("alpha_forward_return_")]
         if not fwd_cols:
             tprint_warning("No alpha_forward_return column found for regime optimization")
+            tprint_info(
+                "HMM macro regime assignment diagnostics: "
+                f"available_columns={list(alpha_df.columns)}"
+            )
             return alpha_df, None, None
 
         fwd_col = fwd_cols[0]
@@ -2635,13 +2745,26 @@ class HMMMLMacroTrendStep(BaseStep):
         # Align scores and returns
         common_idx = valid_scores.index.intersection(forward_returns.index)
         if len(common_idx) < 20:
+            # If we don't have enough overlapping samples to run the
+            # forward-return-driven optimization, still proceed with
+            # score-only quantile regimes instead of returning None.
             tprint_warning(
-                f"Not enough valid samples ({len(common_idx)}) for regime optimization"
+                f"Not enough valid samples ({len(common_idx)}) for regime optimization; "
+                "falling back to score-only quantile regimes"
             )
-            return alpha_df, None, None
-
-        aligned_scores = valid_scores.loc[common_idx]
-        aligned_returns = forward_returns.loc[common_idx]
+            tprint_info(
+                "HMM macro regime assignment diagnostics: "
+                f"valid_scores={len(valid_scores)}, "
+                f"valid_forward_returns={len(forward_returns)}, "
+                f"intersection={len(common_idx)}, "
+                f"min_required=20"
+            )
+            aligned_scores = valid_scores
+            aligned_returns = forward_returns.reindex(valid_scores.index)
+            use_flexible_regimes = False
+        else:
+            aligned_scores = valid_scores.loc[common_idx]
+            aligned_returns = forward_returns.loc[common_idx]
 
         # Multi-regime competition: test multiple regime counts
         if use_flexible_regimes:
@@ -2733,13 +2856,38 @@ class HMMMLMacroTrendStep(BaseStep):
 
             try:
                 ranks = aligned_scores.rank(method="first")
-                bucket_codes = pd.qcut(ranks, q=num_bins, labels=False)
+                bucket_codes = pd.qcut(
+                    ranks,
+                    q=num_bins,
+                    labels=False,
+                    duplicates="drop",
+                )
+
+                # If heavy duplication collapses bins, fall back to a binary median split
+                effective_bins = int(pd.Series(bucket_codes).nunique())
+                if effective_bins < 2:
+                    tprint_warning(
+                        "Quantile-based alpha regimes collapsed to a single bin; "
+                        "falling back to binary median split"
+                    )
+                    median_rank = ranks.median()
+                    bucket_codes = (ranks > median_rank).astype(int)
+                    num_bins = 2
+                else:
+                    num_bins = effective_bins
+
                 tprint_info(
-                    f"ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Using simple quantile binning with {num_bins} equal-sized regimes"
+                    f"ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Using simple quantile binning with {num_bins} effective regimes"
                 )
             except ValueError as e:
-                tprint_warning(f"Failed to compute quantile-based alpha regimes: {e}")
-                return alpha_df, None, None
+                tprint_warning(
+                    f"Failed to compute quantile-based alpha regimes with qcut: {e}; "
+                    "falling back to binary median split"
+                )
+                ranks = aligned_scores.rank(method="first")
+                median_rank = ranks.median()
+                bucket_codes = (ranks > median_rank).astype(int)
+                num_bins = 2
 
         bucket_col = f"alpha_regime_bucket_{num_bins}"
         alpha_df[bucket_col] = bucket_codes.reindex(alpha_df.index)
@@ -3661,6 +3809,69 @@ class HMMMLMacroTrendStep(BaseStep):
 
         return metrics, quality_path
 
+    def _build_fallback_regime_column_for_report(
+        self,
+        *,
+        alpha_df: pd.DataFrame,
+        config: Dict[str, Any],
+        prefix: str = "macro_regime_bucket_report_",
+    ) -> Optional[str]:
+        """Best-effort helper to ensure a regime column exists for quality reporting."""
+        try:
+            score_series = None
+            if "alpha_score_continuous" in alpha_df.columns:
+                score_series = alpha_df["alpha_score_continuous"].astype(float)
+            elif "alpha_target" in alpha_df.columns:
+                score_series = alpha_df["alpha_target"].astype(float)
+            else:
+                fwd_cols_local = [
+                    c for c in alpha_df.columns if c.startswith("alpha_forward_return_")
+                ]
+                if fwd_cols_local:
+                    score_series = alpha_df[fwd_cols_local[0]].astype(float)
+
+            if score_series is None:
+                return None
+
+            score_series = score_series.replace([np.inf, -np.inf], np.nan).dropna()
+            if len(score_series) < 50:
+                return None
+
+            num_bins = int(config.get("alpha_regime_bins", 5))
+            num_bins = max(3, min(num_bins, 6))
+
+            ranks = score_series.rank(method="first")
+            try:
+                bucket_codes = pd.qcut(
+                    ranks,
+                    q=num_bins,
+                    labels=False,
+                    duplicates="drop",
+                )
+            except Exception:
+                bucket_codes = pd.cut(
+                    ranks,
+                    bins=num_bins,
+                    labels=False,
+                    duplicates="drop",
+                )
+
+            if bucket_codes is None or bucket_codes.empty:
+                return None
+
+            effective_bins = int(bucket_codes.nunique())
+            if effective_bins < 2:
+                return None
+
+            bucket_col = f"{prefix}{effective_bins}"
+            alpha_df[bucket_col] = bucket_codes.reindex(alpha_df.index)
+            return bucket_col
+        except Exception as exc:
+            tprint_warning(
+                f"Failed to build fallback regime column for quality report: {exc}"
+            )
+            return None
+
     def _generate_hmm_macro_quality_report(
         self,
         *,
@@ -3673,12 +3884,12 @@ class HMMMLMacroTrendStep(BaseStep):
         config: Dict[str, Any],
     ) -> Optional[Tuple[str, str]]:
         """Generate comprehensive quality report for HMM macro trend regimes.
-        
+
         Creates CSV and Markdown reports in outcomes/ with:
         - Per-regime metrics: returns on different timeframes, Sharpe, temporal smoothness
         - Per-quantile (based on 0-1 scalar) metrics
         - Global metrics: transition matrix, overall Sharpe, regime duration stats
-        
+
         Args:
             alpha_df: DataFrame with regime assignments and alpha_score_continuous
             regime_col: Name of the regime column
@@ -3687,17 +3898,20 @@ class HMMMLMacroTrendStep(BaseStep):
             timeframe: Timeframe string
             training_metrics: Dict of training metrics from model
             config: Configuration dictionary
-            
+
         Returns:
             Tuple of (csv_path, md_path) or None if generation fails
         """
         import os
         from datetime import datetime
-        
+
         if regime_col is None or regime_col not in alpha_df.columns:
-            tprint_warning("No regime column for quality report generation")
+            tprint_warning(
+                "No regime column for quality report generation; "
+                "skipping HMM macro trend quality report"
+            )
             return None
-        
+
         try:
             os.makedirs("outcomes", exist_ok=True)
             now_str = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
@@ -3929,9 +4143,11 @@ class HMMMLMacroTrendStep(BaseStep):
                     for key, value in training_metrics.items():
                         if isinstance(value, (int, float)):
                             f.write(f"- **{key}**: {value}\n")
+                        elif isinstance(value, str) and key.endswith("_error"):
+                            f.write(f"- **{key}**: {value}\n")
                 f.write("\n")
             
-            tprint_info(f"đ Generated HMM macro trend quality report: {md_path}")
+            tprint_info(f"đ“„ Generated HMM macro trend quality report: {md_path}")
             return csv_path, md_path
             
         except Exception as e:

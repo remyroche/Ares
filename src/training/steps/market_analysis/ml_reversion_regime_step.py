@@ -401,6 +401,11 @@ class MLMeanReversionRegimeStep(BaseStep):
                 y_teacher_binary = y_teacher_binary.loc[union_mask]
                 teacher_score_aligned = teacher_score_aligned.loc[union_mask]
 
+            # Allow global launcher-level HPO toggle to control this step when
+            # mr_enable_hpo is not explicitly provided in the config.
+            if bool(config.get("enable_hpo", False)) and "mr_enable_hpo" not in config:
+                config["mr_enable_hpo"] = True
+
             # 5) Run HPO if enabled
             hpo_enabled = bool(config.get("mr_enable_hpo", False))
             if hpo_enabled:
@@ -511,7 +516,7 @@ class MLMeanReversionRegimeStep(BaseStep):
                 # Forward-return diagnostics at multiple horizons
                 tprint_info(f"  📊 Computing forward-return diagnostics for {dir_} direction...")
                 fwd_start = time.time()
-                horizons_cfg = config.get("mr_forward_horizons", [2, 4, 8, 12])
+                horizons_cfg = config.get("mr_forward_horizons", [4, 8, 12])
                 fwd_metrics: Dict[int, Dict[str, Any]] = {}
                 for h in horizons_cfg:
                     try:
@@ -556,6 +561,7 @@ class MLMeanReversionRegimeStep(BaseStep):
                         timeframe=regime_timeframe,
                         market_source=str(market_source),
                         oof_metadata=oof_results.metadata,  # Pass OOF metadata
+                        config=config,
                     )
 
                     all_artifacts[dir_] = artifacts
@@ -1049,24 +1055,88 @@ class MLMeanReversionRegimeStep(BaseStep):
         """
         close = df["close"].astype(float)
 
-        # For 15m timeframe, use 4-6 bar horizon (1-1.5h)
-        forward_horizon = int(config.get("mr_forward_target_horizon", 6))
-        min_threshold = float(config.get("mr_direction_min_threshold", 0.002))  # 0.2% minimum move
+        # For 15m timeframe, prefer a slightly longer 4–8 bar horizon
+        # (default 8 bars ≈ 2 hours) to reduce micro-noise.
+        forward_horizon = int(config.get("mr_forward_target_horizon", 8))
+        min_threshold = float(config.get("mr_direction_min_threshold", 0.02))  # 2.0% minimum move
 
         fwd_returns = np.full(len(close), np.nan)
         for i in range(len(close) - forward_horizon):
             if close.iloc[i] > 0 and close.iloc[i + forward_horizon] > 0:
                 fwd_returns[i] = (close.iloc[i + forward_horizon] - close.iloc[i]) / close.iloc[i]
 
-        # Classification:
-        # - If forward return > +min_threshold: label = 0 (bullish, price went up)
-        # - If forward return < -min_threshold: label = 1 (bearish, price went down)
-        # - If |forward return| < min_threshold: look at sign (slight bias up vs down)
-        y_direction = np.full(len(close), np.nan)
-        finite_mask = np.isfinite(fwd_returns)
-        y_direction[finite_mask] = (fwd_returns[finite_mask] < 0).astype(int)  # 1 if down, 0 if up
+        # Quick PnL-aligned approximation: subtract an approximate round-trip
+        # fee from the forward return so that labels reflect whether a trade
+        # would have been profitable after fees at this horizon.
+        fee_rate = float(config.get("mr_fee_rate", 0.0015))  # ~0.15% round trip
+        effective_fee = float(config.get("mr_effective_roundtrip_fee", 2.0 * fee_rate))
+        net_returns = fwd_returns - effective_fee
 
-        return pd.Series(y_direction, index=df.index)
+        # Classification:
+        # - If net return > +min_threshold: label = 0 (bullish, price went up)
+        # - If net return < -min_threshold: label = 1 (bearish, price went down)
+        # - If |net return| < min_threshold: leave unlabeled (NaN) so these are dropped
+        y_direction = np.full(len(close), np.nan)
+        finite_mask = np.isfinite(net_returns)
+        if bool(finite_mask.any()):
+            net_valid = net_returns[finite_mask]
+            labels = np.full(net_valid.shape, np.nan)
+
+            large_up = net_valid > min_threshold
+            large_down = net_valid < -min_threshold
+
+            labels[large_up] = 0
+            labels[large_down] = 1
+
+            y_direction[finite_mask] = labels
+
+        y_series = pd.Series(y_direction, index=df.index)
+
+        # Optional gating: only keep labels where the OU/Hurst teacher indicates
+        # a mean-reversion regime (core MR cluster or high teacher_score band)
+        # and RSI is outside a neutral band. This focuses the target on
+        # economically meaningful MR opportunities when the relevant columns
+        # are available.
+        try:
+            teacher_mask = None
+            if "mr_teacher_mean_reversion" in df.columns:
+                mr_core = df["mr_teacher_mean_reversion"].astype(float) == 1.0
+                teacher_mask = mr_core
+
+            if "mr_teacher_score" in df.columns:
+                score = df["mr_teacher_score"].astype(float)
+                q_conf = float(config.get("mr_teacher_score_quantile", 0.8))
+                try:
+                    thr = float(score.quantile(q_conf))
+                    hi_band = score >= thr
+                except Exception:
+                    hi_band = score.notna()
+                if teacher_mask is None:
+                    teacher_mask = hi_band
+                else:
+                    teacher_mask = teacher_mask | hi_band
+
+            if teacher_mask is None:
+                gating_mask = y_series.notna().to_numpy()
+            else:
+                gating_mask = (teacher_mask & y_series.notna()).to_numpy()
+
+            # RSI gating: drop labels where RSI is in a neutral range.
+            if "rsi" in df.columns:
+                rsi = df["rsi"].astype(float)
+                rsi_norm = rsi / 100.0
+                rsi_low = float(config.get("mr_rsi_neutral_low", 0.35))
+                rsi_high = float(config.get("mr_rsi_neutral_high", 0.65))
+                rsi_tradable = (rsi_norm < rsi_low) | (rsi_norm > rsi_high)
+                gating_mask = gating_mask & rsi_tradable.to_numpy()
+
+            # Apply gating mask: set all non-selected labels to NaN
+            y_series.loc[~gating_mask] = np.nan
+        except Exception:
+            # If anything goes wrong with gating, fall back to the raw labels.
+            pass
+
+        return y_series
 
     def _calculate_atr_multipliers(
         self, df: pd.DataFrame, config: Dict[str, Any]
@@ -1206,6 +1276,15 @@ class MLMeanReversionRegimeStep(BaseStep):
         n_neg = (y_train_np == 0).sum()
         n_pos = (y_train_np == 1).sum()
         auto_scale_pos_weight = float(n_neg / n_pos) if n_pos > 0 else 1.0
+        if (n_pos + n_neg) > 0:
+            hpo_base_score = float(n_pos / float(n_pos + n_neg))
+            eps = 1e-6
+            if hpo_base_score <= 0.0:
+                hpo_base_score = eps
+            elif hpo_base_score >= 1.0:
+                hpo_base_score = 1.0 - eps
+        else:
+            hpo_base_score = 0.5
 
         # Define parameter groups with tied parameters
         param_groups = [
@@ -1256,7 +1335,17 @@ class MLMeanReversionRegimeStep(BaseStep):
         ]
 
         # Define objective function
-        def objective(params: Dict[str, Any]) -> float:
+        def objective(
+            params: Dict[str, Any],
+            X_train: Optional[np.ndarray] = None,
+            y_train: Optional[np.ndarray] = None,
+            X_val: Optional[np.ndarray] = None,
+            y_val: Optional[np.ndarray] = None,
+            model: Optional[Any] = None,
+            cv_folds: Optional[int] = None,
+            scoring_metric: Optional[str] = None,
+            **kwargs: Any,
+        ) -> float:
             """Objective function for HPO."""
             # Expand tied parameters
             if "reg_strength" in params:
@@ -1281,6 +1370,7 @@ class MLMeanReversionRegimeStep(BaseStep):
                 "scale_pos_weight": auto_scale_pos_weight,
                 "eval_metric": "logloss",
                 "random_state": 42,
+                "base_score": hpo_base_score,
             }
 
             try:
@@ -1318,7 +1408,7 @@ class MLMeanReversionRegimeStep(BaseStep):
         # Create optimizer
         optimizer = HierarchicalParameterOptimizer(
             param_groups=param_groups,
-            objective_func=lambda params: objective(params),
+            objective_func=objective,
             stages=[
                 OptimizationStage.COARSE_GRID,
                 OptimizationStage.TPE
@@ -1464,6 +1554,16 @@ class MLMeanReversionRegimeStep(BaseStep):
         else:
             auto_scale_pos_weight = 1.0
 
+        if (n_pos + n_neg) > 0:
+            base_score = float(n_pos / float(n_pos + n_neg))
+            eps = 1e-6
+            if base_score <= 0.0:
+                base_score = eps
+            elif base_score >= 1.0:
+                base_score = 1.0 - eps
+        else:
+            base_score = 0.5
+
         # IMPROVED: Reduced regularization to allow more diverse predictions
         # Previous settings were too conservative, leading to compressed probabilities
         params = dict(
@@ -1480,6 +1580,7 @@ class MLMeanReversionRegimeStep(BaseStep):
             # Use auto-calculated scale_pos_weight for class balance
             scale_pos_weight=float(config.get("mr_scale_pos_weight", auto_scale_pos_weight)),
             eval_metric="logloss",
+            base_score=base_score,
         )
 
         tprint_info(
@@ -1745,6 +1846,18 @@ class MLMeanReversionRegimeStep(BaseStep):
             X_te = X[test_start:test_end]
             y_te = y[test_start:test_end]
 
+            n_neg = int((y_tr == 0).sum())
+            n_pos = int((y_tr == 1).sum())
+            if n_pos + n_neg > 0:
+                fold_base_score = float(n_pos / float(n_pos + n_neg))
+                eps = 1e-6
+                if fold_base_score <= 0.0:
+                    fold_base_score = eps
+                elif fold_base_score >= 1.0:
+                    fold_base_score = 1.0 - eps
+            else:
+                fold_base_score = 0.5
+
             params = dict(
                 tree_method="hist",
                 learning_rate=float(config.get("mr_learning_rate", 0.02)),
@@ -1757,6 +1870,7 @@ class MLMeanReversionRegimeStep(BaseStep):
                 reg_lambda=float(config.get("mr_reg_lambda", 1.0)),
                 n_estimators=wf_estimators,
                 eval_metric="logloss",
+                base_score=fold_base_score,
             )
             try:
                 tprint_info(f"    🤖 Training XGBoost model ({wf_estimators} trees, train_size={len(X_tr)})...")
@@ -1887,6 +2001,7 @@ class MLMeanReversionRegimeStep(BaseStep):
         timeframe: str,
         market_source: str,
         oof_metadata: Optional[List[Dict[str, Any]]] = None,
+        config: Optional[Dict[str, Any]] = None,
     ) -> Tuple[Dict[str, str], Dict[str, str]]:
         """Save artifacts and generate comprehensive reports with improved diagnostics and burn-in metadata."""
         artifacts: Dict[str, str] = {}
@@ -1975,6 +2090,104 @@ class MLMeanReversionRegimeStep(BaseStep):
             tprint_warning(f"Failed to save calibrated model artifact: {exc}")
 
         # Save metrics
+        # Enrich student metrics with OOF-based classification metrics if available.
+        try:
+            if "mr_probability" in output_df.columns and "mr_direction_target" in output_df.columns:
+                prob_series_full = output_df["mr_probability"].astype(float)
+                target_series_full = output_df["mr_direction_target"].astype(float)
+
+                # Use only finite probabilities with known targets
+                base_mask = np.isfinite(prob_series_full.values) & np.isfinite(target_series_full.values)
+
+                # Restrict to true OOF samples when available
+                if "mr_is_oof" in output_df.columns:
+                    base_mask &= output_df["mr_is_oof"].astype(bool).values
+
+                if bool(base_mask.any()):
+                    idx_all = output_df.index[base_mask]
+                    y_all = target_series_full.loc[idx_all].astype(int)
+                    p_all = prob_series_full.loc[idx_all]
+
+                    def _split_indices(start_ts: datetime, end_ts: datetime) -> pd.DatetimeIndex:
+                        if split_config is None:
+                            return idx_all
+                        return idx_all[(idx_all >= start_ts) & (idx_all <= end_ts)]
+
+                    def _compute_split_metrics(idx_subset: pd.DatetimeIndex) -> Dict[str, float]:
+                        if idx_subset is None or len(idx_subset) < 50:
+                            return {}
+                        y_true = y_all.loc[idx_subset]
+                        p = p_all.loc[idx_subset]
+                        if y_true.nunique() < 2:
+                            return {}
+                        y_pred = (p >= 0.5).astype(int)
+                        m: Dict[str, float] = {
+                            "acc": float(accuracy_score(y_true, y_pred)),
+                            "f1": float(f1_score(y_true, y_pred, zero_division=0.0)),
+                            "precision": float(precision_score(y_true, y_pred, zero_division=0.0)),
+                            "recall": float(recall_score(y_true, y_pred, zero_division=0.0)),
+                        }
+                        try:
+                            m["auc"] = float(roc_auc_score(y_true, p))
+                        except ValueError:
+                            m["auc"] = float("nan")
+                        try:
+                            m["logloss"] = float(log_loss(y_true, p))
+                        except ValueError:
+                            m["logloss"] = float("nan")
+                        return m
+
+                    if split_config is not None:
+                        train_idx = _split_indices(split_config.training.start, split_config.training.effective_end)
+                        val_idx = _split_indices(split_config.validation.start, split_config.validation.effective_end)
+                        test_idx = _split_indices(split_config.test.start, split_config.test.effective_end)
+                    else:
+                        train_idx = idx_all
+                        val_idx = idx_all
+                        test_idx = idx_all
+
+                    train_metrics = _compute_split_metrics(train_idx)
+                    val_metrics = _compute_split_metrics(val_idx)
+                    test_metrics = _compute_split_metrics(test_idx)
+
+                    # Populate raw metrics
+                    if train_metrics:
+                        student_metrics["train_raw"] = train_metrics
+                    if val_metrics:
+                        student_metrics["val_raw"] = val_metrics
+                    if test_metrics:
+                        student_metrics["test_raw"] = test_metrics
+
+                    # For now, treat calibrated metrics as identical to raw OOF metrics
+                    if "train_calibrated" not in student_metrics and train_metrics:
+                        student_metrics["train_calibrated"] = dict(train_metrics)
+                    if "val_calibrated" not in student_metrics and val_metrics:
+                        student_metrics["val_calibrated"] = dict(val_metrics)
+                    if "test_calibrated" not in student_metrics and test_metrics:
+                        student_metrics["test_calibrated"] = dict(test_metrics)
+
+                    # Class balance and split sizes
+                    cb = student_metrics.get("class_balance", {})
+                    if len(train_idx) > 0:
+                        cb["train_pos_rate"] = float(y_all.loc[train_idx].mean())
+                    if len(val_idx) > 0:
+                        cb["val_pos_rate"] = float(y_all.loc[val_idx].mean())
+                    if len(test_idx) > 0:
+                        cb["test_pos_rate"] = float(y_all.loc[test_idx].mean())
+                    if cb:
+                        student_metrics["class_balance"] = cb
+
+                    split_sizes = student_metrics.get("split_sizes", {})
+                    split_sizes["train"] = int(len(train_idx))
+                    split_sizes["val"] = int(len(val_idx))
+                    split_sizes["test"] = int(len(test_idx))
+                    student_metrics["split_sizes"] = split_sizes
+
+                    # Mark calibration method to avoid misleading defaults
+                    student_metrics.setdefault("calibration_method", "oof")
+        except Exception as metrics_exc:  # noqa: BLE001
+            tprint_warning(f"Failed to compute OOF classification metrics: {metrics_exc}")
+
         try:
             artifacts["metrics"] = self._save_artifact(
                 data={
@@ -2233,41 +2446,195 @@ class MLMeanReversionRegimeStep(BaseStep):
                 tp_override = None
                 sl_override = None
 
-            if tp_override is not None and sl_override is not None:
-                grid_df = grid_fn(
-                    close=close,
-                    high=high,
-                    low=low,
-                    raw_returns=raw_returns,
-                    predictions=preds,
-                    confidence=grid_confidence,
-                    ml_df=ml_df_grid,
-                    timeframe=timeframe,
-                    regime_col="mr_teacher_mean_reversion",
-                    tp_values=[tp_override],
-                    sl_values=[sl_override],
-                )
-            else:
-                grid_df = grid_fn(
-                    close=close,
-                    high=high,
-                    low=low,
-                    raw_returns=raw_returns,
-                    predictions=preds,
-                    confidence=grid_confidence,
-                    ml_df=ml_df_grid,
-                    timeframe=timeframe,
-                    regime_col="mr_teacher_mean_reversion",
-                )
+            local_config: Dict[str, Any] = config or {}
+            dir_suffix = "_short" if direction == "short" else "_long"
 
-            if isinstance(grid_df, pd.DataFrame):
+            # Optionally constrain TPSL overrides to a configurable band around
+            # average ATR_14-relative volatility so that profit targets and
+            # stops remain in a reasonable range relative to recent price
+            # movement and trading fees.
+            if tp_override is not None and sl_override is not None and "mr_atr_14" in output_df.columns:
+                try:
+                    atr_14_series = output_df.loc[idx, "mr_atr_14"].astype(float)
+                    close_series = close
+                    atr_rel = (atr_14_series / close_series).replace([np.inf, -np.inf], np.nan)
+                    avg_atr_rel = float(atr_rel.mean())
+                except Exception:
+                    avg_atr_rel = None
+
+                if avg_atr_rel is not None and avg_atr_rel > 0:
+                    tp_min_mult = float(local_config.get("mr_tp_min_atr_mult", 1.0))
+                    tp_max_mult = float(local_config.get("mr_tp_max_atr_mult", 3.0))
+                    sl_min_mult = float(local_config.get("mr_sl_min_atr_mult", 0.5))
+                    sl_max_mult = float(local_config.get("mr_sl_max_atr_mult", 2.0))
+
+                    tp_floor = tp_min_mult * avg_atr_rel
+                    tp_cap = tp_max_mult * avg_atr_rel
+                    sl_floor = sl_min_mult * avg_atr_rel
+                    sl_cap = sl_max_mult * avg_atr_rel
+
+                    tp_override = max(tp_floor, min(tp_override, tp_cap))
+                    sl_override = max(sl_floor, min(sl_override, sl_cap))
+
+            holding_candidates = (
+                local_config.get(f"mr_grid_max_holding_bars_list{dir_suffix}")
+                or local_config.get("mr_grid_max_holding_bars_list")
+            )
+            if holding_candidates is None:
+                base_hold = int(
+                    local_config.get(
+                        f"mr_grid_max_holding_bars_default{dir_suffix}",
+                        local_config.get("mr_grid_max_holding_bars_default", 6),
+                    )
+                )
+                if direction == "short":
+                    holding_candidates = [max(2, base_hold // 2), base_hold, base_hold * 2]
+                else:
+                    holding_candidates = [base_hold, base_hold * 2, base_hold * 4]
+
+            try:
+                holds_unique = sorted(
+                    {int(h) for h in holding_candidates if h is not None and int(h) > 0}
+                )
+            except Exception:
+                holds_unique = [6]
+
+            grid_frames: List[pd.DataFrame] = []
+            for max_hold in holds_unique:
+                if tp_override is not None and sl_override is not None:
+                    grid_local = grid_fn(
+                        close=close,
+                        high=high,
+                        low=low,
+                        raw_returns=raw_returns,
+                        predictions=preds,
+                        confidence=grid_confidence,
+                        ml_df=ml_df_grid,
+                        timeframe=timeframe,
+                        regime_col="mr_teacher_mean_reversion",
+                        tp_values=[tp_override],
+                        sl_values=[sl_override],
+                        max_holding_bars=max_hold,
+                    )
+                else:
+                    grid_local = grid_fn(
+                        close=close,
+                        high=high,
+                        low=low,
+                        raw_returns=raw_returns,
+                        predictions=preds,
+                        confidence=grid_confidence,
+                        ml_df=ml_df_grid,
+                        timeframe=timeframe,
+                        regime_col="mr_teacher_mean_reversion",
+                        max_holding_bars=max_hold,
+                    )
+
+                if isinstance(grid_local, pd.DataFrame) and not grid_local.empty:
+                    grid_local = grid_local.copy()
+                    grid_local["max_holding_bars"] = int(max_hold)
+                    if "grid_config" in grid_local.columns:
+                        grid_local["grid_config"] = (
+                            grid_local["grid_config"].astype(str) + f",max_hold={max_hold}"
+                        )
+                    grid_frames.append(grid_local)
+
+            grid_df_all: Optional[pd.DataFrame]
+            if grid_frames:
+                grid_df_all = pd.concat(grid_frames, ignore_index=True)
+            else:
+                grid_df_all = None
+
+            best_summary = None
+            if isinstance(grid_df_all, pd.DataFrame) and not grid_df_all.empty:
                 grid_path = f"outcomes/ml_mean_reversion_grid_backtest_{symbol}_{timeframe}_{direction}_{ts}.csv"
                 tprint_info(
-                    f"Writing grid backtest CSV with shape={grid_df.shape} to {grid_path}"
+                    f"Writing grid backtest CSV with shape={grid_df_all.shape} to {grid_path}"
                 )
-                grid_df.to_csv(grid_path, index=False)
+                grid_df_all.to_csv(grid_path, index=False)
                 reports["grid_backtest_csv"] = grid_path
                 tprint_success(f"✅ Saved grid backtest CSV: {grid_path}")
+
+                try:
+                    candidates = grid_df_all.copy()
+                    min_trades = int(
+                        local_config.get(
+                            f"mr_min_grid_trades{dir_suffix}",
+                            local_config.get("mr_min_grid_trades", 30),
+                        )
+                    )
+                    min_bars = int(
+                        local_config.get(
+                            f"mr_min_grid_bars{dir_suffix}",
+                            local_config.get("mr_min_grid_bars", 200),
+                        )
+                    )
+                    if "number_of_trades" in candidates.columns:
+                        candidates = candidates[candidates["number_of_trades"] >= min_trades]
+                    if "bars" in candidates.columns:
+                        candidates = candidates[candidates["bars"] >= min_bars]
+
+                    if not candidates.empty:
+                        sort_cols = [
+                            "sharpe_ratio_with_fees",
+                            "calmar_ratio_with_fees",
+                            "strategy_total_return_with_fees_%",
+                        ]
+                        available_cols = [c for c in sort_cols if c in candidates.columns]
+                        if available_cols:
+                            candidates = candidates.sort_values(
+                                by=available_cols,
+                                ascending=[False] * len(available_cols),
+                            )
+                            best_row = candidates.iloc[0]
+                            best_summary = {
+                                "grid_config": best_row.get("grid_config"),
+                                "take_profit_pct": float(best_row.get("take_profit_pct", 0.0)),
+                                "stop_loss_pct": float(best_row.get("stop_loss_pct", 0.0)),
+                                "confidence_quantile": float(best_row.get("confidence_quantile", 0.0)),
+                                "max_holding_bars": int(best_row.get("max_holding_bars", 0)),
+                                "sharpe_ratio_with_fees": float(
+                                    best_row.get("sharpe_ratio_with_fees", 0.0)
+                                ),
+                                "calmar_ratio_with_fees": float(
+                                    best_row.get("calmar_ratio_with_fees", 0.0)
+                                ),
+                                "strategy_total_return_with_fees_%": float(
+                                    best_row.get("strategy_total_return_with_fees_%", 0.0)
+                                ),
+                                "number_of_trades": int(best_row.get("number_of_trades", 0)),
+                            }
+                            tprint_info(
+                                "✨ Best fee-aware grid config: "
+                                f"{best_summary['grid_config']} | "
+                                f"TP={best_summary['take_profit_pct']*100:.3f}% "
+                                f"SL={best_summary['stop_loss_pct']*100:.3f}% | "
+                                f"Sharpe_with_fees={best_summary['sharpe_ratio_with_fees']:.3f}, "
+                                f"Calmar_with_fees={best_summary['calmar_ratio_with_fees']:.3f}, "
+                                f"Total_return_with_fees={best_summary['strategy_total_return_with_fees_%']:.2f}% "
+                                f"(trades={best_summary['number_of_trades']}, "
+                                f"max_hold={best_summary['max_holding_bars']} bars)"
+                            )
+                except Exception as sel_exc:
+                    tprint_warning(f"Failed to select best grid configuration: {sel_exc}")
+
+                if best_summary is not None:
+                    try:
+                        artifacts["grid_backtest_best"] = self._save_artifact(
+                            data=best_summary,
+                            artifact_name=(
+                                f"ml_mean_reversion_grid_best_with_fees_{symbol}_{timeframe}_{direction}"
+                            ),
+                            artifact_type="metadata",
+                            metadata={
+                                "symbol": symbol,
+                                "exchange": exchange,
+                                "timeframe": timeframe,
+                                "direction": direction,
+                            },
+                        )
+                    except Exception as exc:
+                        tprint_warning(f"Failed to save best grid config artifact: {exc}")
         except Exception as exc:  # noqa: BLE001
             tprint_warning(f"Failed to run/write grid backtest: {exc}")
 

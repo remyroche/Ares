@@ -651,6 +651,11 @@ class MLLiquidityRegimeStep(BaseStep):
                 "liquidity_range_std_lookback": 192,
                 "liquidity_winsor_lower": 0.005,
                 "liquidity_winsor_upper": 0.975,
+                # Temporal smoothing of liquidity regimes to reduce flicker
+                "liquidity_enable_smoothing": True,
+                "liquidity_smoothing_window": 5,
+                "liquidity_smoothing_min_run": 2,
+                "liquidity_use_smoothed_for_training": True,
             }
             for k, v in liquidity_defaults.items():
                 config.setdefault(k, v)
@@ -707,7 +712,12 @@ class MLLiquidityRegimeStep(BaseStep):
             if not isinstance(market_data_1h.index, pd.DatetimeIndex):
                 try:
                     market_data_1h = market_data_1h.copy()
-                    market_data_1h.index = pd.to_datetime(market_data_1h.index)
+                    # Handle tz-aware objects by converting to UTC then dropping tz
+                    try:
+                        market_data_1h.index = pd.to_datetime(market_data_1h.index)
+                    except (TypeError, ValueError):
+                        market_data_1h.index = pd.to_datetime(market_data_1h.index, utc=True)
+                        market_data_1h.index = market_data_1h.index.tz_convert(None)
                 except Exception as exc:
                     raise ValueError("Market data index could not be converted to DatetimeIndex") from exc
 
@@ -872,7 +882,31 @@ class MLLiquidityRegimeStep(BaseStep):
             training_metrics: Dict[str, Any] = {}
             model = None
             feature_pipeline_artifacts = None
-            regime_labels = liquidity_df["liquidity_regime"].astype(int)
+            # Optional temporal smoothing to reduce regime flicker before
+            # training and quality assessment.
+            use_smoothing = bool(config.get("liquidity_enable_smoothing", True))
+            regime_col = "liquidity_regime"
+            if use_smoothing:
+                try:
+                    window = int(config.get("liquidity_smoothing_window", 5))
+                    min_run = int(config.get("liquidity_smoothing_min_run", 2))
+                    smoothed_labels = self._smooth_regime_labels(
+                        labels=liquidity_df[regime_col].astype(int),
+                        window=window,
+                        min_run=min_run,
+                    )
+                    liquidity_df["liquidity_regime_smoothed"] = smoothed_labels
+                    if bool(config.get("liquidity_use_smoothed_for_training", True)):
+                        regime_col = "liquidity_regime_smoothed"
+                    tprint_info(
+                        f"Applied liquidity regime smoothing: window={window}, min_run={min_run}"
+                    )
+                except Exception as smooth_exc:
+                    tprint_warning(
+                        f"Liquidity regime smoothing failed (non-fatal): {smooth_exc}"
+                    )
+
+            regime_labels = liquidity_df[regime_col].astype(int)
 
             proba_df = self._compute_regime_probabilities(
                 df=liquidity_df,
@@ -1178,6 +1212,61 @@ class MLLiquidityRegimeStep(BaseStep):
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+    def _smooth_regime_labels(
+        self,
+        labels: pd.Series,
+        window: int = 5,
+        min_run: int = 2,
+    ) -> pd.Series:
+        """Apply simple temporal smoothing to integer regime labels.
+
+        Uses a causal moving-window majority vote and a minimum run-length
+        filter to reduce one-bar flicker while preserving regime structure.
+        """
+        if not isinstance(labels, pd.Series) or labels.empty:
+            return labels
+
+        try:
+            window = max(int(window), 1)
+        except Exception:
+            window = 5
+        try:
+            min_run = max(int(min_run), 1)
+        except Exception:
+            min_run = 2
+
+        values = labels.to_numpy(copy=True)
+        n = len(values)
+        smoothed = values.copy()
+
+        # Causal moving-window majority vote
+        for i in range(n):
+            start = 0 if i + 1 <= window else i + 1 - window
+            window_vals = values[start : i + 1]
+            if window_vals.size == 0:
+                continue
+            unique_vals, counts = np.unique(window_vals, return_counts=True)
+            smoothed[i] = unique_vals[int(np.argmax(counts))]
+
+        # Minimum run-length filter to remove short flickers
+        i = 0
+        while i < n:
+            j = i + 1
+            while j < n and smoothed[j] == smoothed[i]:
+                j += 1
+            run_len = j - i
+            if run_len < min_run:
+                if i > 0:
+                    replacement = smoothed[i - 1]
+                elif j < n:
+                    replacement = smoothed[j]
+                else:
+                    replacement = smoothed[i]
+                smoothed[i:j] = replacement
+            i = j
+
+        return pd.Series(smoothed, index=labels.index, dtype=labels.dtype)
+
     def _generate_liquidity_features_vectorized(self, market_data: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
         """Vectorized feature generation with hardware acceleration."""
         df = market_data.copy()
@@ -2216,6 +2305,41 @@ class MLLiquidityRegimeStep(BaseStep):
             df["amihud_spike_ratio"],
             window=window_size,
         )
+        try:
+            rvol24_scaled = df.get("rvol_24_scaled")
+            rvol168_scaled = df.get("rvol_168_scaled")
+            norm_range = df.get("normalized_range")
+            vol_of_vol = df.get("vol_of_vol")
+            if rvol168_scaled is not None and norm_range is not None and vol_of_vol is not None:
+                long_rvol_thr = float(config.get("liquidity_structural_rvol_168_thresh", -0.5))
+                long_low = rvol168_scaled < long_rvol_thr
+                range_low_band = norm_range.rolling(96, min_periods=10).quantile(0.3)
+                flat_range = norm_range < range_low_band
+                vol_stab_band = vol_of_vol.rolling(96, min_periods=10).quantile(0.3)
+                stable_vol = vol_of_vol < vol_stab_band
+                df["liquidity_structural_low"] = (long_low & flat_range & stable_vol).astype(int)
+            else:
+                df["liquidity_structural_low"] = 0
+        except Exception:
+            df["liquidity_structural_low"] = 0
+
+        try:
+            rvol24_scaled = df.get("rvol_24_scaled")
+            norm_range = df.get("normalized_range")
+            gap_factor = df.get("gap_factor")
+            if rvol24_scaled is not None and norm_range is not None and gap_factor is not None:
+                range_high_band = norm_range.rolling(96, min_periods=10).quantile(0.8)
+                high_range = norm_range > range_high_band
+                short_rvol_thr = float(config.get("liquidity_transient_rvol_24_thresh", 0.0))
+                low_rvol_short = rvol24_scaled < short_rvol_thr
+                gap_thr = float(config.get("liquidity_gap_factor_thresh", 0.005))
+                big_gap = gap_factor.abs() > gap_thr
+                df["liquidity_transient_gap"] = (high_range & low_rvol_short & big_gap).astype(int)
+            else:
+                df["liquidity_transient_gap"] = 0
+        except Exception:
+            df["liquidity_transient_gap"] = 0
+
         return df
 
     def _compute_winsorized_cov_ratio(

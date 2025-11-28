@@ -421,6 +421,10 @@ class LiquidityClusterQualityAssessor:
         volume_price_trend_sync = df.get("volume_price_trend_sync")
         price_impact_ratio = df.get("price_impact_ratio")
 
+        # Structural vs transient liquidity flags (optional, computed upstream)
+        structural_low_flag = df.get("liquidity_structural_low")
+        transient_gap_flag = df.get("liquidity_transient_gap")
+
         eps = 1e-9
 
         per_regime: Dict[int, Dict[str, float]] = {}
@@ -457,6 +461,14 @@ class LiquidityClusterQualityAssessor:
                         "forward_return_mean": 0.0,
                         "forward_return_std": 0.0,
                         "forward_return_cov": 0.0,
+                        "forward_return_positive_rate": 0.0,
+                        "forward_return_negative_rate": 0.0,
+                        "forward_return_sharpe_like": 0.0,
+                        "forward_return_mar_like": 0.0,
+                        "forward_return_tail_loss_p95": 0.0,
+                        "adverse_selection_rate": 0.0,
+                        "structural_low_fraction": 0.0,
+                        "transient_gap_fraction": 0.0,
                     }
                 )
                 per_regime[int(regime)] = regime_metrics
@@ -523,8 +535,43 @@ class LiquidityClusterQualityAssessor:
 
             if forward_returns is not None:
                 fr_mean, fr_std, fr_cov = _mean_std_cov(forward_returns)
+                fr_vals = forward_returns[mask].dropna()
+                if len(fr_vals) > 0:
+                    pos_rate = float((fr_vals > 0).mean())
+                    neg_rate = float((fr_vals < 0).mean())
+                    sharpe_like = float(fr_mean / (fr_std + eps)) if fr_std > 0.0 else 0.0
+                    # Approximate MAR using cumulative forward returns and max drawdown
+                    cum = fr_vals.cumsum()
+                    drawdown = cum.cummax() - cum
+                    max_dd = float(drawdown.max()) if len(drawdown) > 0 else 0.0
+                    mar_like = float(fr_mean / (max_dd + eps)) if max_dd > 0.0 else 0.0
+                    tail_loss_p95 = float(-np.percentile(fr_vals, 5)) if len(fr_vals) > 0 else 0.0
+                else:
+                    pos_rate = 0.0
+                    neg_rate = 0.0
+                    sharpe_like = 0.0
+                    mar_like = 0.0
+                    tail_loss_p95 = 0.0
             else:
                 fr_mean, fr_std, fr_cov = 0.0, 0.0, 0.0
+                pos_rate = 0.0
+                neg_rate = 0.0
+                sharpe_like = 0.0
+                mar_like = 0.0
+                tail_loss_p95 = 0.0
+
+            # Structural vs transient liquidity fractions within this regime
+            if structural_low_flag is not None:
+                struct_vals = structural_low_flag[mask].astype(float).dropna()
+                structural_frac = float(struct_vals.mean()) if len(struct_vals) > 0 else 0.0
+            else:
+                structural_frac = 0.0
+
+            if transient_gap_flag is not None:
+                trans_vals = transient_gap_flag[mask].astype(float).dropna()
+                transient_frac = float(trans_vals.mean()) if len(trans_vals) > 0 else 0.0
+            else:
+                transient_frac = 0.0
 
             regime_metrics.update(
                 {
@@ -613,6 +660,14 @@ class LiquidityClusterQualityAssessor:
                     "forward_return_mean": fr_mean,
                     "forward_return_std": fr_std,
                     "forward_return_cov": fr_cov,
+                    "forward_return_positive_rate": pos_rate,
+                    "forward_return_negative_rate": neg_rate,
+                    "forward_return_sharpe_like": sharpe_like,
+                    "forward_return_mar_like": mar_like,
+                    "forward_return_tail_loss_p95": tail_loss_p95,
+                    "adverse_selection_rate": neg_rate,
+                    "structural_low_fraction": structural_frac,
+                    "transient_gap_fraction": transient_frac,
                 }
             )
 

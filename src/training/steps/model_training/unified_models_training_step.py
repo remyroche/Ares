@@ -2420,8 +2420,14 @@ class UnifiedModelsTrainingStep(BaseStep):
             if analyst_targets is None and tactician_targets is None:
                 tprint_warning("⚠️ No separate target artifacts found, trying to extract from labeled_data...")
                 
-                # Try to get labeled_data artifact
-                for artifact_name in ['labeled_data', 'labeled_features']:
+                # Try to get labeled_data artifact (prefer fully-qualified meta-labeling artifact name)
+                symbol_cfg = config.get('symbol', 'ETHUSDT')
+                timeframe_cfg = config.get('timeframe', '15m')
+                for artifact_name in [
+                    f"labeled_data_{symbol_cfg}_{timeframe_cfg}",
+                    'labeled_data',
+                    'labeled_features',
+                ]:
                     try:
                         labeled_data = self._get_artifact(artifact_name, 'data')
                         if labeled_data is not None and isinstance(labeled_data, pd.DataFrame):
@@ -2681,10 +2687,19 @@ class UnifiedModelsTrainingStep(BaseStep):
                         except Exception:
                             ld = None
                         if ld is None or not isinstance(ld, pd.DataFrame):
-                            try:
-                                ld = self._get_artifact('labeled_data', 'data')
-                            except Exception:
-                                ld = None
+                            symbol_cfg = config.get('symbol', 'ETHUSDT')
+                            timeframe_cfg = config.get('timeframe', '15m')
+                            for artifact_name_candidate in [
+                                f"labeled_data_{symbol_cfg}_{timeframe_cfg}",
+                                'labeled_data',
+                            ]:
+                                try:
+                                    ld_candidate = self._get_artifact(artifact_name_candidate, 'data')
+                                except Exception:
+                                    ld_candidate = None
+                                if isinstance(ld_candidate, pd.DataFrame):
+                                    ld = ld_candidate
+                                    break
                         if isinstance(ld, pd.DataFrame):
                             # Prefer explicit weight column name
                             for cname in ['target_sample_weight', 'sample_weight', 'label_sample_weight']:
@@ -3076,135 +3091,147 @@ class UnifiedModelsTrainingStep(BaseStep):
                 tprint_warning(f"⚠️ Failed to load specialist model outputs: {e}")
 
             # 1) Legacy regime ensemble / regime model probabilities (OOF/OOS preferred)
-            try:
-                tprint_info("=" * 80)
-                tprint_info("🌍 LOADING LEGACY REGIME ENSEMBLE PROBABILITIES FROM HDF5 VERSIONED ARTIFACTS")
-                tprint_info("=" * 80)
-                tprint_info("   Source Step: regime_ensemble_training / regime_models_training")
-                tprint_info("   Artifact Names: regime_ensemble_predictions[_oof/oos], regime_models_predictions[_oof/oos]")
+            # NOTE: These are only needed for ensemble training. Base models should not depend on
+            # regime_ensemble_predictions_* artifacts, because they are the ones producing inputs
+            # for the ensemble.
+            if training_type in ('analyst_ensemble', 'tactician_ensemble'):
+                try:
+                    tprint_info("=" * 80)
+                    tprint_info("🌍 LOADING LEGACY REGIME ENSEMBLE PROBABILITIES FROM HDF5 VERSIONED ARTIFACTS")
+                    tprint_info("=" * 80)
+                    tprint_info("   Source Step: regime_ensemble_training / regime_models_training")
+                    tprint_info("   Artifact Names: regime_ensemble_predictions[_oof/oos], regime_models_predictions[_oof/oos]")
 
-                regime_features = None
-                regime_candidates = [
-                    'regime_ensemble_predictions_oof',
-                    'regime_ensemble_predictions_oos',
-                    'regime_models_predictions_oof',
-                    'regime_models_predictions_oos',
-                    'regime_ensemble_predictions',
-                    'regime_models_predictions',
-                ]
-                for artifact_name in regime_candidates:
-                    try:
-                        regime_features = self._get_artifact(artifact_name, 'data')
-                        if regime_features is not None:
-                            tprint_success(f"✅ Found regime features in '{artifact_name}' (preferred OOF/OOS if available)")
-                            if ('oof' not in artifact_name.lower()) and ('oos' not in artifact_name.lower()):
-                                try:
-                                    tprint_warning("⚠️ Regime features are in-sample; creating OOS proxy via 1-step shift (ffill)")
-                                    regime_features = regime_features.shift(1).fillna(method='ffill')
+                    regime_features = None
+                    regime_candidates = [
+                        'regime_ensemble_predictions_oof',
+                        'regime_ensemble_predictions_oos',
+                        'regime_models_predictions_oof',
+                        'regime_models_predictions_oos',
+                        'regime_ensemble_predictions',
+                        'regime_models_predictions',
+                    ]
+                    for artifact_name in regime_candidates:
+                        try:
+                            regime_features = self._get_artifact(artifact_name, 'data')
+                            if regime_features is not None:
+                                tprint_success(f"✅ Found regime features in '{artifact_name}' (preferred OOF/OOS if available)")
+                                if ('oof' not in artifact_name.lower()) and ('oos' not in artifact_name.lower()):
                                     try:
-                                        saved_path = self._save_artifact(
-                                            data=regime_features,
-                                            artifact_name='regime_ensemble_predictions_oos',
-                                            artifact_type='data',
-                                        )
-                                        tprint_info(f"   ↪ Saved OOS proxy regime features at: {saved_path}")
+                                        tprint_warning("⚠️ Regime features are in-sample; creating OOS proxy via 1-step shift (ffill)")
+                                        regime_features = regime_features.shift(1).fillna(method='ffill')
+                                        try:
+                                            saved_path = self._save_artifact(
+                                                data=regime_features,
+                                                artifact_name='regime_ensemble_predictions_oos',
+                                                artifact_type='data',
+                                            )
+                                            tprint_info(f"   ↪ Saved OOS proxy regime features at: {saved_path}")
+                                        except Exception as e:
+                                            tprint_warning(f"   ⚠️ Failed to save OOS proxy regime features: {e}")
                                     except Exception as e:
-                                        tprint_warning(f"   ⚠️ Failed to save OOS proxy regime features: {e}")
-                                except Exception as e:
-                                    tprint_warning(f"⚠️ Failed to create OOS proxy for regime features: {e}")
-                            tprint_info(f"🔍 [DEBUG] Regime features shape: {regime_features.shape}")
-                            tprint_info(f"🔍 [DEBUG] Regime features columns: {list(regime_features.columns)}")
-                            tprint_info(f"🔍 [DEBUG] Regime features index range: {regime_features.index.min()} to {regime_features.index.max()}")
-                            tprint_info("🔍 [DEBUG] First 5 rows of regime features:")
-                            tprint_info(f"{regime_features.head().to_string()}")
+                                        tprint_warning(f"⚠️ Failed to create OOS proxy for regime features: {e}")
+                                tprint_info(f"🔍 [DEBUG] Regime features shape: {regime_features.shape}")
+                                tprint_info(f"🔍 [DEBUG] Regime features columns: {list(regime_features.columns)}")
+                                tprint_info(f"🔍 [DEBUG] Regime features index range: {regime_features.index.min()} to {regime_features.index.max()}")
+                                tprint_info("🔍 [DEBUG] First 5 rows of regime features:")
+                                tprint_info(f"{regime_features.head().to_string()}")
 
-                            non_finite_mask = ~np.isfinite(regime_features.select_dtypes(include=[np.number]))
-                            if non_finite_mask.any().any():
-                                non_finite_counts = non_finite_mask.sum()
-                                tprint_warning("🔍 [DEBUG] Non-finite values found in regime features:")
-                                for col in regime_features.columns:
-                                    col_non_finite = non_finite_mask[col].sum()
-                                    if col_non_finite > 0:
-                                        tprint_warning(
-                                            f"   - {col}: {col_non_finite} non-finite values "
-                                            f"({col_non_finite/len(regime_features)*100:.1f}%)"
-                                        )
-                                        non_finite_indices = regime_features.index[non_finite_mask[col]]
-                                        non_finite_values = regime_features.loc[non_finite_indices, col]
-                                        tprint_info(f"     Sample non-finite values: {non_finite_values.head().to_dict()}")
-                            break
-                    except Exception as e:
-                        self.logger.debug(f"   Artifact '{artifact_name}' not found: {e}")
-                        continue
+                                non_finite_mask = ~np.isfinite(regime_features.select_dtypes(include=[np.number]))
+                                if non_finite_mask.any().any():
+                                    non_finite_counts = non_finite_mask.sum()
+                                    tprint_warning("🔍 [DEBUG] Non-finite values found in regime features:")
+                                    for col in regime_features.columns:
+                                        col_non_finite = non_finite_mask[col].sum()
+                                        if col_non_finite > 0:
+                                            tprint_warning(
+                                                f"   - {col}: {col_non_finite} non-finite values "
+                                                f"({col_non_finite/len(regime_features)*100:.1f}%)"
+                                            )
+                                            non_finite_indices = regime_features.index[non_finite_mask[col]]
+                                            non_finite_values = regime_features.loc[non_finite_indices, col]
+                                            tprint_info(f"     Sample non-finite values: {non_finite_values.head().to_dict()}")
+                                break
+                        except Exception as e:
+                            self.logger.debug(f"   Artifact '{artifact_name}' not found: {e}")
+                            continue
 
-                if regime_features is not None:
-                    tprint_info(
-                        f"   ↪ Retrieved regime ensemble/model predictions: shape={regime_features.shape}, "
-                        f"columns={len(regime_features.columns)}"
-                    )
-
-                    tprint_info("=" * 80)
-                    tprint_info("🌍 REGIME FEATURE ADDITION: Loading Regime Probabilities")
-                    tprint_info("=" * 80)
-                    tprint_data_preview(
-                        regime_features,
-                        name="Regime Ensemble Predictions (Before Resampling)",
-                        max_rows=5,
-                        max_cols=10,
-                        show_dtypes=True,
-                        show_shape=True,
-                    )
-
-                    if not regime_features.index.equals(training_data.index):
-                        tprint_warning(
-                            f"Regime features index mismatch. Resampling {len(regime_features)} rows to match {len(training_data)} rows."
-                        )
-                        regime_features_resampled = regime_features.reindex(training_data.index, method='ffill')
+                    if regime_features is not None:
                         tprint_info(
-                            f"   ↪ Resampled regime features -> shape={regime_features_resampled.shape}, "
-                            f"columns={len(regime_features_resampled.columns)}"
+                            f"   ↪ Retrieved regime ensemble/model predictions: shape={regime_features.shape}, "
+                            f"columns={len(regime_features.columns)}"
                         )
 
                         tprint_info("=" * 80)
-                        tprint_info("🌍 DATA MODIFICATION: Regime Features After Resampling")
+                        tprint_info("🌍 REGIME FEATURE ADDITION: Loading Regime Probabilities")
                         tprint_info("=" * 80)
                         tprint_data_preview(
-                            regime_features_resampled,
-                            name="Regime Features (After Resampling)",
+                            regime_features,
+                            name="Regime Ensemble Predictions (Before Resampling)",
                             max_rows=5,
                             max_cols=10,
                             show_dtypes=True,
                             show_shape=True,
                         )
 
-                        additional_features_list.append(regime_features_resampled)
-                    else:
-                        tprint_info("   ↪ Regime features already aligned with training index")
-                        additional_features_list.append(regime_features)
+                        if not regime_features.index.equals(training_data.index):
+                            tprint_warning(
+                                f"Regime features index mismatch. Resampling {len(regime_features)} rows to match {len(training_data)} rows."
+                            )
+                            regime_features_resampled = regime_features.reindex(training_data.index, method='ffill')
+                            tprint_info(
+                                f"   ↪ Resampled regime features -> shape={regime_features_resampled.shape}, "
+                                f"columns={len(regime_features_resampled.columns)}"
+                            )
 
-                    have_regime_features = True
-                    tprint_success("✅ Added legacy regime ensemble/model probability features.")
-            except ValueError:
-                # Re-raise ValueError for fast-fail
-                raise
-            except Exception as e:
-                error_msg = f"❌ CRITICAL: Failed to load legacy regime ensemble/model predictions: {e}"
-                tprint_error(error_msg)
-                raise ValueError(error_msg) from e
+                            tprint_info("=" * 80)
+                            tprint_info("🌍 DATA MODIFICATION: Regime Features After Resampling")
+                            tprint_info("=" * 80)
+                            tprint_data_preview(
+                                regime_features_resampled,
+                                name="Regime Features (After Resampling)",
+                                max_rows=5,
+                                max_cols=10,
+                                show_dtypes=True,
+                                show_shape=True,
+                            )
 
-            # Final safety check: require at least one regime feature source
+                            additional_features_list.append(regime_features_resampled)
+                        else:
+                            tprint_info("   ↪ Regime features already aligned with training index")
+                            additional_features_list.append(regime_features)
+
+                        have_regime_features = True
+                        tprint_success("✅ Added legacy regime ensemble/model probability features.")
+                except ValueError:
+                    # Re-raise ValueError for fast-fail
+                    raise
+                except Exception as e:
+                    error_msg = f"❌ CRITICAL: Failed to load legacy regime ensemble/model predictions: {e}"
+                    tprint_error(error_msg)
+                    raise ValueError(error_msg) from e
+
+            # Final safety check: require at least one regime feature source. For ensemble
+            # training this is mandatory; for base training we proceed without regime
+            # features if none are available.
             if not have_regime_features:
-                error_msg = (
-                    "❌ CRITICAL: No regime predictions artifact found!\n"
-                    "   Expected at least one of the following regime sources:\n"
-                    "   - specialist model outputs (ML Risk / HMM Alpha / Liquidity) via get_specialist_models_outputs\n"
-                    "   - regime_ensemble_predictions / regime_models_predictions (from regime_ensemble_training / regime_models_training)\n"
-                    "   \n"
-                    "   This artifact is REQUIRED for model training.\n"
-                    "   Format: HDF5 (versioned_artifacts)\n"
-                )
-                tprint_error(error_msg)
-                raise ValueError(error_msg)
+                if training_type in ('analyst_ensemble', 'tactician_ensemble'):
+                    error_msg = (
+                        "❌ CRITICAL: No regime predictions artifact found!\n"
+                        "   Expected at least one of the following regime sources:\n"
+                        "   - specialist model outputs (ML Risk / HMM Alpha / Liquidity) via get_specialist_models_outputs\n"
+                        "   - regime_ensemble_predictions / regime_models_predictions (from regime_ensemble_training / regime_models_training)\n"
+                        "   \n"
+                        "   This artifact is REQUIRED for ensemble model training.\n"
+                        "   Format: HDF5 (versioned_artifacts)\n"
+                    )
+                    tprint_error(error_msg)
+                    raise ValueError(error_msg)
+                else:
+                    tprint_warning(
+                        "⚠️ No regime prediction features found; proceeding without regime blocks "
+                        f"for base training type '{training_type}'."
+                    )
 
             # --- END: Regime feature loading ---
 
@@ -5327,7 +5354,8 @@ class UnifiedModelsTrainingStep(BaseStep):
                 f.write(f"- **Timeframe:** {timeframe}\n")
                 f.write(f"- **Direction:** {direction}\n")
                 f.write(f"- **Execution Mode:** {config.get('execution_mode', 'full')}\n")
-                f.write(f"- **HPO Enabled:** {config.get('enable_hpo', True)}\n")
+                effective_hpo_enabled = bool(comprehensive_metrics.get('hpo_results'))
+                f.write(f"- **HPO Enabled:** {effective_hpo_enabled}\n")
                 f.write("\n---\n\n")
 
                 # ===== OVERALL PERFORMANCE METRICS =====
@@ -5961,7 +5989,8 @@ class UnifiedModelsTrainingStep(BaseStep):
                     'timeframe': timeframe,
                     'direction': direction,
                     'execution_mode': config.get('execution_mode', 'full'),
-                    'enable_hpo': config.get('enable_hpo', True),
+                    # Reflect effective HPO activity rather than just the raw config flag
+                    'enable_hpo': bool(comprehensive_metrics.get('hpo_results')),
                     'train_percentage': config.get('train_percentage', 0.70),
                     'validation_percentage': config.get('validation_percentage', 0.15),
                     'test_percentage': config.get('test_percentage', 0.15),

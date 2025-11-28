@@ -1704,6 +1704,19 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             except Exception as e:
                 tprint_warning(f"⚠️ Final optimization failed: {e}")
 
+        if 'timestamp' in result_df.columns:
+            try:
+                ts = pd.to_datetime(result_df['timestamp'], errors='coerce')
+                valid_mask = ~ts.isna()
+                if valid_mask.any():
+                    if not valid_mask.all():
+                        result_df = result_df.loc[valid_mask].copy()
+                        ts = ts[valid_mask]
+                    result_df.index = ts
+                    result_df.index.name = 'timestamp'
+                    result_df = result_df.sort_index()
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to standardize index from timestamp: {e}")
         tprint_info(f"📊 Combined feature matrix: {result_df.shape[1]} features, {result_df.shape[0]} samples")
         
         # CRITICAL DEBUG: Final result analysis

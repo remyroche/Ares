@@ -499,29 +499,45 @@ def create_temporal_split_config_for_pipeline(
         # If there is no overlap at all (e.g., legacy synthetic 2020 dates vs 2022+ data),
         # regenerate the config based on the current data range.
         if data_start is not None and data_end is not None:
-            cfg_starts = [
-                config.training.start,
-                config.validation.start,
-                config.test.start,
-            ]
-            if config.burnin is not None:
-                cfg_starts.append(config.burnin.start)
+            data_is_datetime_like = isinstance(data_start, (datetime, pd.Timestamp)) and isinstance(
+                data_end, (datetime, pd.Timestamp)
+            )
 
-            cfg_ends = [
-                config.training.effective_end,
-                config.validation.effective_end,
-                config.test.effective_end,
-            ]
-            if config.burnin is not None:
-                cfg_ends.append(config.burnin.effective_end)
+            if data_is_datetime_like:
+                cfg_starts = [
+                    config.training.start,
+                    config.validation.start,
+                    config.test.start,
+                ]
+                if config.burnin is not None:
+                    cfg_starts.append(config.burnin.start)
 
-            cfg_start = min(cfg_starts)
-            cfg_end = max(cfg_ends)
+                cfg_ends = [
+                    config.training.effective_end,
+                    config.validation.effective_end,
+                    config.test.effective_end,
+                ]
+                if config.burnin is not None:
+                    cfg_ends.append(config.burnin.effective_end)
 
-            overlap_start = max(data_start, cfg_start)
-            overlap_end = min(data_end, cfg_end)
+                cfg_start = min(cfg_starts)
+                cfg_end = max(cfg_ends)
 
-            if overlap_end <= overlap_start:
+                overlap_start = max(data_start, cfg_start)
+                overlap_end = min(data_end, cfg_end)
+
+                if overlap_end <= overlap_start:
+                    config = TemporalSplitConfig.create_from_data(
+                        data_start=data_start,
+                        data_end=data_end,
+                        train_pct=0.6,
+                        val_pct=0.2,
+                        test_pct=0.2,
+                        embargo_days=1,
+                        burnin_pct=burnin_pct if enable_burnin else 0.0,
+                    )
+                    config.save(config_path)
+            else:
                 config = TemporalSplitConfig.create_from_data(
                     data_start=data_start,
                     data_end=data_end,

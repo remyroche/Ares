@@ -328,6 +328,26 @@ class DynamicSubsampler:
             # No sampling needed
             return X, y
         
+        is_temporal = isinstance(X, pd.DataFrame) and isinstance(X.index, pd.DatetimeIndex)
+        
+        if is_temporal:
+            start_idx = max(0, n_samples - sample_size)
+            
+            if isinstance(X, pd.DataFrame):
+                X_sample = X.iloc[start_idx:]
+            else:
+                X_sample = X[start_idx:]
+            
+            if y is not None:
+                if isinstance(y, pd.Series):
+                    y_sample = y.iloc[start_idx:]
+                else:
+                    y_sample = y[start_idx:]
+            else:
+                y_sample = None
+            
+            return X_sample, y_sample
+        
         np.random.seed(random_state)
         
         if stratify and y is not None:

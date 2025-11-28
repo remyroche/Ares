@@ -314,9 +314,13 @@ class TrainingPipelineOrchestrator:
         """Create analyst trainer."""
         try:
             # Default analyst configuration
+            # NOTE: Only LightGBM is enabled here. NGBoost is disabled because the
+            # ngboost library is not installed in the runtime environment, and
+            # DEPTHWISE_CNN (TabR/Mambular) is disabled due to missing Mambular
+            # dependency and poor suitability for tabular features in this setup.
             analyst_config = TrainingConfig(
                 role=TrainingRole.ANALYST,
-                model_types=[ModelType.LIGHTGBM, ModelType.CATBOOST, ModelType.NGBOOST, ModelType.DEPTHWISE_CNN],  # Removed DEPTHWISE_CNN (R²≈0, not suitable for tabular data)
+                model_types=[ModelType.LIGHTGBM],
                 timeframe=self.config.timeframe,
                 symbol=self.config.symbol,
                 enable_ensemble=False,  # Individual models only
@@ -348,7 +352,7 @@ class TrainingPipelineOrchestrator:
             # Default tactician configuration
             tactician_config = TrainingConfig(
                 role=TrainingRole.TACTICIAN,
-                model_types=[ModelType.LIGHTGBM, ModelType.CATBOOST, ModelType.NEURAL_NETWORK],
+                model_types=[ModelType.LIGHTGBM, ModelType.NEURAL_NETWORK],
                 timeframe=self.config.timeframe,
                 symbol=self.config.symbol,
                 enable_ensemble=False,  # Individual models only
@@ -379,7 +383,7 @@ class TrainingPipelineOrchestrator:
             # Default ensemble configuration
             ensemble_config = TrainingConfig(
                 role=TrainingRole.ENSEMBLE,
-                model_types=[ModelType.LIGHTGBM, ModelType.CATBOOST],
+                model_types=[ModelType.LIGHTGBM],
                 timeframe=self.config.timeframe,
                 symbol=self.config.symbol,
                 enable_ensemble=True,

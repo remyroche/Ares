@@ -376,6 +376,8 @@ class StandardizedXGBTrainer:
         w_tr = sample_weight[:n_train] if sample_weight is not None else None
         w_val = sample_weight[n_train:] if sample_weight is not None else None
 
+        base_score = self._compute_base_score(y_tr)
+
         # Convert to DMatrix (with sparse support)
         dtrain = self._create_dmatrix(X_tr, y_tr, w_tr)
         dval = self._create_dmatrix(X_val, y_val, w_val)
@@ -383,12 +385,12 @@ class StandardizedXGBTrainer:
         if should_run_hpo:
             if verbose:
                 logger.info(f"   🎯 Running HPO for window {window_id} (scheduled HPO)")
-            model = self._train_with_hpo(dtrain, dval, eval_metric, verbose)
+            model = self._train_with_hpo(dtrain, dval, eval_metric, verbose, base_score=base_score)
             model.__used_hpo__ = True
         else:
             if verbose:
                 logger.info(f"   🤖 Training with fixed parameters for window {window_id}")
-            model = self._train_with_fixed_params(dtrain, dval, eval_metric, verbose)
+            model = self._train_with_fixed_params(dtrain, dval, eval_metric, verbose, base_score=base_score)
             model.__used_hpo__ = False
 
         return model
@@ -443,12 +445,32 @@ class StandardizedXGBTrainer:
             feature_names=X.columns.tolist()
         )
 
+    def _compute_base_score(self, y: pd.Series) -> Optional[float]:
+        try:
+            if y is None or len(y) == 0:
+                return None
+            y_array = y.values
+            if self.config.task_type == "regression":
+                return float(np.nanmean(y_array))
+            if self.config.task_type == "classification":
+                pos_rate = float(np.mean(y_array == 1))
+                eps = 1e-6
+                if pos_rate <= 0.0:
+                    return eps
+                if pos_rate >= 1.0:
+                    return 1.0 - eps
+                return pos_rate
+        except Exception:
+            return None
+        return None
+
     def _train_with_fixed_params(
         self,
         dtrain: xgb.DMatrix,
         dval: xgb.DMatrix,
         eval_metric: str,
-        verbose: bool
+        verbose: bool,
+        base_score: Optional[float] = None
     ) -> xgb.Booster:
         """Train XGBoost with fixed parameters (no HPO)."""
         params = {
@@ -463,6 +485,9 @@ class StandardizedXGBTrainer:
             'eval_metric': eval_metric,
             'objective': self.config.objective,
         }
+
+        if base_score is not None:
+            params['base_score'] = float(base_score)
 
         # Add num_class for multiclass classification
         if self.config.num_class is not None:
@@ -486,7 +511,8 @@ class StandardizedXGBTrainer:
         dtrain: xgb.DMatrix,
         dval: xgb.DMatrix,
         eval_metric: str,
-        verbose: bool
+        verbose: bool,
+        base_score: Optional[float] = None
     ) -> xgb.Booster:
         """
         Train XGBoost with HPO using BOHB (TPE + Hyperband).
@@ -587,6 +613,9 @@ class StandardizedXGBTrainer:
                 'objective': self.config.objective,
             }
 
+            if base_score is not None:
+                xgb_params['base_score'] = float(base_score)
+
             # Add num_class for multiclass classification
             if self.config.num_class is not None:
                 xgb_params['num_class'] = self.config.num_class
@@ -662,6 +691,9 @@ class StandardizedXGBTrainer:
             'eval_metric': eval_metric,
             'objective': self.config.objective,
         }
+
+        if base_score is not None:
+            final_params['base_score'] = float(base_score)
 
         # Add num_class for multiclass classification
         if self.config.num_class is not None:

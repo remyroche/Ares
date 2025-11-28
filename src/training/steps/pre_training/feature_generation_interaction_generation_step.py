@@ -662,7 +662,12 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             
             if len(variant_features.columns) == 0:
                 tprint_warning("⚠️ DEBUG: No variant features to prune! Returning empty DataFrame")
-                return pd.DataFrame(), {"error": "No variant features to prune"}
+                return {
+                    'success': False,
+                    'error': 'No variant features to prune',
+                    'artifacts': {},
+                    'metrics': self.performance_stats,
+                }
             
             # Debug: Check variant features before pruning
             tprint_info(f"🔍 DEBUG: Variant features columns: {list(variant_features.columns)[:10]}...")  # Show first 10 columns
@@ -948,7 +953,6 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             top_features_by_category = self._select_top_features_per_category(
                 lookback_optimization, top_features_per_category
             )
-        
         
         # Count total selected features across all categories
         total_selected_features = sum(len(features) for features in top_features_by_category.values())
@@ -1283,6 +1287,55 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         
         # Return original if no match found
         return category
+
+    def _fallback_select_top_features_from_generated(
+        self,
+        generated_features: pd.DataFrame,
+        top_n: int = 4,
+    ) -> Dict[str, List[Tuple[str, int, float]]]:
+        """Heuristic fallback when lookback optimization has no per-feature data.
+
+        Select a small set of features per category directly from generated_features
+        using name-based category inference. This keeps the interaction pipeline
+        usable even if lookback metrics are missing or empty.
+        """
+        fallback_top: Dict[str, List[Tuple[str, int, float]]] = {cat: [] for cat in self.categories}
+
+        try:
+            for col in generated_features.columns:
+                category = self._infer_feature_category(col)
+                if category in fallback_top:
+                    # Use placeholder lookback=0 and composite_score=0.0; only
+                    # the feature name is required for downstream variant generation.
+                    fallback_top[category].append((col, 0, 0.0))
+
+            # Limit to top_n per category to avoid exploding the search space
+            for category in list(fallback_top.keys()):
+                features = fallback_top[category]
+                if not features:
+                    continue
+                if len(features) > top_n:
+                    fallback_top[category] = features[:top_n]
+
+            # Drop categories with no features at all to keep logs clean
+            fallback_top = {cat: feats for cat, feats in fallback_top.items() if feats}
+
+            if not fallback_top:
+                tprint_warning(
+                    "⚠️ Fallback selection from generated_features found no "
+                    "features matching known categories"
+                )
+            else:
+                tprint_info(
+                    f"📊 Fallback selection picked {sum(len(v) for v in fallback_top.values())} "
+                    f"features across {len(fallback_top)} categories"
+                )
+
+            return fallback_top
+
+        except Exception as e:
+            self.logger.warning(f"Fallback feature selection from generated_features failed: {e}")
+            return {}
 
     def _apply_multi_window_priority_boost(self, features_df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -2291,6 +2344,8 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         targets = aligned_target.to_frame(name=first_target_name)
 
         # Configure label-guided interaction discovery
+        # NOTE: thresholds are intentionally made looser in light mode so we
+        # can explore a richer interaction space.
         lgid_config = LabelGuidedInteractionConfig(
             # MI/SHAP scoring
             use_mi_scoring=True,
@@ -2298,12 +2353,11 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             mi_weight=0.6,
             shap_weight=0.4,
 
-            # Lift requirements - CRITICAL for ensuring interactions beat base features
-            min_r2_lift=float(config.get('min_interaction_r2_lift', 0.02)),  # 2% R² improvement (tightened from 1%)
-            # Require at least 10% MI improvement: child MI ≥ 1.10 × best parent MI
-            # This tighter threshold ensures composite scores become more informative
-            # now that CT features are no longer being discarded prematurely.
-            min_mi_lift=float(config.get('min_interaction_mi_lift', 0.10)),  # Tightened from 0.10
+            # Lift requirements – relaxed so that more promising interactions are kept
+            # in light-mode exploration. Keep a small R² guard but do not require it.
+            min_r2_lift=float(config.get('min_interaction_r2_lift', 0.005)),  # 0.5% R² improvement
+            # Require only modest MI improvement: child MI ≥ 1.02 × best parent MI
+            min_mi_lift=float(config.get('min_interaction_mi_lift', 0.02)),
             require_r2_lift=False,  # Don't require R² lift (too expensive to compute)
             require_mi_lift=True,   # Require MI lift (fast to compute)
 
@@ -2313,8 +2367,8 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             lasso_cv_folds=3,  # Reduced for speed
             lasso_max_iter=500,
 
-            # Interaction generation limits
-            max_pairs_to_test=int(config.get('max_interaction_pairs', 100)),
+            # Interaction generation limits – allow more pairs to be evaluated
+            max_pairs_to_test=int(config.get('max_interaction_pairs', 250)),
             operations=['multiply', 'divide', 'subtract', 'log_ratio'],  # Exclude 'add' (often redundant)
 
             # Category controls - CRITICAL for preventing trend over-representation
@@ -4151,8 +4205,9 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         
         # Select top interactions
         scores.sort(key=lambda x: x[1], reverse=True)
-        # Select top interactions (up to 80 or all if fewer)
-        max_interactions = min(80, len(scores))
+        # Select top interactions – allow a larger pool in analyst/light mode
+        max_interactions_cfg = int(config.get('max_interactions', 160)) if isinstance(config, dict) else 160
+        max_interactions = min(max_interactions_cfg, len(scores))
         top_interactions = scores[:max_interactions]
         
         # Store the scores for use in metadata

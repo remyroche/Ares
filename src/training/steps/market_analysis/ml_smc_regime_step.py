@@ -958,6 +958,7 @@ class MLSMCRegimeStep(BaseStep):
                 log_loss,
                 mean_squared_error,
                 r2_score,
+                brier_score_loss,
             )
 
             # Class predictions
@@ -993,12 +994,158 @@ class MLSMCRegimeStep(BaseStep):
                 "smc_xgb_hpo_runs": sum(1 for m in oof_metadata if m.get('used_hpo', False)),
             })
 
+        # Derive full-sample predictions and classical train/val/test metrics for reporting
+        report_y_pred_scalar = None
+        report_y_pred_class = None
+        report_feature_importances = None
+        train_rmse = val_rmse = test_rmse = float("nan")
+        train_r2 = val_r2 = test_r2 = float("nan")
+        train_brier = val_brier = test_brier = float("nan")
+        n_train = n_val = n_test = 0
+
+        try:
+            if oof_models:
+                # Full-sample predictions from the latest window model
+                d_all = xgb.DMatrix(
+                    X.values,
+                    feature_names=X.columns.tolist(),
+                )
+                proba_all_full = oof_models[-1].predict(d_all)
+
+                proba_df_full = None
+                if proba_all_full.ndim == 2 and proba_all_full.shape[1] >= 3:
+                    class_to_scalar_full = np.array([0.0, 0.5, 1.0], dtype=np.float32)
+                    report_y_pred_scalar = proba_all_full.dot(class_to_scalar_full)
+                    report_y_pred_class = np.argmax(proba_all_full, axis=1)
+                    proba_df_full = pd.DataFrame(
+                        proba_all_full,
+                        index=df_with_target.index,
+                        columns=prob_cols,
+                    )
+                else:
+                    report_y_pred_scalar = np.asarray(proba_all_full, dtype=float)
+                    report_y_pred_class = None
+
+                # Feature importances from the booster
+                try:
+                    score_dict = oof_models[-1].get_score(importance_type="gain")
+                    report_feature_importances = np.array(
+                        [float(score_dict.get(col, 0.0)) for col in feature_cols],
+                        dtype=float,
+                    )
+                except Exception:
+                    report_feature_importances = None
+
+                # Train/val/test metrics on scalar predictions
+                y_true_reg = df_with_target["target_atr_return"]
+                target_class_series = pd.Series(target_class, index=df_with_target.index)
+                y_pred_series = pd.Series(report_y_pred_scalar, index=df_with_target.index)
+
+                def _compute_split_metrics(start_ts, end_ts):
+                    mask = (df_with_target.index >= start_ts) & (df_with_target.index <= end_ts)
+                    y_true_split = y_true_reg[mask]
+                    y_pred_split = y_pred_series[mask]
+                    if len(y_true_split) == 0:
+                        return (
+                            0,
+                            float("nan"),
+                            float("nan"),
+                            float("nan"),
+                        )
+
+                    rmse_val = float(
+                        np.sqrt(mean_squared_error(y_true_split, y_pred_split))
+                    )
+                    try:
+                        r2_val = float(r2_score(y_true_split, y_pred_split))
+                    except Exception:
+                        r2_val = float("nan")
+
+                    brier_val = float("nan")
+                    if proba_df_full is not None:
+                        proba_split = proba_df_full.loc[mask]
+                        if len(proba_split) == len(y_true_split):
+                            y_class_split = target_class_series[mask].to_numpy()
+                            y_onehot = np.eye(3, dtype=float)[y_class_split]
+                            brier_scores = []
+                            for class_idx in range(3):
+                                try:
+                                    brier_scores.append(
+                                        brier_score_loss(
+                                            y_onehot[:, class_idx],
+                                            proba_split.iloc[:, class_idx].to_numpy(),
+                                        )
+                                    )
+                                except Exception:
+                                    continue
+                            if brier_scores:
+                                brier_val = float(np.mean(brier_scores))
+
+                    return (
+                        int(mask.sum()),
+                        rmse_val,
+                        r2_val,
+                        brier_val,
+                    )
+
+                n_train, train_rmse, train_r2, train_brier = _compute_split_metrics(
+                    split_config.training.start,
+                    split_config.training.effective_end,
+                )
+                n_val, val_rmse, val_r2, val_brier = _compute_split_metrics(
+                    split_config.validation.start,
+                    split_config.validation.effective_end,
+                )
+                n_test, test_rmse, test_r2, test_brier = _compute_split_metrics(
+                    split_config.test.start,
+                    split_config.test.effective_end,
+                )
+        except Exception as report_metric_exc:
+            tprint_warning(f"SMC XGB: failed to compute full report metrics: {report_metric_exc}")
+
             tprint_success(
                 f"✅ SMC XGB OOF metrics: accuracy={oof_accuracy:.4f}, f1={oof_f1:.4f}, "
                 f"logloss={oof_logloss:.4f}, rmse={oof_rmse:.4f}, r2={oof_r2:.4f}, ic={oof_ic:.4f}"
             )
         else:
             tprint_warning("No OOF predictions available for metric calculation")
+
+        # Generate comprehensive SMC reports if we have predictions
+        try:
+            if report_y_pred_scalar is not None and len(report_y_pred_scalar) == len(df_with_target):
+                report_artifacts = self._generate_smc_reports(
+                    df=df_with_target,
+                    model=oof_models[-1] if oof_models else None,
+                    X=X,
+                    y=df_with_target["target_atr_return"],
+                    forward_returns=df_with_target["forward_return"],
+                    feature_cols=feature_cols,
+                    calibration_results=None,
+                    symbol=symbol,
+                    exchange=exchange,
+                    regime_timeframe=regime_timeframe,
+                    train_rmse=train_rmse,
+                    val_rmse=val_rmse,
+                    test_rmse=test_rmse,
+                    train_r2=train_r2,
+                    val_r2=val_r2,
+                    test_r2=test_r2,
+                    train_brier=train_brier,
+                    val_brier=val_brier,
+                    test_brier=test_brier,
+                    iso_test_rmse=float("nan"),
+                    iso_test_r2=float("nan"),
+                    n_train=n_train,
+                    n_val=n_val,
+                    n_test=n_test,
+                    y_pred_scalar=report_y_pred_scalar,
+                    y_pred_class=report_y_pred_class,
+                    feature_importance_override=report_feature_importances,
+                )
+                if report_artifacts:
+                    artifacts.extend(report_artifacts)
+        except Exception as report_exc:
+            tprint_warning(f"SMC XGB report generation failed: {report_exc}")
 
         # Save model
         model_metadata = {
@@ -1319,6 +1466,9 @@ class MLSMCRegimeStep(BaseStep):
         n_train: int,
         n_val: int,
         n_test: int,
+        y_pred_scalar: Optional[np.ndarray] = None,
+        y_pred_class: Optional[np.ndarray] = None,
+        feature_importance_override: Optional[np.ndarray] = None,
     ) -> List[str]:
         """Generate consolidated comprehensive reports."""
         artifacts = []
@@ -1328,21 +1478,31 @@ class MLSMCRegimeStep(BaseStep):
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
 
         # Predictions (scalarized classifier output 0.0/0.5/1.0 where possible)
-        try:
-            proba_all = model.predict_proba(X)
-            if proba_all.shape[1] >= 3:
-                class_to_scalar = np.array([0.0, 0.5, 1.0], dtype=np.float32)
-                y_pred_scalar = proba_all.dot(class_to_scalar)
-                y_pred_class = np.argmax(proba_all, axis=1)
-            else:
+        if y_pred_scalar is not None:
+            y_pred_scalar = np.asarray(y_pred_scalar, dtype=float)
+            if y_pred_class is not None:
+                y_pred_class = np.asarray(y_pred_class, dtype=int)
+        else:
+            try:
+                proba_all = model.predict_proba(X)
+                if proba_all.shape[1] >= 3:
+                    class_to_scalar = np.array([0.0, 0.5, 1.0], dtype=np.float32)
+                    y_pred_scalar = proba_all.dot(class_to_scalar)
+                    y_pred_class = np.argmax(proba_all, axis=1)
+                else:
+                    y_pred_scalar = model.predict(X)
+                    y_pred_class = None
+            except Exception:
                 y_pred_scalar = model.predict(X)
                 y_pred_class = None
-        except Exception:
-            y_pred_scalar = model.predict(X)
-            y_pred_class = None
 
         # 1. CONSOLIDATED CSV: Feature importance + correlations
-        feature_importance = model.feature_importances_
+        if feature_importance_override is not None:
+            feature_importance = np.asarray(feature_importance_override, dtype=float)
+        else:
+            feature_importance = getattr(model, "feature_importances_", None)
+            if feature_importance is None:
+                feature_importance = np.zeros(len(feature_cols), dtype=float)
 
         feature_data = []
         for i, feat in enumerate(feature_cols):

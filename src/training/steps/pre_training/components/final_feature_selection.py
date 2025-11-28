@@ -57,11 +57,11 @@ class FinalFeatureSelectionConfig:
         pre_lgbm_target_features: int = 120,
         mi_proxy_folds: int = 5,
         mi_proxy_min_quantile: float = 0.3,
-        pre_lgbm_min_stability: float = 0.2,
+        pre_lgbm_min_stability: float = 0.1,
         pre_lgbm_correlation_threshold: float = 0.8,
-        min_selection_frequency: float = 0.3,
-        enable_cv_frequency_filter: bool = True,
-        cv_frequency_folds: int = 5
+        min_selection_frequency: float = 0.1,
+        enable_cv_frequency_filter: bool = False,
+        cv_frequency_folds: int = 3
     ):
         """
         Initialize final feature selection configuration.
@@ -74,14 +74,16 @@ class FinalFeatureSelectionConfig:
             use_tree_based: Whether to use tree-based feature importance
             use_permutation_importance: Whether to use permutation importance (captures interactions) vs standard Gini importance
             stability_weight: Weight for stability in ranking (0-1). 0=pure importance, 0.3=30% stability, 1=pure stability
-            min_selection_frequency: Minimum frequency (0-1) for a feature to be selected across CV folds (default: 0.3 = 30%)
+            min_selection_frequency: Minimum frequency (0-1) for a feature to be selected across CV folds (default: 0.1 = 10%)
             enable_cv_frequency_filter: Whether to enable CV-based frequency filtering
             cv_frequency_folds: Number of CV folds for frequency-based filtering
         """
         self.max_features = max_features
         self.min_features = min_features
         self.selection_method = selection_method
-        self.scoring_threshold = scoring_threshold
+        # Make the score threshold very permissive by default; downstream
+        # steps (caps and set sizes) will control the final feature count.
+        self.scoring_threshold = scoring_threshold if scoring_threshold is not None else 0.0
         self.use_tree_based = use_tree_based
         self.use_permutation_importance = use_permutation_importance
         self.stability_weight = stability_weight
@@ -398,7 +400,7 @@ class FinalFeatureSelectionComponent:
 
             # Step 3.9: Apply CV-based selection frequency filtering if enabled
             enable_cv_filter = getattr(self.config, 'enable_cv_frequency_filter', True)
-            min_freq = getattr(self.config, 'min_selection_frequency', 0.3)
+            min_freq = getattr(self.config, 'min_selection_frequency', 0.1)
             cv_folds = getattr(self.config, 'cv_frequency_folds', 5)
 
             if enable_cv_filter and len(ranked_features) > 0:
@@ -1094,7 +1096,7 @@ class FinalFeatureSelectionComponent:
     
     def _apply_stability_weighted_ranking(self, X: pd.DataFrame, y: pd.Series, 
                                           ranked_features: List[str], 
-                                          stability_weight: float = 0.3) -> List[str]:
+                                          stability_weight: float = 0.1) -> List[str]:
         """
         Re-rank features by combining SHAP importance with stability scores using log multiplication.
         

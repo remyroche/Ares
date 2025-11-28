@@ -741,6 +741,33 @@ class ModelTrainer(BaseTrainer):
                 show_shape=True
             )
 
+            constant_target = False
+            try:
+                if isinstance(targets, pd.Series):
+                    y_diag = targets.astype(float)
+                else:
+                    y_diag = pd.Series(targets).astype(float)
+
+                unique_vals = pd.unique(y_diag.dropna())
+                tprint_info(
+                    f"📊 LightGBM target diagnostics: "
+                    f"n_unique={len(unique_vals)}, "
+                    f"min={float(y_diag.min()):.6f}, "
+                    f"max={float(y_diag.max()):.6f}"
+                )
+
+                target_range = float(y_diag.max() - y_diag.min())
+                target_std = float(y_diag.std())
+                constant_target = len(unique_vals) <= 1 or (abs(target_range) == 0.0 and target_std == 0.0)
+                if constant_target:
+                    tprint_warning(
+                        "⚠️ LightGBM target is effectively constant on the full training subset; "
+                        "model will be forced to a trivial solution. "
+                        "Check labeling thresholds, temporal splits, or light-mode filtering."
+                    )
+            except Exception as diag_exc:
+                tprint_warning(f"⚠️ Failed to compute LightGBM target diagnostics: {diag_exc}")
+
             # Get CPU optimizer for threading
             cpu_optimizer = get_m1_cpu_optimizer()
             n_threads = cpu_optimizer.get_optimal_thread_count() if cpu_optimizer else (os.cpu_count() or 4)
@@ -922,10 +949,24 @@ class ModelTrainer(BaseTrainer):
                 tol = np.maximum(min_abs, rel * np.std(y_true))
                 return float(np.mean(np.abs(y_true - y_pred) <= tol))
             
+            train_r2_value = r2_score(y_train, train_pred)
+            test_r2_value = r2_score(y_test, test_pred)
+            train_test_gap_value = train_r2_value - test_r2_value
+            denominator = max(train_r2_value, 0.01)
+            overfitting_ratio_value = train_test_gap_value / denominator
+            generalization_score_value = test_r2_value / denominator
+
+            if constant_target:
+                train_r2_value = 0.0
+                test_r2_value = 0.0
+                train_test_gap_value = 0.0
+                overfitting_ratio_value = 0.0
+                generalization_score_value = 0.0
+
             metrics = {
                 'train_mse': mean_squared_error(y_train, train_pred),
                 'train_mae': mean_absolute_error(y_train, train_pred),
-                'train_r2': r2_score(y_train, train_pred),
+                'train_r2': train_r2_value,
                 'train_rmse': np.sqrt(mean_squared_error(y_train, train_pred)),
                 'val_mse': mean_squared_error(y_val, val_pred),
                 'val_mae': mean_absolute_error(y_val, val_pred),
@@ -933,18 +974,21 @@ class ModelTrainer(BaseTrainer):
                 'val_rmse': np.sqrt(mean_squared_error(y_val, val_pred)),
                 'test_mse': mean_squared_error(y_test, test_pred),
                 'test_mae': mean_absolute_error(y_test, test_pred),
-                'test_r2': r2_score(y_test, test_pred),
+                'test_r2': test_r2_value,
                 'test_rmse': np.sqrt(mean_squared_error(y_test, test_pred)),
-                'train_test_r2_gap': r2_score(y_train, train_pred) - r2_score(y_test, test_pred),
-                'overfitting_ratio': (r2_score(y_train, train_pred) - r2_score(y_test, test_pred)) / max(r2_score(y_train, train_pred), 0.01),
-                'generalization_score': r2_score(y_test, test_pred) / max(r2_score(y_train, train_pred), 0.01),
+                'train_test_r2_gap': train_test_gap_value,
+                'overfitting_ratio': overfitting_ratio_value,
+                'generalization_score': generalization_score_value,
                 'mse': mean_squared_error(y_test, test_pred),
                 'mae': mean_absolute_error(y_test, test_pred),
-                'r2': r2_score(y_test, test_pred),
+                'r2': test_r2_value,
                 'rmse': np.sqrt(mean_squared_error(y_test, test_pred)),
                 'iterations_used': best_iter,
                 'best_iteration': best_iter
             }
+
+            if constant_target:
+                metrics['constant_target'] = True
             
             feature_importance = dict(zip(data.columns, model.feature_importance()))
             
@@ -2109,10 +2153,15 @@ class ModelTrainer(BaseTrainer):
                 prediction_stats['prediction_max'] = float(np.max(predictions_array))
                 prediction_stats['prediction_median'] = float(np.median(predictions_array))
 
-                # Skewness and kurtosis
                 from scipy import stats
-                prediction_stats['prediction_skewness'] = float(stats.skew(predictions_array))
-                prediction_stats['prediction_kurtosis'] = float(stats.kurtosis(predictions_array))
+                skew_value = float(stats.skew(predictions_array))
+                kurtosis_value = float(stats.kurtosis(predictions_array))
+                if not np.isfinite(skew_value):
+                    skew_value = 0.0
+                if not np.isfinite(kurtosis_value):
+                    kurtosis_value = 0.0
+                prediction_stats['prediction_skewness'] = skew_value
+                prediction_stats['prediction_kurtosis'] = kurtosis_value
 
             metadata['prediction_statistics'] = prediction_stats
         except Exception as e:

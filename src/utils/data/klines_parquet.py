@@ -192,6 +192,8 @@ class KlinesParquetManager:
                         open_time_series = open_time_series[valid_mask]
                         df = df[valid_mask]
 
+                    open_time_series = open_time_series.astype('int64')
+
                     # open_time is typically in milliseconds for exchange data
                     timestamp_col = pd.to_datetime(open_time_series, unit='ms')
                 except (OverflowError, FloatingPointError):

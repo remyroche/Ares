@@ -54,18 +54,16 @@ def _compute_basic_performance_metrics(returns: pd.Series, timeframe: str) -> Di
 
     total_return = float((1.0 + returns).prod() - 1.0)
     bars_per_year = _bars_per_year_from_timeframe(timeframe)
-    vol = float(returns.std()) if n_bars > 1 else 0.0
 
-    # Annualize based on total return over the full horizon rather than
-    # exponentiating the mean per-bar return by bars_per_year (which can
-    # massively overstate returns on high-frequency data).
-    years = float(n_bars / bars_per_year) if bars_per_year > 0 else 0.0
-    if years > 0:
-        annualized_return = float((1.0 + total_return) ** (1.0 / years) - 1.0)
-    else:
-        annualized_return = 0.0
+    # Use mean per-bar return for annualization to avoid exploding
+    # annualized returns on short, high-frequency backtests with large
+    # total_return. This keeps Sharpe/Calmar/Sortino in a realistic
+    # numeric range while preserving direction and relative comparisons.
+    mean_bar_ret = float(returns.mean()) if n_bars > 0 else 0.0
+    vol_bar = float(returns.std()) if n_bars > 1 else 0.0
 
-    annualized_vol = float(vol * np.sqrt(bars_per_year)) if vol > 0 else 0.0
+    annualized_return = float(mean_bar_ret * bars_per_year) if bars_per_year > 0 else 0.0
+    annualized_vol = float(vol_bar * np.sqrt(bars_per_year)) if vol_bar > 0 else 0.0
     risk_free = 0.0
     sharpe = float((annualized_return - risk_free) / annualized_vol) if annualized_vol > 0 else 0.0
 

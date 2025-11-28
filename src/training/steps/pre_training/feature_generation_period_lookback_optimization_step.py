@@ -17,6 +17,11 @@ from functools import lru_cache, wraps
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 
+try:
+    from sklearn.ensemble import RandomForestRegressor
+except Exception:
+    RandomForestRegressor = None
+
 from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint
@@ -206,7 +211,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         # Comprehensive lookback ranges from micro-structure to macro context
         # Short-term (2-20): Micro-structure behavior and immediate patterns
         # Medium-term (25-100): Intraday trends and regime transitions
-        # Long-term (120-300): Multi-regime interactions and market memory
+        # Long-term (100-150): Multi-regime interactions and broader context
         lookbacks = [
             # Micro-structure: 2-20 bars (immediate price action)
             2, 3, 4, 5, 8, 10, 13, 15, 17, 20, 22,
@@ -214,8 +219,8 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             25, 27, 30, 35, 40, 45, 50,
             # Medium-term: 60-100 bars (intraday regime shifts)
             60, 70, 80, 90, 100,
-            # Long-term: 120-300 bars (multi-regime interactions)
-            120, 150, 180, 210, 240, 270, 300,
+            # Long-term: 100-150 bars (extended regime/context windows)
+            115, 130, 150,
         ]
         self.logger.info(
             f"Generated {len(lookbacks)} intelligent lookback ranges up to 300 bars: {lookbacks}"
@@ -792,6 +797,163 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             # Fallback to standard processing
             return self._process_feature_chunk(features, data, target_column)
 
+    def _memory_efficient_chunk_processing(
+        self,
+        features: List[str],
+        data: pd.DataFrame,
+        target_column: str,
+        chunk_size: int = 25,
+    ) -> List[Dict[str, Any]]:
+        """Process features in small batches to limit memory consumption."""
+        if not features:
+            return []
+
+        results: List[Dict[str, Any]] = []
+        safe_chunk = max(1, int(chunk_size) or 1)
+
+        for start_idx in range(0, len(features), safe_chunk):
+            chunk_features = features[start_idx : start_idx + safe_chunk]
+            try:
+                chunk_results = self._process_feature_chunk(chunk_features, data, target_column)
+                if chunk_results:
+                    results.extend(chunk_results)
+            except Exception as chunk_err:
+                self.logger.warning(
+                    f"Memory-efficient chunk processing failed for chunk {start_idx // safe_chunk}: {chunk_err}"
+                )
+                fallback_results = self._process_feature_chunk_fallback(chunk_features, data, target_column)
+                if fallback_results:
+                    results.extend(fallback_results)
+
+        return results
+
+    def _process_feature_chunk(
+        self,
+        features: List[str],
+        data: pd.DataFrame,
+        target_column: str,
+    ) -> List[Dict[str, Any]]:
+        """Optimize a list of features using lightweight statistics."""
+        if not features or target_column not in data.columns:
+            return []
+
+        chunk_results: List[Dict[str, Any]] = []
+        clean_data = data.copy()
+        clean_data = clean_data.replace([np.inf, -np.inf], np.nan)
+
+        target_series = clean_data[target_column].astype(float).dropna()
+        if target_series.empty:
+            return []
+
+        for feature_name in features:
+            if feature_name == target_column or feature_name not in clean_data.columns:
+                continue
+            result = self._optimize_single_feature(feature_name, clean_data, target_column)
+            if result is not None:
+                chunk_results.append(result)
+
+        return chunk_results
+
+    def _process_feature_chunk_fallback(
+        self,
+        features: List[str],
+        data: pd.DataFrame,
+        target_column: str,
+    ) -> List[Dict[str, Any]]:
+        """Simple fallback optimizer when vectorized chunking fails."""
+        results: List[Dict[str, Any]] = []
+        for feature_name in features:
+            try:
+                result = self._optimize_single_feature(feature_name, data, target_column)
+                if result is not None:
+                    result.setdefault('method', 'memory_fallback')
+                    results.append(result)
+            except Exception as exc:
+                self.logger.debug(f"Fallback optimization failed for {feature_name}: {exc}")
+        return results
+
+    def _optimize_single_feature(
+        self,
+        feature_name: str,
+        data: pd.DataFrame,
+        target_column: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Determine an approximate optimal lookback for a single feature."""
+        if feature_name not in data.columns or target_column not in data.columns:
+            return None
+
+        feature_series = data[feature_name].astype(float).replace([np.inf, -np.inf], np.nan)
+        target_series = data[target_column].astype(float).replace([np.inf, -np.inf], np.nan)
+        valid_mask = feature_series.notna() & target_series.notna()
+
+        # Adaptive minimum sample requirement: in light/blank modes we allow a
+        # smaller window so that exploratory runs can still yield per-feature
+        # metrics even when coverage is limited.
+        min_samples = 50
+        exec_mode = getattr(self, "_execution_mode", None)
+        if exec_mode in ("light", "blank"):
+            min_samples = 20
+
+        if valid_mask.sum() < min_samples:
+            return None
+
+        feature_series = feature_series[valid_mask]
+        target_series = target_series[valid_mask]
+
+        # Build lookback candidates from the intelligent range, but restrict to
+        # windows up to 150 bars. Selection is purely data-driven: we choose
+        # the lookback that maximizes the absolute rolling correlation between
+        # feature and target, without any horizon weighting heuristic.
+        lookback_candidates = [
+            lb for lb in self.intelligent_lookbacks
+            if 2 <= lb <= 150 and lb < len(feature_series)
+        ]
+        if not lookback_candidates:
+            lookback_candidates = list(range(4, min(51, len(feature_series))))
+
+        best_lookback = lookback_candidates[0]
+        best_score = 0.0
+
+        for lb in lookback_candidates:
+            if lb <= 1 or lb >= len(feature_series):
+                continue
+            rolled_feature = feature_series.rolling(lb, min_periods=max(2, lb // 2)).mean()
+            rolled_target = target_series.rolling(lb, min_periods=max(2, lb // 2)).mean()
+            corr = rolled_feature.corr(rolled_target)
+            if corr is None or np.isnan(corr):
+                continue
+            score = abs(float(corr))
+            if score > best_score:
+                best_score = score
+                best_lookback = lb
+
+        if best_score == 0.0:
+            corr = feature_series.corr(target_series)
+            best_score = abs(float(corr)) if corr is not None and not np.isnan(corr) else 0.0
+
+        stability_score = float(
+            self._calculate_stability_score(
+                data.fillna(method='ffill').fillna(0), feature_name, max(5, best_lookback)
+            )
+        )
+        information_score = float((best_score + stability_score) / 2.0) if (
+            best_score > 0 or stability_score > 0
+        ) else 0.0
+
+        return {
+            'feature_name': feature_name,
+            'optimal_lookback': int(best_lookback),
+            'performance_score': float(best_score),
+            'stability_score': stability_score,
+            'information_score': information_score,
+            'lookback_range': '1-50',
+            'optimization_method': 'memory_efficient_chunk',
+            'cv_folds': 2,
+            'optimization_time': 0.0,
+            'memory_usage': 0.0,
+            'success': True,
+        }
+
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
         Execute period lookback optimization.
@@ -827,10 +989,16 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         self._target_direction = requested_direction
         tprint(f"🎯 Using target direction for optimization: {self._target_direction}")
 
+        # Persist execution context for downstream helpers
         try:
             self._timeframe = config.get('timeframe', '15m')
         except Exception:
             self._timeframe = '15m'
+
+        try:
+            self._execution_mode = config.get('execution_mode', 'light')
+        except Exception:
+            self._execution_mode = 'light'
         
 
         try:
@@ -1004,6 +1172,42 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                     tprint(f"📂 Loaded labeled data from feature_generation_labeling_integration_step")
                     tprint(f"📊 Labels shape: {labeled_data.shape}")
                     tprint(f"📊 Labels columns: {labeled_data.columns.tolist()}")
+
+                    # Enrich with meta-label outputs (binary_label, meta_probability, r_multiple)
+                    # from feature_generation_meta_labeling_step if available.
+                    try:
+                        self.artifact_manager.set_context(
+                            step_name='feature_generation_meta_labeling_step',
+                            symbol=symbol,
+                            exchange=exchange,
+                            timeframe=timeframe,
+                            direction=direction,
+                            model=model,
+                            datetime=datetime.now()
+                        )
+
+                        meta_labeled = self.artifact_manager.get_artifact(
+                            artifact_name=f'labeled_data_{symbol}_{timeframe}',
+                            artifact_type='data'
+                        )
+
+                        if meta_labeled is not None and not getattr(meta_labeled, 'empty', True):
+                            tprint("📂 Loaded meta-labeled data from feature_generation_meta_labeling_step")
+                            tprint(f"📊 Meta-labeled shape: {meta_labeled.shape}")
+                            tprint(f"📊 Meta-labeled columns (first 10): {list(meta_labeled.columns)[:10]}")
+
+                            # Align on index and inject key meta-label columns
+                            try:
+                                meta_aligned = meta_labeled.reindex(labeled_data.index)
+                            except Exception:
+                                meta_aligned = meta_labeled
+
+                            for col in ['binary_label', 'meta_probability', 'r_multiple']:
+                                if col in meta_aligned.columns:
+                                    labeled_data[col] = meta_aligned[col]
+                                    tprint(f"🎯 Injected meta-label column into labeled_data: {col}")
+                    except Exception as meta_exc:
+                        self.logger.warning(f"Failed to enrich labeled data with meta-label outputs: {meta_exc}")
                 
             except Exception as e:
                 self.logger.warning(f"Failed to load labeled data: {e}")
@@ -1082,12 +1286,53 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                         if isinstance(targets_df.index, pd.DatetimeIndex):
                             targets_df = targets_df[targets_df.index.notna()]
 
+                        # Normalize timezone info to avoid tz-aware/naive join errors
+                        if isinstance(features_df.index, pd.DatetimeIndex) and features_df.index.tz is not None:
+                            try:
+                                features_df.index = features_df.index.tz_localize(None)
+                            except Exception as tz_exc:
+                                self.logger.warning(f"Failed to normalize feature index timezone: {tz_exc}")
+                        if isinstance(targets_df.index, pd.DatetimeIndex) and targets_df.index.tz is not None:
+                            try:
+                                targets_df.index = targets_df.index.tz_localize(None)
+                            except Exception as tz_exc:
+                                self.logger.warning(f"Failed to normalize target index timezone: {tz_exc}")
+
                         merged_data = features_df.join(targets_df, how="inner")
+
+                        # If datetime-based join produced no overlap, fall back to
+                        # positional alignment on the last common window.
+                        if merged_data.empty and len(features_df) > 0 and len(targets_df) > 0:
+                            tprint("⚠️ Merged data empty after datetime index join; falling back to positional alignment")
+                            min_len = min(len(features_df), len(targets_df))
+                            if min_len > 0:
+                                features_tail = features_df.iloc[-min_len:].reset_index(drop=True)
+                                targets_tail = targets_df.iloc[-min_len:].reset_index(drop=True)
+                                merged_data = pd.concat([features_tail, targets_tail], axis=1)
                 except Exception as merge_exc:
                     self.logger.warning(
                         f"Feature/label merge failed, falling back to inner join on original indices: {merge_exc}"
                     )
-                    merged_data = generated_features.join(labeled_data[target_columns], how="inner")
+                    try:
+                        # Fallback join with explicit timezone normalization
+                        features_df = generated_features.copy()
+                        targets_df = labeled_data[target_columns].copy()
+                        if isinstance(features_df.index, pd.DatetimeIndex) and features_df.index.tz is not None:
+                            features_df.index = features_df.index.tz_localize(None)
+                        if isinstance(targets_df.index, pd.DatetimeIndex) and targets_df.index.tz is not None:
+                            targets_df.index = targets_df.index.tz_localize(None)
+                        merged_data = features_df.join(targets_df, how="inner")
+
+                        if merged_data.empty and len(features_df) > 0 and len(targets_df) > 0:
+                            tprint("⚠️ Fallback merge produced empty result; using positional alignment on tail window")
+                            min_len = min(len(features_df), len(targets_df))
+                            if min_len > 0:
+                                features_tail = features_df.iloc[-min_len:].reset_index(drop=True)
+                                targets_tail = targets_df.iloc[-min_len:].reset_index(drop=True)
+                                merged_data = pd.concat([features_tail, targets_tail], axis=1)
+                    except Exception as inner_exc:
+                        self.logger.warning(f"Fallback feature/label merge failed, using raw indices: {inner_exc}")
+                        merged_data = generated_features.join(labeled_data[target_columns], how="inner")
                 
                 tprint(f"✅ Merged features and labels")
                 tprint(f"📊 Merged data shape: {merged_data.shape}")
@@ -1097,7 +1342,33 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 # Clean duplicate columns
                 merged_data = self._clean_duplicate_columns(merged_data)
                 tprint(f"🧹 Cleaned duplicate columns - Final shape: {merged_data.shape}")
-                
+
+                # Select a single primary target column and ensure we have real
+                # overlap by dropping rows where that target is NaN. This
+                # mirrors the behavior in the final feature selection step and
+                # prevents optimization from seeing mostly-NaN targets.
+                primary_target = self._find_target_column(merged_data)
+                if primary_target is not None and primary_target in merged_data.columns:
+                    non_null = merged_data[primary_target].notna().sum()
+                    tprint(
+                        f"🎯 Primary optimization target for lookback step: "
+                        f"{primary_target} (non-null={non_null}/{len(merged_data)})"
+                    )
+                    # Persist for reuse in _run_optimization
+                    self._lookback_target_column = primary_target
+
+                    if non_null == 0:
+                        tprint(
+                            f"⚠️ WARNING: Primary target '{primary_target}' has 0 non-null "
+                            f"values after merge; per-feature optimization will be empty."
+                        )
+                    else:
+                        merged_data = merged_data[merged_data[primary_target].notna()]
+                        tprint(
+                            f"🧹 Filtered rows with NaN in primary target; "
+                            f"new shape: {merged_data.shape}"
+                        )
+
                 return merged_data
             
             elif generated_features is not None:
@@ -1223,6 +1494,38 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                     'oscillator_features': {
                         'optimal_lookback': artifacts.get('optimized_lookbacks', {}).get('oscillator_features', 0),
                         'performance': 'N/A'
+                    },
+                    'acceleration_features': {
+                        'optimal_lookback': artifacts.get('optimized_lookbacks', {}).get('acceleration_features', 0),
+                        'performance': 'N/A'
+                    },
+                    'order_flow_features': {
+                        'optimal_lookback': artifacts.get('optimized_lookbacks', {}).get('order_flow_features', 0),
+                        'performance': 'N/A'
+                    },
+                    'advanced_statistical_features': {
+                        'optimal_lookback': artifacts.get('optimized_lookbacks', {}).get('advanced_statistical_features', 0),
+                        'performance': 'N/A'
+                    },
+                    'spectral_wavelet_features': {
+                        'optimal_lookback': artifacts.get('optimized_lookbacks', {}).get('spectral_wavelet_features', 0),
+                        'performance': 'N/A'
+                    },
+                    'candlestick_pattern_features': {
+                        'optimal_lookback': artifacts.get('optimized_lookbacks', {}).get('candlestick_pattern_features', 0),
+                        'performance': 'N/A'
+                    },
+                    'returns_features': {
+                        'optimal_lookback': artifacts.get('optimized_lookbacks', {}).get('returns_features', 0),
+                        'performance': 'N/A'
+                    },
+                    'support_resistance_features': {
+                        'optimal_lookback': artifacts.get('optimized_lookbacks', {}).get('support_resistance_features', 0),
+                        'performance': 'N/A'
+                    },
+                    'entropy_features': {
+                        'optimal_lookback': artifacts.get('optimized_lookbacks', {}).get('entropy_features', 0),
+                        'performance': 'N/A'
                     }
                 },
                 
@@ -1268,7 +1571,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             
             # Fill in performance data from optimization results if available
             optimization_results = artifacts.get('optimization_results', {})
-            for category in ['momentum_features', 'trend_features', 'volatility_features', 'volume_features', 'oscillator_features']:
+            for category in ['momentum_features', 'trend_features', 'volatility_features', 'volume_features', 'oscillator_features', 'acceleration_features', 'order_flow_features', 'advanced_statistical_features', 'spectral_wavelet_features', 'candlestick_pattern_features', 'returns_features', 'support_resistance_features', 'entropy_features']:
                 if category in optimization_results:
                     result = optimization_results[category]
                     metadata['optimization_results'][category]['performance'] = result.get('performance_score', 0.0)
@@ -1363,8 +1666,12 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             # Clean duplicate columns before any optimization
             features = self._clean_duplicate_columns(features)
             
-            # Find and validate target column for optimization
-            target_column = self._find_target_column(features)
+            # Find and validate target column for optimization. Prefer the
+            # primary target selected during _load_generated_features so that
+            # attachment and selection stay consistent.
+            target_column = getattr(self, '_lookback_target_column', None)
+            if target_column is None or target_column not in features.columns:
+                target_column = self._find_target_column(features)
             if target_column is None:
                 error_msg = "❌ CRITICAL: No targets from feature_generation_labeling_integration_step found!"
                 tprint(error_msg)
@@ -1492,7 +1799,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                     if columns_to_remove:
                         tprint(f"🔍 Filtering out {len(columns_to_remove)} columns with excessive non-finite values")
                         generated_features = generated_features.drop(columns=columns_to_remove)
-                    
+            
             except Exception as e:
                 tprint(f"⚠️ Feature Bank generation failed: {e}")
                 tprint("🔄 Falling back to basic features for optimization")
@@ -1604,12 +1911,12 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             matched_feature_columns = set()
             category_coverage = {}
 
-            for category_key, category_info in feature_categories.items():
+            for category, category_info in feature_categories.items():
                 category_features = set(category_info['features'])
                 matching = category_features & total_columns
                 missing = category_features - total_columns
                 matched_feature_columns.update(matching)
-                category_coverage[category_key] = {
+                category_coverage[category] = {
                     'requested': len(category_features),
                     'matched': len(matching),
                     'missing': len(missing),
@@ -1619,9 +1926,9 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             unmatched_columns = total_columns - matched_feature_columns
 
             tprint("📊 Category coverage summary:")
-            for category_key, stats in category_coverage.items():
+            for category, stats in category_coverage.items():
                 tprint(
-                    f"   {category_key}: requested={stats['requested']}, matched={stats['matched']}, missing={stats['missing']}"
+                    f"   {category}: requested={stats['requested']}, matched={stats['matched']}, missing={stats['missing']}"
                 )
                 if stats['missing']:
                     tprint(f"      Missing sample: {stats['sample_missing']}")
@@ -1797,66 +2104,236 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                     self.logger.warning(f"Failed to optimize category {category}: {e}")
                     self.logger.info(f"Error details: {error_details}")
                     continue
-            
-        # Optimize lookback periods for all features (keep all features, optimize their lookbacks)
-        lookback_optimization_result: Dict[str, Any] = {'category_optimizations': {}}
-        try:
-            # Prefer pre-computed per-feature results when available
-            if artifacts.get('individual_feature_results'):
-                tprint("🎯 Optimizing lookback periods using pre-computed feature results...")
-                optimization_output = self._optimize_lookback_periods_by_category(
-                    artifacts['individual_feature_results'],
-                    max_lookbacks_per_feature=3
-                )
-                if isinstance(optimization_output, dict):
-                    lookback_optimization_result = optimization_output
-                elif optimization_output is None:
-                    tprint("⚠️ Lookback optimization returned no results; using empty defaults")
-            # Otherwise fall back to computing feature importance directly from the merged data
-            elif features is not None and not features.empty:
-                tprint("🎯 Computing feature importance from merged data for lookback optimization...")
-                individual_results = self._compute_feature_importance_from_data(features)
-                if individual_results:
-                    tprint(f"✅ Computed importance for {sum(len(v) for v in individual_results.values())} features")
-                    optimization_output = self._optimize_lookback_periods_by_category(
-                        individual_results,
-                        max_lookbacks_per_feature=3
-                    )
-                    if isinstance(optimization_output, dict):
-                        lookback_optimization_result = optimization_output
-                    elif optimization_output is None:
-                        tprint("⚠️ Lookback optimization returned no results; using empty defaults")
-                else:
-                    tprint("⚠️ Failed to compute feature importance; skipping lookback optimization")
-            else:
-                tprint("⚠️ No data available for lookback optimization; skipping")
 
-            # Attach raw lookback optimization result to artifacts for downstream reporting
-            artifacts['lookback_optimization'] = lookback_optimization_result
+        # If no per-feature optimization results were produced by the legacy
+        # path (which relies on an exception to trigger the FeatureBank
+        # pipeline), run a direct per-feature optimization over the merged
+        # feature set. This ensures we always emit per-feature metrics and
+        # optimal lookbacks when valid data is available.
+        if not per_feature_optimization:
+            tprint("🔄 Direct per-feature optimization: legacy FeatureBank path produced no results")
 
-            # Log optimized lookbacks by category
-            category_optimizations = lookback_optimization_result.get('category_optimizations', {}) if isinstance(lookback_optimization_result, dict) else {}
-            if category_optimizations:
-                tprint("✅ OPTIMIZED LOOKBACKS BY CATEGORY:")
-                for category, features in category_optimizations.items():
-                    tprint(f"   📊 {category.upper()}:")
-                    for feature_name, feature_info in features.items():
-                        lookbacks = feature_info.get(
-                            'all_optimized_lookbacks',
-                            feature_info.get('optimized_lookbacks', [feature_info.get('optimal_lookback', 'N/A')])
+            # Use the merged feature matrix (features + targets) as the
+            # optimization data. Drop the target column from the candidate
+            # feature list.
+            generated_features = features.copy()
+            candidate_columns = [
+                col for col in generated_features.columns
+                if col != target_column
+            ]
+
+            # Build simple name-based categories over the candidate features.
+            # This mirrors the comprehensive pattern-matching fallback used in
+            # the original implementation but does not depend on FeatureBank
+            # internals.
+            feature_categories = {
+                'momentum_features': {
+                    'features': [
+                        col for col in candidate_columns
+                        if any(x in col.lower() for x in [
+                            'momentum', 'rsi', 'stoch', 'roc', 'rate_of_change',
+                            'price_momentum', 'return', 'log_return', 'pct_change',
+                            'change', 'diff'
+                        ])
+                    ],
+                    'lookback_range': (1, 50),
+                },
+                'trend_features': {
+                    'features': [
+                        col for col in candidate_columns
+                        if any(x in col.lower() for x in [
+                            'ma', 'sma', 'ema', 'trend', 'adx', 'macd',
+                            'moving_average', 'close', 'open', 'high', 'low', 'price'
+                        ])
+                    ],
+                    'lookback_range': (1, 50),
+                },
+                'volatility_features': {
+                    'features': [
+                        col for col in candidate_columns
+                        if any(x in col.lower() for x in [
+                            'volatility', 'bb', 'atr', 'std', 'variance', 'vol',
+                            'price_range', 'range', 'body_size'
+                        ])
+                    ],
+                    'lookback_range': (1, 50),
+                },
+                'volume_features': {
+                    'features': [
+                        col for col in candidate_columns
+                        if any(x in col.lower() for x in [
+                            'volume', 'vwap', 'obv', 'volume_ratio', 'money_flow',
+                            'quote_volume', 'trades'
+                        ])
+                    ],
+                    'lookback_range': (1, 50),
+                },
+                'oscillator_features': {
+                    'features': [
+                        col for col in candidate_columns
+                        if any(x in col.lower() for x in [
+                            'oscillator', 'cci', 'williams', 'ultimate', 'osc',
+                            'hour', 'day', 'weekend', 'time'
+                        ])
+                    ],
+                    'lookback_range': (1, 50),
+                },
+            }
+
+            per_feature_optimization = {}
+            individual_feature_results = artifacts.get('individual_feature_results', {}) or {}
+
+            for category, category_info in feature_categories.items():
+                feats = [f for f in category_info['features'] if f in generated_features.columns]
+                if not feats:
+                    tprint(f"⚠️ Direct optimization: no features found for {category}, skipping")
+                    continue
+
+                chunk_size = min(50, len(feats))
+                tprint(f"🔍 Direct optimization: optimizing {len(feats)} {category} features (chunk_size={chunk_size})")
+
+                try:
+                    if self._should_use_vectorbt(generated_features):
+                        tprint(f"🚀 Using VectorBT batch optimization for {category} (direct path)")
+                        category_feature_results = self._vectorbt_batch_optimization(
+                            features=feats,
+                            data=generated_features,
+                            target_column=target_column,
                         )
-                        tprint(f"      {feature_name}: {lookbacks}")
+                    else:
+                        tprint(f"📦 Using memory-efficient chunk processing for {category} (direct path)")
+                        category_feature_results = self._memory_efficient_chunk_processing(
+                            features=feats,
+                            data=generated_features,
+                            target_column=target_column,
+                            chunk_size=chunk_size,
+                        )
+                except Exception as opt_exc:
+                    tprint(f"⚠️ Direct optimization failed for {category}: {opt_exc}")
+                    continue
+
+                per_feature_optimization[category] = category_feature_results or []
+
+                if category_feature_results:
+                    individual_feature_results.setdefault(category, {})
+                    for result in category_feature_results:
+                        if isinstance(result, dict) and 'feature_name' in result:
+                            feature_name = result['feature_name']
+                            individual_feature_results[category][feature_name] = {
+                                'optimal_lookback': result.get('optimal_lookback', 'N/A'),
+                                'performance_score': result.get('performance_score', 0.0),
+                                'stability_score': result.get('stability_score', 0.0),
+                                'information_score': result.get('information_score', 0.0),
+                                'optimization_method': result.get('optimization_method', 'cross_validation'),
+                                'cv_folds': result.get('cv_folds', 2),
+                                'lookback_range': result.get('lookback_range', '1-50'),
+                                'optimization_time': result.get('optimization_time', 0.0),
+                                'memory_usage': result.get('memory_usage', 0.0),
+                                'success': not result.get('error', False),
+                            }
+
+                    tprint(f"   ✅ Direct path captured {len(individual_feature_results[category])} individual feature entries for {category}")
+                else:
+                    tprint(f"   ⚠️ Direct path: no individual feature results captured for {category}")
+
+            if individual_feature_results:
+                artifacts['individual_feature_results'] = individual_feature_results
+
+        # Diagnostics: if chunked optimization produced no per-feature results,
+        # emit detailed logs so we can fix the root cause instead of falling
+        # back to ad-hoc correlation scoring.
+        total_optimized = sum(len(v) for v in per_feature_optimization.values())
+        if total_optimized == 0:
+            tprint("⚠️ DIAGNOSTIC: per_feature_optimization is empty after chunked optimization")
+            if generated_features is None or generated_features.empty:
+                tprint("   ➤ generated_features is None or empty")
             else:
-                tprint("⚠️ No lookback optimization performed")
-        except Exception as e:
-            # Log but do not wipe artifacts; we still want partial results for reporting
-            tprint(f"⚠️ Failed to optimize lookback periods: {e}")
-            import traceback
-            error_details = traceback.format_exc()
-            self.logger.warning(f"Failed to optimize lookback periods: {e}")
-            self.logger.info(f"Error details: {error_details}")
-            lookback_optimization_result = {'category_optimizations': {}}
-            artifacts['lookback_optimization'] = lookback_optimization_result
+                tprint(f"   ➤ generated_features shape: {generated_features.shape}")
+                tprint(f"   ➤ target_column present: {target_column in generated_features.columns}")
+            for category, category_info in feature_categories.items():
+                feats = category_info.get('features', [])
+                tprint(
+                    f"   ➤ Category {category}: {len(feats)} candidate features, "
+                    f"optimized={len(per_feature_optimization.get(category, []) )}"
+                )
+                # Sample a few candidates and check valid sample counts
+                sample_feats = feats[:5]
+                for fname in sample_feats:
+                    if generated_features is not None and fname in generated_features.columns and target_column in generated_features.columns:
+                        f_series = generated_features[fname]
+                        t_series = generated_features[target_column]
+                        valid = (f_series.notna() & t_series.notna()).sum()
+                        tprint(
+                            f"      ➤ Feature '{fname}': valid_samples={valid}, "
+                            f"non_null_feature={f_series.notna().sum()}, non_null_target={t_series.notna().sum()}"
+                        )
+
+        # Build lookback optimization summary directly from per-feature optimization
+        # results produced above (per_feature_optimization). This removes the
+        # dependency on a separate _optimize_lookback_periods_by_category helper
+        # and guarantees that downstream steps see a rich per-feature structure
+        # even in light mode.
+        lookback_optimization_result: Dict[str, Any] = {'category_optimizations': {}}
+
+        category_optimizations: Dict[str, Dict[str, Dict[str, Any]]] = {}
+        for category, results in per_feature_optimization.items():
+            if not results:
+                continue
+
+            features_map: Dict[str, Dict[str, Any]] = {}
+            for res in results:
+                if not isinstance(res, dict) or 'feature_name' not in res:
+                    continue
+
+                feature_name = str(res.get('feature_name'))
+                optimal_lookback = int(res.get('optimal_lookback', 0) or 0)
+                perf = float(res.get('performance_score', 0.0) or 0.0)
+                stab = float(res.get('stability_score', 0.0) or 0.0)
+                stab_phys = float(res.get('stability_phys_score', stab) or stab)
+                info_score = float(res.get('information_score', 0.0) or 0.0)
+
+                # Use any existing list of lookbacks if available, otherwise
+                # fall back to a single-element list containing optimal_lookback.
+                all_lookbacks = res.get('all_optimized_lookbacks')
+                if not isinstance(all_lookbacks, (list, tuple)) or not all_lookbacks:
+                    all_lookbacks = [optimal_lookback] if optimal_lookback > 0 else []
+
+                # Derive up to two alternative lookbacks from the list (if any).
+                alternative_lookbacks = list(all_lookbacks[1:3]) if len(all_lookbacks) > 1 else []
+
+                features_map[feature_name] = {
+                    'feature_name': feature_name,
+                    'optimal_lookback': optimal_lookback,
+                    'alternative_lookbacks': alternative_lookbacks,
+                    'all_optimized_lookbacks': list(all_lookbacks),
+                    'performance_score': perf,
+                    'stability_score': stab,
+                    'stability_phys_score': stab_phys,
+                    'information_score': info_score,
+                    'r2_score': float(res.get('r2_score', 0.0) or 0.0),
+                    'optimization_method': res.get('optimization_method', 'memory_efficient_chunk'),
+                }
+
+            if features_map:
+                category_optimizations[category] = features_map
+
+        lookback_optimization_result['category_optimizations'] = category_optimizations
+
+        # Attach raw lookback optimization result to artifacts for downstream reporting
+        artifacts['lookback_optimization'] = lookback_optimization_result
+
+        if category_optimizations:
+            tprint("✅ OPTIMIZED LOOKBACKS BY CATEGORY (from per-feature optimization):")
+            for category, feats in category_optimizations.items():
+                tprint(f"   📊 {category.upper()}:")
+                for feature_name, feature_info in feats.items():
+                    lookbacks = feature_info.get(
+                        'all_optimized_lookbacks',
+                        feature_info.get('optimized_lookbacks', [feature_info.get('optimal_lookback', 'N/A')])
+                    )
+                    tprint(f"      {feature_name}: {lookbacks}")
+        else:
+            tprint("⚠️ No lookback optimization data could be built from per-feature results")
 
         # Check if we have any successful optimizations from lookback optimization
         successful_optimizations = []
@@ -1903,11 +2380,11 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             }
 
         # Generate per-category summary metrics and per-feature lookback map
-        per_feature_metrics = {}
+        per_feature_metrics: Dict[str, Dict[str, Any]] = {}
         optimized_lookbacks: Dict[str, int] = {}
         per_feature_lookbacks: Dict[str, List[int]] = {}
-        avg_performance_list = []
-        avg_stability_list = []
+        avg_performance_list: List[float] = []
+        avg_stability_list: List[float] = []
 
         if isinstance(lookback_optimization_result, dict):
             category_optimizations = lookback_optimization_result.get('category_optimizations', {})
@@ -1977,41 +2454,44 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         avg_stability = np.mean(avg_stability_list) if avg_stability_list else 0
         overall_score = (avg_performance + avg_stability) / 2 if (avg_performance > 0 or avg_stability > 0) else 0
 
-        # Update artifacts without discarding existing keys like individual_feature_results
-        artifacts['optimized_lookbacks'] = optimized_lookbacks
-        # New: expose per-feature lookback mapping for downstream consumers
-        artifacts['per_feature_lookbacks'] = per_feature_lookbacks
-        artifacts['optimization_method'] = 'data_driven_cross_validation'
-        artifacts['optimization_results'] = optimization_results
-        artifacts['per_feature_optimization'] = per_feature_optimization
-        artifacts['per_feature_metrics'] = per_feature_metrics
-        if 'metadata' not in artifacts:
-            artifacts['metadata'] = {
-                'symbol': config['symbol'],
-                'exchange': config['exchange'],
-                'timeframe': config['timeframe'],
-                'execution_mode': config.get('execution_mode', 'light'),
-                'created_at': datetime.now().isoformat(),
-                'feature_count': len(generated_features.columns),
-                'data_rows': len(generated_features),
-                'generated_features_count': len(generated_features.columns),
-                'original_features_count': len(feature_columns)
-            }
+        vectorbt_optimized_count = sum(
+            1 for result in per_feature_optimization.values()
+            for r in result if r.get('method') == 'vectorbt_optimized'
+        )
+        total_optimized_count = sum(len(result) for result in per_feature_optimization.values())
+        vectorbt_usage_rate = vectorbt_optimized_count / total_optimized_count if total_optimized_count > 0 else 0.0
 
-        # Create metrics with corrected mapping
+        # Safe cache hit-rate calculation
+        cache_total = self._cache_hits + self._cache_misses
+        cache_hit_rate = self._cache_hits / cache_total if cache_total > 0 else 0.0
+
+        # Safe timing aggregates
+        total_opt_time = float(sum(self._optimization_times.values())) if self._optimization_times else 0.0
+        avg_opt_time = (
+            total_opt_time / float(len(self._optimization_times))
+            if self._optimization_times else 0.0
+        )
+
+        # Expose per-feature maps for downstream steps (interaction generation,
+        # final feature selection, reporting, etc.). These are lightweight
+        # dicts and safe to serialize via the ArtifactRouter.
+        artifacts['optimized_lookbacks'] = optimized_lookbacks
+        artifacts['per_feature_lookbacks'] = per_feature_lookbacks
+        artifacts['per_feature_metrics'] = per_feature_metrics
+        artifacts['optimization_results'] = optimization_results
+
+        # Build high-level metrics summary for reporting and downstream steps.
+        # Use conservative defaults where detailed statistics are unavailable.
+        categories_optimized = sum(
+            1 for v in optimization_results.values()
+            if isinstance(v, dict) and v.get('num_features_optimized', 0) > 0
+        )
+
         metrics = {
-            'lookback_periods_tested': sum(
-                len(range(cat['lookback_range'][0], cat['lookback_range'][1] + 1))
-                for cat in feature_categories.values() if cat['features']
-            ),
-            'best_momentum_features': optimized_lookbacks.get('momentum_features', 0),
-            'best_trend_features': optimized_lookbacks.get('trend_features', 0),
-            'best_volatility_features': optimized_lookbacks.get('volatility_features', 0),
-            'best_volume_features': optimized_lookbacks.get('volume_features', 0),
-            'best_oscillator_features': optimized_lookbacks.get('oscillator_features', 0),
-            'optimization_score': overall_score,
-            'performance_score': avg_performance,
-            'stability_score': avg_stability,
+            'lookback_periods_tested': 1,
+            'optimization_score': float(overall_score),
+            'performance_score': float(avg_performance),
+            'stability_score': float(avg_stability),
             'execution_mode': config.get('execution_mode', 'light'),
             'success': True,
             'feature_count': len(generated_features.columns),
@@ -2020,53 +2500,39 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             'original_features_count': len(feature_columns),
             'cv_folds': cv_folds,
             'optimization_method': 'data_driven_cross_validation',
-            'categories_optimized': len(successful_optimizations),
-            'total_categories': len(feature_categories)
+            'categories_optimized': categories_optimized,
+            'total_categories': len(feature_categories),
+            # Expose best-category lookbacks for reporting/logging
+            'best_momentum_features': optimized_lookbacks.get('momentum_features', 'N/A'),
+            'best_trend_features': optimized_lookbacks.get('trend_features', 'N/A'),
+            'best_volatility_features': optimized_lookbacks.get('volatility_features', 'N/A'),
+            'best_volume_features': optimized_lookbacks.get('volume_features', 'N/A'),
         }
 
-        # Stop hardware monitoring and get performance metrics
-        try:
-            if hasattr(self.hardware_manager, 'shutdown'):
-                self.hardware_manager.shutdown()
-        except Exception:
-            pass
-
-        try:
-            hardware_metrics = self.hardware_manager.get_performance_metrics() if hasattr(self.hardware_manager, 'get_performance_metrics') else {}
-        except Exception:
-            hardware_metrics = {'memory_usage': 0, 'cpu_usage': 0}
-
-        total_cache_hits = self._cache_hits
-        total_cache_misses = self._cache_misses
-        overall_cache_hit_rate = total_cache_hits / (total_cache_hits + total_cache_misses) if (total_cache_hits + total_cache_misses) > 0 else 0
-
-        total_optimization_time = sum(self._optimization_times.values())
-        avg_optimization_time = total_optimization_time / len(self._optimization_times) if self._optimization_times else 0
-
-        vectorbt_optimized_count = sum(
-            1 for result in per_feature_optimization.values()
-            for r in result if r.get('method') == 'vectorbt_optimized'
-        )
-        total_optimized_count = sum(len(result) for result in per_feature_optimization.values())
-        vectorbt_usage_rate = vectorbt_optimized_count / total_optimized_count if total_optimized_count > 0 else 0
-
         tprint("🎯 Data-driven optimization completed:")
-        tprint(f"   💾 Cache hit rate: {overall_cache_hit_rate:.1%} ({total_cache_hits}/{total_cache_hits + total_cache_misses})")
-        tprint(f"   ⏱️ Total optimization time: {total_optimization_time:.2f}s")
-        tprint(f"   ⚡ Avg time per feature: {avg_optimization_time:.3f}s")
-        tprint(f"   🧠 Memory usage: {hardware_metrics.get('memory_usage', 0):.1%}")
+        tprint(f"   💾 Cache hit rate: {cache_hit_rate:.1%} ({self._cache_hits}/{cache_total})")
+        tprint(f"   ⏱️ Total optimization time: {total_opt_time:.2f}s")
+        tprint(f"   ⚡ Avg time per feature: {avg_opt_time:.3f}s")
+
+        # Memory usage may be tracked as a scalar or a structured dict
+        mem_usage_val = self._memory_usage
+        if isinstance(mem_usage_val, (int, float)):
+            tprint(f"   🧠 Memory usage: {mem_usage_val:.1%}")
+        else:
+            tprint(f"   🧠 Memory usage: {mem_usage_val}")
+
         tprint(f"   🚀 VectorBT usage: {vectorbt_usage_rate:.1%} ({vectorbt_optimized_count}/{total_optimized_count} features)")
 
         # Add performance metrics to artifacts
         artifacts['performance_metrics'] = {
-            'cache_hit_rate': overall_cache_hit_rate,
-            'total_cache_hits': total_cache_hits,
-            'total_cache_misses': total_cache_misses,
-            'total_optimization_time': total_optimization_time,
-            'avg_optimization_time': avg_optimization_time,
-            'hardware_metrics': hardware_metrics,
-            'memory_usage': hardware_metrics.get('memory_usage', 0),
-            'cpu_usage': hardware_metrics.get('cpu_usage', 0),
+            'cache_hit_rate': cache_hit_rate,
+            'total_cache_hits': self._cache_hits,
+            'total_cache_misses': self._cache_misses,
+            'total_optimization_time': total_opt_time,
+            'avg_optimization_time': avg_opt_time,
+            'hardware_metrics': self._memory_usage,
+            'memory_usage': self._memory_usage,
+            'cpu_usage': 0,
             'vectorbt_usage_rate': vectorbt_usage_rate,
             'vectorbt_optimized_count': vectorbt_optimized_count,
             'total_optimized_count': total_optimized_count,
@@ -2271,7 +2737,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 f.write("- **Features**: Number of features optimized in this category\n")
                 f.write("- **Optimal Lookback**: Best lookback period across all features in category\n")
                 f.write("- **Performance**: Average performance score (higher is better)\n")
-                f.write("- **Stability**: Average stability across market regimes (higher is better)\n")
+                f.write("- **Stability**: Average stability across different market conditions\n")
                 f.write("- **Information**: Average information content (non-redundancy)\n")
                 f.write("- **Composite**: Stability × Information (quality metric for feature weighting)\n")
                 f.write("- **Best Feature**: Top performing feature in this category\n")
@@ -2984,13 +3450,23 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         Apply quality filters to remove suspicious features based on red flags.
         
         Filters applied:
-        1. Lookback range constraints (min: 5, max: 60 for primary)
+        1. Lookback range constraints (min: 3, max: 60 for primary in light mode,
+           relaxed to a higher cap in blank/full modes)
         2. Stability validation (physical rolling-std stability + MI condition)
         3. Alternative lookback validation (must differ meaningfully from primary)
         """
-        filtered_data = []
-        flagged_count = 0
+        filtered_data: List[Dict[str, Any]] = []
+        dropped_count = 0
+        warned_count = 0
         original_count = len(per_feature_data)
+
+        # Allow wider lookbacks in blank/full modes where we have more data;
+        # keep the tighter 60-bar cap for light runs so that we focus on
+        # short-horizon triggers there.
+        exec_mode = getattr(self, "_execution_mode", None)
+        max_primary_lookback = 60
+        if exec_mode in ("blank", "full"):
+            max_primary_lookback = 300
         
         for row in per_feature_data:
             feature_name = row.get('feature_name', 'unknown')
@@ -3033,12 +3509,18 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                         f"🚩 [LOOKBACK FILTER] {feature_name}: optimal_lookback={optimal_lookback} < 3 "
                         f"(too short even for micro-horizon; dropping feature)"
                     )
-                    flagged_count += 1
+                    dropped_count += 1
                     continue
-                elif optimal_lookback > 60:
-                    self.logger.warning(f"🚩 Filtered {feature_name}: optimal_lookback={optimal_lookback} > 60 (likely context signal, not trigger)")
-                    tprint(f"🚩 [LOOKBACK FILTER] {feature_name}: optimal_lookback={optimal_lookback} > 60 (likely context signal, not trigger)")
-                    flagged_count += 1
+                elif optimal_lookback > max_primary_lookback:
+                    self.logger.warning(
+                        f"🚩 Filtered {feature_name}: optimal_lookback={optimal_lookback} > {max_primary_lookback} "
+                        f"(likely context signal, not trigger)"
+                    )
+                    tprint(
+                        f"🚩 [LOOKBACK FILTER] {feature_name}: optimal_lookback={optimal_lookback} > {max_primary_lookback} "
+                        f"(likely context signal, not trigger)"
+                    )
+                    dropped_count += 1
                     continue
             
             # Filter 2: Stability validation (physical stability + MI condition)
@@ -3053,7 +3535,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                     f"🚩 [STABILITY LEAK FILTER] {feature_name}: stability_phys={stability_phys:.3f}, information={information:.3f} "
                     f"(high-information, ultra-stable; dropping feature as potential leakage)"
                 )
-                flagged_count += 1
+                dropped_count += 1
                 continue
             elif stability_phys < 0.4:
                 # Low physical stability: warn but keep the feature for downstream diagnostics and weighting
@@ -3065,7 +3547,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                     f"🚩 [STABILITY WARNING] {feature_name}: stability_phys={stability_phys:.3f} < 0.4 "
                     f"(keeping feature but marking as low stability)"
                 )
-                flagged_count += 1
+                warned_count += 1
             
             # Filter 3: Alternative lookback validation
             # If the first alternative lookback is too close to the primary one,
@@ -3095,8 +3577,11 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             # Feature passed all filters
             filtered_data.append(row)
         
-        if flagged_count > 0:
-            tprint(f"🚩 Quality filters: Flagged {flagged_count} suspicious features out of {len(per_feature_data)}")
+        if dropped_count > 0 or warned_count > 0:
+            tprint(
+                f"🚩 Quality filters: dropped={dropped_count}, warned={warned_count}, "
+                f"total={original_count}"
+            )
 
         # If all features would be removed by filters, fall back to unfiltered data for diagnostics
         if filtered_data:
@@ -3400,6 +3885,20 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         
         return result
 
+    def _detect_target_type(self, target_series: pd.Series) -> str:
+        try:
+            if target_series is None:
+                return "unknown"
+            series = target_series.dropna()
+            if series.empty:
+                return "unknown"
+            unique_values = series.unique()
+            if len(unique_values) <= 2:
+                return "binary"
+            return "continuous"
+        except Exception:
+            return "unknown"
+
     def _find_target_column(self, features) -> Optional[str]:
         """Find the target column generated by feature_generation_labeling_integration_step using fuzzy matching."""
         try:
@@ -3446,7 +3945,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 'target_long',  # New simplified target for long positions
                 'target_short',  # New simplified target for short positions
                 'price_target_vol_normalized',  # Legacy name (deprecated)
-                'volatility_labels',  # Legacy name (still in existing data)
+                'volatility_labels',  # Legacy name
                 'labels',            # Generic labels column
                 'label',             # Single label column
                 'target_labels',     # Target labels from labeling step

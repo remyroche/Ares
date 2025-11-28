@@ -524,12 +524,50 @@ class HierarchicalParameterOptimizer:
                 ratio = adjusted_trials / original_trials if original_trials > 0 else 0
                 config.n_startup_trials = max(1, int(config.n_startup_trials * ratio))
   
+    def _get_n_samples_safe(self, X: Any) -> Optional[int]:
+        if X is None:
+            return None
+        try:
+            return len(X)
+        except TypeError:
+            pass
+        if hasattr(X, "shape"):
+            shape = getattr(X, "shape", None)
+            try:
+                if shape is not None and len(shape) > 0:
+                    return shape[0]
+            except Exception:
+                pass
+        if hasattr(X, "num_row"):
+            try:
+                return X.num_row()
+            except Exception:
+                pass
+        return None
+ 
+    def _get_n_features_safe(self, X: Any) -> Optional[int]:
+        if X is None:
+            return None
+        if hasattr(X, "shape"):
+            shape = getattr(X, "shape", None)
+            try:
+                if shape is not None and len(shape) > 1:
+                    return shape[1]
+            except Exception:
+                pass
+        if hasattr(X, "num_col"):
+            try:
+                return X.num_col()
+            except Exception:
+                pass
+        return None
+ 
     def optimize(
         self,
-        X_train: np.ndarray,
-        y_train: np.ndarray,
-        X_val: Optional[np.ndarray] = None,
-        y_val: Optional[np.ndarray] = None,
+        X_train: Any,
+        y_train: Optional[Any] = None,
+        X_val: Optional[Any] = None,
+        y_val: Optional[Any] = None,
         model: Optional[Any] = None,
         initial_params: Optional[Dict[str, Any]] = None
     ) -> HierarchicalOptimizationResult:
@@ -550,12 +588,19 @@ class HierarchicalParameterOptimizer:
         start_time = time.time()
 
         logger.info("🚀 Starting hierarchical parameter optimization")
-        logger.info(f"   Training samples: {len(X_train)}")
-        logger.info(f"   Features: {X_train.shape[1] if hasattr(X_train, 'shape') else 'N/A'}")
+        n_train_samples = self._get_n_samples_safe(X_train)
+        n_features = self._get_n_features_safe(X_train)
+        logger.info(f"   Training samples: {n_train_samples if n_train_samples is not None else 'N/A'}")
+        logger.info(f"   Features: {n_features if n_features is not None else 'N/A'}")
         logger.info(f"   Number of rounds: {self.n_rounds}")
 
         # Guard against empty training data to avoid noisy CV logs and meaningless HPO
-        if X_train is None or len(X_train) == 0 or y_train is None or len(y_train) == 0:
+        n_target_samples = self._get_n_samples_safe(y_train) if y_train is not None else None
+        if (
+            X_train is None
+            or (n_train_samples is not None and n_train_samples == 0)
+            or (y_train is not None and n_target_samples is not None and n_target_samples == 0)
+        ):
             logger.warning(
                 "⚠️ No training samples available for hierarchical optimization "
                 f"(X_train shape={getattr(X_train, 'shape', None)}, y_train shape={getattr(y_train, 'shape', None)}). "
@@ -1409,8 +1454,15 @@ class HierarchicalParameterOptimizer:
         """Evaluate a set of parameters using the objective function."""
         try:
             # 🔍 DIAGNOSTIC LOGS: Cross-validation fold analysis (debug-only)
-            logger.debug(f"🔍 CV DEBUG: Total samples={len(X_train)}, cv_folds={self.cv_folds}")
-            logger.debug(f"🔍 CV DEBUG: Expected samples per fold={len(X_train) // self.cv_folds}")
+            n_train_samples = self._get_n_samples_safe(X_train)
+            logger.debug(
+                f"🔍 CV DEBUG: Total samples={n_train_samples if n_train_samples is not None else 'N/A'}, "
+                f"cv_folds={self.cv_folds}"
+            )
+            logger.debug(
+                "🔍 CV DEBUG: Expected samples per fold="
+                f"{(n_train_samples // self.cv_folds) if n_train_samples is not None else 'N/A'}"
+            )
             
             # Create cross-validation object to analyze fold sizes
             try:
@@ -1445,19 +1497,23 @@ class HierarchicalParameterOptimizer:
                 logger.debug(f"🔍 CV DEBUG: Could not analyze fold sizes: {cv_debug_error}")
             
             # Validate data before calling objective function
-            if X_train is None or len(X_train) == 0:
+            n_train_samples = self._get_n_samples_safe(X_train)
+            if X_train is None or (n_train_samples is not None and n_train_samples == 0):
                 logger.warning(f"⚠️ X_train is empty (shape: {getattr(X_train, 'shape', 'None')}), returning poor score")
                 return float('-inf') if self.direction == 'maximize' else float('inf')
             
-            if y_train is None or len(y_train) == 0:
+            n_y_train_samples = self._get_n_samples_safe(y_train)
+            if y_train is None or (n_y_train_samples is not None and n_y_train_samples == 0):
                 logger.warning(f"⚠️ y_train is empty (shape: {getattr(y_train, 'shape', 'None')}), returning poor score")
                 return float('-inf') if self.direction == 'maximize' else float('inf')
             
-            if X_val is not None and len(X_val) == 0:
+            n_val_samples = self._get_n_samples_safe(X_val)
+            if X_val is not None and n_val_samples is not None and n_val_samples == 0:
                 logger.warning(f"⚠️ X_val is empty (shape: {getattr(X_val, 'shape', 'None')}), returning poor score")
                 return float('-inf') if self.direction == 'maximize' else float('inf')
             
-            if y_val is not None and len(y_val) == 0:
+            n_y_val_samples = self._get_n_samples_safe(y_val)
+            if y_val is not None and n_y_val_samples is not None and n_y_val_samples == 0:
                 logger.warning(f"⚠️ y_val is empty (shape: {getattr(y_val, 'shape', 'None')}), returning poor score")
                 return float('-inf') if self.direction == 'maximize' else float('inf')
             

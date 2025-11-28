@@ -189,6 +189,10 @@ from .feature_evaluation import (
     EvaluationConfig,
     LookbackCandidate,
     create_evaluation_pipeline,
+    # Quick MI/IC scoring helpers (for replacing sklearn mutual_info)
+    compute_quick_mi_scores,
+    compute_feature_stability_scores,
+    compute_composite_scores,
 )
 
 __all__ = [
@@ -319,6 +323,9 @@ __all__ = [
     'EvaluationConfig',
     'LookbackCandidate',
     'create_evaluation_pipeline',
+    'compute_quick_mi_scores',
+    'compute_feature_stability_scores',
+    'compute_composite_scores',
 ]
 
 # Version info

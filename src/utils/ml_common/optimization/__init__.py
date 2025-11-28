@@ -33,6 +33,17 @@ from .execution_mode_adapter import (
     adjust_model_iterations_for_mode,
     set_execution_mode
 )
+from .ic_snr_objective import (
+    ICSNRConfig,
+    ICMetrics,
+    ICSNRObjective,
+    compute_spearman_ic,
+    compute_ic_metrics_purged,
+    compute_stability_across_subsamples,
+    create_ic_snr_objective_for_xgb,
+    DEFAULT_REGULARIZATION_RANGES,
+    is_regularization_param,
+)
 
 # Backward compatibility alias
 HyperparameterOptimizer = HyperparameterOptimization
@@ -71,5 +82,16 @@ __all__ = [
     'get_execution_mode',
     'adjust_hpo_params_for_mode',
     'adjust_model_iterations_for_mode',
-    'set_execution_mode'
+    'set_execution_mode',
+    
+    # IC-SNR Objective for Regularization HPO
+    'ICSNRConfig',
+    'ICMetrics',
+    'ICSNRObjective',
+    'compute_spearman_ic',
+    'compute_ic_metrics_purged',
+    'compute_stability_across_subsamples',
+    'create_ic_snr_objective_for_xgb',
+    'DEFAULT_REGULARIZATION_RANGES',
+    'is_regularization_param',
 ]

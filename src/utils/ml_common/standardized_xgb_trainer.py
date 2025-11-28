@@ -13,6 +13,33 @@ Features:
 - Warm start from previous HPO runs
 - Standardized parameter ranges across all models
 
+HPO Optimization Strategy:
+- For REGULARIZATION parameters (gamma, min_child_weight, lambda, alpha, colsample_bytree, subsample):
+  Uses IC-SNR (Information Coefficient × Signal-to-Noise Ratio) objective:
+    score = median_IC × SNR_factor − IC_volatility_penalty + stability_bonus
+  
+  Where:
+  - IC: Spearman correlation between predictions and actuals (computed on purged+embargoed OOF)
+  - SNR: mean_IC / std_IC (Signal-to-Noise Ratio)
+  - IC_volatility_penalty: penalizes high variance in IC across folds
+  - stability_bonus: rewards consistent IC across random subsamples
+  
+  This favors regularization settings that:
+  1. Maintain consistent predictive power (high median IC)
+  2. Have robust signal (high SNR)
+  3. Are stable across validation chunks (low volatility)
+
+- For OTHER parameters (max_depth, learning_rate):
+  Uses standard loss-based objective (e.g., logloss, RMSE)
+
+Regularization Parameter Ranges (IC-SNR optimized):
+- gamma: 1-5 (min loss reduction)
+- min_child_weight: 20-40 (min sum of instance weight)
+- lambda: 1-5 (L2 regularization)
+- alpha: 0.2-1 (L1 regularization)
+- colsample_bytree: 0.6-0.8 (column sampling)
+- subsample: 0.7-0.9 (row sampling)
+
 Usage:
     ```python
     from src.utils.ml_common.standardized_xgb_trainer import StandardizedXGBTrainer
@@ -58,6 +85,13 @@ except ImportError:
     XGBOOST_AVAILABLE = False
     xgb = None
 
+try:
+    import optuna
+    OPTUNA_AVAILABLE = True
+except ImportError:
+    OPTUNA_AVAILABLE = False
+    optuna = None
+
 from .retraining_scheduler import (
     OOFPredictionGenerator,
     RetrainingSchedule,
@@ -67,6 +101,15 @@ from .optimization.hierarchical_parameter_optimizer import (
     HierarchicalParameterOptimizer,
     ParameterGroup,
     OptimizationStage,
+)
+from .optimization.ic_snr_objective import (
+    ICSNRConfig,
+    ICSNRObjective,
+    compute_ic_metrics_purged,
+    compute_stability_across_subsamples,
+    create_ic_snr_objective_for_xgb,
+    DEFAULT_REGULARIZATION_RANGES,
+    is_regularization_param,
 )
 
 logger = logging.getLogger(__name__)
@@ -99,11 +142,12 @@ class XGBTrainingConfig:
     n_estimators: int = 500
     learning_rate: float = 0.05
     max_depth: int = 6
-    min_child_weight: float = 10.0
-    subsample: float = 0.7
+    min_child_weight: float = 30.0  # Higher for regularization
+    subsample: float = 0.8
     colsample_bytree: float = 0.7
-    gamma: float = 5.0
-    reg_lambda: float = 1.5
+    gamma: float = 3.0  # Updated for IC-SNR optimized regularization
+    reg_lambda: float = 3.0  # L2 regularization
+    reg_alpha: float = 0.5  # L1 regularization
     early_stopping_rounds: int = 20
 
     # Task type and objective
@@ -120,11 +164,25 @@ class XGBTrainingConfig:
     # Parameter search ranges for HPO
     learning_rate_range: Tuple[float, float] = (0.01, 0.3)
     max_depth_range: Tuple[int, int] = (4, 9)
-    min_child_weight_range: Tuple[float, float] = (5.0, 20.0)
-    subsample_range: Tuple[float, float] = (0.6, 0.8)
-    colsample_bytree_range: Tuple[float, float] = (0.6, 0.8)
-    gamma_range: Tuple[float, float] = (3.0, 8.0)
-    lambda_range: Tuple[float, float] = (0.5, 2.5)
+    
+    # Regularization parameter ranges (optimized with IC-SNR objective)
+    # These ranges are specifically tuned for robust feature suppression
+    min_child_weight_range: Tuple[float, float] = (20.0, 40.0)  # Higher = more conservative
+    subsample_range: Tuple[float, float] = (0.7, 0.9)  # Row sampling
+    colsample_bytree_range: Tuple[float, float] = (0.6, 0.8)  # Column sampling
+    gamma_range: Tuple[float, float] = (1.0, 5.0)  # Min loss reduction
+    lambda_range: Tuple[float, float] = (1.0, 5.0)  # L2 regularization (reg_lambda)
+    alpha_range: Tuple[float, float] = (0.2, 1.0)  # L1 regularization (reg_alpha)
+    
+    # IC-SNR HPO configuration for regularization parameters
+    # When True, uses IC×SNR − volatility_penalty objective for regularization HPO
+    use_ic_snr_for_regularization: bool = True
+    ic_snr_n_folds: int = 5  # Folds for purged CV IC computation
+    ic_snr_purge_minutes: int = 30  # Purge window before validation
+    ic_snr_embargo_minutes: int = 15  # Embargo window after validation
+    ic_snr_weight: float = 1.0  # Weight for SNR factor
+    ic_snr_volatility_penalty: float = 0.5  # Penalty for IC volatility
+    ic_snr_subsample_chunks: int = 3  # Subsamples for stability check
 
     # Sparse matrix configuration
     enable_sparse_matrices: bool = True
@@ -482,6 +540,7 @@ class StandardizedXGBTrainer:
             'colsample_bytree': self.config.colsample_bytree,
             'gamma': self.config.gamma,
             'lambda': self.config.reg_lambda,
+            'alpha': self.config.reg_alpha,
             'eval_metric': eval_metric,
             'objective': self.config.objective,
         }
@@ -522,12 +581,38 @@ class StandardizedXGBTrainer:
         - Warm start from previous runs
         - Stratified sampling (10-50% of data)
         - 300 trees during HPO
+        
+        For REGULARIZATION parameters (gamma, min_child_weight, lambda, alpha,
+        colsample_bytree, subsample), uses IC-SNR objective:
+            score = median_IC × SNR_factor − IC_volatility_penalty
+            
+        For OTHER parameters (max_depth, learning_rate), uses standard loss objective.
         """
         # Load warm start parameters if available
         warm_start_params = self._load_warm_start_params() if self.config.enable_warm_start else None
 
-        # Define parameter groups for hierarchical optimization
-        param_groups = [
+        # Subsample data for HPO if needed (stratified sampling)
+        dtrain_hpo, dval_hpo = self._stratified_subsample(dtrain, dval)
+        
+        # Create IC-SNR config if enabled for regularization
+        ic_snr_config = None
+        if self.config.use_ic_snr_for_regularization:
+            ic_snr_config = ICSNRConfig(
+                n_folds=self.config.ic_snr_n_folds,
+                purge_minutes=self.config.ic_snr_purge_minutes,
+                embargo_minutes=self.config.ic_snr_embargo_minutes,
+                snr_weight=self.config.ic_snr_weight,
+                volatility_penalty_weight=self.config.ic_snr_volatility_penalty,
+                min_samples_per_fold=100,
+                use_median_ic=True,
+                subsample_chunks=self.config.ic_snr_subsample_chunks
+            )
+        
+        # =====================================================================
+        # Phase 1: Optimize STRUCTURE parameters with standard loss objective
+        # (max_depth only - min_child_weight is a regularization param)
+        # =====================================================================
+        structure_param_groups = [
             ParameterGroup(
                 name="structure",
                 params={
@@ -536,51 +621,94 @@ class StandardizedXGBTrainer:
                         "low": self.config.max_depth_range[0],
                         "high": self.config.max_depth_range[1]
                     },
-                    "min_child_weight": {
-                        "type": "float",
-                        "low": self.config.min_child_weight_range[0],
-                        "high": self.config.min_child_weight_range[1]
-                    },
                 },
                 priority=1,
-                description="Model structure parameters"
+                description="Model structure parameters (standard loss objective)"
             ),
-            ParameterGroup(
-                name="regularization",
-                params={
-                    "gamma": {
-                        "type": "float",
-                        "low": self.config.gamma_range[0],
-                        "high": self.config.gamma_range[1]
-                    },
-                    "lambda": {
-                        "type": "float",
-                        "low": self.config.lambda_range[0],
-                        "high": self.config.lambda_range[1]
-                    },
-                },
-                priority=2,
-                depends_on=["structure"],
-                description="Regularization parameters"
-            ),
-            ParameterGroup(
-                name="sampling",
-                params={
-                    "subsample": {
-                        "type": "float",
-                        "low": self.config.subsample_range[0],
-                        "high": self.config.subsample_range[1]
-                    },
-                    "colsample_bytree": {
-                        "type": "float",
-                        "low": self.config.colsample_bytree_range[0],
-                        "high": self.config.colsample_bytree_range[1]
-                    },
-                },
-                priority=3,
-                depends_on=["regularization"],
-                description="Sampling parameters"
-            ),
+        ]
+
+        # Standard loss-based objective for structure parameters
+        def structure_objective(params: Dict[str, Any]) -> float:
+            """Standard loss objective for structure parameters."""
+            xgb_params = {
+                'tree_method': self.config.tree_method,
+                'learning_rate': self.config.learning_rate,  # Fixed
+                'max_depth': int(params.get("max_depth", 6)),
+                'min_child_weight': self.config.min_child_weight,  # Fixed
+                'subsample': self.config.subsample,  # Fixed
+                'colsample_bytree': self.config.colsample_bytree,  # Fixed
+                'gamma': self.config.gamma,  # Fixed
+                'lambda': self.config.reg_lambda,  # Fixed
+                'alpha': self.config.reg_alpha,  # Fixed
+                'eval_metric': eval_metric,
+                'objective': self.config.objective,
+            }
+
+            if base_score is not None:
+                xgb_params['base_score'] = float(base_score)
+
+            if self.config.num_class is not None:
+                xgb_params['num_class'] = self.config.num_class
+
+            try:
+                model = xgb.train(
+                    params=xgb_params,
+                    dtrain=dtrain_hpo,
+                    num_boost_round=self.config.hpo_n_estimators,
+                    evals=[(dval_hpo, 'val')],
+                    early_stopping_rounds=self.config.early_stopping_rounds,
+                    verbose_eval=False
+                )
+                # Return negative loss for maximization
+                return -model.best_score
+            except Exception as e:
+                logger.warning(f"Structure HPO trial failed: {e}")
+                return -999.0
+
+        if verbose:
+            logger.info(f"      🔍 Phase 1: Optimizing structure params (max_depth)...")
+
+        structure_optimizer = HierarchicalParameterOptimizer(
+            param_groups=structure_param_groups,
+            objective_func=structure_objective,
+            stages=[OptimizationStage.COARSE_GRID, OptimizationStage.TPE],
+            cv_folds=3,
+            scoring_metric='custom',
+            direction='maximize',
+            n_rounds=1,
+            enable_final_refinement=False,
+            random_state=42,
+            verbose=verbose,
+        )
+
+        structure_result = structure_optimizer.optimize(
+            X_train=dtrain_hpo, y_train=None, X_val=dval_hpo, y_val=None
+        )
+        best_max_depth = int(structure_result.best_params.get("max_depth", 6))
+
+        # =====================================================================
+        # Phase 2: Optimize REGULARIZATION parameters with IC-SNR objective
+        # (gamma, min_child_weight, lambda, alpha, colsample_bytree, subsample)
+        # =====================================================================
+        if verbose:
+            logger.info(f"      🎯 Phase 2: Optimizing regularization params with IC-SNR objective...")
+            logger.info(f"         Goal: score = median_IC × SNR_factor − IC_volatility_penalty")
+
+        best_reg_params = self._optimize_regularization_with_ic_snr(
+            dtrain=dtrain_hpo,
+            dval=dval_hpo,
+            best_max_depth=best_max_depth,
+            eval_metric=eval_metric,
+            base_score=base_score,
+            ic_snr_config=ic_snr_config,
+            verbose=verbose
+        )
+
+        # =====================================================================
+        # Phase 3: Optimize LEARNING RATE with standard loss objective
+        # (using best structure and regularization params)
+        # =====================================================================
+        learning_param_groups = [
             ParameterGroup(
                 name="learning",
                 params={
@@ -591,24 +719,23 @@ class StandardizedXGBTrainer:
                         "log": True
                     },
                 },
-                priority=4,
-                depends_on=["sampling"],
-                description="Learning rate"
+                priority=1,
+                description="Learning rate (standard loss objective)"
             ),
         ]
 
-        # Objective function for HPO
-        def objective(params: Dict[str, Any]) -> float:
-            """Objective function for HPO."""
+        def learning_objective(params: Dict[str, Any]) -> float:
+            """Standard loss objective for learning rate."""
             xgb_params = {
                 'tree_method': self.config.tree_method,
                 'learning_rate': float(params.get("learning_rate", 0.05)),
-                'max_depth': int(params.get("max_depth", 6)),
-                'min_child_weight': float(params.get("min_child_weight", 10.0)),
-                'subsample': float(params.get("subsample", 0.7)),
-                'colsample_bytree': float(params.get("colsample_bytree", 0.7)),
-                'gamma': float(params.get("gamma", 5.0)),
-                'lambda': float(params.get("lambda", 1.5)),
+                'max_depth': best_max_depth,
+                'min_child_weight': best_reg_params['min_child_weight'],
+                'subsample': best_reg_params['subsample'],
+                'colsample_bytree': best_reg_params['colsample_bytree'],
+                'gamma': best_reg_params['gamma'],
+                'lambda': best_reg_params['lambda'],
+                'alpha': best_reg_params['alpha'],
                 'eval_metric': eval_metric,
                 'objective': self.config.objective,
             }
@@ -616,39 +743,30 @@ class StandardizedXGBTrainer:
             if base_score is not None:
                 xgb_params['base_score'] = float(base_score)
 
-            # Add num_class for multiclass classification
             if self.config.num_class is not None:
                 xgb_params['num_class'] = self.config.num_class
 
             try:
                 model = xgb.train(
                     params=xgb_params,
-                    dtrain=dtrain,
+                    dtrain=dtrain_hpo,
                     num_boost_round=self.config.hpo_n_estimators,
-                    evals=[(dval, 'val')],
+                    evals=[(dval_hpo, 'val')],
                     early_stopping_rounds=self.config.early_stopping_rounds,
                     verbose_eval=False
                 )
-
-                # Get validation score (lower is better for logloss)
-                val_score = model.best_score
-
-                # Return negative score for maximization
-                return -val_score
-
+                return -model.best_score
             except Exception as e:
-                logger.warning(f"HPO trial failed: {e}")
+                logger.warning(f"Learning rate HPO trial failed: {e}")
                 return -999.0
 
-        # Create optimizer
-        optimizer = HierarchicalParameterOptimizer(
-            param_groups=param_groups,
-            objective_func=objective,
-            stages=[
-                OptimizationStage.COARSE_GRID,
-                OptimizationStage.FINE_GRID,
-                OptimizationStage.TPE
-            ],
+        if verbose:
+            logger.info(f"      🔍 Phase 3: Optimizing learning rate...")
+
+        learning_optimizer = HierarchicalParameterOptimizer(
+            param_groups=learning_param_groups,
+            objective_func=learning_objective,
+            stages=[OptimizationStage.COARSE_GRID, OptimizationStage.TPE],
             cv_folds=3,
             scoring_metric='custom',
             direction='maximize',
@@ -658,21 +776,19 @@ class StandardizedXGBTrainer:
             verbose=verbose,
         )
 
-        # Subsample data for HPO if needed (stratified sampling)
-        dtrain_hpo, dval_hpo = self._stratified_subsample(dtrain, dval)
-
-        # Run HPO
-        if verbose:
-            logger.info(f"      🔍 Running HPO with {self.config.hpo_n_estimators} trees...")
-
-        result = optimizer.optimize(
-            X_train=dtrain_hpo,
-            y_train=None,  # Already in DMatrix
-            X_val=dval_hpo,
-            y_val=None,
+        learning_result = learning_optimizer.optimize(
+            X_train=dtrain_hpo, y_train=None, X_val=dval_hpo, y_val=None
         )
+        best_learning_rate = float(learning_result.best_params.get("learning_rate", 0.05))
 
-        best_params = result.best_params
+        # =====================================================================
+        # Combine all best parameters
+        # =====================================================================
+        best_params = {
+            'max_depth': best_max_depth,
+            'learning_rate': best_learning_rate,
+            **best_reg_params
+        }
 
         # Save best parameters for warm start
         if self.config.enable_warm_start:
@@ -681,13 +797,14 @@ class StandardizedXGBTrainer:
         # Train final model with best parameters on full data
         final_params = {
             'tree_method': self.config.tree_method,
-            'learning_rate': float(best_params.get("learning_rate", 0.05)),
-            'max_depth': int(best_params.get("max_depth", 6)),
-            'min_child_weight': float(best_params.get("min_child_weight", 10.0)),
-            'subsample': float(best_params.get("subsample", 0.7)),
-            'colsample_bytree': float(best_params.get("colsample_bytree", 0.7)),
-            'gamma': float(best_params.get("gamma", 5.0)),
-            'lambda': float(best_params.get("lambda", 1.5)),
+            'learning_rate': best_learning_rate,
+            'max_depth': best_max_depth,
+            'min_child_weight': best_reg_params['min_child_weight'],
+            'subsample': best_reg_params['subsample'],
+            'colsample_bytree': best_reg_params['colsample_bytree'],
+            'gamma': best_reg_params['gamma'],
+            'lambda': best_reg_params['lambda'],
+            'alpha': best_reg_params['alpha'],
             'eval_metric': eval_metric,
             'objective': self.config.objective,
         }
@@ -695,7 +812,6 @@ class StandardizedXGBTrainer:
         if base_score is not None:
             final_params['base_score'] = float(base_score)
 
-        # Add num_class for multiclass classification
         if self.config.num_class is not None:
             final_params['num_class'] = self.config.num_class
 
@@ -714,6 +830,204 @@ class StandardizedXGBTrainer:
             logger.info(f"      ✅ HPO complete! Best params: {best_params}")
 
         return model
+
+    def _optimize_regularization_with_ic_snr(
+        self,
+        dtrain: xgb.DMatrix,
+        dval: xgb.DMatrix,
+        best_max_depth: int,
+        eval_metric: str,
+        base_score: Optional[float],
+        ic_snr_config: Optional[ICSNRConfig],
+        verbose: bool
+    ) -> Dict[str, float]:
+        """
+        Optimize regularization parameters using IC-SNR objective.
+        
+        Regularization parameters optimized:
+        - gamma: Min loss reduction (1-5)
+        - min_child_weight: Min sum of instance weight (20-40)
+        - lambda: L2 regularization (1-5)
+        - alpha: L1 regularization (0.2-1)
+        - colsample_bytree: Column sampling (0.6-0.8)
+        - subsample: Row sampling (0.7-0.9)
+        
+        Objective: score = median_IC × SNR_factor − IC_volatility_penalty
+        
+        Args:
+            dtrain: Training DMatrix
+            dval: Validation DMatrix
+            best_max_depth: Best max_depth from structure optimization
+            eval_metric: XGBoost evaluation metric
+            base_score: Base score for XGBoost
+            ic_snr_config: IC-SNR configuration
+            verbose: Verbose output
+            
+        Returns:
+            Dict with best regularization parameters
+        """
+        if not OPTUNA_AVAILABLE:
+            logger.warning("Optuna not available, using default regularization params")
+            return {
+                'gamma': self.config.gamma,
+                'min_child_weight': self.config.min_child_weight,
+                'lambda': self.config.reg_lambda,
+                'alpha': self.config.reg_alpha,
+                'colsample_bytree': self.config.colsample_bytree,
+                'subsample': self.config.subsample,
+            }
+        
+        # Extract data from DMatrix for IC computation
+        X_val = dval.get_data()
+        y_val = dval.get_label()
+        
+        # Handle sparse matrices
+        if hasattr(X_val, 'toarray'):
+            X_val_array = X_val.toarray()
+        else:
+            X_val_array = np.array(X_val) if not isinstance(X_val, np.ndarray) else X_val
+        
+        # Create IC-SNR objective
+        if ic_snr_config is None:
+            ic_snr_config = ICSNRConfig()
+        
+        # Track best result
+        best_score = -np.inf
+        best_params = {
+            'gamma': self.config.gamma,
+            'min_child_weight': self.config.min_child_weight,
+            'lambda': self.config.reg_lambda,
+            'alpha': self.config.reg_alpha,
+            'colsample_bytree': self.config.colsample_bytree,
+            'subsample': self.config.subsample,
+        }
+        
+        def ic_snr_objective(trial: optuna.Trial) -> float:
+            """IC-SNR objective for regularization parameters."""
+            nonlocal best_score, best_params
+            
+            # Sample regularization parameters
+            params = {
+                'gamma': trial.suggest_float('gamma', 
+                    self.config.gamma_range[0], self.config.gamma_range[1]),
+                'min_child_weight': trial.suggest_float('min_child_weight',
+                    self.config.min_child_weight_range[0], self.config.min_child_weight_range[1]),
+                'lambda': trial.suggest_float('lambda',
+                    self.config.lambda_range[0], self.config.lambda_range[1]),
+                'alpha': trial.suggest_float('alpha',
+                    self.config.alpha_range[0], self.config.alpha_range[1]),
+                'colsample_bytree': trial.suggest_float('colsample_bytree',
+                    self.config.colsample_bytree_range[0], self.config.colsample_bytree_range[1]),
+                'subsample': trial.suggest_float('subsample',
+                    self.config.subsample_range[0], self.config.subsample_range[1]),
+            }
+            
+            # Build XGBoost params
+            xgb_params = {
+                'tree_method': self.config.tree_method,
+                'learning_rate': self.config.learning_rate,  # Fixed during regularization HPO
+                'max_depth': best_max_depth,
+                'min_child_weight': params['min_child_weight'],
+                'subsample': params['subsample'],
+                'colsample_bytree': params['colsample_bytree'],
+                'gamma': params['gamma'],
+                'lambda': params['lambda'],
+                'alpha': params['alpha'],
+                'eval_metric': eval_metric,
+                'objective': self.config.objective,
+            }
+            
+            if base_score is not None:
+                xgb_params['base_score'] = float(base_score)
+            
+            if self.config.num_class is not None:
+                xgb_params['num_class'] = self.config.num_class
+            
+            try:
+                # Train model
+                model = xgb.train(
+                    params=xgb_params,
+                    dtrain=dtrain,
+                    num_boost_round=self.config.hpo_n_estimators,
+                    evals=[(dval, 'val')],
+                    early_stopping_rounds=self.config.early_stopping_rounds,
+                    verbose_eval=False
+                )
+                
+                # Get predictions
+                y_pred = model.predict(dval)
+                
+                # Compute IC metrics with purged cross-validation
+                y_val_series = pd.Series(y_val)
+                y_pred_series = pd.Series(y_pred, index=y_val_series.index)
+                
+                ic_metrics = compute_ic_metrics_purged(
+                    y_true=y_val_series,
+                    y_pred=y_pred_series,
+                    config=ic_snr_config
+                )
+                
+                # Compute stability across subsamples
+                def predict_func(X):
+                    d = xgb.DMatrix(X)
+                    return model.predict(d)
+                
+                stability_score, _ = compute_stability_across_subsamples(
+                    predict_func=predict_func,
+                    X=X_val_array,
+                    y=y_val,
+                    n_subsamples=ic_snr_config.subsample_chunks
+                )
+                
+                # Final score: IC-SNR + stability bonus
+                # score = median_IC × SNR_factor − IC_volatility_penalty + stability_bonus
+                stability_bonus = 0.1 * stability_score
+                final_score = ic_metrics.final_score + stability_bonus
+                
+                # Track best
+                if final_score > best_score:
+                    best_score = final_score
+                    best_params = params.copy()
+                
+                if verbose:
+                    logger.debug(
+                        f"IC-SNR Trial: median_IC={ic_metrics.median_ic:.4f}, "
+                        f"SNR={ic_metrics.snr:.4f}, stability={stability_score:.4f}, "
+                        f"score={final_score:.4f}"
+                    )
+                
+                return final_score
+                
+            except Exception as e:
+                logger.warning(f"IC-SNR regularization trial failed: {e}")
+                return -999.0
+        
+        # Run Optuna optimization
+        study = optuna.create_study(
+            direction='maximize',
+            sampler=optuna.samplers.TPESampler(seed=42)
+        )
+        
+        # Suppress Optuna logs
+        optuna.logging.set_verbosity(optuna.logging.WARNING)
+        
+        study.optimize(
+            ic_snr_objective,
+            n_trials=min(self.config.hpo_n_trials, 30),  # Limit trials for regularization
+            show_progress_bar=verbose,
+            timeout=600  # 10 minute timeout
+        )
+        
+        if verbose:
+            logger.info(
+                f"         Best IC-SNR score: {study.best_value:.4f}, "
+                f"Best params: gamma={best_params['gamma']:.2f}, "
+                f"mcw={best_params['min_child_weight']:.1f}, "
+                f"lambda={best_params['lambda']:.2f}, "
+                f"alpha={best_params['alpha']:.2f}"
+            )
+        
+        return best_params
 
     def _stratified_subsample(
         self,

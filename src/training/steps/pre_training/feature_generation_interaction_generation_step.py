@@ -2333,13 +2333,28 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                     tprint_warning("  ⚠️ No valid samples after alignment; skipping pipeline pruning")
                     return variant_features.copy(), {"skipped": True, "reason": "alignment_failed"}, targets_df
                 
-                # Run the 4-stage pipeline
-                candidates = pipeline.evaluate_features(
+                # Run the 4-stage pipeline with full scores for reporting
+                all_candidates = pipeline.evaluate_features(
                     features=features_aligned,
                     target=target_aligned,
                     target_column_name='close' if 'close' in features_aligned.columns else targets_df.columns[0],
-                    return_all_scores=False  # Only return top-k
+                    return_all_scores=True  # Get all for CSV export
                 )
+                
+                # Export per-feature metrics to CSV
+                if all_candidates:
+                    try:
+                        csv_path = pipeline.export_feature_metrics_csv(
+                            candidates=all_candidates,
+                            output_dir="outcomes",
+                            prefix="phase2_feature_pruning"
+                        )
+                        tprint_info(f"  📊 Exported feature metrics to: {csv_path}")
+                    except Exception as csv_exc:
+                        tprint_warning(f"  ⚠️ Failed to export CSV: {csv_exc}")
+                
+                # Select top-k candidates
+                candidates = all_candidates[:target_feature_count] if all_candidates else []
                 
                 # Extract selected features
                 if candidates:

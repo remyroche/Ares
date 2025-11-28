@@ -1616,6 +1616,210 @@ class FeatureSelectionPipeline:
             'cache_size': len(self._rolling_cache)
         }
 
+    def export_feature_metrics_csv(
+        self,
+        candidates: List[FeatureCandidate],
+        output_dir: str = "outcomes",
+        prefix: str = "feature_selection"
+    ) -> str:
+        """
+        Export per-feature metrics to CSV with datetime in filename.
+
+        Args:
+            candidates: List of FeatureCandidate objects with computed metrics
+            output_dir: Directory to save CSV (default: "outcomes")
+            prefix: Filename prefix (default: "feature_selection")
+
+        Returns:
+            Path to the generated CSV file
+        """
+        import os
+        from datetime import datetime
+
+        # Create output directory if it doesn't exist
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Generate filename with datetime
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"{prefix}_metrics_{timestamp}.csv"
+        filepath = os.path.join(output_dir, filename)
+
+        # Build rows with all per-feature metrics
+        rows = []
+        for c in candidates:
+            row = {
+                # Feature identification
+                'feature_name': c.feature_name,
+                'survived_stage': c.survived_stage,
+                'final_score': round(c.final_score, 6),
+
+                # Stage 1 - Fast Screening
+                'variance': round(c.variance, 6),
+                'price_corr': round(c.price_corr, 6),
+                'future_corr': round(c.future_corr, 6),
+
+                # Stage 2 - Predictive Power
+                'ic_mean': round(c.ic_mean, 6),
+                'ic_std': round(c.ic_std, 6),
+                'ic_tstat': round(c.ic_tstat, 6),
+                'ic_autocorr': round(c.ic_autocorr, 6),
+                'mi_proxy': round(c.mi_proxy, 6),
+
+                # Stage 3 - Robustness
+                'cv_score': round(c.cv_score, 6),
+                'regime_stability': round(c.regime_stability, 6),
+            }
+
+            # Add regime-specific scores
+            if hasattr(c, 'regime_scores') and c.regime_scores:
+                for regime_name, regime_score in c.regime_scores.items():
+                    row[f'regime_{regime_name}'] = round(regime_score, 6)
+
+            rows.append(row)
+
+        # Create DataFrame and save to CSV
+        df = pd.DataFrame(rows)
+
+        # Sort by final_score descending
+        df = df.sort_values('final_score', ascending=False)
+
+        # Add rank column
+        df.insert(0, 'rank', range(1, len(df) + 1))
+
+        # Save to CSV
+        df.to_csv(filepath, index=False)
+
+        self.logger.info(f"📊 Exported {len(candidates)} feature metrics to: {filepath}")
+
+        return filepath
+
+    def evaluate_features_with_report(
+        self,
+        features: pd.DataFrame,
+        target: pd.Series,
+        target_column_name: str = 'close',
+        return_all_scores: bool = False,
+        output_dir: str = "outcomes",
+        prefix: str = "feature_selection"
+    ) -> Tuple[List[FeatureCandidate], str]:
+        """
+        Evaluate features and automatically generate CSV report.
+
+        This is a convenience method that combines evaluate_features()
+        with export_feature_metrics_csv().
+
+        Args:
+            features: DataFrame of features
+            target: Target variable
+            target_column_name: Name of price column for regime analysis
+            return_all_scores: If True, return all candidates
+            output_dir: Directory to save CSV report
+            prefix: Filename prefix for CSV
+
+        Returns:
+            Tuple of (candidates, csv_filepath)
+        """
+        # Run the 4-stage evaluation
+        candidates = self.evaluate_features(
+            features=features,
+            target=target,
+            target_column_name=target_column_name,
+            return_all_scores=True  # Get all candidates for reporting
+        )
+
+        # Export to CSV
+        csv_path = self.export_feature_metrics_csv(
+            candidates=candidates,
+            output_dir=output_dir,
+            prefix=prefix
+        )
+
+        # Return only top-k if requested
+        if not return_all_scores:
+            candidates = candidates[:self.config.top_k_per_feature]
+
+        return candidates, csv_path
+
+    def generate_summary_report(
+        self,
+        candidates: List[FeatureCandidate],
+        output_dir: str = "outcomes",
+        prefix: str = "feature_selection"
+    ) -> str:
+        """
+        Generate a human-readable summary report of feature selection.
+
+        Args:
+            candidates: List of FeatureCandidate objects
+            output_dir: Directory to save report
+            prefix: Filename prefix
+
+        Returns:
+            Path to the generated report file
+        """
+        import os
+        from datetime import datetime
+
+        os.makedirs(output_dir, exist_ok=True)
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"{prefix}_summary_{timestamp}.txt"
+        filepath = os.path.join(output_dir, filename)
+
+        lines = [
+            "=" * 80,
+            "FEATURE SELECTION PIPELINE - SUMMARY REPORT",
+            f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            "=" * 80,
+            "",
+            "PIPELINE PERFORMANCE:",
+            "-" * 40,
+        ]
+
+        # Performance summary
+        perf = self.get_performance_summary()
+        lines.append(f"  Total Time: {perf.get('total_time', 0):.2f}s")
+        for stage, time_s in perf.get('stage_times', {}).items():
+            lines.append(f"    {stage}: {time_s:.2f}s")
+
+        lines.append("")
+        lines.append("CANDIDATES PER STAGE:")
+        lines.append("-" * 40)
+        for stage, count in perf.get('candidates_per_stage', {}).items():
+            lines.append(f"  {stage}: {count}")
+
+        lines.append("")
+        lines.append("TOP 20 FEATURES BY FINAL SCORE:")
+        lines.append("-" * 40)
+        lines.append(f"{'Rank':<6}{'Feature':<50}{'Score':<10}{'IC_tstat':<10}{'CV':<10}")
+        lines.append("-" * 86)
+
+        for i, c in enumerate(candidates[:20], 1):
+            name = c.feature_name[:48] if len(c.feature_name) > 48 else c.feature_name
+            lines.append(
+                f"{i:<6}{name:<50}{c.final_score:.4f}    {c.ic_tstat:.4f}    {c.cv_score:.4f}"
+            )
+
+        lines.append("")
+        lines.append("STAGE SURVIVAL DISTRIBUTION:")
+        lines.append("-" * 40)
+        stage_counts = {}
+        for c in candidates:
+            stage = c.survived_stage
+            stage_counts[stage] = stage_counts.get(stage, 0) + 1
+        for stage in sorted(stage_counts.keys()):
+            lines.append(f"  Stage {stage}: {stage_counts[stage]} candidates")
+
+        lines.append("")
+        lines.append("=" * 80)
+
+        with open(filepath, 'w') as f:
+            f.write('\n'.join(lines))
+
+        self.logger.info(f"📋 Generated summary report: {filepath}")
+
+        return filepath
+
 
 def create_feature_selection_pipeline(
     subsample_ratio: float = 0.20,

@@ -183,6 +183,14 @@ from .advanced import (
     create_enhanced_multi_stage_rfe,
 )
 
+# Feature Evaluation Pipeline - 4-Stage Lookback Optimization
+from .feature_evaluation import (
+    FeatureEvaluationPipeline,
+    EvaluationConfig,
+    LookbackCandidate,
+    create_evaluation_pipeline,
+)
+
 __all__ = [
     # Core framework - VectorBT based
     'get_feature_selection_framework',
@@ -305,6 +313,12 @@ __all__ = [
     'EnhancedMultiStageRFE',
     'PlateauDetector',
     'create_enhanced_multi_stage_rfe',
+
+    # Feature Evaluation Pipeline - 4-Stage Lookback Optimization
+    'FeatureEvaluationPipeline',
+    'EvaluationConfig',
+    'LookbackCandidate',
+    'create_evaluation_pipeline',
 ]
 
 # Version info

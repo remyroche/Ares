@@ -4778,6 +4778,30 @@ class RollingKDELevelGenerator:
                 level["last_touch_ts"] = last_ts
                 level["volume_depth_ratio"] = depth_ratio
 
+            # PHASE 1 IMPROVEMENT: Filter levels by quality/strength
+            # This reduces weak levels that break too easily (41.3% breakout rate)
+            filtered_levels: List[Dict[str, Any]] = []
+            for level in candidate_levels:
+                touch_count = level.get("touch_count", 0)
+                volume_depth = level.get("volume_depth_ratio", 0.0)
+                prominence = level.get("prominence", 0.0)
+
+                # Quality filters (using balanced defaults from recommendations)
+                min_touches = int(config.get("sr_min_touch_count", 2))
+                min_volume_depth = float(config.get("sr_min_volume_depth_ratio", 0.8))
+                min_prominence = float(config.get("sr_min_prominence", 0.5))
+
+                # Apply filters to ensure only strong levels are used
+                if (touch_count >= min_touches and
+                    volume_depth >= min_volume_depth and
+                    prominence >= min_prominence):
+                    filtered_levels.append(level)
+
+            # Use filtered levels instead of all candidates
+            if not filtered_levels:
+                # No strong levels found for this day, skip
+                continue
+
             day_mask = dates == day_start
             day_index = index[day_mask]
             if day_index.empty:
@@ -4787,7 +4811,7 @@ class RollingKDELevelGenerator:
                 close_price = float(data.at[ts, "close"])
                 above: List[Tuple[Dict[str, Any], float]] = []
                 below: List[Tuple[Dict[str, Any], float]] = []
-                for level in candidate_levels:
+                for level in filtered_levels:  # Changed from candidate_levels
                     lp = float(level["price"])
                     dist = abs(lp - close_price)
                     if lp >= close_price:
@@ -5113,6 +5137,22 @@ class MLBreakoutBounceRegimeStep(BaseStep):
 
             # Add directional edge features (long/short, strength-weighted by default)
             output_df = self._add_directional_edge_features(output_df)
+
+            # PHASE 1 IMPROVEMENT: Add S/R strength features for ML model
+            if config.get("enable_sr_strength_features", True):
+                try:
+                    output_df = self._add_sr_strength_features(output_df)
+                    tprint_info("✅ Added S/R strength features to output")
+                except Exception as exc:
+                    tprint_warning(f"Failed to add S/R strength features: {exc}")
+
+            # PHASE 2 IMPROVEMENT: Add trap reversion quality features
+            if config.get("enable_trap_quality_features", True):
+                try:
+                    output_df = self._add_trap_reversion_features(output_df, config)
+                    tprint_info("✅ Added trap reversion quality features to output")
+                except Exception as exc:
+                    tprint_warning(f"Failed to add trap reversion features: {exc}")
 
             # Generate diagnostics report (CSV + Markdown) in outcomes/
             try:
@@ -5906,6 +5946,176 @@ class MLBreakoutBounceRegimeStep(BaseStep):
         # Keep legacy column names for backward compatibility during transition
         out["breakout_scalar_resistance"] = out["resistance_scalar"]
         out["breakout_scalar_support"] = out["support_scalar"]
+
+        return out
+
+    def _add_sr_strength_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Add S/R level strength indicators for ML model.
+
+        PHASE 1 IMPROVEMENT: Exposes individual strength components to the model
+        so it can learn which aspects of level strength matter for each regime.
+
+        Returns:
+            DataFrame with additional strength feature columns
+        """
+        if df.empty:
+            return df
+
+        out = df.copy()
+
+        # 1. Raw strength components (already available in primary_level_* columns)
+        out["sr_touch_count"] = pd.to_numeric(
+            out.get("primary_level_touch_count"), errors="coerce"
+        ).fillna(0)
+
+        out["sr_volume_depth_ratio"] = pd.to_numeric(
+            out.get("primary_level_volume_depth_ratio"), errors="coerce"
+        ).fillna(0)
+
+        out["sr_prominence"] = pd.to_numeric(
+            out.get("primary_level_prominence"), errors="coerce"
+        ).fillna(0)
+
+        # 2. Derived strength metrics - Level age (hours since first touch)
+        if "primary_level_first_touch_ts" in out.columns:
+            try:
+                first_touch = pd.to_datetime(out["primary_level_first_touch_ts"], errors="coerce")
+                out["sr_age_hours"] = (out.index - first_touch).total_seconds() / 3600
+                out["sr_age_log_hours"] = np.log1p(out["sr_age_hours"].fillna(0).clip(lower=0))
+            except Exception:
+                out["sr_age_hours"] = 0.0
+                out["sr_age_log_hours"] = 0.0
+
+        # Touch recency (hours since last touch)
+        if "primary_level_last_touch_ts" in out.columns:
+            try:
+                last_touch = pd.to_datetime(out["primary_level_last_touch_ts"], errors="coerce")
+                out["sr_recency_hours"] = (out.index - last_touch).total_seconds() / 3600
+                out["sr_recency_log_hours"] = np.log1p(out["sr_recency_hours"].fillna(0).clip(lower=0))
+            except Exception:
+                out["sr_recency_hours"] = 0.0
+                out["sr_recency_log_hours"] = 0.0
+
+        # 3. Normalized strength components (0-1 range for easier model interpretation)
+        out["sr_touch_score"] = np.clip(out["sr_touch_count"] / 5.0, 0, 1)
+        out["sr_volume_score"] = np.clip(out["sr_volume_depth_ratio"] / 2.0, 0, 1)
+        out["sr_prominence_score"] = np.clip(out["sr_prominence"] / 2.0, 0, 1)
+
+        # 4. Combined strength score (weighted average of components)
+        out["sr_combined_strength"] = (
+            0.40 * out["sr_touch_score"] +
+            0.35 * out["sr_volume_score"] +
+            0.25 * out["sr_prominence_score"]
+        )
+
+        # 5. Confidence flags (binary indicators for high/low quality levels)
+        out["sr_high_confidence"] = (
+            (out["sr_touch_count"] >= 3) &
+            (out["sr_volume_depth_ratio"] >= 1.0) &
+            (out["sr_prominence"] >= 0.7)
+        ).astype(int)
+
+        out["sr_low_confidence"] = (
+            (out["sr_touch_count"] < 2) |
+            (out["sr_volume_depth_ratio"] < 0.6) |
+            (out["sr_prominence"] < 0.3)
+        ).astype(int)
+
+        return out
+
+    def _add_trap_reversion_features(self, df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
+        """Add trap quality metrics to help model understand mean reversion potential.
+
+        PHASE 2 IMPROVEMENT: Captures trap reversion behavior since resistance traps
+        show strong mean reversion (Sharpe 0.19) beneficial to longs.
+
+        Returns:
+            DataFrame with trap reversion quality features
+        """
+        if df.empty:
+            return df
+
+        out = df.copy()
+        horizon = int(config.get("breakout_horizon_bars", 96))
+
+        # Get forward price action for trap analysis
+        try:
+            fwd_high = out["high"].rolling(horizon, min_periods=1).max().shift(-horizon)
+            fwd_low = out["low"].rolling(horizon, min_periods=1).min().shift(-horizon)
+            fwd_close = out["close"].shift(-horizon)
+        except Exception:
+            # Trap features are non-critical, return original df if forward lookback fails
+            return out
+
+        if "primary_level_price" not in out.columns:
+            return out
+
+        primary_level = out["primary_level_price"]
+
+        # Determine level type
+        if "is_resistance" in out.columns and "is_support" in out.columns:
+            is_resistance = out["is_resistance"].fillna(False)
+            is_support = out["is_support"].fillna(False)
+        else:
+            is_resistance = out["close"] < primary_level
+            is_support = ~is_resistance
+
+        # Calculate trap metrics
+        # 1. Excursion depth (how far beyond level did price go?)
+        resistance_excursion = (fwd_high - primary_level) / primary_level.replace(0, np.nan)
+        support_excursion = (primary_level - fwd_low) / primary_level.replace(0, np.nan)
+
+        out["trap_excursion_pct"] = np.where(
+            is_resistance,
+            resistance_excursion * 100,  # Positive = break above
+            support_excursion * 100       # Positive = break below
+        )
+
+        # 2. Reversion strength (how far did it reverse back?)
+        resistance_reversion = (fwd_high - fwd_close) / primary_level.replace(0, np.nan)
+        support_reversion = (fwd_close - fwd_low) / primary_level.replace(0, np.nan)
+
+        out["trap_reversion_pct"] = np.where(
+            is_resistance,
+            resistance_reversion * 100,   # Positive = reversed down
+            support_reversion * 100        # Positive = reversed up
+        )
+
+        # 3. Trap efficiency (reversion / excursion ratio)
+        # Values > 1.0 = full reversion + more
+        # Values 0.5-1.0 = partial reversion
+        # Values < 0.5 = weak reversion (real breakout)
+        excursion_abs = out["trap_excursion_pct"].abs()
+        out["trap_efficiency"] = np.where(
+            excursion_abs > 0.1,  # Avoid division by ~zero
+            out["trap_reversion_pct"] / out["trap_excursion_pct"],
+            0.0
+        )
+
+        # 4. Trap quality score (for ML model)
+        # High score = strong mean reversion (trap worked well)
+        # Low score = weak reversion (trap failed, breakout succeeded)
+        out["trap_reversion_quality"] = np.clip(
+            out["trap_efficiency"] * out["trap_reversion_pct"].abs() / 0.5,  # Normalize
+            0, 1
+        )
+
+        # 5. Directional trap flags for regime analysis
+        # Resistance trap with strong reversion = bullish for longs
+        out["trap_resistance_bullish"] = (
+            is_resistance &
+            (out["trap_excursion_pct"] > 0.25) &      # Did break above
+            (out["trap_reversion_pct"] > 0.25) &       # Did reverse down
+            (out["trap_efficiency"] > 0.7)             # Strong reversion
+        ).astype(int)
+
+        # Support trap with strong reversion = bearish for longs
+        out["trap_support_bearish"] = (
+            is_support &
+            (out["trap_excursion_pct"] > 0.25) &
+            (out["trap_reversion_pct"] > 0.25) &
+            (out["trap_efficiency"] > 0.7)
+        ).astype(int)
 
         return out
 

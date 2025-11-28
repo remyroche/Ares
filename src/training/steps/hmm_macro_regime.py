@@ -1668,11 +1668,40 @@ class HMMMLMacroTrendStep(BaseStep):
                 # respect the train/val masks; otherwise we fall back to the
                 # legacy percentage-based split via split_idx.
                 if split_config is not None:
-                    X_train = X_features_full.loc[X_train_raw.index].copy()
-                    X_val = X_features_full.loc[X_val_raw.index].copy()
+                    # Use index intersection to avoid KeyError or empty DataFrames
+                    # when EWM/normalization drops rows
+                    train_idx = X_features_full.index.intersection(X_train_raw.index)
+                    val_idx = X_features_full.index.intersection(X_val_raw.index)
+
+                    if len(train_idx) == 0:
+                        raise ValueError(
+                            f"No training samples remain after feature processing. "
+                            f"Original train size: {len(X_train_raw)}, "
+                            f"Features available: {len(X_features_full)}"
+                        )
+                    if len(val_idx) == 0:
+                        raise ValueError(
+                            f"No validation samples remain after feature processing. "
+                            f"Original val size: {len(X_val_raw)}, "
+                            f"Features available: {len(X_features_full)}"
+                        )
+
+                    X_train = X_features_full.loc[train_idx].copy()
+                    X_val = X_features_full.loc[val_idx].copy()
                 else:
                     X_train = X_features_full.iloc[:split_idx].copy()
                     X_val = X_features_full.iloc[split_idx:].copy()
+
+                # Validate shapes before proceeding
+                if X_train.shape[0] == 0 or X_train.shape[1] == 0:
+                    raise ValueError(
+                        f"Invalid X_train shape after feature processing: {X_train.shape}"
+                    )
+                if X_val.shape[0] == 0 or X_val.shape[1] == 0:
+                    raise ValueError(
+                        f"Invalid X_val shape after feature processing: {X_val.shape}"
+                    )
+
                 X_scaled_full = X_features_full
                 extended_feature_names = feature_names_seq
             else:
@@ -1684,6 +1713,18 @@ class HMMMLMacroTrendStep(BaseStep):
             X_train = X_train_scaled
             X_val = X_val_scaled
             extended_feature_names = list(X_scaled_full.columns)
+
+        # Final validation of data shapes before model training
+        if X_train.shape[0] == 0 or X_train.shape[1] == 0:
+            raise ValueError(
+                f"Invalid X_train shape before model training: {X_train.shape}. "
+                f"Cannot proceed with empty or zero-feature data."
+            )
+        if X_val.shape[0] == 0 or X_val.shape[1] == 0:
+            raise ValueError(
+                f"Invalid X_val shape before model training: {X_val.shape}. "
+                f"Cannot proceed with empty or zero-feature validation data."
+            )
 
         training_metrics: Dict[str, Any] = {}
         training_metrics["scaling_strategy"] = scaling_strategy

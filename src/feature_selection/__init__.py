@@ -183,6 +183,23 @@ from .advanced import (
     create_enhanced_multi_stage_rfe,
 )
 
+# Feature Evaluation Pipeline - 4-Stage Lookback Optimization & Feature Selection
+from .feature_evaluation import (
+    # Lookback optimization
+    FeatureEvaluationPipeline,
+    EvaluationConfig,
+    LookbackCandidate,
+    create_evaluation_pipeline,
+    # Feature selection
+    FeatureSelectionPipeline,
+    FeatureCandidate,
+    create_feature_selection_pipeline,
+    # Quick MI/IC scoring helpers (for replacing sklearn mutual_info)
+    compute_quick_mi_scores,
+    compute_feature_stability_scores,
+    compute_composite_scores,
+)
+
 __all__ = [
     # Core framework - VectorBT based
     'get_feature_selection_framework',
@@ -305,6 +322,18 @@ __all__ = [
     'EnhancedMultiStageRFE',
     'PlateauDetector',
     'create_enhanced_multi_stage_rfe',
+
+    # Feature Evaluation Pipeline - 4-Stage Lookback Optimization & Feature Selection
+    'FeatureEvaluationPipeline',
+    'EvaluationConfig',
+    'LookbackCandidate',
+    'create_evaluation_pipeline',
+    'FeatureSelectionPipeline',
+    'FeatureCandidate',
+    'create_feature_selection_pipeline',
+    'compute_quick_mi_scores',
+    'compute_feature_stability_scores',
+    'compute_composite_scores',
 ]
 
 # Version info

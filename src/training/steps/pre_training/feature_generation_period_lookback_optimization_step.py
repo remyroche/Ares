@@ -30,6 +30,20 @@ from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer
 from src.utils.parallel_processing_optimizer import MacM1ParallelOptimizer
 from src.training.utils.meta_label_constants import META_LABEL_EXCLUDED_FEATURE_COLUMNS
 
+# Feature evaluation pipeline imports
+try:
+    from src.feature_selection.feature_evaluation import (
+        FeatureEvaluationPipeline,
+        EvaluationConfig,
+        create_evaluation_pipeline
+    )
+    FEATURE_EVALUATION_AVAILABLE = True
+except ImportError:
+    FEATURE_EVALUATION_AVAILABLE = False
+    FeatureEvaluationPipeline = None
+    EvaluationConfig = None
+    create_evaluation_pipeline = None
+
 # VectorBT imports for high-performance optimization
 try:
     import vectorbt as vbt
@@ -911,48 +925,153 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         if not lookback_candidates:
             lookback_candidates = list(range(4, min(51, len(feature_series))))
 
-        best_lookback = lookback_candidates[0]
-        best_score = 0.0
+        # Use the 4-stage evaluation pipeline if available
+        if FEATURE_EVALUATION_AVAILABLE and FeatureEvaluationPipeline is not None:
+            try:
+                # Create pipeline with configuration
+                pipeline = create_evaluation_pipeline(
+                    subsample_ratio=0.20,
+                    top_k=3,
+                    use_parallel=False,  # Per-feature already parallelized externally
+                    n_workers=1
+                )
 
-        for lb in lookback_candidates:
-            if lb <= 1 or lb >= len(feature_series):
-                continue
-            rolled_feature = feature_series.rolling(lb, min_periods=max(2, lb // 2)).mean()
-            rolled_target = target_series.rolling(lb, min_periods=max(2, lb // 2)).mean()
-            corr = rolled_feature.corr(rolled_target)
-            if corr is None or np.isnan(corr):
-                continue
-            score = abs(float(corr))
-            if score > best_score:
-                best_score = score
-                best_lookback = lb
+                # Run the 4-stage evaluation
+                candidates = pipeline.evaluate_lookbacks(
+                    data=data,
+                    feature_name=feature_name,
+                    lookback_candidates=lookback_candidates,
+                    target_column=target_column
+                )
 
-        if best_score == 0.0:
-            corr = feature_series.corr(target_series)
-            best_score = abs(float(corr)) if corr is not None and not np.isnan(corr) else 0.0
+                if candidates and len(candidates) > 0:
+                    # Use the top-ranked candidate
+                    top_candidate = candidates[0]
+                    best_lookback = top_candidate.lookback
+                    best_score = top_candidate.final_score
+                    stability_score = top_candidate.regime_stability
+                    information_score = top_candidate.ic_mean
 
-        stability_score = float(
-            self._calculate_stability_score(
-                data.fillna(method='ffill').fillna(0), feature_name, max(5, best_lookback)
+                    # Store detailed metrics in metadata
+                    detailed_metrics = {
+                        'ic_tstat': top_candidate.ic_tstat,
+                        'ic_autocorr': top_candidate.ic_autocorr,
+                        'cv_score': top_candidate.cv_score,
+                        'mi_proxy': top_candidate.mi_proxy,
+                        'regime_stability': top_candidate.regime_stability,
+                        'variance': top_candidate.variance,
+                        'price_corr': top_candidate.price_corr,
+                        'future_corr': top_candidate.future_corr,
+                        'pipeline_stages_passed': top_candidate.survived_stage,
+                        'all_candidates': len(candidates),
+                        'stage_times': pipeline.stage_times
+                    }
+
+                    self.logger.info(
+                        f"4-Stage Pipeline: {feature_name} -> lookback={best_lookback}, "
+                        f"final_score={best_score:.4f}, IC_tstat={top_candidate.ic_tstat:.2f}, "
+                        f"CV_score={top_candidate.cv_score:.4f}"
+                    )
+                else:
+                    # No candidates survived - fallback to simple method
+                    self.logger.warning(
+                        f"4-Stage Pipeline: No candidates survived for {feature_name}, "
+                        "falling back to simple correlation"
+                    )
+                    raise ValueError("No candidates survived pipeline")
+
+            except Exception as e:
+                # Fallback to simple correlation-based method
+                self.logger.warning(
+                    f"4-Stage Pipeline failed for {feature_name}: {e}. "
+                    "Falling back to simple correlation method."
+                )
+
+                best_lookback = lookback_candidates[0]
+                best_score = 0.0
+
+                for lb in lookback_candidates:
+                    if lb <= 1 or lb >= len(feature_series):
+                        continue
+                    rolled_feature = feature_series.rolling(lb, min_periods=max(2, lb // 2)).mean()
+                    rolled_target = target_series.rolling(lb, min_periods=max(2, lb // 2)).mean()
+                    corr = rolled_feature.corr(rolled_target)
+                    if corr is None or np.isnan(corr):
+                        continue
+                    score = abs(float(corr))
+                    if score > best_score:
+                        best_score = score
+                        best_lookback = lb
+
+                if best_score == 0.0:
+                    corr = feature_series.corr(target_series)
+                    best_score = abs(float(corr)) if corr is not None and not np.isnan(corr) else 0.0
+
+                stability_score = float(
+                    self._calculate_stability_score(
+                        data.fillna(method='ffill').fillna(0), feature_name, max(5, best_lookback)
+                    )
+                )
+                information_score = float((best_score + stability_score) / 2.0) if (
+                    best_score > 0 or stability_score > 0
+                ) else 0.0
+                detailed_metrics = {}
+
+        else:
+            # Feature evaluation pipeline not available - use simple method
+            self.logger.info(
+                f"Feature evaluation pipeline not available, using simple correlation method"
             )
-        )
-        information_score = float((best_score + stability_score) / 2.0) if (
-            best_score > 0 or stability_score > 0
-        ) else 0.0
 
-        return {
+            best_lookback = lookback_candidates[0]
+            best_score = 0.0
+
+            for lb in lookback_candidates:
+                if lb <= 1 or lb >= len(feature_series):
+                    continue
+                rolled_feature = feature_series.rolling(lb, min_periods=max(2, lb // 2)).mean()
+                rolled_target = target_series.rolling(lb, min_periods=max(2, lb // 2)).mean()
+                corr = rolled_feature.corr(rolled_target)
+                if corr is None or np.isnan(corr):
+                    continue
+                score = abs(float(corr))
+                if score > best_score:
+                    best_score = score
+                    best_lookback = lb
+
+            if best_score == 0.0:
+                corr = feature_series.corr(target_series)
+                best_score = abs(float(corr)) if corr is not None and not np.isnan(corr) else 0.0
+
+            stability_score = float(
+                self._calculate_stability_score(
+                    data.fillna(method='ffill').fillna(0), feature_name, max(5, best_lookback)
+                )
+            )
+            information_score = float((best_score + stability_score) / 2.0) if (
+                best_score > 0 or stability_score > 0
+            ) else 0.0
+            detailed_metrics = {}
+
+        result = {
             'feature_name': feature_name,
             'optimal_lookback': int(best_lookback),
             'performance_score': float(best_score),
             'stability_score': stability_score,
             'information_score': information_score,
             'lookback_range': '1-50',
-            'optimization_method': 'memory_efficient_chunk',
+            'optimization_method': '4-stage-pipeline' if FEATURE_EVALUATION_AVAILABLE else 'memory_efficient_chunk',
             'cv_folds': 2,
             'optimization_time': 0.0,
             'memory_usage': 0.0,
             'success': True,
         }
+
+        # Add detailed metrics from pipeline if available
+        if 'detailed_metrics' in locals() and detailed_metrics:
+            result['detailed_metrics'] = detailed_metrics
+
+        return result
 
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """

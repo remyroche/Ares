@@ -37,6 +37,13 @@ from src.feature_generation.shared.feature_engineer import (
 )
 from src.feature_generation.shared.feature_validator import FeatureValidator
 
+# Meta features and disagreement
+from src.feature_generation.categories.meta_features import (
+    BarsSinceLastEventGenerator,
+    EventMeanReturnGenerator
+)
+from src.feature_generation.categories.ensemble_disagreement import calculate_ensemble_disagreement_features
+
 logger = system_logger.getChild('SignalGenerationPipeline')
 
 # Constants
@@ -196,6 +203,10 @@ class SignalGenerationPipeline:
         # State management
         self.is_initialized: bool = False
         self.signal_history: deque[SignalGenerationResult] = deque(maxlen=getattr(config, 'max_history', DEFAULT_MAX_HISTORY))
+
+        # Track realized returns for EventMeanReturn calculation (store float returns)
+        # Using deque for sliding window history
+        self.realized_returns_history: deque[float] = deque(maxlen=getattr(config, 'max_history', DEFAULT_MAX_HISTORY))
 
         # Position state management (thread-safe)
         self.current_position: Optional[PositionState] = None
@@ -1385,13 +1396,21 @@ class SignalGenerationPipeline:
             base_confidences = [output.base_confidence for output in base_outputs]
             base_predictions_array = np.array(base_confidences).reshape(1, -1) if base_confidences else np.array([]).reshape(1, 0)
             
-            # Combine all inputs: market_features + regime_probs + base_outputs
+            # Generate meta-features (Disagreement + Category Meta)
+            live_meta_features, meta_feat_info = self._generate_live_meta_features(
+                base_outputs,
+                timestamp
+            )
+
+            # Combine all inputs: market_features + regime_probs + base_outputs + meta_features
             ensemble_input_parts = []
             if len(market_features) > 0:
                 ensemble_input_parts.append(market_features)
             ensemble_input_parts.append(regime_probs_values)
             if len(base_predictions_array.flatten()) > 0:
                 ensemble_input_parts.append(base_predictions_array.flatten())
+            if len(live_meta_features) > 0:
+                ensemble_input_parts.append(live_meta_features)
             
             ensemble_input = np.concatenate(ensemble_input_parts) if ensemble_input_parts else np.array([])
             ensemble_input = ensemble_input.reshape(1, -1) if ensemble_input.ndim == 1 else ensemble_input
@@ -1399,11 +1418,12 @@ class SignalGenerationPipeline:
             self.logger.debug(
                 f"Analyst ensemble input prepared: "
                 f"{len(market_features)} market + {len(regime_probs_values)} regime + "
-                f"{len(base_predictions_array.flatten())} base outputs = {ensemble_input.shape[1]} total features"
+                f"{len(base_predictions_array.flatten())} base + {len(live_meta_features)} meta = {ensemble_input.shape[1]} total features"
             )
             
             ensemble_confidence = None
             ensemble_features = {}
+            ensemble_features.update(meta_feat_info)
             
             # If ensemble model is available, use combined features as input
             if self.analyst_ensemble_model is not None and len(ensemble_input.flatten()) > 0:
@@ -2227,14 +2247,30 @@ class SignalGenerationPipeline:
                     # Close current position
                     pos = self.current_position
                     pos.is_open = False
+
+                    # Calculate realized return for meta-features
+                    current_price = None
+                    realized_return = 0.0
+                    if market_data is not None and not market_data.empty and 'close' in market_data.columns:
+                        current_price = market_data['close'].iloc[-1]
+                        if pos.entry_price is not None:
+                            if pos.direction == 'long':
+                                realized_return = (current_price - pos.entry_price) / pos.entry_price
+                            else:
+                                realized_return = (pos.entry_price - current_price) / pos.entry_price
+
+                    # Store realized return in history for EventMeanReturn feature
+                    self.realized_returns_history.append(realized_return)
+
                     self.position_history.append(pos)
                     self.logger.info(
-                        "📉 Position closed: %s from %s (TP=%.4f, SL=%.4f, max_hold=%ss)",
+                        "📉 Position closed: %s from %s (TP=%.4f, SL=%.4f, max_hold=%ss, ret=%.4f)",
                         pos.direction,
                         pos.entry_timestamp,
                         pos.profit_target_pct if pos.profit_target_pct is not None else float('nan'),
                         pos.stop_loss_pct if pos.stop_loss_pct is not None else float('nan'),
                         pos.max_hold_time_seconds if pos.max_hold_time_seconds is not None else "n/a",
+                        realized_return
                     )
                     self.current_position = None
                     return
@@ -2353,9 +2389,25 @@ class SignalGenerationPipeline:
 
                 # Handle position closes from signal
                 elif signal == 'close' and self.current_position and self.current_position.is_open:
-                    self.current_position.is_open = False
-                    self.position_history.append(self.current_position)
-                    self.logger.info(f"📉 Position closed by signal: {self.current_position.direction}")
+                    # Close position logic duplicated here for signal-based closes
+                    pos = self.current_position
+                    pos.is_open = False
+
+                    # Calculate realized return
+                    current_price = None
+                    realized_return = 0.0
+                    if market_data is not None and not market_data.empty and 'close' in market_data.columns:
+                        current_price = market_data['close'].iloc[-1]
+                        if pos.entry_price is not None:
+                            if pos.direction == 'long':
+                                realized_return = (current_price - pos.entry_price) / pos.entry_price
+                            else:
+                                realized_return = (pos.entry_price - current_price) / pos.entry_price
+
+                    self.realized_returns_history.append(realized_return)
+
+                    self.position_history.append(pos)
+                    self.logger.info(f"📉 Position closed by signal: {pos.direction} (ret=%.4f)", realized_return)
                     self.current_position = None
 
         except Exception as e:
@@ -2518,6 +2570,101 @@ class SignalGenerationPipeline:
         except Exception as e:
             self.logger.error(f"❌ Performance metrics calculation failed: {e}")
             return {}
+
+    def _generate_live_meta_features(
+        self,
+        base_outputs: List[AnalystBaseOutput],
+        timestamp: datetime
+    ) -> Tuple[np.ndarray, Dict[str, Any]]:
+        """
+        Generate live meta-features (Disagreement + Category Meta).
+
+        Args:
+            base_outputs: List of analyst base model outputs
+            timestamp: Current timestamp
+
+        Returns:
+            Tuple of (feature_array, feature_dict)
+        """
+        try:
+            features_list = []
+            features_info = {}
+
+            # 1. Disagreement Features
+            # Extract predictions/confidences
+            base_confidences = {f"model_{i}": np.array([out.base_confidence]) for i, out in enumerate(base_outputs)}
+
+            # Use centralized calculator (adapted for single-row input)
+            # We don't have full history here, so we calculate simple stats on current predictions
+            # If centralized calculator is robust enough for scalar inputs, great. If not, manual calc.
+
+            # Manual calculation for live inference (faster, no overhead)
+            preds = np.array([out.base_confidence for out in base_outputs])
+            if len(preds) > 0:
+                disagreement_vals = [
+                    np.var(preds),                                      # dispersion
+                    np.max(preds) - np.min(preds),                      # range
+                    np.std(preds),                                      # std
+                    0.0, # entropy requires probas, assume 0 for now or calc if avail
+                    0.0, # pairwise requires matrix
+                    np.max(preds),                                      # max conf
+                    0.0  # disagreement rate
+                ]
+                # Try to normalize range/divergence if possible (requires history of std, skip for live simplicity)
+                # Just append raw values as "core features"
+                features_list.extend(disagreement_vals)
+
+                features_info.update({
+                    'disagreement_variance': disagreement_vals[0],
+                    'disagreement_range': disagreement_vals[1]
+                })
+            else:
+                features_list.extend([0.0] * 7) # Fill zeros for missing disagreement
+
+            # 2. BarsSinceLastEvent
+            # Needs 'consensus' history. We define event as high confidence signal.
+            # Look back in signal_history
+            bars_since = 0
+            found_event = False
+
+            # Current consensus
+            current_mean = np.mean(preds) if len(preds) > 0 else 0.0
+            is_event = current_mean > 0.6 # Threshold for "event"
+
+            # Check history (reverse order, most recent first)
+            for i, hist_result in enumerate(reversed(self.signal_history)):
+                # Access analyst confidence from history
+                if hist_result.analyst_output and hist_result.analyst_output.analyst_confidence > 0.6:
+                    bars_since = i + 1 # +1 because history starts from previous bar
+                    found_event = True
+                    break
+
+            if not found_event:
+                bars_since = len(self.signal_history) + 1 # Cap at history length + 1
+
+            features_list.append(float(bars_since))
+            features_info['bars_since_last_event'] = bars_since
+
+            # 3. EventMeanReturn
+            # Uses realized_returns_history
+            window = 50
+            if self.realized_returns_history:
+                # Take last N returns
+                recent_returns = list(self.realized_returns_history)[-window:]
+                mean_return = float(np.mean(recent_returns))
+            else:
+                mean_return = 0.0
+
+            features_list.append(mean_return)
+            features_info['event_mean_return'] = mean_return
+
+            return np.array(features_list), features_info
+
+        except Exception as e:
+            self.logger.error(f"Failed to generate live meta-features: {e}")
+            # Return zeros if failed to avoid pipeline crash
+            # 7 disagreement + 1 bars + 1 return = 9 features
+            return np.zeros(9), {'error': str(e)}
 
     async def stop(self):
         """Stop signal generation pipeline."""

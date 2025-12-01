@@ -18,6 +18,10 @@ import numpy as np
 from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint
+from src.feature_generation.categories.meta_features import (
+    BarsSinceLastEventGenerator,
+    EventMeanReturnGenerator
+)
 
 logger = logging.getLogger(__name__)
 
@@ -484,7 +488,7 @@ class AnalystEnsembleTrainingStep(BaseStep):
                 tprint(f"✅ Loaded base confidence: {base_confidence.shape}", "SUCCESS")
 
             # Step 4: Generate disagreement features
-            tprint("🔧 Step 4/4: Generating disagreement features from base model outputs...", "INFO")
+            tprint("🔧 Step 4/5: Generating disagreement features from base model outputs...", "INFO")
             disagreement_features = self._generate_disagreement_features(base_predictions)
             tprint(f"✅ Generated disagreement features: {disagreement_features.shape}", "SUCCESS")
 
@@ -503,6 +507,15 @@ class AnalystEnsembleTrainingStep(BaseStep):
             )
             tprint("=" * 80, "INFO")
 
+            # Step 5: Generate category meta-features (BarsSinceLastEvent, EventMeanReturn)
+            tprint("🔧 Step 5/5: Generating category meta-features...", "INFO")
+            category_meta_features = self._generate_category_meta_features(
+                base_predictions,
+                target_data,
+                config
+            )
+            tprint(f"✅ Generated category meta-features: {category_meta_features.shape}", "SUCCESS")
+
             # Combine all features
             tprint("🔗 Combining all features for ensemble training...", "INFO")
 
@@ -512,6 +525,7 @@ class AnalystEnsembleTrainingStep(BaseStep):
             base_pred_count = base_predictions.shape[1]
             base_conf_count = base_confidence.shape[1] if base_confidence is not None else 0
             disagreement_count = disagreement_features.shape[1] if not disagreement_features.empty else 0
+            category_meta_count = category_meta_features.shape[1] if not category_meta_features.empty else 0
 
             ensemble_features = self._combine_features(
                 features_data,
@@ -519,6 +533,7 @@ class AnalystEnsembleTrainingStep(BaseStep):
                 base_predictions,
                 base_confidence,
                 disagreement_features,
+                category_meta_features,
                 config
             )
             tprint(f"✅ Combined features shape: {ensemble_features.shape}", "SUCCESS")
@@ -542,11 +557,14 @@ class AnalystEnsembleTrainingStep(BaseStep):
                                           if 'disagreement' in col.lower()])
                 regime_in_final = len([col for col in ensemble_features.columns
                                      if 'regime' in col.lower()])
+                cat_meta_in_final = len([col for col in ensemble_features.columns
+                                        if col in category_meta_features.columns])
 
                 tprint(f"   Label columns: {label_count}", "INFO")
                 tprint(f"   Base predictions: {base_pred_actual}", "INFO")
                 tprint(f"   Disagreement features: {disagreement_actual}", "INFO")
                 tprint(f"   Regime features: {regime_in_final}", "INFO")
+                tprint(f"   Category meta features: {cat_meta_in_final}", "INFO")
                 tprint(f"   Total combined: {ensemble_features.shape[1]}", "INFO")
             else:
                 # Full/light mode - show original breakdown
@@ -555,6 +573,7 @@ class AnalystEnsembleTrainingStep(BaseStep):
                 tprint(f"   Base predictions: {base_pred_count}", "INFO")
                 tprint(f"   Base confidence: {base_conf_count}", "INFO")
                 tprint(f"   Disagreement features: {disagreement_count}", "INFO")
+                tprint(f"   Category meta features: {category_meta_count}", "INFO")
                 tprint(f"   Total combined: {ensemble_features.shape[1]}", "INFO")
 
             tprint_data_preview(
@@ -630,6 +649,108 @@ class AnalystEnsembleTrainingStep(BaseStep):
                 'metrics': {},
                 'error': error_msg
             }
+
+    def _generate_category_meta_features(
+        self,
+        base_predictions: pd.DataFrame,
+        target_data: Optional[pd.DataFrame],
+        config: Dict[str, Any]
+    ) -> pd.DataFrame:
+        """
+        Generate category-specific meta-features (BarsSinceLastEvent, EventMeanReturn).
+
+        Args:
+            base_predictions: DataFrame with base model predictions
+            target_data: DataFrame with targets (optional, needed for EventMeanReturn)
+            config: Configuration dictionary
+
+        Returns:
+            DataFrame with new meta-features
+        """
+        try:
+            # 1. Prepare 'consensus' signal for BarsSinceLastEvent
+            # We derive consensus from base_predictions
+            # Extract probability columns
+            prob_cols = [col for col in base_predictions.columns if '_prob' in col]
+            if not prob_cols:
+                # Fallback to any prediction columns
+                prob_cols = [col for col in base_predictions.columns if '_pred' in col]
+
+            if prob_cols:
+                # Calculate mean signal
+                mean_signal = base_predictions[prob_cols].mean(axis=1)
+                # Determine consensus (e.g., > 0.5 for prob, > 0 for score)
+                # Assuming probabilities 0-1 if names contain 'prob'
+                is_prob = any('_prob' in c for c in prob_cols)
+                threshold = 0.5 if is_prob else 0.0
+
+                consensus = (mean_signal > threshold).astype(int)
+                # If short direction, we might want negative signal, but BarsSinceLastEvent checks != 0
+                # If direction is short, and we predict "short", usually prob > 0.5 means short if trained on binary
+                # But let's stick to 1 = signal, 0 = no signal
+            else:
+                consensus = pd.Series(0, index=base_predictions.index)
+
+            # Prepare input dataframe for generators
+            meta_input = pd.DataFrame(index=base_predictions.index)
+            meta_input['consensus'] = consensus
+
+            # 2. Prepare 'realized_return' and 'binary_label' for EventMeanReturn
+            if target_data is not None:
+                # Try to find a return target
+                target_col = None
+                for col in ['target_long', 'target_short', 'target_dummy']:
+                    if col in target_data.columns:
+                        target_col = col
+                        break
+
+                if target_col:
+                    # realized_return is the target value (future return)
+                    meta_input['realized_return'] = target_data[target_col]
+                    # binary_label is 1 if target > 0 (profit)
+                    meta_input['binary_label'] = (target_data[target_col] > 0).astype(int)
+                    # If target is dummy/binary, just use it
+                    if target_data[target_col].nunique() <= 2:
+                         meta_input['binary_label'] = target_data[target_col]
+
+            # 3. Generate features
+            new_features = []
+
+            # BarsSinceLastEvent
+            try:
+                bars_gen = BarsSinceLastEventGenerator()
+                bars_feat = bars_gen.generate(meta_input)
+                if not bars_feat.empty:
+                    new_features.append(bars_feat)
+            except Exception as e:
+                tprint(f"⚠️ BarsSinceLastEvent generation failed: {e}", "WARNING")
+
+            # EventMeanReturn
+            # Requires realized_return
+            if 'realized_return' in meta_input.columns:
+                try:
+                    event_gen = EventMeanReturnGenerator(window=50)
+                    event_feat = event_gen.generate(meta_input)
+                    if not event_feat.empty:
+                        # IMPORTANT: Shift by 1 to avoid lookahead bias
+                        # EventMeanReturn uses realized_return (future) of the current event in rolling mean.
+                        # So value at T contains info about T. We must shift to make it T-1.
+                        event_feat = event_feat.shift(1)
+                        new_features.append(event_feat)
+                except Exception as e:
+                    tprint(f"⚠️ EventMeanReturn generation failed: {e}", "WARNING")
+
+            if new_features:
+                result = pd.concat(new_features, axis=1)
+                # Align with base_predictions index
+                result = result.reindex(base_predictions.index)
+                return result
+            else:
+                return pd.DataFrame(index=base_predictions.index)
+
+        except Exception as e:
+            tprint(f"⚠️ Failed to generate category meta-features: {e}", "WARNING")
+            return pd.DataFrame(index=base_predictions.index)
 
     def _generate_disagreement_features(self, base_predictions: pd.DataFrame) -> pd.DataFrame:
         """
@@ -740,6 +861,7 @@ class AnalystEnsembleTrainingStep(BaseStep):
         base_predictions: pd.DataFrame,
         base_confidence: Optional[pd.DataFrame],
         disagreement_features: pd.DataFrame,
+        category_meta_features: pd.DataFrame,
         config: Dict[str, Any]
     ) -> pd.DataFrame:
         """Combine all features for ensemble training."""
@@ -839,6 +961,17 @@ class AnalystEnsembleTrainingStep(BaseStep):
                 tprint("   Aligning disagreement_features to common index via reindex (no ffill)", "INFO")
                 disagreement_features = disagreement_features.reindex(common_index)
             combined = combined.join(disagreement_features, how='left')
+
+        # Add category meta features (remove duplicates first)
+        if not category_meta_features.empty:
+            if category_meta_features.index.duplicated().any():
+                self.logger.warning(f"⚠️ Removing {category_meta_features.index.duplicated().sum()} duplicate indices from category_meta_features")
+                category_meta_features = category_meta_features[~category_meta_features.index.duplicated(keep='first')]
+
+            if not category_meta_features.index.equals(common_index):
+                tprint("   Aligning category_meta_features to common index via reindex (no ffill)", "INFO")
+                category_meta_features = category_meta_features.reindex(common_index)
+            combined = combined.join(category_meta_features, how='left')
 
         # Final NA handling (may hide alignment issues if excessive)
         pre_rows = len(combined)

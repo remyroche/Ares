@@ -319,14 +319,18 @@ class TrainingPipelineOrchestrator:
         """Create analyst trainer."""
         try:
             # Default analyst configuration
-            # NOTE: Only LightGBM is enabled here. NGBoost is disabled because the
-            # ngboost library is not installed in the runtime environment, and
-            # DEPTHWISE_CNN (TabR/Mambular) is disabled due to missing Mambular
-            # dependency and poor suitability for tabular features in this setup.
+            # All base models are enabled: LGBM, KNN, NGBoost, BayesianRidge
+            # These will be trained incrementally with rolling OOF predictions
 
-            # Derive analyst base model types from analyst_config.base_models, falling
-            # back to LightGBM only if no mapping is possible.
-            analyst_model_types = [ModelType.LIGHTGBM]
+            # Default: enable all base models for analyst
+            analyst_model_types = [
+                ModelType.LIGHTGBM,
+                ModelType.KNN,
+                ModelType.NGBOOST,
+                ModelType.BAYESIANRIDGE
+            ]
+            
+            # Derive analyst base model types from analyst_config.base_models if provided
             analyst_cfg = self.config.analyst_config or {}
             base_models_cfg = analyst_cfg.get('base_models', {}) or {}
             if base_models_cfg:

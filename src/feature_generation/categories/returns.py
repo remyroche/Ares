@@ -1411,15 +1411,18 @@ def create_returns_generators(periods: Dict[str, List[int]] = None) -> List[Feat
     """Create a set of returns feature generators."""
     if periods is None:
         periods = {
-            'log_returns': [1, 5, 10],
-            'simple_returns': [1, 5, 10],
-            'cumulative_returns': [10, 20],
-            'rolling_returns': [10, 20],
-            'volatility': [20],
-            'skewness': [20],
-            'kurtosis': [20],
-            'sharpe_ratio': [20],
-            'amihud_illiquidity': [20]
+            # Short-horizon returns explicitly include 3,5,7,10,12,15
+            'log_returns': [1, 3, 5, 7, 10, 12, 15],
+            'simple_returns': [1, 3, 5, 7, 10, 12, 15],
+            # Rolling and cumulative returns emphasise 3-15 bar micro-horizons as well
+            'cumulative_returns': [3, 5, 7, 10, 12, 15, 20],
+            'rolling_returns': [3, 5, 7, 10, 12, 15, 20],
+            # Volatility and higher moments include short windows 5-15
+            'volatility': [5, 7, 10, 12, 15, 20],
+            'skewness': [5, 10, 20],
+            'kurtosis': [5, 10, 20],
+            'sharpe_ratio': [5, 10, 20],
+            'amihud_illiquidity': [5, 10, 20]
         }
 
     generators = []
@@ -1465,8 +1468,8 @@ def create_returns_generators(periods: Dict[str, List[int]] = None) -> List[Feat
     for window in periods.get('advanced_cumulative_returns', [10, 20]):
         generators.append(AdvancedCumulativeReturnsGenerator(window))
 
-    # Rolling z-score returns generators
-    for window in periods.get('rolling_zscore_returns', [20]):
+    # Rolling z-score returns generators (short-horizon 3-15 bar stress)
+    for window in periods.get('rolling_zscore_returns', [3, 5, 7, 10, 12, 15, 20]):
         generators.append(RollingZScoreReturnsGenerator(window))
 
     # AR coefficients generators

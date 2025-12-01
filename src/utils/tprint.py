@@ -423,8 +423,7 @@ class TPrintManager:
             try:
                 _original_print(message)
             except BrokenPipeError:
-                sys.stdout.close()
-                sys.exit(0)
+                pass
             return
 
         colored_message = self._get_colored_message(level, message)
@@ -438,8 +437,7 @@ class TPrintManager:
                 _original_print(colored_message, **filtered_kwargs)
             except BrokenPipeError:
                 # Handle broken pipe gracefully (e.g., when piping output)
-                sys.stdout.close()
-                sys.exit(0)
+                pass
 
         if self.config.output_to_file and self._file_handle:
             try:

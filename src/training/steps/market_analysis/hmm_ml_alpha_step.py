@@ -234,20 +234,31 @@ class HMMMLAlphaStep(BaseStep):
                 model="regime",
             )
 
-            await self._ensure_hmm_economic_features(
-                symbol=symbol,
-                exchange=exchange,
-                regime_timeframe=regime_timeframe,
-                direction=direction,
-                config=config,
-            )
+            use_internal_hmm = bool(config.get("alpha_generate_hmm_internally", True))
 
-            labels_df, probs_df, economic_df = self._load_hmm_artifacts(
-                symbol=symbol,
-                exchange=exchange,
-                timeframe=regime_timeframe,
-                config=config,
-            )
+            if use_internal_hmm:
+                labels_df, probs_df, economic_df = await self._generate_hmm_artifacts_internal(
+                    symbol=symbol,
+                    exchange=exchange,
+                    regime_timeframe=regime_timeframe,
+                    direction=direction,
+                    config=config,
+                )
+            else:
+                await self._ensure_hmm_economic_features(
+                    symbol=symbol,
+                    exchange=exchange,
+                    regime_timeframe=regime_timeframe,
+                    direction=direction,
+                    config=config,
+                )
+
+                labels_df, probs_df, economic_df = self._load_hmm_artifacts(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=regime_timeframe,
+                    config=config,
+                )
 
             # ------------------------------------------------------------------
             # 2) Load 1h OHLCV market data
@@ -674,55 +685,11 @@ class HMMMLAlphaStep(BaseStep):
             # This avoids marking alpha_fallback_used=True when primary
             # regime assignment has already succeeded.
             if regime_col_name is None or regime_col_name not in alpha_df.columns:
-                try:
-                    forward_ret_cols = [
-                        col
-                        for col in alpha_df.columns
-                        if col.startswith("alpha_forward_return_")
-                    ]
-                    if forward_ret_cols:
-                        fallback_series = alpha_df[forward_ret_cols[0]].astype(float)
-                        valid_count = fallback_series.notna().sum()
-                        if valid_count >= 3:
-                            pred_col_name_fallback = f"alpha_fallback_score_{forward_ret_cols[0].split('_')[-1]}"
-                            alpha_scores = fallback_series
-                            alpha_df[pred_col_name_fallback] = alpha_scores
-                            alpha_df["alpha_score_continuous"] = alpha_scores
-                            try:
-                                score_base = (
-                                    alpha_df["alpha_score_continuous"]
-                                    .astype(float)
-                                    .replace([np.inf, -np.inf], np.nan)
-                                )
-                                ewm_periods_cfg = config.get("alpha_score_ewm_periods", [3, 5])
-                                try:
-                                    ewm_periods = [int(p) for p in ewm_periods_cfg if int(p) > 0]
-                                except Exception:
-                                    ewm_periods = [3, 5]
-
-                                for period in ewm_periods:
-                                    col_name = f"alpha_score_continuous_ewm_{period}"
-                                    alpha_df[col_name] = score_base.ewm(
-                                        span=period,
-                                        adjust=False,
-                                    ).mean()
-                            except Exception:
-                                pass
-                            alpha_df, regime_stats_df, regime_col_name = self._assign_alpha_regimes(
-                                alpha_df,
-                                alpha_df["alpha_score_continuous"],
-                                config,
-                            )
-                            training_metrics["alpha_fallback_used"] = True
-                            training_metrics["alpha_fallback_source"] = "forward_return"
-                        else:
-                            tprint_warning(
-                                f"Not enough samples ({valid_count}) for fallback alpha regime assignment"
-                            )
-                except Exception as fallback_exc:
-                    tprint_warning(
-                        f"Alpha fallback regime assignment failed; proceeding without regimes: {fallback_exc}"
-                    )
+                raise RuntimeError(
+                    "Alpha regime assignment failed: no regime column produced from primary "
+                    "alpha model / score. Fallback to forward returns has been disabled to "
+                    "force explicit investigation of alpha model/regime issues."
+                )
 
             # ------------------------------------------------------------------
             # 5b) Diagnostics for alpha_score_continuous distribution & economics
@@ -1108,9 +1075,26 @@ class HMMMLAlphaStep(BaseStep):
             else:
                 base_returns = np.log(close).diff()
 
-            vol_window = int(config.get("alpha_target_vol_window", 320))
-            vol_window = max(vol_window, 1)
-            realized_vol = base_returns.rolling(vol_window).std()
+            vol_window_cfg = int(config.get("alpha_target_vol_window", 320))
+            vol_window_cfg = max(vol_window_cfg, 1)
+            n_returns = int(base_returns.shape[0])
+
+            if n_returns <= 0:
+                realized_vol = pd.Series(index=base_returns.index, dtype=float)
+            else:
+                if vol_window_cfg > n_returns:
+                    # Adapt the window to the available history so that we still
+                    # get a meaningful rolling volatility estimate on short
+                    # aligned datasets.
+                    adaptive_base = max(n_returns // 3, 10)
+                    effective_window = max(10, min(vol_window_cfg, adaptive_base))
+                    tprint_warning(
+                        f"alpha_target_vol_window={vol_window_cfg} exceeds available samples ({n_returns}); using adaptive window={effective_window}"
+                    )
+                else:
+                    effective_window = vol_window_cfg
+
+                realized_vol = base_returns.rolling(effective_window).std()
 
             df["alpha_target_raw"] = multi_target
             df["alpha_target_vol"] = realized_vol
@@ -1279,13 +1263,93 @@ class HMMMLAlphaStep(BaseStep):
                 )
                 economic = None
 
-        if economic is not None and not economic.empty:
-            tprint_info(
-                f"ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Loaded economic features: {economic.shape} "
-                f"({economic.index.min()} ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ {economic.index.max()})"
+        return labels, probs, economic
+
+    async def _generate_hmm_artifacts_internal(
+        self,
+        *,
+        symbol: str,
+        exchange: str,
+        regime_timeframe: str,
+        direction: str,
+        config: Dict[str, Any],
+    ) -> Tuple[pd.DataFrame, Optional[pd.DataFrame], Optional[pd.DataFrame]]:
+        """Run RollingHMMRegimeDiscoveryStep to generate fresh HMM artifacts.
+
+        This avoids relying on potentially stale rolling_hmm_regime_* artifacts
+        and instead computes regimes directly from current market data.
+        """
+
+        hmm_config: Dict[str, Any] = {
+            "symbol": symbol,
+            "exchange": exchange,
+            "regime_timeframe": regime_timeframe,
+            "timeframe": regime_timeframe,
+            "execution_mode": str(config.get("execution_mode", "full")).lower(),
+        }
+
+        reuse_hpo_best = bool(config.get("alpha_hmm_reuse_best_params", True))
+        force_hpo = bool(config.get("alpha_hmm_force_hpo", False))
+        if bool(config.get("enable_hpo", False)):
+            force_hpo = True
+
+        hmm_config["reuse_hpo_best_params"] = reuse_hpo_best
+        hmm_config["force_hpo"] = force_hpo
+
+        # Start from any caller-provided rolling_hmm_params, then apply
+        # optimized defaults for internal usage where not explicitly set.
+        rolling_params = dict(config.get("rolling_hmm_params", {})) if "rolling_hmm_params" in config else {}
+
+        if "max_samples_for_hpo" not in rolling_params:
+            rolling_params["max_samples_for_hpo"] = int(
+                config.get("alpha_hmm_max_samples_for_hpo", 8000)
             )
-        else:
-            tprint_warning("No economic features found; proceeding without them")
+        if "hpo_sample_fraction" not in rolling_params:
+            rolling_params["hpo_sample_fraction"] = float(
+                config.get("alpha_hmm_hpo_sample_fraction", 0.3)
+            )
+        if "hpo_stratified_sampling" not in rolling_params:
+            rolling_params["hpo_stratified_sampling"] = bool(
+                config.get("alpha_hmm_hpo_stratified_sampling", True)
+            )
+
+        if rolling_params:
+            hmm_config["rolling_hmm_params"] = rolling_params
+
+        # Allow advanced users to pass through feature/hpo configs when needed.
+        if "feature_config" in config:
+            hmm_config["feature_config"] = config.get("feature_config", {})
+        if "hpo_config" in config:
+            hmm_config["hpo_config"] = config.get("hpo_config", {})
+
+        hmm_step = RollingHMMRegimeDiscoveryStep()
+        hmm_result = await hmm_step.execute(hmm_config)
+
+        if not hmm_result.get("success", False):
+            raise RuntimeError(
+                f"Internal Rolling HMM regime discovery failed inside {self.step_name}: "
+                f"{hmm_result.get('error', 'unknown error')}"
+            )
+
+        artifacts = hmm_result.get("artifacts", {})
+        labels = artifacts.get("labels")
+        probs = artifacts.get("probabilities")
+
+        if labels is None or probs is None:
+            raise RuntimeError(
+                "Internal Rolling HMM regime discovery did not return labels/probabilities DataFrames"
+            )
+
+        # Try to load economic features that Rolling HMM saves as a separate artifact.
+        economic: Optional[pd.DataFrame]
+        try:
+            economic = self._get_artifact(
+                artifact_name="rolling_hmm_economic_features",
+                artifact_type="data",
+            )
+            if economic is not None and not isinstance(economic, pd.DataFrame):
+                economic = pd.DataFrame(economic)
+        except Exception:
             economic = None
 
         return labels, probs, economic
@@ -1555,6 +1619,22 @@ class HMMMLAlphaStep(BaseStep):
             tprint_info(
                 f"ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Temporal splits: train={len(X_train_raw)}, val={len(X_val_raw)}"
             )
+
+            if len(X_train_raw) == 0 or len(X_val_raw) == 0:
+                tprint_warning(
+                    "Temporal split config produced empty train/val segments for alpha_df; "
+                    "falling back to percentage-based split on available alpha samples"
+                )
+                split_config = None
+                train_frac = float(config.get("alpha_train_fraction", 0.8))
+                train_frac = min(max(train_frac, 0.5), 0.95)
+                split_idx = int(len(X) * train_frac)
+                split_idx = max(min(split_idx, len(X) - 1), 1)
+
+                X_train_raw = X.iloc[:split_idx].copy()
+                y_train = y.iloc[:split_idx]
+                X_val_raw = X.iloc[split_idx:].copy()
+                y_val = y.iloc[split_idx:]
         else:
             # Fallback to percentage-based split if no split_config provided
             tprint_warning("No split_config provided, using percentage-based split (legacy fallback)")
@@ -3383,7 +3463,10 @@ class HMMMLAlphaStep(BaseStep):
                     tprint_warning(f"Permutation importance calculation failed: {perm_err}")
 
             # 4. Improved mRMR for redundancy analysis
-            if IMPROVED_MRMR_AVAILABLE and bool(config.get("alpha_enable_mrmr_analysis", True)):
+            # Disabled by default for production/fast runs; enable explicitly via
+            # alpha_enable_mrmr_analysis=True in the config when heavy diagnostics
+            # are desired.
+            if IMPROVED_MRMR_AVAILABLE and bool(config.get("alpha_enable_mrmr_analysis", False)):
                 try:
                     X_full_arr = X_full.to_numpy(dtype=float, copy=False) if hasattr(X_full, 'to_numpy') else X_full
                     y_full_arr = y_full.to_numpy(dtype=float, copy=False) if hasattr(y_full, 'to_numpy') else y_full
@@ -4140,19 +4223,37 @@ class HMMMLAlphaStep(BaseStep):
                 # Per-regime table
                 f.write("## Per-Regime Metrics\n\n")
                 if not regime_df.empty:
-                    f.write(regime_df.to_markdown(index=False))
+                    try:
+                        f.write(regime_df.to_markdown(index=False))
+                    except ImportError:
+                        tprint_warning(
+                            "tabulate not available; falling back to plain-text regime metrics table"
+                        )
+                        f.write(regime_df.to_string(index=False))
                     f.write("\n\n")
                 
                 # Per-quantile table
                 if not quantile_df.empty:
                     f.write("## Per-Quantile Metrics (0-1 Scalar)\n\n")
-                    f.write(quantile_df.to_markdown(index=False))
+                    try:
+                        f.write(quantile_df.to_markdown(index=False))
+                    except ImportError:
+                        tprint_warning(
+                            "tabulate not available; falling back to plain-text quantile metrics table"
+                        )
+                        f.write(quantile_df.to_string(index=False))
                     f.write("\n\n")
                 
                 # Transition matrix
                 f.write("## Transition Matrix\n\n")
                 f.write("Probability of transitioning from row regime to column regime:\n\n")
-                f.write(transition_counts.to_markdown())
+                try:
+                    f.write(transition_counts.to_markdown())
+                except ImportError:
+                    tprint_warning(
+                        "tabulate not available; falling back to plain-text transition matrix"
+                    )
+                    f.write(transition_counts.to_string())
                 f.write("\n\n")
                 
                 # Training metrics summary

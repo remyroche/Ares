@@ -1650,7 +1650,7 @@ class AmihudIlliquidityVWAPDistanceGenerator(VectorizedFeatureGenerator):
 
     def __init__(self, window: int = 20):
         config = FeatureConfig(
-            name="amihud_illiquidity_vwap_distance",
+            name=f"amihud_illiquidity_vwap_distance_{window}",
             category=FeatureCategory.MICROSTRUCTURE,
             description="Amihud illiquidity VWAP distance for market microstructure analysis",
             required_columns=["close", "volume"],
@@ -1825,7 +1825,9 @@ def create_microstructure_feature_generators() -> List[FeatureGenerator]:
     # generators.append(AnalystSpreadNormalizedGenerator())  # DISABLED: Requires bid/ask columns
     generators.append(AnalystTickImbalanceGenerator())
     generators.append(CorwinSchultzSpreadMomentumGenerator())
-    generators.append(AmihudIlliquidityVWAPDistanceGenerator())
+    # VWAP distance features at short horizons 5 and 10 (plus legacy 20)
+    for window in [5, 10, 20]:
+        generators.append(AmihudIlliquidityVWAPDistanceGenerator(window=window))
     generators.append(RollLambdaRVShortGenerator())
     generators.append(RangeVolumeShockOpen30Generator())
 

@@ -23,6 +23,19 @@ import glob
 import pickle
 from pathlib import Path
 import argparse
+import sys
+
+# Ensure project root is on sys.path so `src.*` imports work when running this file directly
+PROJECT_ROOT = Path(__file__).resolve()
+for _ in range(6):
+    if PROJECT_ROOT.name == "src":
+        PROJECT_ROOT = PROJECT_ROOT.parent
+        break
+    PROJECT_ROOT = PROJECT_ROOT.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from src.utils.versioned_artifacts import VersionedArtifactStore
 
 # Suppress warnings for cleaner output in production
 warnings.filterwarnings("ignore")
@@ -83,25 +96,67 @@ class ModelLoader:
             if not os.path.exists(artifacts_dir):
                 artifacts_dir = os.path.abspath('./artifacts')
 
-        model_name = f'analyst_{model_type}_model.pkl'
-        model_path = os.path.join(artifacts_dir, model_name)
+        if model_type == 'ensemble':
+            model_candidates = [os.path.join(artifacts_dir, 'analyst_ensemble_model.pkl')]
+        elif model_type == 'base':
+            base_filenames = [
+                'analyst_base_lightgbm.pkl',
+                'analyst_base_lgbm.pkl',
+                'analyst_base_ngboost.pkl',
+                'analyst_base_bayesianridge.pkl',
+                'analyst_base_knn.pkl',
+            ]
+            model_candidates = [os.path.join(artifacts_dir, name) for name in base_filenames]
+            if not any(os.path.exists(path) for path in model_candidates) and os.path.isdir(artifacts_dir):
+                for fname in sorted(os.listdir(artifacts_dir)):
+                    if (
+                        fname.startswith('analyst_base_')
+                        and fname.endswith('.pkl')
+                        and 'catboost' not in fname
+                    ):
+                        model_candidates.append(os.path.join(artifacts_dir, fname))
+                        break
+        else:
+            raise ValueError(f"Unsupported model_type: {model_type}")
 
-        if not os.path.exists(model_path):
-            raise FileNotFoundError(f"Model not found at {model_path}")
+        model_path = None
+        for cand in model_candidates:
+            if os.path.exists(cand):
+                model_path = cand
+                break
+
+        if model_path is None:
+            raise FileNotFoundError(
+                f"No trained analyst {model_type} model found in {artifacts_dir}. "
+                f"Ensure analyst_{model_type} training has been run first."
+            )
 
         with open(model_path, 'rb') as f:
             artifact = pickle.load(f)
 
-        # Handle both direct model and {model, metadata} dict structures
-        if isinstance(artifact, dict) and 'model' in artifact:
-            model = artifact['model']
-            metadata = artifact.get('metadata', {})
+        # Handle both direct model and dict-based artifacts produced by
+        # ArtifactRouter/_save_pickle. Some training paths store:
+        #   {'data': estimator, 'metadata': {...}, 'saved_at': ...}
+        # while others may already use {'model': estimator, ...}.
+        if isinstance(artifact, dict):
+            if 'model' in artifact:
+                model = artifact['model']
+                metadata = artifact.get('metadata', {})
+            elif 'data' in artifact:
+                model = artifact['data']
+                metadata = artifact.get('metadata', {})
+            else:
+                # Fallback: treat whole dict as model-like object
+                model = artifact
+                metadata = {}
         else:
             model = artifact
             metadata = {}
 
         metadata['model_type'] = model_type
         metadata['loaded_from'] = model_path
+        if model_type == 'base':
+            metadata.setdefault('base_model_id', os.path.basename(model_path).replace('.pkl', ''))
 
         return model, metadata
 
@@ -131,47 +186,373 @@ class ModelLoader:
                 base_dir = os.path.abspath('./versioned_artifacts')
 
         context_path = f"{symbol}_{exchange}_{timeframe}_{direction}_analyst"
-        store_path = os.path.join(base_dir, context_path, 'store.h5')
-        metadata_path = os.path.join(base_dir, context_path, 'metadata.json')
+        store_dir = os.path.join(base_dir, context_path)
 
-        if not os.path.exists(store_path):
-            raise FileNotFoundError(f"Predictions store not found at {store_path}")
+        if not os.path.isdir(store_dir):
+            raise FileNotFoundError(f"Predictions store directory not found at {store_dir}")
 
-        # Load metadata to find latest version
-        metadata = {}
-        if os.path.exists(metadata_path):
-            with open(metadata_path, 'r') as f:
-                metadata = json.load(f)
+        # Use VersionedArtifactStore abstraction instead of raw HDF / pytables
+        store = VersionedArtifactStore(store_dir)
 
-        # Load predictions from HDF5
-        try:
-            # Try to use h5py if available for better control
-            import h5py
-            predictions_df = None
-            with h5py.File(store_path, 'r') as hf:
-                # Find the appropriate version
-                if prediction_type == 'ensemble':
-                    pattern = 'analyst_ensemble_predictions'
-                else:
-                    pattern = 'analyst_base_predictions_oof'
+        # Determine version name pattern
+        if prediction_type == 'ensemble':
+            pattern = 'analyst_ensemble_predictions'
+        else:
+            pattern = 'analyst_base_predictions_oof'
 
-                # Get the latest version matching the pattern
-                versions_group = hf.get('versions', hf)
-                matching_keys = [k for k in versions_group.keys() if pattern in k]
+        versions = store.list_versions()
+        matching_versions = [v for v in versions if pattern in v]
 
-                if matching_keys:
-                    # Sort by timestamp (last part) and get the latest
-                    latest_key = sorted(matching_keys)[-1]
-                    ds = versions_group[latest_key]
-                    predictions_df = pd.DataFrame(ds[()], columns=ds.attrs.get('columns', None))
-        except Exception as e:
-            # Fallback to pandas read_hdf
-            try:
-                predictions_df = pd.read_hdf(store_path, mode='r')
-            except Exception as e2:
-                raise RuntimeError(f"Failed to load predictions: {e2}")
+        # Fallback for base: allow non-OOF predictions if OOF not present
+        if not matching_versions and prediction_type != 'ensemble':
+            alt_pattern = 'analyst_base_predictions'
+            matching_versions = [v for v in versions if alt_pattern in v]
+
+        if not matching_versions:
+            raise FileNotFoundError(
+                f"No versions matching pattern '{pattern}' found in VersionedArtifactStore at {store_dir}"
+            )
+
+        latest_version = sorted(matching_versions)[-1]
+
+        # Materialize the latest predictions version via ArtifactView
+        view = store.get_view(latest_version)
+        predictions_df = view.to_pandas()
+
+        # Retrieve version-specific metadata if available
+        metadata = store.get_version_info(latest_version) or {}
+        metadata.setdefault('version_name', latest_version)
+        metadata.setdefault('store_dir', store_dir)
 
         return predictions_df, metadata
+
+    @staticmethod
+    def load_aligned_targets_for_base(
+        symbol: str = 'ETHUSDT',
+        exchange: str = 'binance',
+        timeframe: str = '15m',
+        direction: str = 'long',
+        base_dir: str = None,
+        reference_version: Optional[str] = None
+    ) -> Optional[pd.Series]:
+        """Load aligned target series for analyst base predictions from VersionedArtifactStore.
+
+        This attempts to find a labeled data or scored historical version that shares
+        the same timestamp token as the predictions version, and then extracts a
+        suitable target column (e.g., alpha_score_continuous).
+        """
+        if base_dir is None:
+            base_dir = os.path.join(os.path.dirname(__file__), '../../../versioned_artifacts')
+            if not os.path.exists(base_dir):
+                base_dir = os.path.abspath('./versioned_artifacts')
+
+        context_path = f"{symbol}_{exchange}_{timeframe}_{direction}_analyst"
+        store_dir = os.path.join(base_dir, context_path)
+
+        if not os.path.isdir(store_dir):
+            return None
+
+        store = VersionedArtifactStore(store_dir)
+        versions = store.list_versions()
+
+        # Extract timestamp token from reference version if provided
+        ts_token: Optional[str] = None
+        if reference_version:
+            parts = reference_version.split('_')
+            # e.g. analyst_base_predictions_oof_20251130_000745_132
+            if len(parts) >= 3:
+                ts_token = f"{parts[-3]}_{parts[-2]}"  # 20251130_000745
+
+        candidate_version: Optional[str] = None
+        label_patterns = [
+            'ml_scored_historical_data_analyst_long_oos',
+            'labeled_data',
+        ]
+
+        for pattern in label_patterns:
+            pattern_versions = [v for v in versions if pattern in v]
+            if not pattern_versions:
+                continue
+
+            if ts_token:
+                aligned = [v for v in pattern_versions if ts_token in v]
+                if aligned:
+                    pattern_versions = aligned
+
+            candidate_version = sorted(pattern_versions)[-1]
+            break
+
+        if not candidate_version:
+            return None
+
+        view = store.get_view(candidate_version)
+        df = view.to_pandas()
+
+        # Heuristic target column selection
+        target_candidates = [
+            'alpha_score_continuous',
+            'trading_signal',
+            'target',
+            'label',
+            'y',
+        ]
+
+        target_col = next((c for c in target_candidates if c in df.columns), None)
+        if target_col is None:
+            return None
+
+        return df[target_col]
+
+    @staticmethod
+    def _build_base_feature_matrix_for_diagnosis(
+        predictions_df: pd.DataFrame,
+        model: Any,
+        pred_metadata: Dict,
+        symbol: str,
+        exchange: str,
+        timeframe: str,
+        direction: str,
+        base_dir: Optional[str] = None,
+    ) -> pd.DataFrame:
+        """Load full scored historical data and use it as the feature matrix for base diagnostics.
+
+        This ensures the Architect module analyzes the true feature space instead of treating
+        base-model predictions as features.
+        """
+        # Derive store directory either from metadata or default convention
+        store_dir = None
+        if isinstance(pred_metadata, dict):
+            store_dir = pred_metadata.get("store_dir")
+        if store_dir is None:
+            if base_dir is None:
+                base_dir = os.path.join(os.path.dirname(__file__), "../../../versioned_artifacts")
+                if not os.path.exists(base_dir):
+                    base_dir = os.path.abspath("./versioned_artifacts")
+            context_path = f"{symbol}_{exchange}_{timeframe}_{direction}_analyst"
+            store_dir = os.path.join(base_dir, context_path)
+
+        if not os.path.isdir(store_dir):
+            # Fallback: use whatever non-target numeric columns exist in predictions_df
+            return predictions_df.drop(columns=["prediction", "target"], errors="ignore")
+
+        store = VersionedArtifactStore(store_dir)
+        versions = store.list_versions()
+
+        # Reuse label patterns to locate the scored historical artifact
+        label_patterns = [
+            "ml_scored_historical_data_analyst_long_oos",
+            "labeled_data",
+        ]
+
+        candidate_version: Optional[str] = None
+        # Try to align by timestamp token from predictions version if available
+        ts_token: Optional[str] = None
+        if isinstance(pred_metadata, dict):
+            ref_version = pred_metadata.get("version_name")
+            if isinstance(ref_version, str):
+                parts = ref_version.split("_")
+                if len(parts) >= 3:
+                    ts_token = f"{parts[-3]}_{parts[-2]}"
+
+        for pattern in label_patterns:
+            pattern_versions = [v for v in versions if pattern in v]
+            if not pattern_versions:
+                continue
+
+            if ts_token:
+                aligned = [v for v in pattern_versions if ts_token in v]
+                if aligned:
+                    pattern_versions = aligned
+
+            candidate_version = sorted(pattern_versions)[-1]
+            break
+
+        if not candidate_version:
+            return predictions_df.drop(columns=["prediction", "target"], errors="ignore")
+
+        view = store.get_view(candidate_version)
+        df = view.to_pandas()
+
+        # Drop obvious target/label columns; keep primarily numeric features
+        target_like = {
+            "alpha_score_continuous",
+            "trading_signal",
+            "target",
+            "label",
+            "y",
+        }
+        drop_cols = [c for c in df.columns if c in target_like]
+        feature_df = df.drop(columns=drop_cols, errors="ignore")
+
+        # Prefer numeric columns for diagnostics
+        feature_df = feature_df.select_dtypes(include=[np.number])
+
+        # Align feature matrix to predictions index
+        feature_df = feature_df.reindex(predictions_df.index)
+
+        # Try to align columns with the model's training feature set to
+        # avoid shape-mismatch errors (e.g. LightGBM 11 vs 28 features).
+        try:
+            feature_df = ModelLoader._align_feature_matrix_to_model(model, feature_df)
+        except Exception:
+            # Best-effort only; if anything fails, fall back to full feature_df
+            pass
+
+        return feature_df
+
+    @staticmethod
+    def _infer_training_feature_columns(model: Any, candidate_columns) -> List[str]:
+        """Infer which columns were used during model training.
+
+        Uses library-specific hooks when available (e.g., LightGBM Booster
+        feature names) and falls back to n_features_in_ or all columns.
+        """
+        cols = list(candidate_columns)
+
+        # LightGBM Booster
+        try:
+            import lightgbm as _lgb  # type: ignore
+        except Exception:  # pragma: no cover - optional dep
+            _lgb = None
+
+        if _lgb is not None and isinstance(model, _lgb.Booster):
+            # 1) Prefer explicit feature names
+            try:
+                names = model.feature_name()
+                if isinstance(names, (list, tuple)):
+                    selected = [c for c in names if c in cols]
+                    if selected:
+                        return selected
+            except Exception:
+                pass
+
+            # 2) Fallback: use num_feature() to cap column count
+            try:
+                n_feat = model.num_feature()
+                if isinstance(n_feat, int) and 0 < n_feat <= len(cols):
+                    return cols[:n_feat]
+            except Exception:
+                pass
+
+        # Generic scikit-learn style models with named features
+        for attr in ("feature_name_", "feature_names_in_"):
+            if hasattr(model, attr):
+                try:
+                    names = getattr(model, attr)
+                    if isinstance(names, (list, tuple)):
+                        selected = [c for c in names if c in cols]
+                        if selected:
+                            return selected
+                except Exception:
+                    pass
+
+        # Fallback: respect n_features_in_ if present
+        n_feat = getattr(model, "n_features_in_", None)
+        try:
+            if isinstance(n_feat, int) and 0 < n_feat <= len(cols):
+                return cols[:n_feat]
+        except Exception:
+            pass
+
+        # Last resort: return all candidate columns
+        return cols
+
+    @staticmethod
+    def _align_feature_matrix_to_model(model: Any, feature_df: pd.DataFrame) -> pd.DataFrame:
+        if feature_df is None or feature_df.empty:
+            return feature_df
+
+        cols = list(feature_df.columns)
+
+        training_cols = None
+        if hasattr(model, "__feature_cols__"):
+            try:
+                training_cols = list(getattr(model, "__feature_cols__"))
+            except Exception:
+                training_cols = None
+
+        if not training_cols:
+            training_cols = ModelLoader._infer_training_feature_columns(model, cols)
+
+        if not training_cols:
+            return feature_df
+
+        training_cols = list(training_cols)
+
+        for c in training_cols:
+            if c not in feature_df.columns:
+                feature_df[c] = 0.0
+
+        feature_df = feature_df[training_cols]
+
+        return feature_df
+
+    @staticmethod
+    def _safe_predict(model: Any, X: Any):
+        try:
+            import lightgbm as _lgb  # type: ignore
+        except Exception:
+            _lgb = None
+
+        if _lgb is not None and isinstance(model, _lgb.Booster):
+            try:
+                return model.predict(X, predict_disable_shape_check=True)
+            except TypeError:
+                return model.predict(X)
+
+        return model.predict(X)
+
+    @staticmethod
+    def _build_ensemble_feature_matrix_for_diagnosis(
+        predictions_df: pd.DataFrame,
+        pred_metadata: Dict,
+        symbol: str,
+        exchange: str,
+        timeframe: str,
+        direction: str,
+        base_dir: Optional[str] = None,
+    ) -> pd.DataFrame:
+        """Load base-model outputs (plus disagreement features if available) for ensemble diagnostics."""
+        store_dir = None
+        if isinstance(pred_metadata, dict):
+            store_dir = pred_metadata.get("store_dir")
+        if store_dir is None:
+            if base_dir is None:
+                base_dir = os.path.join(os.path.dirname(__file__), "../../../versioned_artifacts")
+                if not os.path.exists(base_dir):
+                    base_dir = os.path.abspath("./versioned_artifacts")
+            context_path = f"{symbol}_{exchange}_{timeframe}_{direction}_analyst"
+            store_dir = os.path.join(base_dir, context_path)
+
+        if not os.path.isdir(store_dir):
+            return predictions_df.drop(columns=["prediction", "target"], errors="ignore")
+
+        store = VersionedArtifactStore(store_dir)
+        versions = store.list_versions()
+
+        # Prefer OOF base predictions, fall back to full base predictions which
+        # may already include disagreement features.
+        base_version: Optional[str] = None
+        preferred_patterns = [
+            "analyst_base_predictions_oof",
+            "analyst_base_predictions",
+        ]
+        for pattern in preferred_patterns:
+            pattern_versions = [v for v in versions if pattern in v]
+            if pattern_versions:
+                base_version = sorted(pattern_versions)[-1]
+                break
+
+        if not base_version:
+            return predictions_df.drop(columns=["prediction", "target"], errors="ignore")
+
+        base_view = store.get_view(base_version)
+        base_df = base_view.to_pandas()
+
+        # Use numeric columns from base predictions (per-model outputs + any disagreement features)
+        feature_df = base_df.select_dtypes(include=[np.number])
+        feature_df = feature_df.reindex(predictions_df.index)
+        return feature_df
 
     @staticmethod
     def auto_initialize_diagnostician(
@@ -202,22 +583,83 @@ class ModelLoader:
             direction=direction, prediction_type=model_type
         )
 
-        # Use provided test data or extract from predictions
+        # Use provided test data or extract from artifacts
         if test_data is not None:
             X_test = test_data.get('X_test')
             y_test = test_data.get('y_test')
             X_train = test_data.get('X_train')
             y_train = test_data.get('y_train')
         else:
-            # Try to reconstruct from predictions_df
-            X_test = predictions_df.drop(columns=['prediction', 'target'], errors='ignore')
-            y_test = predictions_df.get('target') if 'target' in predictions_df else None
+            # Targets: first try directly from predictions, then aligned labels for base
             X_train = None
             y_train = None
+            y_test = predictions_df.get('target') if 'target' in predictions_df else None
+
+            # For base models, attempt to load aligned targets from VersionedArtifactStore
+            if y_test is None and model_type == 'base':
+                try:
+                    ref_version = pred_metadata.get('version_name') if isinstance(pred_metadata, dict) else None
+                    target_series = ModelLoader.load_aligned_targets_for_base(
+                        symbol=symbol,
+                        exchange=exchange,
+                        timeframe=timeframe,
+                        direction=direction,
+                        reference_version=ref_version,
+                    )
+                    if target_series is not None:
+                        # Align to predictions index
+                        y_test = target_series.reindex(predictions_df.index)
+                except Exception:
+                    # Non-fatal here; we'll validate below
+                    pass
+
+            # Features: build mode-specific feature matrix so Architect sees the
+            # correct feature space for each model type.
+            if model_type == 'base':
+                X_test = ModelLoader._build_base_feature_matrix_for_diagnosis(
+                    predictions_df,
+                    model,
+                    pred_metadata,
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    direction=direction,
+                )
+            elif model_type == 'ensemble':
+                X_test = ModelLoader._build_ensemble_feature_matrix_for_diagnosis(
+                    predictions_df,
+                    pred_metadata,
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    direction=direction,
+                )
+            else:
+                # Fallback: treat auxiliary columns in predictions as features
+                X_test = predictions_df.drop(columns=['prediction', 'target'], errors='ignore')
+
+        if y_test is None:
+            raise ValueError(
+                "Could not locate target series for diagnostics. "
+                "Ensure labeled data or ml_scored_historical_data is available in versioned_artifacts."
+            )
 
         # Extract predictions (assume column name is 'prediction' or first numeric column)
         if 'prediction' in predictions_df.columns:
             y_pred = predictions_df['prediction'].values
+        elif model_type == 'base':
+            base_id = None
+            if isinstance(model_metadata, dict):
+                base_id = model_metadata.get('base_model_id')
+            base_col = None
+            if isinstance(base_id, str) and base_id.startswith('analyst_base_'):
+                short_name = base_id.replace('analyst_base_', '')
+                if short_name in predictions_df.columns:
+                    base_col = short_name
+            if base_col is None:
+                numeric_cols = predictions_df.select_dtypes(include=[np.number]).columns
+                base_col = numeric_cols[0] if len(numeric_cols) > 0 else None
+            y_pred = predictions_df[base_col].values if base_col is not None else None
         else:
             # Find first numeric column that looks like prediction
             numeric_cols = predictions_df.select_dtypes(include=[np.number]).columns
@@ -225,6 +667,37 @@ class ModelLoader:
 
         if y_pred is None:
             raise ValueError("Could not extract predictions from data")
+
+        # ------------------------------------------------------------------
+        # Sanity filter: drop rows with NaNs in targets, predictions, or
+        # base-feature columns to avoid sklearn crashes in diagnostics.
+        # ------------------------------------------------------------------
+        import numpy as _np
+        import pandas as _pd
+
+        index = predictions_df.index
+        y_pred_series = _pd.Series(y_pred, index=index)
+
+        mask = _pd.Series(True, index=index)
+        mask &= y_pred_series.notna()
+        if isinstance(y_test, _pd.Series):
+            mask &= y_test.notna()
+        else:
+            # Best-effort: construct Series for boolean mask
+            mask &= _pd.Series(_np.isfinite(_np.asarray(y_test)), index=index)
+
+        if isinstance(X_test, _pd.DataFrame) and not X_test.empty:
+            mask &= X_test.replace([_np.inf, -_np.inf], _np.nan).notna().all(axis=1)
+
+        valid_count = int(mask.sum())
+        if valid_count == 0:
+            raise ValueError("No valid samples remain after filtering NaNs in y and predictions")
+
+        if isinstance(X_test, _pd.DataFrame):
+            X_test = X_test.loc[mask]
+        if isinstance(y_test, _pd.Series):
+            y_test = y_test.loc[mask]
+        y_pred = y_pred_series.loc[mask].values
 
         # Create diagnostician
         diag = ModelDiagnostician(model, X_test, y_test, y_pred, X_train, y_train)
@@ -282,21 +755,45 @@ class ModelDiagnostician:
         """Run all diagnostic tests and return a structured dictionary."""
         results = {}
         print("Running Oracle Diagnostics...")
-        results['oracle'] = self.oracle.run_all()
+        try:
+            results['oracle'] = self.oracle.run_all()
+        except Exception as e:
+            results['oracle'] = {'error': str(e)}
         print("Running Performance Metrics...")
-        results['performance'] = self.performance_analyst.run_all()
+        try:
+            results['performance'] = self.performance_analyst.run_all()
+        except Exception as e:
+            results['performance'] = {'error': str(e)}
         print("Running Architect Diagnostics...")
-        results['architect'] = self.architect.run_all()
+        try:
+            results['architect'] = self.architect.run_all()
+        except Exception as e:
+            results['architect'] = {'error': str(e)}
         print("Running Critic Diagnostics...")
-        results['critic'] = self.critic.run_all()
+        try:
+            results['critic'] = self.critic.run_all()
+        except Exception as e:
+            results['critic'] = {'error': str(e)}
         print("Running Navigator Diagnostics...")
-        results['navigator'] = self.navigator.run_all()
+        try:
+            results['navigator'] = self.navigator.run_all()
+        except Exception as e:
+            results['navigator'] = {'error': str(e)}
         print("Running Stress Tester Diagnostics...")
-        results['stress_tester'] = self.stress_tester.run_all()
+        try:
+            results['stress_tester'] = self.stress_tester.run_all()
+        except Exception as e:
+            results['stress_tester'] = {'error': str(e)}
         print("Running Historian Diagnostics...")
-        results['historian'] = self.historian.run_all()
+        try:
+            results['historian'] = self.historian.run_all()
+        except Exception as e:
+            results['historian'] = {'error': str(e)}
         print("Running Calibration Auditor...")
-        results['calibration'] = self.calibration_auditor.run_all()
+        try:
+            results['calibration'] = self.calibration_auditor.run_all()
+        except Exception as e:
+            results['calibration'] = {'error': str(e)}
         return results
 
     def generate_report(self, results: Dict[str, Any], output_path: str = "diagnosis_report.html"):
@@ -647,48 +1144,81 @@ class ModelDiagnostician:
 
         def calculate_permutation_importance(self) -> Dict:
             """2.4b Permutation Importance - True reliance on features with stability score"""
-            if not PERMUTATION_IMPORTANCE_AVAILABLE:
-                return {"error": "PermutationImportanceCalculator not available"}
-
             try:
-                # Create configuration for permutation importance
-                perm_config = PermutationConfig(
-                    n_repeats=10,
-                    random_state=42,
-                    n_jobs=-1
+                # Use a lightweight, model-agnostic permutation importance that
+                # works directly with pandas DataFrames. This avoids API
+                # mismatches between numpy arrays and models that expect
+                # DataFrame inputs with .values access.
+
+                if self.p.X_test is None or self.p.X_test.empty:
+                    return {"error": "No features available for permutation importance"}
+                if self.p.y_test is None:
+                    return {"error": "Target y_test is not available for permutation importance"}
+
+                X = self.p.X_test
+                y = self.p.y_test
+
+                model = self.p.model
+                seen = set()
+                while isinstance(model, dict) and 'model' in model and id(model) not in seen:
+                    seen.add(id(model))
+                    model = model['model']
+
+                if not hasattr(model, 'predict'):
+                    return {"error": "Underlying model has no predict() method; cannot compute permutation importance"}
+
+                baseline_pred = ModelLoader._safe_predict(model, X)
+                baseline_r2 = r2_score(y, baseline_pred)
+
+                if not np.isfinite(baseline_r2):
+                    return {"error": "Baseline R² is not finite; cannot compute permutation importance"}
+
+                feature_names = list(X.columns)
+                n_features = len(feature_names)
+                n_repeats = 5
+                rng = np.random.RandomState(42)
+
+                all_scores = np.zeros((n_repeats, n_features), dtype=float)
+
+                for r in range(n_repeats):
+                    for j, col in enumerate(feature_names):
+                        X_perm = X.copy()
+                        X_perm[col] = rng.permutation(X_perm[col].values)
+                        perm_pred = ModelLoader._safe_predict(model, X_perm)
+                        score = r2_score(y, perm_pred)
+                        all_scores[r, j] = baseline_r2 - score
+
+                importance_mean = all_scores.mean(axis=0)
+                importance_std = all_scores.std(axis=0)
+
+                # Build top-features mapping
+                top_features: Dict[str, Dict[str, Any]] = {}
+                order = np.argsort(-np.abs(importance_mean))
+                for rank_idx, feat_idx in enumerate(order[:5], 1):
+                    feat_name = feature_names[feat_idx]
+                    top_features[feat_name] = {
+                        "importance": float(importance_mean[feat_idx]),
+                        "std": float(importance_std[feat_idx]),
+                        "rank": rank_idx,
+                    }
+
+                # Simple interpretability score based on coefficient of variation
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    cvs = np.where(
+                        np.abs(importance_mean) > 0,
+                        importance_std / np.abs(importance_mean),
+                        np.inf,
+                    )
+                valid_cvs = cvs[np.isfinite(cvs)]
+                interpretability_score = (
+                    float(1.0 / (1.0 + np.mean(valid_cvs))) if valid_cvs.size else 0.0
                 )
-
-                calculator = PermutationImportanceCalculator(perm_config)
-
-                # Calculate importance
-                importance_result = calculator.calculate_importance(
-                    model=self.p.model,
-                    X=self.p.X_test.values.astype(np.float64),
-                    y=self.p.y_test.values.astype(np.float64),
-                    scoring='r2'
-                )
-
-                # Extract top features and stability
-                top_features = {}
-                if importance_result and 'importances' in importance_result:
-                    importances = importance_result['importances']
-                    for idx, (feature, importance) in enumerate(
-                        sorted(zip(self.p.X_test.columns, importances),
-                               key=lambda x: abs(x[1]), reverse=True)[:5]
-                    ):
-                        top_features[feature] = {
-                            "importance": float(importance),
-                            "rank": idx + 1
-                        }
-
-                # Add stability metrics if available
-                stability_scores = importance_result.get('stability_scores', {})
 
                 return {
-                    "method": "PermutationImportance",
+                    "method": "SimplePermutationImportance",
                     "top_features": top_features,
-                    "stability_scores": stability_scores,
-                    "interpretability_score": importance_result.get('interpretability_score', 0.0)
+                    "stability_scores": {},
+                    "interpretability_score": interpretability_score,
                 }
 
             except Exception as e:
@@ -701,13 +1231,27 @@ class ModelDiagnostician:
 
             try:
                 complexity_config = ModelComplexityConfig()
+
+                try:
+                    import lightgbm as _lgb  # type: ignore
+                except Exception:
+                    _lgb = None
+
+                model = self.p.model
+                if isinstance(model, dict) and 'model' in model:
+                    model = model['model']
+
+                if _lgb is not None and isinstance(model, _lgb.Booster):
+                    complexity_config.enable_overfitting_risk_assessment = False
+                    complexity_config.enable_performance_impact_analysis = False
+
                 analyzer = ModelComplexityAnalyzer(complexity_config)
 
                 # Analyze model complexity
                 complexity_report = analyzer.analyze_model_complexity(
-                    model=self.p.model,
-                    X=self.p.X_test.values.astype(np.float64),
-                    y=self.p.y_test.values.astype(np.float64)
+                    model=model,
+                    X=self.p.X_test,
+                    y=self.p.y_test
                 )
 
                 return {
@@ -952,10 +1496,15 @@ class ModelDiagnostician:
             # Add 1% noise to features and see if predictions flip sign
             noise = np.random.normal(0, 0.01, self.p.X_test.shape)
             X_noisy = self.p.X_test + noise
-            
+
             try:
-                # This requires the model object to run predict
-                y_pred_noisy = self.p.model.predict(X_noisy)
+                model = self.p.model
+                seen = set()
+                while isinstance(model, dict) and 'model' in model and id(model) not in seen:
+                    seen.add(id(model))
+                    model = model['model']
+
+                y_pred_noisy = ModelLoader._safe_predict(model, X_noisy)
                 
                 # Check Sign Flips
                 sign_flips = np.mean(np.sign(self.p.y_pred) != np.sign(y_pred_noisy))
@@ -2530,9 +3079,18 @@ class DiagnosisReporter:
     def _create_dashboard_plots(self):
         """Creates a Plotly subplot figure with key diagnostic charts."""
         fig = make_subplots(
-            rows=2, cols=2,
-            subplot_titles=("Residual Distribution vs Normal", "Noise Ceiling Gap", 
-                           "Bootstrap R² CI", "Autocorrelation Check")
+            rows=2,
+            cols=2,
+            specs=[
+                [{"type": "xy"}, {"type": "domain"}],
+                [{"type": "xy"}, {"type": "domain"}],
+            ],
+            subplot_titles=(
+                "Residual Distribution vs Normal",
+                "Noise Ceiling Gap",
+                "Bootstrap R² CI",
+                "Autocorrelation Check",
+            ),
         )
 
         r = self.results
@@ -2548,13 +3106,16 @@ class DiagnosisReporter:
 
         # Plot 2: Feature Ablation / Dead Features (Architect)
         dead_count = r.get('architect', {}).get('ablation', {}).get('dead_features_count', 0)
-        fig.add_trace(go.Indicator(
-            mode = "number+gauge",
-            value = dead_count,
-            title = {"text": "Dead Features"},
-            domain = {'row': 0, 'column': 1},
-            gauge = {'axis': {'range': [None, 50]}, 'bar': {'color': "darkred"}}
-        ), row=1, col=2)
+        fig.add_trace(
+            go.Indicator(
+                mode="number+gauge",
+                value=dead_count,
+                title={"text": "Dead Features"},
+                gauge={"axis": {"range": [None, 50]}, "bar": {"color": "darkred"}},
+            ),
+            row=1,
+            col=2,
+        )
 
         # Plot 3: Bootstrap CI (Stress Tester)
         ci = r.get('stress_tester', {}).get('bootstrap_ci', {})
@@ -2574,20 +3135,24 @@ class DiagnosisReporter:
 
         # Plot 4: Autocorrelation Gauge (Critic)
         ac = abs(r.get('critic', {}).get('residual_autocorr', {}).get('lag1_autocorr', 0))
-        fig.add_trace(go.Indicator(
-            mode = "number+gauge",
-            value = ac,
-            title = {"text": "Residual Autocorr"},
-            gauge = {
-                'axis': {'range': [0, 0.5]},
-                'bar': {'color': "green" if ac < 0.1 else "red"},
-                'steps': [
-                    {'range': [0, 0.1], 'color': "lightgreen"},
-                    {'range': [0.1, 0.2], 'color': "yellow"},
-                    {'range': [0.2, 0.5], 'color': "salmon"}
-                ]
-            }
-        ), row=2, col=2)
+        fig.add_trace(
+            go.Indicator(
+                mode="number+gauge",
+                value=ac,
+                title={"text": "Residual Autocorr"},
+                gauge={
+                    "axis": {"range": [0, 0.5]},
+                    "bar": {"color": "green" if ac < 0.1 else "red"},
+                    "steps": [
+                        {"range": [0, 0.1], "color": "lightgreen"},
+                        {"range": [0.1, 0.2], "color": "yellow"},
+                        {"range": [0.2, 0.5], "color": "salmon"},
+                    ],
+                },
+            ),
+            row=2,
+            col=2,
+        )
 
         fig.update_layout(height=700, title_text=f"Diagnostic Overview: {self.model_name}", template="plotly_dark")
         return fig
@@ -2637,7 +3202,7 @@ class DiagnosisReporter:
                 
                 <h2>📝 Raw Metrics</h2>
                 <div class="json-dump">
-                    <pre>{json.dumps(self.results, indent=2)}</pre>
+                    <pre>{json.dumps(self.results, indent=2, default=str)}</pre>
                 </div>
             </div>
         </body>

@@ -663,6 +663,16 @@ class ModelComplexityAnalyzer:
     def _evaluate_model(self, model: Any, X: np.ndarray, y: np.ndarray, is_classification: bool) -> float:
         """Evaluate model performance."""
         try:
+            # Some callers may accidentally pass a wrapper dict or other objects
+            # without a predict() method (e.g., training metadata). In that case,
+            # skip evaluation gracefully instead of logging a noisy error.
+            if not hasattr(model, "predict"):
+                logger.warning(
+                    "Model evaluation skipped: provided model has no predict() method "
+                    f"(type={type(model).__name__})"
+                )
+                return 0.0
+
             if is_classification:
                 y_pred = model.predict(X)
                 return accuracy_score(y, y_pred)

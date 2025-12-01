@@ -319,7 +319,7 @@ class LightGBMFeatureSelector(BaseAdvancedSelector):
             raise ImportError("LightGBM is required for LightGBMFeatureSelector")
         super().__init__(config)
 
-    def _fit_model(self, X: np.ndarray, y: np.ndarray) -> lgb.LGBMRegressor:
+    def _fit_model(self, X: np.ndarray, y: np.ndarray) -> "lgb.LGBMRegressor":
         """Fit LightGBM model."""
         # Determine if classification or regression
         is_classification = len(np.unique(y)) < 10 and np.all(y == y.astype(int))

@@ -229,17 +229,48 @@ class TrainingMetricsCollector:
                 
                 # Train model on fold
                 try:
+                    # For models that cannot handle NaNs natively (e.g., BayesianRidge),
+                    # drop rows with NaN in X or y before fitting.
+                    X_train_fold, y_train_fold = X_train, y_train
+                    X_val_fold, y_val_fold = X_val, y_val
+
+                    if 'bayesianridge' in model_type.lower():
+                        try:
+                            train_mask = X_train_fold.notna().all(axis=1) & y_train_fold.notna()
+                            val_mask = X_val_fold.notna().all(axis=1) & y_val_fold.notna()
+                            dropped_train = int((~train_mask).sum())
+                            dropped_val = int((~val_mask).sum())
+                            if dropped_train > 0 or dropped_val > 0:
+                                tprint_warning(
+                                    f"⚠️ Fold {fold}: dropping {dropped_train} train and {dropped_val} val "
+                                    "samples with NaNs for BayesianRidge pre-HPO metrics"
+                                )
+                            X_train_fold = X_train_fold[train_mask]
+                            y_train_fold = y_train_fold[train_mask]
+                            X_val_fold = X_val_fold[val_mask]
+                            y_val_fold = y_val_fold[val_mask]
+                            if len(X_train_fold) == 0 or len(X_val_fold) == 0:
+                                tprint_warning(
+                                    f"⚠️ Fold {fold}: no valid samples remain after NaN filtering for "
+                                    "BayesianRidge; skipping this fold."
+                                )
+                                continue
+                        except Exception as nan_exc:
+                            tprint_warning(
+                                f"⚠️ Fold {fold}: failed to clean NaNs for BayesianRidge pre-HPO metrics: {nan_exc}"
+                            )
+
                     # Handle different model types
                     if hasattr(model, 'fit'):
-                        model.fit(X_train, y_train)
+                        model.fit(X_train_fold, y_train_fold)
                     
                     # Get predictions
-                    train_pred = model.predict(X_train)
-                    val_pred = model.predict(X_val)
+                    train_pred = model.predict(X_train_fold)
+                    val_pred = model.predict(X_val_fold)
                     
                     # Calculate metrics
-                    train_metrics = self._calculate_metrics(y_train, train_pred, is_classification)
-                    val_metrics = self._calculate_metrics(y_val, val_pred, is_classification)
+                    train_metrics = self._calculate_metrics(y_train_fold, train_pred, is_classification)
+                    val_metrics = self._calculate_metrics(y_val_fold, val_pred, is_classification)
                     
                     fold_time = time.time() - fold_start
                     
@@ -541,6 +572,50 @@ class TrainingMetricsCollector:
             f.write(report)
         
         tprint_success(f"📄 Training report saved to: {filepath}")
+        return filepath
+    
+    def save_metrics_csv(self) -> Path:
+        """Save a consolidated CSV of post-HPO metrics for all models.
+
+        Each row corresponds to one model (LightGBM, KNN, NGBoost, BayesianRidge, etc.)
+        and includes its model_name, model_type, and all available post-HPO metrics.
+        """
+        if not self.current_session:
+            raise ValueError("No active session to save metrics for")
+
+        if not self.current_session.model_metrics:
+            # Nothing to save; create an empty CSV for traceability
+            filename = f"{self.current_session.session_id}_training_metrics.csv"
+            filepath = self.outcomes_dir / filename
+            pd.DataFrame().to_csv(filepath, index=False)
+            tprint_warning(f"⚠️ No model metrics to save; created empty CSV at: {filepath}")
+            return filepath
+
+        # Collect union of all post-HPO metric names across models
+        metric_names = set()
+        for m in self.current_session.model_metrics:
+            metric_names.update(m.post_hpo_metrics.keys())
+
+        # Stable ordering
+        metric_names = sorted(metric_names)
+
+        rows: List[Dict[str, Any]] = []
+        for m in self.current_session.model_metrics:
+            row: Dict[str, Any] = {
+                'model_name': m.model_name,
+                'model_type': m.model_type,
+                'hpo_n_trials': m.hpo_n_trials,
+                'hpo_time': m.hpo_time,
+            }
+            for name in metric_names:
+                row[name] = m.post_hpo_metrics.get(name, np.nan)
+            rows.append(row)
+
+        df = pd.DataFrame(rows)
+        filename = f"{self.current_session.session_id}_training_metrics.csv"
+        filepath = self.outcomes_dir / filename
+        df.to_csv(filepath, index=False)
+        tprint_success(f"📊 Training metrics CSV saved to: {filepath}")
         return filepath
     
     def _get_primary_metric_name(self, is_classification: bool = False) -> str:

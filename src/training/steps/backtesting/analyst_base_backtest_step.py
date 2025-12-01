@@ -125,7 +125,9 @@ class AnalystBaseBacktestStep(BaseStep):
             if price_data is None or not isinstance(price_data, pd.DataFrame) or price_data.empty:
                 raise ValueError("Price data not available or empty for backtest")
 
-            price_df = price_data.copy().sort_index()
+            price_df = price_data.copy()
+            price_df = self._normalize_datetime_index(price_df, "price data")
+            price_df = price_df.sort_index()
             if "close" not in price_df.columns:
                 raise ValueError("Price data is missing 'close' column")
 
@@ -147,7 +149,9 @@ class AnalystBaseBacktestStep(BaseStep):
             if not isinstance(ml_scored, pd.DataFrame) or ml_scored.empty:
                 raise ValueError(f"ML-scored artifact '{artifact_name}' is empty or not a DataFrame")
 
-            ml_df = ml_scored.copy().sort_index()
+            ml_df = ml_scored.copy()
+            ml_df = self._normalize_datetime_index(ml_df, "ML-scored data")
+            ml_df = ml_df.sort_index()
 
             # ------------------------------------------------------------------
             # 3) Align indices between price data and ML predictions

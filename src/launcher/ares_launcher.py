@@ -108,7 +108,13 @@ except Exception as e:
         e,
     )
 
-# import src.training.steps.backtesting  # Registers BACKTESTING steps - temporarily disabled due to import issues
+try:
+    import src.training.steps.backtesting  # Registers BACKTESTING steps
+except Exception as e:
+    logger.warning(
+        "BACKTESTING steps could not be imported and will be unavailable: %s",
+        e,
+    )
 
 
 class SimplifiedAresLauncher:
@@ -364,6 +370,7 @@ Examples:
     regime_group.add_argument('--regime-models-training', action='store_true', help='Train machine learning models for regime classification')
     regime_group.add_argument('--regime-ensemble-training', action='store_true', help='Train ensemble models for regime classification using meta-learning')
     regime_group.add_argument('--hmm-macro-regime', action='store_true', help='Run HMM macro alpha / macro regime step from Rolling HMM outputs')
+    regime_group.add_argument('--final_parameters_optimization', action='store_true', help='Run final parameters optimization')
 
     # Feature generation step shortcuts
     feature_group = parser.add_argument_group('Feature generation step shortcuts')
@@ -674,7 +681,8 @@ async def main():
         args.run_tactician_interaction, args.run_analyst_interaction, args.run_both_interaction_modes,
         args.rolling_hmm_regime_discovery,
         args.regime_models_training, args.regime_ensemble_training,
-        args.hmm_macro_regime,
+        args.regime_models_training, args.regime_ensemble_training,
+        args.hmm_macro_regime, args.final_parameters_optimization,
     ])
 
     if not has_execution_mode:
@@ -860,6 +868,12 @@ async def main():
             logger.info("Training ensemble models for regime classification using meta-learning")
             result = await launcher.run_step('regime_ensemble_training', config)
             print(f"Regime ensemble training completed: {'✅ Success' if result.get('success') else '❌ Failed'}")
+
+        elif args.final_parameters_optimization:
+            # Final parameters optimization execution
+            logger.info("Running final parameters optimization")
+            result = await launcher.run_step('final_parameters_optimization', config)
+            print(f"Final parameters optimization completed: {'✅ Success' if result.get('success') else '❌ Failed'}")
 
         elif args.run_tactician_interaction:
             # Tactician mode interaction generation (MI-based)

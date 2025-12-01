@@ -5,14 +5,14 @@
   "direction": "long",
   "model_family": "analyst_meta",
   "meta_gating": {
-    "version": "2025-11-23T00:10:39",
+    "version": "2025-11-30T23:07:12",
     "transaction_cost": 0.0015,
     "entry": {
       "prob_threshold": 0.75,
       "use_expected_return": true,
       "expected_return_threshold": 0.0015,
       "expected_return_unit": "fraction",
-      "min_trades": 7494
+      "min_trades": 701
     },
     "calibration": {
       "iso_regressor_artifact": "artifacts/iso_regressor_analyst_meta.pkl",
@@ -25,10 +25,10 @@
       "min_event_spacing": 3
     },
     "backtest_metrics": {
-      "auc_oof": 0.8322096254903196,
-      "mean_return_gated": 0.013176834543779483,
-      "sharpe_gated": 1.1777129773874515,
-      "trades_gated": 7494
+      "auc_oof": 0.7863974845949963,
+      "mean_return_gated": 0.012032183274225337,
+      "sharpe_gated": 0.9912385221598472,
+      "trades_gated": 701
     },
     "regime_specific": {}
   }

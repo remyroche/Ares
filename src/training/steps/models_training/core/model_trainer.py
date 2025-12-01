@@ -19,6 +19,18 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import pandas as pd
 import numpy as np
 
+try:
+    import torch
+    import torch.nn as nn
+    import torch.optim as optim
+    from torch.utils.data import DataLoader, TensorDataset
+except ImportError:  # pragma: no cover - optional dependency
+    torch = None  # type: ignore[assignment]
+    nn = None  # type: ignore[assignment]
+    optim = None  # type: ignore[assignment]
+    DataLoader = None  # type: ignore[assignment]
+    TensorDataset = None  # type: ignore[assignment]
+
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_debug, tprint_performance
 from src.utils.common_operations import (
@@ -337,8 +349,9 @@ class ModelTrainer(BaseTrainer):
                 n_features=len(processed_data.columns)
             )
             
-            # Generate and save report
+            # Generate and save report + consolidated CSV of model metrics
             report_path = self._metrics_collector.save_report()
+            metrics_csv_path = self._metrics_collector.save_metrics_csv()
             
             # Update state
             self._training_state['training_completed'] = True
@@ -372,6 +385,7 @@ class ModelTrainer(BaseTrainer):
                     'individual_results': training_results,
                     'comprehensive_metrics': all_model_metrics,
                     'report_path': str(report_path),
+                    'metrics_csv_path': str(metrics_csv_path),
                     'trained_models': trained_models,
                     'model_instances': self._model_instances,
                     'trained_feature_columns': list(model_result.metadata.get('engineered_data', processed_data).columns),
@@ -425,9 +439,40 @@ class ModelTrainer(BaseTrainer):
             
             engineered_data = data
             if self.config.role == TrainingRole.ANALYST:
-                engineered_data = self._engineer_analyst_features(data, targets, allow_uniform_defaults=False)
+                engineered_data = self._engineer_analyst_features(data, targets)
                 tprint_info(f"   After ANALYST engineering: {engineered_data.shape}")
                 tprint_info(f"   Engineered columns (first 20): {list(engineered_data.columns[:20])}")
+                try:
+                    specialist_keys = [
+                        'liquidity_regime',
+                        'alpha_score',
+                        'risk_regime',
+                        'path_regime',
+                        'mean_reversion',
+                        'mr_regime',
+                        'smc_regime',
+                        'breakout',
+                        'support_scalar',
+                        'resistance_scalar',
+                    ]
+                    specialist_cols = [
+                        c for c in engineered_data.columns
+                        if any(key in c.lower() for key in specialist_keys)
+                    ]
+                    if specialist_cols:
+                        tprint_info(
+                            "   ✅ Detected "
+                            f"{len(specialist_cols)} specialist/regime feature columns "
+                            f"(first 20): {specialist_cols[:20]}"
+                        )
+                    else:
+                        tprint_warning(
+                            "   ⚠️ No specialist/regime feature columns detected after ANALYST engineering"
+                        )
+                except Exception as diag_exc:
+                    tprint_warning(
+                        f"   ⚠️ Failed to inspect specialist/regime feature columns: {diag_exc}"
+                    )
             elif self.config.role == TrainingRole.TACTICIAN:
                 engineered_data = self._engineer_tactician_features(data, targets)
                 tprint_info(f"   After TACTICIAN engineering: {engineered_data.shape}")
@@ -464,6 +509,23 @@ class ModelTrainer(BaseTrainer):
             
             # Model-specific training
             result = None
+            # TEMPORARY: For ANALYST debug runs, skip non-LightGBM models so we can
+            # focus on LightGBM behaviour and data/window diagnostics.
+            if self.config.role == TrainingRole.ANALYST and model_type in (
+                ModelType.KNN,
+                ModelType.NGBOOST,
+                ModelType.BAYESIANRIDGE,
+            ):
+                tprint_info(
+                    f"⏭️ Skipping {model_type.value} training for ANALYST role "
+                    f"(temporary LightGBM-only debug run)"
+                )
+                return TrainingResult(
+                    success=False,
+                    error_message=f"{model_type.value} skipped for LightGBM-only debug run",
+                    training_time=time.time() - start_time,
+                )
+
             if model_type == ModelType.LIGHTGBM:
                 result = await self._train_lightgbm_model(model, engineered_data, aligned_targets)
             elif model_type == ModelType.EXTRATREES:
@@ -474,6 +536,10 @@ class ModelTrainer(BaseTrainer):
                 result = await self._train_catboost_model(model, engineered_data, aligned_targets)
             elif model_type == ModelType.NGBOOST:
                 result = await self._train_ngboost_model(model, engineered_data, aligned_targets)
+            elif model_type == ModelType.KNN:
+                result = await self._train_knn_model(model, engineered_data, aligned_targets)
+            elif model_type == ModelType.BAYESIANRIDGE:
+                result = await self._train_bayesianridge_model(model, engineered_data, aligned_targets)
             elif model_type == ModelType.NEURAL_NETWORK:
                 result = await self._train_neural_network_model(model, engineered_data, aligned_targets)
             else:
@@ -487,6 +553,447 @@ class ModelTrainer(BaseTrainer):
                 
         except Exception as e:
             self.logger.error(f"Single model training failed: {e}")
+            return TrainingResult(success=False, error_message=str(e))
+
+    async def _train_knn_model(self, model: Any, data: pd.DataFrame, targets: pd.Series) -> TrainingResult:
+        """Train KNeighborsRegressor model using YAML-driven hyperparameters."""
+        try:
+            from sklearn.neighbors import KNeighborsRegressor
+            from sklearn.model_selection import train_test_split
+            from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+            import yaml
+            from pathlib import Path
+            from src.utils.tprint import tprint_data_preview, tprint_info, tprint_warning, tprint_success
+
+            tprint_info("=" * 80)
+            tprint_info("🌟 MODEL-SPECIFIC TRAINING: KNN")
+            tprint_info("=" * 80)
+            tprint_data_preview(
+                data,
+                name="KNN Training Data",
+                max_rows=5,
+                max_cols=10,
+                show_dtypes=True,
+                show_shape=True
+            )
+
+            # For analyst role, optionally restrict KNN to specialist regime
+            # outputs when those columns are present. This ensures KNN uses
+            # only compact regime/specialist signals rather than the full
+            # feature set. Log columns before/after for diagnostics.
+            if getattr(self.config, 'role', None) == TrainingRole.ANALYST:
+                try:
+                    tprint_info(
+                        f"   🔍 KNN pre-restriction columns ({len(data.columns)}): "
+                        f"{list(data.columns)[:20]}{'...' if len(data.columns) > 20 else ''}"
+                    )
+                    specialist_prefixes = (
+                        'risk_',
+                        'alpha_',
+                        'macro_',
+                        'liquidity_regime_',
+                        'breakout_',
+                        'path_',
+                    )
+                    specialist_exact = {
+                        'risk_regime',
+                        'path_regime',
+                        'resistance_scalar',
+                        'support_scalar',
+                        'breakout_scalar_resistance',
+                        'breakout_scalar_support',
+                        'breakout_long_edge_score',
+                        'breakout_short_edge_score',
+                        'is_resistance',
+                        'is_support',
+                        'predicted',
+                    }
+                    # Include generic prob_/confidence_ columns (e.g., SMC)
+                    def _is_specialist(col: str) -> bool:
+                        return (
+                            any(col.startswith(p) for p in specialist_prefixes)
+                            or col in specialist_exact
+                            or col.startswith('prob_')
+                            or col.startswith('confidence_')
+                        )
+
+                    specialist_cols = [c for c in data.columns if _is_specialist(c)]
+                    if specialist_cols:
+                        tprint_info(
+                            f"   🔧 KNN feature restriction: using {len(specialist_cols)} specialist features "
+                            f"out of {len(data.columns)} total"
+                        )
+                        tprint_info(
+                            f"   🔍 KNN specialist columns ({len(specialist_cols)}): "
+                            f"{specialist_cols[:20]}{'...' if len(specialist_cols) > 20 else ''}"
+                        )
+                        data = data[specialist_cols].copy()
+                    else:
+                        # For Analyst KNN, specialist regime features are
+                        # mandatory. If none are present, abort this model
+                        # rather than silently training on the full feature
+                        # set, which leads to unstable and hard-to-interpret
+                        # behaviour.
+                        tprint_error(
+                            "   ❌ KNN feature restriction: no specialist regime columns found; "
+                            "aborting KNN training for Analyst role."
+                        )
+                        raise ValueError(
+                            "KNN requires specialist regime features (risk_*/alpha_*/macro_*/liquidity_regime_*/"
+                            "breakout_*/path_ or prob_/confidence_ columns); none were found in the training data."
+                        )
+                except Exception as fe:
+                    tprint_warning(
+                        f"   ⚠️ KNN feature restriction failed, using full feature set: {fe}"
+                    )
+
+            # Temporal 70/15/15 split (no shuffle) to respect ordering
+            X_temp, X_test, y_temp, y_test = train_test_split(
+                data, targets, test_size=0.15, random_state=42, shuffle=False
+            )
+            X_train, X_val, y_train, y_val = train_test_split(
+                X_temp, y_temp, test_size=0.176, random_state=42, shuffle=False
+            )
+
+            tprint_info("   📊 Data splits (temporal order preserved):")
+            tprint_info(f"      Train: {len(X_train)} samples ({len(X_train)/len(data)*100:.1f}%)")
+            tprint_info(f"      Val: {len(X_val)} samples ({len(X_val)/len(data)*100:.1f}%)")
+            tprint_info(f"      Test: {len(X_test)} samples ({len(X_test)/len(data)*100:.1f}%)")
+            tprint_info("=" * 80)
+
+            # Clean NaN targets for NGBoost: it requires finite y values.
+            try:
+                def _drop_nan_targets_ngb(X: pd.DataFrame, y: pd.Series, label: str):
+                    mask = y.notna()
+                    dropped = int((~mask).sum())
+                    if dropped > 0:
+                        tprint_warning(
+                            f"   ⚠️ Dropping {dropped} {label} samples with NaN target for NGBoost"
+                        )
+                    return X[mask], y[mask]
+
+                X_train, y_train = _drop_nan_targets_ngb(X_train, y_train, "train")
+                X_val, y_val = _drop_nan_targets_ngb(X_val, y_val, "val")
+                X_test, y_test = _drop_nan_targets_ngb(X_test, y_test, "test")
+
+                if len(X_train) == 0 or len(X_val) == 0 or len(X_test) == 0:
+                    raise ValueError("No valid samples remain after NaN target filtering for NGBoost")
+            except Exception as nan_exc:
+                tprint_warning(
+                    f"   ⚠️ Failed to clean NaN targets for NGBoost; training may fail: {nan_exc}"
+                )
+
+            # Clean NaN targets to satisfy NGBoost's requirement of finite y values
+            try:
+                def _drop_nan_targets(X: pd.DataFrame, y: pd.Series, label: str):
+                    mask = y.notna()
+                    dropped = int((~mask).sum())
+                    if dropped > 0:
+                        tprint_warning(
+                            f"   ⚠️ Dropping {dropped} {label} samples with NaN target for NGBoost"
+                        )
+                    return X[mask], y[mask]
+
+                X_train, y_train = _drop_nan_targets(X_train, y_train, "train")
+                X_val, y_val = _drop_nan_targets(X_val, y_val, "val")
+                X_test, y_test = _drop_nan_targets(X_test, y_test, "test")
+
+                if len(X_train) == 0 or len(X_val) == 0 or len(X_test) == 0:
+                    raise ValueError("No valid samples remain after NaN target filtering for NGBoost")
+            except Exception as nan_exc:
+                tprint_warning(
+                    f"   ⚠️ Failed to clean NaN targets for NGBoost; training may fail: {nan_exc}"
+                )
+
+            # Load KNN params from analyst_base_config.yaml if available
+            model_params: Dict[str, Any] = {}
+            config_path = Path('src/training/steps/model_training/analyst_base_config.yaml')
+            if config_path.exists():
+                try:
+                    with open(config_path) as f:
+                        yaml_config = yaml.safe_load(f)
+                    knn_cfg = (
+                        yaml_config.get('analyst_config', {})
+                        .get('base_models', {})
+                        .get('knn', {})
+                    ) or {}
+                    base_params = knn_cfg.get('params', {}) or {}
+                    hpo_cfg = knn_cfg.get('hpo', {}) or {}
+                    optimal_params = {}
+                    if isinstance(hpo_cfg, dict):
+                        optimal_params = hpo_cfg.get('optimal_params', {}) or {}
+                    model_params = {**base_params, **optimal_params}
+                    if optimal_params:
+                        tprint_success(
+                            f"   ✅ Loaded {len(base_params)} base KNN params and "
+                            f"{len(optimal_params)} optimal params from YAML config"
+                        )
+                    elif base_params:
+                        tprint_success(f"   ✅ Loaded {len(base_params)} KNN params from YAML config")
+                    else:
+                        tprint_warning("   ⚠️ No KNN params found in YAML, using defaults")
+                except Exception as yaml_exc:
+                    tprint_warning(f"   ⚠️ Failed to load KNN params from YAML: {yaml_exc}")
+
+            n_neighbors = int(model_params.get('n_neighbors', 50))
+            algorithm = model_params.get('algorithm', 'auto')
+            leaf_size = int(model_params.get('leaf_size', 30))
+            weights = model_params.get('weights', 'distance')
+            p = int(model_params.get('p', 2))
+
+            tprint_info(
+                f"Training KNN: n_neighbors={n_neighbors}, algorithm={algorithm}, leaf_size={leaf_size}, "
+                f"weights={weights}, p={p}"
+            )
+
+            knn = KNeighborsRegressor(
+                n_neighbors=n_neighbors,
+                algorithm=algorithm,
+                leaf_size=leaf_size,
+                weights=weights,
+                p=p,
+                n_jobs=-1,
+            )
+
+            knn.fit(X_train, y_train)
+
+            # Evaluate on splits (mirror LightGBM/NGBoost schema)
+            train_pred = knn.predict(X_train)
+            val_pred = knn.predict(X_val)
+            test_pred = knn.predict(X_test)
+
+            metrics = {
+                'train_mse': mean_squared_error(y_train, train_pred),
+                'train_mae': mean_absolute_error(y_train, train_pred),
+                'train_r2': r2_score(y_train, train_pred),
+                'train_rmse': np.sqrt(mean_squared_error(y_train, train_pred)),
+                'val_mse': mean_squared_error(y_val, val_pred),
+                'val_mae': mean_absolute_error(y_val, val_pred),
+                'val_r2': r2_score(y_val, val_pred),
+                'val_rmse': np.sqrt(mean_squared_error(y_val, val_pred)),
+                'test_mse': mean_squared_error(y_test, test_pred),
+                'test_mae': mean_absolute_error(y_test, test_pred),
+                'test_r2': r2_score(y_test, test_pred),
+                'test_rmse': np.sqrt(mean_squared_error(y_test, test_pred)),
+            }
+
+            train_r2 = metrics['train_r2']
+            test_r2 = metrics['test_r2']
+            metrics['train_test_r2_gap'] = train_r2 - test_r2
+            denom = max(abs(train_r2), 1e-3)
+            metrics['overfitting_ratio'] = metrics['train_test_r2_gap'] / denom
+            metrics['generalization_score'] = test_r2 / denom
+
+            tprint_success("✅ KNN trained")
+            tprint_info(
+                f"   📊 Train R²: {metrics['train_r2']:.4f}, RMSE: {metrics['train_rmse']:.4f}"
+            )
+            tprint_info(
+                f"   📊 Val R²: {metrics['val_r2']:.4f}, RMSE: {metrics['val_rmse']:.4f}"
+            )
+            tprint_info(
+                f"   📊 Test R²: {metrics['test_r2']:.4f}, RMSE: {metrics['test_rmse']:.4f}"
+            )
+
+            if metrics['overfitting_ratio'] > 0.2:
+                tprint_warning("   ⚠️ HIGH OVERFITTING detected for KNN")
+            elif metrics['overfitting_ratio'] > 0.1:
+                tprint_warning("   ⚠️ Moderate overfitting detected for KNN")
+            else:
+                tprint_success("   ✅ Good generalization (overfitting ratio < 10%)")
+
+            return TrainingResult(
+                success=True,
+                model=knn,
+                metrics=metrics,
+                feature_importance=None,
+                metadata={
+                    'n_features': len(data.columns),
+                    'n_samples': len(data),
+                    'test_predictions': test_pred.tolist() if hasattr(test_pred, 'tolist') else list(test_pred),
+                    'train_predictions': train_pred.tolist() if hasattr(train_pred, 'tolist') else list(train_pred),
+                    'val_predictions': val_pred.tolist() if hasattr(val_pred, 'tolist') else list(val_pred),
+                },
+            )
+
+        except Exception as e:
+            self.logger.error(f"KNN training failed: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+            return TrainingResult(success=False, error_message=str(e))
+
+    async def _train_bayesianridge_model(self, model: Any, data: pd.DataFrame, targets: pd.Series) -> TrainingResult:
+        """Train BayesianRidge model using YAML-driven hyperparameters."""
+        try:
+            from sklearn.linear_model import BayesianRidge
+            from sklearn.model_selection import train_test_split
+            from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+            import yaml
+            from pathlib import Path
+            from src.utils.tprint import tprint_data_preview, tprint_info, tprint_warning, tprint_success
+
+            tprint_info("=" * 80)
+            tprint_info("🌟 MODEL-SPECIFIC TRAINING: BayesianRidge")
+            tprint_info("=" * 80)
+            tprint_data_preview(
+                data,
+                name="BayesianRidge Training Data",
+                max_rows=5,
+                max_cols=10,
+                show_dtypes=True,
+                show_shape=True
+            )
+
+            # Temporal 70/15/15 split (no shuffle)
+            X_temp, X_test, y_temp, y_test = train_test_split(
+                data, targets, test_size=0.15, random_state=42, shuffle=False
+            )
+            X_train, X_val, y_train, y_val = train_test_split(
+                X_temp, y_temp, test_size=0.176, random_state=42, shuffle=False
+            )
+
+            tprint_info("   📊 Data splits (temporal order preserved):")
+            tprint_info(f"      Train: {len(X_train)} samples ({len(X_train)/len(data)*100:.1f}%)")
+            tprint_info(f"      Val: {len(X_val)} samples ({len(X_val)/len(data)*100:.1f}%)")
+            tprint_info(f"      Test: {len(X_test)} samples ({len(X_test)/len(data)*100:.1f}%)")
+            tprint_info("=" * 80)
+
+            # Load BayesianRidge params from YAML if available
+            model_params: Dict[str, Any] = {}
+            config_path = Path('src/training/steps/model_training/analyst_base_config.yaml')
+            if config_path.exists():
+                try:
+                    with open(config_path) as f:
+                        yaml_config = yaml.safe_load(f)
+                    bayes_cfg = (
+                        yaml_config.get('analyst_config', {})
+                        .get('base_models', {})
+                        .get('bayesianridge', {})
+                    ) or {}
+                    base_params = bayes_cfg.get('params', {}) or {}
+                    hpo_cfg = bayes_cfg.get('hpo', {}) or {}
+                    optimal_params = {}
+                    if isinstance(hpo_cfg, dict):
+                        optimal_params = hpo_cfg.get('optimal_params', {}) or {}
+                    model_params = {**base_params, **optimal_params}
+                    if optimal_params:
+                        tprint_success(
+                            f"   ✅ Loaded {len(base_params)} base BayesianRidge params and "
+                            f"{len(optimal_params)} optimal params from YAML config"
+                        )
+                    elif base_params:
+                        tprint_success(f"   ✅ Loaded {len(base_params)} BayesianRidge params from YAML config")
+                    else:
+                        tprint_warning("   ⚠️ No BayesianRidge params found in YAML, using defaults")
+                except Exception as yaml_exc:
+                    tprint_warning(f"   ⚠️ Failed to load BayesianRidge params from YAML: {yaml_exc}")
+
+            # Map legacy 'n_iter' key to sklearn's 'max_iter' if needed
+            if 'n_iter' in model_params and 'max_iter' not in model_params:
+                try:
+                    mapped_iter = int(model_params.get('n_iter', 0))
+                    if mapped_iter > 0:
+                        tprint_info(
+                            f"   ℹ️ Mapping legacy BayesianRidge param 'n_iter'={mapped_iter} "
+                            f"to 'max_iter'."
+                        )
+                        model_params['max_iter'] = mapped_iter
+                except Exception:
+                    # If mapping fails, leave handling to sklearn's own validation
+                    pass
+                finally:
+                    # Remove legacy key to avoid confusion
+                    model_params.pop('n_iter', None)
+
+            # Drop parameters that are not supported by sklearn.linear_model.BayesianRidge
+            try:
+                supported_params = set(BayesianRidge().get_params().keys())
+                invalid_keys = [k for k in model_params.keys() if k not in supported_params]
+                for key in invalid_keys:
+                    tprint_warning(
+                        f"   ⚠️ Dropping unsupported BayesianRidge param '{key}' (value={model_params[key]})"
+                    )
+                    model_params.pop(key, None)
+            except Exception as param_exc:
+                tprint_warning(
+                    f"   ⚠️ Failed to validate BayesianRidge params against estimator, using all params as-is: {param_exc}"
+                )
+
+            bayes = BayesianRidge(**model_params)
+
+            tprint_info(f"Training BayesianRidge with params: {model_params}")
+
+            bayes.fit(X_train, y_train)
+
+            # Evaluate on splits
+            train_pred = bayes.predict(X_train)
+            val_pred = bayes.predict(X_val)
+            test_pred = bayes.predict(X_test)
+
+            metrics = {
+                'train_mse': mean_squared_error(y_train, train_pred),
+                'train_mae': mean_absolute_error(y_train, train_pred),
+                'train_r2': r2_score(y_train, train_pred),
+                'train_rmse': np.sqrt(mean_squared_error(y_train, train_pred)),
+                'val_mse': mean_squared_error(y_val, val_pred),
+                'val_mae': mean_absolute_error(y_val, val_pred),
+                'val_r2': r2_score(y_val, val_pred),
+                'val_rmse': np.sqrt(mean_squared_error(y_val, val_pred)),
+                'test_mse': mean_squared_error(y_test, test_pred),
+                'test_mae': mean_absolute_error(y_test, test_pred),
+                'test_r2': r2_score(y_test, test_pred),
+                'test_rmse': np.sqrt(mean_squared_error(y_test, test_pred)),
+            }
+
+            train_r2 = metrics['train_r2']
+            test_r2 = metrics['test_r2']
+            metrics['train_test_r2_gap'] = train_r2 - test_r2
+            denom = max(abs(train_r2), 1e-3)
+            metrics['overfitting_ratio'] = metrics['train_test_r2_gap'] / denom
+            metrics['generalization_score'] = test_r2 / denom
+
+            tprint_success("✅ BayesianRidge trained")
+            tprint_info(
+                f"   📊 Train R²: {metrics['train_r2']:.4f}, RMSE: {metrics['train_rmse']:.4f}"
+            )
+            tprint_info(
+                f"   📊 Val R²: {metrics['val_r2']:.4f}, RMSE: {metrics['val_rmse']:.4f}"
+            )
+            tprint_info(
+                f"   📊 Test R²: {metrics['test_r2']:.4f}, RMSE: {metrics['test_rmse']:.4f}"
+            )
+
+            if train_r2 < 0.02:
+                # Extremely low explanatory power: treat as low-signal rather than classical overfitting
+                tprint_info(
+                    "   ℹ️ BayesianRidge is in a low-signal regime (train R² < 0.02); "
+                    "overfitting assessment is not strongly informative."
+                )
+            elif metrics['overfitting_ratio'] > 0.2:
+                tprint_warning("   ⚠️ HIGH OVERFITTING detected for BayesianRidge")
+            elif metrics['overfitting_ratio'] > 0.1:
+                tprint_warning("   ⚠️ Moderate overfitting detected for BayesianRidge")
+            else:
+                tprint_success("   ✅ Good generalization (overfitting ratio < 10%)")
+
+            return TrainingResult(
+                success=True,
+                model=bayes,
+                metrics=metrics,
+                feature_importance=None,
+                metadata={
+                    'n_features': len(data.columns),
+                    'n_samples': len(data),
+                    'test_predictions': test_pred.tolist() if hasattr(test_pred, 'tolist') else list(test_pred),
+                    'train_predictions': train_pred.tolist() if hasattr(train_pred, 'tolist') else list(train_pred),
+                    'val_predictions': val_pred.tolist() if hasattr(val_pred, 'tolist') else list(val_pred),
+                },
+            )
+
+        except Exception as e:
+            self.logger.error(f"BayesianRidge training failed: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
             return TrainingResult(success=False, error_message=str(e))
     
     async def _optimize_hyperparameters(
@@ -510,7 +1017,11 @@ class ModelTrainer(BaseTrainer):
         """Engineer features specific to Analyst role using shared module."""
         try:
             # Use shared feature engineer for consistency with inference
-            engineered_data = self._analyst_feature_engineer.engineer_features(data, **kwargs)
+            engineered_data = self._analyst_feature_engineer.engineer_features(
+                data,
+                allow_uniform_defaults=False,
+                **kwargs,
+            )
             # Remove uniform default regime columns if they were auto-inserted (e.g., all 0.25)
             try:
                 regime_cols = [c for c in engineered_data.columns if c.startswith('regime_confidence_')]
@@ -602,10 +1113,36 @@ class ModelTrainer(BaseTrainer):
                         yaml_config.get('analyst_config', {})
                         .get('base_models', {})
                         .get('ngboost', {})
-                    )
-                    model_params = ngb_cfg.get('params', {}) or {}
-                    if model_params:
-                        tprint_success(f"   ✅ Loaded {len(model_params)} NGBoost params from YAML config")
+                    ) or {}
+                    base_params = ngb_cfg.get('params', {}) or {}
+                    hpo_cfg = ngb_cfg.get('hpo', {}) or {}
+                    optimal_params = {}
+                    if isinstance(hpo_cfg, dict):
+                        optimal_params = hpo_cfg.get('optimal_params', {}) or {}
+                    # Start from base params and overlay optimal params
+                    model_params = dict(base_params)
+                    if optimal_params:
+                        # Direct top-level overrides
+                        for key in ['n_estimators', 'learning_rate', 'minibatch_frac', 'verbose']:
+                            if key in optimal_params:
+                                model_params[key] = optimal_params[key]
+                        # Map base learner-specific keys into nested params
+                        if (
+                            'base_learner_max_depth' in optimal_params
+                            or 'base_learner_min_samples_leaf' in optimal_params
+                        ):
+                            base_learner_params = model_params.get('base_learner_params', {}) or {}
+                            if 'base_learner_max_depth' in optimal_params:
+                                base_learner_params['max_depth'] = optimal_params['base_learner_max_depth']
+                            if 'base_learner_min_samples_leaf' in optimal_params:
+                                base_learner_params['min_samples_leaf'] = optimal_params['base_learner_min_samples_leaf']
+                            model_params['base_learner_params'] = base_learner_params
+                        tprint_success(
+                            f"   ✅ Loaded {len(base_params)} base NGBoost params and "
+                            f"{len(optimal_params)} optimal params from YAML config"
+                        )
+                    elif base_params:
+                        tprint_success(f"   ✅ Loaded {len(base_params)} NGBoost params from YAML config")
                     else:
                         tprint_warning("   ⚠️ No NGBoost params found in YAML, using defaults")
                 except Exception as yaml_exc:
@@ -620,10 +1157,22 @@ class ModelTrainer(BaseTrainer):
             base_max_depth = int(base_learner_params.get('max_depth', 4))
             base_min_samples_leaf = int(base_learner_params.get('min_samples_leaf', 20))
 
-            base_learner = default_tree_learner(
-                max_depth=base_max_depth,
-                min_samples_leaf=base_min_samples_leaf,
-            )
+            # NGBoost expects `Base` to be an instantiated sklearn regressor
+            # (see ngboost.api.NGBRegressor). The library's own default is the
+            # `default_tree_learner` instance, which is a pre-configured
+            # DecisionTreeRegressor. To customise its depth/leaf settings while
+            # preserving sane defaults, clone its parameters, override the
+            # relevant keys, and instantiate a fresh tree of the same class.
+            try:
+                default_params = default_tree_learner.get_params(deep=True)
+            except Exception:
+                default_params = {}
+
+            tree_params = dict(default_params)
+            tree_params['max_depth'] = base_max_depth
+            tree_params['min_samples_leaf'] = base_min_samples_leaf
+
+            base_learner = default_tree_learner.__class__(**tree_params)
 
             ngb = NGBRegressor(
                 Dist=Normal,
@@ -741,6 +1290,76 @@ class ModelTrainer(BaseTrainer):
                 show_shape=True
             )
 
+            # Dataset diagnostics before temporal split
+            try:
+                x_len = len(data)
+                y_len = len(targets)
+                tprint_info("📊 LightGBM dataset before split:")
+                tprint_info(f"   X.shape={getattr(data, 'shape', None)}, y.shape={getattr(targets, 'shape', (y_len,))}")
+
+                # Index diagnostics for time-aware debugging
+                if hasattr(data, "index"):
+                    try:
+                        x_index = data.index
+                        tprint_info(f"   X index type: {type(x_index).__name__}")
+                        if len(x_index) > 0:
+                            tprint_info(
+                                f"   X index range: {x_index.min()} → {x_index.max()}"
+                            )
+                    except Exception as idx_exc:
+                        tprint_warning(
+                            f"   ⚠️ Failed to log X index diagnostics: {idx_exc}"
+                        )
+                if hasattr(targets, "index"):
+                    try:
+                        y_index = targets.index
+                        tprint_info(f"   y index type: {type(y_index).__name__}")
+                        if len(y_index) > 0:
+                            tprint_info(
+                                f"   y index range: {y_index.min()} → {y_index.max()}"
+                            )
+                    except Exception as tidx_exc:
+                        tprint_warning(
+                            f"   ⚠️ Failed to log y index diagnostics: {tidx_exc}"
+                        )
+
+                # Heuristic feature block composition (base vs specialist-like)
+                try:
+                    cols = list(data.columns)
+                    specialist_prefixes = (
+                        "liquidity_",
+                        "alpha_",
+                        "macro_alpha_",
+                        "risk_",
+                        "smc_",
+                        "breakout_",
+                        "path_",
+                        "regime_",
+                        "resistance_",
+                        "support_",
+                    )
+                    specialist_cols = [
+                        c for c in cols
+                        if any(p in c.lower() for p in specialist_prefixes)
+                    ]
+                    base_cols = [c for c in cols if c not in specialist_cols]
+                    tprint_info(
+                        "📊 LightGBM feature composition (heuristic): "
+                        f"total={len(cols)}, base≈{len(base_cols)}, specialist≈{len(specialist_cols)}"
+                    )
+                    if specialist_cols:
+                        tprint_info(
+                            f"   Example specialist-like cols: {specialist_cols[:10]}"
+                        )
+                except Exception as feat_exc:
+                    self.logger.debug(
+                        f"Failed to log LightGBM feature composition: {feat_exc}"
+                    )
+            except Exception as ds_exc:
+                self.logger.debug(
+                    f"Failed to log LightGBM dataset diagnostics before split: {ds_exc}"
+                )
+
             constant_target = False
             try:
                 if isinstance(targets, pd.Series):
@@ -749,15 +1368,20 @@ class ModelTrainer(BaseTrainer):
                     y_diag = pd.Series(targets).astype(float)
 
                 unique_vals = pd.unique(y_diag.dropna())
+                y_mean = float(y_diag.mean())
+                y_std = float(y_diag.std())
+                y_min = float(y_diag.min())
+                y_max = float(y_diag.max())
+
                 tprint_info(
                     f"📊 LightGBM target diagnostics: "
-                    f"n_unique={len(unique_vals)}, "
-                    f"min={float(y_diag.min()):.6f}, "
-                    f"max={float(y_diag.max()):.6f}"
+                    f"len={len(y_diag)}, n_unique={len(unique_vals)}, "
+                    f"mean={y_mean:.6f}, std={y_std:.6f}, "
+                    f"min={y_min:.6f}, max={y_max:.6f}"
                 )
 
-                target_range = float(y_diag.max() - y_diag.min())
-                target_std = float(y_diag.std())
+                target_range = float(y_max - y_min)
+                target_std = float(y_std)
                 constant_target = len(unique_vals) <= 1 or (abs(target_range) == 0.0 and target_std == 0.0)
                 if constant_target:
                     tprint_warning(
@@ -809,9 +1433,26 @@ class ModelTrainer(BaseTrainer):
                 if config_path.exists():
                     with open(config_path) as f:
                         yaml_config = yaml.safe_load(f)
-                        lgbm_config = yaml_config.get('analyst_config', {}).get('base_models', {}).get('lgbm', {})
-                        model_params = lgbm_config.get('params', {})
-                        tprint_success(f"   ✅ Loaded {len(model_params)} parameters from YAML config")
+                    lgbm_config = (
+                        yaml_config.get('analyst_config', {})
+                        .get('base_models', {})
+                        .get('lgbm', {})
+                    ) or {}
+                    base_params = lgbm_config.get('params', {}) or {}
+                    hpo_cfg = lgbm_config.get('hpo', {}) or {}
+                    optimal_params = {}
+                    if isinstance(hpo_cfg, dict):
+                        optimal_params = hpo_cfg.get('optimal_params', {}) or {}
+                    model_params = {**base_params, **optimal_params}
+                    if optimal_params:
+                        tprint_success(
+                            f"   ✅ Loaded {len(base_params)} base LightGBM params and "
+                            f"{len(optimal_params)} optimal params from YAML config"
+                        )
+                    elif base_params:
+                        tprint_success(f"   ✅ Loaded {len(base_params)} LightGBM params from YAML config")
+                    else:
+                        tprint_warning("   ⚠️ No LightGBM params found in YAML, using defaults")
                 else:
                     tprint_warning(f"   ⚠️  YAML config not found, using defaults")
                     model_params = {}
@@ -861,17 +1502,26 @@ class ModelTrainer(BaseTrainer):
                                f"num_leaves={num_leaves}, max_depth={max_depth}, min_child_samples={min_child_samples}")
             
             # Build parameters dictionary
+            # Default to GOSS-style sampling unless explicitly overridden in model_params
+            boosting_type_cfg = str(model_params.get('boosting_type', 'goss')).lower()
+            top_rate = model_params.get('top_rate')
+            other_rate = model_params.get('other_rate')
+            data_sample_strategy_cfg = str(model_params.get('data_sample_strategy', '')).lower()
+
+            use_goss = (boosting_type_cfg == 'goss') or (data_sample_strategy_cfg == 'goss')
+
             params = {
                 # Task configuration
                 'objective': 'regression',
                 'metric': 'rmse',
+                # Use gbdt booster and control sampling via data_sample_strategy to
+                # avoid LightGBM's deprecation warnings about boosting='goss'.
                 'boosting_type': 'gbdt',
                 
                 # Hyperparameters (from YAML/HPO)
                 'num_leaves': num_leaves,
                 'learning_rate': learning_rate,
                 'max_depth': max_depth,
-                'subsample': subsample,
                 'colsample_bytree': colsample_bytree,
                 'reg_alpha': reg_alpha,
                 'reg_lambda': reg_lambda,
@@ -879,10 +1529,39 @@ class ModelTrainer(BaseTrainer):
                 
                 # Performance optimizations (NOT tuned by HPO)
                 'n_jobs': n_threads,
-                'bagging_freq': 5,
                 'verbose': -1,
                 'force_col_wise': True,
             }
+
+            # Configure sampling/bagging depending on whether we want GOSS semantics.
+            if use_goss:
+                # GOSS is incompatible with standard bagging, so disable bagging
+                # and rely on top_rate/other_rate via data_sample_strategy='goss'.
+                params['data_sample_strategy'] = 'goss'
+                params['subsample'] = 1.0
+                params['bagging_freq'] = 0
+
+                # If using GOSS and GOSS-specific rates weren't set in model_params,
+                # apply robust defaults.
+                if top_rate is None:
+                    top_rate = 0.2
+                if other_rate is None:
+                    other_rate = 0.1
+                params['top_rate'] = top_rate
+                params['other_rate'] = other_rate
+                tprint_info(
+                    f"   🔧 LightGBM GOSS enabled: boosting_type='gbdt', data_sample_strategy='goss', "
+                    f"top_rate={top_rate}, other_rate={other_rate}, bagging_freq=0, subsample=1.0"
+                )
+            else:
+                # For non-GOSS strategies, keep standard bagging configuration.
+                params['subsample'] = subsample
+                params['bagging_freq'] = 5
+
+                # If the caller explicitly requested a non-GOSS data_sample_strategy,
+                # propagate it through.
+                if data_sample_strategy_cfg and data_sample_strategy_cfg != 'goss':
+                    params['data_sample_strategy'] = data_sample_strategy_cfg
 
             # Derive monotonic constraints aligned with data columns
             try:
@@ -952,11 +1631,12 @@ class ModelTrainer(BaseTrainer):
             train_r2_value = r2_score(y_train, train_pred)
             test_r2_value = r2_score(y_test, test_pred)
             train_test_gap_value = train_r2_value - test_r2_value
-            denominator = max(train_r2_value, 0.01)
-            overfitting_ratio_value = train_test_gap_value / denominator
-            generalization_score_value = test_r2_value / denominator
+            denom = max(abs(train_r2_value), 1e-3)
+            overfitting_ratio_value = train_test_gap_value / denom
+            generalization_score_value = test_r2_value / denom
 
             if constant_target:
+                # Force metrics to zero for constant-target regimes
                 train_r2_value = 0.0
                 test_r2_value = 0.0
                 train_test_gap_value = 0.0
@@ -1011,14 +1691,27 @@ class ModelTrainer(BaseTrainer):
             tprint_info(f"   📊 Val R²: {metrics['val_r2']:.4f}, RMSE: {metrics['val_rmse']:.4f}")
             tprint_info(f"   📊 Test R²: {metrics['test_r2']:.4f}, RMSE: {metrics['test_rmse']:.4f}")
             tprint_info(f"   ⚠️  Train-Test Gap: {metrics['train_test_r2_gap']:.4f} ({metrics['overfitting_ratio']*100:.1f}%)")
-        
+
+            low_signal = constant_target or abs(metrics['train_r2']) < 0.02
+
             if best_iter is not None and best_iter <= 5:
-                tprint_warning(
-                    f"   ⚠️ LightGBM used only {best_iter} boosting iterations – model may be degenerate "
-                    f"(check target variance and training subset size)."
+                if low_signal:
+                    tprint_info(
+                        f"   ℹ️ LightGBM stopped after {best_iter} iterations in a low-signal regime; "
+                        f"this often indicates the target contains little usable structure."
+                    )
+                else:
+                    tprint_warning(
+                        f"   ⚠️ LightGBM used only {best_iter} boosting iterations – model may be degenerate "
+                        f"(check target variance and training subset size)."
+                    )
+
+            if low_signal:
+                tprint_info(
+                    "   ℹ️ LightGBM is in a low-signal regime (train R² < 0.02 or constant target); "
+                    "overfitting assessment is not strongly informative."
                 )
-        
-            if metrics['overfitting_ratio'] > 0.2:
+            elif metrics['overfitting_ratio'] > 0.2:
                 tprint_warning(f"   ⚠️  HIGH OVERFITTING detected! Model may not generalize well.")
             elif metrics['overfitting_ratio'] > 0.1:
                 tprint_warning(f"   ⚠️  Moderate overfitting detected.")
@@ -1818,36 +2511,75 @@ class ModelTrainer(BaseTrainer):
     async def _train_neural_network_model(self, model: Any, data: pd.DataFrame, targets: pd.Series) -> TrainingResult:
         """Train neural network model with role-specific architecture."""
         try:
-            # Import PyTorch
-            import torch
-            import torch.nn as nn
-            import torch.optim as optim
-            from torch.utils.data import DataLoader, TensorDataset
-            
+            if torch is None or DataLoader is None or TensorDataset is None:
+                raise ImportError("PyTorch is not available but a neural network model was requested")
+
+            # Resolve configuration-driven hyperparameters (with sensible defaults)
+            nn_params = self.config.custom_params.get('neural_network', {})
+            if isinstance(nn_params, dict) and 'params' in nn_params:
+                nn_params = nn_params['params']
+
+            batch_size = int(nn_params.get('batch_size', 64))
+            epochs = int(nn_params.get('epochs', 100))
+            learning_rate = float(nn_params.get('learning_rate', 0.001))
+
+            # Fallback to global training config for patience / validation_split when not overridden
+            early_stopping_patience = int(
+                nn_params.get('early_stopping_patience', self.config.early_stopping_patience)
+            )
+            validation_split = float(
+                nn_params.get('validation_split', self.config.validation_split)
+            )
+            reduce_lr_patience = int(
+                nn_params.get('reduce_lr_patience', max(1, early_stopping_patience // 2))
+            )
+
             # Convert to tensors
-            X_tensor = torch.FloatTensor(data.values)
-            y_tensor = torch.FloatTensor(targets.values)
-            
-            # Create dataset and dataloader
-            dataset = TensorDataset(X_tensor, y_tensor)
-            dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
-            
+            X_tensor = torch.as_tensor(data.values, dtype=torch.float32)
+            y_tensor = torch.as_tensor(targets.values, dtype=torch.float32).view(-1)
+
+            # Create dataset and temporal train/validation split
+            full_dataset = TensorDataset(X_tensor, y_tensor)
+            n_samples = len(full_dataset)
+
+            if n_samples <= 0:
+                raise ValueError("Neural network training received empty dataset")
+
+            val_size = int(n_samples * validation_split) if validation_split > 0 else 0
+            val_size = max(0, min(n_samples - 1, val_size))  # Ensure at least 1 train sample
+            train_size = n_samples - val_size
+
+            if val_size > 0:
+                # Use deterministic split for reproducibility; keep temporal ordering by slicing
+                indices = list(range(n_samples))
+                train_indices = indices[:train_size]
+                val_indices = indices[train_size:]
+                train_subset = TensorDataset(X_tensor[train_indices], y_tensor[train_indices])
+                val_subset = TensorDataset(X_tensor[val_indices], y_tensor[val_indices])
+            else:
+                train_subset = full_dataset
+                val_subset = None
+
+            train_loader = DataLoader(train_subset, batch_size=batch_size, shuffle=True)
+            val_loader = DataLoader(val_subset, batch_size=batch_size, shuffle=False) if val_subset is not None else None
+
             # Role-specific architecture
+            input_dim = data.shape[1]
             if self.config.role == TrainingRole.ANALYST:
                 model = nn.Sequential(
-                    nn.Linear(data.shape[1], 128),
+                    nn.Linear(input_dim, 128),
                     nn.ReLU(),
                     nn.Dropout(0.2),
                     nn.Linear(128, 64),
                     nn.ReLU(),
                     nn.Dropout(0.2),
                     nn.Linear(64, 1),
-                    nn.Sigmoid()
+                    nn.Sigmoid(),
                 )
                 criterion = nn.BCELoss()
-            else:  # Tactician
+            else:  # Tactician or other regression roles
                 model = nn.Sequential(
-                    nn.Linear(data.shape[1], 256),
+                    nn.Linear(input_dim, 256),
                     nn.ReLU(),
                     nn.Dropout(0.3),
                     nn.Linear(256, 128),
@@ -1855,59 +2587,132 @@ class ModelTrainer(BaseTrainer):
                     nn.Dropout(0.3),
                     nn.Linear(128, 64),
                     nn.ReLU(),
-                    nn.Linear(64, 1)
+                    nn.Linear(64, 1),
                 )
                 criterion = nn.MSELoss()
-            
-            # Optimizer
-            optimizer = optim.Adam(model.parameters(), lr=0.001)
-            
-            # Training loop
+
+            # Optimizer and LR scheduler
+            optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+            scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+                optimizer,
+                mode="min",
+                factor=0.5,
+                patience=reduce_lr_patience,
+                verbose=False,
+            )
+
+            # Training loop with early stopping based on validation loss
             model.train()
-            for epoch in range(100):
-                total_loss = 0
-                for batch_X, batch_y in dataloader:
+            best_state: Optional[Dict[str, Any]] = None
+            best_val_loss = float("inf")
+            epochs_no_improve = 0
+            enable_early_stopping = bool(self.config.enable_early_stopping and val_loader is not None)
+
+            for epoch in range(epochs):
+                running_loss = 0.0
+                n_train = 0
+
+                for batch_X, batch_y in train_loader:
                     optimizer.zero_grad()
-                    outputs = model(batch_X)
-                    loss = criterion(outputs.squeeze(), batch_y)
+                    outputs = model(batch_X).squeeze()
+                    loss = criterion(outputs, batch_y)
                     loss.backward()
                     optimizer.step()
-                    total_loss += loss.item()
-                
-                if epoch % 20 == 0:
-                    self.logger.info(f"Epoch {epoch}, Loss: {total_loss/len(dataloader):.4f}")
-            
-            # Get predictions and metrics
+
+                    batch_size_actual = batch_X.size(0)
+                    running_loss += loss.item() * batch_size_actual
+                    n_train += batch_size_actual
+
+                train_loss = running_loss / max(1, n_train)
+
+                # Validation pass if available
+                val_loss = None
+                if val_loader is not None:
+                    model.eval()
+                    val_running = 0.0
+                    n_val = 0
+                    with torch.no_grad():
+                        for batch_X, batch_y in val_loader:
+                            outputs = model(batch_X).squeeze()
+                            loss = criterion(outputs, batch_y)
+                            batch_size_actual = batch_X.size(0)
+                            val_running += loss.item() * batch_size_actual
+                            n_val += batch_size_actual
+                    val_loss = val_running / max(1, n_val)
+                    scheduler.step(val_loss)
+                    model.train()
+                else:
+                    scheduler.step(train_loss)
+
+                if epoch % max(1, epochs // 10) == 0:
+                    if val_loss is not None:
+                        self.logger.info(
+                            f"NN Epoch {epoch}/{epochs} - train_loss={train_loss:.4f}, val_loss={val_loss:.4f}"
+                        )
+                    else:
+                        self.logger.info(
+                            f"NN Epoch {epoch}/{epochs} - train_loss={train_loss:.4f} (no validation set)"
+                        )
+
+                # Early stopping
+                if enable_early_stopping and val_loss is not None:
+                    if val_loss < best_val_loss - 1e-6:
+                        best_val_loss = val_loss
+                        best_state = {k: v.detach().clone() for k, v in model.state_dict().items()}
+                        epochs_no_improve = 0
+                    else:
+                        epochs_no_improve += 1
+                        if epochs_no_improve >= early_stopping_patience:
+                            self.logger.info(
+                                f"Neural network early stopping triggered after {epoch + 1} epochs "
+                                f"(patience={early_stopping_patience}, best_val_loss={best_val_loss:.4f})"
+                            )
+                            break
+
+            # Restore best validation model if available
+            if best_state is not None:
+                model.load_state_dict(best_state)
+
+            # Get predictions and metrics on full dataset
             model.eval()
             with torch.no_grad():
-                predictions = model(X_tensor).squeeze().numpy()
-            
+                predictions_tensor = model(X_tensor).squeeze()
+            predictions = predictions_tensor.detach().cpu().numpy()
+
+            y_true = targets.values if isinstance(targets, pd.Series) else np.asarray(targets)
+
             if self.config.role == TrainingRole.ANALYST:
                 # Binary classification metrics
                 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+
                 binary_predictions = (predictions > 0.5).astype(int)
                 metrics = {
-                    'accuracy': accuracy_score(targets, binary_predictions),
-                    'precision': precision_score(targets, binary_predictions),
-                    'recall': recall_score(targets, binary_predictions),
-                    'f1_score': f1_score(targets, binary_predictions)
+                    'accuracy': float(accuracy_score(y_true, binary_predictions)),
+                    'precision': float(precision_score(y_true, binary_predictions, zero_division=0)),
+                    'recall': float(recall_score(y_true, binary_predictions, zero_division=0)),
+                    'f1_score': float(f1_score(y_true, binary_predictions, zero_division=0)),
                 }
             else:
                 # Regression metrics
                 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+
+                mse = mean_squared_error(y_true, predictions)
+                mae = mean_absolute_error(y_true, predictions)
+                r2 = r2_score(y_true, predictions)
+                rmse = float(np.sqrt(mse))
                 metrics = {
-                    'mse': mean_squared_error(targets, predictions),
-                    'mae': mean_absolute_error(targets, predictions),
-                    'r2': r2_score(targets, predictions),
-                    'rmse': np.sqrt(mean_squared_error(targets, predictions))
+                    'mse': float(mse),
+                    'mae': float(mae),
+                    'r2': float(r2),
+                    'rmse': rmse,
                 }
-            
+
             return TrainingResult(
                 success=True,
                 model=model,
-                metrics=metrics
+                metrics=metrics,
             )
-            
+
         except Exception as e:
             self.logger.error(f"Neural network training failed: {e}")
             return TrainingResult(success=False, error_message=str(e))
@@ -1941,11 +2746,20 @@ class ModelTrainer(BaseTrainer):
                     from ngboost.distns import Normal
                     from ngboost.learners import default_tree_learner
 
-                    base_learner = default_tree_learner()
-                    return NGBRegressor(Dist=Normal, Base=base_learner, random_state=42)
+                    # Pass the learner factory/class directly so NGBoost can
+                    # construct fresh base learners internally.
+                    return NGBRegressor(Dist=Normal, Base=default_tree_learner, random_state=42)
                 except ImportError as e:
                     self.logger.error(f"Failed to import NGBoost: {e}")
                     return None
+            elif model_type == ModelType.KNN:
+                from sklearn.neighbors import KNeighborsRegressor
+                # Use a reasonable default; YAML-driven params will be applied in the
+                # dedicated training method.
+                return KNeighborsRegressor()
+            elif model_type == ModelType.BAYESIANRIDGE:
+                from sklearn.linear_model import BayesianRidge
+                return BayesianRidge()
             elif model_type == ModelType.NEURAL_NETWORK:
                 # Return None, will be created in training method
                 return None
@@ -2162,6 +2976,154 @@ class ModelTrainer(BaseTrainer):
                     kurtosis_value = 0.0
                 prediction_stats['prediction_skewness'] = skew_value
                 prediction_stats['prediction_kurtosis'] = kurtosis_value
+
+            # Advanced prediction–target relationship metrics (IC, IR, hit ratios, H-test)
+            try:
+                # Reconstruct the common temporal 70/15/15 split used in training
+                from sklearn.model_selection import train_test_split
+
+                X_temp, X_test, y_temp, y_test = train_test_split(
+                    processed_data,
+                    processed_targets,
+                    test_size=0.15,
+                    random_state=42,
+                    shuffle=False,
+                )
+
+                # Ensure float targets and preserve index for time-based IC metrics
+                if isinstance(y_test, pd.Series):
+                    y_test_series = y_test.astype(float)
+                else:
+                    y_test_series = pd.Series(y_test, index=X_test.index).astype(float)
+
+                # Collect per-model test predictions that match the test split length
+                per_model_preds = {}
+                for model_name, result in training_results.items():
+                    if not (result.success and result.metadata and 'test_predictions' in result.metadata):
+                        continue
+                    preds = np.array(result.metadata['test_predictions'], dtype=float)
+                    if len(preds) != len(y_test_series):
+                        continue
+                    per_model_preds[model_name] = preds
+
+                if per_model_preds:
+                    # Build matrix [n_models, n_samples] and aggregated prediction for IC metrics
+                    model_names = list(per_model_preds.keys())
+                    pred_matrix = np.vstack([per_model_preds[m] for m in model_names])
+                    avg_pred = pred_matrix.mean(axis=0)
+
+                    # Spearman IC and IC-based metrics using existing utilities
+                    try:
+                        from src.utils.ml_common.optimization.ic_snr_objective import (
+                            compute_spearman_ic,
+                            compute_ic_metrics_purged,
+                            ICSNRConfig,
+                        )
+
+                        # Overall IC on aggregated predictions
+                        ic_value = compute_spearman_ic(
+                            y_true=y_test_series.values.astype(float),
+                            y_pred=avg_pred.astype(float),
+                        )
+                        prediction_stats['spearman_ic'] = float(ic_value)
+
+                        # Purged IC metrics (provides SNR / information ratio and volatility)
+                        y_true_ic = pd.Series(y_test_series.values.astype(float), index=y_test_series.index)
+                        y_pred_ic = pd.Series(avg_pred.astype(float), index=y_test_series.index)
+                        ic_config = ICSNRConfig()
+                        ic_metrics = compute_ic_metrics_purged(
+                            y_true=y_true_ic,
+                            y_pred=y_pred_ic,
+                            config=ic_config,
+                            datetime_index=y_true_ic.index if isinstance(y_true_ic.index, pd.DatetimeIndex) else None,
+                        )
+
+                        prediction_stats['ic_mean'] = float(ic_metrics.mean_ic)
+                        prediction_stats['ic_median'] = float(ic_metrics.median_ic)
+                        prediction_stats['ic_std'] = float(ic_metrics.std_ic)
+                        prediction_stats['ic_snr'] = float(ic_metrics.snr)
+                        prediction_stats['ic_sharpe'] = float(ic_metrics.ic_sharpe)
+                        prediction_stats['ic_volatility'] = float(ic_metrics.std_ic)
+                        prediction_stats['ic_final_score'] = float(ic_metrics.final_score)
+                        prediction_stats['ic_n_valid_folds'] = int(ic_metrics.n_valid_folds)
+
+                        # Information Ratio of predictions (signal-to-noise of IC stream)
+                        prediction_stats['information_ratio_predictions'] = float(ic_metrics.snr)
+                        prediction_stats['rolling_ic_volatility'] = float(ic_metrics.std_ic)
+                    except Exception as ic_exc:
+                        self.logger.debug(f"IC metrics calculation failed: {ic_exc}")
+
+                    # Fragmentation ratio of prediction signal (choppiness of sign)
+                    try:
+                        pred_signs = np.sign(avg_pred)
+                        if len(pred_signs) > 1:
+                            sign_changes = np.sum(pred_signs[1:] != pred_signs[:-1])
+                            fragmentation_ratio = sign_changes / float(len(pred_signs) - 1)
+                            prediction_stats['prediction_fragmentation_ratio'] = float(fragmentation_ratio)
+                    except Exception as frag_exc:
+                        self.logger.debug(f"Fragmentation ratio calculation failed: {frag_exc}")
+
+                    # Prediction–return calibration via simple linear regression
+                    try:
+                        slope, intercept, r_value, p_value, std_err = stats.linregress(
+                            avg_pred.astype(float),
+                            y_test_series.values.astype(float),
+                        )
+                        prediction_stats['prediction_return_calibration_slope'] = float(slope)
+                        prediction_stats['prediction_return_calibration_intercept'] = float(intercept)
+                        prediction_stats['prediction_return_calibration_r'] = float(r_value)
+                        prediction_stats['prediction_return_calibration_r2'] = float(r_value ** 2)
+                        prediction_stats['prediction_return_calibration_pvalue'] = float(p_value)
+                    except Exception as calib_exc:
+                        self.logger.debug(f"Prediction–return calibration calculation failed: {calib_exc}")
+
+                    # Hit ratio at top-K thresholds (fraction of positive returns in top-K predictions)
+                    try:
+                        y_true_arr = y_test_series.values.astype(float)
+                        preds_arr = avg_pred.astype(float)
+                        order = np.argsort(-preds_arr)
+                        n_samples_test = len(preds_arr)
+                        for k_frac in [0.01, 0.05, 0.10]:
+                            k = max(1, int(n_samples_test * k_frac))
+                            if k <= 0 or k > n_samples_test:
+                                continue
+                            idx = order[:k]
+                            y_top = y_true_arr[idx]
+                            hit_ratio = float(np.mean(y_top > 0)) if len(y_top) > 0 else 0.0
+                            key = f"hit_ratio_top_{int(k_frac * 100)}pct"
+                            prediction_stats[key] = hit_ratio
+                    except Exception as hit_exc:
+                        self.logger.debug(f"Top-K hit ratio calculation failed: {hit_exc}")
+
+                    # H-test style residual serial-independence check via lag-1 autocorrelation
+                    try:
+                        residuals = y_test_series.values.astype(float) - avg_pred.astype(float)
+                        if len(residuals) >= 2:
+                            residual_series = pd.Series(residuals, index=y_test_series.index)
+                            lag1_autocorr = residual_series.autocorr(lag=1)
+                            prediction_stats['residual_lag1_autocorr'] = float(lag1_autocorr)
+
+                            # Simple H-style statistic and normal-approximate p-value
+                            h_stat = float(lag1_autocorr * np.sqrt(len(residual_series)))
+                            try:
+                                h_pvalue = float(2 * stats.norm.sf(abs(h_stat)))
+                            except Exception:
+                                h_pvalue = 1.0
+
+                            prediction_stats['h_test_statistic'] = h_stat
+                            prediction_stats['h_test_pvalue'] = h_pvalue
+
+                            status = 'clean'
+                            if abs(lag1_autocorr) > 0.20:
+                                status = 'critical_dependence'
+                            elif abs(lag1_autocorr) > 0.10:
+                                status = 'moderate_dependence'
+                            prediction_stats['residual_autocorr_status'] = status
+                    except Exception as h_exc:
+                        self.logger.debug(f"Residual H-test style check failed: {h_exc}")
+
+            except Exception as adv_exc:
+                self.logger.debug(f"Advanced prediction statistics calculation failed: {adv_exc}")
 
             metadata['prediction_statistics'] = prediction_stats
         except Exception as e:

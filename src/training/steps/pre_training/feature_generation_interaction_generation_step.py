@@ -56,6 +56,7 @@ from datetime import datetime
 import time
 from pathlib import Path
 from sklearn.preprocessing import RobustScaler
+from sklearn.metrics import roc_auc_score
 from src.training.utils.meta_label_constants import (
     META_LABEL_TARGET_COLUMNS,
     META_LABEL_PRIMARY_TRAINING_TARGETS,
@@ -67,7 +68,7 @@ from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
 from src.utils.tprint import (
     tprint, tprint_info, tprint_success, tprint_error, tprint_performance,
-    tprint_warning, tprint_structured, LogLevel
+    tprint_warning, tprint_structured, tprint_debug, LogLevel
 )
 
 
@@ -203,6 +204,7 @@ try:
     import lightgbm as lgb
     from sklearn.model_selection import cross_val_score
     from sklearn.multioutput import MultiOutputRegressor
+    from sklearn.metrics import r2_score
     import shap
     LGBM_AVAILABLE = True
     SHAP_AVAILABLE = True
@@ -254,79 +256,6 @@ except ImportError as e:
     create_feature_selection_pipeline = None
     tprint_warning(f"⚠️ FeatureSelectionPipeline not available: {e}")
 
-# Import overfitting prevention utilities
-try:
-    from src.utils.ml_common.validation.unified_cv import temporal_cross_validation, TimeSeriesSplit
-    from src.utils.ml_common.validation.universal_temporal_validation import UniversalTimeSeriesSplit
-    from src.utils.ml_common.validation.data_leakage_prevention import DataLeakagePrevention
-    OVERFITTING_PREVENTION_AVAILABLE = True
-except ImportError as e:
-    OVERFITTING_PREVENTION_AVAILABLE = False
-    tprint_warning(f"⚠️ Overfitting prevention utilities not available: {e}")
-
-# Import HPO utilities for CMI-weighted LGBM optimization
-HPO_AVAILABLE = False
-HierarchicalHPOConfig = None
-HPOPhaseConfig = None
-HierarchicalHPO = None
-BayesianTPEOptimizer = None
-TPEOptimizationConfig = None
-
-try:
-    from src.utils.ml_common.optimization.hierarchical_hpo import (
-        HierarchicalHPOConfig, HPOPhaseConfig, HierarchicalHPO
-    )
-    HPO_AVAILABLE = True
-except ImportError as e:
-    pass  # Already set to None above
-
-try:
-    from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
-        BayesianTPEOptimizer, OptimizationConfig as TPEOptimizationConfig
-    )
-except ImportError as e:
-    pass  # Already set to None above
-
-# Try to import numba for fast MI calculation (optional)
-NUMBA_AVAILABLE = False
-try:
-    from numba import njit
-    NUMBA_AVAILABLE = True
-except ImportError:
-    # Numba not available - will use pure numpy fallback
-    def njit(*args, **kwargs):
-        """Fallback decorator if numba not available."""
-        def decorator(func):
-            return func
-        return decorator if not args else decorator(args[0])
-
-# Only log once after all attempts
-if HPO_AVAILABLE:
-    tprint_info("✅ HPO utilities loaded successfully")
-else:
-    # Silently fail - not critical for feature generation
-    pass
-
-if NUMBA_AVAILABLE:
-    tprint_info("✅ Numba loaded - MI calculation will use JIT-accelerated joint probability (10x speedup)")
-else:
-    tprint_info("ℹ️  Numba not available - MI calculation will use pure numpy (still fast)")
-
-# Try to import overfitting prevention manager separately (optional)
-try:
-    from src.utils.ml_common.optimization.overfitting_prevention import OverfittingPreventionConfig, OverfittingPreventionManager
-    OVERFITTING_MANAGER_AVAILABLE = True
-except ImportError as e:
-    OVERFITTING_MANAGER_AVAILABLE = False
-    tprint_warning(f"⚠️ Overfitting prevention manager not available: {e}")
-    
-    # Define a fallback OverfittingPreventionManager class if not available
-    class OverfittingPreventionManager:
-        def __init__(self, *args, **kwargs):
-            pass
-        def __getattr__(self, name):
-            return lambda *args, **kwargs: None
-
 logger = logging.getLogger(__name__)
 
 
@@ -372,20 +301,6 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             self.cmi_scorer = None
             self.analyst_handler = None
             # Note: CMI availability will be checked at runtime for Tactician mode
-        
-        # Initialize HPO components for CMI-weighted LGBM optimization
-        if HPO_AVAILABLE:
-            self.hpo_optimizer = None  # Will be initialized when needed
-            self.cmi_lgbm_params = {
-                'alpha_cmi': 0.6,  # Weight for LGBM importance
-                'beta_cmi': 0.4,   # Weight for CMI score
-                'enable_cmi_weighting': True
-            }
-            tprint_info("✅ HPO components available for CMI-weighted LGBM")
-        else:
-            self.hpo_optimizer = None
-            self.cmi_lgbm_params = None
-            tprint_warning("⚠️ HPO not available - using default CMI parameters")
         
         # Initialize hardware optimization
         if HARDWARE_OPT_AVAILABLE:
@@ -447,36 +362,6 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             self.available_categories = []
             tprint_warning("⚠️ Using fallback category management")
         
-        # Initialize overfitting prevention with enhanced settings
-        if OVERFITTING_PREVENTION_AVAILABLE:
-            self.overfitting_config = OverfittingPreventionConfig(
-                enable_early_stopping=True,
-                early_stopping_patience=5,  # Reduced patience for stricter control
-                early_stopping_min_delta=1e-3,  # Increased minimum delta
-                enable_cross_validation=True,
-                cv_folds=5,
-                cv_strategy='time_series_split',
-                enable_regularization=True,
-                l1_regularization=0.15,  # Increased L1 regularization
-                l2_regularization=0.15,  # Increased L2 regularization
-                enable_ensemble_diversity=True,
-                diversity_threshold=0.8,  # Increased diversity threshold
-                enable_performance_monitoring=True,
-                overfitting_threshold=0.1,
-                enable_learning_curves=True,
-                validation_split=0.2,
-                test_split=0.1,
-                enable_holdout_validation=True
-            )
-            self.overfitting_manager = OverfittingPreventionManager(self.overfitting_config)
-            self.data_leakage_prevention = DataLeakagePrevention()
-            tprint_info("✅ Enhanced overfitting prevention initialized")
-        else:
-            self.overfitting_config = None
-            self.overfitting_manager = None
-            self.data_leakage_prevention = None
-            tprint_warning("⚠️ Overfitting prevention not available")
-        
         # Category definitions - now using feature bank categories
         self.categories = [
             'trend', 'oscillator', 'momentum', 'returns', 'volatility', 
@@ -494,6 +379,10 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
 
         # Runtime diagnostics
         self._runtime_class_logged = False
+
+        # OHLCV caching for Phase 1 to avoid repeated disk reads
+        self._ohlcv_cache = {}
+        self.ohlcv_source_max_rows = 200000
 
     def _ensure_runtime_helpers(self) -> None:
         try:
@@ -689,7 +578,7 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             tprint_info(f"🔍 DEBUG: Variant features columns: {list(variant_features.columns)[:10]}...")  # Show first 10 columns
             
             # Check for cross-timeframe features
-            cross_timeframe_cols = [c for c in variant_features.columns if any(f'_{m}x_ratio' in c for m in [3, 6, 9, 15, 27, 45, 60])]
+            cross_timeframe_cols = [c for c in variant_features.columns if any(f'_{m}x_ratio' in c for m in [3, 6, 9, 15])]
             if len(cross_timeframe_cols) > 0:
                 tprint_info(f"🔍 Found {len(cross_timeframe_cols)} cross-timeframe features before pruning")
             
@@ -708,7 +597,7 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                 tprint_info(f"🔍 DEBUG: Pruned features columns: {list(pruned_features.columns)[:10]}...")  # Show first 10 columns
                 
                 # Check for cross-timeframe features after pruning
-                cross_timeframe_cols_after = [c for c in pruned_features.columns if any(f'_{m}x_ratio' in c for m in [3, 6, 9, 15, 27, 45, 60])]
+                cross_timeframe_cols_after = [c for c in pruned_features.columns if any(f'_{m}x_ratio' in c for m in [3, 6, 9, 15])]
                 if len(cross_timeframe_cols_after) > 0:
                     tprint_info(f"🔍 Found {len(cross_timeframe_cols_after)} cross-timeframe features after pruning")
                 else:
@@ -983,8 +872,10 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
     def _get_primary_summary_targets(self, config: Dict[str, Any]) -> Optional[pd.DataFrame]:
         """Load labeled_data and select a primary target column for summary metrics.
 
-        Prefers smoothed_label, then binary_label, then realized_return, and
-        finally falls back to the first available non-empty column.
+        Prefers primary meta-label training targets produced by
+        FeatureGenerationMetaLabelingStep. If none of the
+        META_LABEL_PRIMARY_TRAINING_TARGETS are present or non-empty,
+        returns None so callers can decide how to handle missing targets.
         """
 
         try:
@@ -994,31 +885,80 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             try:
                 labeled_data = self._get_artifact("labeled_data", "data")
             except Exception:
+                tprint_warning("⚠️ Phase 4: failed to load labeled_data artifact for primary summary targets")
                 return None
 
         labeled_data = _ensure_pandas_dataframe(labeled_data)
         if not isinstance(labeled_data, pd.DataFrame) or labeled_data.empty:
+            tprint_warning("⚠️ Phase 4: labeled_data for primary summary targets is empty or not a DataFrame")
             return None
 
         if labeled_data.index.duplicated().any():
             labeled_data = labeled_data[~labeled_data.index.duplicated(keep='first')]
 
-        preferred_targets = [
-            "smoothed_label",
-            "binary_label",
-            "realized_return",
-        ]
-        existing = [col for col in preferred_targets if col in labeled_data.columns]
-        if existing:
-            return labeled_data[[existing[0]]]
+        min_samples = int(config.get("lgbm_fs_min_target_samples", 200))
 
-        # Fallback: first non-all-NaN column
-        for col in labeled_data.columns:
-            series = labeled_data[col]
-            if getattr(series, "notna", None) is not None and series.notna().any():
-                return labeled_data[[col]]
+        def _is_usable_target(series: pd.Series, label: str) -> bool:
+            """Return True if target has enough samples and variation for LGBM FS."""
+            try:
+                non_null = int(series.notna().sum())
+                unique = int(series.nunique(dropna=True))
+                if non_null < min_samples or unique <= 1:
+                    tprint_warning(
+                        f"📊 Skipping primary target candidate {label}: "
+                        f"n_non_null={non_null}, n_unique={unique}"
+                    )
+                    return False
+                return True
+            except Exception as stats_exc:  # pragma: no cover - diagnostic
+                tprint_warning(
+                    f"📊 Skipping primary target candidate {label} due to stats error: {stats_exc}"
+                )
+                return False
 
-        return labeled_data.iloc[:, :1]
+        # Prefer meta-label primary training targets (from FeatureGenerationMetaLabelingStep)
+        direction = str(config.get("direction", "long")).lower()
+        directional_candidates: List[str] = []
+        if direction == "long":
+            directional_candidates = ["target_long", "target_long_fused"]
+        elif direction == "short":
+            directional_candidates = ["target_short", "target_short_fused"]
+        else:
+            directional_candidates = [
+                "target_long",
+                "target_short",
+                "target_long_fused",
+                "target_short_fused",
+            ]
+
+        for col in directional_candidates:
+            if col in labeled_data.columns:
+                series = labeled_data[col]
+                if _is_usable_target(series, col):
+                    tprint_info(f"📊 Using directional primary target column for summaries: {col}")
+                    return labeled_data[[col]]
+
+        # Fallback: generic meta-label primary training targets
+        for col in META_LABEL_PRIMARY_TRAINING_TARGETS:
+            if col in labeled_data.columns:
+                series = labeled_data[col]
+                if _is_usable_target(series, col):
+                    tprint_info(f"📊 Using fallback primary target column for summaries: {col}")
+                    return labeled_data[[col]]
+
+        # Final fallback: diagnostic targets used for reporting only
+        diagnostic_candidates = ["binary_label", "realized_return"]
+        for col in diagnostic_candidates:
+            if col in labeled_data.columns:
+                series = labeled_data[col]
+                if _is_usable_target(series, col):
+                    tprint_info(
+                        f"📊 Using diagnostic primary target column for LGBM FS summaries: {col}"
+                    )
+                    return labeled_data[[col]]
+
+        tprint_warning("⚠️ No suitable primary target column found for LGBM FS summaries")
+        return None
 
     def _normalize_lookback_optimization(self, lookback_optimization: Any) -> pd.DataFrame:
         """Normalize lookback_optimization artifact into a per-feature DataFrame.
@@ -1376,9 +1316,8 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             'ema', 'ewma', 'exponential_ma', 'exp_ma',
             # Multi-window indicators
             'multi_window', 'multi_timeframe', 'cross_timeframe',
-            # Cross-timeframe ratio features (all multipliers)
+            # Cross-timeframe ratio features (conservative multipliers)
             '_3x_ratio', '_6x_ratio', '_9x_ratio', '_15x_ratio',
-            '_27x_ratio', '_45x_ratio', '_60x_ratio',
             # Bollinger Bands (ATR-related volatility)
             'bb', 'bollinger',
             # Volume-weighted features (multi-window volume interactions)
@@ -1690,14 +1629,41 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         Optimized Phase 1: Generate normalized variants with hardware optimization.
         
         Uses chunked processing, parallel feature generation, and VectorBT optimization.
-        Note: For now, we delegate to the full variant generation to ensure cross-timeframe features are created.
+        Limits the number of features per category before delegating to the full
+        variant generation to keep compute bounded on large inputs.
         """
         tprint_info("🚀 Starting optimized variant generation")
-        
-        # Delegate to the full variant generation to ensure cross-timeframe features are created
-        # TODO: Optimize this later for hardware acceleration while maintaining cross-timeframe generation
+
+        # Limit the number of features per category for faster Phase 1 on large datasets.
+        try:
+            n_rows = len(generated_features)
+        except Exception:
+            n_rows = 0
+
+        default_max_per_cat = 32
+        tight_max_per_cat = 16
+        max_per_cat = default_max_per_cat
+        if n_rows > 50000:
+            max_per_cat = tight_max_per_cat
+
+        max_per_cat = int(config.get("phase1_max_features_per_category", max_per_cat))
+
+        optimized_top: Dict = {}
+        for category, features in top_features_by_category.items():
+            if not isinstance(features, (list, tuple)):
+                optimized_top[category] = features
+                continue
+            if len(features) <= max_per_cat:
+                optimized_top[category] = features
+            else:
+                optimized_top[category] = features[:max_per_cat]
+
+        tprint_info(
+            f"📊 Phase 1 optimized: limiting to at most {max_per_cat} features per category across {len(optimized_top)} categories"
+        )
+
         return await self._phase1_generate_variants(
-            generated_features, top_features_by_category, lookback_optimization, config
+            generated_features, optimized_top, lookback_optimization, config
         )
 
     async def _phase1_generate_variants(
@@ -1738,32 +1704,67 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                 # can reliably load the underlying OHLCV needed for variant generation.
                 klines_manager = get_klines_manager(data_dir=data_dir, exchange=exchange_name)
 
-                # Prefer processed data (partitioned or consolidated), fall back to raw
+                # Prefer processed data (partitioned or consolidated), fall back to raw.
+                # Use a small in-memory cache to avoid repeated disk reads for the
+                # same (exchange, data_dir, symbol, timeframe) combination.
+                cache_key = (exchange_name, data_dir, symbol, timeframe)
+                cache_map = getattr(self, '_ohlcv_cache', None)
                 ohlcv_data = None
                 last_source = None
-                for data_type_candidate in ("processed", "raw"):
-                    try:
-                        candidate = klines_manager.read_data(
-                            symbol=symbol,
-                            interval=timeframe,
-                            data_type=data_type_candidate,
-                            columns=['open', 'high', 'low', 'close', 'volume']
-                        )
-                        if candidate is not None and len(candidate) > 0:
-                            ohlcv_data = candidate
-                            last_source = data_type_candidate
-                            tprint_info(
-                                f"📁 Loaded {data_type_candidate} OHLCV candidate for {symbol} {timeframe}: {ohlcv_data.shape}"
+
+                if isinstance(cache_map, dict) and cache_key in cache_map:
+                    ohlcv_data = cache_map[cache_key]
+                    last_source = "cache"
+                    tprint_info(
+                        f"📁 Reusing cached OHLCV for {symbol} {timeframe} from {exchange_name}/{data_dir}: {ohlcv_data.shape}"
+                    )
+                else:
+                    for data_type_candidate in ("processed", "raw"):
+                        try:
+                            candidate = klines_manager.read_data(
+                                symbol=symbol,
+                                interval=timeframe,
+                                data_type=data_type_candidate,
+                                columns=['open', 'high', 'low', 'close', 'volume']
                             )
-                            break
-                        else:
+                            if candidate is not None and len(candidate) > 0:
+                                # Optionally downsample very long OHLCV histories before alignment
+                                try:
+                                    max_rows = int(getattr(self, 'ohlcv_source_max_rows', 200000) or 200000)
+                                except Exception:
+                                    max_rows = 200000
+                                if len(candidate) > max_rows:
+                                    stride = int(np.ceil(float(len(candidate)) / float(max_rows)))
+                                    if stride > 1:
+                                        candidate = candidate.iloc[::stride].copy()
+                                        tprint_info(
+                                            f"📉 Downsampled OHLCV from {len(ohlcv_data) if ohlcv_data is not None else 'N/A'} "
+                                            f"to {len(candidate)} rows using stride={stride}"
+                                        )
+
+                                ohlcv_data = candidate
+                                last_source = data_type_candidate
+                                tprint_info(
+                                    f"📁 Loaded {data_type_candidate} OHLCV candidate for {symbol} {timeframe}: {ohlcv_data.shape}"
+                                )
+
+                                # Populate cache for subsequent calls
+                                try:
+                                    if isinstance(cache_map, dict):
+                                        cache_map[cache_key] = ohlcv_data
+                                        self._ohlcv_cache = cache_map
+                                except Exception:
+                                    pass
+
+                                break
+                            else:
+                                tprint_warning(
+                                    f"⚠️ No {data_type_candidate} OHLCV data found for {symbol} {timeframe}"
+                                )
+                        except Exception as inner_exc:
                             tprint_warning(
-                                f"⚠️ No {data_type_candidate} OHLCV data found for {symbol} {timeframe}"
+                                f"⚠️ Failed to load {data_type_candidate} OHLCV data for {symbol} {timeframe}: {inner_exc}"
                             )
-                    except Exception as inner_exc:
-                        tprint_warning(
-                            f"⚠️ Failed to load {data_type_candidate} OHLCV data for {symbol} {timeframe}: {inner_exc}"
-                        )
 
                 if ohlcv_data is not None and len(ohlcv_data) > 0:
                     # Ensure unique time index to allow reindexing safely
@@ -1771,28 +1772,71 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                         tprint_warning("⚠️ OHLCV index has duplicates. Collapsing to last occurrence per timestamp for safe reindexing")
                         ohlcv_data = ohlcv_data[~ohlcv_data.index.duplicated(keep='last')]
 
+                    # Index diagnostics before attempting alignment so we can debug
+                    # mixed-type index issues that kill label-based alignment.
+                    try:
+                        tprint_info(
+                            f"🔍 OHLCV index dtype={getattr(ohlcv_data.index, 'dtype', None)}, "
+                            f"features index dtype={getattr(generated_features.index, 'dtype', None)}"
+                        )
+                        o_idx_head = list(ohlcv_data.index[:3])
+                        f_idx_head = list(generated_features.index[:3])
+                        tprint_info(
+                            f"🔍 OHLCV index head={o_idx_head}, features index head={f_idx_head}"
+                        )
+                    except Exception:
+                        pass
+
                     # Try to align OHLCV index with generated_features index. If this fails
-                    # due to mixed index dtypes (e.g. Timestamp vs bytes), fall back to a
+                    # due to mixed index dtypes (e.g. Timestamp vs bytes), first attempt to
+                    # coerce the feature index to datetimes, and only then fall back to a
                     # robust positional alignment on the most recent overlapping window.
                     try:
-                        ohlcv_data = ohlcv_data.reindex(generated_features.index, method='ffill')
+                        ohlcv_data = ohlcv_data.reindex(generated_features.index, method="ffill")
                     except Exception as align_exc:
                         tprint_warning(
-                            f"⚠️ Failed to align OHLCV index with generated_features index via reindex; "
-                            f"falling back to positional alignment: {align_exc}"
+                            f"⚠️ Failed direct OHLCV/generated_features alignment via reindex: {align_exc}"
                         )
-                        min_len = min(len(ohlcv_data), len(generated_features))
-                        if min_len > 0:
-                            # Preserve the most recent history and force the index to match
-                            # the tail of generated_features so downstream alignment is safe.
-                            ohlcv_aligned = ohlcv_data.iloc[-min_len:].copy()
-                            ohlcv_aligned.index = generated_features.index[-min_len:]
-                            ohlcv_data = ohlcv_aligned
-                        else:
-                            tprint_warning(
-                                "⚠️ OHLCV alignment produced no usable rows; disabling OHLCV-based variants"
+
+                        retry_success = False
+                        try:
+                            coerced_index = pd.to_datetime(
+                                generated_features.index, errors="coerce", utc=True
                             )
-                            ohlcv_data = None
+                            if (
+                                getattr(coerced_index, "notna", None) is not None
+                                and coerced_index.notna().sum() > 0
+                            ):
+                                tprint_info(
+                                    "🔧 Retrying OHLCV alignment using datetime-converted generated_features index"
+                                )
+                                ohlcv_aligned = ohlcv_data.reindex(coerced_index, method="ffill")
+                                # Restore the original feature index labels so downstream
+                                # code continues to see the canonical generated_features.index.
+                                ohlcv_aligned.index = generated_features.index
+                                ohlcv_data = ohlcv_aligned
+                                retry_success = True
+                                tprint_success(
+                                    "✅ Successfully realigned OHLCV using datetime-converted feature index"
+                                )
+                        except Exception as coercion_exc:
+                            tprint_warning(
+                                f"⚠️ Datetime-coercion alignment attempt failed; falling back to positional alignment: {coercion_exc}"
+                            )
+
+                        if not retry_success:
+                            min_len = min(len(ohlcv_data), len(generated_features))
+                            if min_len > 0:
+                                # Preserve the most recent history and force the index to match
+                                # the tail of generated_features so downstream alignment is safe.
+                                ohlcv_aligned = ohlcv_data.iloc[-min_len:].copy()
+                                ohlcv_aligned.index = generated_features.index[-min_len:]
+                                ohlcv_data = ohlcv_aligned
+                            else:
+                                tprint_warning(
+                                    "⚠️ OHLCV alignment produced no usable rows; disabling OHLCV-based variants"
+                                )
+                                ohlcv_data = None
 
                     if ohlcv_data is not None and len(ohlcv_data) > 0:
                         # Debug: Check the types of OHLCV columns
@@ -2040,7 +2084,7 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         tprint_info("="*60)
         tprint_info("🔄 CROSS-TIMEFRAME FEATURES GENERATION")
         tprint_info("="*60)
-        tprint_info("🔄 Generating cross-timeframe features with 3x, 6x, 9x, 27x lookback ratios")
+        tprint_info("🔄 Generating cross-timeframe features with 3x, 6x, 9x, 15x lookback ratios")
         
         if len(variant_features.columns) == 0:
             tprint_warning("⚠️ No variant features available for cross-timeframe generation")
@@ -2092,7 +2136,7 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         # Short-term: 3x, 6x (micro to short-term regime shifts)
         # Medium-term: 9x, 15x (intraday regime transitions)
         # Long-term: 27x, 45x, 60x (multi-regime and market memory interactions)
-        timeframe_multipliers = [3, 6, 9, 15, 27, 45, 60]
+        timeframe_multipliers = [3, 6, 9, 15]
 
         # Create lookback mapping from original features
         lookback_mapping = {}
@@ -2110,9 +2154,6 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                 # Extract base feature name and variant type
                 base_feature_name = self._extract_base_feature_name(variant_col)
                 variant_type = self._extract_variant_type(variant_col)
-
-                if variant_type in ("volnorm", "trend_adj"):
-                    continue
 
                 if base_feature_name not in lookback_mapping:
                     tprint_warning(f"⚠️ No lookback found for base feature {base_feature_name}, skipping")
@@ -2251,23 +2292,15 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         # Select target(s) for pruning
         targets_df = self._get_primary_summary_targets(config)
         if targets_df is None or targets_df.empty:
-            # Fallback: try basic columns on labeled_data
-            candidate_cols = [
-                "smoothed_label",
-                "binary_label",
-                "realized_return",
-            ]
-            if isinstance(labeled_data, pd.DataFrame) and not labeled_data.empty:
-                existing = [c for c in candidate_cols if c in labeled_data.columns]
-                if existing:
-                    targets_df = labeled_data[[existing[0]]]
-                else:
-                    # Last resort: first column of labeled_data
-                    targets_df = labeled_data.iloc[:, :1].copy()
-            else:
-                # Absolute fallback: dummy zero target with correct index
-                targets_df = pd.DataFrame(index=variant_features.index)
-                targets_df["dummy_target"] = 0.0
+            tprint_error(
+                "❌ Phase 2: No valid meta-label primary training target found in labeled_data "
+                "(expected one of META_LABEL_PRIMARY_TRAINING_TARGETS). "
+                "Ensure feature_generation_meta_labeling_step has been run and its "
+                "labeled_data_{symbol}_{timeframe} artifact is available."
+            )
+            raise RuntimeError(
+                "No valid meta-label primary training target available for Phase 2 pruning"
+            )
 
         # Infer feature categories
         try:
@@ -2296,18 +2329,29 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                 
                 tprint_info(f"  📊 Target feature count after pruning: {target_feature_count}")
                 
-                # Configure pipeline for pruning (stricter thresholds)
+                # Configure pipeline for pruning (stricter & lighter for interactions)
                 pipeline_config = EvaluationConfig(
-                    subsample_ratio=0.20,  # 20% subsample for stages 1-2
+                    subsample_ratio=0.15,  # 15% subsample for stages 1-2
                     n_chunks=6,
                     variance_quantile_threshold=0.25,  # Filter bottom 25% by variance
-                    price_corr_quantile_threshold=0.25,
-                    future_corr_quantile_threshold=0.25,
-                    ic_tstat_threshold=1.5,  # Moderate IC filtering
+                    # Stronger Stage 1 filters to drop more weak interactions early
+                    price_corr_quantile_threshold=0.40,
+                    future_corr_quantile_threshold=0.40,
+                    # Base thresholds (used if quantiles are not set)
+                    ic_tstat_threshold=1.5,
                     ic_autocorr_threshold=0.0,
                     mi_proxy_threshold=0.02,
-                    n_cv_splits=5,
+                    # Quantile-based Stage 2 filtering for interactions
+                    ic_tstat_quantile_threshold=0.60,  # Keep top 40% by IC t-stat
+                    mi_proxy_quantile_threshold=0.60,  # Keep top 40% by MI proxy
+                    # Downsample time for IC computation to reduce cost
+                    ic_downsample_factor=2,
+                    # Softer robustness for interactions: fewer CV splits
+                    n_cv_splits=3,
                     embargo_bars=1,
+                    # Cheaper redundancy analysis: cap feature count and use simple clustering
+                    max_redundancy_features=200,
+                    use_simple_redundancy_clustering=True,
                     top_k_per_feature=target_feature_count,  # Return top N features
                     use_parallel=False,
                     n_workers=1,
@@ -2376,6 +2420,46 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                             if cat_features:
                                 # Just add the first one (could improve by scoring)
                                 selected_features.append(cat_features[0])
+                    try:
+                        def _normalize_base_name(name: str) -> str:
+                            base = name
+                            ct_suffixes = [
+                                '_3x_ratio',
+                                '_6x_ratio',
+                                '_9x_ratio',
+                                '_15x_ratio',
+                            ]
+                            for sfx in ct_suffixes:
+                                if base.endswith(sfx):
+                                    base = base[:-len(sfx)]
+                                    break
+                            return self._extract_base_feature_name(base)
+
+                        selected_set = set(selected_features)
+                        base_to_selected: Dict[str, List[str]] = {}
+                        for f in selected_features:
+                            key = _normalize_base_name(f)
+                            base_to_selected.setdefault(key, []).append(f)
+
+                        max_extra_volnorm = int(config.get("phase2_max_extra_volnorm", 50))
+                        volnorm_added = 0
+                        for col in variant_features.columns:
+                            if "volnorm" not in col:
+                                continue
+                            if col in selected_set:
+                                continue
+                            base_key = _normalize_base_name(col)
+                            if base_key not in base_to_selected:
+                                continue
+                            selected_features.append(col)
+                            selected_set.add(col)
+                            volnorm_added += 1
+                            if volnorm_added >= max_extra_volnorm:
+                                break
+                        if volnorm_added > 0:
+                            tprint_info(f"  📊 Volnorm retention: added {volnorm_added} _volnorm variants to Phase 2 selection")
+                    except Exception as vol_exc:
+                        tprint_warning(f"  ⚠️ Volnorm retention post-processing failed: {vol_exc}")
                     
                     # Subset the features
                     valid_selected = [f for f in selected_features if f in variant_features.columns]
@@ -2399,20 +2483,20 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                     
                 else:
                     tprint_warning("  ⚠️ No candidates from pipeline, falling back to legacy pruning")
-                    return self._phase2_cheap_pruning_legacy(
+                    return await self._phase2_cheap_pruning_legacy(
                         variant_features, labeled_data, lookback_optimization, config,
                         targets_df, feature_categories
                     )
                 
             except Exception as exc:
                 tprint_warning(f"  ⚠️ FeatureSelectionPipeline failed: {exc}; falling back to legacy pruning")
-                return self._phase2_cheap_pruning_legacy(
+                return await self._phase2_cheap_pruning_legacy(
                     variant_features, labeled_data, lookback_optimization, config,
                     targets_df, feature_categories
                 )
         else:
             tprint_warning("  ⚠️ FeatureSelectionPipeline not available; using legacy pruning")
-            return self._phase2_cheap_pruning_legacy(
+            return await self._phase2_cheap_pruning_legacy(
                 variant_features, labeled_data, lookback_optimization, config,
                 targets_df, feature_categories
             )
@@ -2512,23 +2596,51 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         features = aligned_features
         targets = aligned_target.to_frame(name=first_target_name)
 
+        # Apply per-feature coverage filter so that interaction discovery only
+        # uses features with high non-NaN coverage.
+        coverage_threshold = float(config.get("interaction_min_coverage", 0.90))
+        n_rows = len(features)
+        if n_rows > 0 and len(features.columns) > 0:
+            non_nan_counts = features.notna().sum(axis=0)
+            coverage = non_nan_counts / float(n_rows)
+            kept_cols = coverage[coverage >= coverage_threshold].index.tolist()
+
+            if kept_cols:
+                tprint_info(
+                    f"  📊 Interaction coverage filter: keeping {len(kept_cols)}/{features.shape[1]} "
+                    f"features with ≥{coverage_threshold:.0%} non-NaN coverage"
+                )
+            else:
+                sorted_cols = coverage.sort_values(ascending=False)
+                kept_cols = sorted_cols.index[: min(50, len(sorted_cols))].tolist()
+                tprint_warning(
+                    f"  ⚠️ Interaction coverage filter (≥{coverage_threshold:.0%} non-NaN) "
+                    "removed all features; using top-coverage features instead"
+                )
+
+            features = features[kept_cols]
+            if feature_categories is not None:
+                feature_categories = {
+                    name: feature_categories.get(name, "unknown") for name in kept_cols
+                }
+
         # Configure label-guided interaction discovery
-        # NOTE: thresholds are intentionally made looser in light mode so we
-        # can explore a richer interaction space.
+        # NOTE: thresholds are intentionally made looser in this step so we
+        # can explore a richer interaction space for analyst interactions.
         lgid_config = LabelGuidedInteractionConfig(
             # MI/SHAP scoring
             use_mi_scoring=True,
-            use_shap_scoring=SHAP_AVAILABLE,
-            mi_weight=0.6,
-            shap_weight=0.4,
+            use_shap_scoring=False,
+            mi_weight=0.4,
+            shap_weight=0.6,
 
-            # Lift requirements – relaxed so that more promising interactions are kept
-            # in light-mode exploration. Keep a small R² guard but do not require it.
+            # Lift requirements – relaxed; for this step we rely on MI scores only
+            # for ranking and diagnostics, not for hard filtering.
             min_r2_lift=float(config.get('min_interaction_r2_lift', 0.005)),  # 0.5% R² improvement
-            # Require only modest MI improvement: child MI ≥ 1.02 × best parent MI
+            # Default to ~2% relative MI lift in diagnostics unless config overrides.
             min_mi_lift=float(config.get('min_interaction_mi_lift', 0.02)),
-            require_r2_lift=False,  # Don't require R² lift (too expensive to compute)
-            require_mi_lift=True,   # Require MI lift (fast to compute)
+            require_r2_lift=False,  # Don't require R² lift in this step
+            require_mi_lift=False,  # Don't hard-filter by MI lift; let LASSO/category limits decide
 
             # Regularization - use LASSO for sparse selection
             use_lasso=True,
@@ -2537,12 +2649,23 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             lasso_max_iter=500,
 
             # Interaction generation limits – allow more pairs to be evaluated
-            max_pairs_to_test=int(config.get('max_interaction_pairs', 250)),
+            max_pairs_to_test=int(config.get('max_interaction_pairs', 1200)),
             operations=['multiply', 'divide', 'subtract', 'log_ratio'],  # Exclude 'add' (often redundant)
 
             # Category controls - CRITICAL for preventing trend over-representation
-            max_interactions_per_category_pair=int(config.get('max_interactions_per_category_pair', 3)),
+            max_interactions_per_category_pair=int(config.get('max_interactions_per_category_pair', 25)),
             banned_category_pairs=set(),  # Could ban (trend, trend) to prevent trend×trend
+            per_category_pair_cap={
+                "oscillator_x_oscillator": int(
+                    config.get("max_oscillator_oscillator_interactions", 20)
+                ),
+                "oscillator_x_returns": int(
+                    config.get("max_oscillator_returns_interactions", 30)
+                ),
+                "momentum_x_oscillator": int(
+                    config.get("max_momentum_oscillator_interactions", 30)
+                ),
+            },
 
             # Performance
             n_jobs=-1,
@@ -2562,14 +2685,33 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
 
                 # Train LGBM
                 lgbm_params = {
-                    'max_depth': 3,
-                    'num_leaves': 10,
-                    'n_estimators': 50,
+                    # Slightly deeper trees and more leaves to expose richer
+                    # combinations of features in splits.
+                    'max_depth': 4,
+                    'num_leaves': 31,
+
+                    # More trees to increase the diversity of feature
+                    # co-occurrences observed across the ensemble.
+                    'n_estimators': 100,
+
+                    # Keep a moderate learning rate; this model is only used
+                    # for structure discovery, not final prediction.
                     'learning_rate': 0.1,
-                    'reg_alpha': 0.2,
-                    'reg_lambda': 0.2,
+
+                    # Mild regularization – enough to avoid pathological
+                    # overfitting but loose enough to let more features
+                    # participate in splits.
+                    'reg_alpha': 0.1,
+                    'reg_lambda': 0.1,
+
+                    # Encourage feature diversity with column and row
+                    # subsampling per tree.
+                    'feature_fraction': 0.5,
+                    'bagging_fraction': 0.8,
+                    'bagging_freq': 1,
+
                     'random_state': 42,
-                    'verbose': -1
+                    'verbose': -1,
                 }
                 model = lgb.LGBMRegressor(**lgbm_params)
                 model.fit(features_sample, targets_sample.iloc[:, 0])
@@ -2717,7 +2859,7 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             DataFrame of cross-timeframe interaction features
         """
         # Look for features that have both CT markers and interaction operators
-        ct_markers = ['_3x_ratio', '_6x_ratio', '_9x_ratio', '_15x_ratio', '_27x_ratio', '_45x_ratio', '_60x_ratio']
+        ct_markers = ['_3x_ratio', '_6x_ratio', '_9x_ratio', '_15x_ratio']
         interaction_ops = ['_x_', '_div_', '_minus_', '_plus_', '_log_']
 
         ct_interaction_cols = []
@@ -2864,6 +3006,102 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                 }
             }
 
+        # Step 5: LightGBM gain + permutation-based feature selection (interactions + base/CT/variants)
+        lgbm_fs_stats: Dict[str, Any] = {}
+        try:
+            if LGBM_AVAILABLE and (len(normalized_features.columns) + len(interactions.columns)) > 0:
+                tprint_info("  🌟 Phase 3.4: LGBM gain + permutation-based feature selection (bypassing 4-stage FS for interactions)")
+
+                primary_target = targets.iloc[:, 0]
+
+                base_cols_for_corr = list(normalized_features.columns)
+                if base_cols_for_corr:
+                    corr_scores: Dict[str, float] = {}
+                    target_valid = primary_target.notna()
+                    for col in base_cols_for_corr:
+                        col_series = normalized_features[col]
+                        mask = target_valid & col_series.notna()
+                        if mask.sum() > 1:
+                            try:
+                                corr_val = col_series[mask].corr(primary_target[mask])
+                            except Exception:
+                                corr_val = 0.0
+                            if pd.isna(corr_val):
+                                corr_val = 0.0
+                        else:
+                            corr_val = 0.0
+                        corr_scores[col] = float(abs(corr_val))
+
+                    sorted_corr = sorted(corr_scores.items(), key=lambda x: x[1], reverse=True)
+                    keep_n = int(len(sorted_corr) * 0.75)
+                    if keep_n <= 0:
+                        keep_n = len(sorted_corr)
+                    kept_base = [name for name, _ in sorted_corr[:keep_n]]
+                    if kept_base and len(kept_base) < len(base_cols_for_corr):
+                        normalized_features = normalized_features[kept_base]
+                        tprint_info(
+                            f"  📊 Correlation prefilter: keeping {len(kept_base)}/{len(base_cols_for_corr)} base features (top 75% by |corr|)"
+                        )
+
+                combined_for_fs = pd.concat([normalized_features, interactions], axis=1)
+
+                gain_top200, perm_top100, gain_importances, perm_importances = (
+                    self._select_features_with_lgbm_gain_and_permutation(
+                        combined_for_fs,
+                        primary_target,
+                        config,
+                    )
+                )
+
+                selected_set = set(perm_top100)
+
+                base_cols = list(normalized_features.columns)
+
+                base_scores: Dict[str, float] = {}
+                for col in base_cols:
+                    score = 0.0
+                    if col in perm_importances:
+                        score = float(perm_importances.get(col, 0.0))
+                    elif col in gain_importances:
+                        score = float(gain_importances.get(col, 0.0))
+                    base_scores[col] = score
+
+                sorted_base = sorted(base_scores.items(), key=lambda x: x[1], reverse=True)
+                top_k = min(100, len(sorted_base))
+                base_top = [name for name, _ in sorted_base[:top_k]]
+                if not base_top:
+                    base_top = base_cols
+
+                interaction_cols = [c for c in interactions.columns if c in selected_set]
+
+                normalized_features = normalized_features[base_top]
+                interactions = interactions[interaction_cols]
+
+                tprint_info(
+                    f"  📊 LGBM FS: {len(gain_top200)} features in gain_top200, {len(perm_top100)} in perm_top100"
+                )
+                tprint_info(f"    🔝 Top 5 by gain: {gain_top200[:5]}")
+                tprint_info(f"    🔝 Top 5 by permutation importance: {perm_top100[:5]}")
+
+                lgbm_fs_stats = {
+                    "method": "lgbm_gain_then_permutation",
+                    "gain_top_k": len(gain_top200),
+                    "perm_top_k": len(perm_top100),
+                    "gain_top200": gain_importances,
+                    "perm_top100": perm_importances,
+                }
+            else:
+                tprint_warning(
+                    "  ⚠️ Skipping LGBM gain+permutation selection (LGBM unavailable or no features)"
+                )
+        except Exception as exc:
+            tprint_warning(
+                f"  ⚠️ LGBM gain+permutation feature selection failed: {exc}"
+            )
+            lgbm_fs_stats = {"error": str(exc)}
+
+        shap_metadata["lgbm_feature_selection"] = lgbm_fs_stats
+
         tprint_success(f"  ✅ Phase 3 complete: {len(normalized_features.columns)} features, {len(interactions.columns)} interactions")
 
         return normalized_features, interactions, shap_metadata
@@ -2931,6 +3169,7 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             'variant_generation': shap_metadata.get('variant_generation', {}),
             'pruning_stages': shap_metadata.get('pruning_stages', {}),
             'interaction_discovery': shap_metadata.get('interaction_discovery', {}),
+            'lgbm_feature_selection': shap_metadata.get('lgbm_feature_selection', {}),
             'created_at': datetime.now().isoformat()
         }
         
@@ -2953,11 +3192,11 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         for col in combined_features.columns:
             # Check interaction operations FIRST (before CT markers)
             if any(op in col for op in ['_x_', '_div_', '_minus_', '_log_', '_plus_']):
-                if any(marker in col for marker in ['_3x_ratio', '_6x_ratio', '_9x_ratio', '_27x_ratio']):
+                if any(marker in col for marker in ['_3x_ratio', '_6x_ratio', '_9x_ratio', '_15x_ratio']):
                     hybrid_ct_interactions.append(col)  # Hybrid: interaction + cross-timeframe
                 else:
                     traditional_interactions.append(col)  # Pure interactions
-            elif any(marker in col for marker in ['_3x_ratio', '_6x_ratio', '_9x_ratio', '_27x_ratio']):
+            elif any(marker in col for marker in ['_3x_ratio', '_6x_ratio', '_9x_ratio', '_15x_ratio']):
                 ct_ratio_features.append(col)  # Pure cross-timeframe ratios
             else:
                 # Check if it's a variant feature or base feature
@@ -2992,6 +3231,9 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                 shap_metadata.get('interaction_discovery', {}).get('interaction_scores', {})
                 or {}
             )
+            lgbm_fs = shap_metadata.get('lgbm_feature_selection', {}) or {}
+            gain_importances = lgbm_fs.get('gain_top200', {}) or {}
+            perm_importances = lgbm_fs.get('perm_top100', {}) or {}
 
             # Compute per-feature MI and stability for the final combined feature set
             mi_scores: Dict[str, float] = {}
@@ -3022,9 +3264,6 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                     '_6x_ratio',
                     '_9x_ratio',
                     '_15x_ratio',
-                    '_27x_ratio',
-                    '_45x_ratio',
-                    '_60x_ratio',
                 ]
                 base = name
                 for sfx in ct_suffixes:
@@ -3060,6 +3299,9 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                     score = 0.0
 
                 category = feature_categories.get(col, 'unknown')
+
+                gain_val = gain_importances.get(col, np.nan)
+                perm_val = perm_importances.get(col, np.nan)
 
                 mi_val = mi_scores.get(col)
                 if mi_val is None:
@@ -3125,6 +3367,8 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                     'feature_type': feature_type,
                     'category': category,
                     'importance_score': score,
+                    'gain_importance': gain_val,
+                    'permutation_importance': perm_val,
                     'mi': mi_val,
                     'stability': stability_val,
                     'composite_score': composite_val,
@@ -3162,39 +3406,138 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                     positive_count / n_interactions if n_interactions > 0 else 0.0
                 )
 
-                # Store summary as special rows for easy downstream aggregation
+                tprint_info(
+                    f"  📊 Interaction scores: mean={mean_score:.4f}, median={median_score:.4f}, "
+                    f"max={max_score:.4f}, positive_ratio={positive_ratio:.1%}"
+                )
+
                 summary_rows.append({
-                    'feature_name': '__summary__::interaction_count',
-                    'feature_type': 'interaction_summary',
-                    'category': 'all',
-                    'importance_score': float(n_interactions),
-                })
-                summary_rows.append({
-                    'feature_name': '__summary__::interaction_mean_score',
-                    'feature_type': 'interaction_summary',
-                    'category': 'all',
+                    'feature_name': '__interaction_stats__::mean_score',
+                    'feature_type': 'interaction_stats',
+                    'category': 'stats',
                     'importance_score': mean_score,
                 })
                 summary_rows.append({
-                    'feature_name': '__summary__::interaction_median_score',
-                    'feature_type': 'interaction_summary',
-                    'category': 'all',
+                    'feature_name': '__interaction_stats__::median_score',
+                    'feature_type': 'interaction_stats',
+                    'category': 'stats',
                     'importance_score': median_score,
                 })
                 summary_rows.append({
-                    'feature_name': '__summary__::interaction_best_score',
-                    'feature_type': 'interaction_summary',
-                    'category': 'all',
-                    'importance_score': max_score,
-                })
-                summary_rows.append({
-                    'feature_name': '__summary__::interaction_positive_ratio',
-                    'feature_type': 'interaction_summary',
-                    'category': 'all',
-                    'importance_score': float(positive_ratio),
+                    'feature_name': '__interaction_stats__::positive_ratio',
+                    'feature_type': 'interaction_stats',
+                    'category': 'stats',
+                    'importance_score': positive_ratio,
                 })
 
-            if summary_rows:
+            # Add feature type counts summary
+            feature_type_counts = {
+                'base': len(base_features_list),
+                'variant': len(variant_features_list),
+                'ct_ratio': len(ct_ratio_features),
+                'interaction': len(traditional_interactions),
+                'ct_interaction': len(hybrid_ct_interactions),
+            }
+            
+            for f_type, count in feature_type_counts.items():
+                 summary_rows.append({
+                    'feature_name': f'__feature_type_count__::{f_type}',
+                    'feature_type': 'feature_type_count',
+                    'category': 'stats',
+                    'importance_score': float(count),
+                })
+
+            # Enrich summary rows with parent metrics
+            for row in summary_rows:
+                # Skip summary stats rows
+                if row['feature_type'] in ('category_coverage', 'interaction_stats', 'feature_type_count'):
+                    continue
+                    
+                parent = row.get('parent_feature')
+                
+                # Default values
+                parent_gain = 0.0
+                parent_perm = 0.0
+                gain_lift = 0.0
+                perm_lift = 0.0
+                
+                if parent:
+                    # Look up parent importance
+                    raw_p_gain = gain_importances.get(parent)
+                    try:
+                        parent_gain = float(raw_p_gain) if raw_p_gain is not None and not pd.isna(raw_p_gain) else 0.0
+                    except Exception:
+                        parent_gain = 0.0
+                        
+                    raw_p_perm = perm_importances.get(parent)
+                    try:
+                        parent_perm = float(raw_p_perm) if raw_p_perm is not None and not pd.isna(raw_p_perm) else 0.0
+                    except Exception:
+                        parent_perm = 0.0
+                    
+                    # Calculate lift (avoid division by zero)
+                    if parent_gain > 1e-9:
+                        gain_lift = (row.get('gain_importance', 0.0) - parent_gain) / parent_gain
+                    else:
+                        # If parent has 0 gain, any positive gain is infinite lift, but we cap/handle it
+                        gain_lift = 0.0 if row.get('gain_importance', 0.0) <= 1e-9 else 999.0
+                        
+                    if parent_perm > 1e-9:
+                        perm_lift = (row.get('permutation_importance', 0.0) - parent_perm) / parent_perm
+                    else:
+                        perm_lift = 0.0 if row.get('permutation_importance', 0.0) <= 1e-9 else 999.0
+
+                row['parent_gain_importance'] = parent_gain
+                row['parent_permutation_importance'] = parent_perm
+                row['gain_lift_vs_parent'] = gain_lift
+                row['perm_lift_vs_parent'] = perm_lift
+                base_count = 0
+                variant_count = 0
+                ct_count = 0
+                interaction_count = 0
+
+                for row in summary_rows:
+                    fname = row.get('feature_name', '')
+                    ftype = row.get('feature_type', '')
+
+                    # Skip synthetic summary/category rows when counting
+                    if isinstance(fname, str) and fname.startswith('__'):
+                        continue
+
+                    if ftype == 'base':
+                        base_count += 1
+                    elif ftype == 'variant':
+                        variant_count += 1
+                    elif ftype == 'ct_ratio':
+                        ct_count += 1
+                    elif ftype in ('interaction', 'ct_interaction'):
+                        interaction_count += 1
+
+                def _append_fs_summary(name: str, value: float) -> None:
+                    """Append a lightweight LGBM FS summary row to the CSV."""
+                    summary_rows.append({
+                        'feature_name': name,
+                        'feature_type': 'lgbm_fs_summary',
+                        'category': 'top100',
+                        'importance_score': float(value),
+                        'gain_importance': np.nan,
+                        'permutation_importance': np.nan,
+                        'mi': np.nan,
+                        'stability': np.nan,
+                        'composite_score': np.nan,
+                        'parent_feature': None,
+                        'parent_mi': np.nan,
+                        'parent_stability': np.nan,
+                        'mi_lift_vs_parent': np.nan,
+                        'stability_ratio_vs_parent': np.nan,
+                    })
+
+                _append_fs_summary('__summary__::top100_base_count', base_count)
+                _append_fs_summary('__summary__::top100_variant_count', variant_count)
+                _append_fs_summary('__summary__::top100_ct_count', ct_count)
+                _append_fs_summary('__summary__::top100_interaction_count', interaction_count)
+
+                # Build final DataFrame and persist to CSV
                 summary_df = pd.DataFrame(summary_rows)
                 symbol = config.get('symbol', 'UNKNOWN')
                 timeframe = config.get('timeframe', 'UNKNOWN')
@@ -3498,6 +3841,82 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             content += f"- **Pruning Efficiency**: {(total_removed / max(total_features + total_removed, 1) * 100):.1f}%\n"
         
         content += f"""
+## LGBM Feature Selection (Gain + Permutation)
+"""
+
+        lgbm_fs = shap_metadata.get('lgbm_feature_selection', {}) or {}
+        if lgbm_fs:
+            method = lgbm_fs.get('method', 'lgbm_gain_then_permutation')
+            gain_top_k = lgbm_fs.get('gain_top_k', 0)
+            perm_top_k = lgbm_fs.get('perm_top_k', 0)
+            content += f"- **Method**: {method}\n"
+            content += f"- **Gain top-K**: {gain_top_k}\n"
+            content += f"- **Permutation top-K**: {perm_top_k}\n"
+
+            gain_imp = lgbm_fs.get('gain_top200', {}) or {}
+            perm_imp = lgbm_fs.get('perm_top100', {}) or {}
+
+            if isinstance(gain_imp, dict) and gain_imp:
+                top_gain = sorted(gain_imp.items(), key=lambda kv: kv[1], reverse=True)[:10]
+                content += "- **Top 10 features by gain:**\n"
+                for name, score in top_gain:
+                    content += f"  - `{name}`: {score:.4f}\n"
+
+            if isinstance(perm_imp, dict) and perm_imp:
+                top_perm = sorted(perm_imp.items(), key=lambda kv: kv[1], reverse=True)[:10]
+                content += "- **Top 10 features by permutation importance:**\n"
+                for name, score in top_perm:
+                    content += f"  - `{name}`: {score:.4f}\n"
+        else:
+            content += "- LGBM gain/permutation selection was not executed or failed.\n"
+
+        # Top-200 gain-ranked feature diagnostics vs meta-label targets
+        top200_diag = shap_metadata.get("top200_meta_label_diagnostics") or {}
+        overall_diag = top200_diag.get("overall") if isinstance(top200_diag, dict) else None
+        if isinstance(overall_diag, dict) and overall_diag:
+            content += """\n## Top-200 LGBM Features: Stability & Meta-Label Diagnostics\n\n"""
+            content += (
+                "The table below summarizes stability plus meta-label diagnostics for the top-200 "
+                "features ranked by LGBM gain importance. Metrics are computed against `binary_label` "
+                "and `realized_return` where available.\n\n"
+            )
+            content += (
+                "| Rank | Feature | Stability | AUC (binary_label) | IC (binary_label) | "
+                "IC (realized_return) | Rank IC (realized_return) | N (binary) | N (ret) |\n"
+            )
+            content += "| --- | --- | --- | --- | --- | --- | --- | --- | --- |\n"
+
+            def _fmt_diag(v: Any, ndigits: int = 4) -> str:
+                if isinstance(v, (int, float)) and np.isfinite(v):
+                    return f"{v:.{ndigits}f}"
+                return "N/A"
+
+            gain_imp_for_diag = gain_imp if isinstance(gain_imp, dict) and gain_imp else {}
+            if gain_imp_for_diag:
+                ordered_feats = [name for name, _ in sorted(gain_imp_for_diag.items(), key=lambda kv: kv[1], reverse=True)]
+            else:
+                ordered_feats = list(overall_diag.keys())
+
+            max_rows = int(top200_diag.get("top_k", 200)) if isinstance(top200_diag, dict) else 200
+            for rank, feat_name in enumerate(ordered_feats[:max_rows], 1):
+                metrics = overall_diag.get(feat_name, {}) or {}
+                stab = metrics.get("stability")
+                bin_m = metrics.get("binary_label") or {}
+                rr_m = metrics.get("realized_return") or {}
+                row = "| {rank} | {feat} | {stab} | {auc_bin} | {ic_bin} | {ic_rr} | {rank_ic} | {n_bin} | {n_ret} |\n".format(
+                    rank=rank,
+                    feat=feat_name,
+                    stab=_fmt_diag(stab),
+                    auc_bin=_fmt_diag(bin_m.get("auc")),
+                    ic_bin=_fmt_diag(bin_m.get("ic")),
+                    ic_rr=_fmt_diag(rr_m.get("ic")),
+                    rank_ic=_fmt_diag(rr_m.get("rank_ic")),
+                    n_bin=str(bin_m.get("n") if bin_m.get("n") is not None else "N/A"),
+                    n_ret=str(rr_m.get("n") if rr_m.get("n") is not None else "N/A"),
+                )
+                content += row
+
+        content += f"""
 ## Interaction Discovery & Analysis
 """
         
@@ -3738,35 +4157,31 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         except Exception as e:
             tprint_warning(f"⚠️ Failed to extract Analyst side information: {e}")
             return None
-
     def _calculate_composite_scores(
         self,
         features_df: pd.DataFrame,
         targets_df: pd.DataFrame,
-        feature_categories: Dict[str, str],
-        config: Optional[Dict[str, Any]] = None
+        feature_categories: Dict[str, Any],
+        config: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, float]:
-        """
-        Calculate composite scores for features using MI + stability (for reporting/CSV summary).
-        
-        NOTE: This method is used for reporting/CSV summary purposes only.
+        """Calculate composite MI+stability scores for features.
+
         The main pre-LGBM feature selection is handled by _phase2_cheap_pruning which
         uses FeatureSelectionPipeline directly for the complete 4-stage evaluation.
-        
         For Tactician mode, CMI scoring is applied as an overlay.
-        
+
         Args:
             features_df: DataFrame with features
             targets_df: DataFrame with targets
             feature_categories: Dict mapping feature names to categories
             config: Optional configuration for mode detection
-            
+
         Returns:
             Dict mapping feature names to composite scores
         """
         from sklearn.feature_selection import mutual_info_regression
         import numpy as np
-        
+
         # Check if Tactician mode and CMI available
         use_cmi = False
         analyst_side_info = None
@@ -3779,9 +4194,9 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                 tprint_info("📊 Using MI-based composite scoring (CMI unavailable)")
         else:
             tprint_info("📊 Using MI-based composite scoring (Analyst mode)")
-        
+
         tprint_info(f"  📊 Calculating MI scores for {len(features_df.columns)} features...")
-        
+
         # Use first target for MI calculation
         target_col = targets_df.columns[0]
         target = targets_df[target_col]
@@ -3792,11 +4207,13 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         )
 
         if features_aligned.empty or target_aligned.empty:
-            tprint_warning("  ⚠️ No valid overlapping samples between features and targets; using uniform composite scores")
+            tprint_warning(
+                "  ⚠️ No valid overlapping samples between features and targets; using uniform composite scores"
+            )
             return {col: 0.5 for col in features_df.columns}
 
         # Filter valid features
-        valid_features = []
+        valid_features: List[str] = []
         for col in features_aligned.columns:
             col_data = features_aligned[col]
             if col_data.notna().sum() > 0 and col_data.nunique() > 1 and col_data.var() > 0:
@@ -3806,14 +4223,52 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             valid_features = list(features_aligned.columns)
 
         # Subsample for efficiency
-        max_samples = config.get('mi_max_samples', 50000) if config else 50000
+        max_samples = config.get("mi_max_samples", 20000) if config else 20000
         if len(features_aligned) > max_samples:
             step = max(1, len(features_aligned) // max_samples)
             features_aligned = features_aligned.iloc[::step]
             target_aligned = target_aligned.iloc[::step]
 
+        # Cheap pre-filter: use simple Pearson correlation vs target to keep only
+        # the top fraction of features for MI. This significantly reduces the
+        # dimensionality of the MI computation while preserving the strongest
+        # linear relationships.
+        pre_filter_frac = 0.5
+        if config is not None:
+            try:
+                pre_filter_frac = float(config.get("mi_pre_filter_fraction", 0.5))
+            except Exception:
+                pre_filter_frac = 0.5
+
+        if 0.0 < pre_filter_frac < 1.0 and len(valid_features) > 1:
+            corr_scores: Dict[str, float] = {}
+            for col in valid_features:
+                col_data = features_aligned[col]
+                valid_mask = col_data.notna() & target_aligned.notna()
+                if valid_mask.sum() > 10:
+                    try:
+                        corr_val = col_data[valid_mask].corr(target_aligned[valid_mask])
+                        corr_scores[col] = float(abs(corr_val)) if np.isfinite(corr_val) else 0.0
+                    except Exception:
+                        corr_scores[col] = 0.0
+                else:
+                    corr_scores[col] = 0.0
+
+            n_keep = max(1, int(len(valid_features) * pre_filter_frac))
+            sorted_cols = sorted(
+                valid_features,
+                key=lambda name: corr_scores.get(name, 0.0),
+                reverse=True,
+            )
+            kept_features = sorted_cols[:n_keep]
+            tprint_info(
+                f"  📊 MI pre-filter: keeping {len(kept_features)}/{len(valid_features)} features "
+                f"for MI based on |Pearson corr| with {target_col}"
+            )
+            valid_features = kept_features
+
         # Calculate MI scores
-        mi_dict = {}
+        mi_dict: Dict[str, float] = {}
         try:
             if use_cmi and analyst_side_info and self.cmi_scorer is not None:
                 # Use CMI scoring (Tactician mode)
@@ -3821,50 +4276,70 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                     features=features_aligned[valid_features].fillna(0),
                     targets=target_aligned,
                     analyst_outputs=analyst_side_info.analyst_outputs,
-                    regime_labels=analyst_side_info.regime_labels
+                    regime_labels=analyst_side_info.regime_labels,
                 )
-                if hasattr(cmi_result, 'complementarity_scores'):
+                if hasattr(cmi_result, "complementarity_scores"):
                     mi_dict = cmi_result.complementarity_scores
-                elif hasattr(cmi_result, 'feature_scores'):
+                elif hasattr(cmi_result, "feature_scores"):
                     mi_dict = cmi_result.feature_scores
                 else:
                     # Fallback to MI
-                    features_for_mi = features_aligned[valid_features].fillna(0).astype(np.float32)
-                    mi_scores = mutual_info_regression(features_for_mi, target_aligned, random_state=42, n_neighbors=3)
+                    features_for_mi = (
+                        features_aligned[valid_features].fillna(0).astype(np.float32)
+                    )
+                    mi_scores = mutual_info_regression(
+                        features_for_mi,
+                        target_aligned,
+                        random_state=42,
+                        n_neighbors=3,
+                    )
                     mi_dict = dict(zip(valid_features, mi_scores))
             else:
                 # Standard MI calculation
-                features_for_mi = features_aligned[valid_features].fillna(0).astype(np.float32)
-                mi_scores = mutual_info_regression(features_for_mi, target_aligned, random_state=42, n_neighbors=3)
+                features_for_mi = (
+                    features_aligned[valid_features].fillna(0).astype(np.float32)
+                )
+                mi_scores = mutual_info_regression(
+                    features_for_mi,
+                    target_aligned,
+                    random_state=42,
+                    n_neighbors=3,
+                )
                 mi_dict = dict(zip(valid_features, mi_scores))
-            
+
             # Normalize MI scores to 0-1
             if mi_dict:
                 mi_values = np.array(list(mi_dict.values()))
                 if mi_values.max() > 0:
                     mi_max = mi_values.max()
                     mi_dict = {k: v / mi_max for k, v in mi_dict.items()}
-                    
-            tprint_info(f"  ✅ MI scores calculated")
+
+            tprint_info("  ✅ MI scores calculated")
         except Exception as e:
             tprint_warning(f"  ⚠️ MI calculation failed: {e}")
             mi_dict = {col: 0.5 for col in valid_features}
 
         # Calculate stability scores
-        stability_dict = {}
+        stability_dict: Dict[str, float] = {}
         try:
             window_size = min(100, len(features_aligned) // 5)
             for col in valid_features:
                 feature_data = features_aligned[col].ffill().fillna(0)
-                rolling_mean = feature_data.rolling(window=window_size, min_periods=10).mean()
-                rolling_std = feature_data.rolling(window=window_size, min_periods=10).std()
+                rolling_mean = feature_data.rolling(
+                    window=window_size,
+                    min_periods=10,
+                ).mean()
+                rolling_std = feature_data.rolling(
+                    window=window_size,
+                    min_periods=10,
+                ).std()
                 if rolling_mean.std() > 1e-8:
                     cv = rolling_std.mean() / (abs(rolling_mean.mean()) + 1e-8)
                     stability = 1.0 / (1.0 + cv)
                 else:
                     stability = 0.5
                 stability_dict[col] = max(0.0, min(1.0, stability))
-            tprint_info(f"  ✅ Stability scores calculated")
+            tprint_info("  ✅ Stability scores calculated")
         except Exception as e:
             tprint_warning(f"  ⚠️ Stability calculation failed: {e}")
             stability_dict = {col: 0.5 for col in valid_features}
@@ -3877,7 +4352,7 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             pass
 
         # Combine scores
-        composite_scores = {}
+        composite_scores: Dict[str, float] = {}
         for col in features_df.columns:
             if col in mi_dict and col in stability_dict:
                 composite_scores[col] = 0.6 * mi_dict[col] + 0.4 * stability_dict[col]
@@ -3886,6 +4361,250 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
 
         tprint_info(f"  ✅ Composite scores calculated for {len(composite_scores)} features")
         return composite_scores
+
+    def _select_features_with_lgbm_gain_and_permutation(
+        self,
+        features_df: pd.DataFrame,
+        target_series: pd.Series,
+        config: Dict[str, Any],
+    ) -> Tuple[List[str], List[str], Dict[str, float], Dict[str, float]]:
+        """Select features using LightGBM gain, then permutation importance.
+
+        Workflow:
+        1. Train a light LGBM (GOSS) model on all candidate features.
+        2. Rank features by GAIN importance and keep top K_gain (default 200).
+        3. Within that subset, compute permutation importance and keep top K_perm (default 100).
+
+        Returns:
+            gain_top_names: ordered list of top-K_gain feature names by gain
+            perm_top_names: ordered list of top-K_perm feature names by permutation importance
+            gain_importances: mapping name -> gain score for gain_top_names
+            perm_importances: mapping name -> permutation score for perm_top_names
+        """
+
+        if not LGBM_AVAILABLE:
+            raise ImportError("LightGBM is not available for gain/permutation selection")
+
+        tprint_info("  🔧 LGBM feature selection: gain → top-K, then permutation → top-K'")
+
+        # Align features and target by index with robust fallback
+        common_idx = features_df.index.intersection(target_series.index)
+        if len(common_idx) == 0:
+            min_len = min(len(features_df), len(target_series))
+            if min_len == 0:
+                raise ValueError("No overlapping samples for LGBM feature selection")
+            X = features_df.iloc[-min_len:].reset_index(drop=True)
+            y = target_series.iloc[-min_len:].reset_index(drop=True)
+        else:
+            X = features_df.loc[common_idx].copy()
+            y = target_series.loc[common_idx].copy()
+
+        # Filter to rows with non-NaN targets and robustly handle feature NaNs/Infs.
+        # We intentionally avoid requiring every feature to be non-NaN at the
+        # same time, since that collapses the sample when many features have
+        # sparse coverage.
+        valid_mask = y.notna()
+        X = X[valid_mask]
+        y = y[valid_mask]
+
+        if X.empty:
+            raise ValueError("No valid samples after target NaN filtering for LGBM feature selection")
+
+        # Replace non-finite feature values with safe defaults to keep as many
+        # samples as possible for training.
+        X = X.replace([np.inf, -np.inf], np.nan).fillna(0.0)
+
+        # Log basic target statistics for diagnostics
+        try:
+            n_non_null = int(y.notna().sum())
+            n_unique = int(y.nunique(dropna=True))
+            mean_y = float(np.nanmean(y.values))
+            std_y = float(np.nanstd(y.values))
+            tprint_info(
+                f"  🔍 LGBM FS target stats: name={getattr(y, 'name', 'unknown')}, "
+                f"n={len(y)}, n_non_null={n_non_null}, n_unique={n_unique}, "
+                f"mean={mean_y:.4f}, std={std_y:.4f}"
+            )
+        except Exception as target_stats_exc:  # pragma: no cover - diagnostic
+            tprint_warning(
+                f"  ⚠️ Failed to compute LGBM FS target stats: {target_stats_exc}"
+            )
+
+        # Optional stratified subsampling for efficiency (default: 30% of rows)
+        subsample_ratio = float(config.get("lgbm_fs_subsample_ratio", 0.30))
+        if 0.0 < subsample_ratio < 1.0 and len(X) > 0:
+            try:
+                n_samples_full = len(X)
+                n_bins = int(config.get("lgbm_fs_stratify_bins", 10))
+                n_bins = max(1, n_bins)
+
+                # Quantile-based bins on the target for regression-style stratification
+                y_values = y.values.astype(float)
+                quantiles = np.linspace(0.0, 1.0, n_bins + 1)
+                bin_edges = np.unique(np.quantile(y_values, quantiles))
+                if bin_edges.shape[0] > 1:
+                    # Use interior edges for digitization
+                    y_bins = np.digitize(y_values, bin_edges[1:-1], right=True)
+                else:
+                    # Degenerate case: target has almost no variation
+                    y_bins = np.zeros_like(y_values, dtype=int)
+
+                rng = np.random.default_rng(int(config.get("lgbm_fs_subsample_seed", 42)))
+                indices = np.arange(n_samples_full)
+                selected_idx: List[int] = []
+                for b in np.unique(y_bins):
+                    bin_mask = y_bins == b
+                    bin_indices = indices[bin_mask]
+                    if bin_indices.size == 0:
+                        continue
+                    n_bin = max(1, int(round(subsample_ratio * bin_indices.size)))
+                    if n_bin >= bin_indices.size:
+                        selected_idx.extend(bin_indices.tolist())
+                    else:
+                        sampled = rng.choice(bin_indices, size=n_bin, replace=False)
+                        selected_idx.extend(sampled.tolist())
+
+                if selected_idx:
+                    selected_idx = sorted(set(selected_idx))
+                    X = X.iloc[selected_idx]
+                    y = y.iloc[selected_idx]
+                    tprint_info(
+                        f"  📊 LGBM FS stratified subsample: {len(X)}/{n_samples_full} rows (~{subsample_ratio:.0%})"
+                    )
+            except Exception as sub_exc:
+                tprint_warning(
+                    f"  ⚠️ Stratified subsampling for LGBM FS failed; using full dataset: {sub_exc}"
+                )
+
+        n_features = X.shape[1]
+        if n_features == 0:
+            raise ValueError("No features available for LGBM feature selection")
+
+        gain_top_k = int(config.get("lgbm_gain_top_k", 200))
+        perm_top_k = int(config.get("lgbm_perm_top_k", 100))
+        gain_top_k = max(1, min(gain_top_k, n_features))
+        perm_top_k = max(1, min(perm_top_k, gain_top_k))
+
+        tprint_info(
+            f"  📊 LGBM FS config: gain_top_k={gain_top_k}, perm_top_k={perm_top_k}, "
+            f"n_features={n_features}, n_samples={len(X)}"
+        )
+
+        # Light LGBM model with GOSS boosting
+        lgbm_params = {
+            "boosting_type": "gbdt",
+            "data_sample_strategy": "goss",
+            "n_estimators": int(config.get("lgbm_fs_n_estimators", 200)),
+            "learning_rate": float(config.get("lgbm_fs_learning_rate", 0.05)),
+            "num_leaves": int(config.get("lgbm_fs_num_leaves", 31)),
+            "max_depth": int(config.get("lgbm_fs_max_depth", 6)),
+            "subsample": float(config.get("lgbm_fs_subsample", 1.0)),
+            "colsample_bytree": float(config.get("lgbm_fs_colsample_bytree", 0.8)),
+            "reg_alpha": float(config.get("lgbm_fs_reg_alpha", 0.1)),
+            "reg_lambda": float(config.get("lgbm_fs_reg_lambda", 0.1)),
+            "random_state": 42,
+            "n_jobs": -1,
+        }
+
+        tprint_info("  🔧 Training LightGBM (GOSS) model for gain-based ranking...")
+        model = lgb.LGBMRegressor(**lgbm_params)
+        model.fit(X, y)
+
+        booster = model.booster_
+        gain_values = booster.feature_importance(importance_type="gain")
+        feature_names = list(X.columns)
+        gain_dict: Dict[str, float] = {
+            name: float(score) for name, score in zip(feature_names, gain_values)
+        }
+
+        # Basic gain statistics
+        nonzero_gains = [
+            v
+            for v in gain_dict.values()
+            if isinstance(v, (int, float)) and np.isfinite(v) and v != 0.0
+        ]
+        max_gain = float(max(nonzero_gains)) if nonzero_gains else 0.0
+        median_gain = float(np.median(nonzero_gains)) if nonzero_gains else 0.0
+        tprint_info(
+            f"  🔍 LGBM FS gain stats: nonzero={len(nonzero_gains)}/{len(gain_dict)}, "
+            f"max={max_gain:.4f}, median={median_gain:.4f}"
+        )
+
+        # Optional fallback: if all gains are effectively zero, fall back to
+        # simple correlation-based ranking so that reporting has some signal.
+        if not nonzero_gains:
+            tprint_warning(
+                "  ⚠️ LGBM FS produced all-zero gain importances; "
+                "falling back to correlation-based ranking."
+            )
+            corr_scores: Dict[str, float] = {}
+            for name in feature_names:
+                try:
+                    s = pd.to_numeric(X[name], errors="coerce")
+                    valid = s.notna() & y.notna()
+                    if valid.sum() < 100:
+                        continue
+                    corr = np.corrcoef(s[valid].values, y[valid].values)[0, 1]
+                    if np.isfinite(corr):
+                        corr_scores[name] = float(abs(corr))
+                except Exception:
+                    continue
+
+            if corr_scores:
+                gain_dict = corr_scores
+                tprint_info(
+                    f"  📊 Correlation-based FS: non-zero correlations for {len(gain_dict)} features"
+                )
+            else:
+                tprint_warning(
+                    "  ⚠️ Correlation-based fallback FS also failed; keeping zero gain importances."
+                )
+
+        # Rank by (possibly adjusted) gain importance
+        sorted_by_gain = sorted(
+            gain_dict.items(), key=lambda kv: kv[1], reverse=True
+        )
+        gain_top_names = [name for name, score in sorted_by_gain[:gain_top_k] if score > 0.0]
+        if not gain_top_names:
+            gain_top_names = [name for name, _ in sorted_by_gain[:gain_top_k]]
+
+        tprint_info(
+            f"  ✅ LGBM gain ranking complete: selected {len(gain_top_names)}/{gain_top_k} features"
+        )
+
+        # Permutation importance on gain-top subset. We must call the model with the
+        # same feature dimensionality it was trained with, otherwise LightGBM raises
+        # a n_features_ mismatch. We therefore use the full X for predictions and
+        # only permute one column at a time.
+        X_top = X[gain_top_names]
+        base_pred = model.predict(X)
+        base_score = r2_score(y, base_pred)
+        tprint_info(f"  🔧 Baseline R² for permutation importance: {base_score:.4f}")
+
+        rng = np.random.default_rng(42)
+        perm_scores: Dict[str, float] = {}
+        for name in gain_top_names:
+            X_pert = X.copy()
+            X_pert[name] = rng.permutation(X_pert[name].values)
+            perm_pred = model.predict(X_pert)
+            perm_score = r2_score(y, perm_pred)
+            perm_scores[name] = float(base_score - perm_score)
+
+        sorted_by_perm = sorted(
+            perm_scores.items(), key=lambda kv: kv[1], reverse=True
+        )
+        perm_top_names = [name for name, score in sorted_by_perm[:perm_top_k] if score > 0.0]
+        if not perm_top_names:
+            perm_top_names = [name for name, _ in sorted_by_perm[:perm_top_k]]
+
+        tprint_info(
+            f"  ✅ Permutation importance complete: selected {len(perm_top_names)}/{perm_top_k} features"
+        )
+
+        gain_importances = {name: gain_dict.get(name, 0.0) for name in gain_top_names}
+        perm_importances = {name: perm_scores.get(name, 0.0) for name in perm_top_names}
+
+        return gain_top_names, perm_top_names, gain_importances, perm_importances
 
     def _get_feature_categories_from_bank(self, feature_names: List[str], lookback_optimization: Dict) -> Dict[str, str]:
         """Get feature categories from lookback optimization feature bank."""
@@ -4380,11 +5099,11 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         for col in combined_features.columns:
             # Check interaction operations FIRST (before CT markers)
             if any(op in col for op in ['_x_', '_div_', '_minus_', '_log_', '_plus_']):
-                if any(marker in col for marker in ['_3x_ratio', '_6x_ratio', '_9x_ratio', '_27x_ratio']):
+                if any(marker in col for marker in ['_3x_ratio', '_6x_ratio', '_9x_ratio', '_15x_ratio']):
                     hybrid_ct_interactions.append(col)  # Hybrid: interaction + cross-timeframe
                 else:
                     traditional_interactions.append(col)  # Pure interactions
-            elif any(marker in col for marker in ['_3x_ratio', '_6x_ratio', '_9x_ratio', '_27x_ratio']):
+            elif any(marker in col for marker in ['_3x_ratio', '_6x_ratio', '_9x_ratio', '_15x_ratio']):
                 ct_ratio_features.append(col)  # Pure cross-timeframe ratios
             else:
                 # Check if it's a variant feature or base feature
@@ -4419,6 +5138,168 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         tprint_info(f" Category coverage: {category_coverage}")
 
         return artifacts, metrics
+
+
+def _fgigs_compute_topk_meta_label_diagnostics(
+    step: Any,
+    combined_features: pd.DataFrame,
+    top_features: List[str],
+    config: Dict[str, Any],
+    top_k: int = 200,
+) -> Dict[str, Any]:
+    """Compute stability + AUC/IC diagnostics for top-K features.
+
+    Mirrors the meta-label diagnostics used in the final feature selection
+    step, but scoped to the interaction pipeline and limited to an overall
+    slice (no regime/TTO buckets).
+    """
+    results: Dict[str, Any] = {}
+
+    if combined_features is None or combined_features.empty or not top_features:
+        return results
+
+    # Load labeled_data with meta-label targets
+    symbol = config.get("symbol", "ETHUSDT")
+    timeframe = config.get("timeframe", "15m")
+
+    try:
+        try:
+            labeled_data = step._get_artifact(  # type: ignore[attr-defined]
+                f"labeled_data_{symbol}_{timeframe}",
+                "data",
+            )
+        except Exception:
+            labeled_data = step._get_artifact("labeled_data", "data")  # type: ignore[attr-defined]
+    except Exception:
+        return {"error": "labeled_data artifact not found"}
+
+    labeled_df = _ensure_pandas_dataframe(labeled_data)
+    if not isinstance(labeled_df, pd.DataFrame) or labeled_df.empty:
+        return {"error": "labeled_data is empty or not a DataFrame"}
+
+    if labeled_df.index.duplicated().any():
+        labeled_df = labeled_df[~labeled_df.index.duplicated(keep="first")]
+
+    has_binary = "binary_label" in labeled_df.columns
+    has_rr = "realized_return" in labeled_df.columns
+    if not (has_binary or has_rr):
+        return {"error": "binary_label and realized_return not found in labeled_data"}
+
+    common_idx = combined_features.index.intersection(labeled_df.index)
+    if len(common_idx) < 100:
+        return {"warning": f"insufficient overlap between features and labeled_data ({len(common_idx)} samples)"}
+
+    # Optional row subsampling for efficiency on large datasets
+    max_samples = 50000
+    try:
+        if isinstance(config, dict):
+            max_samples = int(config.get("interaction_diag_max_samples", max_samples))
+    except Exception:
+        max_samples = 50000
+
+    if len(common_idx) > max_samples:
+        # Evenly spaced positional indices to preserve temporal coverage
+        pos_idx = np.linspace(0, len(common_idx) - 1, max_samples, dtype=int)
+        common_idx = common_idx.take(pos_idx)
+
+    # Restrict to overlapping window and selected features
+    top_features_unique = [f for f in top_features if f in combined_features.columns]
+    if not top_features_unique:
+        return {"error": "no top features found in combined_features"}
+
+    X = combined_features.loc[common_idx, top_features_unique].copy()
+    bin_series = labeled_df.loc[common_idx, "binary_label"] if has_binary else None
+    rr_series = labeled_df.loc[common_idx, "realized_return"] if has_rr else None
+
+    def _safe_corr(x: pd.Series, y: Optional[pd.Series]) -> Optional[float]:
+        if x is None or y is None:
+            return None
+        valid = x.notna() & y.notna()
+        if valid.sum() < 100:
+            return None
+        try:
+            val = float(x[valid].corr(y[valid]))
+            return None if not np.isfinite(val) else val
+        except Exception:
+            return None
+
+    def _compute_stability(series: pd.Series) -> Optional[float]:
+        s = pd.to_numeric(series, errors="coerce").ffill().fillna(0.0)
+        if len(s) < 50:
+            return None
+        window = min(100, max(10, len(s) // 5))
+        rolling = s.rolling(window=window, min_periods=10)
+        rolling_mean = rolling.mean()
+        rolling_std = rolling.std()
+        try:
+            if rolling_mean.std() > 1e-8:
+                cv = rolling_std.mean() / (abs(rolling_mean.mean()) + 1e-8)
+                stability = 1.0 / (1.0 + cv)
+            else:
+                stability = 0.5
+            return float(max(0.0, min(1.0, stability)))
+        except Exception:
+            return None
+
+    overall: Dict[str, Any] = {}
+
+    for feat in top_features_unique[:top_k]:
+        s_feat = pd.to_numeric(X[feat], errors="coerce")
+        feat_metrics: Dict[str, Any] = {}
+
+        # Stability analysis
+        feat_metrics["stability"] = _compute_stability(s_feat)
+
+        # binary_label diagnostics
+        if has_binary and bin_series is not None:
+            yb = bin_series
+            valid = s_feat.notna() & yb.notna()
+            n_valid = int(valid.sum())
+            auc_val: Optional[float] = None
+            if n_valid >= 100 and yb[valid].nunique() == 2:
+                try:
+                    auc_val = float(roc_auc_score(yb[valid], s_feat[valid]))
+                except Exception:
+                    auc_val = None
+            ic_clf = _safe_corr(s_feat, yb)
+            feat_metrics["binary_label"] = {
+                "ic": ic_clf,
+                "auc": auc_val,
+                "n": n_valid,
+            }
+
+        # realized_return diagnostics
+        if has_rr and rr_series is not None:
+            yr = rr_series
+            valid_ret = s_feat.notna() & yr.notna()
+            n_ret = int(valid_ret.sum())
+            ic_ret = _safe_corr(s_feat, yr)
+
+            rank_ic_ret: Optional[float] = None
+            if n_ret >= 100:
+                try:
+                    s_valid = s_feat[valid_ret]
+                    r_valid = yr[valid_ret]
+                    rank_ic_val = s_valid.rank().corr(r_valid.rank())
+                    if isinstance(rank_ic_val, (int, float)) and np.isfinite(rank_ic_val):
+                        rank_ic_ret = float(rank_ic_val)
+                except Exception:
+                    rank_ic_ret = None
+
+            feat_metrics["realized_return"] = {
+                "ic": ic_ret,
+                "rank_ic": rank_ic_ret,
+                "n": n_ret,
+            }
+
+        overall[feat] = feat_metrics
+
+    return {
+        "top_k": int(min(top_k, len(top_features_unique))),
+        "n_samples": int(len(common_idx)),
+        "overall": overall,
+    }
+
 
 def _fgigs_generate_outcome_report(
     self,
@@ -4560,6 +5441,437 @@ async def _phase4_save_artifacts(
 
     step.performance_stats['category_coverage'] = category_coverage
 
+    # ------------------------------------------------------------------
+    # Build analyst interaction summary CSV (per-feature metrics + FS stats)
+    # ------------------------------------------------------------------
+    summary_path = None
+    try:
+        from pathlib import Path
+
+        # Classify features into base / variant / CT / interactions
+        hybrid_ct_interactions: List[str] = []
+        traditional_interactions: List[str] = []
+        ct_ratio_features: List[str] = []
+        variant_features_list: List[str] = []
+        base_features_list: List[str] = []
+
+        variant_suffixes = ['_volnorm', '_vwap', '_trend_adj']
+        ct_markers = [
+            '_3x_ratio',
+            '_6x_ratio',
+            '_9x_ratio',
+            '_15x_ratio',
+        ]
+
+        for col in combined_features.columns:
+            name = str(col)
+            if any(op in name for op in ['_x_', '_div_', '_minus_', '_log_', '_plus_']):
+                if any(marker in name for marker in ct_markers):
+                    hybrid_ct_interactions.append(name)
+                else:
+                    traditional_interactions.append(name)
+            elif any(marker in name for marker in ct_markers):
+                ct_ratio_features.append(name)
+            else:
+                if any(name.endswith(suffix) for suffix in variant_suffixes):
+                    variant_features_list.append(name)
+                else:
+                    base_features_list.append(name)
+
+        tprint_info("  📊 Feature breakdown before save:")
+        tprint_info(f"    - Hybrid CT interactions: {len(hybrid_ct_interactions)}")
+        tprint_info(f"    - Traditional interactions: {len(traditional_interactions)}")
+        tprint_info(f"    - Cross-timeframe ratios: {len(ct_ratio_features)}")
+        tprint_info(f"    - Variant features: {len(variant_features_list)}")
+        tprint_info(f"    - Base features: {len(base_features_list)}")
+        tprint_info("=" * 80)
+
+        feature_categories = shap_metadata.get('feature_categories', {}) or {}
+        interaction_scores = (
+            shap_metadata.get('interaction_discovery', {}).get('interaction_scores', {})
+            or {}
+        )
+
+        # ------------------------------------------------------------------
+        # LGBM gain/perm importances for reporting metrics
+        #
+        # For robustness, we always run a lightweight LGBM FS pass here using
+        # the primary summary targets. This ensures that the analyst
+        # interaction summary CSV and the top-200 diagnostics section are
+        # populated with meaningful non-zero metrics, even if Phase 3
+        # metadata was missing or partially populated.
+        # ------------------------------------------------------------------
+        gain_importances: Dict[str, float] = {}
+        perm_importances: Dict[str, float] = {}
+        lgbm_fs_meta: Dict[str, Any] = (
+            shap_metadata.get('lgbm_feature_selection', {}) or {}
+        )
+
+        try:
+            if LGBM_AVAILABLE and hasattr(
+                step, "_select_features_with_lgbm_gain_and_permutation"
+            ):
+                targets_for_fs: Optional[pd.DataFrame] = (
+                    step._get_primary_summary_targets(config)
+                    if hasattr(step, "_get_primary_summary_targets")
+                    else None
+                )
+
+                if targets_for_fs is not None and not targets_for_fs.empty:
+                    primary_target = targets_for_fs.iloc[:, 0]
+                    (
+                        gain_top_fb,
+                        perm_top_fb,
+                        gain_imp_fb,
+                        perm_imp_fb,
+                    ) = step._select_features_with_lgbm_gain_and_permutation(
+                        combined_features,
+                        primary_target,
+                        config,
+                    )
+
+                    if gain_imp_fb:
+                        gain_importances = gain_imp_fb
+                    if perm_imp_fb:
+                        perm_importances = perm_imp_fb
+
+                    # Merge back into shap_metadata for downstream consumers
+                    try:
+                        lgbm_fs_meta.update(
+                            {
+                                "method": lgbm_fs_meta.get(
+                                    "method", "lgbm_gain_then_permutation"
+                                ),
+                                "gain_top_k": len(gain_top_fb),
+                                "perm_top_k": len(perm_top_fb),
+                                "gain_top200": gain_importances,
+                                "perm_top100": perm_importances,
+                            }
+                        )
+                        shap_metadata["lgbm_feature_selection"] = lgbm_fs_meta
+                    except Exception:
+                        # Best-effort; metrics will still be used for CSV even
+                        # if metadata update fails.
+                        pass
+
+                    tprint_info(
+                        "  📊 Phase 4: LGBM gain/perm recomputation for summary metrics "
+                        f"({len(gain_importances)} gain, {len(perm_importances)} perm)"
+                    )
+                else:
+                    tprint_warning(
+                        "  ⚠️ Phase 4: no primary summary targets available for LGBM FS; "
+                        "CSV will use interaction scores only."
+                    )
+            else:
+                tprint_warning(
+                    "  ⚠️ Phase 4: LGBM not available for summary metrics; "
+                    "CSV will use interaction scores only."
+                )
+        except Exception as lgbm_metrics_exc:  # pragma: no cover - diagnostic
+            tprint_warning(
+                "  ⚠️ Phase 4 LGBM gain/perm computation for summary metrics failed; "
+                f"keeping zeroed metrics: {lgbm_metrics_exc}"
+            )
+            # As a defensive fallback, reuse any existing metadata values if present
+            try:
+                if isinstance(lgbm_fs_meta, dict):
+                    gain_importances = lgbm_fs_meta.get('gain_top200', {}) or {}
+                    perm_importances = lgbm_fs_meta.get('perm_top100', {}) or {}
+            except Exception:
+                pass
+
+        # ------------------------------------------------------------------
+        # Top-K meta-label diagnostics for gain-ranked features
+        # ------------------------------------------------------------------
+        try:
+            if gain_importances:
+                sorted_gain = sorted(gain_importances.items(), key=lambda kv: kv[1], reverse=True)
+                top_features_for_diag = [name for name, _ in sorted_gain[:200]]
+                top200_diag = _fgigs_compute_topk_meta_label_diagnostics(
+                    step,
+                    combined_features,
+                    top_features_for_diag,
+                    config,
+                    top_k=200,
+                )
+                if isinstance(top200_diag, dict) and top200_diag:
+                    shap_metadata["top200_meta_label_diagnostics"] = top200_diag
+        except Exception as diag_exc:  # pragma: no cover - diagnostic surface
+            tprint_warning(
+                f"⚠️ Top-200 meta-label diagnostics computation failed; keeping report without diagnostics: {diag_exc}"
+            )
+
+        def _strip_ct_suffix(name: str) -> str:
+            base = name
+            for sfx in ct_markers:
+                if base.endswith(sfx):
+                    return base[:-len(sfx)]
+            return base
+
+        def _parse_interaction_parents(name: str) -> List[str]:
+            ops = ['_log_ratio_', '_div_', '_minus_', '_plus_', '_x_']
+            for op in ops:
+                if op in name:
+                    left, right = name.split(op, 1)
+                    return [left, right]
+            return []
+
+        summary_rows: List[Dict[str, Any]] = []
+        for col in combined_features.columns:
+            col_name = str(col)
+            if col_name in hybrid_ct_interactions:
+                feature_type = 'ct_interaction'
+            elif col_name in traditional_interactions:
+                feature_type = 'interaction'
+            elif col_name in ct_ratio_features:
+                feature_type = 'ct_ratio'
+            elif col_name in variant_features_list:
+                feature_type = 'variant'
+            else:
+                feature_type = 'base'
+
+            category = feature_categories.get(col_name, 'unknown')
+
+            # LGBM gain / permutation importances (always numeric)
+            raw_gain = gain_importances.get(col_name)
+            try:
+                gain_val = float(raw_gain) if raw_gain is not None and not pd.isna(raw_gain) else 0.0
+            except Exception:
+                gain_val = 0.0
+
+            raw_perm = perm_importances.get(col_name)
+            try:
+                perm_val = float(raw_perm) if raw_perm is not None and not pd.isna(raw_perm) else 0.0
+            except Exception:
+                perm_val = 0.0
+
+            # Interaction-discovery score (may be NaN / missing)
+            raw_interaction_score = interaction_scores.get(col_name)
+            interaction_score = 0.0
+            try:
+                if raw_interaction_score is not None and not pd.isna(raw_interaction_score):
+                    interaction_score = float(raw_interaction_score)
+            except Exception:
+                interaction_score = 0.0
+
+            # Aggregate importance_score preference:
+            # 1) permutation importance, 2) gain, 3) interaction score
+            importance_score = 0.0
+            if perm_val != 0.0:
+                importance_score = perm_val
+            elif gain_val != 0.0:
+                importance_score = gain_val
+            else:
+                importance_score = interaction_score
+
+            parent_feature: Optional[str] = None
+
+            # Parent mapping depends on feature type
+            if feature_type in ('variant', 'ct_ratio'):
+                base_name = step._extract_base_feature_name(col_name) if hasattr(step, "_extract_base_feature_name") else _strip_ct_suffix(col_name)
+                base_candidate = f"{base_name}_base"
+                if base_candidate in combined_features.columns:
+                    parent_feature = base_candidate
+                else:
+                    stripped = _strip_ct_suffix(col_name)
+                    if stripped in combined_features.columns:
+                        parent_feature = stripped
+            elif feature_type in ('interaction', 'ct_interaction'):
+                raw_name = col_name
+                if feature_type == 'ct_interaction':
+                    raw_name = _strip_ct_suffix(col_name)
+                parent_candidates = _parse_interaction_parents(raw_name)
+                if parent_candidates:
+                    parent_feature = parent_candidates[0]
+
+            summary_rows.append({
+                'feature_name': col_name,
+                'feature_type': feature_type,
+                'category': category,
+                'importance_score': importance_score,
+                'gain_importance': gain_val,
+                'permutation_importance': perm_val,
+                'parent_feature': parent_feature,
+            })
+
+        # Add category coverage summary rows
+        for cat, count in category_coverage.items():
+            summary_rows.append({
+                'feature_name': f'__category__::{cat}',
+                'feature_type': 'category_coverage',
+                'category': cat,
+                'importance_score': float(count),
+            })
+
+        # Add compact interaction learnability summary based on interaction scores
+        interaction_rows = [
+            row for row in summary_rows
+            if row['feature_type'] in ('interaction', 'ct_interaction')
+        ]
+
+        interaction_values = [row['importance_score'] for row in interaction_rows]
+        if interaction_values:
+            scores_arr = np.array(interaction_values, dtype=float)
+            n_interactions = int(len(scores_arr))
+            mean_score = float(scores_arr.mean())
+            median_score = float(np.median(scores_arr))
+            max_score = float(scores_arr.max())
+            positive_count = int((scores_arr > 0).sum())
+            positive_ratio = (
+                positive_count / n_interactions if n_interactions > 0 else 0.0
+            )
+
+            tprint_info(
+                f"  📊 Interaction scores: mean={mean_score:.4f}, median={median_score:.4f}, "
+                f"max={max_score:.4f}, positive_ratio={positive_ratio:.1%}"
+            )
+
+            summary_rows.append({
+                'feature_name': '__interaction_stats__::mean_score',
+                'feature_type': 'interaction_stats',
+                'category': 'stats',
+                'importance_score': mean_score,
+            })
+            summary_rows.append({
+                'feature_name': '__interaction_stats__::median_score',
+                'feature_type': 'interaction_stats',
+                'category': 'stats',
+                'importance_score': median_score,
+            })
+            summary_rows.append({
+                'feature_name': '__interaction_stats__::positive_ratio',
+                'feature_type': 'interaction_stats',
+                'category': 'stats',
+                'importance_score': positive_ratio,
+            })
+
+        # Add feature type counts summary
+        feature_type_counts = {
+            'base': len(base_features_list),
+            'variant': len(variant_features_list),
+            'ct_ratio': len(ct_ratio_features),
+            'interaction': len(traditional_interactions),
+            'ct_interaction': len(hybrid_ct_interactions),
+        }
+        
+        for f_type, count in feature_type_counts.items():
+             summary_rows.append({
+                'feature_name': f'__feature_type_count__::{f_type}',
+                'feature_type': 'feature_type_count',
+                'category': 'stats',
+                'importance_score': float(count),
+            })
+
+        # Enrich summary rows with parent metrics
+        for row in summary_rows:
+            # Skip summary stats rows
+            if row['feature_type'] in ('category_coverage', 'interaction_stats', 'feature_type_count'):
+                continue
+                
+            parent = row.get('parent_feature')
+            
+            # Default values
+            parent_gain = 0.0
+            parent_perm = 0.0
+            gain_lift = 0.0
+            perm_lift = 0.0
+            
+            if parent:
+                # Look up parent importance
+                raw_p_gain = gain_importances.get(parent)
+                try:
+                    parent_gain = float(raw_p_gain) if raw_p_gain is not None and not pd.isna(raw_p_gain) else 0.0
+                except Exception:
+                    parent_gain = 0.0
+                    
+                raw_p_perm = perm_importances.get(parent)
+                try:
+                    parent_perm = float(raw_p_perm) if raw_p_perm is not None and not pd.isna(raw_p_perm) else 0.0
+                except Exception:
+                    parent_perm = 0.0
+                
+                # Calculate lift (avoid division by zero)
+                if parent_gain > 1e-9:
+                    gain_lift = (row.get('gain_importance', 0.0) - parent_gain) / parent_gain
+                else:
+                    # If parent has 0 gain, any positive gain is infinite lift, but we cap/handle it
+                    gain_lift = 0.0 if row.get('gain_importance', 0.0) <= 1e-9 else 999.0
+                    
+                if parent_perm > 1e-9:
+                    perm_lift = (row.get('permutation_importance', 0.0) - parent_perm) / parent_perm
+                else:
+                    perm_lift = 0.0 if row.get('permutation_importance', 0.0) <= 1e-9 else 999.0
+
+            row['parent_gain_importance'] = parent_gain
+            row['parent_permutation_importance'] = parent_perm
+            row['gain_lift_vs_parent'] = gain_lift
+            row['perm_lift_vs_parent'] = perm_lift
+
+        if summary_rows:
+            # Aggregate counts for final perm-top-K feature set. If
+            # permutation importances are available from LGBM FS, restrict
+            # counts to that subset; otherwise fall back to all features.
+            perm_top_features: Set[str] = set()
+            try:
+                if perm_importances:
+                    perm_top_features = {str(k) for k in perm_importances.keys()}
+            except Exception:
+                perm_top_features = set()
+
+            top_base_count = 0
+            top_variant_count = 0
+            top_ct_count = 0
+            top_interaction_count = 0
+
+            for row in summary_rows:
+                fname = row.get('feature_name', '')
+                ftype = row.get('feature_type', '')
+
+                # Skip synthetic summary/category rows when counting
+                if isinstance(fname, str) and fname.startswith('__'):
+                    continue
+
+                # If we have a perm-top feature set, only count those
+                if perm_top_features and fname not in perm_top_features:
+                    continue
+
+                if ftype == 'base':
+                    top_base_count += 1
+                elif ftype == 'variant':
+                    top_variant_count += 1
+                elif ftype == 'ct_ratio':
+                    top_ct_count += 1
+                elif ftype in ('interaction', 'ct_interaction'):
+                    top_interaction_count += 1
+
+            def _append_fs_summary(name: str, value: float) -> None:
+                summary_rows.append({
+                    'feature_name': name,
+                    'feature_type': 'lgbm_fs_summary',
+                    'category': 'top100',
+                    'importance_score': float(value),
+                })
+
+            _append_fs_summary('__summary__::top100_base_count', top_base_count)
+            _append_fs_summary('__summary__::top100_variant_count', top_variant_count)
+            _append_fs_summary('__summary__::top100_ct_count', top_ct_count)
+            _append_fs_summary('__summary__::top100_interaction_count', top_interaction_count)
+
+            # Build final DataFrame and persist to CSV
+            summary_df = pd.DataFrame(summary_rows)
+            symbol = config.get('symbol', 'UNKNOWN')
+            timeframe = config.get('timeframe', 'UNKNOWN')
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            summary_dir = Path('outcomes')
+            summary_dir.mkdir(exist_ok=True)
+            summary_filename = f"analyst_interaction_summary_{symbol}_{timeframe}_{timestamp}.csv"
+            summary_path = summary_dir / summary_filename
+            summary_df.to_csv(summary_path, index=False)
+            tprint_info(f"📄 Saved analyst interaction summary CSV: {summary_path}")
+    except Exception as csv_exc:  # pragma: no cover - diagnostic surface
+        tprint_warning(f"⚠️ Failed to save analyst_interaction_summary.csv: {csv_exc}")
+
     # Build enhanced metadata for interaction features
     enhanced_metadata = {
         'symbol': config.get('symbol', 'UNKNOWN'),
@@ -4573,30 +5885,24 @@ async def _phase4_save_artifacts(
         'variant_generation': shap_metadata.get('variant_generation', {}),
         'pruning_stages': shap_metadata.get('pruning_stages', {}),
         'interaction_discovery': shap_metadata.get('interaction_discovery', {}),
+        'lgbm_feature_selection': shap_metadata.get('lgbm_feature_selection', {}),
         'created_at': datetime.now().isoformat(),
     }
 
-    # Generate outcome report using inline helper if available, otherwise the
-    # more defensive _fgigs_generate_outcome_report fallback.
+    # Generate outcome report using the defensive _fgigs_generate_outcome_report
+    # helper. This avoids signature mismatches with any custom
+    # `_generate_outcome_report` implementations and ensures that the
+    # interaction outcome markdown (including the top-200 diagnostics section)
+    # is always written when possible.
     report_path: Optional[str] = None
     try:
-        if hasattr(step, "_generate_outcome_report"):
-            report_path = step._generate_outcome_report(
-                combined_features,
-                final_features,
-                interactions,
-                shap_metadata,
-                enhanced_metadata,
-                config,
-            )
-        else:
-            report_path = _fgigs_generate_outcome_report(
-                step,
-                shap_metadata,
-                pruning_stats,
-                category_coverage,
-                config,
-            )
+        report_path = _fgigs_generate_outcome_report(
+            step,
+            shap_metadata,
+            pruning_stats,
+            category_coverage,
+            config,
+        )
     except Exception as exc:  # pragma: no cover - diagnostic surface
         tprint_warning(f"⚠️ Outcome report generation failed: {exc}")
         report_path = None
@@ -4617,6 +5923,9 @@ async def _phase4_save_artifacts(
             artifacts['interactions'] = interactions
     except Exception as exc:  # pragma: no cover - diagnostic surface
         tprint_warning(f"⚠️ Failed to save Phase 4 artifacts: {exc}")
+
+    if summary_path is not None:
+        artifacts['analyst_interaction_summary_csv'] = str(summary_path)
 
     metrics: Dict[str, Any] = {
         'success': True,

@@ -681,8 +681,18 @@ def get_advanced_cpu_optimizer() -> AdvancedM1CPUOptimizer:
     global _advanced_cpu_optimizer
 
     if _advanced_cpu_optimizer is None:
-        _advanced_cpu_optimizer = AdvancedM1CPUOptimizer()
-        _advanced_cpu_optimizer.start_advanced_monitoring()
+        optimizer = AdvancedM1CPUOptimizer()
+        # Only start advanced monitoring when the optimizer implementation
+        # actually provides this hook. This avoids AttributeError in
+        # environments where the underlying M1CPUOptimizer does not expose
+        # start_advanced_monitoring.
+        if hasattr(optimizer, "start_advanced_monitoring"):
+            try:
+                optimizer.start_advanced_monitoring()
+            except Exception:
+                # Monitoring is purely advisory; failures should not break callers.
+                pass
+        _advanced_cpu_optimizer = optimizer
 
     return _advanced_cpu_optimizer
 

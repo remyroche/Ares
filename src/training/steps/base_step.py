@@ -88,6 +88,47 @@ class BaseStep(ABC):
         timeframe_display = timeframe if timeframe not in (None, "") else "UNKNOWN"
         return f"{symbol}/{exchange} [{timeframe_display}] {direction}/{model}"
 
+    def _normalize_datetime_index(self, df: Any, name: str) -> Any:
+        """Normalize a DataFrame index to a tz-naive DatetimeIndex for safe alignment.
+
+        This is used by backtesting and evaluation steps to avoid pandas errors like
+        "Cannot compare tz-naive and tz-aware timestamps" when sorting or aligning
+        indices coming from different sources (e.g., external OHLCV vs ML-scored data).
+        """
+        # Guard for environments without pandas or non-DataFrame inputs
+        if not pandas_available or df is None:
+            return df
+        if not isinstance(df, pd.DataFrame) or df.empty:
+            return df
+
+        try:
+            idx = df.index
+
+            # Convert generic/object index to DatetimeIndex if needed
+            if not isinstance(idx, pd.DatetimeIndex):
+                new_idx = pd.to_datetime(idx, utc=True, errors="coerce")
+                # Only adopt the new index if at least some values are valid
+                if getattr(new_idx, "notna", None) is not None and new_idx.notna().any():
+                    idx = new_idx
+
+            # If still not a DatetimeIndex, leave as-is
+            if not isinstance(idx, pd.DatetimeIndex):
+                return df
+
+            # Convert tz-aware to UTC tz-naive so all downstream comparisons are safe
+            if idx.tz is not None:
+                self.logger.info(
+                    "Normalizing tz-aware index for %s: converting to UTC tz-naive for alignment" % name
+                )
+                idx = idx.tz_convert("UTC").tz_localize(None)
+
+            df = df.copy()
+            df.index = idx
+            return df
+        except Exception:
+            # On any failure, fall back to original DataFrame unchanged
+            return df
+
     @property
     def artifact_manager(self):
         """Lazy initialization of artifact manager."""

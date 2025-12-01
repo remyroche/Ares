@@ -221,6 +221,29 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             hpo_results: Optional[Dict[str, Any]] = None
             best_params: Optional[Dict[str, Any]] = None
 
+            reuse_hpo_best = bool(config.get('reuse_hpo_best_params', True))
+            force_hpo = bool(config.get('force_hpo', False))
+            if reuse_hpo_best and not force_hpo:
+                cached_hpo: Optional[Dict[str, Any]]
+                try:
+                    cached_hpo = self._get_artifact(
+                        artifact_name='rolling_hmm_hpo_results',
+                        artifact_type='metadata',
+                    )
+                except Exception:
+                    cached_hpo = None
+
+                if isinstance(cached_hpo, dict) and cached_hpo.get('best_params'):
+                    hpo_results = cached_hpo
+                    best_params = cached_hpo.get('best_params')
+                    if not isinstance(config.get('rolling_hmm_params'), dict):
+                        config['rolling_hmm_params'] = {}
+                    config['rolling_hmm_params'].update(best_params)
+                    enable_auto_tuning = False
+                    tprint_info(
+                        "Reusing cached rolling_hmm_hpo_results.best_params; skipping new HPO run"
+                    )
+
             tprint_info(f"ÄÂÂÂ§ Configuration check: execution_mode={execution_mode}, enable_auto_tuning={enable_auto_tuning}")
 
             # Check if manual params are provided
@@ -633,6 +656,7 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
                 rolling_params = config.get('rolling_hmm_params', {}) or {}
                 max_samples = rolling_params.get('max_samples_for_hpo')
                 sample_fraction = rolling_params.get('hpo_sample_fraction')
+                use_stratified = bool(rolling_params.get('hpo_stratified_sampling', False))
                 total_samples = len(market_data)
                 cap = total_samples
                 if isinstance(max_samples, int) and max_samples > 0:
@@ -640,8 +664,17 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
                 if isinstance(sample_fraction, (float, int)) and 0 < float(sample_fraction) < 1.0:
                     cap = min(cap, int(total_samples * float(sample_fraction)))
                 if cap < total_samples and cap > 0:
-                    hpo_market_data = market_data.tail(cap)
-                    tprint_info(f"ÄÂÂÂ§ HPO using subsample of {len(hpo_market_data)} rows out of {total_samples} (rolling_hmm_params cap)")
+                    if use_stratified and cap > 1:
+                        indices = np.linspace(0, total_samples - 1, num=cap, dtype=int)
+                        hpo_market_data = market_data.iloc[indices]
+                        tprint_info(
+                            f"ÄÂÂÂ§ HPO using stratified subsample of {len(hpo_market_data)} rows out of {total_samples} (rolling_hmm_params cap)"
+                        )
+                    else:
+                        hpo_market_data = market_data.tail(cap)
+                        tprint_info(
+                            f"ÄÂÂÂ§ HPO using subsample of {len(hpo_market_data)} rows out of {total_samples} (rolling_hmm_params cap)"
+                        )
             except Exception as e:
                 tprint_debug(f"Ă˘ÂÂ ÄÂ¸Â HPO subsampling disabled due to error: {e}")
 
@@ -901,7 +934,12 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             tprint(f"ÄÂÂÂ DEBUG: [STEP 8] labels_df index range: {labels_df.index.min()} to {labels_df.index.max()}", "INFO")
 
             # Create probabilities DataFrame
-            probs_columns = [f'regime_{i}_prob' for i in range(result['n_regimes'])]
+            try:
+                n_regimes = int(result.get('n_regimes', 0))
+            except Exception:
+                n_regimes = int(result['regime_probs'].shape[1]) if 'regime_probs' in result else 0
+
+            probs_columns = [f"regime_{i}_prob" for i in range(n_regimes)]
             
             # Ensure timestamps is a proper DatetimeIndex
             timestamps = result['timestamps']
@@ -931,7 +969,7 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
                 eps = 1e-12
                 p_safe = np.clip(probs_values, eps, 1.0)
                 entropy = -np.sum(p_safe * np.log(p_safe), axis=1)
-                regime_indices = np.arange(result['n_regimes'], dtype=float)
+                regime_indices = np.arange(n_regimes, dtype=float)
                 expected_index = probs_values.dot(regime_indices)
                 confidence_df = pd.DataFrame(
                     {
@@ -1013,8 +1051,8 @@ class RollingHMMRegimeDiscoveryStep(BaseStep):
             # Save transition matrix
             transition_matrix_df = pd.DataFrame(
                 result['transition_matrix'],
-                columns=pd.Index([f'to_regime_{i}' for i in range(result['n_regimes'])]),
-                index=pd.Index([f'from_regime_{i}' for i in range(result['n_regimes'])])
+                columns=pd.Index([f"to_regime_{i}" for i in range(n_regimes)]),
+                index=pd.Index([f"from_regime_{i}" for i in range(n_regimes)])
             )
             self._save_artifact(
                 data=transition_matrix_df,

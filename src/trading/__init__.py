@@ -22,6 +22,8 @@ New Features:
 - Trading Orchestrator: Unified coordination of all trading components
 """
 
+import logging
+
 from .config import *
 from .execution import *
 from .monitoring import *
@@ -31,7 +33,16 @@ from .sizing import *
 from .signal_generation import *
 # from .backtesting import *  # Module not found - commented out
 from .reporting import *
-from .integration import *
+
+# Integration subpackage depends on heavy ML/deep learning stacks (e.g., torch).
+# Make these imports best-effort so that trading can still be imported when
+# those optional dependencies are not available.
+try:
+    from .integration import *
+except Exception as e:  # noqa: F401
+    logging.getLogger(__name__).warning(
+        "Trading integration utilities not fully available: %s", e
+    )
 
 # Import new live trading components
 from .execution.live_trading_scheduler import (
@@ -83,14 +94,24 @@ from .reporting.trade_analyzer import (
     TradeAnalyzer, trade_analyzer, analyze_trade_performance
 )
 
-# Integration utilities
-from .integration.model_integration import (
-    TrainingModelLoader, training_model_loader, load_trained_models, validate_model_compatibility
-)
+# Integration utilities (optional, guard against missing heavy dependencies like torch)
+try:
+    from .integration.model_integration import (
+        TrainingModelLoader, training_model_loader, load_trained_models, validate_model_compatibility
+    )
+except Exception as e:  # noqa: F401
+    logging.getLogger(__name__).warning(
+        "Model integration utilities not available: %s", e
+    )
 
-from .integration.training_integration import (
-    TrainingDataProvider, training_data_provider, get_training_features, sync_with_training_pipeline
-)
+try:
+    from .integration.training_integration import (
+        TrainingDataProvider, training_data_provider, get_training_features, sync_with_training_pipeline
+    )
+except Exception as e:  # noqa: F401
+    logging.getLogger(__name__).warning(
+        "Training integration utilities not available: %s", e
+    )
 
 __version__ = "1.2.0"
 __author__ = "Ares Trading System"

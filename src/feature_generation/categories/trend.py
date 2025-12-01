@@ -138,7 +138,8 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixi
             parameters={
                 "sma_periods": [5, 10, 20, 50],
                 "ema_periods": [12, 26],
-                "trend_windows": [10, 20]
+                # Trend strength windows now explicitly cover 5–15 bar horizons
+                "trend_windows": [5, 7, 10, 12, 15, 20]
             },
             matrix_optimized=True,
             gpu_accelerated=False
@@ -180,6 +181,64 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixi
         else:
             sma = self._calculate_sma(close_prices.values, period=20)
             return pd.Series(sma, index=data.index, name='sma_20')
+
+    def generate_trend_slopes_fixed(self, data: pd.DataFrame,
+                                    bar_duration_minutes: int = 15) -> pd.DataFrame:
+        """Generate fixed 8h and 16h trend slope features without lookback optimization.
+
+        This helper computes linear regression slopes over fixed horizons expressed in
+        bars, using only the close price. Horizons are defined in time (hours) and
+        converted to bar counts via ``bar_duration_minutes``. The implementation is
+        intentionally self-contained and does not interact with category-level or
+        per-feature lookback optimization steps.
+        """
+        if 'close' not in data.columns:
+            return pd.DataFrame(index=data.index)
+
+        close = data['close']
+
+        # Map horizons (in hours) to bar windows using the provided bar duration.
+        # For the default 15m timeframe, 8h ≈ 32 bars and 16h ≈ 64 bars.
+        bars_per_hour = max(int(60 / max(bar_duration_minutes, 1)), 1)
+        window_8h = 8 * bars_per_hour
+        window_16h = 16 * bars_per_hour
+
+        def _linreg_slope(series: pd.Series) -> float:
+            # Minimal, robust linear regression slope on the last ``len(series)`` points.
+            n = len(series)
+            if n < 2:
+                return 0.0
+            x = np.arange(n, dtype=float)
+            y = series.values.astype(float)
+            x_mean = x.mean()
+            y_mean = y.mean()
+            denom = ((x - x_mean) ** 2).sum()
+            if denom == 0.0:
+                return 0.0
+            num = ((x - x_mean) * (y - y_mean)).sum()
+            slope = num / denom
+            # Normalize by current price level to keep the feature scale stable.
+            last_price = y[-1]
+            if last_price == 0.0 or np.isnan(last_price):
+                return 0.0
+            return float(slope / last_price)
+
+        result = pd.DataFrame(index=data.index)
+
+        for window, name in [
+            (window_8h, 'trend_slope_8h'),
+            (window_16h, 'trend_slope_16h'),
+        ]:
+            if window <= 1:
+                series = pd.Series(0.0, index=data.index, name=name)
+            else:
+                rolled = close.rolling(window=window, min_periods=2).apply(
+                    _linreg_slope, raw=False
+                )
+                series = rolled.fillna(0.0).rename(name)
+            result[name] = series
+
+        return result
 
     def _calculate_sma(self, prices: np.ndarray, period: int = 20) -> np.ndarray:
         if len(prices) < period:

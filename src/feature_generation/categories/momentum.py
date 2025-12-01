@@ -1316,13 +1316,16 @@ def create_momentum_generators(periods: Dict[str, List[int]] = None) -> List[Fea
     """Create a set of momentum feature generators."""
     if periods is None:
         periods = {
-            'rsi': [14],
+            # RSI short horizons: 3,5,7,10 plus legacy 14
+            'rsi': [3, 5, 7, 10, 14],
             'macd_fast': [12],
             'macd_slow': [26],
-            'stochastic': [14],
+            # Stochastic short horizons: 5,7,10 plus legacy 14
+            'stochastic': [5, 7, 10, 14],
             'williams_r': [14],
-            'momentum': [10],
-            'roc': [10]
+            'momentum': [3, 5, 7, 10, 12, 15],
+            # ROC explicitly at 3,5,7,10,12,15 bars
+            'roc': [3, 5, 7, 10, 12, 15]
         }
 
     generators = []

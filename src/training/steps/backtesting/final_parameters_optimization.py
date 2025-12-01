@@ -282,6 +282,11 @@ class FinalParametersOptimizer(BaseStep):
         ]
 
         # Default search spaces for each category
+        tprint(f"🔍 DEBUG: Checking for _get_default_search_spaces method...", "info")
+        if not hasattr(self, '_get_default_search_spaces'):
+            tprint("❌ _get_default_search_spaces NOT FOUND in self!", "error")
+            tprint(f"   Attributes: {[a for a in dir(self) if 'search' in a]}", "info")
+        
         self.default_search_spaces = self._get_default_search_spaces()
 
         # Enhanced search spaces with non-linear transformations

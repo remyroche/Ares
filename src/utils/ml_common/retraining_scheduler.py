@@ -66,7 +66,7 @@ class RetrainingSchedule:
         return cls(
             model_type='analyst_base',
             retrain_interval_days=5,
-            burnin_pct=1/20,  # 3 months after specialist burn-in
+            burnin_pct=1/6,  # 6-month burn-in so base models start predicting after sufficient history
             min_samples_for_training=2000,
             enable_warm_start=False
         )

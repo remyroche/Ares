@@ -104,7 +104,9 @@ class MetaGatedBacktestStep(BaseStep):
                     f"Labeled data artifact '{artifact_name}' is empty or not a DataFrame"
                 )
 
-            df = labeled_data.copy().sort_index()
+            df = labeled_data.copy()
+            df = self._normalize_datetime_index(df, "labeled_data")
+            df = df.sort_index()
 
             # Validate labeled_data schema for required columns
             validate_labeled_data_schema(

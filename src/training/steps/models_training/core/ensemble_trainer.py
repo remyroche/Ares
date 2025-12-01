@@ -133,16 +133,18 @@ class EnsembleTrainer(BaseTrainer):
             oof_predictions = base_predictions.values
             tprint_info(f"📊 Using {oof_predictions.shape[1]} base model predictions for meta-learning")
             
-            # Phase 3: Collect pre-HPO metrics for meta-learner
-            tprint_info("📈 Phase 3: Collecting pre-HPO metrics for meta-learner...")
-            meta_model_metrics = self._metrics_collector.collect_pre_hpo_metrics(
-                model_name=f"{self.config.role.value}_ensemble_meta",
-                model_type=self.meta_learner_type,
-                model=self._create_meta_learner_model(),
-                X=pd.DataFrame(oof_predictions),
-                y=processed_targets,
-                n_folds=self.cv_folds
-            )
+            # Phase 3: Collect pre-HPO metrics for meta-learner (skip for calibrated stacker)
+            meta_model_metrics = None
+            if self.meta_learner_type != 'stacker_lgbm_calibrated':
+                tprint_info("📈 Phase 3: Collecting pre-HPO metrics for meta-learner...")
+                meta_model_metrics = self._metrics_collector.collect_pre_hpo_metrics(
+                    model_name=f"{self.config.role.value}_ensemble_meta",
+                    model_type=self.meta_learner_type,
+                    model=self._create_meta_learner_model(),
+                    X=pd.DataFrame(oof_predictions),
+                    y=processed_targets,
+                    n_folds=self.cv_folds
+                )
             
             # Phase 4: Train meta-learner
             tprint_info("🧠 Phase 4: Training meta-learner...")
@@ -151,21 +153,22 @@ class EnsembleTrainer(BaseTrainer):
             if not meta_result.success:
                 return TrainingResult(success=False, error_message="Meta-learner training failed")
             
-            # Phase 5: Collect post-HPO metrics
-            tprint_info("📊 Phase 5: Collecting post-HPO metrics for meta-learner...")
-            meta_model_metrics = self._metrics_collector.collect_post_hpo_metrics(
-                model_metrics=meta_model_metrics,
-                model=self._meta_learner,
-                X=pd.DataFrame(oof_predictions),
-                y=processed_targets,
-                best_params=meta_result.metadata.get('best_params', {}),
-                hpo_n_trials=0,  # Meta-learner typically doesn't use HPO
-                hpo_time=0.0,
-                n_folds=self.cv_folds
-            )
-            
-            # Add metrics to session
-            self._metrics_collector.add_model_metrics(meta_model_metrics)
+            # Phase 5: Collect post-HPO metrics (skip for calibrated stacker)
+            if self.meta_learner_type != 'stacker_lgbm_calibrated' and meta_model_metrics is not None:
+                tprint_info("📊 Phase 5: Collecting post-HPO metrics for meta-learner...")
+                meta_model_metrics = self._metrics_collector.collect_post_hpo_metrics(
+                    model_metrics=meta_model_metrics,
+                    model=self._meta_learner,
+                    X=pd.DataFrame(oof_predictions),
+                    y=processed_targets,
+                    best_params=meta_result.metadata.get('best_params', {}),
+                    hpo_n_trials=0,
+                    hpo_time=0.0,
+                    n_folds=self.cv_folds
+                )
+
+                # Add metrics to session
+                self._metrics_collector.add_model_metrics(meta_model_metrics)
             
             # Calculate ensemble metrics
             tprint_info("📈 Phase 6: Calculating ensemble metrics...")
@@ -196,14 +199,35 @@ class EnsembleTrainer(BaseTrainer):
             final_predictions = None
             if self._meta_learner is not None and oof_predictions is not None:
                 try:
-                    final_predictions = self._meta_learner.predict(oof_predictions)
+                    # For calibrated stacker we pass the same base_predictions matrix used during fit.
+                    # StackerLGBMCalibrated.predict will internally construct stacking/meta-features.
+                    from src.models.stacker_lgbm_calibrated import StackerLGBMCalibrated
+                    if isinstance(self._meta_learner, StackerLGBMCalibrated):
+                        # Reconstruct a simple dict of base model predictions from the columns of base_predictions
+                        # to satisfy the meta-learner interface.
+                        base_pred_dict = {
+                            f"model_{i}": oof_predictions[:, i]
+                            for i in range(oof_predictions.shape[1])
+                        }
+                        final_predictions = self._meta_learner.predict(base_pred_dict)
+                    else:
+                        final_predictions = self._meta_learner.predict(oof_predictions)
                 except Exception as e:
                     self.logger.warning(f"Could not generate final predictions: {e}")
             
+            # Prefer explicitly exposed meta-learner OOF predictions when available
+            oof_for_result = None
+            if hasattr(self._meta_learner, 'meta_oof_predictions'):
+                try:
+                    oof_for_result = np.asarray(self._meta_learner.meta_oof_predictions)
+                except Exception:
+                    oof_for_result = None
+
             result = TrainingResult(
                 success=True,
                 model=self._meta_learner,
                 predictions=final_predictions,
+                oof_predictions=oof_for_result,
                 metrics=ensemble_metrics,
                 training_time=training_time,
                 metadata={
@@ -211,7 +235,7 @@ class EnsembleTrainer(BaseTrainer):
                     'base_models_count': base_predictions.shape[1] if base_predictions is not None else 0,
                     'meta_learner_type': self.meta_learner_type,
                     'oof_predictions_shape': oof_predictions.shape if oof_predictions is not None else None,
-                    'comprehensive_metrics': meta_model_metrics,
+                    'comprehensive_metrics': meta_model_metrics or {},
                     'report_path': str(report_path)
                 }
             )
@@ -242,6 +266,7 @@ class EnsembleTrainer(BaseTrainer):
                 from catboost import CatBoostRegressor
                 return CatBoostRegressor(verbose=False)
             else:
+                # Default to LightGBM if unknown type
                 import lightgbm as lgb
                 return lgb.LGBMRegressor(verbose=-1)
         except Exception as e:
@@ -428,6 +453,47 @@ class EnsembleTrainer(BaseTrainer):
                     **performance_params
                 )
             
+            elif self.meta_learner_type == 'stacker_lgbm_calibrated':
+                from src.models.stacker_lgbm_calibrated import (
+                    StackerLGBMCalibrated,
+                    StackerLGBMCalibratedConfig,
+                )
+
+                cfg_dict = self.config.custom_params.get('meta_learner_config', {})
+                try:
+                    stacker_cfg = StackerLGBMCalibratedConfig(**cfg_dict)
+                except TypeError:
+                    stacker_cfg = StackerLGBMCalibratedConfig()
+
+                meta_model = StackerLGBMCalibrated(config=stacker_cfg)
+
+                # Reconstruct simple base prediction dict from OOF matrix columns
+                base_pred_dict = {
+                    f"model_{i}": oof_predictions[:, i]
+                    for i in range(oof_predictions.shape[1])
+                }
+
+                # Fit calibrated stacker; it will generate internal OOF predictions for calibration
+                meta_model.fit(base_pred_dict, targets.to_numpy())
+
+                # Calculate meta-learner metrics on the same OOF features
+                meta_predictions = meta_model.predict(base_pred_dict)
+                from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+                metrics = {
+                    'meta_mse': mean_squared_error(targets, meta_predictions),
+                    'meta_mae': mean_absolute_error(targets, meta_predictions),
+                    'meta_r2': r2_score(targets, meta_predictions),
+                    'meta_rmse': np.sqrt(mean_squared_error(targets, meta_predictions)),
+                }
+
+                self._meta_learner = meta_model
+
+                return TrainingResult(
+                    success=True,
+                    model=meta_model,
+                    metrics=metrics,
+                )
+
             else:
                 raise ValueError(f"Unsupported meta-learner type: {self.meta_learner_type}")
             

@@ -103,6 +103,11 @@ class PermutationImportanceCalculator:
             if feature_names is None:
                 feature_names = [f"feature_{i}" for i in range(X.shape[1])]
 
+            # Persist feature names for downstream helpers that need to
+            # construct DMatrix objects (e.g., when working with raw
+            # xgboost.Booster models that expect named features).
+            self._feature_names = feature_names
+
             # Determine scoring function
             if custom_scoring is not None:
                 scoring_func = custom_scoring
@@ -266,19 +271,57 @@ class PermutationImportanceCalculator:
     def _get_baseline_score(self, model: Any, X: np.ndarray, y: np.ndarray,
                            scoring_func: Callable) -> float:
         """Get baseline score for the model."""
-        if self.config.enable_cross_validation:
-            # Use cross-validation
-            scores = cross_val_score(
-                model, X, y,
-                cv=self.config.cv_folds,
-                scoring=make_scorer(scoring_func),
-                n_jobs=1  # Avoid nested parallelism
+        # Detect raw xgboost.Booster models from StandardizedXGBTrainer. For
+        # these, cross_val_score is not applicable (no fit method) and the
+        # Booster expects a DMatrix with feature names, so we bypass CV and
+        # use a single-prediction baseline directly.
+        booster_like = False
+        model_cls = type(model)
+        booster_cls_name = getattr(model_cls, "__name__", "")
+        booster_module = getattr(model_cls, "__module__", "")
+
+        if booster_cls_name == "Booster" and "xgboost" in str(booster_module).lower():
+            booster_like = True
+
+        if not booster_like and self.config.enable_cross_validation:
+            # Use cross-validation when possible for non-Booster estimators.
+            try:
+                scores = cross_val_score(
+                    model, X, y,
+                    cv=self.config.cv_folds,
+                    scoring=make_scorer(scoring_func),
+                    n_jobs=1,  # Avoid nested parallelism
+                )
+                return float(np.mean(scores))
+            except Exception as cv_err:
+                self.logger.warning(
+                    "Cross-validation baseline failed for permutation importance "
+                    f"(falling back to single prediction): {cv_err}"
+                )
+
+        # Single-prediction baseline. For Booster models we construct a DMatrix
+        # with the same feature names that were used during training.
+        try:
+            if booster_like:
+                import xgboost as xgb  # type: ignore[import]
+
+                feature_names = getattr(self, "_feature_names", None)
+                if feature_names is not None:
+                    dmat = xgb.DMatrix(X, feature_names=feature_names)
+                else:
+                    dmat = xgb.DMatrix(X)
+                y_pred = model.predict(dmat)
+            else:
+                y_pred = model.predict(X)
+
+            return float(scoring_func(y, y_pred))
+
+        except Exception as pred_err:
+            self.logger.error(
+                "Baseline prediction failed for permutation importance; returning 0.0: "
+                f"{pred_err}"
             )
-            return np.mean(scores)
-        else:
-            # Use single prediction
-            y_pred = model.predict(X)
-            return scoring_func(y, y_pred)
+            return 0.0
 
     def _check_stability(self, importance_scores: np.ndarray) -> Dict[str, Dict[str, Any]]:
         """Check stability of importance scores across repeats."""

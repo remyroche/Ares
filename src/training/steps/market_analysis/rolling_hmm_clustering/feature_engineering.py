@@ -1182,7 +1182,8 @@ class RollingHMMFeatureEngineer:
             economic_features['return_momentum'] = features[f'ewma_returns_diff_{ewma_config.name}']
 
         if 'log_returns' in features.columns:
-            economic_features['return_1h'] = features['log_returns']
+            log_ret = features['log_returns']
+            economic_features['return_3h'] = log_ret.rolling(window=3, min_periods=1).sum()
 
         # 2. Volatility features (REDUCED - only keep 2 most important)
         if f'volatility_{ewma_config.short_window}' in features.columns:
@@ -1260,7 +1261,7 @@ class RollingHMMFeatureEngineer:
             'return_momentum',
             'trend_strength',
             'rsi',
-            'return_1h',
+            'return_3h',
         ]
         for col in directional_cols:
             if col in economic_df.columns:
@@ -1268,7 +1269,7 @@ class RollingHMMFeatureEngineer:
 
         # Restrict to a compact set of core economic axes for HMM emissions
         core_cols = [
-            'return_1h',
+            'return_3h',
             'mean_return_short',
             'volatility_short',
             'hl_range',

@@ -304,47 +304,58 @@ class KlinesParquetManager:
                         try:
                             # If already datetime-like, use directly.
                             if pd.api.types.is_datetime64_any_dtype(col):
-                                # Already datetime-like: simple, safe parsing.
                                 ts_local = pd.to_datetime(col, errors='coerce')
                             else:
-                                # Try numeric epoch-based parsing with magnitude
-                                # heuristics to select an appropriate unit.
-                                # Use a local numpy errstate guard so that any
-                                # internal overflows become NaT via
-                                # errors='coerce' instead of raising
-                                # FloatingPointError.
+                                # Try numeric epoch-based parsing with multiple
+                                # candidate units and a plausibility check on
+                                # the resulting dates to avoid 1970-era
+                                # artifacts from overflow or mis-scaled epochs.
                                 with np.errstate(all='ignore'):
                                     col_numeric = pd.to_numeric(col, errors='coerce')
                                     finite = col_numeric[np.isfinite(col_numeric)]
 
                                     if finite.empty:
-                                        # Fallback: attempt generic datetime parsing.
                                         ts_local = pd.to_datetime(col, errors='coerce')
                                     else:
-                                        max_abs = float(np.nanmax(np.abs(finite)))
+                                        ts_local = None
+                                        for unit in [
+                                            'ms',  # most common for exchange klines
+                                            's',   # sometimes stored as seconds
+                                            'ns',  # high-precision storage
+                                        ]:
+                                            try:
+                                                cand = pd.to_datetime(
+                                                    col_numeric,
+                                                    unit=unit,
+                                                    errors='coerce',
+                                                )
+                                            except (OverflowError, ValueError, TypeError, FloatingPointError) as unit_exc:
+                                                tprint_warning(
+                                                    f"⚠️ Failed to parse '{col_name}' with unit={unit}: {unit_exc}; trying next candidate unit",
+                                                )
+                                                continue
 
-                                        # Heuristic unit selection:
-                                        # - >1e15 → likely nanoseconds
-                                        # - >1e11 → likely milliseconds
-                                        # - otherwise seconds
-                                        if max_abs > 1e15:
-                                            unit = 'ns'
-                                        elif max_abs > 1e11:
-                                            unit = 'ms'
-                                        else:
-                                            unit = 's'
+                                            if not isinstance(cand, pd.Series) or not cand.notna().any():
+                                                continue
 
-                                        try:
-                                            ts_local = pd.to_datetime(
-                                                col_numeric,
-                                                unit=unit,
-                                                errors='coerce',
-                                            )
-                                        except (OverflowError, ValueError, TypeError, FloatingPointError) as unit_exc:
-                                            tprint_warning(
-                                                f"⚠️ Failed to parse '{col_name}' with unit={unit}: {unit_exc} – "
-                                                "falling back to generic to_datetime",
-                                            )
+                                            # Plausibility check: require
+                                            # timestamps to be in a reasonable
+                                            # trading window rather than near
+                                            # the Unix epoch.
+                                            max_ts = cand.max()
+                                            min_ts = cand.min()
+                                            if (
+                                                isinstance(max_ts, pd.Timestamp)
+                                                and isinstance(min_ts, pd.Timestamp)
+                                                and max_ts.year >= 2000
+                                                and max_ts.year <= 2100
+                                            ):
+                                                ts_local = cand
+                                                break
+
+                                        # Final fallback if no unit produced a
+                                        # plausible range.
+                                        if ts_local is None:
                                             ts_local = pd.to_datetime(col, errors='coerce')
 
                             if ts_local is None or not isinstance(ts_local, pd.Series):

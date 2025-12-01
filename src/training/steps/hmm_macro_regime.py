@@ -49,8 +49,14 @@ from src.training.steps.market_analysis.clusters.cluster_quality_assessor import
     ClusterQualityAssessor,
     ClusterQualityMetrics,
 )
-from src.training.steps.market_analysis.rolling_hmm_clustering.rolling_hmm_regime_discovery_step import (
-    RollingHMMRegimeDiscoveryStep,
+from src.training.steps.market_analysis.rolling_hmm_clustering.feature_engineering import (
+    RollingHMMFeatureEngineer,
+    FeatureEngineeringConfig,
+    DEFAULT_EWMA_CONFIGS,
+)
+from src.training.steps.market_analysis.rolling_hmm_clustering.sticky_hmm_model import (
+    StickyHMMModel,
+    StickyHMMConfig,
 )
 from src.utils.ml_common.optimization import (
     HierarchicalParameterOptimizer,
@@ -58,6 +64,10 @@ from src.utils.ml_common.optimization import (
     OptimizationStage,
 )
 from src.utils.ml_common.feature_engineering.feature_smoothing import apply_ewm_smoothing
+from src.utils.ml_common.standardized_xgb_trainer import (
+    StandardizedXGBTrainer,
+    XGBTrainingConfig,
+)
 
 # Feature analysis and selection tools
 try:
@@ -128,14 +138,18 @@ class HMMMLMacroTrendStep(BaseStep):
             )
             direction = str(config.get("direction", "long"))
 
-            # Set default alpha-specific configuration if not provided
-            # Smoothing defaults are chosen to target longer 10–16h macro regimes
-            # while allowing overrides via config/CLI when needed.
+            # Set default alpha-specific configuration if not provided.
+            # Macro step is explicitly designed to target slower 10–24h
+            # horizons and more structural regimes than the core HMM ML
+            # alpha step. Defaults here are therefore slower/smoother and
+            # use coarser, more persistent regimes.
             alpha_defaults: Dict[str, Any] = {
                 "alpha_target_smoothing_method": "ewm",
-                "alpha_target_smoothing_window": 12,  # Increased for 10-16h regimes (was 5)
+                # Slightly slower target smoothing than core alpha
+                "alpha_target_smoothing_window": 16,
                 "alpha_score_smoothing_method": "ewm",
-                "alpha_score_smoothing_window": 32,  # Further increased window for smoother 10-16h regimes (was 28)
+                # Much smoother score for macro trend
+                "alpha_score_smoothing_window": 48,
                 # Keep HPO opt-in; these defaults are used when explicitly enabled
                 "alpha_enable_hpo": False,
                 "alpha_hpo_cv_folds": 3,
@@ -145,14 +159,18 @@ class HMMMLMacroTrendStep(BaseStep):
                 "alpha_enable_expectation_calibration": True,
                 "alpha_expectation_positive_threshold": 0.0,
                 "alpha_expectation_min_samples": 200,
-                "alpha_expectation_ema_period": 12,  # Slightly slower EMA for 10-16h regimes
-                "alpha_expectation_ema_weight_recent": 0.08,  # Slower EMA for longer regimes (was None ~0.4)
-                "alpha_target_vol_window": 480,  # Increased rolling window (was 320)
-                # Enable trend feature engineering on aligned market data
+                # Slower EMA for longer macro regimes
+                "alpha_expectation_ema_period": 12,
+                "alpha_expectation_ema_weight_recent": 0.06,
+                # Use a much longer volatility window so macro targets are
+                # normalized by structural rather than short-term volatility.
+                "alpha_target_vol_window": 1000,
+                # Enable trend feature engineering on aligned market data with
+                # slower windows than the core alpha step.
                 "alpha_enable_trend_features": True,
-                "alpha_trend_ema_fast_window": 72,  # Longer EMA for macro (was 48)
-                "alpha_trend_ema_slow_window": 156,  # Longer slow EMA for macro (was 104)
-                "alpha_trend_slope_window": 120,  # Longer slope window for macro (was 80)
+                "alpha_trend_ema_fast_window": 96,
+                "alpha_trend_ema_slow_window": 240,
+                "alpha_trend_slope_window": 168,
                 # Auto-pruning experiment enabled by default with a small R^2 threshold
                 "alpha_enable_auto_prune_rerun": True,
                 "alpha_auto_prune_min_delta": 0.0005,
@@ -160,28 +178,37 @@ class HMMMLMacroTrendStep(BaseStep):
                 # Try slightly more aggressive thresholds; still require a small
                 # positive improvement in validation R^2 before adopting.
                 "alpha_auto_prune_quantiles": [0.15, 0.25, 0.35, 0.45],
-                # Minimum run length for regime persistence (NOT scaled)
-                # Leave at 0 by default; prefer HMM/smoothing to control persistence
-                "alpha_regime_min_run_bars": 0,
+                # Minimum run length for regime persistence (NOT scaled). Use a
+                # small positive value so macro regimes are more persistent than
+                # the core alpha regimes.
+                "alpha_regime_min_run_bars": 4,
                 # Enable quality report generation
                 "alpha_enable_quality_report": True,
                 # Regime configuration: macro trend should use fewer, smoother
-                # regimes. Default to 3 bins and explore 2–4 in experiments.
+                # regimes than the core alpha step. Default to 3 bins and
+                # explore 2–4 in experiments, allowing a 4-regime optimized
+                # configuration when economically justified.
                 "alpha_regime_counts": [2, 3, 4],
                 "alpha_regime_bins": 3,
             }
             for k, v in alpha_defaults.items():
                 config.setdefault(k, v)
 
+            # Macro scaling factor is applied to horizon/smoothing/volatility
+            # windows so that all macro horizons live noticeably above the
+            # core alpha horizons.
             macro_scaling_factor = 3
 
             for key, default in [
-                ("alpha_max_horizon_bars", 3),
+                # Use longer maximum horizon in 1h bars so macro alpha focuses
+                # on 8–24h behavior instead of the 1–4h band used by the core
+                # alpha step.
+                ("alpha_max_horizon_bars", 8),
                 ("alpha_horizon_bars", 1),
-                ("alpha_target_smoothing_window", 12),  # Updated default for 10-16h regimes
-                ("alpha_score_smoothing_window", 32),  # Updated default for smoother 10-16h regimes
-                ("alpha_target_vol_window", 480),  # Updated default for longer analysis
-                ("alpha_expectation_ema_period", 8),  # Updated default for 10-16h regimes
+                ("alpha_target_smoothing_window", 16),
+                ("alpha_score_smoothing_window", 24),
+                ("alpha_target_vol_window", 1000),
+                ("alpha_expectation_ema_period", 8),
             ]:
                 value = config.get(key, default)
                 try:
@@ -205,8 +232,8 @@ class HMMMLMacroTrendStep(BaseStep):
                     except Exception:
                         config[name] = raw
 
-            _scale_periods("alpha_ewm_periods", [2, 6, 10])
-            _scale_periods("alpha_score_ewm_periods", [3, 5])
+            _scale_periods("alpha_ewm_periods", [2, 4, 8])
+            _scale_periods("alpha_score_ewm_periods", [2, 4])
 
             if not symbol or not exchange:
                 raise ValueError("Config must include 'symbol' and 'exchange'")
@@ -217,31 +244,14 @@ class HMMMLMacroTrendStep(BaseStep):
             )
 
             # ------------------------------------------------------------------
-            # 1) Load HMM artifacts (labels/probabilities/economic features)
+            # 1) Initialize regime context (labels/probabilities/economic features)
             # ------------------------------------------------------------------
-            # Use the same context as RollingHMMRegimeDiscoveryStep when loading
-            # its artifacts (model='regime').
             self.set_context(
                 symbol=symbol,
                 exchange=exchange,
                 timeframe=regime_timeframe,
                 direction=direction,
                 model="regime",
-            )
-
-            await self._ensure_hmm_economic_features(
-                symbol=symbol,
-                exchange=exchange,
-                regime_timeframe=regime_timeframe,
-                direction=direction,
-                config=config,
-            )
-
-            labels_df, probs_df, economic_df = self._load_hmm_artifacts(
-                symbol=symbol,
-                exchange=exchange,
-                timeframe=regime_timeframe,
-                config=config,
             )
 
             # ------------------------------------------------------------------
@@ -308,14 +318,75 @@ class HMMMLMacroTrendStep(BaseStep):
             )
 
             # ------------------------------------------------------------------
-            # 3) Align all inputs on common DatetimeIndex
+            # 3) Obtain HMM artifacts (internal estimation or external artifacts)
             # ------------------------------------------------------------------
-            aligned_df = self._align_inputs(
-                market_data=market_data,
-                labels_df=labels_df,
-                probs_df=probs_df,
-                economic_df=economic_df,
-            )
+            macro_use_hmm = bool(config.get("macro_use_hmm", False))
+            use_internal_hmm = bool(config.get("macro_use_internal_hmm", True)) and macro_use_hmm
+
+            labels_df: Optional[pd.DataFrame] = None
+            probs_df: Optional[pd.DataFrame] = None
+            economic_df: Optional[pd.DataFrame] = None
+
+            if macro_use_hmm and use_internal_hmm:
+                try:
+                    labels_df, probs_df, economic_df = self._compute_internal_hmm_from_market_data(
+                        market_data=market_data,
+                        config=config,
+                    )
+                except Exception as internal_exc:
+                    tprint_warning(
+                        f"Internal macro HMM estimation failed; falling back to rolling_hmm artifacts: {internal_exc}"
+                    )
+
+            if macro_use_hmm and labels_df is None:
+                await self._ensure_hmm_economic_features(
+                    symbol=symbol,
+                    exchange=exchange,
+                    regime_timeframe=regime_timeframe,
+                    direction=direction,
+                    config=config,
+                )
+
+                labels_df, probs_df, economic_df = self._load_hmm_artifacts(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=regime_timeframe,
+                    config=config,
+                )
+
+            # ------------------------------------------------------------------
+            # 4) Align all inputs on common DatetimeIndex
+            # ------------------------------------------------------------------
+            if macro_use_hmm:
+                aligned_df = self._align_inputs(
+                    market_data=market_data,
+                    labels_df=labels_df,
+                    probs_df=probs_df,
+                    economic_df=economic_df,
+                )
+            else:
+                aligned_df = market_data.copy()
+
+                # When HMM is disabled for the macro step, we still want to
+                # reuse the same economic feature set that powered the HMM,
+                # but computed directly from OHLCV without fitting any HMM.
+                if bool(config.get("alpha_enable_economic_features", True)):
+                    try:
+                        econ_df = self._compute_economic_features_from_market_data(
+                            market_data=aligned_df,
+                            config=config,
+                        )
+
+                        if not isinstance(econ_df.index, pd.DatetimeIndex):
+                            econ_df = econ_df.copy()
+                            econ_df.index = pd.to_datetime(econ_df.index)
+
+                        econ_df = econ_df.sort_index()
+                        aligned_df = aligned_df.join(econ_df, how="inner")
+                    except Exception as econ_exc:
+                        tprint_warning(
+                            f"Economic feature extraction for macro alpha failed (non-fatal): {econ_exc}"
+                        )
 
             if aligned_df.empty:
                 raise ValueError("Aligned dataset is empty after merging inputs")
@@ -335,6 +406,12 @@ class HMMMLMacroTrendStep(BaseStep):
                     raise ValueError(
                         "Aligned dataset became empty after light-mode filtering; check HMM and market data coverage"
                     )
+
+            if bool(config.get("alpha_enable_macro_features", True)):
+                try:
+                    aligned_df = self._generate_macro_features(aligned_df, config)
+                except Exception as macro_exc:
+                    tprint_warning(f"Macro feature engineering failed (ignored): {macro_exc}")
 
             if bool(config.get("alpha_enable_trend_features", True)):
                 try:
@@ -614,6 +691,34 @@ class HMMMLMacroTrendStep(BaseStep):
                     else:
                         alpha_df["alpha_score_continuous"] = alpha_scores
 
+                        # Best-effort monotonic mapping of raw alpha_scores into a stable [0, 1]
+                        # range so that downstream consumers can always treat alpha_score_continuous
+                        # as a 0-1 expectation-like scalar even when explicit calibration failed.
+                        try:
+                            score_base = (
+                                alpha_df["alpha_score_continuous"]
+                                .astype(float)
+                                .replace([np.inf, -np.inf], np.nan)
+                            )
+                            score_clean = score_base.dropna()
+                            if not score_clean.empty:
+                                q_low = float(score_clean.quantile(0.01))
+                                q_high = float(score_clean.quantile(0.99))
+
+                                if np.isfinite(q_low) and np.isfinite(q_high) and q_high > q_low:
+                                    scaled = (score_base - q_low) / (q_high - q_low)
+                                else:
+                                    mean_val = float(score_clean.mean())
+                                    std_val = float(score_clean.std())
+                                    denom = std_val if std_val > 0 and np.isfinite(std_val) else 1.0
+                                    z = (score_base - mean_val) / denom
+                                    scaled = 1.0 / (1.0 + np.exp(-z))
+
+                                alpha_df["alpha_score_continuous"] = scaled.clip(0.0, 1.0)
+                        except Exception:
+                            # If normalization fails, keep the raw alpha_scores as-is.
+                            pass
+
                     # Add EWM-smoothed variants of alpha_score_continuous as additional features
                     try:
                         score_base = (
@@ -636,11 +741,48 @@ class HMMMLMacroTrendStep(BaseStep):
                     except Exception:
                         pass
 
-                    alpha_df, regime_stats_df, regime_col_name = self._assign_alpha_regimes(
-                        alpha_df,
-                        alpha_df["alpha_score_continuous"],
-                        config,
-                    )
+                    # For regime binning, prefer a lightly transformed raw
+                    # alpha_pred_return signal when available so that regimes
+                    # react faster than the fully processed
+                    # alpha_score_continuous.
+                    regime_score_series = None
+                    if "alpha_pred_return" in alpha_df.columns:
+                        try:
+                            raw_scores = (
+                                alpha_df["alpha_pred_return"]
+                                .astype(float)
+                                .replace([np.inf, -np.inf], np.nan)
+                            )
+                            scores_clean = raw_scores.dropna()
+                            if not scores_clean.empty:
+                                median_val = float(scores_clean.median())
+                                iqr = float(
+                                    scores_clean.quantile(0.75)
+                                    - scores_clean.quantile(0.25)
+                                )
+                                scale = iqr if iqr > 1e-8 else max(
+                                    float(scores_clean.std()), 1e-8
+                                )
+                                z = (raw_scores - median_val) / scale
+                                regime_score_series = 1.0 / (1.0 + np.exp(-z))
+                                regime_score_series = regime_score_series.clip(0.0, 1.0)
+                        except Exception:
+                            regime_score_series = None
+
+                    if regime_score_series is None:
+                        if "alpha_expectation_raw_01" in alpha_df.columns:
+                            regime_score_series = alpha_df["alpha_expectation_raw_01"]
+                        elif "alpha_expectation_ema_01" in alpha_df.columns:
+                            regime_score_series = alpha_df["alpha_expectation_ema_01"]
+                        elif "alpha_score_continuous" in alpha_df.columns:
+                            regime_score_series = alpha_df["alpha_score_continuous"]
+
+                    if regime_score_series is not None:
+                        alpha_df, regime_stats_df, regime_col_name = self._assign_alpha_regimes(
+                            alpha_df,
+                            regime_score_series,
+                            config,
+                        )
 
                     # Record whether primary regime assignment produced a usable regime column
                     if regime_col_name is not None and regime_col_name in alpha_df.columns:
@@ -654,9 +796,9 @@ class HMMMLMacroTrendStep(BaseStep):
                         training_metrics["alpha_primary_regimes_n_regimes"] = n_regimes_primary
                     else:
                         training_metrics["alpha_primary_regimes_success"] = 0
-            except ImportError as lgb_err:
+            except ImportError as xgb_err:
                 tprint_warning(
-                    f"LightGBM not available; skipping alpha model training: {lgb_err}"
+                    f"XGBoost not available; skipping alpha model training: {xgb_err}"
                 )
             except Exception as model_exc:
                 tprint_warning(
@@ -688,6 +830,29 @@ class HMMMLMacroTrendStep(BaseStep):
                                     .astype(float)
                                     .replace([np.inf, -np.inf], np.nan)
                                 )
+
+                                # Map fallback alpha scores into a robust [0, 1] range so the
+                                # resulting alpha_score_continuous is always a bounded scalar.
+                                try:
+                                    score_clean = score_base.dropna()
+                                    if not score_clean.empty:
+                                        q_low = float(score_clean.quantile(0.01))
+                                        q_high = float(score_clean.quantile(0.99))
+
+                                        if np.isfinite(q_low) and np.isfinite(q_high) and q_high > q_low:
+                                            scaled = (score_base - q_low) / (q_high - q_low)
+                                        else:
+                                            mean_val = float(score_clean.mean())
+                                            std_val = float(score_clean.std())
+                                            denom = std_val if std_val > 0 and np.isfinite(std_val) else 1.0
+                                            z = (score_base - mean_val) / denom
+                                            scaled = 1.0 / (1.0 + np.exp(-z))
+
+                                        score_base = scaled.clip(0.0, 1.0)
+                                        alpha_df["alpha_score_continuous"] = score_base
+                                except Exception:
+                                    pass
+
                                 ewm_periods_cfg = config.get("alpha_score_ewm_periods", [3, 5])
                                 try:
                                     ewm_periods = [int(p) for p in ewm_periods_cfg if int(p) > 0]
@@ -908,12 +1073,12 @@ class HMMMLMacroTrendStep(BaseStep):
             # Save trained model if available
             if model is not None:
                 try:
-                    tprint_info(" Saving LightGBM alpha model via artifact router")
+                    tprint_info(" Saving XGBoost alpha model via artifact router")
                     model_metadata = {
                         "symbol": symbol,
                         "exchange": exchange,
                         "timeframe": regime_timeframe,
-                        "model_type": "lightgbm",
+                        "model_type": "xgboost",
                         "version": "v2_with_burnin",
                         "training_start": str(split_config.training.start),
                         "training_end": str(split_config.training.effective_end),
@@ -1017,14 +1182,16 @@ class HMMMLMacroTrendStep(BaseStep):
     ) -> pd.DataFrame:
         """Compute forward-return-based alpha labels on the aligned dataset.
 
-        For regression:
-            - Compute forward returns for horizons 1ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ3h.
-            - Use the average of these horizons as a smoother macro alpha target.
+        For regression (macro alpha):
+            - Compute forward returns for multiple 1h-based horizons.
+            - Use the average of *long-horizon* returns (e.g. 6–24h) as a
+              smoother macro alpha target.
 
         For classification:
-            - Use the sign of the 1h forward return.
+            - Use the sign of the long-horizon averaged return instead of the
+              1h sign so that even classification targets remain slower than
+              the core HMM ML alpha step.
         """
-
         return_type = str(config.get("alpha_return_type", "log")).lower()
         target_type = str(config.get("alpha_target_type", "regression")).lower()
 
@@ -1048,7 +1215,9 @@ class HMMMLMacroTrendStep(BaseStep):
         winsorize_upper = config.get("alpha_winsorize_upper_quantile", 0.99)
 
         # Build forward-return columns for multiple horizons
-        max_h = int(config.get("alpha_max_horizon_bars", 3))
+        # For macro, default to a 1–8h horizon set so we can construct
+        # longer-horizon blends (e.g. 6–8h) while still allowing overrides.
+        max_h = int(config.get("alpha_max_horizon_bars", 8))
         max_h = max(max_h, 1)
         fwd_cols: Dict[int, str] = {}
 
@@ -1060,6 +1229,22 @@ class HMMMLMacroTrendStep(BaseStep):
             col_name = f"alpha_forward_return_{h}h"
             df[col_name] = fwd_ret
             fwd_cols[h] = col_name
+
+        # For macro alpha, focus the effective target on longer horizons
+        # (by default 6–8h) so that it captures slower macro swings. The
+        # minimum horizon for the macro blend can be overridden via config.
+        long_h_min = int(config.get("alpha_macro_min_horizon_bars", 6))
+        candidate_horizons = [h for h in sorted(fwd_cols.keys()) if h >= long_h_min]
+        if not candidate_horizons:
+            # Fallback to all horizons if config is misaligned; this preserves
+            # backward compatibility while still allowing explicit overrides.
+            candidate_horizons = sorted(fwd_cols.keys())
+
+        target_h = int(config.get("alpha_macro_target_horizon_bars", 8))
+        if target_h in candidate_horizons:
+            macro_horizons = [target_h]
+        else:
+            macro_horizons = [max(candidate_horizons)]
 
         if winsorize_enabled:
             try:
@@ -1081,9 +1266,8 @@ class HMMMLMacroTrendStep(BaseStep):
                 )
 
         if target_type == "regression":
-            # Average of 1ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ3h forward returns as macro target
-            horizon_keys = [h for h in fwd_cols.keys() if 1 <= h <= max_h]
-            fwd_stack = [df[fwd_cols[h]] for h in horizon_keys]
+            # Average of long-horizon forward returns as macro target
+            fwd_stack = [df[fwd_cols[h]] for h in macro_horizons]
             multi_target = pd.concat(fwd_stack, axis=1).mean(axis=1)
 
             # Volatility-normalized target: scale by recent realized volatility
@@ -1094,7 +1278,7 @@ class HMMMLMacroTrendStep(BaseStep):
             else:
                 base_returns = np.log(close).diff()
 
-            vol_window = int(config.get("alpha_target_vol_window", 320))
+            vol_window = int(config.get("alpha_target_vol_window", 160))
             vol_window = max(vol_window, 1)
             realized_vol = base_returns.rolling(vol_window).std()
 
@@ -1135,13 +1319,16 @@ class HMMMLMacroTrendStep(BaseStep):
                     )
 
             df["alpha_target"] = alpha_target
-            effective_horizon = f"1-{max_h}h_mean_vol_norm"
+            effective_horizon = f"{min(macro_horizons)}-{max(macro_horizons)}h_mean_vol_norm"
         else:
-            # Classification: sign of 1h forward return
-            target = (fwd_ret_1h > 0).astype(float)
-            target = target.where(~fwd_ret_1h.isna())
+            # Classification: sign of the long-horizon averaged return rather
+            # than the 1h sign to maintain a slower, macro-focused target.
+            fwd_stack = [df[fwd_cols[h]] for h in macro_horizons]
+            multi_target = pd.concat(fwd_stack, axis=1).mean(axis=1)
+            target = (multi_target > 0).astype(float)
+            target = target.where(~multi_target.isna())
             df["alpha_target"] = target
-            effective_horizon = "1h_classification"
+            effective_horizon = f"{min(macro_horizons)}-{max(macro_horizons)}h_classification"
 
         # Drop rows where we cannot compute all required forward returns
         required_cols = ["alpha_target"] + [fwd_cols[h] for h in sorted(fwd_cols.keys())]
@@ -1159,6 +1346,266 @@ class HMMMLMacroTrendStep(BaseStep):
         )
 
         return df
+
+    def _compute_internal_hmm_from_market_data(
+        self,
+        *,
+        market_data: pd.DataFrame,
+        config: Dict[str, Any],
+    ) -> Tuple[pd.DataFrame, Optional[pd.DataFrame], Optional[pd.DataFrame]]:
+        if not isinstance(market_data, pd.DataFrame) or market_data.empty:
+            raise ValueError("Market data must be a non-empty DataFrame for internal HMM estimation")
+
+        params_raw = config.get("macro_hmm_params") or config.get("rolling_hmm_params") or {}
+        params = dict(params_raw)
+
+        if "ewma_config_idx" not in params:
+            params["ewma_config_idx"] = 2
+
+        if "hmm_sample_fraction" not in params and "hpo_sample_fraction" not in params:
+            params["hmm_sample_fraction"] = 0.3
+        if "hmm_stratified_sampling" not in params and "hpo_stratified_sampling" not in params:
+            params["hmm_stratified_sampling"] = True
+
+        ewma_idx_raw = params.get("ewma_config_idx", 2)
+        try:
+            ewma_idx = int(ewma_idx_raw)
+        except Exception:
+            ewma_idx = 0
+        if ewma_idx < 0:
+            ewma_idx = 0
+        if ewma_idx >= len(DEFAULT_EWMA_CONFIGS):
+            ewma_idx = len(DEFAULT_EWMA_CONFIGS) - 1
+        ewma_config = DEFAULT_EWMA_CONFIGS[ewma_idx]
+
+        tprint_info(f"  Using internal macro HMM with EWMA config: {ewma_config.name}")
+
+        fe_config = FeatureEngineeringConfig(
+            ewma_configs=[ewma_config],
+            use_log_returns=True,
+            use_volatility_features=True,
+            use_trend_features=True,
+            use_volume_features=True,
+            pca_components=int(params.get("pca_components", 4)),
+            normalize_method=str(params.get("normalize_method", "robust")),
+            rolling_normalize_window=int(params.get("rolling_normalize_window", 100)),
+            enable_vectorbt_optimization=False,
+            enable_hardware_optimization=False,
+            enable_numba_jit=True,
+            cache_dir=None,
+            enable_persistent_cache=False,
+            cache_version=str(params.get("cache_version", "v1")),
+            cache_namespace=None,
+        )
+
+        feature_engineer = RollingHMMFeatureEngineer(fe_config)
+
+        features = feature_engineer.generate_features(market_data, ewma_config, use_cache=False)
+        if len(features) < 50:
+            raise ValueError(
+                f"Insufficient data after feature engineering for internal HMM: {len(features)} samples"
+            )
+
+        features_economic = feature_engineer.extract_economic_features(
+            features,
+            market_data,
+            ewma_config,
+        )
+        if features_economic is None or features_economic.empty:
+            raise ValueError("Economic features for internal HMM are empty")
+
+        features_pca, _, pca_explained = feature_engineer.apply_pca(
+            features_economic,
+            use_cache=False,
+            cache_key=f"macro_economic_{ewma_config.name}",
+        )
+
+        tprint_info(
+            f"  Internal macro HMM PCA explained variance (economic features): {pca_explained:.2%}"
+        )
+
+        n_components = int(params.get("n_components", 3))
+        min_covar = float(params.get("min_covar", 1e-3))
+        kappa = float(params.get("kappa", 10.0))
+        n_iter = int(params.get("n_iter", 100))
+        tol = float(params.get("tol", 1e-3))
+        random_state = params.get("random_state", 42)
+
+        hmm_config = StickyHMMConfig(
+            n_components=n_components,
+            min_covar=min_covar,
+            kappa=kappa,
+            n_iter=n_iter,
+            tol=tol,
+            covariance_type="diag",
+            kmeans_init=True,
+            use_sticky_priors=True,
+            post_fit_regularization=True,
+            random_state=random_state,
+        )
+
+        tprint_info(
+            f"  Internal macro HMM config: n_components={n_components}, kappa={kappa}, min_covar={min_covar}"
+        )
+
+        hmm_model = StickyHMMModel(hmm_config)
+
+        x_full = features_pca.values
+        total_samples = x_full.shape[0]
+        x_fit = x_full
+
+        # Optional subsampling for HMM fitting: use stratified sampling over time
+        # to keep long histories tractable while preserving coverage of regimes.
+        try:
+            max_samples = params.get("max_samples_for_hmm", params.get("max_samples_for_hpo"))
+            sample_fraction = params.get("hmm_sample_fraction", params.get("hpo_sample_fraction"))
+            use_stratified = bool(
+                params.get(
+                    "hmm_stratified_sampling",
+                    params.get("hpo_stratified_sampling", True),
+                )
+            )
+
+            cap = total_samples
+            if isinstance(max_samples, int) and max_samples > 0:
+                cap = min(cap, max_samples)
+            if isinstance(sample_fraction, (float, int)) and 0 < float(sample_fraction) < 1.0:
+                cap = min(cap, int(total_samples * float(sample_fraction)))
+
+            if cap < total_samples and cap > 1:
+                if use_stratified:
+                    indices = np.linspace(0, total_samples - 1, num=cap, dtype=int)
+                    x_fit = x_full[indices]
+                    tprint_info(
+                        f"  Internal HMM using stratified subsample of {cap} rows out of {total_samples}"
+                    )
+                else:
+                    x_fit = x_full[-cap:]
+                    tprint_info(
+                        f"  Internal HMM using tail subsample of {cap} rows out of {total_samples}"
+                    )
+        except Exception as subsample_exc:
+            tprint_warning(
+                f"Internal HMM subsampling disabled due to error (non-fatal): {subsample_exc}"
+            )
+            x_fit = x_full
+
+        hmm_model.fit(
+            x_fit,
+            ewma_config_name=ewma_config.name,
+            pca_components=features_pca.shape[1],
+        )
+
+        regime_labels_raw = hmm_model.predict(x_full)
+        regime_probs = hmm_model.predict_proba(x_full)
+
+        index = features_economic.index
+        labels_df = pd.DataFrame({"regime_label": regime_labels_raw}, index=index)
+
+        try:
+            probs_array = np.asarray(regime_probs, dtype=float)
+            if probs_array.ndim != 2 or probs_array.shape[0] != labels_df.shape[0]:
+                raise ValueError("Probability array shape does not match labels index")
+
+            top_prob = probs_array.max(axis=1)
+            ml_labels = np.array(regime_labels_raw, copy=True)
+
+            low_conf_mask = top_prob < 0.55
+            ml_labels[low_conf_mask] = -1
+
+            min_run = 2
+            n_samples = ml_labels.shape[0]
+            start = 0
+            while start < n_samples:
+                label_val = ml_labels[start]
+                end = start + 1
+                while end < n_samples and ml_labels[end] == label_val:
+                    end += 1
+                run_len = end - start
+                if label_val != -1 and run_len < min_run:
+                    ml_labels[start:end] = -1
+                start = end
+
+            try:
+                hysteresis_factor_raw = config.get(
+                    "macro_regime_hysteresis_factor",
+                    config.get("regime_hysteresis_factor", 1.05),
+                )
+                hysteresis_factor = float(hysteresis_factor_raw)
+            except Exception:
+                hysteresis_factor = 1.05
+
+            if hysteresis_factor > 1.0:
+                n_regimes = probs_array.shape[1]
+                for i in range(1, n_samples):
+                    prev_label = ml_labels[i - 1]
+                    curr_label = ml_labels[i]
+                    if prev_label < 0 or curr_label < 0 or prev_label == curr_label:
+                        continue
+                    if prev_label >= n_regimes or curr_label >= n_regimes:
+                        continue
+                    prev_prob = probs_array[i, prev_label]
+                    curr_prob = probs_array[i, curr_label]
+                    if not (np.isfinite(prev_prob) and np.isfinite(curr_prob)):
+                        continue
+                    if curr_prob < hysteresis_factor * prev_prob:
+                        ml_labels[i] = prev_label
+
+            labels_df["regime_label_ml"] = ml_labels
+        except Exception:
+            labels_df["regime_label_ml"] = labels_df["regime_label"]
+
+        probs_columns = [f"regime_{i}_prob" for i in range(regime_probs.shape[1])]
+        probs_df = pd.DataFrame(regime_probs, index=index, columns=probs_columns)
+
+        economic_df = features_economic.copy()
+
+        try:
+            labels_to_save = labels_df.reset_index().rename(
+                columns={labels_df.index.name or "index": "timestamp"}
+            )
+            self._save_artifact(
+                data=labels_to_save,
+                artifact_name="rolling_hmm_regime_labels",
+                artifact_type="data",
+                metadata={
+                    "symbol": config.get("symbol"),
+                    "exchange": config.get("exchange"),
+                    "timeframe": config.get("regime_timeframe", config.get("timeframe", "1h")),
+                },
+            )
+
+            probs_to_save = probs_df.reset_index().rename(
+                columns={probs_df.index.name or "index": "timestamp"}
+            )
+            self._save_artifact(
+                data=probs_to_save,
+                artifact_name="rolling_hmm_regime_probabilities",
+                artifact_type="data",
+                metadata={
+                    "symbol": config.get("symbol"),
+                    "exchange": config.get("exchange"),
+                    "timeframe": config.get("regime_timeframe", config.get("timeframe", "1h")),
+                },
+            )
+
+            economic_to_save = economic_df.reset_index().rename(
+                columns={economic_df.index.name or "index": "timestamp"}
+            )
+            self._save_artifact(
+                data=economic_to_save,
+                artifact_name="rolling_hmm_economic_features",
+                artifact_type="data",
+                metadata={
+                    "symbol": config.get("symbol"),
+                    "exchange": config.get("exchange"),
+                    "timeframe": config.get("regime_timeframe", config.get("timeframe", "1h")),
+                },
+            )
+        except Exception as save_exc:
+            tprint_warning(f"Internal macro HMM artifact saving failed (non-fatal): {save_exc}")
+
+        return labels_df, probs_df, economic_df
 
     async def _ensure_hmm_economic_features(
         self,
@@ -1330,17 +1777,190 @@ class HMMMLMacroTrendStep(BaseStep):
 
         return aligned
 
+    def _generate_macro_features(
+        self,
+        aligned_df: pd.DataFrame,
+        config: Dict[str, Any],
+    ) -> pd.DataFrame:
+        if not isinstance(aligned_df, pd.DataFrame) or aligned_df.empty:
+            return aligned_df
+
+        df = aligned_df.copy()
+
+        if "close" not in df.columns:
+            return df
+
+        close = df["close"].astype(float)
+
+        high = df["high"].astype(float) if "high" in df.columns else None
+        low = df["low"].astype(float) if "low" in df.columns else None
+        volume = df["volume"].astype(float) if "volume" in df.columns else None
+
+        timeframe = str(config.get("regime_timeframe", config.get("timeframe", "15m")))
+        bars_per_hour = 4
+        if timeframe.endswith("m"):
+            try:
+                minutes = int(timeframe[:-1])
+                if minutes > 0:
+                    bars_per_hour = max(int(round(60.0 / float(minutes))), 1)
+            except Exception:
+                bars_per_hour = 4
+        elif timeframe.endswith("h"):
+            try:
+                hours = float(timeframe[:-1])
+                if hours > 0:
+                    bars_per_hour = max(int(round(1.0 / hours)), 1)
+            except Exception:
+                bars_per_hour = 1
+
+        h3 = int(config.get("alpha_macro_3h_bars", 3 * bars_per_hour))
+        h6 = int(config.get("alpha_macro_6h_bars", 6 * bars_per_hour))
+        h12 = int(config.get("alpha_macro_12h_bars", 12 * bars_per_hour))
+        h24 = int(config.get("alpha_macro_24h_bars", 24 * bars_per_hour))
+
+        horizons: List[Tuple[str, int]] = [
+            ("3h", max(h3, 1)),
+            ("6h", max(h6, 1)),
+            ("12h", max(h12, 1)),
+            ("24h", max(h24, 1)),
+        ]
+
+        if high is not None and low is not None and volume is not None:
+            typical_price = (high + low + close) / 3.0
+        else:
+            typical_price = close
+
+        if volume is not None:
+            vol_series = volume
+        else:
+            vol_series = pd.Series(1.0, index=df.index)
+
+        for label, window in horizons:
+            try:
+                vol_sum = vol_series.rolling(window).sum()
+                price_vol_sum = (typical_price * vol_series).rolling(window).sum()
+                vwap = price_vol_sum / (vol_sum + 1e-8)
+                df[f"macro_vwap_{label}"] = vwap
+                denom = close.replace(0.0, np.nan)
+                df[f"macro_dist_close_vwap_{label}"] = (close - vwap) / denom
+            except Exception:
+                continue
+
+        if high is not None and low is not None:
+            prev_close = close.shift(1)
+            tr1 = high - low
+            tr2 = (high - prev_close).abs()
+            tr3 = (low - prev_close).abs()
+            tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+
+            for label, window in horizons:
+                try:
+                    roll_high = high.rolling(window).max()
+                    roll_low = low.rolling(window).min()
+                    denom = close.replace(0.0, np.nan)
+                    df[f"macro_support_dist_{label}"] = (close - roll_low) / denom
+                    df[f"macro_resistance_dist_{label}"] = (roll_high - close) / denom
+                    df[f"macro_range_norm_{label}"] = (roll_high - roll_low) / denom
+                    atr = tr.rolling(window).mean()
+                    df[f"macro_atr_norm_{label}"] = atr / denom
+                except Exception:
+                    continue
+
+        log_returns = np.log(close).diff()
+        for label, window in horizons:
+            try:
+                vol_realized = log_returns.rolling(window).std()
+                df[f"macro_vol_realized_{label}"] = vol_realized
+                ret_window = log_returns.rolling(window).sum()
+                df[f"macro_return_{label}"] = ret_window
+                df[f"macro_return_vol_norm_{label}"] = ret_window / (vol_realized + 1e-8)
+            except Exception:
+                continue
+
+        if volume is not None:
+            for label, window in horizons:
+                try:
+                    vol_ma = volume.rolling(window).mean()
+                    df[f"macro_volume_ratio_{label}"] = volume / (vol_ma + 1e-8)
+                except Exception:
+                    continue
+
+        return df
+
+    def _compute_economic_features_from_market_data(
+        self,
+        *,
+        market_data: pd.DataFrame,
+        config: Dict[str, Any],
+    ) -> pd.DataFrame:
+        if not isinstance(market_data, pd.DataFrame) or market_data.empty:
+            raise ValueError("Market data must be a non-empty DataFrame for economic feature extraction")
+
+        params_raw = config.get("macro_hmm_params") or config.get("rolling_hmm_params") or {}
+        params = dict(params_raw)
+
+        if "ewma_config_idx" not in params:
+            params["ewma_config_idx"] = 2
+
+        ewma_idx_raw = params.get("ewma_config_idx", 2)
+        try:
+            ewma_idx = int(ewma_idx_raw)
+        except Exception:
+            ewma_idx = 0
+        if ewma_idx < 0:
+            ewma_idx = 0
+        if ewma_idx >= len(DEFAULT_EWMA_CONFIGS):
+            ewma_idx = len(DEFAULT_EWMA_CONFIGS) - 1
+
+        ewma_config = DEFAULT_EWMA_CONFIGS[ewma_idx]
+
+        fe_config = FeatureEngineeringConfig(
+            ewma_configs=[ewma_config],
+            use_log_returns=True,
+            use_volatility_features=True,
+            use_trend_features=True,
+            use_volume_features=True,
+            pca_components=int(params.get("pca_components", 4)),
+            normalize_method=str(params.get("normalize_method", "robust")),
+            rolling_normalize_window=int(params.get("rolling_normalize_window", 100)),
+            enable_vectorbt_optimization=False,
+            enable_hardware_optimization=False,
+            enable_numba_jit=True,
+            cache_dir=None,
+            enable_persistent_cache=False,
+            cache_version=str(params.get("cache_version", "v1")),
+            cache_namespace=None,
+        )
+
+        feature_engineer = RollingHMMFeatureEngineer(fe_config)
+
+        features = feature_engineer.generate_features(market_data, ewma_config, use_cache=False)
+        if len(features) < 50:
+            raise ValueError(
+                f"Insufficient data after feature engineering for economic features: {len(features)} samples"
+            )
+
+        economic_features = feature_engineer.extract_economic_features(
+            features,
+            market_data,
+            ewma_config,
+        )
+        if economic_features is None or economic_features.empty:
+            raise ValueError("Economic features for macro model are empty")
+
+        return economic_features
+
     def _train_alpha_model(
         self,
         alpha_df: pd.DataFrame,
         config: Dict[str, Any],
         split_config: Optional[TemporalSplitConfig] = None,
     ) -> Tuple[Any, Optional[pd.Series], str, Dict[str, Any], Dict[str, Any]]:
-        """Train a LightGBM model to predict alpha targets."""
+        """Train an XGBoost model to predict alpha targets."""
         try:
-            import lightgbm as lgb  # type: ignore[import]
+            import xgboost as xgb  # type: ignore[import]
         except ImportError as e:  # pragma: no cover - environment dependent
-            raise ImportError("lightgbm is required for alpha model training") from e
+            raise ImportError("xgboost is required for alpha model training") from e
 
         try:
             from sklearn.metrics import (
@@ -1493,29 +2113,137 @@ class HMMMLMacroTrendStep(BaseStep):
         if df.empty:
             raise ValueError("No valid samples for alpha model training after dropping NaNs")
 
+        teacher_exclude_cols: List[str] = []
+        teacher_metrics: Dict[str, Any] = {}
+
+        # Optional teacher/distillation path for regression: blend alpha_target
+        # with an external teacher signal, without using the teacher as a model input.
+        if target_type == "regression" and bool(config.get("alpha_use_teacher", False)):
+            teacher_col_name = str(config.get("alpha_teacher_column", "alpha_teacher_signal"))
+            if teacher_col_name in df.columns:
+                try:
+                    teacher_series = df[teacher_col_name].astype(float)
+                    mask = teacher_series.notna() & df["alpha_target"].notna()
+                    min_samples_teacher = int(config.get("alpha_teacher_min_samples", 200))
+                    if mask.sum() >= max(min_samples_teacher, 50):
+                        w = float(config.get("alpha_teacher_weight", 0.5))
+                        w = min(max(w, 0.0), 1.0)
+                        base_target = df.loc[mask, "alpha_target"].astype(float)
+                        teacher_vals = teacher_series.loc[mask]
+                        blended = (1.0 - w) * base_target + w * teacher_vals
+                        df.loc[mask, "alpha_target"] = blended
+
+                        teacher_exclude_cols.append(teacher_col_name)
+                        teacher_metrics["alpha_teacher_used"] = True
+                        teacher_metrics["alpha_teacher_column"] = teacher_col_name
+                        teacher_metrics["alpha_teacher_weight"] = w
+                        teacher_metrics["alpha_teacher_samples"] = int(mask.sum())
+                    else:
+                        teacher_metrics["alpha_teacher_used"] = False
+                        teacher_metrics["alpha_teacher_reason"] = (
+                            f"insufficient_samples_{int(mask.sum())}"
+                        )
+                except Exception as teacher_exc:
+                    teacher_metrics["alpha_teacher_used"] = False
+                    teacher_metrics["alpha_teacher_error"] = str(teacher_exc)
+            else:
+                teacher_metrics["alpha_teacher_used"] = False
+                teacher_metrics["alpha_teacher_reason"] = "column_missing"
+
         y = df["alpha_target"]
 
         numeric_df = df.select_dtypes(include=[np.number])
         feature_cols = [
             col
             for col in numeric_df.columns
-            if col != "alpha_target" and not col.startswith("alpha_forward_return_")
+            if col != "alpha_target"
+            and not col.startswith("alpha_forward_return_")
+            and col not in teacher_exclude_cols
         ]
 
-        # Treat regime probability channels as model outputs, not training inputs
-        regime_prob_cols = [
+        # Treat all regime channels (labels and probabilities) as model outputs,
+        # not training inputs, so the macro XGBoost model never depends on
+        # HMM-derived signals.
+        regime_feature_cols = [
             col
             for col in feature_cols
-            if col.startswith("regime_") and col.endswith("_prob")
+            if col.startswith("regime_")
         ]
-        if regime_prob_cols:
+        if regime_feature_cols:
             tprint_info(
-                f"ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂÄÂÄšÄÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ¸ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Excluding regime probability columns from alpha features: {regime_prob_cols}"
+                f"Excluding regime-related columns from alpha features: {regime_feature_cols}"
             )
-            feature_cols = [c for c in feature_cols if c not in regime_prob_cols]
+            feature_cols = [c for c in feature_cols if c not in regime_feature_cols]
+
+        use_allowlist = bool(config.get("alpha_use_feature_allowlist", True))
+        if use_allowlist and feature_cols:
+            alpha_feature_allowlist_cfg = config.get("alpha_feature_allowlist")
+
+            if isinstance(alpha_feature_allowlist_cfg, (list, tuple)) and alpha_feature_allowlist_cfg:
+                macro_feature_allowlist = [str(c) for c in alpha_feature_allowlist_cfg]
+            else:
+                macro_feature_allowlist: List[str] = [
+                    # Economic core features from RollingHMMFeatureEngineer
+                    "return_3h",
+                    "mean_return_short",
+                    "volatility_short",
+                    "hl_range",
+                    "volume_ratio",
+                    "sharpe",
+                    "return_momentum",
+                    # Additional trend features engineered in execute
+                    "trend_ema_fast",
+                    "trend_ema_slow",
+                    "trend_price_slope",
+                ]
+
+                # Multi-horizon macro features derived from OHLCV and volume
+                horizon_labels: List[str] = ["3h", "6h", "12h", "24h"]
+                for label in horizon_labels:
+                    macro_feature_allowlist.extend(
+                        [
+                            f"macro_vwap_{label}",
+                            f"macro_dist_close_vwap_{label}",
+                            f"macro_support_dist_{label}",
+                            f"macro_resistance_dist_{label}",
+                            f"macro_range_norm_{label}",
+                            f"macro_atr_norm_{label}",
+                            f"macro_vol_realized_{label}",
+                            f"macro_return_{label}",
+                            f"macro_return_vol_norm_{label}",
+                            f"macro_volume_ratio_{label}",
+                        ]
+                    )
+
+            allowlist_cols = [c for c in feature_cols if c in macro_feature_allowlist]
+            min_allowed = int(config.get("alpha_min_allowed_features", 10))
+
+            if len(allowlist_cols) >= max(1, min_allowed):
+                feature_cols = allowlist_cols
+            else:
+                tprint_warning(
+                    f"Feature allowlist produced only {len(allowlist_cols)} usable features; "
+                    "falling back to full numeric feature set for alpha model"
+                )
 
         if not feature_cols:
             raise ValueError("No numeric features available for alpha model training")
+
+        # Log the final macro feature set used for the alpha model. To avoid
+        # excessively long log lines, only display a truncated prefix of the
+        # feature list while still reporting the full count.
+        try:
+            max_log_features = int(config.get("alpha_log_max_features", 64))
+        except Exception:
+            max_log_features = 64
+        if max_log_features <= 0:
+            max_log_features = 64
+
+        feature_preview = feature_cols[:max_log_features]
+        tprint_info(
+            f"Macro alpha feature set ({len(feature_cols)} features, showing up to {len(feature_preview)}): "
+            f"{feature_preview}"
+        )
 
         X = numeric_df[feature_cols]
 
@@ -1557,7 +2285,7 @@ class HMMMLMacroTrendStep(BaseStep):
         # Apply rolling window normalization to features to prevent look-ahead bias.
         # Use adaptive routing so spatial distance/level features get ATR normalization,
         # pure volume series can use log1p+zscore, and the rest keep winsorized z-score.
-        window_size = int(config.get("alpha_normalization_window", 500))
+        window_size = int(config.get("alpha_normalization_window", 250))
 
         # Use OHLC from alpha_df when available for ATR calculation
         high = alpha_df["high"] if "high" in alpha_df.columns else None
@@ -1732,6 +2460,9 @@ class HMMMLMacroTrendStep(BaseStep):
         training_metrics["alpha_use_ewm_features"] = use_ewm_features
         training_metrics["alpha_ewm_periods"] = ewma_periods
 
+        # Propagate any teacher/distillation diagnostics captured earlier.
+        training_metrics.update(teacher_metrics)
+
         # Prepare feature pipeline artifacts for persistence (feature names + scaler state)
         feature_pipeline_artifacts: Dict[str, Any] = {
             "feature_names": extended_feature_names,
@@ -1739,176 +2470,122 @@ class HMMMLMacroTrendStep(BaseStep):
             "normalizer_config": normalizer_config,
         }
 
-        # Optional hierarchical HPO for LightGBM hyperparameters (regression only, config-gated)
+        # Disable LightGBM-specific HPO for this XGBoost-based macro model.
         best_hpo_params: Dict[str, Any] = {}
-        enable_hpo = bool(config.get("alpha_enable_hpo", False)) and target_type == "regression"
-        if enable_hpo:
-            try:
-                hpo_param_groups = [
-                    ParameterGroup(
-                        name="lgbm_core",
-                        params={
-                            "num_leaves": {"type": "int", "low": 16, "high": 128},
-                            "subsample": {"type": "float", "low": 0.5, "high": 1.0},
-                            "colsample_bytree": {"type": "float", "low": 0.5, "high": 1.0},
-                            "learning_rate": {"type": "float", "low": 0.01, "high": 0.2, "log": True},
-                        },
-                        priority=1,
-                    ),
-                ]
-
-                base_model_for_hpo = lgb.LGBMRegressor(
-                    n_estimators=int(config.get("alpha_n_estimators", 300)),
-                    random_state=int(config.get("alpha_random_state", 42)),
-                )
-
-                optimizer = HierarchicalParameterOptimizer(
-                    param_groups=hpo_param_groups,
-                    objective_func=_alpha_hpo_objective,
-                    stages=[OptimizationStage.COARSE_GRID, OptimizationStage.TPE],
-                    cv_folds=int(config.get("alpha_hpo_cv_folds", 3)),
-                    scoring_metric="r2",
-                    direction="maximize",
-                    n_rounds=1,
-                    enable_final_refinement=False,
-                    final_refinement_trials=int(config.get("alpha_hpo_final_trials", 20)),
-                    verbose=True,
-                    use_custom_balanced_score=False,
-                )
-
-                X_train_hpo = X_train.to_numpy(dtype=float, copy=False)
-                y_train_hpo = y_train.to_numpy(dtype=float, copy=False)
-                X_val_hpo = X_val.to_numpy(dtype=float, copy=False) if len(X_val) > 0 else None
-                y_val_hpo = y_val.to_numpy(dtype=float, copy=False) if len(X_val) > 0 else None
-
-                hpo_result = optimizer.optimize(
-                    X_train=X_train_hpo,
-                    y_train=y_train_hpo,
-                    X_val=X_val_hpo,
-                    y_val=y_val_hpo,
-                    model=base_model_for_hpo,
-                )
-
-                best_hpo_params = hpo_result.best_params or {}
-                training_metrics["alpha_hpo_best_score"] = float(hpo_result.best_score)
-                training_metrics["alpha_hpo_best_params"] = best_hpo_params
-                training_metrics["alpha_hpo_used"] = True
-            except Exception as hpo_exc:
-                tprint_warning(f"Alpha HPO failed; proceeding with default hyperparameters: {hpo_exc}")
-                best_hpo_params = {}
-                training_metrics["alpha_hpo_used"] = False
-        else:
-            training_metrics["alpha_hpo_used"] = False
+        training_metrics["alpha_hpo_used"] = False
 
         if target_type == "regression":
-            base_params: Dict[str, Any] = {
-                "n_estimators": int(config.get("alpha_n_estimators", 300)),
-                "learning_rate": float(config.get("alpha_learning_rate", 0.05)),
-                "num_leaves": int(config.get("alpha_num_leaves", 64)),
-                "subsample": float(config.get("alpha_subsample", 0.8)),
-                "colsample_bytree": float(config.get("alpha_colsample_bytree", 0.8)),
-                "random_state": int(config.get("alpha_random_state", 42)),
-            }
+            # Use the shared StandardizedXGBTrainer for macro alpha regression
+            # so we benefit from scheduled retraining, OOF predictions and IC-SNR
+            # optimized regularization, consistent with other regime specialists.
+            symbol = str(config.get("symbol", "ETHUSDT"))
+            exchange = str(config.get("exchange", "binance"))
+            regime_timeframe = str(config.get("regime_timeframe", config.get("timeframe", "15m")))
+            model_id = f"{symbol}_{exchange}_{regime_timeframe}_macro_alpha"
 
-            if best_hpo_params:
-                for key, value in best_hpo_params.items():
-                    if key in base_params:
-                        base_params[key] = value
+            # Build training features from the scaled feature space
+            X_for_trainer = X_scaled_full[extended_feature_names].copy()
+            y_for_trainer = y.reindex(X_for_trainer.index)
 
-            model = lgb.LGBMRegressor(**base_params)
-            es_rounds = int(config.get("alpha_early_stopping_rounds", 0))
-            if es_rounds > 0 and len(X_val) > 0:
-                try:
-                    model.fit(
-                        X_train,
-                        y_train,
-                        eval_set=[(X_val, y_val)],
-                        eval_metric="l2",
-                        early_stopping_rounds=es_rounds,
-                    )
-                except TypeError:
-                    # Fallback if early stopping or eval_set are unsupported
-                    model.fit(X_train, y_train)
-            else:
-                model.fit(X_train, y_train)
-
-            train_pred = model.predict(X_train)
-            if r2_score is not None:
-                training_metrics["train_r2"] = float(r2_score(y_train, train_pred))
-            if mean_squared_error is not None:
-                rmse_val = _safe_rmse(y_train, train_pred)
-                if rmse_val is not None:
-                    training_metrics["train_rmse"] = rmse_val
-
-            regression_calibration_enabled = bool(config.get("alpha_enable_regression_calibration", True))
-            training_metrics["regression_calibration_enabled"] = regression_calibration_enabled
-
-            calibrator = None
-
-            if len(X_val) > 0:
-                val_pred = model.predict(X_val)
-                if r2_score is not None:
-                    training_metrics["val_r2"] = float(r2_score(y_val, val_pred))
-                if mean_squared_error is not None:
-                    rmse_val = _safe_rmse(y_val, val_pred)
-                    if rmse_val is not None:
-                        training_metrics["val_rmse"] = rmse_val
-
-                if regression_calibration_enabled and IsotonicRegression is not None:
-                    try:
-                        tprint_info(f"ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ§ Starting regression calibration (Isotonic Regression) on {len(y_val)} validation samples...")
-                        calibrator = IsotonicRegression(out_of_bounds="clip")
-                        calibrator.fit(val_pred, y_val.to_numpy(dtype=float, copy=False))
-
-                        if mean_squared_error is not None:
-                            rmse_uncal = _safe_rmse(y_val, val_pred)
-                            val_pred_cal = calibrator.predict(val_pred)
-                            rmse_cal = _safe_rmse(y_val, val_pred_cal) if mean_squared_error is not None else None
-                            if rmse_uncal is not None:
-                                training_metrics["val_rmse_uncalibrated"] = rmse_uncal
-                            if rmse_cal is not None:
-                                training_metrics["val_rmse_calibrated"] = rmse_cal
-
-                            # Log calibration improvement
-                            if rmse_uncal is not None and rmse_cal is not None:
-                                improvement = ((rmse_uncal - rmse_cal) / rmse_uncal) * 100 if rmse_uncal > 0 else 0.0
-                                tprint_info(f"  ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Regression calibration complete: RMSE {rmse_uncal:.6f} ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ {rmse_cal:.6f} (improvement: {improvement:.2f}%)")
-                            else:
-                                tprint_info(f"  ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Regression calibration complete")
-
-                        training_metrics["regression_calibration_method"] = "isotonic_regression"
-                        training_metrics["regression_calibration_used"] = True
-                    except Exception as calib_err:
-                        calibrator = None
-                        training_metrics["regression_calibration_used"] = False
-                        training_metrics["regression_calibration_failed"] = True
-                        training_metrics["regression_calibration_error"] = str(calib_err)
-                        tprint_warning(f"ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ¸ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Regression calibration failed: {calib_err}")
-                elif not regression_calibration_enabled:
-                    training_metrics["regression_calibration_used"] = False
-                    tprint_info("ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂÄÂÄšÄÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ¸ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ  Regression calibration disabled (alpha_enable_regression_calibration=False)")
-                elif IsotonicRegression is None:
-                    training_metrics["regression_calibration_used"] = False
-                    tprint_warning("ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ¸ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Regression calibration unavailable (IsotonicRegression not imported)")
-
-            if calibrator is not None:
-                full_raw_pred = model.predict(X_scaled_full)
-                full_scores = calibrator.predict(full_raw_pred)
-            else:
-                full_scores = model.predict(X_scaled_full)
-
-            scores = pd.Series(full_scores, index=df.index, name="alpha_pred_return")
-            pred_col_name = "alpha_pred_return"
-            training_metrics["model_type"] = "lightgbm_regression"
-
-        else:
-            base_model = lgb.LGBMClassifier(
-                n_estimators=int(config.get("alpha_n_estimators", 300)),
+            training_config = XGBTrainingConfig(
+                model_id=model_id,
+                task_type="regression",
+                objective="reg:squarederror",
+                num_class=None,
+                retrain_interval_days=int(config.get("alpha_retrain_interval_days", 10)),
+                hpo_interval_days=int(config.get("alpha_hpo_interval_days", 30)),
+                burnin_pct=float(config.get("alpha_burnin_pct", 1.0 / 12.0)),
+                min_samples_for_training=int(config.get("alpha_min_samples_for_xgb", 1000)),
+                tree_method=str(config.get("alpha_tree_method", "hist")),
+                n_estimators=int(config.get("alpha_n_estimators", 500)),
                 learning_rate=float(config.get("alpha_learning_rate", 0.05)),
-                num_leaves=int(config.get("alpha_num_leaves", 64)),
+                max_depth=int(config.get("alpha_max_depth", 6)),
+                min_child_weight=float(config.get("alpha_min_child_weight", 30.0)),
                 subsample=float(config.get("alpha_subsample", 0.8)),
                 colsample_bytree=float(config.get("alpha_colsample_bytree", 0.8)),
+                gamma=float(config.get("alpha_gamma", 1.0)),
+                reg_lambda=float(config.get("alpha_reg_lambda", 3.0)),
+                reg_alpha=float(config.get("alpha_reg_alpha", 0.5)),
+                early_stopping_rounds=int(config.get("alpha_early_stopping_rounds", 20)),
+            )
+
+            trainer = StandardizedXGBTrainer(model_id=model_id, config=training_config)
+
+            results = trainer.train_and_predict(
+                X=X_for_trainer,
+                y=pd.Series(y_for_trainer.values, index=X_for_trainer.index),
+                data_start=X_for_trainer.index.min(),
+                data_end=X_for_trainer.index.max(),
+                eval_metric="rmse",
+                verbose=bool(config.get("alpha_xgb_verbose", True)),
+            )
+
+            oof_df = results.oof_predictions if results.oof_predictions is not None else pd.DataFrame()
+            window_metadata = results.metadata or []
+            training_metrics["xgb_oof_windows"] = len(window_metadata)
+            training_metrics["xgb_oof_predictions"] = int(oof_df.shape[0])
+            if window_metadata:
+                hpo_windows = [m for m in window_metadata if m.get("used_hpo", False)]
+                training_metrics["alpha_hpo_used"] = bool(hpo_windows)
+                training_metrics["alpha_hpo_windows"] = len(hpo_windows)
+
+            if not oof_df.empty and "prediction" in oof_df.columns:
+                try:
+                    y_oof = y_for_trainer.reindex(oof_df.index)
+                    mask = (
+                        y_oof.notna()
+                        & np.isfinite(y_oof)
+                        & np.isfinite(oof_df["prediction"])
+                    )
+                    y_oof_clean = y_oof[mask].astype(float)
+                    pred_oof_clean = oof_df.loc[mask, "prediction"].astype(float)
+                    if r2_score is not None:
+                        training_metrics["oof_r2"] = float(r2_score(y_oof_clean, pred_oof_clean))
+                    if mean_squared_error is not None:
+                        rmse_val = _safe_rmse(y_oof_clean, pred_oof_clean)
+                        if rmse_val is not None:
+                            training_metrics["oof_rmse"] = rmse_val
+                except Exception:
+                    pass
+
+            model = results.models[-1] if results.models else None
+            if model is None:
+                raise ValueError("StandardizedXGBTrainer returned no models for macro alpha")
+
+            # Predict on full scaled feature matrix using Booster
+            try:
+                import xgboost as _xgb  # local import to avoid global dependency issues
+
+                d_full = _xgb.DMatrix(
+                    X_scaled_full.to_numpy(dtype=float, copy=False),
+                    feature_names=list(X_scaled_full.columns),
+                )
+                full_scores_arr = model.predict(d_full)
+            except Exception as pred_exc:
+                raise ValueError(
+                    f"Failed to generate macro alpha predictions with standardized XGBoost: {pred_exc}"
+                ) from pred_exc
+
+            scores = pd.Series(full_scores_arr, index=df.index, name="alpha_pred_return")
+            pred_col_name = "alpha_pred_return"
+
+            # We rely on downstream expectation calibration to map to [0, 1].
+            training_metrics["regression_calibration_enabled"] = False
+            training_metrics["regression_calibration_used"] = False
+            training_metrics["model_type"] = "xgboost_regression_standardized"
+
+        else:
+            base_model = xgb.XGBClassifier(
+                n_estimators=int(config.get("alpha_n_estimators", 300)),
+                learning_rate=float(config.get("alpha_learning_rate", 0.05)),
+                max_depth=int(config.get("alpha_max_depth", 6)),
+                subsample=float(config.get("alpha_subsample", 0.8)),
+                colsample_bytree=float(config.get("alpha_colsample_bytree", 0.8)),
+                reg_alpha=float(config.get("alpha_reg_alpha", 0.1)),
+                reg_lambda=float(config.get("alpha_reg_lambda", 0.1)),
                 random_state=int(config.get("alpha_random_state", 42)),
+                n_jobs=int(config.get("alpha_n_jobs", -1)),
+                eval_metric="logloss",
             )
             base_model.fit(X_train, y_train)
 
@@ -2029,7 +2706,7 @@ class HMMMLMacroTrendStep(BaseStep):
             proba_all = model.predict_proba(X_scaled_full)[:, 1]
             scores = pd.Series(proba_all, index=df.index, name="alpha_pred_prob")
             pred_col_name = "alpha_pred_prob"
-            training_metrics["model_type"] = "lightgbm_classification"
+            training_metrics["model_type"] = "xgboost_classification"
 
         full_scores = scores.reindex(alpha_df.index)
 
@@ -2094,196 +2771,8 @@ class HMMMLMacroTrendStep(BaseStep):
                 training_metrics.update(feature_analysis)
                 tprint_info(f"ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Comprehensive feature analysis completed and integrated into metrics")
 
-                # Optional auto-prune experiment: try multiple quantile-based thresholds
-                # over permutation importance and adopt the best pruned model if it
-                # improves validation R^2 by more than alpha_auto_prune_min_delta.
-                if (
-                    target_type == "regression"
-                    and bool(config.get("alpha_enable_auto_prune_rerun", False))
-                ):
-                    try:
-                        perm_info = feature_analysis.get("permutation_importance") or training_metrics.get("permutation_importance")
-                        if isinstance(perm_info, dict) and perm_info:
-                            imp_values = {}
-                            for fname, finfo in perm_info.items():
-                                try:
-                                    imp_values[fname] = float(finfo.get("importance_mean", 0.0))
-                                except Exception:
-                                    continue
-
-                            if imp_values:
-                                imp_series = pd.Series(imp_values)
-
-                                # Ensure we have a proper DataFrame view of features
-                                if hasattr(X_scaled_full, "columns"):
-                                    X_full_df = X_scaled_full
-                                else:
-                                    X_full_df = pd.DataFrame(
-                                        X_scaled_full,
-                                        columns=extended_feature_names,
-                                    )
-
-                                # Configuration for quantile-based pruning
-                                quantiles_cfg = config.get("alpha_auto_prune_quantiles", [0.1, 0.2, 0.3])
-                                try:
-                                    quantiles = sorted(
-                                        {
-                                            float(q)
-                                            for q in quantiles_cfg
-                                            if 0.0 < float(q) < 1.0
-                                        }
-                                    )
-                                except Exception:
-                                    quantiles = [0.1, 0.2, 0.3]
-
-                                baseline_val_r2 = training_metrics.get("val_r2")
-                                best_val_r2 = baseline_val_r2
-                                best_model = None
-                                best_drop_features: List[str] = []
-                                best_quantile: Optional[float] = None
-                                best_X_pruned: Optional[pd.DataFrame] = None
-
-                                # Reuse gentle minimum-keep heuristics from pruning config
-                                min_fraction = float(
-                                    config.get("alpha_feature_pruning_min_fraction", 0.6)
-                                )
-                                min_fraction = min(max(min_fraction, 0.2), 0.9)
-                                min_absolute = int(
-                                    config.get("alpha_feature_pruning_min_absolute", 5)
-                                )
-                                n_features_total = len(extended_feature_names)
-                                min_keep = int(
-                                    max(n_features_total * min_fraction, float(min_absolute), 1.0)
-                                )
-
-                                candidate_summaries = []
-
-                                for q in quantiles:
-                                    try:
-                                        threshold = imp_series.quantile(q)
-                                        drop_features = [
-                                            name
-                                            for name, val in imp_series.items()
-                                            if val <= threshold and name in extended_feature_names
-                                        ]
-
-                                        # Ensure we keep enough features
-                                        if not drop_features:
-                                            continue
-                                        if n_features_total - len(drop_features) < min_keep:
-                                            continue
-
-                                        X_pruned = X_full_df.drop(columns=drop_features, errors="ignore")
-                                        X_train_pruned = X_pruned.iloc[:split_idx]
-                                        X_val_pruned = X_pruned.iloc[split_idx:]
-
-                                        pruned_model = lgb.LGBMRegressor(**base_params)
-                                        pruned_model.fit(X_train_pruned, y_train)
-
-                                        pruned_val_r2 = None
-                                        if len(X_val_pruned) > 0 and r2_score is not None:
-                                            try:
-                                                val_pred_pruned = pruned_model.predict(X_val_pruned)
-                                                pruned_val_r2 = float(r2_score(y_val, val_pred_pruned))
-                                            except Exception:
-                                                pruned_val_r2 = None
-
-                                        candidate_summaries.append(
-                                            {
-                                                "quantile": q,
-                                                "threshold": float(threshold),
-                                                "n_dropped": len(drop_features),
-                                                "dropped_features": drop_features,
-                                                "val_r2": pruned_val_r2,
-                                            }
-                                        )
-
-                                        if pruned_val_r2 is not None and (
-                                            best_val_r2 is None
-                                            or pruned_val_r2 > best_val_r2
-                                        ):
-                                            best_val_r2 = pruned_val_r2
-                                            best_model = pruned_model
-                                            best_drop_features = drop_features
-                                            best_quantile = q
-                                            best_X_pruned = X_pruned
-                                    except Exception as cand_err:
-                                        tprint_warning(
-                                            f"Auto-prune candidate at quantile={q} failed (ignored): {cand_err}"
-                                        )
-
-                                training_metrics["auto_prune_enabled"] = True
-                                training_metrics["auto_prune_candidates"] = candidate_summaries
-                                training_metrics["auto_prune_baseline_val_r2"] = (
-                                    float(baseline_val_r2)
-                                    if baseline_val_r2 is not None
-                                    else None
-                                )
-
-                                epsilon = float(
-                                    config.get("alpha_auto_prune_min_delta", 0.0)
-                                )
-
-                                adopt_pruned = (
-                                    best_model is not None
-                                    and baseline_val_r2 is not None
-                                    and best_val_r2 is not None
-                                    and best_val_r2 > baseline_val_r2 + epsilon
-                                )
-
-                                training_metrics["auto_prune_adopted"] = bool(adopt_pruned)
-                                training_metrics["auto_prune_best_quantile"] = (
-                                    float(best_quantile) if best_quantile is not None else None
-                                )
-                                training_metrics["auto_prune_best_val_r2"] = (
-                                    float(best_val_r2)
-                                    if best_val_r2 is not None
-                                    else None
-                                )
-                                training_metrics["auto_prune_best_dropped_features"] = (
-                                    best_drop_features
-                                )
-
-                                if adopt_pruned and best_model is not None and best_X_pruned is not None:
-                                    # Adopt pruned model and feature set as primary
-                                    model = best_model
-                                    X_scaled_full = best_X_pruned
-                                    extended_feature_names = [
-                                        n for n in extended_feature_names if n not in best_drop_features
-                                    ]
-                                    feature_pipeline_artifacts["feature_names"] = (
-                                        extended_feature_names
-                                    )
-
-                                    try:
-                                        # Recompute full scores with pruned model
-                                        full_raw_scores_pruned = model.predict(X_scaled_full)
-                                        scores = pd.Series(
-                                            full_raw_scores_pruned,
-                                            index=df.index,
-                                            name=pred_col_name,
-                                        )
-                                        full_scores = scores.reindex(alpha_df.index)
-                                    except Exception as pred_err:
-                                        tprint_warning(
-                                            f"Auto-prune adoption prediction failed (non-fatal): {pred_err}"
-                                        )
-
-                                    tprint_info(
-                                        "ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Auto-prune ADOPTED: quantile="
-                                        f"{best_quantile}, dropped {len(best_drop_features)} features | "
-                                        f"val_r2 {baseline_val_r2 if baseline_val_r2 is not None else 'N/A'} ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ {best_val_r2:.6f}"
-                                    )
-                                else:
-                                    tprint_info(
-                                        "ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Auto-prune experiment completed: "
-                                        f"baseline val_r2={baseline_val_r2 if baseline_val_r2 is not None else 'N/A'}, "
-                                        f"best_pruned_val_r2={best_val_r2 if best_val_r2 is not None else 'N/A'} (no adoption)"
-                                    )
-                        else:
-                            training_metrics["auto_prune_enabled"] = False
-                    except Exception as auto_prune_err:
-                        tprint_warning(f"Auto-prune experiment failed (non-fatal): {auto_prune_err}")
+                # Disable LightGBM-specific auto-prune experiment for XGBoost macro model.
+                training_metrics["auto_prune_enabled"] = False
         except Exception as feature_analysis_err:
             tprint_warning(f"Comprehensive feature analysis integration failed (non-fatal): {feature_analysis_err}")
 
@@ -2722,7 +3211,7 @@ class HMMMLMacroTrendStep(BaseStep):
         # SIMPLE SCORE-ONLY REGIME ASSIGNMENT (robust default)
         # ------------------------------------------------------------------
         try:
-            num_bins_simple = int(config.get("alpha_regime_bins", 3))
+            num_bins_simple = int(config.get("alpha_regime_bins", 4))
         except Exception:
             num_bins_simple = 3
         # Clamp to a compact 2–4 regime range to avoid overly fragmented regimes
@@ -2768,7 +3257,6 @@ class HMMMLMacroTrendStep(BaseStep):
 
         # For now, skip regime_stats_df from this simplified path; downstream
         # consumers already guard on regime_stats_df being None.
-        return alpha_df, None, bucket_col_simple
 
         # Get forward returns for optimization
         fwd_cols = [col for col in alpha_df.columns if col.startswith("alpha_forward_return_")]
@@ -3315,11 +3803,43 @@ class HMMMLMacroTrendStep(BaseStep):
         try:
             # 1. Information Coefficient (IC) - Correlation between predictions and targets
             try:
-                y_pred = model.predict(X_full)
+                # Detect raw xgboost.Booster models so we can construct a
+                # DMatrix with feature names instead of passing a DataFrame
+                # directly to ``predict``.
+                model_cls = type(model)
+                booster_like = (
+                    getattr(model_cls, "__name__", "") == "Booster"
+                    and "xgboost" in str(getattr(model_cls, "__module__", "")).lower()
+                )
+
+                if booster_like:
+                    try:
+                        import xgboost as xgb  # type: ignore[import]
+
+                        X_full_arr = (
+                            X_full.to_numpy(dtype=float, copy=False)
+                            if hasattr(X_full, "to_numpy")
+                            else X_full
+                        )
+                        dmat = xgb.DMatrix(X_full_arr, feature_names=feature_names)
+                        y_pred = model.predict(dmat)
+                    except Exception as booster_ic_err:
+                        tprint_warning(
+                            f"IC calculation Booster path failed, falling back to direct predict: {booster_ic_err}"
+                        )
+                        y_pred = model.predict(X_full)
+                else:
+                    y_pred = model.predict(X_full)
 
                 # Ensure y_pred is 1D for IC calculation
-                if hasattr(y_pred, 'shape') and len(y_pred.shape) > 1:
-                    y_pred = y_pred.ravel() if y_pred.shape[1] == 1 else y_pred[:, 1] if is_classification else y_pred[:, 0]
+                if hasattr(y_pred, "shape") and len(y_pred.shape) > 1:
+                    y_pred = (
+                        y_pred.ravel()
+                        if y_pred.shape[1] == 1
+                        else y_pred[:, 1]
+                        if is_classification
+                        else y_pred[:, 0]
+                    )
 
                 y_full_vals = y_full.values if isinstance(y_full, pd.Series) else y_full
 
@@ -3338,7 +3858,9 @@ class HMMMLMacroTrendStep(BaseStep):
                     hits = (np.sign(y_pred) == np.sign(y_full_vals)).mean()
                     feature_analysis_results["ic_hit_rate"] = float(hits)
 
-                tprint_info(f"ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Information Coefficient (IC) calculated: Pearson r={ic_pearson_corr:.4f}, Spearman r={ic_spearman_corr:.4f}")
+                tprint_info(
+                    f"ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Information Coefficient (IC) calculated: Pearson r={ic_pearson_corr:.4f}, Spearman r={ic_spearman_corr:.4f}"
+                )
             except Exception as ic_err:
                 tprint_warning(f"IC calculation failed: {ic_err}")
 
@@ -3406,21 +3928,48 @@ class HMMMLMacroTrendStep(BaseStep):
                     tprint_warning(f"Permutation importance calculation failed: {perm_err}")
 
             # 4. Improved mRMR for redundancy analysis
-            if IMPROVED_MRMR_AVAILABLE and bool(config.get("alpha_enable_mrmr_analysis", True)):
+            # Disabled by default for production/fast runs; enable explicitly via
+            # alpha_enable_mrmr_analysis=True in the config when heavy diagnostics
+            # are desired.
+            if IMPROVED_MRMR_AVAILABLE and bool(config.get("alpha_enable_mrmr_analysis", False)):
                 try:
                     X_full_arr = X_full.to_numpy(dtype=float, copy=False) if hasattr(X_full, 'to_numpy') else X_full
                     y_full_arr = y_full.to_numpy(dtype=float, copy=False) if hasattr(y_full, 'to_numpy') else y_full
 
+                    # Optional row subsampling to keep mRMR diagnostics lightweight on
+                    # long histories. By default, cap at ~20k samples with a
+                    # deterministic stride-based subsample to maintain temporal
+                    # coverage while reducing CPU load.
+                    max_mrmr_samples = int(config.get("alpha_mrmr_max_samples", 20000))
+                    if max_mrmr_samples > 0 and X_full_arr.shape[0] > max_mrmr_samples:
+                        stride = int(np.ceil(X_full_arr.shape[0] / max_mrmr_samples))
+                        stride = max(stride, 1)
+                        X_mrmr = X_full_arr[::stride]
+                        y_mrmr = y_full_arr[::stride]
+                        tprint_info(
+                            f"Subsampling mRMR input from {X_full_arr.shape[0]} to "
+                            f"{X_mrmr.shape[0]} rows (stride={stride}) for lighter diagnostics"
+                        )
+                    else:
+                        X_mrmr = X_full_arr
+                        y_mrmr = y_full_arr
+
+                    # Lighter-weight mRMR configuration: slightly lower target ratio,
+                    # fewer CV folds, fewer quantile bins, and CV relevance disabled
+                    # by default. All knobs are overridable via config.
                     mrmr_config = {
                         'mi_weight': 0.7,
                         'spearman_weight': 0.3,
-                        'target_ratio': float(config.get("alpha_mrmr_target_ratio", 0.7)),
+                        'target_ratio': float(config.get("alpha_mrmr_target_ratio", 0.5)),
                         'use_mi_proxy': True,
                         'enable_hardware_optimization': True,
+                        'quantile_bins': int(config.get("alpha_mrmr_quantile_bins", 8)),
+                        'cv_folds': int(config.get("alpha_mrmr_cv_folds", 3)),
+                        'enable_cv_relevance': bool(config.get("alpha_mrmr_enable_cv_relevance", False)),
                     }
 
                     mrmr = ImprovedMRMR(mrmr_config)
-                    mrmr_results = mrmr.select_features(X_full_arr, y_full_arr, feature_names)
+                    mrmr_results = mrmr.select_features(X_mrmr, y_mrmr, feature_names)
 
                     feature_analysis_results["mrmr_selected_features"] = mrmr_results.get("selected_features", [])
                     feature_analysis_results["mrmr_n_selected"] = len(mrmr_results.get("selected_features", []))
@@ -3809,7 +4358,35 @@ class HMMMLMacroTrendStep(BaseStep):
         timestamps = alpha_df.index[valid_mask]
         min_regime_size = int(config.get("alpha_min_regime_size", 3))
         temporal_mode = str(config.get("alpha_temporal_sensitivity_mode", "regime_persistence_focused"))
-        fast_mode = bool(config.get("alpha_quality_fast_mode", False))
+        # For macro runs, default to FAST quality assessment to avoid the
+        # heaviest O(n^2) metrics (silhouette, DBI, full economic analysis).
+        # This can be overridden via alpha_quality_fast_mode=False if you
+        # explicitly want the comprehensive assessment.
+        fast_mode = bool(config.get("alpha_quality_fast_mode", True))
+
+        # Optionally subsample rows before calling ClusterQualityAssessor to
+        # keep runtime manageable on long histories. By default, cap at
+        # ~12k samples with stride-based sampling to preserve temporal
+        # coverage while reducing cost.
+        max_quality_samples = int(config.get("alpha_quality_max_samples", 12000))
+        if max_quality_samples > 0:
+            n_samples = len(regime_labels)
+            if n_samples > max_quality_samples:
+                stride = int(np.ceil(n_samples / max_quality_samples))
+                stride = max(stride, 1)
+
+                idx = np.arange(0, n_samples, stride)
+                regime_labels_sub = regime_labels[idx]
+                feature_data = feature_data.iloc[idx]
+                if forward_returns is not None:
+                    forward_returns = forward_returns.iloc[idx]
+                timestamps = timestamps[idx]
+                regime_labels = regime_labels_sub
+
+                tprint_info(
+                    f"Subsampling alpha regime quality assessment from {n_samples} to "
+                    f"{len(regime_labels)} rows (stride={stride}, fast_mode={fast_mode})"
+                )
 
         try:
             metrics = self.quality_assessor.assess_quality(
@@ -4125,6 +4702,50 @@ class HMMMLMacroTrendStep(BaseStep):
                 
                 f.write("## Transition Matrix\n")
                 transition_counts.to_csv(f)
+
+                # ------------------------------------------------------------
+                # 4b. Training metrics and alpha diagnostics
+                # ------------------------------------------------------------
+                if training_metrics:
+                    # Core scalar training metrics
+                    f.write("\n## Training Metrics\n")
+                    core_scalar_keys = [
+                        "oof_r2",
+                        "oof_rmse",
+                        "xgb_oof_windows",
+                        "xgb_oof_predictions",
+                        "ic_pearson_correlation",
+                        "ic_spearman_correlation",
+                    ]
+                    for key in core_scalar_keys:
+                        if key in training_metrics:
+                            f.write(f"{key},{training_metrics[key]}\n")
+
+                    # Basic distribution of the 0-1 alpha scalar
+                    dist = training_metrics.get("alpha_score_continuous_distribution")
+                    if isinstance(dist, dict) and dist:
+                        f.write("\n## Alpha Score Distribution\n")
+                        f.write("stat,value\n")
+                        for stat_key, val in dist.items():
+                            f.write(f"{stat_key},{val}\n")
+
+                    # Permutation importance (top features)
+                    perm_top = training_metrics.get("permutation_top_features")
+                    if isinstance(perm_top, list) and perm_top:
+                        f.write("\n## Permutation Top Features\n")
+                        # Collect all keys to form a consistent header
+                        fieldnames = sorted({k for row in perm_top for k in row.keys()})
+                        f.write(",".join(fieldnames) + "\n")
+                        for row in perm_top:
+                            f.write(",".join(str(row.get(col, "")) for col in fieldnames) + "\n")
+
+                    # mRMR selected features
+                    mrmr_feats = training_metrics.get("mrmr_selected_features")
+                    if isinstance(mrmr_feats, list) and mrmr_feats:
+                        f.write("\n## mRMR Selected Features\n")
+                        f.write("rank,feature_name\n")
+                        for idx, name in enumerate(mrmr_feats):
+                            f.write(f"{idx + 1},{name}\n")
             
             # ================================================================
             # 5. Save Markdown Report
@@ -4163,32 +4784,103 @@ class HMMMLMacroTrendStep(BaseStep):
                 # Per-regime table
                 f.write("## Per-Regime Metrics\n\n")
                 if not regime_df.empty:
-                    f.write(regime_df.to_markdown(index=False))
+                    try:
+                        f.write(regime_df.to_markdown(index=False))
+                    except ImportError:
+                        tprint_warning(
+                            "tabulate not available; falling back to plain-text regime metrics table"
+                        )
+                        f.write(regime_df.to_string(index=False))
                     f.write("\n\n")
                 
                 # Per-quantile table
                 if not quantile_df.empty:
                     f.write("## Per-Quantile Metrics (0-1 Scalar)\n\n")
-                    f.write(quantile_df.to_markdown(index=False))
+                    try:
+                        f.write(quantile_df.to_markdown(index=False))
+                    except ImportError:
+                        tprint_warning(
+                            "tabulate not available; falling back to plain-text quantile metrics table"
+                        )
+                        f.write(quantile_df.to_string(index=False))
                     f.write("\n\n")
                 
                 # Transition matrix
                 f.write("## Transition Matrix\n\n")
                 f.write("Probability of transitioning from row regime to column regime:\n\n")
-                f.write(transition_counts.to_markdown())
+                try:
+                    f.write(transition_counts.to_markdown())
+                except ImportError:
+                    tprint_warning(
+                        "tabulate not available; falling back to plain-text transition matrix"
+                    )
+                    f.write(transition_counts.to_string())
                 f.write("\n\n")
                 
                 # Training metrics summary
                 if training_metrics:
                     f.write("## Training Metrics Summary\n\n")
+                    # Highlight core scalar metrics first
+                    core_scalar_keys = [
+                        "oof_r2",
+                        "oof_rmse",
+                        "xgb_oof_windows",
+                        "xgb_oof_predictions",
+                        "ic_pearson_correlation",
+                        "ic_spearman_correlation",
+                        "alpha_model_training_failed",
+                        "alpha_fallback_used",
+                    ]
+
+                    for key in core_scalar_keys:
+                        if key in training_metrics:
+                            value = training_metrics[key]
+                            f.write(f"- **{key}**: {value}\n")
+
+                    # Include any recorded errors
                     for key, value in training_metrics.items():
-                        if isinstance(value, (int, float)):
+                        if isinstance(value, str) and key.endswith("_error"):
                             f.write(f"- **{key}**: {value}\n")
-                        elif isinstance(value, str) and key.endswith("_error"):
-                            f.write(f"- **{key}**: {value}\n")
+
+                    # Alpha score distribution summary
+                    dist = training_metrics.get("alpha_score_continuous_distribution")
+                    if isinstance(dist, dict) and dist:
+                        f.write("\n### Alpha Score Distribution (alpha_score_continuous)\n\n")
+                        f.write("| Stat | Value |\n")
+                        f.write("|------|-------|\n")
+                        for stat_key in ["mean", "std", "min", "max", "q05", "q50", "q95", "n"]:
+                            if stat_key in dist:
+                                val = dist[stat_key]
+                                if isinstance(val, float):
+                                    f.write(f"| {stat_key} | {val:.6f} |\n")
+                                else:
+                                    f.write(f"| {stat_key} | {val} |\n")
+
+                    # Permutation importance: top features
+                    perm_top = training_metrics.get("permutation_top_features")
+                    if isinstance(perm_top, list) and perm_top:
+                        f.write("\n### Permutation Importance (Top Features)\n\n")
+                        f.write("| Rank | Feature | Importance (mean) |\n")
+                        f.write("|------|---------|-------------------|\n")
+                        for idx, item in enumerate(perm_top):
+                            name = item.get("feature_name", "")
+                            imp = item.get("importance_mean", "")
+                            if isinstance(imp, float):
+                                f.write(f"| {idx + 1} | {name} | {imp:.6f} |\n")
+                            else:
+                                f.write(f"| {idx + 1} | {name} | {imp} |\n")
+
+                    # mRMR selected features
+                    mrmr_feats = training_metrics.get("mrmr_selected_features")
+                    if isinstance(mrmr_feats, list) and mrmr_feats:
+                        f.write("\n### mRMR Selected Features\n\n")
+                        f.write("| Rank | Feature |\n")
+                        f.write("|------|---------|\n")
+                        for idx, name in enumerate(mrmr_feats):
+                            f.write(f"| {idx + 1} | {name} |\n")
                 f.write("\n")
             
-            tprint_info(f"đ“„ Generated HMM macro trend quality report: {md_path}")
+            tprint_info(f"đŸ“„ Generated HMM macro trend quality report: {md_path}")
             return csv_path, md_path
             
         except Exception as e:

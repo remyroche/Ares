@@ -276,15 +276,6 @@ except ImportError as e:
     ML_IMPORT_ERRORS.append(f"scikit-learn: {e}")
     tprint(f"❌ [REGIME_MODELS] Failed to import scikit-learn: {e}", color="red")
 
-# Import CatBoost
-try:
-    import catboost as cb
-    ML_LIBRARY_VERSIONS['catboost'] = cb.__version__
-    tprint(f"✅ [REGIME_MODELS] CatBoost imported successfully (v{cb.__version__})", color="green")
-except ImportError as e:
-    ML_IMPORT_ERRORS.append(f"CatBoost: {e}")
-    tprint(f"❌ [REGIME_MODELS] Failed to import CatBoost: {e}", color="red")
-
 # Import LightGBM
 try:
     import lightgbm as lgb
@@ -321,16 +312,6 @@ try:
 except ImportError as e:
     ML_IMPORT_ERRORS.append(f"Random Forest: {e}")
     tprint(f"❌ [REGIME_MODELS] Failed to import Random Forest: {e}", color="red")
-
-# Import Greedy Rule Lists
-try:
-    from imodels import GreedyRuleListClassifier  # type: ignore
-    ML_LIBRARY_VERSIONS['imodels'] = "available"
-    tprint(f"✅ [REGIME_MODELS] Greedy Rule Lists imported successfully", color="green")
-except ImportError as e:
-    ML_IMPORT_ERRORS.append(f"Greedy Rule Lists: {e}")
-    tprint(f"❌ [REGIME_MODELS] Failed to import Greedy Rule Lists: {e}", color="red")
-    GreedyRuleListClassifier = None
 
 # Check overall availability
 if not ML_IMPORT_ERRORS:
@@ -520,13 +501,6 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
         # Regime-specific model configurations
         self.regime_models_config = {
             'base': {
-                'CatBoost': {
-                    'iterations': 100,
-                    'depth': 6,
-                    'learning_rate': 0.1,
-                    'random_seed': 42,
-                    'verbose': False
-                },
                 'XGBoost': {
                     'n_estimators': 100,
                     'max_depth': 6,
@@ -548,11 +522,6 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     'bootstrap': True,
                     'random_state': 42,
                     'n_jobs': optimal_workers
-                },
-                'Greedy Rule Lists': {
-                    'max_depth': 20,  # Increased for better complexity handling
-                    'criterion': 'gini',  # Criterion for splitting
-                    'class_weight': 'balanced'  # Handle class imbalance
                 },
                 'ExtraTrees': {
                     'n_estimators': 100,
@@ -632,10 +601,8 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
         """
         try:
             required_params = {
-                'CatBoost': ['iterations', 'depth', 'learning_rate', 'random_seed'],
                 'XGBoost': ['n_estimators', 'max_depth', 'learning_rate', 'random_state'],
                 'Random Forest': ['n_estimators', 'max_depth', 'random_state'],
-                'Greedy Rule Lists': ['max_depth', 'criterion'],
                 'ExtraTrees': ['n_estimators', 'max_depth', 'random_state'],
                 'stacker_lgbm_calibrated': ['num_leaves', 'max_depth', 'learning_rate', 'n_estimators']
             }
@@ -740,18 +707,6 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
         try:
             models_config = self.config.get('models', {})
             base_models = models_config.get('base_models', {})
-            
-            # Mettre à jour la configuration CatBoost
-            if 'catboost' in base_models:
-                catboost_config = base_models['catboost']
-                catboost_hpo = catboost_config.get('hpo', {})
-                if hasattr(self, 'regime_models_config'):
-                    if 'base' in self.regime_models_config and 'CatBoost' in self.regime_models_config['base']:
-                        self.regime_models_config['base']['CatBoost']['hpo'] = {
-                            'enabled': catboost_hpo.get('enabled', True),
-                            'n_trials': catboost_hpo.get('n_trials', 75),
-                            'timeout_seconds': catboost_hpo.get('timeout_seconds', 300)
-                        }
             
             # Mettre à jour la configuration LightGBM
             if 'lightgbm' in base_models:
@@ -2609,18 +2564,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 params = {}
 
             # Create factory function based on model type
-            if 'catboost' in model_name.lower():
-                def factory(**kwargs):
-                    import catboost as cb
-                    # Filter out params that aren't valid for CatBoost
-                    valid_params = {k: v for k, v in kwargs.items()
-                                  if k in ['iterations', 'depth', 'learning_rate', 'l2_leaf_reg',
-                                          'subsample', 'colsample_bylevel', 'bootstrap_type',
-                                          'class_weights', 'random_seed', 'verbose']}
-                    return cb.CatBoostClassifier(**valid_params)
-                return factory, params
-
-            elif 'lightgbm' in model_name.lower() or 'lgbm' in model_name.lower():
+            if 'lightgbm' in model_name.lower() or 'lgbm' in model_name.lower():
                 def factory(**kwargs):
                     import lightgbm as lgb
                     return lgb.LGBMClassifier(**kwargs)
@@ -3034,7 +2978,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
         catboost_weights = [adaptive_weights.get(i, 1.0) for i in range(len(adaptive_weights))]
 
         # 1. Train CatBoost with HPO
-        if ML_LIBRARIES_AVAILABLE:
+        if False and ML_LIBRARIES_AVAILABLE:
             try:
                 tprint("🐱 [REGIME_MODELS] Training CatBoost with HPO", color="blue")
 

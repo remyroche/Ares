@@ -31,6 +31,7 @@ from sklearn.metrics import (
     log_loss,
 )
 from sklearn.calibration import CalibratedClassifierCV
+from sklearn.isotonic import IsotonicRegression
 
 try:
     from statsmodels.tsa.stattools import adfuller
@@ -59,6 +60,7 @@ from src.utils.tprint import (
     tprint_success,
 )
 from src.features_common.transforms.scaling_normalization import (
+    zscore_normalize,
     winsorized_zscore_normalize,
     rolling_adaptive_normalize,
 )
@@ -283,11 +285,74 @@ class MLMeanReversionRegimeStep(BaseStep):
             if not isinstance(market_data, pd.DataFrame) or market_data.empty:
                 raise ValueError("Loaded market data is empty or not a DataFrame")
 
-            if not isinstance(market_data.index, pd.DatetimeIndex):
+            if "timestamp" in market_data.columns:
+                ts = market_data["timestamp"]
+                if np.issubdtype(ts.dtype, np.datetime64):
+                    market_data = market_data.copy()
+                    market_data.index = ts
+                elif np.issubdtype(ts.dtype, np.number):
+                    market_data = market_data.copy()
+                    try:
+                        market_data.index = pd.to_datetime(ts.astype("int64"), unit="ms")
+                    except (OverflowError, ValueError):
+                        market_data.index = pd.to_datetime(ts.astype("int64"), unit="s")
+                else:
+                    market_data = market_data.copy()
+                    market_data.index = pd.to_datetime(ts)
+            elif not isinstance(market_data.index, pd.DatetimeIndex):
                 market_data = market_data.copy()
-                market_data.index = pd.to_datetime(market_data.index)
-                if market_data.index.tz is not None:
+                try:
+                    market_data.index = pd.to_datetime(market_data.index)
+                except (TypeError, ValueError):
+                    market_data.index = pd.to_datetime(market_data.index, utc=True)
                     market_data.index = market_data.index.tz_convert(None)
+            if isinstance(market_data.index, pd.DatetimeIndex) and market_data.index.tz is not None:
+                market_data.index = market_data.index.tz_convert(None)
+
+            if isinstance(market_data.index, pd.DatetimeIndex):
+                idx_min = market_data.index.min()
+                idx_max = market_data.index.max()
+                span_days = max(1, (idx_max - idx_min).days)
+                timeframe_lower = str(regime_timeframe).lower()
+                minutes_per_bar_map = {
+                    "1m": 1,
+                    "3m": 3,
+                    "5m": 5,
+                    "15m": 15,
+                    "30m": 30,
+                    "1h": 60,
+                    "4h": 240,
+                    "1d": 1440,
+                }
+                minutes_per_bar = minutes_per_bar_map.get(timeframe_lower)
+                approx_days_from_bars = None
+                if minutes_per_bar is not None:
+                    approx_days_from_bars = max(
+                        1.0,
+                        float(len(market_data)) * float(minutes_per_bar) / (60.0 * 24.0),
+                    )
+                needs_rebuild = False
+                if idx_min.year < 2000 or idx_max.year < 2000:
+                    needs_rebuild = True
+                elif approx_days_from_bars is not None and span_days < approx_days_from_bars * 0.2:
+                    needs_rebuild = True
+                if needs_rebuild and minutes_per_bar is not None:
+                    freq_map = {
+                        "1m": "1T",
+                        "3m": "3T",
+                        "5m": "5T",
+                        "15m": "15T",
+                        "30m": "30T",
+                        "1h": "1H",
+                        "4h": "4H",
+                        "1d": "1D",
+                    }
+                    freq = freq_map.get(timeframe_lower)
+                    if freq is not None:
+                        base_ts = pd.Timestamp("2020-01-01 00:00:00")
+                        new_index = pd.date_range(start=base_ts, periods=len(market_data), freq=freq)
+                        market_data = market_data.copy()
+                        market_data.index = new_index
 
             tprint_info(
                 f"✅ Loaded market data from {market_source}: {market_data.shape} "
@@ -341,6 +406,14 @@ class MLMeanReversionRegimeStep(BaseStep):
             tprint_info("🎓 [4/9] Building student features (enhanced with momentum divergence, reversion speed, persistence)...")
             student_start = time.time()
             student_df = self._build_student_features(market_data, config)
+            # Augment with teacher interactions so the model can learn
+            # regime- and teacher-score-dependent behaviour directly.
+            student_df = self._augment_with_teacher_interactions(
+                student_df=student_df,
+                teacher_binary=teacher_binary,
+                teacher_score=teacher_score,
+                config=config,
+            )
             tprint_info(f"✅ Student features built in {time.time() - student_start:.2f}s (shape={student_df.shape})")
 
             # 3.5) Calculate dynamic ATR-based TPSL multipliers
@@ -357,6 +430,16 @@ class MLMeanReversionRegimeStep(BaseStep):
             y_direction_all = self._build_direction_target(market_data, config)
             tprint_info(f"✅ Target built in {time.time() - target_start:.2f}s")
 
+            # Determine minimum number of aligned samples required for training.
+            # Use a configurable threshold with a sane lower bound so that we can
+            # still train in smaller windows while avoiding degenerate runs.
+            try:
+                min_aligned_samples = int(config.get("mr_min_aligned_samples", 300))
+            except Exception:
+                min_aligned_samples = 300
+            if min_aligned_samples < 200:
+                min_aligned_samples = 200
+
             # Align indices and drop any samples without a valid direction label
             valid_target_idx = y_direction_all.dropna().index
             common_idx = (
@@ -365,8 +448,10 @@ class MLMeanReversionRegimeStep(BaseStep):
                 .intersection(valid_target_idx)
                 .sort_values()
             )
-            if len(common_idx) < 500:
-                raise ValueError(f"Not enough aligned samples for training ({len(common_idx)} < 500)")
+            if len(common_idx) < min_aligned_samples:
+                raise ValueError(
+                    f"Not enough aligned samples for training ({len(common_idx)} < {min_aligned_samples})"
+                )
 
             X_all = student_df.loc[common_idx]
             y_target_all = y_direction_all.loc[common_idx].astype(int)
@@ -391,9 +476,9 @@ class MLMeanReversionRegimeStep(BaseStep):
                     & (X_all.index <= split_config.test.effective_end)
                 )
                 union_mask = train_mask | val_mask | test_mask
-                if union_mask.sum() < 500:
+                if union_mask.sum() < min_aligned_samples:
                     raise ValueError(
-                        f"Not enough samples within temporal split windows ({union_mask.sum()} < 500)"
+                        f"Not enough samples within temporal split windows ({union_mask.sum()} < {min_aligned_samples})"
                     )
 
                 X_all = X_all.loc[union_mask]
@@ -496,18 +581,110 @@ class MLMeanReversionRegimeStep(BaseStep):
                 for c in student_df.columns:
                     output_df[c] = student_df[c]
 
-                # Join OOF predictions (only OOF, no training set!)
-                # This will have NaN for non-OOF periods
-                output_df = output_df.join(oof_predictions.rename(columns={'probability': 'mr_probability'}), how='left')
+                # Align per-direction classification target to the full
+                # market_data index so that diagnostics and artifact
+                # saving can always rely on mr_direction_target existing.
+                aligned_target_full = y_dir.reindex(output_df.index)
+                output_df["mr_direction_target"] = aligned_target_full
 
-                # Mark which samples are OOF vs. filled
-                output_df['mr_is_oof'] = ~output_df['mr_probability'].isna()
+                # Join OOF predictions (only OOF, no training set!) as raw scores.
+                # This will have NaN for non-OOF periods. Be robust to empty
+                # predictions and different column names.
+                raw_df = None
+                if isinstance(oof_predictions, pd.DataFrame) and not oof_predictions.empty:
+                    prob_col = None
+                    if 'probability' in oof_predictions.columns:
+                        prob_col = 'probability'
+                    elif 'prediction' in oof_predictions.columns:
+                        prob_col = 'prediction'
+                    else:
+                        # Fallback: use the first numeric column if available
+                        numeric_cols = [
+                            c
+                            for c in oof_predictions.columns
+                            if np.issubdtype(oof_predictions[c].dtype, np.number)
+                        ]
+                        if len(numeric_cols) == 1:
+                            prob_col = numeric_cols[0]
 
-                # Add target for OOF samples only
-                output_df.loc[oof_predictions.index, "mr_direction_target"] = y_dir.loc[oof_predictions.index].values
+                    if prob_col is not None:
+                        raw_df = oof_predictions[[prob_col]].rename(columns={prob_col: 'mr_raw_score'})
 
-                # For backward compatibility, also add mr_raw_score (same as mr_probability for OOF)
-                output_df['mr_raw_score'] = output_df['mr_probability']
+                if raw_df is None:
+                    # No usable OOF probabilities – create an all-NaN column
+                    raw_df = pd.DataFrame({
+                        'mr_raw_score': pd.Series(index=output_df.index, dtype=float)
+                    })
+
+                output_df = output_df.join(raw_df, how='left')
+
+                # Mark which samples are OOF vs. filled based on raw scores
+                output_df['mr_is_oof'] = ~output_df['mr_raw_score'].isna()
+
+                # Add target for OOF samples only (safe even if index is empty)
+                if isinstance(oof_predictions, pd.DataFrame) and not oof_predictions.empty:
+                    common_oof_idx = oof_predictions.index.intersection(output_df.index)
+                    if len(common_oof_idx) > 0:
+                        aligned_oof_target = y_dir.reindex(common_oof_idx)
+                        output_df.loc[common_oof_idx, "mr_direction_target"] = aligned_oof_target
+
+                # Calibrate raw scores into probabilities using isotonic regression when possible.
+                # This keeps mr_raw_score as the uncalibrated OOF score and mr_probability as
+                # the calibrated probability used for downstream metrics and backtests.
+                raw_series_full = output_df["mr_raw_score"].astype(float)
+                target_series_full = output_df["mr_direction_target"].astype(float)
+
+                raw_values = raw_series_full.values
+                target_values = target_series_full.values
+                is_oof = output_df["mr_is_oof"].astype(bool).values
+
+                # cal_mask: OOF samples with both a valid raw score and a valid label
+                cal_mask = (
+                    is_oof
+                    & np.isfinite(raw_values)
+                    & np.isfinite(target_values)
+                )
+                # pred_mask: all OOF samples with a valid raw score (may or may not have labels)
+                pred_mask = is_oof & np.isfinite(raw_values)
+
+                calib_method = str(config.get("mr_oof_calibration_method", "isotonic"))
+                min_cal_samples = int(config.get("mr_oof_min_calibration_samples", 200))
+
+                if calib_method == "isotonic" and cal_mask.sum() >= max(50, min_cal_samples):
+                    x_cal = raw_values[cal_mask]
+                    y_cal = target_values[cal_mask]
+
+                    # Require both classes for meaningful calibration
+                    if np.unique(y_cal).size >= 2:
+                        try:
+                            ir = IsotonicRegression(y_min=0.0, y_max=1.0)
+                            ir.fit(x_cal, y_cal)
+
+                            # Apply calibrated mapping to all OOF predictions produced
+                            # by the standardized trainer, not just the labeled subset.
+                            prob_full = np.full_like(raw_values, np.nan, dtype=float)
+                            if pred_mask.any():
+                                prob_full[pred_mask] = ir.transform(raw_values[pred_mask])
+                            output_df["mr_probability"] = prob_full
+                            student_metrics["calibration_method"] = "isotonic_oof_full"
+                        except Exception:
+                            # Fall back to identity mapping if calibration fails
+                            output_df["mr_probability"] = raw_series_full.values
+                            student_metrics["calibration_method"] = "identity_oof_fallback"
+                    else:
+                        # Not enough class diversity to calibrate
+                        output_df["mr_probability"] = raw_series_full.values
+                        student_metrics["calibration_method"] = "identity_oof_insufficient_classes"
+                else:
+                    # Identity calibration (no change or insufficient samples)
+                    output_df["mr_probability"] = raw_series_full.values
+                    if "calibration_method" not in student_metrics:
+                        student_metrics["calibration_method"] = "identity_oof"
+
+                prob_dense = output_df["mr_probability"].astype(float)
+                if prob_dense.notna().any():
+                    prob_dense = prob_dense.ffill().bfill()
+                output_df["mr_probability_dense"] = prob_dense
 
                 output_df["mr_atr_14"] = atr_14
                 output_df["mr_atr_300"] = atr_300
@@ -657,34 +834,33 @@ class MLMeanReversionRegimeStep(BaseStep):
         vr_start = time.time()
         vr = np.full(len(returns), np.nan)
         if vr_window > vr_h + 5:
-            for i in range(vr_window, len(returns)):
-                win = returns.iloc[i - vr_window : i]
-                if win.isna().all():
-                    continue
-                var1 = float(win.var(ddof=1))
-                if not np.isfinite(var1) or var1 <= 0:
-                    continue
-                win_k = win.rolling(vr_h).sum().dropna()
-                if len(win_k) < 10:
-                    continue
-                var_k = float(win_k.var(ddof=1))
-                if not np.isfinite(var_k) or var_k <= 0:
-                    continue
-                vr[i] = var_k / (vr_h * var1)
+            var1 = returns.rolling(vr_window).var(ddof=1)
+            sum_k = returns.rolling(vr_h).sum()
+            var_k = sum_k.rolling(vr_window).var(ddof=1)
+            vr_series = var_k / (vr_h * var1)
+            vr_series[~np.isfinite(vr_series)] = np.nan
+            vr = vr_series.to_numpy()
         tprint_info(f"  ✅ Variance ratio computed in {time.time() - vr_start:.2f}s")
 
         adf_p = np.full(len(close), np.nan)
         if STATIONARITY_AVAILABLE:
-            tprint_info(f"  📊 Computing ADF p-values...")
             adf_start = time.time()
             adf_w = int(config.get("mr_adf_window", 200))
-            for i in range(adf_w, len(returns)):
+            adf_stride = max(1, int(config.get("mr_adf_stride", 4)))
+            tprint_info(
+                f"  📊 Computing ADF p-values (window={adf_w}, stride={adf_stride})..."
+            )
+            for i in range(adf_w, len(returns), adf_stride):
                 seg = returns.iloc[i - adf_w : i]
                 try:
                     adf_p[i] = float(adfuller(seg.values, maxlag=0, autolag=None)[1])
                 except Exception:
                     adf_p[i] = np.nan
-            tprint_info(f"  ✅ ADF p-values computed in {time.time() - adf_start:.2f}s")
+            # Forward-fill between stride steps so every bar has a p-value.
+            adf_p = pd.Series(adf_p, index=df.index).ffill().to_numpy()
+            tprint_info(
+                f"  ✅ ADF p-values computed in {time.time() - adf_start:.2f}s (stride={adf_stride})"
+            )
         else:
             tprint_warning("  ⚠️  Statsmodels not available, skipping ADF p-values")
         teacher_df = pd.DataFrame(
@@ -741,18 +917,49 @@ class MLMeanReversionRegimeStep(BaseStep):
         core_gmm_cols = ["mr_hurst", "mr_ou_half_life", "mr_ou_theta"]
         mask = teacher_df[core_gmm_cols].notna().all(axis=1)
 
+        n_valid = int(mask.sum())
         min_teacher = int(config.get("mr_min_teacher_samples", 100))
-        if mask.sum() < min_teacher:
-            raise ValueError("Not enough valid teacher samples")
+        n_comp = int(config.get("mr_teacher_n_components", 3))
+        abs_min = int(config.get("mr_min_teacher_abs_min", 50))
+        per_comp_min = 10 * max(1, n_comp)
+        effective_min = min(min_teacher, max(abs_min, per_comp_min))
 
-        # Use rolling window normalization to prevent look-ahead bias
+        if n_valid < effective_min:
+            msg = (
+                "Not enough valid teacher samples for stable GMM: "
+                f"{n_valid} < {effective_min} "
+                f"(configured mr_min_teacher_samples={min_teacher}, "
+                f"abs_min={abs_min}, n_components={n_comp})"
+            )
+            raise ValueError(msg)
+        if n_valid < min_teacher:
+            tprint_warning(
+                f"  ⚠️ Using reduced teacher sample count {n_valid} < configured "
+                f"mr_min_teacher_samples={min_teacher} (effective_min={effective_min})"
+            )
+
+        # Use rolling window normalization to prevent look-ahead bias.
+        # For performance on multi-year 15m data (~100k samples), prefer
+        # standard rolling z-score normalization here instead of the more
+        # expensive winsorized variant.
         window_size = int(config.get("mr_normalization_window", 500))
-        X = winsorized_zscore_normalize(
+        X = zscore_normalize(
             teacher_df.loc[mask, core_gmm_cols],
             window=window_size,
         ).values.astype(float)
         n_comp = int(config.get("mr_teacher_n_components", 3))
-        gmm = GaussianMixture(n_components=n_comp, covariance_type="full", random_state=42)
+        cov_type = str(config.get("mr_teacher_covariance_type", "diag"))
+        if cov_type not in {"full", "tied", "diag", "spherical"}:
+            cov_type = "diag"
+        tprint_info(
+            f"  📊 Fitting teacher GMM on {int(mask.sum())} samples "
+            f"(n_components={n_comp}, covariance_type={cov_type})..."
+        )
+        gmm = GaussianMixture(
+            n_components=n_comp,
+            covariance_type=cov_type,
+            random_state=42,
+        )
         gmm.fit(X)
         clusters_clean = gmm.predict(X)
         clusters = pd.Series(-1, index=teacher_df.index, dtype=int)
@@ -947,6 +1154,21 @@ class MLMeanReversionRegimeStep(BaseStep):
         extreme_below_periods = extreme_below.rolling(10, min_periods=1).sum()
         extreme_above_periods = extreme_above.rolling(10, min_periods=1).sum()
 
+        # Approximate higher-timeframe (HTF) context using multi-bar windows
+        # 1h ~ 4 bars, 4h ~ 16 bars, 1d ~ 96 bars on 15m timeframe.
+        vol_1h = ret.rolling(4, min_periods=2).std()
+        vol_4h = ret.rolling(16, min_periods=4).std()
+        vol_ratio_4h_1h = vol_4h / (vol_1h.replace(0.0, np.nan))
+
+        ma_1h = close.rolling(4, min_periods=2).mean()
+        ma_4h = close.rolling(16, min_periods=4).mean()
+        trend_ma_1h = ma_1h - ma_1h.shift(4)
+        trend_ma_4h = ma_4h - ma_4h.shift(16)
+
+        hh_1d = close.rolling(96, min_periods=16).max()
+        ll_1d = close.rolling(96, min_periods=16).min()
+        range_pos_1d = (close - ll_1d) / (hh_1d - ll_1d + 1e-8)
+
         feats = pd.DataFrame(
             {
                 # Original features
@@ -959,6 +1181,13 @@ class MLMeanReversionRegimeStep(BaseStep):
                 "log_volume": log_vol,
                 "volume_rel_ma": vol_rel,
                 "volume_cv_30": vol_cv,
+                # HTF-inspired context (approximate 1h/4h/1d using bar windows)
+                "htf_vol_1h": vol_1h,
+                "htf_vol_4h": vol_4h,
+                "htf_vol_ratio_4h_1h": vol_ratio_4h_1h,
+                "htf_trend_ma_1h": trend_ma_1h,
+                "htf_trend_ma_4h": trend_ma_4h,
+                "htf_range_pos_1d": range_pos_1d,
                 # NEW: Momentum divergence
                 "momentum_div_5": momentum_div_5,
                 "momentum_div_10": momentum_div_10,
@@ -1043,6 +1272,57 @@ class MLMeanReversionRegimeStep(BaseStep):
             )
         return feats
 
+    def _augment_with_teacher_interactions(
+        self,
+        student_df: pd.DataFrame,
+        teacher_binary: pd.Series,
+        teacher_score: pd.Series,
+        config: Dict[str, Any],
+    ) -> pd.DataFrame:
+        """Augment student features with teacher score/regime and simple interactions.
+
+        This explicitly exposes:
+        - mr_teacher_score and mr_teacher_mean_reversion on the student grid
+        - interactions between teacher signals and key mean-reversion features.
+        """
+
+        if student_df is None or student_df.empty:
+            return student_df
+
+        if not bool(config.get("mr_enable_teacher_interactions", True)):
+            return student_df
+
+        try:
+            df_aug = student_df.copy()
+            idx = df_aug.index
+
+            score = teacher_score.reindex(idx).astype(float)
+            binary = teacher_binary.reindex(idx).astype(float)
+
+            df_aug["mr_teacher_score"] = score
+            df_aug["mr_teacher_mean_reversion"] = binary
+
+            base_cols = [
+                "z_price_ma_slow",
+                "z_price_vwap",
+                "ret_std_20",
+                "atr_rel_20",
+            ]
+            for col in base_cols:
+                if col in df_aug.columns:
+                    df_aug[f"{col}_x_mr_teacher"] = (
+                        df_aug[col] * df_aug["mr_teacher_score"]
+                    )
+                    df_aug[f"{col}_x_mr_regime"] = (
+                        df_aug[col] * df_aug["mr_teacher_mean_reversion"]
+                    )
+
+            df_aug = df_aug.replace([np.inf, -np.inf], np.nan)
+            return df_aug
+        except Exception:
+            # If anything goes wrong, fall back to the original student features.
+            return student_df
+
     def _build_direction_target(self, df: pd.DataFrame, config: Dict[str, Any]) -> pd.Series:
         """Build classification target: forward price direction.
 
@@ -1058,7 +1338,7 @@ class MLMeanReversionRegimeStep(BaseStep):
         # For 15m timeframe, prefer a slightly longer 4–8 bar horizon
         # (default 8 bars ≈ 2 hours) to reduce micro-noise.
         forward_horizon = int(config.get("mr_forward_target_horizon", 8))
-        min_threshold = float(config.get("mr_direction_min_threshold", 0.02))  # 2.0% minimum move
+        min_threshold = float(config.get("mr_direction_min_threshold", 0.01))  # 1.0% minimum move
 
         fwd_returns = np.full(len(close), np.nan)
         for i in range(len(close) - forward_horizon):
@@ -1292,7 +1572,7 @@ class MLMeanReversionRegimeStep(BaseStep):
             ParameterGroup(
                 name="structure",
                 params={
-                    "max_depth": {"type": "int", "low": 3, "high": 7},
+                    "max_depth": {"type": "int", "low": 4, "high": 7},
                     "min_child_weight": {"type": "float", "low": 2.0, "high": 10.0},
                 },
                 priority=1,
@@ -1723,6 +2003,24 @@ class MLMeanReversionRegimeStep(BaseStep):
         timeframe = config.get("regime_timeframe", config.get("timeframe", "15m"))
         model_id = f"{symbol}_{exchange}_{timeframe}_mean_reversion_{direction}"
 
+        # Allow step-level override of the minimum number of samples required
+        # for each OOF training window so that shorter histories can still
+        # produce usable predictions. Default to a moderately conservative
+        # value (400) and clamp extreme values to avoid very small windows.
+        min_samples_cfg = config.get("mr_oof_min_samples_for_training", 400)
+        try:
+            min_samples_int = int(min_samples_cfg)
+        except Exception:
+            min_samples_int = 400
+        if min_samples_int < 200:
+            min_samples_int = 200
+
+        tprint_info(
+            "📊 OOF configuration: "
+            f"min_samples_for_training={min_samples_int}, "
+            "retrain_interval_days=10, burnin_pct≈1/12"
+        )
+
         tprint_info(f"🚀 Using StandardizedXGBTrainer for OOF predictions (model_id={model_id})")
 
         # Create custom config
@@ -1731,7 +2029,7 @@ class MLMeanReversionRegimeStep(BaseStep):
             retrain_interval_days=10,  # OOF window every 10 days of historical data
             hpo_interval_days=30,  # HPO every 30 days of historical data
             burnin_pct=1/12,  # 3 months
-            min_samples_for_training=1000,
+            min_samples_for_training=min_samples_int,
 
             # XGBoost parameters
             tree_method="hist",
@@ -2018,6 +2316,7 @@ class MLMeanReversionRegimeStep(BaseStep):
             "mr_teacher_score",
             "mr_raw_score",
             "mr_probability",
+            "mr_probability_dense",
             "mr_direction_target",
         ]].copy()
         to_save = to_save.reset_index().rename(columns={output_df.index.name or "index": "timestamp"})
@@ -2106,14 +2405,20 @@ class MLMeanReversionRegimeStep(BaseStep):
                 if bool(base_mask.any()):
                     idx_all = output_df.index[base_mask]
                     y_all = target_series_full.loc[idx_all].astype(int)
-                    p_all = prob_series_full.loc[idx_all]
+                    p_cal_all = prob_series_full.loc[idx_all]
+
+                    if "mr_raw_score" in output_df.columns:
+                        raw_series_full = output_df["mr_raw_score"].astype(float)
+                        p_raw_all = raw_series_full.loc[idx_all]
+                    else:
+                        p_raw_all = p_cal_all
 
                     def _split_indices(start_ts: datetime, end_ts: datetime) -> pd.DatetimeIndex:
                         if split_config is None:
                             return idx_all
                         return idx_all[(idx_all >= start_ts) & (idx_all <= end_ts)]
 
-                    def _compute_split_metrics(idx_subset: pd.DatetimeIndex) -> Dict[str, float]:
+                    def _compute_split_metrics(idx_subset: pd.DatetimeIndex, p_all: pd.Series) -> Dict[str, float]:
                         if idx_subset is None or len(idx_subset) < 50:
                             return {}
                         y_true = y_all.loc[idx_subset]
@@ -2146,25 +2451,29 @@ class MLMeanReversionRegimeStep(BaseStep):
                         val_idx = idx_all
                         test_idx = idx_all
 
-                    train_metrics = _compute_split_metrics(train_idx)
-                    val_metrics = _compute_split_metrics(val_idx)
-                    test_metrics = _compute_split_metrics(test_idx)
+                    # Raw metrics (from mr_raw_score when available)
+                    train_raw = _compute_split_metrics(train_idx, p_raw_all)
+                    val_raw = _compute_split_metrics(val_idx, p_raw_all)
+                    test_raw = _compute_split_metrics(test_idx, p_raw_all)
 
-                    # Populate raw metrics
-                    if train_metrics:
-                        student_metrics["train_raw"] = train_metrics
-                    if val_metrics:
-                        student_metrics["val_raw"] = val_metrics
-                    if test_metrics:
-                        student_metrics["test_raw"] = test_metrics
+                    if train_raw:
+                        student_metrics["train_raw"] = train_raw
+                    if val_raw:
+                        student_metrics["val_raw"] = val_raw
+                    if test_raw:
+                        student_metrics["test_raw"] = test_raw
 
-                    # For now, treat calibrated metrics as identical to raw OOF metrics
-                    if "train_calibrated" not in student_metrics and train_metrics:
-                        student_metrics["train_calibrated"] = dict(train_metrics)
-                    if "val_calibrated" not in student_metrics and val_metrics:
-                        student_metrics["val_calibrated"] = dict(val_metrics)
-                    if "test_calibrated" not in student_metrics and test_metrics:
-                        student_metrics["test_calibrated"] = dict(test_metrics)
+                    # Calibrated metrics (from mr_probability)
+                    train_cal = _compute_split_metrics(train_idx, p_cal_all)
+                    val_cal = _compute_split_metrics(val_idx, p_cal_all)
+                    test_cal = _compute_split_metrics(test_idx, p_cal_all)
+
+                    if train_cal:
+                        student_metrics["train_calibrated"] = train_cal
+                    if val_cal:
+                        student_metrics["val_calibrated"] = val_cal
+                    if test_cal:
+                        student_metrics["test_calibrated"] = test_cal
 
                     # Class balance and split sizes
                     cb = student_metrics.get("class_balance", {})
@@ -2206,6 +2515,75 @@ class MLMeanReversionRegimeStep(BaseStep):
             )
         except Exception as exc:  # noqa: BLE001
             tprint_warning(f"Failed to save metrics artifact: {exc}")
+
+        # Also export key metrics to a flat CSV in outcomes/ for easier inspection.
+        try:
+            flat_metrics: Dict[str, Any] = {}
+
+            # Teacher metrics (top-level scalars)
+            for k, v in teacher_metrics.items():
+                if isinstance(v, (int, float, str, bool)):
+                    flat_metrics[f"teacher_{k}"] = v
+
+            thresholds = teacher_metrics.get("thresholds", {})
+            if isinstance(thresholds, dict):
+                for k, v in thresholds.items():
+                    if isinstance(v, (int, float, str, bool)):
+                        flat_metrics[f"teacher_thresholds_{k}"] = v
+
+            # Student metrics (top-level scalars)
+            for k, v in student_metrics.items():
+                if isinstance(v, (int, float, str, bool)):
+                    flat_metrics[f"student_{k}"] = v
+
+            # Nested student metrics: raw and calibrated splits
+            for split_key in [
+                "train_raw",
+                "val_raw",
+                "test_raw",
+                "train_calibrated",
+                "val_calibrated",
+                "test_calibrated",
+            ]:
+                split_metrics = student_metrics.get(split_key, {})
+                if isinstance(split_metrics, dict):
+                    for mk, mv in split_metrics.items():
+                        if isinstance(mv, (int, float, str, bool)):
+                            flat_metrics[f"student_{split_key}_{mk}"] = mv
+
+            class_balance = student_metrics.get("class_balance", {})
+            if isinstance(class_balance, dict):
+                for mk, mv in class_balance.items():
+                    if isinstance(mv, (int, float, str, bool)):
+                        flat_metrics[f"student_class_balance_{mk}"] = mv
+
+            split_sizes = student_metrics.get("split_sizes", {})
+            if isinstance(split_sizes, dict):
+                for mk, mv in split_sizes.items():
+                    if isinstance(mv, (int, float, str, bool)):
+                        flat_metrics[f"student_split_sizes_{mk}"] = mv
+
+            # Forward-return diagnostics, keyed by horizon
+            for h, m in fwd_metrics.items():
+                if isinstance(m, dict):
+                    for mk, mv in m.items():
+                        if isinstance(mv, (int, float, str, bool)):
+                            flat_metrics[f"forward_h{h}_{mk}"] = mv
+
+            # Basic identifiers
+            flat_metrics["symbol"] = symbol
+            flat_metrics["exchange"] = exchange
+            flat_metrics["timeframe"] = timeframe
+            flat_metrics["direction"] = direction
+            flat_metrics["created_at"] = datetime.now().isoformat()
+
+            metrics_df = pd.DataFrame([flat_metrics])
+            ts_metrics = datetime.now().strftime("%Y%m%d_%H%M%S")
+            csv_path = f"outcomes/ml_mean_reversion_metrics_{symbol}_{timeframe}_{direction}_{ts_metrics}.csv"
+            metrics_df.to_csv(csv_path, index=False)
+            tprint_info(f"  💾 Saved metrics CSV to {csv_path}")
+        except Exception as exc:  # noqa: BLE001
+            tprint_warning(f"Failed to save metrics CSV: {exc}")
 
         # Generate comprehensive Markdown report
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -2328,14 +2706,18 @@ class MLMeanReversionRegimeStep(BaseStep):
 
         # Save probabilities CSV
         try:
+            idx = X_all.index
+            # Align all series explicitly to the feature index to guarantee equal lengths
+            output_aligned = output_df.reindex(idx)
+            y_aligned = y_target.reindex(idx)
             csv_df = pd.DataFrame(
                 {
-                    "timestamp": X_all.index,
-                    "mr_teacher_score": output_df.loc[X_all.index, "mr_teacher_score"],
-                    "mr_raw_score": output_df.loc[X_all.index, "mr_raw_score"],
-                    "mr_probability": output_df.loc[X_all.index, "mr_probability"],
-                    "mr_direction_target": y_target,
-                    "close": output_df.loc[X_all.index, "close"],
+                    "timestamp": idx.to_numpy(),
+                    "mr_teacher_score": output_aligned["mr_teacher_score"].to_numpy(),
+                    "mr_raw_score": output_aligned["mr_raw_score"].to_numpy(),
+                    "mr_probability": output_aligned["mr_probability"].to_numpy(),
+                    "mr_direction_target": y_aligned.to_numpy(),
+                    "close": output_aligned["close"].to_numpy(),
                 }
             )
             csv_path = f"outcomes/ml_mean_reversion_probabilities_{symbol}_{timeframe}_{direction}_{ts}.csv"
@@ -2348,12 +2730,32 @@ class MLMeanReversionRegimeStep(BaseStep):
         # Grid backtest with SIMPLIFIED signal generation
         try:
             idx = X_all.index
-            close = output_df.loc[idx, "close"].astype(float)
-            high = output_df.loc[idx, "high"].astype(float)
-            low = output_df.loc[idx, "low"].astype(float)
+            # Align all series (teacher labels, targets, features) to the
+            # same feature index used for probabilities.
+            output_aligned = output_df.reindex(idx)
+            y_teacher_aligned = y_teacher.reindex(idx)
+            y_target_aligned = y_target.reindex(idx)
+
+            # Use a clean RangeIndex for grid simulation to avoid duplicate-label
+            # reindex issues inside the grid backtester while preserving
+            # temporal ordering.
+            grid_index = pd.RangeIndex(len(idx))
+
+            close = pd.Series(
+                output_aligned["close"].astype(float).to_numpy(), index=grid_index
+            )
+            high = pd.Series(
+                output_aligned["high"].astype(float).to_numpy(), index=grid_index
+            )
+            low = pd.Series(
+                output_aligned["low"].astype(float).to_numpy(), index=grid_index
+            )
             raw_returns = close.pct_change().fillna(0.0)
 
-            prob = output_df.loc[idx, "mr_probability"].astype(float)
+            prob = pd.Series(
+                output_aligned["mr_probability"].astype(float).to_numpy(),
+                index=grid_index,
+            )
 
             # SIMPLIFIED: Use continuous probability directly.
             # For long strategy:
@@ -2363,23 +2765,36 @@ class MLMeanReversionRegimeStep(BaseStep):
             # For short strategy (reverse grid):
             #   - High bearish prob (close to 1) = strong short signal
             #   → short_confidence = prob
-            z_ma = output_df.loc[idx, "z_price_ma_slow"].astype(float)
-            z_vwap = output_df.loc[idx, "z_price_vwap"].astype(float)
+            z_ma = pd.Series(
+                output_aligned["z_price_ma_slow"].astype(float).to_numpy(),
+                index=grid_index,
+            )
+            z_vwap = pd.Series(
+                output_aligned["z_price_vwap"].astype(float).to_numpy(),
+                index=grid_index,
+            )
 
             if direction == "short":
                 base_confidence = prob
-                # Boost confidence when overbought (above mean) for mean-reversion shorts
-                overbought = ((z_ma > 0.01) | (z_vwap > 0.01)).astype(float)
-                confidence_boost = 1.0 + overbought * 0.5
+                # Boost confidence when *strongly* overbought (above mean) for
+                # mean-reversion shorts. Use stricter AND condition and a
+                # slightly larger z-threshold by default.
+                short_z_thr = float(config.get("mr_short_overbought_z_threshold", 0.02))
+                short_boost = float(config.get("mr_short_confidence_boost", 0.5))
+                overbought = ((z_ma > short_z_thr) & (z_vwap > short_z_thr)).astype(float)
+                confidence_boost = 1.0 + overbought * short_boost
                 preds = -base_confidence * confidence_boost
                 preds = preds.clip(-1, 0)
                 grid_confidence = base_confidence
                 grid_fn = run_simple_short_grid_backtest
             else:
                 base_confidence = 1.0 - prob
-                # Boost confidence when oversold (below mean) for mean-reversion longs
-                oversold = ((z_ma < -0.01) | (z_vwap < -0.01)).astype(float)
-                confidence_boost = 1.0 + oversold * 0.5
+                # Boost confidence when clearly oversold (below mean) for
+                # mean-reversion longs. Use symmetric AND condition.
+                long_z_thr = float(config.get("mr_long_oversold_z_threshold", -0.02))
+                long_boost = float(config.get("mr_long_confidence_boost", 0.5))
+                oversold = ((z_ma < long_z_thr) & (z_vwap < long_z_thr)).astype(float)
+                confidence_boost = 1.0 + oversold * long_boost
                 preds = base_confidence * confidence_boost
                 preds = preds.clip(0, 1)
                 grid_confidence = base_confidence
@@ -2387,12 +2802,14 @@ class MLMeanReversionRegimeStep(BaseStep):
 
             ml_df_grid = pd.DataFrame(
                 {
-                    "mr_teacher_mean_reversion": y_teacher.loc[idx].astype(int),
-                    "mr_teacher_score": output_df.loc[idx, "mr_teacher_score"].astype(float),
-                    "mr_probability": prob,
-                    "mr_direction_target": y_target.loc[idx].astype(int),
+                    "mr_teacher_mean_reversion": y_teacher_aligned.astype(int).to_numpy(),
+                    "mr_teacher_score": output_aligned["mr_teacher_score"]
+                    .astype(float)
+                    .to_numpy(),
+                    "mr_probability": prob.to_numpy(),
+                    "mr_direction_target": y_target_aligned.astype(int).to_numpy(),
                 },
-                index=idx,
+                index=grid_index,
             )
 
             # Attempt to load meta-labeling HPO parameters and apply dynamic ATR multiplier
@@ -2481,16 +2898,12 @@ class MLMeanReversionRegimeStep(BaseStep):
                 or local_config.get("mr_grid_max_holding_bars_list")
             )
             if holding_candidates is None:
-                base_hold = int(
-                    local_config.get(
-                        f"mr_grid_max_holding_bars_default{dir_suffix}",
-                        local_config.get("mr_grid_max_holding_bars_default", 6),
-                    )
-                )
-                if direction == "short":
-                    holding_candidates = [max(2, base_hold // 2), base_hold, base_hold * 2]
-                else:
-                    holding_candidates = [base_hold, base_hold * 2, base_hold * 4]
+                base_default = int(local_config.get("mr_grid_max_holding_bars_default", 6))
+                base_dir = int(local_config.get(f"mr_grid_max_holding_bars_default{dir_suffix}", base_default))
+                base_hold = max(1, base_dir)
+                # Use symmetric holding-period candidates for long and short by
+                # default so that trade intensity is comparable across sides.
+                holding_candidates = [base_hold, base_hold * 2, base_hold * 4]
 
             try:
                 holds_unique = sorted(
@@ -2573,6 +2986,32 @@ class MLMeanReversionRegimeStep(BaseStep):
                         candidates = candidates[candidates["number_of_trades"] >= min_trades]
                     if "bars" in candidates.columns:
                         candidates = candidates[candidates["bars"] >= min_bars]
+
+                    # Optional trade-intensity band based on avg_trades_per_day
+                    # when configured. This allows constraining the selected
+                    # grid to a desired activity level without hard-coding a
+                    # specific range here.
+                    max_tpd_cfg = local_config.get(
+                        f"mr_max_grid_trades_per_day{dir_suffix}",
+                        local_config.get("mr_max_grid_trades_per_day"),
+                    )
+                    min_tpd_cfg = local_config.get(
+                        f"mr_min_grid_trades_per_day{dir_suffix}",
+                        local_config.get("mr_min_grid_trades_per_day"),
+                    )
+                    if "avg_trades_per_day" in candidates.columns:
+                        if min_tpd_cfg is not None:
+                            try:
+                                min_tpd = float(min_tpd_cfg)
+                                candidates = candidates[candidates["avg_trades_per_day"] >= min_tpd]
+                            except Exception:
+                                pass
+                        if max_tpd_cfg is not None:
+                            try:
+                                max_tpd = float(max_tpd_cfg)
+                                candidates = candidates[candidates["avg_trades_per_day"] <= max_tpd]
+                            except Exception:
+                                pass
 
                     if not candidates.empty:
                         sort_cols = [

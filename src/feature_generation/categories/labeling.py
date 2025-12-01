@@ -22,7 +22,27 @@ import pandas as pd
 import logging
 from typing import Any, Dict, List, Optional, Union, Tuple
 from dataclasses import dataclass
-from numba import njit, prange
+try:
+    from numba import njit, prange
+    NUMBA_AVAILABLE = True
+except ImportError:
+    NUMBA_AVAILABLE = False
+
+    def njit(*args, **kwargs):
+        """Fallback no-op njit decorator when numba is not installed."""
+
+        # Support both @njit and @njit(...)
+        if args and callable(args[0]) and len(args) == 1 and not kwargs:
+            return args[0]
+
+        def decorator(func):
+            return func
+
+        return decorator
+
+    def prange(*args, **kwargs):
+        """Fallback prange implementation using built-in range."""
+        return range(*args, **kwargs)
 
 from ..core.feature_generator import (
     FeatureGenerator,

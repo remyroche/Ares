@@ -503,6 +503,11 @@ class UnifiedTrainingPipeline:
             # Merge with provided configuration
             if config:
                 default_config.update(config)
+                
+            # DEBUG: Log custom_params
+            tprint_info(f"🔍 [DEBUG] Config custom_params: {default_config.get('custom_params')}")
+            if config and 'custom_params' in config:
+                 tprint_info(f"🔍 [DEBUG] Input config custom_params: {config['custom_params']}")
             
             # Adjust based on data quality
             if quality_result:
@@ -530,8 +535,13 @@ class UnifiedTrainingPipeline:
                 timeout_seconds=default_config.get('timeout_seconds'),
                 enable_monitoring=default_config.get('enable_monitoring', True),
                 monitoring_interval=default_config.get('monitoring_interval', 30.0),
-                enable_health_checks=default_config.get('enable_health_checks', True)
+                enable_health_checks=default_config.get('enable_health_checks', True),
+                analyst_config=default_config.get('analyst_config'),
+                tactician_config=default_config.get('tactician_config'),
+                ensemble_config=default_config.get('ensemble_config'),
+                custom_params=default_config.get('custom_params', {})
             )
+            tprint_info(f"🔍 [DEBUG] PipelineConfig created. enable_analyst={pipeline_config.enable_analyst}")
             
             # Add utility-specific settings
             pipeline_config.utility_settings = {
@@ -874,7 +884,14 @@ class UnifiedTrainingPipeline:
             
             # Validate all targets mathematically
             try:
+                print("DEBUG: UnifiedTrainingPipeline.train_ensemble_models called!") # Explicit print
                 validate_array_finite(analyst_targets.values)
+                
+                # Check for constant target (User Request)
+                if analyst_targets.nunique() <= 1:
+                     tprint_error(f"❌ Target is constant (value={analyst_targets.iloc[0] if not analyst_targets.empty else 'N/A'})! Cannot train.")
+                     return {'success': False, 'error': 'Constant target'}
+                     
             except ValueError:
                 tprint_warning("Non-finite values in analyst targets, cleaning...")
                 analyst_targets = analyst_targets.replace([np.inf, -np.inf], np.nan).fillna(analyst_targets.median())
@@ -931,7 +948,10 @@ class UnifiedTrainingPipeline:
             
             # Create ensemble-only configuration with advanced features
             # NOTE: enable_analyst must be True to trigger analyst ensemble training phase
+            # Create ensemble-only configuration with advanced features
+            # NOTE: enable_analyst must be True to trigger analyst ensemble training phase
             ensemble_config = {
+                **(config or {}),  # Merge input config first so we can override
                 'enable_analyst': True,  # Required to trigger analyst ensemble phase
                 'enable_tactician': False,
                 'enable_ensemble': True,
@@ -943,8 +963,25 @@ class UnifiedTrainingPipeline:
                 'enable_data_leakage_detection': True,
                 'enable_lookahead_detection': True,
                 'skip_base_training': True,  # Skip base model training, use existing artifacts
-                **(config or {})
             }
+            
+            # --- FIX: Ensure skip_base_training is in custom_params ---
+            # PipelineOrchestrator looks for skip_base_training in custom_params
+            if 'custom_params' not in ensemble_config:
+                ensemble_config['custom_params'] = {}
+            elif not isinstance(ensemble_config['custom_params'], dict):
+                ensemble_config['custom_params'] = {}
+                
+            ensemble_config['custom_params']['skip_base_training'] = True
+            
+            # Also propagate ensemble_features if present
+            if 'ensemble_features' in ensemble_config:
+                ensemble_config['custom_params']['ensemble_features'] = ensemble_config['ensemble_features']
+                print(f"DEBUG: Propagated ensemble_features to custom_params. Shape: {ensemble_config['ensemble_features'].shape}")
+            else:
+                print("DEBUG: ensemble_features NOT found in ensemble_config!")
+                
+            # --- END FIX ---
             
             # Execute pipeline with enhanced monitoring
             with tprint_timer("Ensemble Models Training"):

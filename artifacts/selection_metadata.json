@@ -1,5 +1,5 @@
 {
-  "total_features_available": 197,
+  "total_features_available": 25,
   "feature_set_sizes": [
     60,
     50,
@@ -9,11 +9,29 @@
   "selection_method": "permutation",
   "scoring_threshold": 0.01,
   "use_tree_based": true,
-  "timestamp": "2025-11-27T23:05:21.079213",
+  "timestamp": "2025-11-30T13:53:15.379177",
   "symbol": "ETHUSDT",
   "exchange": "binance",
   "timeframe": "15m",
   "direction": "long",
-  "mode": "light",
-  "execution_mode": "light"
+  "mode": "blank",
+  "execution_mode": "blank",
+  "lgbm_stage_summary": {
+    "stage1": {
+      "input_features": 2,
+      "kept_features": 2,
+      "drop_fraction": 0.33
+    },
+    "stage2": {
+      "input_features": 2,
+      "kept_features": 2,
+      "top_unchanged_prefix": 2,
+      "skim_fraction_beyond_60": 0.5
+    },
+    "stage3": {
+      "input_features": 2,
+      "ranked_features": 2,
+      "cv_splits": 5
+    }
+  }
 }

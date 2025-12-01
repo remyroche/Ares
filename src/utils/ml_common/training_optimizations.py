@@ -319,7 +319,8 @@ def configure_lightgbm_optimizations(
     }
 
     if enable_goss:
-        params['boosting_type'] = 'goss'
+        params['boosting_type'] = 'gbdt'
+        params['data_sample_strategy'] = 'goss'
         params['top_rate'] = top_rate
         params['other_rate'] = other_rate
         logger.info(
@@ -451,9 +452,10 @@ def create_efficient_train_params(
             params['colsample_bytree'] = 0.8
 
     elif model_type == 'lightgbm':
-        # Use GOSS for large datasets
+        # Use GOSS sampling for large datasets (new API: gbdt + data_sample_strategy='goss')
         if n_samples > 100000:
-            params['boosting_type'] = 'goss'
+            params['boosting_type'] = 'gbdt'
+            params['data_sample_strategy'] = 'goss'
             params['top_rate'] = 0.2
             params['other_rate'] = 0.1
 

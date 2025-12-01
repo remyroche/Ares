@@ -56,8 +56,8 @@ try:
     import talib  # type: ignore
     TALIB_AVAILABLE = True
     logger.info("✅ TA-Lib available for enhanced technical indicators")
-except ImportError as e:
-    logger.warning(f"TA-Lib not available: {e}")
+except ImportError:
+    logger.info("TA-Lib not available; using optimized numpy/pandas fallbacks for technical indicators")
     TALIB_AVAILABLE = False
 
 # Feature selection tools - using fallback implementations since optimized versions are not available

@@ -106,12 +106,52 @@ class _CompatibleArtifactManager:
 
     def __init__(self, config: Optional[Dict[str, Any]] = None) -> None:
         self._manager = EnhancedArtifactManager(config=config)
+        
+        # Initialize the real ArtifactManager for data I/O
+        from src.utils.artifact_manager import ArtifactManager
+        self._real_manager = ArtifactManager(config=config or {})
+        
         # Basic directory mapping used by artifact_pickup_utils
         self.base_paths: Dict[str, Path] = {
             "artifacts": Path("artifacts"),
             "versioned_artifacts": Path("versioned_artifacts"),
             "outcomes": Path("outcomes"),
         }
+
+    def load_artifact(self, artifact_name: str, artifact_type: str = "data", return_path: bool = False) -> Any:
+        """Load artifact using the real ArtifactManager."""
+        # Ensure context is set
+        if self._real_manager._current_step_name is None:
+            self._real_manager.set_context(
+                step_name="pipeline_orchestrator",
+                symbol=self._manager.config.get('symbol', 'ETHUSDT'),
+                exchange=self._manager.config.get('exchange', 'binance'),
+                timeframe=self._manager.config.get('timeframe', '15m')
+            )
+            
+        return self._real_manager.get_artifact(
+            artifact_name=artifact_name,
+            artifact_type=artifact_type,
+            return_path=return_path
+        )
+
+    def save_artifact(self, data: Any, artifact_name: str, artifact_type: str = "data", metadata: Optional[Dict] = None) -> str:
+        """Save artifact using the real ArtifactManager."""
+        # Ensure context is set
+        if self._real_manager._current_step_name is None:
+            self._real_manager.set_context(
+                step_name="pipeline_orchestrator",
+                symbol=self._manager.config.get('symbol', 'ETHUSDT'),
+                exchange=self._manager.config.get('exchange', 'binance'),
+                timeframe=self._manager.config.get('timeframe', '15m')
+            )
+
+        return self._real_manager.save(
+            data=data,
+            artifact_name=artifact_name,
+            artifact_type=artifact_type,
+            metadata=metadata
+        )
 
     # The following methods intentionally return conservative defaults.
     # They are sufficient for modules that only need to *import* the

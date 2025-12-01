@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Tuple, Any, Optional
 
 import numpy as np
-import datetime
+from datetime import datetime
 import logging
 import time
 import typing

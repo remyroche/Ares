@@ -8540,20 +8540,22 @@ class MLPathRegimeStep(BaseStep):
                 "max_risk_score": float(regime_scores.max()),
             }
 
+            # Additional risk score distribution diagnostics
+            try:
+                regime_scores_clean = pd.Series(regime_scores).dropna()
+                if len(regime_scores_clean) > 0:
+                    stats["median_risk_score"] = float(regime_scores_clean.median())
+                    stats["p25_risk_score"] = float(regime_scores_clean.quantile(0.25))
+                    stats["p75_risk_score"] = float(regime_scores_clean.quantile(0.75))
+            except Exception:
+                pass
+
             # Calculate returns if available
             if 'returns_1h' in df.columns:
                 regime_returns = df.loc[regime_mask, 'returns_1h'].dropna()
                 if len(regime_returns) > 0:
                     stats["mean_return"] = float(regime_returns.mean())
                     stats["std_return"] = float(regime_returns.std())
-
-            # 3h forward-return statistics if directional diagnostics were
-            # computed.
-            if 'forward_return_3h' in df.columns:
-                fwd3 = df.loc[regime_mask, 'forward_return_3h'].dropna()
-                if len(fwd3) > 0:
-                    stats["mean_forward_return_3h"] = float(fwd3.mean())
-                    stats["std_forward_return_3h"] = float(fwd3.std())
 
             # Fraction of bad-path outcomes for this regime (3h horizon).
             if 'bad_path_flag_3h' in df.columns:

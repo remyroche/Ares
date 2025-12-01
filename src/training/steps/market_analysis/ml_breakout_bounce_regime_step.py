@@ -25,6 +25,7 @@ import os
 from typing import Any, Dict, Optional, Tuple, List, Union
 from dataclasses import asdict, is_dataclass
 from datetime import datetime
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -4577,11 +4578,20 @@ class RollingKDELevelGenerator:
         peaks_per_side: int = 3,
         price_grid_size: int = 400,
         min_history_bars: int = 200,
+        sr_min_touch_count: int = 2,
+        sr_min_volume_depth_ratio: float = 0.8,
+        sr_min_prominence: float = 0.5,
     ) -> None:
         self.lookback_days = int(max(1, lookback_days))
         self.peaks_per_side = int(max(1, peaks_per_side))
         self.price_grid_size = int(max(100, price_grid_size))
         self.min_history_bars = int(max(50, min_history_bars))
+        # Support/resistance quality filter thresholds are configured via
+        # the parent step and passed into this helper to avoid relying on
+        # any global config within level computation.
+        self.sr_min_touch_count = int(max(1, sr_min_touch_count))
+        self.sr_min_volume_depth_ratio = float(sr_min_volume_depth_ratio)
+        self.sr_min_prominence = float(sr_min_prominence)
 
     def _compute_pivots(
         self,
@@ -4786,18 +4796,34 @@ class RollingKDELevelGenerator:
                 volume_depth = level.get("volume_depth_ratio", 0.0)
                 prominence = level.get("prominence", 0.0)
 
-                # Quality filters (using balanced defaults from recommendations)
-                min_touches = int(config.get("sr_min_touch_count", 2))
-                min_volume_depth = float(config.get("sr_min_volume_depth_ratio", 0.8))
-                min_prominence = float(config.get("sr_min_prominence", 0.5))
+                # Quality filters (using thresholds provided by the parent step)
+                min_touches = int(self.sr_min_touch_count)
+                min_volume_depth = float(self.sr_min_volume_depth_ratio)
+                min_prominence = float(self.sr_min_prominence)
 
                 # Apply filters to ensure only strong levels are used
-                if (touch_count >= min_touches and
-                    volume_depth >= min_volume_depth and
-                    prominence >= min_prominence):
+                if (
+                    touch_count >= min_touches
+                    and volume_depth >= min_volume_depth
+                    and prominence >= min_prominence
+                ):
                     filtered_levels.append(level)
 
             # Use filtered levels instead of all candidates
+            if not filtered_levels:
+                qualities: List[float] = []
+                for level in candidate_levels:
+                    touch_count = float(level.get("touch_count", 0.0))
+                    volume_depth = float(level.get("volume_depth_ratio", 0.0))
+                    prominence = float(level.get("prominence", 0.0))
+                    qualities.append(touch_count + volume_depth + prominence)
+
+                if qualities:
+                    threshold = float(np.nanpercentile(qualities, 50.0))
+                    for level, quality in zip(candidate_levels, qualities):
+                        if quality >= threshold:
+                            filtered_levels.append(level)
+
             if not filtered_levels:
                 # No strong levels found for this day, skip
                 continue
@@ -4977,13 +5003,69 @@ class MLBreakoutBounceRegimeStep(BaseStep):
             if not isinstance(market_data.index, pd.DatetimeIndex):
                 try:
                     market_data = market_data.copy()
-                    try:
-                        market_data.index = pd.to_datetime(market_data.index)
-                    except (TypeError, ValueError):
-                        market_data.index = pd.to_datetime(market_data.index, utc=True)
-                        market_data.index = market_data.index.tz_convert(None)
+                    time_index = None
+                    if "open_time" in market_data.columns:
+                        time_index = pd.to_datetime(market_data["open_time"], errors="coerce")
+                    elif "timestamp" in market_data.columns:
+                        time_index = pd.to_datetime(market_data["timestamp"], errors="coerce")
+                    elif "close_time" in market_data.columns:
+                        time_index = pd.to_datetime(market_data["close_time"], errors="coerce")
+
+                    if time_index is not None:
+                        mask = time_index.notna()
+                        if not mask.any():
+                            raise ValueError("No valid timestamps found in market data time columns")
+                        market_data = market_data.loc[mask].copy()
+                        market_data.index = time_index[mask]
+                        market_data = market_data.sort_index()
+                    else:
+                        try:
+                            market_data.index = pd.to_datetime(market_data.index)
+                        except (TypeError, ValueError):
+                            market_data.index = pd.to_datetime(market_data.index, utc=True)
+                            market_data.index = market_data.index.tz_convert(None)
                 except Exception as exc:
                     raise ValueError("Market data index could not be converted to DatetimeIndex") from exc
+
+            # Fallback: if the inferred DateTimeIndex spans less than 2 days but
+            # we have a large number of bars, rebuild a synthetic sequential
+            # index based on the regime timeframe. This avoids degenerate
+            # 1970-era ranges that cause day-based level generation to see only
+            # a single unique day.
+            #
+            # NOTE: This fallback is now disabled by default and can be
+            # re-enabled via the `enable_synthetic_index_fallback` config flag
+            # if needed for legacy scenarios.
+            try:
+                if config.get("enable_synthetic_index_fallback", False) and isinstance(market_data.index, pd.DatetimeIndex) and len(market_data) > 1000:
+                    span = market_data.index.max() - market_data.index.min()
+                    if span.days < 2:
+                        tf = str(regime_timeframe).lower()
+                        freq = None
+                        try:
+                            if tf.endswith("m"):
+                                freq = f"{int(tf[:-1])}T"
+                            elif tf.endswith("h"):
+                                freq = f"{int(tf[:-1])}H"
+                            elif tf.endswith("d"):
+                                freq = f"{int(tf[:-1])}D"
+                        except Exception:
+                            freq = None
+
+                        if freq is None:
+                            freq = "15T"
+
+                        synthetic_start = pd.Timestamp("2020-01-01 00:00:00")
+                        synthetic_index = pd.date_range(
+                            start=synthetic_start,
+                            periods=len(market_data),
+                            freq=freq,
+                        )
+                        market_data = market_data.copy()
+                        market_data.index = synthetic_index
+            except Exception:
+                # Non-fatal; retain original index if synthetic construction fails
+                pass
 
             tprint_info(
                 f"✅ Loaded market data from {market_source}: {market_data.shape} "
@@ -4991,14 +5073,16 @@ class MLBreakoutBounceRegimeStep(BaseStep):
             )
 
             # Create temporal split config with 6-month burn-in for indicator stabilization
+            canonical_split_path = Path("config/temporal_splits") / f"{symbol}_{exchange}_{regime_timeframe}.json"
+
             split_config = create_temporal_split_config_for_pipeline(
                 symbol=symbol,
                 exchange=exchange,
                 timeframe=regime_timeframe,
                 data_start=market_data.index.min(),
                 data_end=market_data.index.max(),
-                enable_burnin=True,
-                # Use default burnin_pct=1/12 (3 months)
+                config_path=canonical_split_path,
+                enable_burnin=False,
             )
             tprint_info(
                 f"📅 Temporal split config: "
@@ -5021,6 +5105,9 @@ class MLBreakoutBounceRegimeStep(BaseStep):
             level_generator = RollingKDELevelGenerator(
                 lookback_days=int(config.get("breakout_lookback_days", 30)),
                 peaks_per_side=int(config.get("breakout_peaks_per_side", 3)),
+                sr_min_touch_count=int(config.get("sr_min_touch_count", 2)),
+                sr_min_volume_depth_ratio=float(config.get("sr_min_volume_depth_ratio", 0.8)),
+                sr_min_prominence=float(config.get("sr_min_prominence", 0.5)),
             )
             levels_df = level_generator.compute_levels(market_data[["open", "high", "low", "close", "volume"]])
             if levels_df.empty or levels_df["primary_level_price"].isna().all():
@@ -5103,11 +5190,20 @@ class MLBreakoutBounceRegimeStep(BaseStep):
                 raw_success_prob = np.sum(probs_full * success_weights[np.newaxis, :], axis=1)
                 raw_success_prob = np.asarray(raw_success_prob, dtype=float)
 
+                # Default quantiles in case we cannot compute them (e.g. all-NaN)
+                success_q_low = float("nan")
+                success_q_high = float("nan")
+
                 finite_mask = np.isfinite(raw_success_prob)
                 if finite_mask.any():
                     sp = raw_success_prob[finite_mask]
                     q_low = float(np.nanquantile(sp, 0.05))
                     q_high = float(np.nanquantile(sp, 0.95))
+
+                    # Preserve scaling quantiles so they can be reused
+                    # downstream (e.g. in live trading) via artifact metadata.
+                    success_q_low = q_low
+                    success_q_high = q_high
 
                     if q_high > q_low:
                         scaled = (raw_success_prob - q_low) / (q_high - q_low)
@@ -5171,6 +5267,28 @@ class MLBreakoutBounceRegimeStep(BaseStep):
             except Exception as report_exc:  # noqa: PERF203 - diagnostics must not break step
                 tprint_warning(f"Failed to generate breakout/bounce report: {report_exc}")
 
+            try:
+                if config.get("enable_output_preview", False):
+                    preview_cols = [
+                        "breakout_regime",
+                        "breakout_regime_0_prob",
+                        "breakout_regime_1_prob",
+                        "breakout_regime_2_prob",
+                        "resistance_scalar",
+                        "support_scalar",
+                        "breakout_scalar_resistance",
+                        "breakout_scalar_support",
+                        "breakout_success_prob",
+                        "breakout_high_conf_signal",
+                    ]
+                    cols = [c for c in preview_cols if c in output_df.columns]
+                    if cols:
+                        preview = output_df[cols].head()
+                        tprint_info("Preview of breakout/bounce output_df (first 5 rows):")
+                        tprint_info(preview.to_string())
+            except Exception as exc:
+                tprint_warning(f"Failed to generate breakout/bounce output preview: {exc}")
+
             self.set_context(
                 symbol=symbol,
                 exchange=exchange,
@@ -5206,6 +5324,9 @@ class MLBreakoutBounceRegimeStep(BaseStep):
                 # Side indicators
                 "is_resistance",
                 "is_support",
+                # Calibrated success probability and high-confidence flag
+                "breakout_success_prob",
+                "breakout_high_conf_signal",
             ]
             # Note: all other breakout/bounce features remain available in the
             # diagnostics report CSVs; the artifact is intentionally narrowed.
@@ -5230,6 +5351,52 @@ class MLBreakoutBounceRegimeStep(BaseStep):
                 metadata["burnin_start"] = str(split_config.burnin.start)
                 metadata["burnin_end"] = str(split_config.burnin.effective_end)
 
+            # Attach breakout calibration parameters so live trading or downstream
+            # consumers can faithfully reproduce success-probability scaling and
+            # high-confidence gating. Use a defensive pattern to avoid NameError
+            # if any component was not computed.
+            try:
+                import numpy as _np  # local import to avoid top-level changes
+
+                calib_meta: Dict[str, Any] = {}
+                if "success_weights" in locals():
+                    try:
+                        calib_meta["breakout_success_weights"] = [
+                            float(x) for x in success_weights
+                        ]
+                    except Exception:
+                        pass
+
+                if "global_success_rate" in locals():
+                    try:
+                        if _np.isfinite(global_success_rate):
+                            calib_meta["breakout_global_success_rate"] = float(global_success_rate)
+                    except Exception:
+                        pass
+
+                if "success_q_low" in locals():
+                    try:
+                        calib_meta["breakout_success_q_low"] = float(success_q_low)
+                    except Exception:
+                        pass
+
+                if "success_q_high" in locals():
+                    try:
+                        calib_meta["breakout_success_q_high"] = float(success_q_high)
+                    except Exception:
+                        pass
+
+                if "high_conf_threshold" in locals():
+                    try:
+                        calib_meta["breakout_high_conf_threshold"] = float(high_conf_threshold)
+                    except Exception:
+                        pass
+
+                metadata.update(calib_meta)
+            except Exception:
+                # Calibration metadata is optional; do not break artifact saving
+                pass
+
             training_data_path = self._save_artifact(
                 data=to_save,
                 artifact_name="ml_breakout_bounce_training_data_15m",
@@ -5252,6 +5419,50 @@ class MLBreakoutBounceRegimeStep(BaseStep):
                     if split_config.burnin is not None:
                         model_metadata["burnin_start"] = str(split_config.burnin.start)
                         model_metadata["burnin_end"] = str(split_config.burnin.effective_end)
+
+                    # Mirror calibration metadata on the model artifact as well so
+                    # it can be consumed even without loading the training data.
+                    try:
+                        import numpy as _np  # local import to avoid top-level changes
+
+                        calib_meta: Dict[str, Any] = {}
+                        if "success_weights" in locals():
+                            try:
+                                calib_meta["breakout_success_weights"] = [
+                                    float(x) for x in success_weights
+                                ]
+                            except Exception:
+                                pass
+
+                        if "global_success_rate" in locals():
+                            try:
+                                if _np.isfinite(global_success_rate):
+                                    calib_meta["breakout_global_success_rate"] = float(global_success_rate)
+                            except Exception:
+                                pass
+
+                        if "success_q_low" in locals():
+                            try:
+                                model_metadata["breakout_success_q_low"] = float(success_q_low)
+                            except Exception:
+                                pass
+
+                        if "success_q_high" in locals():
+                            try:
+                                model_metadata["breakout_success_q_high"] = float(success_q_high)
+                            except Exception:
+                                pass
+
+                        if "high_conf_threshold" in locals():
+                            try:
+                                model_metadata["breakout_high_conf_threshold"] = float(high_conf_threshold)
+                            except Exception:
+                                pass
+
+                        model_metadata.update(calib_meta)
+                    except Exception:
+                        # Optional; do not block model saving on metadata issues
+                        pass
 
                     model_path = self._save_artifact(
                         data=model,
@@ -8319,8 +8530,19 @@ class MLBreakoutBounceRegimeStep(BaseStep):
             config=stage2_config
         )
 
-        # Weight samples by stage1 confidence (more confident = higher weight)
-        confidence_weights = np.abs(stage1_oof["probability"].reindex(X_train.index).fillna(0.5) - 0.5) * 2
+        # Weight samples by stage1 confidence (more confident = higher weight).
+        # stage1_oof may contain duplicate indices if multiple windows emit
+        # OOF predictions for the same timestamp. Aggregate to a unique index
+        # before reindexing to avoid pandas duplicate-label reindex errors.
+        prob_series = stage1_oof["probability"].copy()
+        if prob_series.index.has_duplicates:
+            try:
+                prob_series = prob_series.groupby(prob_series.index).mean()
+            except Exception:
+                # Fallback: drop duplicates, keeping the last occurrence
+                prob_series = prob_series[~prob_series.index.duplicated(keep="last")]
+
+        confidence_weights = np.abs(prob_series.reindex(X_train.index).fillna(0.5) - 0.5) * 2
         confidence_weights = confidence_weights.values
 
         # Train Stage 2 with OOF predictions

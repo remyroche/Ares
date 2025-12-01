@@ -168,6 +168,17 @@ class AnalystBaseBacktestStep(BaseStep):
                 )
                 ml_df = ml_df[~ml_df.index.duplicated(keep="last")]
 
+            # Prefer OHLC from ML-scored artifact itself to guarantee perfect
+            # temporal alignment between prices and OOS predictions. Fall back
+            # to externally loaded price data only when ML-scored data does not
+            # provide the required OHLC columns.
+            ohlc_cols = ["close", "high", "low"]
+            if all(c in ml_df.columns for c in ohlc_cols):
+                price_df = ml_df[ohlc_cols].copy()
+                for c in ohlc_cols:
+                    price_df[c] = price_df[c].astype(float)
+                source = "ml_scored_historical_data"
+
             # ------------------------------------------------------------------
             # Derive temporal splits (train/val/test) from the actual OOS data
             # range used in this run, then restrict the backtest strictly to the

@@ -139,10 +139,12 @@ class AnalystFeatureEngineer(FeatureEngineer):
                         warnings.append(f"{prob_col} not found in data, using default 0.25")
                         result_data[f'regime_confidence_{regime_idx}'] = 0.25
             
-            else:
+            elif allow_uniform_defaults:
                 warnings.append("No regime probabilities provided or found in data, using uniform distribution")
                 for regime_idx in range(4):
                     result_data[f'regime_confidence_{regime_idx}'] = 0.25
+            else:
+                pass
             
             # Fill NaN values
             result_data = result_data.fillna(method='bfill').fillna(0.25)

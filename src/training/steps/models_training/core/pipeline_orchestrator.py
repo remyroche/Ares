@@ -43,6 +43,10 @@ from src.core.decorators import handles_errors, traced, log_execution_time
 from .base_trainer import TrainingConfig, TrainingRole, ModelType
 from .model_trainer import ModelTrainer
 from .ensemble_trainer import EnsembleTrainer
+from src.utils.ml_common.retraining_scheduler import (
+    RetrainingSchedule,
+    OOFPredictionGenerator,
+)
 
 
 class PipelinePhase(Enum):
@@ -205,7 +209,8 @@ class TrainingPipelineOrchestrator:
             Pipeline execution result
         """
         try:
-            self.logger.info("🚀 Starting training pipeline execution...")
+            tprint_info("🚀 Starting training pipeline execution...")
+            tprint_info(f"🔍 [DEBUG] PipelineOrchestrator.execute: enable_analyst={self.config.enable_analyst}")
             start_time = time.time()
             
             # Initialize pipeline
@@ -318,14 +323,46 @@ class TrainingPipelineOrchestrator:
             # ngboost library is not installed in the runtime environment, and
             # DEPTHWISE_CNN (TabR/Mambular) is disabled due to missing Mambular
             # dependency and poor suitability for tabular features in this setup.
+
+            # Derive analyst base model types from analyst_config.base_models, falling
+            # back to LightGBM only if no mapping is possible.
+            analyst_model_types = [ModelType.LIGHTGBM]
+            analyst_cfg = self.config.analyst_config or {}
+            base_models_cfg = analyst_cfg.get('base_models', {}) or {}
+            if base_models_cfg:
+                mapped_types = []
+                for name, bm_cfg in base_models_cfg.items():
+                    try:
+                        mt_str = str((bm_cfg or {}).get('model_type', '')).lower()
+                    except Exception:
+                        mt_str = ''
+
+                    if 'lgbmregressor' in mt_str or 'lightgbm' in mt_str:
+                        mapped_types.append(ModelType.LIGHTGBM)
+                    elif 'kneighborsregressor' in mt_str or 'kneighbors' in mt_str:
+                        mapped_types.append(ModelType.KNN)
+                    elif 'bayesianridge' in mt_str:
+                        mapped_types.append(ModelType.BAYESIANRIDGE)
+                    elif 'ngboost' in mt_str:
+                        mapped_types.append(ModelType.NGBOOST)
+
+                if mapped_types:
+                    # Deduplicate while preserving order
+                    seen = set()
+                    analyst_model_types = []
+                    for mt in mapped_types:
+                        if mt not in seen:
+                            analyst_model_types.append(mt)
+                            seen.add(mt)
+
             analyst_config = TrainingConfig(
                 role=TrainingRole.ANALYST,
-                model_types=[ModelType.LIGHTGBM],
+                model_types=analyst_model_types,
                 timeframe=self.config.timeframe,
                 symbol=self.config.symbol,
                 enable_ensemble=False,  # Individual models only
                 enable_hyperparameter_optimization=False,  # Enable HPO (we'll control when it's run)
-                custom_params=self.config.analyst_config or {}
+                custom_params=analyst_cfg
             )
             
             # Merge with custom configuration
@@ -446,6 +483,8 @@ class TrainingPipelineOrchestrator:
             
             # Phase 1: Analyst Base Models Training
             skip_base = self.config.custom_params.get('skip_base_training', False)
+            tprint_info(f"🔍 [DEBUG] PipelineOrchestrator skip_base: {skip_base}")
+            tprint_info(f"🔍 [DEBUG] PipelineOrchestrator custom_params: {self.config.custom_params}")
             if self.config.enable_analyst and not skip_base:
                 tprint_info("🎯 Phase 1: Training Analyst base models...")
                 analyst_base_result = await self._execute_analyst_base_training(data, analyst_targets)
@@ -462,20 +501,29 @@ class TrainingPipelineOrchestrator:
                     tprint_error("❌ Analyst base models training failed")
             elif skip_base and self.config.enable_analyst:
                 tprint_info("⏭️ Skipping base training, loading existing artifacts for ensemble...")
-                # Load base models from artifacts for ensemble training
-                try:
-                    from src.utils.ml_common.artifact_manager import get_artifact_manager
-                    artifact_mgr = get_artifact_manager()
-                    # Try to load analyst base outputs (predictions from base models)
-                    base_outputs = artifact_mgr.load_artifact('analyst_base_outputs', artifact_type='data')
-                    if base_outputs is not None:
-                        artifacts['analyst_base_models'] = {'loaded_from_artifacts': True}  # Dummy models dict
-                        artifacts['analyst_predictions'] = base_outputs
-                        tprint_success(f"✅ Loaded base model outputs: {base_outputs.shape}")
-                    else:
-                        tprint_warning("⚠️ Could not load analyst_base_outputs, ensemble may not have base features")
-                except Exception as e:
-                    tprint_warning(f"⚠️ Failed to load base artifacts: {e}")
+                
+                # Check for pre-loaded ensemble features in config
+                ensemble_features = self.config.custom_params.get('ensemble_features')
+                
+                if ensemble_features is not None:
+                    tprint_info("✅ Using pre-loaded ensemble features from config")
+                    artifacts['analyst_base_models'] = {'loaded_from_config': True}
+                    artifacts['analyst_predictions'] = ensemble_features
+                else:
+                    # Load base models from artifacts for ensemble training
+                    try:
+                        from src.utils.enhanced_artifact_manager import get_artifact_manager
+                        artifact_mgr = get_artifact_manager()
+                        # Try to load analyst base outputs (predictions from base models)
+                        base_outputs = artifact_mgr.load_artifact('analyst_base_outputs', artifact_type='data')
+                        if base_outputs is not None:
+                            artifacts['analyst_base_models'] = {'loaded_from_artifacts': True}  # Dummy models dict
+                            artifacts['analyst_predictions'] = base_outputs
+                            tprint_success(f"✅ Loaded base model outputs: {base_outputs.shape}")
+                        else:
+                            tprint_warning("⚠️ Could not load analyst_base_outputs, ensemble may not have base features")
+                    except Exception as e:
+                        tprint_warning(f"⚠️ Failed to load base artifacts: {e}")
             
             # Phase 2: Analyst Ensemble Training (uses Analyst base models)
             if self.config.enable_analyst and self.config.enable_ensemble and artifacts['analyst_base_models'] is not None:
@@ -561,61 +609,137 @@ class TrainingPipelineOrchestrator:
 
             tprint_info("📊 Starting analyst base models training...")
 
-            # Generate OOF predictions using time-series splits for leakage-safe stacking
+            # Generate OOF predictions using a rolling retrain schedule (specialist-style)
+            # instead of fold-based TimeSeriesSplit. This mirrors the regime specialists:
+            # - Retrain every ~10 days
+            # - Burn-in of 30–60 days before first predictions
+            # - No leakage (train only on history strictly before prediction window)
             try:
-                n_splits = int(self.config.custom_params.get('oof_splits', 5)) if hasattr(self, 'config') else 5
-            except Exception:
-                n_splits = 5
-            tprint_info(f"🧪 Generating OOF predictions with TimeSeriesSplit(n_splits={n_splits})...")
-            # Disable HPO during OOF folds to avoid repeated optimization cycles
+                analyst_params = getattr(self.config, 'custom_params', {}) or {}
+
+                # Historical window
+                if not isinstance(data.index, pd.DatetimeIndex):
+                    raise ValueError("Analyst base data index must be a DatetimeIndex for OOF scheduling")
+
+                data_start = data.index.min()
+                data_end = data.index.max()
+                total_days = max(1, (data_end - data_start).days)
+
+                # Defaults: 10-day retrain interval, 60-day burn-in (30 for light mode)
+                execution_mode = str(getattr(self.config, 'execution_mode', 'full')).lower()
+                default_burnin_days = 30 if execution_mode == 'light' else 60
+
+                retrain_days = int(analyst_params.get('analyst_oof_retrain_days', 10))
+                burnin_days = int(analyst_params.get('analyst_oof_burnin_days', default_burnin_days))
+                min_samples = int(analyst_params.get('analyst_oof_min_samples', 2000))
+
+                # HPO interval (in historical days). With retrain_days=10 and
+                # hpo_interval_days=30 this gives HPO every 3rd window, matching
+                # the standardized XGB trainers.
+                hpo_interval_days = int(analyst_params.get('analyst_oof_hpo_interval_days', 30))
+                if hpo_interval_days <= 0:
+                    windows_per_hpo = None
+                else:
+                    effective_retrain = max(1, retrain_days)
+                    windows_per_hpo = max(1, hpo_interval_days // effective_retrain)
+
+                # Convert burn-in days to fraction of available history, clamp to [0, 0.9]
+                burnin_pct = min(max(burnin_days / float(total_days), 0.0), 0.9)
+
+                schedule = RetrainingSchedule(
+                    model_type='analyst_base',
+                    retrain_interval_days=retrain_days,
+                    burnin_pct=burnin_pct,
+                    min_samples_for_training=min_samples,
+                    enable_warm_start=False,
+                )
+
+                oof_generator = OOFPredictionGenerator(
+                    schedule=schedule,
+                    data_start=data_start.to_pydatetime() if hasattr(data_start, 'to_pydatetime') else data_start,
+                    data_end=data_end.to_pydatetime() if hasattr(data_end, 'to_pydatetime') else data_end,
+                )
+
+                tprint_info(
+                    f"🧪 Generating OOF predictions with rolling schedule: "
+                    f"windows={len(oof_generator.windows)}, "
+                    f"retrain_interval_days={schedule.retrain_interval_days}, "
+                    f"burnin_days≈{int(burnin_pct * total_days)} (requested={burnin_days}), "
+                    f"min_samples_for_training={schedule.min_samples_for_training}, "
+                    f"hpo_interval_days={hpo_interval_days}, "
+                    f"windows_per_hpo={windows_per_hpo if hpo_interval_days > 0 else 'disabled'}"
+                )
+            except Exception as sched_exc:
+                tprint_error(f"❌ Failed to initialize analyst OOF schedule: {sched_exc}")
+                return {'success': False, 'error_message': str(sched_exc)}
+
+            # Preserve original HPO flag for the final full-data pass; OOF windows
+            # will control HPO per-window based on the schedule above.
             _orig_hpo_flag = getattr(self._analyst_trainer.config, 'enable_hyperparameter_optimization', False)
-            self._analyst_trainer.config.enable_hyperparameter_optimization = False
-            # In BLANK mode, pre-configure smaller HPO trials for the later final pass
+            # In BLANK mode, pre-configure smaller HPO trials (applies to both
+            # scheduled OOF HPO windows and the later final pass).
             if getattr(self.config, 'execution_mode', '').lower() == 'blank':
                 self._analyst_trainer.config.custom_params['hpo_n_trials'] = min(
                     int(self._analyst_trainer.config.custom_params.get('hpo_n_trials', 10)), 5
                 )
             oof_df = pd.DataFrame(index=data.index)
-            tscv = TimeSeriesSplit(n_splits=n_splits)
 
-            # Compute embargo gap in bars if available
-            def _bars_per_day(tf: str) -> int:
-                mapping = {'1m': 1440, '5m': 288, '15m': 96, '30m': 48, '1h': 24, '2h': 12, '4h': 6, '1d': 1}
-                return mapping.get(str(self.config.timeframe).lower(), 96)
-            embargo_days = int(self.config.custom_params.get('wf_embargo_days', 1))
-            gap_bars = max(0, embargo_days * _bars_per_day(str(self.config.timeframe)))
-            tprint_info(f"🔒 OOF CV setup: n_splits={n_splits}, timeframe={self.config.timeframe}, bars_per_day={_bars_per_day(str(self.config.timeframe))}, wf_embargo_days={embargo_days}, gap_bars={gap_bars}")
-            if gap_bars == 0:
-                tprint_warning("⚠️ OOF CV running with gap_bars=0 (no embargo). Increase embargo to reduce leakage risk.")
+            window_num = 0
+            for window in oof_generator.windows:
+                window_num += 1
+                # Decide whether this window should run HPO
+                use_window_hpo = False
+                if 'windows_per_hpo' in locals() and windows_per_hpo is not None:
+                    use_window_hpo = (window.window_id % windows_per_hpo) == 0
 
-            fold_num = 0
-            for train_idx, val_idx in tscv.split(data):
-                # Apply purged gap between train and val
-                if gap_bars > 0:
-                    # Trim the last gap_bars from train and first gap_bars from val if possible
-                    if len(train_idx) > gap_bars:
-                        train_idx = train_idx[:len(train_idx)-gap_bars]
-                    if len(val_idx) > gap_bars:
-                        val_idx = val_idx[gap_bars:]
-                if len(train_idx) == 0 or len(val_idx) == 0:
+                tprint_info(
+                    f"   ↪ OOF window {window_num}/{len(oof_generator.windows)}: "
+                    f"train={window.training_start}→{window.training_end}, "
+                    f"predict={window.prediction_start}→{window.prediction_end}, "
+                    f"HPO={'on' if use_window_hpo else 'off'} "
+                    f"(window_id={window.window_id}, windows_per_hpo={windows_per_hpo if 'windows_per_hpo' in locals() else 'n/a'})"
+                )
+
+                train_mask = (data.index >= window.training_start) & (data.index < window.training_end)
+                pred_mask = (data.index >= window.prediction_start) & (data.index <= window.prediction_end)
+
+                train_data = data.loc[train_mask].copy()
+                val_data = data.loc[pred_mask].copy()
+
+                if len(train_data) < schedule.min_samples_for_training or len(val_data) == 0:
+                    tprint_warning(
+                        f"⚠️ OOF window {window.window_id}: insufficient samples "
+                        f"(train={len(train_data)}, val={len(val_data)}; min_train={schedule.min_samples_for_training}). Skipping."
+                    )
                     continue
-                fold_num += 1
-                tprint_info(f"   ↪ OOF fold {fold_num}/{n_splits}: train={len(train_idx)}, val={len(val_idx)} (gap={gap_bars})")
-                train_data, val_data = data.iloc[train_idx], data.iloc[val_idx]
-                train_targets = targets.iloc[train_idx] if targets is not None else None
+
+                train_targets = targets.loc[train_data.index] if targets is not None else None
+
                 # Sanity: drop potential leak columns
-                leak_cols = [c for c in train_data.columns if any(term in c.lower() for term in ['label', 'target', 'future_', 'lead_'])]
+                leak_cols = [
+                    c
+                    for c in train_data.columns
+                    if any(term in c.lower() for term in ['label', 'target', 'future_', 'lead_'])
+                ]
                 if leak_cols:
-                    tprint_info(f"   🔍 Dropping potential leakage columns from fold data: {len(leak_cols)} (e.g., {leak_cols[:5]})")
+                    tprint_info(
+                        f"   🔍 Dropping potential leakage columns from window data: "
+                        f"{len(leak_cols)} (e.g., {leak_cols[:5]})"
+                    )
                     train_data = train_data.drop(columns=leak_cols, errors='ignore')
                     val_data = val_data.drop(columns=leak_cols, errors='ignore')
-                # Train on fold-train only
+
+                # Train on window history only, with per-window HPO scheduling
+                # similar to standardized XGB/analyst trainers (e.g. HPO every
+                # 3rd window when hpo_interval_days=30 and retrain_days=10).
+                self._analyst_trainer.config.enable_hyperparameter_optimization = bool(use_window_hpo)
                 fold_result = await self._analyst_trainer.train(train_data, train_targets)
                 if not getattr(fold_result, 'success', False):
-                    tprint_warning(f"⚠️ OOF fold {fold_num} training failed, skipping fold")
+                    tprint_warning(f"⚠️ OOF window {window.window_id} training failed, skipping window")
                     continue
+
                 # Determine models to predict
-                models_to_predict = {}
+                models_to_predict: Dict[str, Any] = {}
                 if hasattr(fold_result, 'metadata') and 'trained_models' in fold_result.metadata:
                     models_to_predict = fold_result.metadata['trained_models']
                 elif hasattr(fold_result, 'metadata') and 'model_instances' in fold_result.metadata:
@@ -624,26 +748,36 @@ class TrainingPipelineOrchestrator:
                     models_to_predict = fold_result.models
                 else:
                     models_to_predict = {'best_model': getattr(fold_result, 'model', None)}
+
                 # Select trained features if available
                 data_for_prediction = val_data
                 if hasattr(fold_result, 'metadata') and 'trained_feature_columns' in fold_result.metadata:
                     trained_features = fold_result.metadata['trained_feature_columns']
                     missing = set(trained_features) - set(data_for_prediction.columns)
                     if missing:
-                        tprint_warning(f"⚠️ OOF fold {fold_num}: missing {len(missing)} trained features; skipping fold predictions")
+                        tprint_warning(
+                            f"⚠️ OOF window {window.window_id}: missing {len(missing)} trained features; "
+                            "skipping window predictions"
+                        )
                         continue
                     data_for_prediction = data_for_prediction[trained_features]
-                # Predict on fold-val
+
+                # Predict on window prediction period
                 fold_preds = await self._generate_predictions(models_to_predict, data_for_prediction)
                 if fold_preds is None or fold_preds.empty:
-                    tprint_warning(f"⚠️ OOF fold {fold_num}: no predictions generated")
+                    tprint_warning(f"⚠️ OOF window {window.window_id}: no predictions generated")
                     continue
-                # Allocate columns in oof_df as needed and fill fold indices
+
+                # Allocate columns in oof_df as needed and fill window indices by timestamp
                 for col in fold_preds.columns:
                     if col not in oof_df.columns:
                         oof_df[col] = np.nan
-                    oof_df.iloc[val_idx, oof_df.columns.get_loc(col)] = fold_preds[col].values
-            # End OOF loop
+                    # Align by index to be safe
+                    common_idx = oof_df.index.intersection(fold_preds.index)
+                    if not common_idx.empty:
+                        oof_df.loc[common_idx, col] = fold_preds.loc[common_idx, col].values
+
+            # End OOF window loop
             if not oof_df.empty and oof_df.isna().any().any():
                 filled = oof_df.notna().sum().min()
                 tprint_info(f"   OOF coverage: min non-NaN count per column = {filled}")
@@ -880,6 +1014,12 @@ class TrainingPipelineOrchestrator:
 
             tprint_info("📊 Starting analyst ensemble training...")
 
+            # Check for ensemble features override (from pre-computed features)
+            ensemble_features = self.config.custom_params.get('ensemble_features')
+            if ensemble_features is not None:
+                tprint_info("🎯 Using pre-computed ensemble features for training (overriding base_predictions)")
+                base_predictions = ensemble_features
+
             # CRITICAL: Pass base_predictions directly to ensemble trainer
             # The ensemble trainer will use these predictions for meta-learning
             # Do NOT add them as features - they are the input to the meta-learner
@@ -888,15 +1028,24 @@ class TrainingPipelineOrchestrator:
             result = await self._ensemble_trainer.train(data, targets, base_predictions=base_predictions)
 
             if result.success:
-                # Generate ensemble predictions
-                predictions = result.predictions if hasattr(result, 'predictions') and result.predictions is not None else await self._generate_predictions(result.model, data)
+                # Prefer explicitly returned OOF predictions from meta-learner when available
+                oof_preds = getattr(result, 'oof_predictions', None)
 
-                # Note: analyst_ensemble_outputs will be saved by unified_models_training_step
+                # Generate ensemble predictions for convenience (may be equal to OOF in stacking case)
+                predictions = result.predictions
+                if predictions is None and result.model is not None:
+                    try:
+                        predictions = await self._generate_predictions(result.model, data)
+                    except Exception as e:
+                        tprint_warning(f"⚠️ Failed to generate ensemble predictions on full data: {e}")
+
+                # Note: analyst_ensemble_outputs(_oof) will be saved by unified_models_training_step
                 tprint_success("✅ Analyst ensemble trained successfully")
                 return {
                     'success': True,
                     'model': result.model,
                     'predictions': predictions,
+                    'oof_predictions': oof_preds,
                     'metrics': result.metrics,
                     'training_time': result.training_time,
                     'metadata': result.metadata
@@ -930,7 +1079,7 @@ class TrainingPipelineOrchestrator:
                 # Save predictions to HDF5 as tactician_base_outputs
                 if predictions is not None:
                     try:
-                        from src.utils.ml_common.artifact_manager import get_artifact_manager
+                        from src.utils.enhanced_artifact_manager import get_artifact_manager
                         artifact_mgr = get_artifact_manager()
                         artifact_mgr.save_artifact(
                             predictions,
@@ -991,7 +1140,7 @@ class TrainingPipelineOrchestrator:
                 # Save predictions to HDF5 as tactician_ensemble_outputs
                 if predictions is not None:
                     try:
-                        from src.utils.ml_common.artifact_manager import get_artifact_manager
+                        from src.utils.enhanced_artifact_manager import get_artifact_manager
                         artifact_mgr = get_artifact_manager()
                         artifact_mgr.save_artifact(
                             predictions,

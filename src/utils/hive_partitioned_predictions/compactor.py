@@ -13,7 +13,7 @@ Features:
 from pathlib import Path
 import pandas as pd
 from datetime import datetime, timedelta
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, Dict
 import logging
 import fcntl
 import os

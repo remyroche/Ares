@@ -39,7 +39,7 @@ import sys
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Tuple
+from typing import Tuple, List, Optional
 
 import numpy as np
 import pandas as pd
@@ -2305,7 +2305,7 @@ def run_trading_simulation(
     timeframe: str,
     direction: str = "long",
     model: str = "analyst",
-    prob_thresholds: list[float] | None = None,
+    prob_thresholds: Optional[List[float]] = None,
     cv_splits: int = 5,
 ) -> None:
     """Run trading simulation diagnostics with calibration and threshold analysis.
@@ -2756,7 +2756,7 @@ def run_full(
     model: str = "analyst",
     cv_splits_learn: int = 3,
     cv_splits_robust: int = 5,
-    prob_thresholds: list[float] | None = None,
+    prob_thresholds: Optional[List[float]] = None,
 ) -> None:
     _LAST_EXPORTS.clear()
 

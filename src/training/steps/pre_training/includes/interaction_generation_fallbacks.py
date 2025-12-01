@@ -13,11 +13,6 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-try:  # sklearn is already a hard dependency for the step
-    from sklearn.feature_selection import mutual_info_regression
-except ImportError:  # pragma: no cover - fallback if sklearn is unavailable
-    mutual_info_regression = None  # type: ignore
-
 
 CATEGORY_KEYWORDS: Dict[str, List[str]] = {
     "trend": ["sma", "ema", "trend", "moving_average", "ma"],
@@ -119,70 +114,104 @@ def _calculate_composite_scores_fallback(
     feature_categories: Dict[str, str],
     config: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, float]:
-    """Simplified composite score calculation (MI + stability)."""
+    """Simplified composite score calculation (MI + stability).
+
+    This fallback mirrors the quick per-feature correlation-based MI/stability
+    proxy used in Phase 4, avoiding the strict "all-features non-NaN"
+    requirement of mutual_info_regression.
+    """
+
     if features_df.empty or targets_df.empty:
         return {}
 
-    target_col = targets_df.columns[0]
-    target_series = targets_df[target_col].dropna()
-    aligned_index = features_df.index.intersection(target_series.index)
+    try:
+        target_col = targets_df.columns[0]
+        target_series = pd.to_numeric(targets_df[target_col], errors="coerce")
+    except Exception:
+        return {}
 
-    if aligned_index.empty:
+    # Align on index intersection; if none, fall back to positional alignment on
+    # the most recent overlapping window.
+    common_idx = features_df.index.intersection(target_series.index)
+    if len(common_idx) == 0:
         common_len = min(len(features_df), len(target_series))
         if common_len == 0:
             return {}
-        features_aligned = features_df.iloc[:common_len].fillna(0)
-        target_aligned = target_series.iloc[:common_len].fillna(0)
+        features_aligned = features_df.iloc[-common_len:].copy()
+        target_aligned = target_series.iloc[-common_len:].copy()
+        features_aligned.index = pd.RangeIndex(common_len)
+        target_aligned.index = pd.RangeIndex(common_len)
     else:
-        features_aligned = features_df.loc[aligned_index].fillna(0)
-        target_aligned = target_series.loc[aligned_index].fillna(0)
+        features_aligned = features_df.loc[common_idx].copy()
+        target_aligned = target_series.loc[common_idx].copy()
 
-    valid_features: List[str] = []
+    y_clean = pd.to_numeric(target_aligned, errors="coerce")
+
+    cfg = config or {}
+    min_samples = int(cfg.get("mi_quick_min_samples", 200))
+    subsample_ratio = float(cfg.get("mi_quick_subsample_ratio", 0.30))
+    rng = np.random.default_rng(int(cfg.get("mi_quick_random_state", 42)))
+
+    # Per-feature correlation-based MI proxy
+    mi_raw: Dict[str, float] = {}
     for column in features_aligned.columns:
-        series = features_aligned[column]
-        if series.std() > 1e-8 and series.notna().sum() >= 10:
-            valid_features.append(column)
+        series = pd.to_numeric(features_aligned[column], errors="coerce")
+        mask = series.notna() & y_clean.notna()
+        n_valid = int(mask.sum())
+        if n_valid < min_samples:
+            continue
 
-    if not valid_features:
-        return {}
+        s_vals = series[mask]
+        t_vals = y_clean[mask]
 
-    mi_scores: Dict[str, float] = {}
-    if mutual_info_regression is not None:
-        try:
-            mi = mutual_info_regression(
-                features_aligned[valid_features].values,
-                target_aligned.values,
-                random_state=42,
-                n_neighbors=3,
-            )
-            mi_max = float(np.max(mi)) if len(mi) else 0.0
-            for column, score in zip(valid_features, mi):
-                mi_scores[column] = float(score / mi_max) if mi_max > 0 else 0.0
-        except Exception:  # pragma: no cover - regression fallback
-            pass
+        if 0.0 < subsample_ratio < 1.0 and n_valid > min_samples:
+            n_sub = max(min_samples, int(n_valid * subsample_ratio))
+            idx = rng.choice(np.arange(n_valid), size=n_sub, replace=False)
+            s_vals = s_vals.iloc[idx]
+            t_vals = t_vals.iloc[idx]
 
-    if not mi_scores:
-        # Uniform baseline if MI fails
-        mi_scores = {column: 0.5 for column in valid_features}
-
-    stability_scores: Dict[str, float] = {}
-    window = max(10, min(100, len(features_aligned) // 5))
-    for column in valid_features:
-        series = features_aligned[column].fillna(method="ffill").fillna(0)
-        rolling = series.rolling(window=window, min_periods=5)
-        rolling_mean = rolling.mean()
-        rolling_std = rolling.std()
-        if rolling_mean.std() > 1e-8:
-            cv = rolling_std.mean() / (abs(rolling_mean.mean()) + 1e-8)
-            stability_scores[column] = max(0.0, min(1.0, 1.0 / (1.0 + cv)))
+        corr = s_vals.corr(t_vals)
+        if not np.isfinite(corr):
+            continue
+        corr_abs = abs(corr)
+        if corr_abs >= 0.999:
+            mi_raw[column] = 5.0
         else:
-            stability_scores[column] = 0.5
+            mi_raw[column] = float(-0.5 * np.log(1.0 - corr_abs ** 2))
+
+    if mi_raw:
+        mi_vals = np.array(list(mi_raw.values()), dtype=float)
+        max_val = float(np.nanmax(mi_vals)) if np.isfinite(mi_vals).any() else 0.0
+        if max_val > 0.0:
+            mi_scores: Dict[str, float] = {k: float(v) / max_val for k, v in mi_raw.items()}
+        else:
+            mi_scores = {k: 0.0 for k in mi_raw.keys()}
+    else:
+        # Uniform baseline when no feature passes the min_samples check
+        mi_scores = {column: 0.5 for column in features_aligned.columns}
+
+    # Stability scores using rolling coefficient of variation
+    stability_scores: Dict[str, float] = {}
+    try:
+        window = min(100, max(10, len(features_aligned) // 5))
+        for column in features_aligned.columns:
+            series = features_aligned[column].ffill().fillna(0)
+            rolling = series.rolling(window=window, min_periods=10)
+            rolling_mean = rolling.mean()
+            rolling_std = rolling.std()
+            if rolling_mean.std() > 1e-8:
+                cv = rolling_std.mean() / (abs(rolling_mean.mean()) + 1e-8)
+                stability = 1.0 / (1.0 + cv)
+            else:
+                stability = 0.5
+            stability_scores[column] = max(0.0, min(1.0, float(stability)))
+    except Exception:
+        stability_scores = {column: 0.5 for column in features_aligned.columns}
 
     composite_scores: Dict[str, float] = {}
-    for column in valid_features:
-        mi_score = mi_scores.get(column, 0.0)
-        stability = stability_scores.get(column, 0.0)
-        # Balanced weighting keeps behaviour close to the original implementation
+    for column in features_df.columns:
+        mi_score = float(mi_scores.get(column, 0.0))
+        stability = float(stability_scores.get(column, 0.5))
         composite_scores[column] = 0.6 * mi_score + 0.4 * stability
 
     return composite_scores
@@ -467,6 +496,51 @@ async def _phase3_lgbm_shap_pipeline_fallback(
                 "interaction_generation_successful": False,
             },
         }
+
+    # Optional: LightGBM gain + permutation-based feature selection
+    lgbm_fs_stats: Dict[str, Any] = {}
+    try:
+        if hasattr(step, "_select_features_with_lgbm_gain_and_permutation"):
+            combined_for_fs = pd.concat([final_features, interactions], axis=1)
+            if not combined_for_fs.empty and not targets.empty:
+                primary_target = targets.iloc[:, 0]
+
+                gain_top, perm_top, gain_importances, perm_importances = (
+                    step._select_features_with_lgbm_gain_and_permutation(  # type: ignore[call-arg]
+                        combined_for_fs,
+                        primary_target,
+                        config,
+                    )
+                )
+
+                selected_set = set(perm_top) if perm_top else set()
+                if selected_set:
+                    base_cols = [c for c in final_features.columns if c in selected_set]
+                    interaction_cols = [c for c in interactions.columns if c in selected_set]
+
+                    if base_cols:
+                        final_features = final_features[base_cols]
+                    if interaction_cols:
+                        interactions = interactions[interaction_cols]
+
+                lgbm_fs_stats = {
+                    "method": "lgbm_gain_then_permutation",
+                    "gain_top_k": len(gain_top),
+                    "perm_top_k": len(perm_top),
+                    "gain_top200": gain_importances,
+                    "perm_top100": perm_importances,
+                }
+    except Exception as exc:
+        # Keep base/interactions as-is but surface the error for diagnostics
+        lgbm_fs_stats = {"error": str(exc)}
+
+    # Attach LGBM FS stats to shap_metadata, preserving any existing keys
+    try:
+        if isinstance(shap_metadata, dict):
+            shap_metadata["lgbm_feature_selection"] = lgbm_fs_stats
+    except Exception:
+        # Best-effort; do not break the pipeline on metadata issues
+        pass
 
     return final_features, interactions, shap_metadata
 

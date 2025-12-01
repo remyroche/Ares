@@ -207,8 +207,17 @@ class BasicBacktestingPostStep(BaseStep):
                 try:
                     artifact_name = f"ml_scored_historical_data_{model_type}_{direction}"
                     ml_data = self._get_artifact(artifact_name, 'data')
-                    
+
                     if ml_data is not None and not ml_data.empty:
+                        # Normalize index to avoid tz-naive vs tz-aware issues and
+                        # ensure deterministic ordering before any alignment.
+                        if isinstance(ml_data, pd.DataFrame):
+                            ml_data = ml_data.copy()
+                            ml_data = self._normalize_datetime_index(
+                                ml_data, f"ML-scored data ({model_type})"
+                            )
+                            ml_data = ml_data.sort_index()
+
                         self.logger.info(f"Loaded ML-scored data from {model_type}: {len(ml_data)} samples")
                         return ml_data
                         
@@ -261,7 +270,13 @@ class BasicBacktestingPostStep(BaseStep):
             
             # Apply light mode filtering if needed
             price_data = self._apply_light_mode_filter(price_data, config, timeframe)
-            
+
+            # Normalize index and ensure sorted order for downstream alignment
+            if isinstance(price_data, pd.DataFrame):
+                price_data = price_data.copy()
+                price_data = self._normalize_datetime_index(price_data, "price data")
+                price_data = price_data.sort_index()
+
             self.logger.info(f"Loaded {len(price_data)} price bars")
             return price_data
             

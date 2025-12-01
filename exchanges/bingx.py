@@ -300,10 +300,14 @@ class BingXExchange(BaseExchange):
             "interval": self._convert_interval(interval),
             "startTime": start_time_ms,
             "endTime": end_time_ms,
-            "limit": min(limit, 1000)
+            # /openApi/market/his/v1/kline supports a maximum limit of 500
+            "limit": min(limit, 500),
         }
         
-        response = await self._make_request("GET", "/openApi/swap/v2/quote/klines", params)
+        # Use the dedicated historical K-line endpoint which returns an
+        # array-of-arrays format: [openTime, open, high, low, close, volume,
+        # closeTime, quoteVolume].
+        response = await self._make_request("GET", "/openApi/market/his/v1/kline", params)
         
         if not response:
             raise BingXAPIError("No historical kline data received")
@@ -322,20 +326,31 @@ class BingXExchange(BaseExchange):
         # Convert BingX format to standard format
         klines = []
         for item in data:
-            if isinstance(item, dict) and "time" in item:
+            # Historical endpoint returns arrays: [openTime, open, high, low,
+            # close, volume, closeTime, quoteVolume]
+            if isinstance(item, list) and len(item) >= 7:
+                open_time = int(item[0])
+                close_time = int(item[6])
+                quote_vol = None
+                if len(item) > 7 and item[7] is not None:
+                    try:
+                        quote_vol = float(item[7])
+                    except (TypeError, ValueError):
+                        quote_vol = None
+
                 klines.append({
-                    "timestamp": item["time"],
-                    "open_time": item["time"],
-                    "open": float(item["open"]),
-                    "high": float(item["high"]),
-                    "low": float(item["low"]),
-                    "close": float(item["close"]),
-                    "volume": float(item["volume"]),
-                    "close_time": item["time"] + 59999,  # 1 minute = 60000ms, so close_time = time + 59999
-                    "quote_volume": None,
+                    "timestamp": open_time,
+                    "open_time": open_time,
+                    "open": float(item[1]),
+                    "high": float(item[2]),
+                    "low": float(item[3]),
+                    "close": float(item[4]),
+                    "volume": float(item[5]),
+                    "close_time": close_time,
+                    "quote_volume": quote_vol,
                     "trades": None,
                     "taker_buy_base": None,
-                    "taker_buy_quote": None
+                    "taker_buy_quote": None,
                 })
         
         return klines

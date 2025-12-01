@@ -40,6 +40,16 @@ except ImportError:
     SCIPY_AVAILABLE = False
     spearmanr = None
 
+try:
+    import lightgbm as lgb
+    LGBM_AVAILABLE = True
+except ImportError:
+    LGBM_AVAILABLE = False
+    lgb = None
+
+from sklearn.inspection import permutation_importance
+from src.utils.tprint import tprint
+
 logger = logging.getLogger(__name__)
 
 
@@ -64,6 +74,12 @@ class LookbackCandidate:
     # Stage 3 - Robustness
     cv_score: float = 0.0
     regime_stability: float = 0.0
+
+    event_hit_rate: float = 0.0
+    false_alarm_rate: float = 0.0
+    event_auc: float = 0.0
+
+    lgbm_gain: float = 0.0
 
     # Stage 4 - Final Score
     final_score: float = 0.0
@@ -116,7 +132,7 @@ class EvaluationConfig:
     """Configuration for the 4-stage evaluation pipeline."""
 
     # Stage 0 - Subsampling
-    subsample_ratio: float = 0.20
+    subsample_ratio: float = 0.30
     n_chunks: int = 6  # 4-8 non-contiguous chunks
 
     # Stage 1 - Fast Screening
@@ -128,6 +144,9 @@ class EvaluationConfig:
     ic_tstat_threshold: float = 1.96  # ~95% confidence
     ic_autocorr_threshold: float = 0.0  # Must be positive
     mi_proxy_threshold: float = 0.05
+    ic_tstat_quantile_threshold: Optional[float] = None
+    mi_proxy_quantile_threshold: Optional[float] = None
+    ic_downsample_factor: int = 1
 
     # Stage 3 - Robustness
     n_cv_splits: int = 5
@@ -138,15 +157,21 @@ class EvaluationConfig:
     redundancy_cluster_threshold: float = 0.50  # Distance threshold for hierarchical clustering
     redundancy_penalty_weight: float = 0.15  # Weight for redundancy penalty in final score
     enable_redundancy_analysis: bool = True  # Enable/disable redundancy analysis
+    max_redundancy_features: Optional[int] = None
+    use_simple_redundancy_clustering: bool = False
 
     # Stage 4 - Final Selection
     top_k_per_feature: int = 3
     weights: Dict[str, float] = field(default_factory=lambda: {
         'ic_tstat': 0.30,
         'ic_autocorr': 0.20,
-        'cv_score': 0.30,
+        'cv_score': 0.25,
         'regime_stability': 0.15,
-        'mi_proxy': 0.05
+        'mi_proxy': 0.05,
+        'event_reactivity': 0.03,
+        'event_auc': 0.01,
+        'event_specificity': 0.01,
+        'lgbm_gain': 0.0,
     })
 
     # Performance
@@ -157,6 +182,11 @@ class EvaluationConfig:
 
     # Future returns
     future_returns_horizon: int = 1  # Bars ahead for target
+
+    event_scoring_enabled: bool = True
+    event_window_bars: int = 12
+    event_alarm_quantile: float = 0.9
+    min_event_count: int = 30
 
 
 class FeatureEvaluationPipeline:
@@ -176,6 +206,8 @@ class FeatureEvaluationPipeline:
         # Cache for rolling statistics
         self._rolling_cache = {}
         self._regime_cache = {}
+
+        self._event_mask_cache = {}
 
         # Performance tracking
         self.stage_times = {}
@@ -210,6 +242,28 @@ class FeatureEvaluationPipeline:
         start = time.time()
         subsampled_data, full_data = self._stage0_subsample(data)
         self.stage_times['stage0'] = time.time() - start
+
+        # Stage 0 target diagnostics for lookback evaluation
+        try:
+            if target_column in data.columns:
+                tgt = data[target_column]
+                n = len(tgt)
+                n_non_null = int(tgt.notna().sum())
+                n_unique = int(tgt.nunique(dropna=True))
+                mean_val = float(np.nanmean(tgt.values))
+                std_val = float(np.nanstd(tgt.values))
+                self.logger.info(
+                    "Stage 0 target stats (lookback): name=%s, n=%d, n_non_null=%d, "
+                    "n_unique=%d, mean=%.6f, std=%.6f",
+                    target_column,
+                    n,
+                    n_non_null,
+                    n_unique,
+                    mean_val,
+                    std_val,
+                )
+        except Exception as e:  # pragma: no cover - diagnostic only
+            self.logger.warning("Stage 0 (lookback): failed to compute target stats: %s", e)
 
         # Initialize candidates
         candidates = [
@@ -291,12 +345,20 @@ class FeatureEvaluationPipeline:
             # Trend: rolling mean of returns
             trend = returns.rolling(20, min_periods=1).mean()
 
-            # Classify regimes
-            vol_high = vol > vol.quantile(0.67)
-            vol_low = vol < vol.quantile(0.33)
+            # Classify regimes using robust quantiles
+            vol_values = vol.to_numpy()
+            trend_values = trend.to_numpy()
 
-            trend_bull = trend > trend.quantile(0.67)
-            trend_bear = trend < trend.quantile(0.33)
+            vol_q67 = float(np.nanquantile(vol_values, 0.67))
+            vol_q33 = float(np.nanquantile(vol_values, 0.33))
+            trend_q67 = float(np.nanquantile(trend_values, 0.67))
+            trend_q33 = float(np.nanquantile(trend_values, 0.33))
+
+            vol_high = vol > vol_q67
+            vol_low = vol < vol_q33
+
+            trend_bull = trend > trend_q67
+            trend_bear = trend < trend_q33
             trend_sideways = ~(trend_bull | trend_bear)
 
             # Define regime buckets
@@ -312,7 +374,7 @@ class FeatureEvaluationPipeline:
             samples_per_regime = n_subsample // len(regimes)
             selected_indices = []
 
-            for regime_name, indices in regimes.items():
+            for _regime_name, indices in regimes.items():
                 if len(indices) > 0:
                     n_samples = min(samples_per_regime, len(indices))
                     # Stratified sampling to get non-contiguous chunks
@@ -347,6 +409,11 @@ class FeatureEvaluationPipeline:
             f"Stage 0: Subsampled {len(subsampled_data)}/{len(data)} rows "
             f"({100*len(subsampled_data)/len(data):.1f}%)"
         )
+
+        for df in (subsampled_data, data):
+            float_cols = df.select_dtypes(include=["float64"]).columns
+            if len(float_cols) > 0:
+                df[float_cols] = df[float_cols].astype("float32")
 
         return subsampled_data, data
 
@@ -496,6 +563,13 @@ class FeatureEvaluationPipeline:
         feature_data = data[feature_name].values
         future_returns = self._compute_future_returns(data, target_column)
 
+        use_lgbm_gain = (
+            LGBM_AVAILABLE
+            and lgb is not None
+            and isinstance(getattr(self.config, 'weights', None), dict)
+            and self.config.weights.get('lgbm_gain', 0.0) > 0.0
+        )
+
         for candidate in candidates:
             lb = candidate.lookback
 
@@ -547,19 +621,95 @@ class FeatureEvaluationPipeline:
 
             candidate.survived_stage = 2
 
-        # Filter by thresholds
+        ic_tstats = np.array([c.ic_tstat for c in candidates])
+        ic_autocorrs = np.array([c.ic_autocorr for c in candidates])
+        mi_proxies = np.array([c.mi_proxy for c in candidates])
+
+        if self.config.ic_tstat_quantile_threshold is not None and len(ic_tstats) > 0:
+            ic_tstat_threshold = float(
+                np.quantile(ic_tstats, self.config.ic_tstat_quantile_threshold)
+            )
+        else:
+            ic_tstat_threshold = self.config.ic_tstat_threshold
+
+        if self.config.mi_proxy_quantile_threshold is not None and len(mi_proxies) > 0:
+            mi_proxy_threshold = float(
+                np.quantile(mi_proxies, self.config.mi_proxy_quantile_threshold)
+            )
+        else:
+            mi_proxy_threshold = self.config.mi_proxy_threshold
+
+        # Diagnostic logging: summarize metric distributions before filtering so we
+        # can see whether thresholds are too strict or metrics are near-zero.
+        if ic_tstats.size > 0:
+            finite_ic = ic_tstats[np.isfinite(ic_tstats)]
+            if finite_ic.size > 0:
+                self.logger.info(
+                    "Stage 2 metrics (IC_tstat): min=%.4f, median=%.4f, max=%.4f, >0: %d, >=0.01: %d",
+                    float(np.min(finite_ic)),
+                    float(np.median(finite_ic)),
+                    float(np.max(finite_ic)),
+                    int(np.sum(finite_ic > 0.0)),
+                    int(np.sum(finite_ic >= 0.01)),
+                )
+
+        if ic_autocorrs.size > 0:
+            finite_ac = ic_autocorrs[np.isfinite(ic_autocorrs)]
+            if finite_ac.size > 0:
+                self.logger.info(
+                    "Stage 2 metrics (IC_autocorr): min=%.4f, median=%.4f, max=%.4f, >0: %d, >=0.01: %d",
+                    float(np.min(finite_ac)),
+                    float(np.median(finite_ac)),
+                    float(np.max(finite_ac)),
+                    int(np.sum(finite_ac > 0.0)),
+                    int(np.sum(finite_ac >= 0.01)),
+                )
+
+        if mi_proxies.size > 0:
+            finite_mi = mi_proxies[np.isfinite(mi_proxies)]
+            if finite_mi.size > 0:
+                self.logger.info(
+                    "Stage 2 metrics (MI_proxy): min=%.4f, median=%.4f, max=%.4f, >0: %d, >=0.01: %d",
+                    float(np.min(finite_mi)),
+                    float(np.median(finite_mi)),
+                    float(np.max(finite_mi)),
+                    int(np.sum(finite_mi > 0.0)),
+                    int(np.sum(finite_mi >= 0.01)),
+                )
+
+        # If all predictive metrics are effectively zero (or non-finite) for all
+        # candidates, treat Stage 2 as degenerate and skip filtering instead of
+        # aborting the pipeline. This can happen when the target is a meta-label
+        # and future_returns is poorly defined (e.g., many zeros leading to inf).
+        finite_ic = ic_tstats[np.isfinite(ic_tstats)]
+        finite_ac = ic_autocorrs[np.isfinite(ic_autocorrs)]
+        finite_mi_all = mi_proxies[np.isfinite(mi_proxies)]
+        all_zero_like = (
+            (finite_ic.size == 0 or np.all(np.abs(finite_ic) < 1e-8))
+            and (finite_ac.size == 0 or np.all(np.abs(finite_ac) < 1e-8))
+            and (finite_mi_all.size == 0 or np.all(np.abs(finite_mi_all) < 1e-8))
+        )
+        if all_zero_like:
+            self.logger.warning(
+                "Stage 2 metrics are degenerate (IC_tstat, IC_autocorr, MI_proxy ~ 0 "
+                "for all features); skipping Stage 2 filtering and passing all %d candidates",
+                len(candidates),
+            )
+            return candidates
+
         filtered = [
-            c for c in candidates
-            if c.ic_tstat > self.config.ic_tstat_threshold
-            and c.ic_autocorr > self.config.ic_autocorr_threshold
-            and c.mi_proxy > self.config.mi_proxy_threshold
+            c
+            for c, ic_ts, ic_ac, mi in zip(candidates, ic_tstats, ic_autocorrs, mi_proxies)
+            if ic_ts > ic_tstat_threshold
+            and ic_ac > self.config.ic_autocorr_threshold
+            and mi > mi_proxy_threshold
         ]
 
         self.logger.info(
             f"Stage 2: {len(filtered)}/{len(candidates)} candidates survived "
-            f"(IC_tstat>{self.config.ic_tstat_threshold:.2f}, "
+            f"(IC_tstat>{ic_tstat_threshold:.2f}, "
             f"IC_autocorr>{self.config.ic_autocorr_threshold:.2f}, "
-            f"MI_proxy>{self.config.mi_proxy_threshold:.3f})"
+            f"MI_proxy>{mi_proxy_threshold:.3f})"
         )
 
         return filtered
@@ -609,6 +759,42 @@ class FeatureEvaluationPipeline:
             candidate.survived_stage = 3
             candidate.metadata['regime_scores'] = regime_scores
 
+            event_hit_rate = 0.0
+            false_alarm_rate = 0.0
+            event_auc = 0.0
+            try:
+                event_hit_rate, false_alarm_rate, event_auc = self._compute_event_metrics(
+                    data, rolling_feature, target_column
+                )
+            except Exception:
+                event_hit_rate = 0.0
+                false_alarm_rate = 0.0
+                event_auc = 0.0
+
+            candidate.event_hit_rate = event_hit_rate
+            candidate.false_alarm_rate = false_alarm_rate
+            candidate.event_auc = event_auc
+            candidate.metadata['event_hit_rate'] = event_hit_rate
+            candidate.metadata['false_alarm_rate'] = false_alarm_rate
+            candidate.metadata['event_auc'] = event_auc
+
+            if use_lgbm_gain:
+                try:
+                    gain = self._compute_lgbm_gain_from_signal(
+                        rolling_feature,
+                        future_returns
+                    )
+                except Exception as e:
+                    self.logger.warning(
+                        f"LightGBM gain computation failed for {feature_name} (lb={lb}): {e}"
+                    )
+                    gain = 0.0
+            else:
+                gain = 0.0
+
+            candidate.lgbm_gain = float(gain)
+            candidate.metadata['lgbm_gain'] = float(gain)
+
         # No filtering in this stage - just compute scores
         self.logger.info(
             f"Stage 3: Computed robustness for {len(candidates)} candidates"
@@ -651,6 +837,10 @@ class FeatureEvaluationPipeline:
         cv_scores = [c.cv_score for c in candidates]
         regime_stabilities = [c.regime_stability for c in candidates]
         mi_proxies = [c.mi_proxy for c in candidates]
+        event_hit_rates = [getattr(c, 'event_hit_rate', 0.0) for c in candidates]
+        false_alarm_rates = [getattr(c, 'false_alarm_rate', 0.0) for c in candidates]
+        event_aucs = [getattr(c, 'event_auc', 0.0) for c in candidates]
+        lgbm_gains = [getattr(c, 'lgbm_gain', 0.0) for c in candidates]
 
         # Normalize
         norm_ic_tstat = normalize(ic_tstats)
@@ -658,16 +848,35 @@ class FeatureEvaluationPipeline:
         norm_cv_score = normalize(cv_scores)
         norm_regime_stability = normalize(regime_stabilities)
         norm_mi_proxy = normalize(mi_proxies)
+        norm_event_hit = normalize(event_hit_rates)
+        norm_event_auc = normalize(event_aucs)
+        inv_false_alarm = [1.0 - r for r in false_alarm_rates]
+        norm_event_specificity = normalize(inv_false_alarm)
+        norm_lgbm_gain = normalize(lgbm_gains) if any(v != 0.0 for v in lgbm_gains) else [0.0] * len(lgbm_gains)
 
         # Compute final scores
         weights = self.config.weights
+        w_ic_tstat = weights.get('ic_tstat', 0.30)
+        w_ic_autocorr = weights.get('ic_autocorr', 0.20)
+        w_cv_score = weights.get('cv_score', 0.30)
+        w_regime_stability = weights.get('regime_stability', 0.15)
+        w_mi_proxy = weights.get('mi_proxy', 0.05)
+        w_event_reactivity = weights.get('event_reactivity', 0.0)
+        w_event_auc = weights.get('event_auc', 0.0)
+        w_event_specificity = weights.get('event_specificity', 0.0)
+        w_lgbm_gain = weights.get('lgbm_gain', 0.0)
+
         for i, candidate in enumerate(candidates):
             candidate.final_score = (
-                weights['ic_tstat'] * norm_ic_tstat[i] +
-                weights['ic_autocorr'] * norm_ic_autocorr[i] +
-                weights['cv_score'] * norm_cv_score[i] +
-                weights['regime_stability'] * norm_regime_stability[i] +
-                weights['mi_proxy'] * norm_mi_proxy[i]
+                w_ic_tstat * norm_ic_tstat[i] +
+                w_ic_autocorr * norm_ic_autocorr[i] +
+                w_cv_score * norm_cv_score[i] +
+                w_regime_stability * norm_regime_stability[i] +
+                w_mi_proxy * norm_mi_proxy[i] +
+                w_event_reactivity * norm_event_hit[i] +
+                w_event_auc * norm_event_auc[i] +
+                w_event_specificity * norm_event_specificity[i] +
+                w_lgbm_gain * norm_lgbm_gain[i]
             )
             candidate.survived_stage = 4
 
@@ -698,6 +907,77 @@ class FeatureEvaluationPipeline:
         future_returns = prices.pct_change(horizon).shift(-horizon)
 
         return future_returns
+
+    def _compute_lgbm_gain_from_signal(
+        self,
+        signal: pd.Series,
+        target: pd.Series
+    ) -> float:
+        if not LGBM_AVAILABLE or lgb is None:
+            return 0.0
+
+        try:
+            sig = signal.astype(float)
+            tgt = target.astype(float)
+
+            valid_mask = ~(sig.isna() | tgt.isna())
+            if valid_mask.sum() < 100:
+                return 0.0
+
+            X = sig[valid_mask].values.reshape(-1, 1)
+            y = tgt[valid_mask].values
+
+            n_max = 5000
+            if X.shape[0] > n_max:
+                indices = np.linspace(0, X.shape[0] - 1, n_max).astype(int)
+                X = X[indices]
+                y = y[indices]
+
+            unique_vals = np.unique(y[np.isfinite(y)])
+            params = dict(
+                boosting_type='gbdt',
+                data_sample_strategy='goss',
+                n_estimators=300,
+                learning_rate=0.05,
+                max_depth=3,
+                num_leaves=8,
+                min_child_samples=50,
+                reg_alpha=1.0,
+                reg_lambda=1.0,
+                subsample=1.0,
+                colsample_bytree=0.8,
+                n_jobs=1,
+            )
+
+            if unique_vals.size <= 10 and set(np.unique(unique_vals)).issubset({0.0, 1.0}):
+                model = lgb.LGBMClassifier(objective='binary', **params)
+            else:
+                model = lgb.LGBMRegressor(objective='regression', **params)
+
+            model.fit(X, y)
+            # Use permutation importance on the trained model instead of
+            # tree-based gain importance so that we consistently rely on
+            # perturbation-based importance across the pipeline.
+            perm = permutation_importance(
+                model,
+                X,
+                y,
+                n_repeats=10,
+                random_state=42,
+                n_jobs=1,
+            )
+            importances = perm.importances_mean
+            if importances is None or len(importances) == 0:
+                return 0.0
+
+            score = float(importances[0])
+            if not np.isfinite(score):
+                return 0.0
+            return score
+
+        except Exception as e:
+            self.logger.warning(f"_compute_lgbm_gain_from_signal failed: {e}")
+            return 0.0
 
     def _compute_rolling_ic(
         self, signal: pd.Series, returns: pd.Series, window: int = 20
@@ -836,6 +1116,165 @@ class FeatureEvaluationPipeline:
 
         return regime_scores
 
+    def _get_event_mask(self, data: pd.DataFrame, target_column: str) -> Optional[np.ndarray]:
+        key = (id(data), target_column)
+        cache = self._event_mask_cache
+        if key in cache:
+            return cache[key]
+
+        if target_column not in data.columns:
+            cache[key] = None
+            return None
+
+        target_series = data[target_column].astype(float)
+        values = target_series.values
+        finite_mask = np.isfinite(values)
+        finite_vals = values[finite_mask]
+
+        min_events = getattr(self.config, 'min_event_count', 30)
+        if finite_vals.size < min_events:
+            cache[key] = None
+            return None
+
+        unique_vals = np.unique(finite_vals)
+        if unique_vals.size > 10:
+            cache[key] = None
+            return None
+
+        if np.all(unique_vals == 0.0):
+            cache[key] = None
+            return None
+
+        event_mask = np.zeros_like(values, dtype=bool)
+        event_mask[finite_mask] = np.abs(finite_vals) > 0.0
+
+        if event_mask.sum() < min_events:
+            cache[key] = None
+            return None
+
+        cache[key] = event_mask
+        return event_mask
+
+    def _compute_event_metrics(
+        self,
+        data: pd.DataFrame,
+        signal: pd.Series,
+        target_column: str
+    ) -> Tuple[float, float, float]:
+        if not getattr(self.config, 'event_scoring_enabled', True):
+            return 0.0, 0.0, 0.0
+
+        if target_column not in data.columns:
+            return 0.0, 0.0, 0.0
+
+        event_mask = self._get_event_mask(data, target_column)
+        if event_mask is None:
+            return 0.0, 0.0, 0.0
+
+        signal_values = signal.astype(float).values
+        target_values = data[target_column].astype(float).values
+
+        valid = np.isfinite(signal_values) & np.isfinite(target_values)
+        if valid.sum() < getattr(self.config, 'min_event_count', 30):
+            return 0.0, 0.0, 0.0
+
+        event_mask_valid = event_mask & valid
+        if event_mask_valid.sum() == 0:
+            return 0.0, 0.0, 0.0
+
+        non_event_mask_valid = (~event_mask) & valid
+        event_values = signal_values[event_mask_valid]
+        bg_values = signal_values[non_event_mask_valid]
+
+        if event_values.size == 0 or bg_values.size == 0:
+            event_auc = 0.5
+        else:
+            combined = np.concatenate([event_values, bg_values])
+            labels = np.concatenate([
+                np.ones(event_values.size, dtype=int),
+                np.zeros(bg_values.size, dtype=int),
+            ])
+
+            order = np.argsort(combined)
+            ranks = np.arange(1, combined.shape[0] + 1, dtype=float)
+            ordered_labels = labels[order]
+            pos_ranks_sum = ranks[order][ordered_labels == 1].sum()
+            n1 = float(event_values.size)
+            n0 = float(bg_values.size)
+            denom = n1 * n0
+            if denom > 0.0:
+                event_auc = (pos_ranks_sum - n1 * (n1 + 1.0) / 2.0) / denom
+            else:
+                event_auc = 0.5
+
+            if not np.isfinite(event_auc):
+                event_auc = 0.5
+
+            if event_auc < 0.0:
+                event_auc = 0.0
+            if event_auc > 1.0:
+                event_auc = 1.0
+
+        window = int(getattr(self.config, 'event_window_bars', 12))
+        if window <= 0:
+            window = 1
+
+        alarm_quantile = float(getattr(self.config, 'event_alarm_quantile', 0.9))
+        valid_signal_values = signal_values[valid]
+        if valid_signal_values.size < 10:
+            return 0.0, 0.0, event_auc
+
+        try:
+            threshold = float(np.nanquantile(valid_signal_values, alarm_quantile))
+        except Exception:
+            threshold = float(np.nanmax(valid_signal_values)) if valid_signal_values.size > 0 else 0.0
+
+        alarm_mask = (signal_values >= threshold) & np.isfinite(signal_values)
+
+        indices = np.arange(signal_values.shape[0])
+        event_indices = indices[event_mask & np.isfinite(signal_values)]
+        if event_indices.size == 0:
+            return 0.0, 0.0, event_auc
+
+        hits = 0
+        for idx in event_indices:
+            start = max(0, idx - window)
+            end = idx + 1
+            if np.any(alarm_mask[start:end]):
+                hits += 1
+
+        event_hit_rate = float(hits) / float(event_indices.size) if event_indices.size > 0 else 0.0
+
+        if np.any(alarm_mask):
+            n = signal_values.shape[0]
+            try:
+                kernel = np.ones(window + 1, dtype=int)
+                conv = np.convolve(event_mask.astype(int), kernel, mode='full')
+                pre_window_mask = conv[window:window + n] > 0
+            except Exception:
+                pre_window_mask = np.zeros(n, dtype=bool)
+                for idx in event_indices:
+                    start = max(0, idx - window)
+                    end = idx + 1
+                    pre_window_mask[start:end] = True
+
+            alarm_indices = indices[alarm_mask]
+            if alarm_indices.size > 0:
+                alarms_in_window = pre_window_mask[alarm_indices].sum()
+                false_alarms = max(0, alarm_indices.size - alarms_in_window)
+                false_alarm_rate = float(false_alarms) / float(alarm_indices.size)
+            else:
+                false_alarm_rate = 0.0
+        else:
+            false_alarm_rate = 0.0
+
+        if false_alarm_rate < 0.0:
+            false_alarm_rate = 0.0
+        if false_alarm_rate > 1.0:
+            false_alarm_rate = 1.0
+
+        return event_hit_rate, false_alarm_rate, event_auc
+
     def evaluate_features_parallel(
         self,
         data: pd.DataFrame,
@@ -899,7 +1338,7 @@ class FeatureEvaluationPipeline:
 
 
 def create_evaluation_pipeline(
-    subsample_ratio: float = 0.20,
+    subsample_ratio: float = 0.30,
     top_k: int = 3,
     use_parallel: bool = True,
     n_workers: int = 4
@@ -963,8 +1402,7 @@ class FeatureSelectionPipeline:
         target_column_name: str = 'close',
         return_all_scores: bool = False
     ) -> List[FeatureCandidate]:
-        """
-        Evaluate all features through the 4-stage pipeline.
+        """Evaluate all features through the 4-stage pipeline.
 
         Args:
             features: DataFrame of features (shape: [n_samples, n_features])
@@ -978,12 +1416,43 @@ class FeatureSelectionPipeline:
         import time
 
         # Stage 0: Subsample data for stages 1 and 2
+        tprint(
+            f"[FS] Stage 0: Subsampling for feature selection - "
+            f"{len(features.columns)} features, {len(features)} rows, "
+            f"ratio={self.config.subsample_ratio:.2f}"
+        )
         start = time.time()
         # Create a dataframe with features + target for subsampling
         data = features.copy()
         data['_target_'] = target
         subsampled_data, full_data = self._stage0_subsample(data, target_column_name)
         self.stage_times['stage0'] = time.time() - start
+
+        # Stage 0 target diagnostics for feature selection pipeline
+        try:
+            tgt = data["_target_"]
+            n = len(tgt)
+            n_non_null = int(tgt.notna().sum())
+            n_unique = int(tgt.nunique(dropna=True))
+            mean_val = float(np.nanmean(tgt.values))
+            std_val = float(np.nanstd(tgt.values))
+            self.logger.info(
+                "Stage 0 target stats (features): name=%s, n=%d, n_non_null=%d, "
+                "n_unique=%d, mean=%.6f, std=%.6f",
+                getattr(target, "name", "_target_"),
+                n,
+                n_non_null,
+                n_unique,
+                mean_val,
+                std_val,
+            )
+        except Exception as e:  # pragma: no cover - diagnostic only
+            self.logger.warning("Stage 0 (features): failed to compute target stats: %s", e)
+        tprint(
+            f"[FS] Stage 0 complete: {len(subsampled_data)}/{len(data)} rows "
+            f"({100.0 * len(subsampled_data) / len(data):.1f}%) used for stages 1-2 "
+            f"in {self.stage_times['stage0']:.2f}s"
+        )
 
         # Initialize candidates
         candidates = [
@@ -993,55 +1462,103 @@ class FeatureSelectionPipeline:
         self.candidates_per_stage['initial'] = len(candidates)
 
         # Stage 1: Fast Screening (on subsample)
+        tprint(
+            f"[FS] Stage 1: Fast screening on {len(subsampled_data)} rows - "
+            f"{len(candidates)} candidate features"
+        )
         start = time.time()
         candidates = self._stage1_fast_screening_features(
             subsampled_data, candidates, target_column_name
         )
         self.stage_times['stage1'] = time.time() - start
         self.candidates_per_stage['after_stage1'] = len(candidates)
+        tprint(
+            f"[FS] Stage 1 complete: "
+            f"{self.candidates_per_stage['after_stage1']}/"
+            f"{self.candidates_per_stage['initial']} features survived "
+            f"in {self.stage_times['stage1']:.2f}s"
+        )
 
         if not candidates:
             self.logger.info("No candidates survived Stage 1")
+            tprint("[FS] Stage 1 finished: 0 candidates survived; aborting pipeline")
             return []
 
         # Stage 2: Predictive Power Metrics (on subsample)
+        tprint(
+            f"[FS] Stage 2: Predictive power metrics on {len(subsampled_data)} rows - "
+            f"{len(candidates)} candidate features"
+        )
         start = time.time()
         candidates = self._stage2_predictive_power_features(
             subsampled_data, candidates, target_column_name
         )
         self.stage_times['stage2'] = time.time() - start
         self.candidates_per_stage['after_stage2'] = len(candidates)
+        tprint(
+            f"[FS] Stage 2 complete: "
+            f"{self.candidates_per_stage['after_stage2']} features survived "
+            f"in {self.stage_times['stage2']:.2f}s"
+        )
 
         if not candidates:
             self.logger.info("No candidates survived Stage 2")
+            tprint("[FS] Stage 2 finished: 0 candidates survived; aborting pipeline")
             return []
 
         # Stage 3: Robustness Tests (on full data)
+        tprint(
+            f"[FS] Stage 3: Robustness tests on {len(full_data)} rows - "
+            f"{len(candidates)} candidate features"
+        )
         start = time.time()
         candidates = self._stage3_robustness_features(
             full_data, candidates, target_column_name
         )
         self.stage_times['stage3'] = time.time() - start
         self.candidates_per_stage['after_stage3'] = len(candidates)
+        tprint(
+            f"[FS] Stage 3 complete: "
+            f"{self.candidates_per_stage['after_stage3']} features survived "
+            f"in {self.stage_times['stage3']:.2f}s"
+        )
 
         if not candidates:
             self.logger.info("No candidates survived Stage 3")
+            tprint("[FS] Stage 3 finished: 0 candidates survived; aborting pipeline")
             return []
 
         # Stage 3.5: Redundancy Analysis (on subsampled data for speed)
         if self.config.enable_redundancy_analysis:
+            tprint(
+                f"[FS] Stage 3.5: Redundancy analysis on {len(subsampled_data)} rows - "
+                f"{len(candidates)} candidate features"
+            )
             start = time.time()
             candidates = self._stage3_5_redundancy_analysis(
                 subsampled_data, candidates
             )
             self.stage_times['stage3_5'] = time.time() - start
             self.candidates_per_stage['after_stage3_5'] = len(candidates)
+            tprint(
+                f"[FS] Stage 3.5 complete: "
+                f"{self.candidates_per_stage['after_stage3_5']} features survived "
+                f"in {self.stage_times['stage3_5']:.2f}s"
+            )
 
         # Stage 4: Final Selection
+        tprint(
+            f"[FS] Stage 4: Final selection - ranking {len(candidates)} features"
+        )
         start = time.time()
         candidates = self._stage4_final_selection_features(candidates, return_all_scores)
         self.stage_times['stage4'] = time.time() - start
         self.candidates_per_stage['final'] = len(candidates)
+        tprint(
+            f"[FS] Stage 4 complete: "
+            f"{self.candidates_per_stage['final']} features returned "
+            f"in {self.stage_times['stage4']:.2f}s"
+        )
 
         return candidates
 
@@ -1067,12 +1584,20 @@ class FeatureSelectionPipeline:
             # Trend: rolling mean of returns
             trend = returns.rolling(20, min_periods=1).mean()
 
-            # Classify regimes
-            vol_high = vol > vol.quantile(0.67)
-            vol_low = vol < vol.quantile(0.33)
+            # Classify regimes using robust quantiles
+            vol_values = np.asarray(vol, dtype=float)
+            trend_values = np.asarray(trend, dtype=float)
 
-            trend_bull = trend > trend.quantile(0.67)
-            trend_bear = trend < trend.quantile(0.33)
+            vol_q67 = float(np.nanquantile(vol_values, 0.67))
+            vol_q33 = float(np.nanquantile(vol_values, 0.33))
+            trend_q67 = float(np.nanquantile(trend_values, 0.67))
+            trend_q33 = float(np.nanquantile(trend_values, 0.33))
+
+            vol_high = vol > vol_q67
+            vol_low = vol < vol_q33
+
+            trend_bull = trend > trend_q67
+            trend_bear = trend < trend_q33
             trend_sideways = ~(trend_bull | trend_bear)
 
             # Define regime buckets
@@ -1144,7 +1669,7 @@ class FeatureSelectionPipeline:
             Filtered list of candidates
         """
         # Remove target column from feature evaluation
-        feature_cols = [c.feature_name for c in candidates if c.feature_name != '_target_']
+        _feature_cols = [c.feature_name for c in candidates if c.feature_name != '_target_']
         candidates = [c for c in candidates if c.feature_name != '_target_']
 
         if not candidates:
@@ -1267,8 +1792,7 @@ class FeatureSelectionPipeline:
         candidates: List[FeatureCandidate],
         price_column: str
     ) -> List[FeatureCandidate]:
-        """
-        Stage 2: Predictive Power Metrics for features.
+        """Stage 2: Predictive Power Metrics for features.
 
         Computes:
         1. Information Coefficient (IC) - Spearman correlation with returns
@@ -1283,10 +1807,44 @@ class FeatureSelectionPipeline:
         Returns:
             Filtered list of candidates
         """
-        target = data['_target_']
+        target = data["_target_"]
         future_returns = target.pct_change(self.config.future_returns_horizon).shift(
             -self.config.future_returns_horizon
         )
+        # Replace infinite values with NaN so that downstream IC/MI computations
+        # do not explode when the target has many zeros or very small values.
+        future_returns = future_returns.replace([np.inf, -np.inf], np.nan)
+
+        # Log which target series (and derived future-returns series) is used so we
+        # can detect degenerate targets when Stage 2 rejects everything.
+        try:
+            n = len(target)
+            n_non_null = int(target.notna().sum())
+            n_unique = int(target.nunique(dropna=True))
+            mean_val = float(np.nanmean(target.values))
+            std_val = float(np.nanstd(target.values))
+
+            fr_non_null = int(future_returns.notna().sum())
+            fr_mean = float(np.nanmean(future_returns.values))
+            fr_std = float(np.nanstd(future_returns.values))
+
+            self.logger.info(
+                "Stage 2 target stats: name=%s, n=%d, n_non_null=%d, n_unique=%d, "
+                "mean=%.6f, std=%.6f, horizon=%d, future_n_non_null=%d, "
+                "future_mean=%.6f, future_std=%.6f",
+                getattr(target, "name", "_target_"),
+                n,
+                n_non_null,
+                n_unique,
+                mean_val,
+                std_val,
+                int(self.config.future_returns_horizon),
+                fr_non_null,
+                fr_mean,
+                fr_std,
+            )
+        except Exception as e:  # pragma: no cover - diagnostic only
+            self.logger.warning("Stage 2: failed to compute target stats: %s", e)
 
         for candidate in candidates:
             col = candidate.feature_name
@@ -1301,7 +1859,9 @@ class FeatureSelectionPipeline:
             feature_data = data[col]
 
             # 1. Information Coefficient (IC) - rolling Spearman correlation
-            ic_series = self._compute_rolling_ic_feature(feature_data, future_returns, window=20)
+            ic_series = self._compute_rolling_ic_feature(
+                feature_data, future_returns, window=20
+            )
 
             if not ic_series.isna().all() and len(ic_series.dropna()) > 0:
                 candidate.ic_mean = float(ic_series.mean())
@@ -1310,7 +1870,9 @@ class FeatureSelectionPipeline:
                 # IC t-statistic
                 n = len(ic_series.dropna())
                 if candidate.ic_std > 0 and n > 1:
-                    candidate.ic_tstat = candidate.ic_mean / (candidate.ic_std / np.sqrt(n))
+                    candidate.ic_tstat = candidate.ic_mean / (
+                        candidate.ic_std / np.sqrt(n)
+                    )
                 else:
                     candidate.ic_tstat = 0.0
 
@@ -1320,7 +1882,9 @@ class FeatureSelectionPipeline:
                     ic_lag1 = ic_clean.shift(1)
                     valid_mask = ~(ic_clean.isna() | ic_lag1.isna())
                     if valid_mask.sum() > 2:
-                        candidate.ic_autocorr = float(ic_clean[valid_mask].corr(ic_lag1[valid_mask]))
+                        candidate.ic_autocorr = float(
+                            ic_clean[valid_mask].corr(ic_lag1[valid_mask])
+                        )
                         if np.isnan(candidate.ic_autocorr):
                             candidate.ic_autocorr = 0.0
                     else:
@@ -1342,19 +1906,101 @@ class FeatureSelectionPipeline:
 
             candidate.survived_stage = 2
 
-        # Filter by thresholds
+        ic_tstats = np.array([c.ic_tstat for c in candidates])
+        ic_autocorrs = np.array([c.ic_autocorr for c in candidates])
+        mi_proxies = np.array([c.mi_proxy for c in candidates])
+
+        if (
+            self.config.ic_tstat_quantile_threshold is not None
+            and len(ic_tstats) > 0
+        ):
+            ic_tstat_threshold = float(
+                np.quantile(ic_tstats, self.config.ic_tstat_quantile_threshold)
+            )
+        else:
+            ic_tstat_threshold = self.config.ic_tstat_threshold
+
+        if (
+            self.config.mi_proxy_quantile_threshold is not None
+            and len(mi_proxies) > 0
+        ):
+            mi_proxy_threshold = float(
+                np.quantile(mi_proxies, self.config.mi_proxy_quantile_threshold)
+            )
+        else:
+            mi_proxy_threshold = self.config.mi_proxy_threshold
+
+        # Diagnostic logging: summarize metric distributions before filtering so we
+        # can see whether thresholds are too strict or metrics are near-zero.
+        if ic_tstats.size > 0:
+            finite_ic = ic_tstats[np.isfinite(ic_tstats)]
+            if finite_ic.size > 0:
+                self.logger.info(
+                    "Stage 2 metrics (IC_tstat): min=%.4f, median=%.4f, max=%.4f, >0: %d, >=0.01: %d",
+                    float(np.min(finite_ic)),
+                    float(np.median(finite_ic)),
+                    float(np.max(finite_ic)),
+                    int(np.sum(finite_ic > 0.0)),
+                    int(np.sum(finite_ic >= 0.01)),
+                )
+
+        if ic_autocorrs.size > 0:
+            finite_ac = ic_autocorrs[np.isfinite(ic_autocorrs)]
+            if finite_ac.size > 0:
+                self.logger.info(
+                    "Stage 2 metrics (IC_autocorr): min=%.4f, median=%.4f, max=%.4f, >0: %d, >=0.01: %d",
+                    float(np.min(finite_ac)),
+                    float(np.median(finite_ac)),
+                    float(np.max(finite_ac)),
+                    int(np.sum(finite_ac > 0.0)),
+                    int(np.sum(finite_ac >= 0.01)),
+                )
+
+        if mi_proxies.size > 0:
+            finite_mi = mi_proxies[np.isfinite(mi_proxies)]
+            if finite_mi.size > 0:
+                self.logger.info(
+                    "Stage 2 metrics (MI_proxy): min=%.4f, median=%.4f, max=%.4f, >0: %d, >=0.01: %d",
+                    float(np.min(finite_mi)),
+                    float(np.median(finite_mi)),
+                    float(np.max(finite_mi)),
+                    int(np.sum(finite_mi > 0.0)),
+                    int(np.sum(finite_mi >= 0.01)),
+                )
+
+        # If all predictive metrics are effectively zero (or non-finite) for all
+        # candidates, treat Stage 2 as degenerate and skip filtering instead of
+        # aborting the pipeline. This can happen when the target is a meta-label
+        # and future_returns is poorly defined.
+        finite_ic_all = ic_tstats[np.isfinite(ic_tstats)]
+        finite_ac_all = ic_autocorrs[np.isfinite(ic_autocorrs)]
+        finite_mi_all = mi_proxies[np.isfinite(mi_proxies)]
+        all_zero_like = (
+            (finite_ic_all.size == 0 or np.all(np.abs(finite_ic_all) < 1e-8))
+            and (finite_ac_all.size == 0 or np.all(np.abs(finite_ac_all) < 1e-8))
+            and (finite_mi_all.size == 0 or np.all(np.abs(finite_mi_all) < 1e-8))
+        )
+        if all_zero_like:
+            self.logger.warning(
+                "Stage 2 metrics are degenerate (IC_tstat, IC_autocorr, MI_proxy ~ 0 "
+                "for all feature candidates); skipping Stage 2 filtering and passing all %d candidates",
+                len(candidates),
+            )
+            return candidates
+
         filtered = [
-            c for c in candidates
-            if c.ic_tstat > self.config.ic_tstat_threshold
-            and c.ic_autocorr > self.config.ic_autocorr_threshold
-            and c.mi_proxy > self.config.mi_proxy_threshold
+            c
+            for c, ic_ts, ic_ac, mi in zip(candidates, ic_tstats, ic_autocorrs, mi_proxies)
+            if ic_ts > ic_tstat_threshold
+            and ic_ac > self.config.ic_autocorr_threshold
+            and mi > mi_proxy_threshold
         ]
 
         self.logger.info(
             f"Stage 2: {len(filtered)}/{len(candidates)} candidates survived "
-            f"(IC_tstat>{self.config.ic_tstat_threshold:.2f}, "
+            f"(IC_tstat>{ic_tstat_threshold:.2f}, "
             f"IC_autocorr>{self.config.ic_autocorr_threshold:.2f}, "
-            f"MI_proxy>{self.config.mi_proxy_threshold:.3f})"
+            f"MI_proxy>{mi_proxy_threshold:.3f})"
         )
 
         return filtered
@@ -1445,6 +2091,21 @@ class FeatureSelectionPipeline:
         if len(valid_features) < 2:
             return candidates
 
+        max_features = getattr(self.config, "max_redundancy_features", None)
+        if max_features is not None and len(valid_features) > max_features:
+            candidate_by_name = {c.feature_name: c for c in candidates}
+            scored = []
+            for f in valid_features:
+                c = candidate_by_name.get(f)
+                if c is not None:
+                    score = c.ic_tstat * 0.5 + c.cv_score * 0.5
+                    scored.append((f, score))
+            scored.sort(key=lambda x: x[1], reverse=True)
+            top_names = {f for f, _ in scored[:max_features]}
+            valid_features = [f for f in valid_features if f in top_names]
+            if len(valid_features) < 2:
+                return candidates
+
         # Compute correlation matrix (cheap proxy for mutual information)
         feature_data = data[valid_features].copy()
 
@@ -1466,31 +2127,35 @@ class FeatureSelectionPipeline:
 
         # Perform hierarchical clustering using linkage
         try:
-            from scipy.cluster.hierarchy import linkage, fcluster
-            from scipy.spatial.distance import squareform
+            if getattr(self.config, "use_simple_redundancy_clustering", False):
+                feature_clusters = self._simple_correlation_clustering(
+                    corr_matrix, valid_features
+                )
+            else:
+                from scipy.cluster.hierarchy import linkage, fcluster
+                from scipy.spatial.distance import squareform
 
-            # Convert to condensed distance matrix
-            condensed_dist = squareform(distance_matrix.values, checks=False)
+                # Convert to condensed distance matrix
+                condensed_dist = squareform(distance_matrix.values, checks=False)
 
-            # Handle any NaN/inf values
-            condensed_dist = np.nan_to_num(condensed_dist, nan=1.0, posinf=1.0, neginf=0.0)
+                # Handle any NaN/inf values
+                condensed_dist = np.nan_to_num(condensed_dist, nan=1.0, posinf=1.0, neginf=0.0)
 
-            # Perform hierarchical clustering (average linkage)
-            linkage_matrix = linkage(condensed_dist, method='average')
+                # Perform hierarchical clustering (average linkage)
+                linkage_matrix = linkage(condensed_dist, method='average')
 
-            # Cut the dendrogram at threshold to form clusters
-            cluster_labels = fcluster(
-                linkage_matrix,
-                t=self.config.redundancy_cluster_threshold,
-                criterion='distance'
-            )
+                # Cut the dendrogram at threshold to form clusters
+                cluster_labels = fcluster(
+                    linkage_matrix,
+                    t=self.config.redundancy_cluster_threshold,
+                    criterion='distance'
+                )
 
-            # Map cluster IDs to features
-            feature_clusters = {f: int(c) for f, c in zip(valid_features, cluster_labels)}
+                # Map cluster IDs to features
+                feature_clusters = {f: int(c) for f, c in zip(valid_features, cluster_labels)}
 
         except ImportError:
             self.logger.warning("scipy not available, using simple correlation-based clustering")
-            # Fallback: simple correlation-based grouping
             feature_clusters = self._simple_correlation_clustering(
                 corr_matrix, valid_features
             )
@@ -1713,32 +2378,12 @@ class FeatureSelectionPipeline:
         Returns:
             Series of IC values
         """
-        if SCIPY_AVAILABLE and spearmanr is not None:
-            # Use scipy for Spearman correlation
-            ic_values = []
-            for i in range(len(signal)):
-                if i < window - 1:
-                    ic_values.append(np.nan)
-                else:
-                    sig_window = signal.iloc[i-window+1:i+1]
-                    ret_window = returns.iloc[i-window+1:i+1]
+        factor = getattr(self.config, "ic_downsample_factor", 1)
+        if factor > 1:
+            signal = signal.iloc[::factor]
+            returns = returns.iloc[::factor]
 
-                    valid_mask = ~(sig_window.isna() | ret_window.isna())
-                    if valid_mask.sum() >= 3:
-                        try:
-                            corr, _ = spearmanr(
-                                sig_window[valid_mask], ret_window[valid_mask]
-                            )
-                            ic_values.append(corr if not np.isnan(corr) else 0.0)
-                        except Exception:
-                            ic_values.append(np.nan)
-                    else:
-                        ic_values.append(np.nan)
-
-            return pd.Series(ic_values, index=signal.index)
-        else:
-            # Fallback to Pearson correlation
-            return signal.rolling(window).corr(returns)
+        return signal.rolling(window).corr(returns)
 
     def _walk_forward_cv_feature(
         self,
@@ -1812,19 +2457,30 @@ class FeatureSelectionPipeline:
         if price_column not in data.columns:
             return {'default': 0.0}
 
-        # Compute regime indicators
-        close_returns = data[price_column].pct_change()
-        vol = close_returns.rolling(20, min_periods=1).std()
-        trend = close_returns.rolling(20, min_periods=1).mean()
+        cache_key = (id(data), price_column)
+        regimes = self._regime_cache.get(cache_key)
 
-        # Define regimes
-        regimes = {
-            'high_vol': vol > vol.quantile(0.67),
-            'low_vol': vol < vol.quantile(0.33),
-            'bull': trend > trend.quantile(0.67),
-            'bear': trend < trend.quantile(0.33),
-            'sideways': (trend >= trend.quantile(0.33)) & (trend <= trend.quantile(0.67))
-        }
+        if regimes is None:
+            close_returns = data[price_column].pct_change()
+            vol = close_returns.rolling(20, min_periods=1).std()
+            trend = close_returns.rolling(20, min_periods=1).mean()
+
+            vol_values = np.asarray(vol, dtype=float)
+            trend_values = np.asarray(trend, dtype=float)
+
+            vol_q67 = float(np.nanquantile(vol_values, 0.67))
+            vol_q33 = float(np.nanquantile(vol_values, 0.33))
+            trend_q67 = float(np.nanquantile(trend_values, 0.67))
+            trend_q33 = float(np.nanquantile(trend_values, 0.33))
+
+            regimes = {
+                'high_vol': vol > vol_q67,
+                'low_vol': vol < vol_q33,
+                'bull': trend > trend_q67,
+                'bear': trend < trend_q33,
+                'sideways': (trend >= trend_q33) & (trend <= trend_q67)
+            }
+            self._regime_cache[cache_key] = regimes
 
         # Compute IC for each regime
         for regime_name, regime_mask in regimes.items():
@@ -2109,7 +2765,7 @@ class FeatureSelectionPipeline:
 
 
 def create_feature_selection_pipeline(
-    subsample_ratio: float = 0.20,
+    subsample_ratio: float = 0.30,
     top_k: int = 50,
     use_parallel: bool = False,
     n_workers: int = 1,

@@ -967,9 +967,17 @@ class StandardizedXGBTrainer:
                     config=ic_snr_config
                 )
                 
-                # Compute stability across subsamples
+                # Compute stability across subsamples. Reuse the original
+                # feature names from the validation DMatrix so that
+                # xgboost.DMatrix does not emit feature-name mismatch
+                # warnings when working with NumPy subsamples.
+                feature_names = getattr(dval, 'feature_names', None)
+
                 def predict_func(X):
-                    d = xgb.DMatrix(X)
+                    if feature_names is not None:
+                        d = xgb.DMatrix(X, feature_names=feature_names)
+                    else:
+                        d = xgb.DMatrix(X)
                     return model.predict(d)
                 
                 stability_score, _ = compute_stability_across_subsamples(
@@ -1011,9 +1019,20 @@ class StandardizedXGBTrainer:
         # Suppress Optuna logs
         optuna.logging.set_verbosity(optuna.logging.WARNING)
         
+        n_train = dtrain.num_row()
+        base_max_trials = min(self.config.hpo_n_trials, 30)
+        if n_train < 10000:
+            n_trials = base_max_trials
+        elif n_train < 50000:
+            n_trials = max(5, int(0.7 * base_max_trials))
+        elif n_train < 100000:
+            n_trials = max(5, int(0.5 * base_max_trials))
+        else:
+            n_trials = max(5, int(0.3 * base_max_trials))
+        
         study.optimize(
             ic_snr_objective,
-            n_trials=min(self.config.hpo_n_trials, 30),  # Limit trials for regularization
+            n_trials=n_trials,
             show_progress_bar=verbose,
             timeout=600  # 10 minute timeout
         )
@@ -1040,6 +1059,7 @@ class StandardizedXGBTrainer:
         Maintains class balance while reducing computational cost.
         """
         n_train = dtrain.num_row()
+        n_val = dval.num_row()
 
         # Determine sampling percentage based on data size
         if n_train < 5000:
@@ -1055,11 +1075,69 @@ class StandardizedXGBTrainer:
             min(sampling_pct, self.config.hpo_stratified_sampling_pct[1])
         )
 
-        # For now, return full data (stratified sampling requires label access)
-        # TODO: Implement proper stratified sampling
-        logger.debug(f"Using {sampling_pct*100:.0f}% of data for HPO")
+        if sampling_pct >= 0.999:
+            # For now, return full data (stratified sampling requires label access)
+            # TODO: Implement proper stratified sampling
+            logger.debug(f"Using {sampling_pct*100:.0f}% of data for HPO")
+            return dtrain, dval
 
-        return dtrain, dval
+        rng = np.random.RandomState(42)
+
+        y_train = dtrain.get_label()
+        y_val = dval.get_label()
+
+        def _sample_indices(labels: np.ndarray, n_samples: int) -> np.ndarray:
+            if self.config.task_type == "classification" and len(np.unique(labels)) > 1:
+                indices_list = []
+                unique_labels, counts = np.unique(labels, return_counts=True)
+                for label, count in zip(unique_labels, counts):
+                    label_idx = np.where(labels == label)[0]
+                    n_label = max(1, int(round(count * sampling_pct)))
+                    n_label = min(n_label, len(label_idx))
+                    chosen = rng.choice(label_idx, size=n_label, replace=False)
+                    indices_list.append(chosen)
+                all_indices = np.concatenate(indices_list)
+                rng.shuffle(all_indices)
+                return all_indices
+            n_sample = max(1, int(round(n_samples * sampling_pct)))
+            n_sample = min(n_sample, n_samples)
+            return rng.choice(n_samples, size=n_sample, replace=False)
+
+        train_indices = _sample_indices(y_train, n_train)
+        val_indices = _sample_indices(y_val, n_val)
+
+        X_train = dtrain.get_data()
+        X_val = dval.get_data()
+
+        X_train_sub = X_train[train_indices]
+        X_val_sub = X_val[val_indices]
+
+        w_train = dtrain.get_weight()
+        w_val = dval.get_weight()
+
+        w_train_sub = w_train[train_indices] if w_train is not None and len(w_train) > 0 else None
+        w_val_sub = w_val[val_indices] if w_val is not None and len(w_val) > 0 else None
+
+        feature_names_train = dtrain.feature_names
+        feature_names_val = dval.feature_names
+
+        dtrain_sub = xgb.DMatrix(
+            X_train_sub,
+            label=y_train[train_indices],
+            weight=w_train_sub,
+            feature_names=feature_names_train,
+        )
+
+        dval_sub = xgb.DMatrix(
+            X_val_sub,
+            label=y_val[val_indices],
+            weight=w_val_sub,
+            feature_names=feature_names_val,
+        )
+
+        logger.debug(f"Using {sampling_pct*100:.0f}% of data for HPO (train={len(train_indices)}, val={len(val_indices)})")
+
+        return dtrain_sub, dval_sub
 
     def _predict_single_window(self, model: Any, pred_data: pd.DataFrame) -> pd.DataFrame:
         """Generate predictions for a single window."""

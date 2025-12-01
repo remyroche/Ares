@@ -37,6 +37,10 @@ class AnalystEnsembleTrainingStep(BaseStep):
         """Initialize the analyst ensemble training step."""
         super().__init__(step_name, use_versioned_artifacts=True)  # Enable HDF5 storage
         self.logger = system_logger.getChild('AnalystEnsembleTraining')
+        
+        # Initialize unified pipeline
+        from src.training.steps.model_training.unified_models_training_step import UnifiedModelsTrainingStep
+        self.unified_pipeline = UnifiedModelsTrainingStep()
 
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -95,6 +99,28 @@ class AnalystEnsembleTrainingStep(BaseStep):
                 return {'success': False, 'artifacts': {}, 'metrics': {}, 'error': error_msg}
 
             tprint(f"✅ Loaded features: {features_data.shape}", "SUCCESS")
+
+            # Derive start and end dates from features data
+            start_date = features_data.index.min()
+            end_date = features_data.index.max()
+            tprint(f"📅 Derived date range: {start_date} to {end_date}", "INFO")
+
+            # Extract target data
+            target_cols = [c for c in features_data.columns if c.startswith('target_')]
+            if target_cols:
+                target_data = features_data[target_cols].copy()
+                tprint(f"✅ Extracted {len(target_cols)} target columns", "SUCCESS")
+            else:
+                tprint("⚠️ No target columns found in features_data", "WARNING")
+                if config.get('execution_mode') == 'blank':
+                    tprint("⚠️ Creating dummy target for blank mode testing", "WARNING")
+                    # Create a dummy target (random binary for classification or float for regression)
+                    # Assuming classification for now as it's common for ensembles
+                    target_data = pd.DataFrame({
+                        'target_dummy': np.random.randint(0, 2, size=len(features_data))
+                    }, index=features_data.index)
+                else:
+                    target_data = None
 
             # Step 2: Load regime probabilities (prefer HMM Alpha regimes)
             tprint("📥 Step 2/4: Loading regime probabilities (preferring HMM Alpha)...", "INFO")
@@ -420,11 +446,29 @@ class AnalystEnsembleTrainingStep(BaseStep):
                 tprint(error_msg, "ERROR")
                 return {'success': False, 'artifacts': {}, 'metrics': {}, 'error': error_msg}
 
+            # FIX: Handle non-DatetimeIndex in base_predictions immediately after loading
+            # This ensures disagreement features are generated with correct index
+            if base_predictions is not None and not isinstance(base_predictions.index, pd.DatetimeIndex):
+                tprint(f"⚠️ Base predictions has non-DatetimeIndex ({len(base_predictions)} rows), attempting to align with end of features_data", "WARNING")
+                if len(base_predictions) <= len(features_data):
+                    tprint(f"   Assigning last {len(base_predictions)} dates from features_data to base_predictions", "INFO")
+                    base_predictions.index = features_data.index[-len(base_predictions):]
+                else:
+                    tprint("❌ Base predictions longer than features_data, cannot align", "ERROR")
+
             base_confidence = self._get_artifact(
                 'analyst_base_confidence',
                 artifact_type='data',
                 data_category='predictions'
             )
+
+            # FIX: Handle non-DatetimeIndex in base_confidence
+            if base_confidence is not None and not isinstance(base_confidence.index, pd.DatetimeIndex):
+                tprint(f"⚠️ Base confidence has non-DatetimeIndex ({len(base_confidence)} rows), attempting to align with end of features_data", "WARNING")
+                if len(base_confidence) <= len(features_data):
+                    base_confidence.index = features_data.index[-len(base_confidence):]
+                else:
+                    tprint("❌ Base confidence longer than features_data, cannot align", "ERROR")
 
             if base_predictions is None:
                 error_msg = (
@@ -524,37 +568,40 @@ class AnalystEnsembleTrainingStep(BaseStep):
             tprint("=" * 80, "INFO")
 
             # Train ensemble model
-            tprint("🏋️ Training analyst ensemble model...", "INFO")
-            ensemble_result = await self._train_ensemble_model(
-                ensemble_features,
-                features_data,
-                config
-            )
+            # Prepare config for unified pipeline
+            # Align target_data to ensemble_features
+            if target_data is not None:
+                tprint(f"🔄 Aligning target_data ({len(target_data)} rows) to ensemble_features ({len(ensemble_features)} rows)", "INFO")
+                target_data = target_data.reindex(ensemble_features.index)
+                tprint(f"✅ Aligned target_data: {target_data.shape}", "SUCCESS")
 
-            if not ensemble_result['success']:
-                return ensemble_result
+            # Prepare unified configuration
+            unified_config = config.copy()
+            unified_config['training_type'] = 'analyst_ensemble'
+            unified_config['execution_context'] = 'analyst'
+            unified_config['ensemble_features'] = ensemble_features
+            unified_config['target_data'] = target_data
 
-            # Save metrics to .md and JSON
+            # Execute unified pipeline
+            tprint("🚀 Executing unified pipeline for ensemble training...", "INFO")
+            
+            result = await self.unified_pipeline.execute(unified_config)
+
+            if not result['success']:
+                return result
+
+            # Save metrics
             tprint("💾 Saving metrics to .md and JSON...", "INFO")
-            metrics_saved = self._save_metrics(
-                ensemble_result['metrics'],
+            metric_paths = self._save_metrics(
+                result['metrics'],
                 symbol,
                 analyst_timeframe,
                 direction
             )
 
-            # Verify model is saved in Pickle format
+            # Verify model saved in Pickle format
             tprint("✅ Verifying model saved in Pickle format...", "INFO")
-            model_path = ensemble_result.get('model_path')
-
-            # Fallback: derive model path from artifacts if not explicitly provided
-            if not model_path:
-                artifacts = ensemble_result.get('artifacts', {})
-                if isinstance(artifacts, dict):
-                    candidate = artifacts.get('analyst_ensemble_model') or artifacts.get('ensemble_model')
-                    if candidate:
-                        model_path = candidate
-
+            model_path = result.get('model_path')
             if model_path and Path(model_path).exists():
                 tprint(f"✅ Model saved at: {model_path}", "SUCCESS")
             else:
@@ -566,10 +613,10 @@ class AnalystEnsembleTrainingStep(BaseStep):
 
             return {
                 'success': True,
-                'artifacts': ensemble_result.get('artifacts', {}),
-                'metrics': ensemble_result.get('metrics', {}),
+                'artifacts': result.get('artifacts', {}),
+                'metrics': result.get('metrics', {}),
                 'model_path': model_path,
-                'metrics_files': metrics_saved
+                'metrics_files': metric_paths
             }
 
         except Exception as e:
@@ -699,17 +746,23 @@ class AnalystEnsembleTrainingStep(BaseStep):
         execution_mode = config.get('execution_mode', 'full')
         
         if execution_mode == 'blank':
-            # In blank mode, avoid feeding raw feature-generation columns directly,
-            # but still allow regime probabilities, base predictions, and disagreement
-            # features to be used as inputs to the ensemble.
-            tprint("🎯 BLANK MODE: Using regime probabilities, base predictions and disagreement features (no raw FG features)", "INFO")
-            combined = pd.DataFrame(index=features_data.index)
+            # In blank mode, we NOW retain raw features to ensure the ensemble has access
+            # to high-quality signals (like 'vectorbt_enhanced_obv_10_base') identified
+            # in feature selection, rather than relying solely on weaker regime specialists.
+            tprint("🎯 BLANK MODE: Retaining raw features for ensemble (previously dropped)", "INFO")
+            combined = features_data.copy()
         else:
             combined = features_data.copy()
-            leak_cols = [col for col in combined.columns if ('label' in col.lower() or 'target' in col.lower())]
             if leak_cols:
                 tprint(f"⚠️ Removing {len(leak_cols)} target/label columns from features", "WARNING")
                 combined = combined.drop(columns=leak_cols)
+
+        # DEBUG: Print index ranges
+        tprint(f"🔍 [DEBUG] features_data range: {features_data.index.min()} to {features_data.index.max()}", "INFO")
+        if regime_probs is not None:
+            tprint(f"🔍 [DEBUG] regime_probs range: {regime_probs.index.min()} to {regime_probs.index.max()}", "INFO")
+        if base_predictions is not None:
+            tprint(f"🔍 [DEBUG] base_predictions range: {base_predictions.index.min()} to {base_predictions.index.max()}", "INFO")
 
         # Align all dataframes to the same index
         common_index = combined.index if not combined.empty else features_data.index
@@ -738,13 +791,26 @@ class AnalystEnsembleTrainingStep(BaseStep):
                 combined = combined.join(regime_probs, how='left', rsuffix='_regime')
 
         # Add base predictions (remove duplicates first)
+        # Add base predictions (remove duplicates first)
         if base_predictions.index.duplicated().any():
             self.logger.warning(f"⚠️ Removing {base_predictions.index.duplicated().sum()} duplicate indices from base_predictions")
             base_predictions = base_predictions[~base_predictions.index.duplicated(keep='first')]
         
+        # FIX: Handle non-DatetimeIndex in base_predictions
+        print(f"DEBUG: base_predictions index type: {type(base_predictions.index)}")
+        if not isinstance(base_predictions.index, pd.DatetimeIndex):
+            print(f"DEBUG: Base predictions has non-DatetimeIndex ({len(base_predictions)} rows), attempting to align with end of features_data")
+            if len(base_predictions) <= len(common_index):
+                print(f"DEBUG: Assigning last {len(base_predictions)} dates from common_index to base_predictions")
+                base_predictions.index = common_index[-len(base_predictions):]
+                print(f"DEBUG: New base_predictions index range: {base_predictions.index.min()} to {base_predictions.index.max()}")
+            else:
+                print("DEBUG: Base predictions longer than features_data, cannot align")
+
         if not base_predictions.index.equals(common_index):
             tprint("   Aligning base_predictions to common index via reindex (no ffill)", "INFO")
             base_predictions = base_predictions.reindex(common_index)
+            tprint(f"   Base predictions alignment: {base_predictions.isna().sum().sum()} nulls", "INFO")
             tprint(f"   Base predictions alignment: {base_predictions.isna().sum().sum()} nulls", "INFO")
             if base_predictions.isna().any().any():
                 tprint("⚠️ Base predictions leakage detected", "WARNING")
@@ -799,6 +865,12 @@ class AnalystEnsembleTrainingStep(BaseStep):
             config['training_type'] = 'analyst_ensemble'
             config['execution_context'] = 'analyst'
             config['ensemble_features'] = ensemble_features
+            
+            # Align target_data to ensemble_features
+            tprint(f"🔄 Aligning target_data ({len(target_data)} rows) to ensemble_features ({len(ensemble_features)} rows)", "INFO")
+            target_data = target_data.reindex(ensemble_features.index)
+            tprint(f"✅ Aligned target_data: {target_data.shape}", "SUCCESS")
+            
             config['target_data'] = target_data
 
             # Create and execute unified training step

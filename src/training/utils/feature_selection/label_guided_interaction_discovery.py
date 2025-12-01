@@ -64,8 +64,10 @@ class LabelGuidedInteractionConfig:
     shap_weight: float = 0.5
 
     # Lift requirements
-    min_r2_lift: float = 0.02  # Interaction must improve R² by at least 2% (tightened from 1%)
-    min_mi_lift: float = 0.15  # Interaction must improve MI by at least 15% (tightened from 5%)
+    # Defaults are intentionally moderate; individual call sites can override
+    # these for lighter or stricter exploration.
+    min_r2_lift: float = 0.01  # Require at least 1% R² improvement by default
+    min_mi_lift: float = 0.05  # Require at least 5% MI improvement by default
     require_r2_lift: bool = True
     require_mi_lift: bool = True
 
@@ -75,14 +77,16 @@ class LabelGuidedInteractionConfig:
     lasso_alpha: Optional[float] = 1e-3  # None = use CV
     lasso_cv_folds: int = 5
     lasso_max_iter: int = 1000
+    lasso_min_candidates: int = 200  # Only trigger LASSO when we have enough candidates
 
     # Interaction generation
-    max_pairs_to_test: int = 100  # Limit pair combinations
+    max_pairs_to_test: int = 300  # Limit pair combinations (global default)
     operations: List[str] = None  # Operations to test
 
     # Category controls
-    max_interactions_per_category_pair: int = 7  # Max interactions per (cat1, cat2) pair
+    max_interactions_per_category_pair: int = 15  # Max interactions per (cat1, cat2) pair
     banned_category_pairs: Set[Tuple[str, str]] = None  # Pairs to exclude
+    per_category_pair_cap: Dict[str, int] = None
 
     # Performance
     n_jobs: int = -1
@@ -94,6 +98,8 @@ class LabelGuidedInteractionConfig:
             self.operations = ['multiply', 'divide', 'subtract', 'add', 'log_ratio']
         if self.banned_category_pairs is None:
             self.banned_category_pairs = set()
+        if self.per_category_pair_cap is None:
+            self.per_category_pair_cap = {}
 
 
 class LabelGuidedInteractionDiscovery:
@@ -152,8 +158,38 @@ class LabelGuidedInteractionDiscovery:
         # Subsample rows for LGID to reduce runtime
         features_sub, target_sub = self._subsample_rows(features_clean, target_clean)
 
-        # Pre-filter base features before LGID
-        features_reduced = self._preselect_features(features_sub, target_sub, feature_categories)
+        # Pre-filter base features before LGID. When explicit feature_pairs are
+        # provided (e.g. from tree-guided extraction), ensure that none of the
+        # columns referenced by those pairs are dropped during preselection so
+        # they survive into the cleaned feature matrix used for interaction
+        # candidate generation.
+        if feature_pairs:
+            # Run the normal preselection first
+            base_reduced = self._preselect_features(features_sub, target_sub, feature_categories)
+
+            # Collect all feature names that appear in the externally supplied pairs
+            pair_feature_names: Set[str] = set()
+            for f1, f2 in feature_pairs:
+                if f1 in features_sub.columns:
+                    pair_feature_names.add(f1)
+                if f2 in features_sub.columns:
+                    pair_feature_names.add(f2)
+
+            extra_cols = sorted(pair_feature_names - set(base_reduced.columns))
+            if extra_cols:
+                self.logger.info(
+                    "  📊 Preselection kept %d base features; adding %d tree-guided "
+                    "feature(s) referenced in pairs",
+                    base_reduced.shape[1],
+                    len(extra_cols),
+                )
+                features_reduced = base_reduced.copy()
+                for col in extra_cols:
+                    features_reduced[col] = features_sub[col]
+            else:
+                features_reduced = base_reduced
+        else:
+            features_reduced = self._preselect_features(features_sub, target_sub, feature_categories)
 
         # Generate or validate feature pairs
         if feature_pairs is None:
@@ -299,13 +335,15 @@ class LabelGuidedInteractionDiscovery:
         if n_samples == 0 or len(target) == 0:
             return features, target
 
-        # Use ~33% of rows with a minimum floor to keep stability
+        # Use ~33% of rows with a minimum floor and an absolute cap to keep stability
         frac = 0.33
         min_samples = 5000
+        max_samples = 20000
         if n_samples <= min_samples:
             return features, target
 
         n_sub = max(min_samples, int(n_samples * frac))
+        n_sub = min(n_sub, max_samples)
 
         sampled_index = features.sample(
             n=n_sub,
@@ -328,8 +366,11 @@ class LabelGuidedInteractionDiscovery:
         if n_features == 0:
             return features
 
-        max_global = min(80, n_features)
-        max_per_category = 10
+        # Be less aggressive so that more base features are available for
+        # interaction pair generation. We still keep an upper bound to
+        # avoid exploding runtime when there are thousands of features.
+        max_global = min(320, n_features)
+        max_per_category = 30
         if n_features <= max_global:
             return features
 
@@ -762,17 +803,47 @@ class LabelGuidedInteractionDiscovery:
             if interaction_series is not None:
                 candidate_features[cand.name] = interaction_series
 
-        if len(candidate_features) == 0:
+        n_candidates = len(candidate_features)
+        if n_candidates == 0:
             self.logger.warning("  ⚠️ No candidates to apply LASSO to")
             return
 
+        # If we have only a small number of candidates, skip LASSO entirely and
+        # keep all lift-filtered candidates. This avoids over-regularizing when
+        # the search space is already very small (e.g., <200 interactions).
+        if n_candidates < self.config.lasso_min_candidates:
+            self.logger.info(
+                "  📊 [LGID] Skipping LASSO: only %d candidates (threshold=%d); "
+                "marking all as selected before category limits",
+                n_candidates,
+                self.config.lasso_min_candidates,
+            )
+            for cand in self.candidates:
+                cand.selected = True
+            return
+
         candidate_df = pd.DataFrame(candidate_features)
+
+        # Subsample rows for LASSO to control memory usage
+        max_lasso_samples = 5000
+        if len(candidate_df) > max_lasso_samples:
+            sampled_index = candidate_df.sample(
+                n=max_lasso_samples,
+                replace=False,
+                random_state=self.config.random_state,
+            ).index
+            candidate_df_sub = candidate_df.loc[sampled_index]
+            target_sub = target.loc[sampled_index]
+        else:
+            candidate_df_sub = candidate_df
+            target_sub = target
 
         # Apply LASSO
         try:
             if self.config.lasso_alpha is None:
                 # Use CV to find optimal alpha
                 lasso = LassoCV(
+                    alphas=np.logspace(-4, 0, 20),
                     cv=self.config.lasso_cv_folds,
                     max_iter=self.config.lasso_max_iter,
                     random_state=self.config.random_state,
@@ -785,7 +856,7 @@ class LabelGuidedInteractionDiscovery:
                     random_state=self.config.random_state
                 )
 
-            lasso.fit(candidate_df, target)
+            lasso.fit(candidate_df_sub, target_sub)
 
             # Select features with non-zero coefficients
             coef_ = np.asarray(lasso.coef_)
@@ -816,7 +887,7 @@ class LabelGuidedInteractionDiscovery:
                             max_iter=self.config.lasso_max_iter,
                             random_state=self.config.random_state,
                         )
-                        lasso_fallback.fit(candidate_df, target)
+                        lasso_fallback.fit(candidate_df_sub, target_sub)
                         coef_ = np.asarray(lasso_fallback.coef_)
                         selected_mask = np.abs(coef_) > 1e-6
                         n_selected = int(np.sum(selected_mask))
@@ -893,7 +964,11 @@ class LabelGuidedInteractionDiscovery:
             )
 
             # Take top N per category pair
-            n_to_select = min(len(cands), self.config.max_interactions_per_category_pair)
+            cat_key = f"{cat_pair[0]}_x_{cat_pair[1]}"
+            pair_cap = self.config.per_category_pair_cap.get(
+                cat_key, self.config.max_interactions_per_category_pair
+            )
+            n_to_select = min(len(cands), pair_cap)
             self.selected_interactions.extend(cands[:n_to_select])
 
         self.logger.info(f"  ✅ Selected {len(self.selected_interactions)} interactions after category limits")

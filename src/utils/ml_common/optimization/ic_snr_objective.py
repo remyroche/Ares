@@ -266,7 +266,8 @@ def compute_stability_across_subsamples(
     """
     np.random.seed(random_state)
     n_samples = len(X)
-    subsample_size = int(n_samples * subsample_frac)
+    max_subsample_size = 20000
+    subsample_size = max(1, min(int(n_samples * subsample_frac), max_subsample_size))
     
     ic_values = []
     

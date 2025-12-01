@@ -427,7 +427,7 @@ class HierarchicalHPO:
 
     def _objective_function(
         self,
-        trial: optuna.Trial,
+        trial: "optuna.Trial",
         model: Any,
         model_name: str,
         search_space: Dict[str, Any],
@@ -475,7 +475,7 @@ class HierarchicalHPO:
             self.logger.warning(f"⚠️ Trial failed for {model_name}: {e}")
             return float('-inf')
 
-    def _sample_hyperparameters(self, trial: optuna.Trial, search_space: Dict[str, Any]) -> Dict[str, Any]:
+    def _sample_hyperparameters(self, trial: "optuna.Trial", search_space: Dict[str, Any]) -> Dict[str, Any]:
         """Sample hyperparameters from search space."""
         params = {}
 

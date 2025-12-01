@@ -121,6 +121,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         # Pre-computed rolling statistics cache
         self._rolling_stats_cache = {}
         self._batch_processing_cache = {}
+        self._latest_rolling_stats_for_stability = {}
         
         # Performance monitoring
         self._optimization_times = {}
@@ -164,6 +165,8 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         self.mi_early_stop_patience = 3
         self.mi_early_stop_drop = 0.10  # 10% relative drop
         self.max_samples_for_optimization = 25000
+        self.r2_max_samples = 20000
+        self.r2_correlation_threshold = 0.02
     
     def _initialize_vectorbt_components(self):
         """Initialize VectorBT components for performance optimization."""
@@ -225,21 +228,142 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         # Comprehensive lookback ranges from micro-structure to macro context
         # Short-term (2-20): Micro-structure behavior and immediate patterns
         # Medium-term (25-100): Intraday trends and regime transitions
-        # Long-term (100-150): Multi-regime interactions and broader context
+        # Long-term (100-200): Multi-regime interactions and broader context
         lookbacks = [
             # Micro-structure: 2-20 bars (immediate price action)
-            2, 3, 4, 5, 8, 10, 13, 15, 17, 20, 22,
+            2, 3, 4, 5, 7, 8, 10, 12, 13, 15, 17, 20, 22,
             # Short-term: 25-50 bars (local trends and patterns)
             25, 27, 30, 35, 40, 45, 50,
             # Medium-term: 60-100 bars (intraday regime shifts)
             60, 70, 80, 90, 100,
-            # Long-term: 100-150 bars (extended regime/context windows)
-            115, 130, 150,
+            # Long-term: 100-200 bars (extended regime/context windows)
+            115, 130, 150, 175, 200,
         ]
         self.logger.info(
             f"Generated {len(lookbacks)} intelligent lookback ranges up to 300 bars: {lookbacks}"
         )
         return lookbacks
+
+    def _precompute_rolling_statistics(
+        self,
+        feature_data: np.ndarray,
+        target_data: np.ndarray,
+        lookback_ranges: List[int],
+    ) -> Dict[int, Dict[str, np.ndarray]]:
+        """Pre-compute rolling statistics for all lookback periods to avoid redundant calculations."""
+        try:
+            cache_key = f"{hash(feature_data.tobytes())}_{hash(target_data.tobytes())}"
+
+            # Check if we already have cached statistics for this data
+            if cache_key in self._rolling_stats_cache:
+                self._cache_hits += 1
+                return self._rolling_stats_cache[cache_key]
+
+            self._cache_misses += 1
+            stats_cache: Dict[int, Dict[str, np.ndarray]] = {}
+
+            # Pre-compute statistics for all lookback periods
+            for lookback in lookback_ranges:
+                if len(feature_data) < lookback + 10:
+                    continue
+
+                try:
+                    if VECTORBT_AVAILABLE and rolling_mean is not None and rolling_std is not None and rolling_var is not None:
+                        feature_series = pd.Series(feature_data, dtype=np.float64)
+                        target_series = pd.Series(target_data, dtype=np.float64)
+
+                        rolling_mean_feature = rolling_mean(feature_series, window=lookback)
+                        rolling_mean_target = rolling_mean(target_series, window=lookback)
+                        rolling_std_feature = rolling_std(feature_series, window=lookback)
+                        rolling_std_target = rolling_std(target_series, window=lookback)
+                        rolling_var_feature = rolling_var(feature_series, window=lookback)
+                        rolling_var_target = rolling_var(target_series, window=lookback)
+
+                        stats_cache[lookback] = {
+                            'feature_mean': getattr(rolling_mean_feature, 'values', np.asarray(rolling_mean_feature, dtype=float)),
+                            'target_mean': getattr(rolling_mean_target, 'values', np.asarray(rolling_mean_target, dtype=float)),
+                            'feature_std': getattr(rolling_std_feature, 'values', np.asarray(rolling_std_feature, dtype=float)),
+                            'target_std': getattr(rolling_std_target, 'values', np.asarray(rolling_std_target, dtype=float)),
+                            'feature_var': getattr(rolling_var_feature, 'values', np.asarray(rolling_var_feature, dtype=float)),
+                            'target_var': getattr(rolling_var_target, 'values', np.asarray(rolling_var_target, dtype=float)),
+                            'window_size': lookback,
+                        }
+                    else:
+                        stats_cache[lookback] = self._numpy_precompute_rolling_stats(
+                            feature_data,
+                            target_data,
+                            lookback,
+                        )
+
+                except Exception as e:
+                    self.logger.debug(f"Failed to pre-compute stats for lookback {lookback}: {e}")
+                    continue
+
+            # Cache the results
+            self._rolling_stats_cache[cache_key] = stats_cache
+
+            # Expose latest feature rolling std arrays for stability scoring reuse
+            try:
+                self._latest_rolling_stats_for_stability = {
+                    lb: v.get('feature_std')
+                    for lb, v in stats_cache.items()
+                    if isinstance(v, dict) and 'feature_std' in v
+                }
+            except Exception:
+                self._latest_rolling_stats_for_stability = {}
+
+            return stats_cache
+
+        except Exception as e:
+            self.logger.warning(f"Pre-computation of rolling statistics failed: {e}")
+            return {}
+
+    def _numpy_precompute_rolling_stats(
+        self,
+        feature_data: np.ndarray,
+        target_data: np.ndarray,
+        lookback: int,
+    ) -> Dict[str, np.ndarray]:
+        """NumPy-based pre-computation of rolling statistics as fallback."""
+        try:
+            n = len(feature_data)
+            result_size = n - lookback + 1
+            if result_size <= 0:
+                return {}
+
+            # Pre-allocate arrays
+            feature_mean = np.full(result_size, np.nan)
+            target_mean = np.full(result_size, np.nan)
+            feature_std = np.full(result_size, np.nan)
+            target_std = np.full(result_size, np.nan)
+            feature_var = np.full(result_size, np.nan)
+            target_var = np.full(result_size, np.nan)
+
+            # Compute rolling statistics
+            for i in range(result_size):
+                feature_win = feature_data[i : i + lookback]
+                target_win = target_data[i : i + lookback]
+
+                feature_mean[i] = np.mean(feature_win)
+                target_mean[i] = np.mean(target_win)
+                feature_std[i] = np.std(feature_win)
+                target_std[i] = np.std(target_win)
+                feature_var[i] = np.var(feature_win)
+                target_var[i] = np.var(target_win)
+
+            return {
+                'feature_mean': feature_mean,
+                'target_mean': target_mean,
+                'feature_std': feature_std,
+                'target_std': target_std,
+                'feature_var': feature_var,
+                'target_var': target_var,
+                'window_size': lookback,
+            }
+
+        except Exception as e:
+            self.logger.debug(f"NumPy pre-computation failed for lookback {lookback}: {e}")
+            return {}
 
     def _batch_evaluate_lookback_periods(self, feature_data: np.ndarray, target_data: np.ndarray,
                                         lookback_ranges: List[int]) -> Dict[int, float]:
@@ -248,7 +372,9 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         try:
             # Optional subsampling for very long histories to reduce computation cost
             n_samples = len(feature_data)
-            max_samples = int(getattr(self, 'max_samples_for_optimization', 25000) or 25000)
+            max_samples_attr = int(getattr(self, 'max_samples_for_optimization', 25000) or 25000)
+            mi_max = int(getattr(self, 'mi_max_samples', max_samples_attr) or max_samples_attr)
+            max_samples = min(max_samples_attr, mi_max)
             if n_samples > max_samples:
                 try:
                     stride = int(np.ceil(float(n_samples) / float(max_samples)))
@@ -338,7 +464,18 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                             # Low variance: use correlation only
                             mi_proxy = abs_correlation
             
-                    results[lookback] = min(max(mi_proxy, 0.0), 1.0)
+                    score = min(max(mi_proxy, 0.0), 1.0)
+                    results[lookback] = score
+
+                    # Early stopping on monotonically degrading MI proxy to limit work
+                    if score > best_score:
+                        best_score = score
+                        consecutive_drop = 0
+                    elif early_stop_enabled and best_score > 0:
+                        if score < best_score * (1.0 - drop_frac):
+                            consecutive_drop += 1
+                            if consecutive_drop >= patience:
+                                break
                     
                 except Exception as e:
                     self.logger.debug(f"Batch evaluation failed for lookback {lookback}: {e}")
@@ -353,19 +490,32 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
     def _calculate_stability_score(self, data: pd.DataFrame, feature_name: str, lookback: int) -> float:
         """Calculate stability score for a feature with given lookback."""
         try:
-            feature_col = data[feature_name]
+            feature_col_raw = data[feature_name]
+            # Ensure numeric dtype upfront to avoid backend issues with object dtypes
+            feature_col = pd.to_numeric(feature_col_raw, errors="coerce")
 
             # Calculate rolling standard deviation as stability metric using the best available backend
             rolling_vals = None
+
+            # First try to reuse pre-computed rolling std from the most recent stats cache
+            try:
+                cached_map = getattr(self, '_latest_rolling_stats_for_stability', None)
+                if isinstance(cached_map, dict):
+                    cached_std = cached_map.get(int(lookback))
+                    if cached_std is not None:
+                        rolling_vals = np.asarray(cached_std, dtype=float)
+            except Exception:
+                rolling_vals = None
+
             try:
                 rolling_opt = getattr(self, 'rolling_optimizer', None)
-                if rolling_opt is not None:
+                if rolling_opt is not None and rolling_vals is None:
                     rolling_series = rolling_opt.rolling_std(feature_col, window=lookback)
                     if hasattr(rolling_series, 'values'):
                         rolling_vals = rolling_series.values
                     else:
                         rolling_vals = np.asarray(rolling_series, dtype=float)
-                elif self._should_use_vectorbt(data) and rolling_std is not None:
+                elif self._should_use_vectorbt(data) and rolling_std is not None and rolling_vals is None:
                     rs = rolling_std(feature_col, window=lookback)
                     rolling_vals = rs.values if hasattr(rs, 'values') else np.asarray(rs, dtype=float)
             except Exception:
@@ -384,6 +534,11 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                     rs = feature_col.rolling(window=lookback).std()
                     rolling_vals = rs.values if hasattr(rs, 'values') else np.asarray(rs, dtype=float)
 
+            # Ensure rolling standard deviations are numeric and non-negative
+            rolling_vals = np.asarray(rolling_vals, dtype=float)
+            rolling_vals[~np.isfinite(rolling_vals)] = np.nan
+            rolling_vals = np.where(rolling_vals < 0.0, 0.0, rolling_vals)
+
             global_std = float(feature_col.std())
 
             # Handle edge cases where feature has no variation
@@ -392,6 +547,10 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 return 0.1
 
             rolling_std_mean = float(np.nanmean(rolling_vals))
+
+            if not np.isfinite(rolling_std_mean):
+                self.logger.debug(f"Stability calculation produced non-finite rolling std mean for {feature_name}")
+                return 0.5
 
             # Detect suspiciously low rolling std (potential data issue)
             if rolling_std_mean < global_std * 0.02:  # Rolling std < 2% of global std
@@ -443,6 +602,25 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             if target_clean.std() == 0:
                 self.logger.debug(f"Target {target_column} has zero variance, R²=0.0")
                 return 0.0
+
+            # Cheap gating based on simple correlation to avoid expensive model fits
+            try:
+                corr_val = feature_clean[feature_name].corr(target_clean)
+                if corr_val is None or np.isnan(corr_val):
+                    return 0.0
+                if abs(float(corr_val)) < getattr(self, "r2_correlation_threshold", 0.02):
+                    return 0.0
+            except Exception:
+                pass
+
+            # Optional subsampling for very long histories to cap R² cost
+            try:
+                max_r2_samples = int(getattr(self, "r2_max_samples", 20000) or 20000)
+            except Exception:
+                max_r2_samples = 20000
+            if len(feature_clean) > max_r2_samples:
+                feature_clean = feature_clean.iloc[-max_r2_samples:]
+                target_clean = target_clean.iloc[-max_r2_samples:]
 
             try:
                 # Preferred path: LightGBM
@@ -900,9 +1078,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         target_series = data[target_column].astype(float).replace([np.inf, -np.inf], np.nan)
         valid_mask = feature_series.notna() & target_series.notna()
 
-        # Adaptive minimum sample requirement: in light/blank modes we allow a
-        # smaller window so that exploratory runs can still yield per-feature
-        # metrics even when coverage is limited.
+        # Adaptive minimum sample requirement to allow exploratory runs in light/blank modes.
         min_samples = 50
         exec_mode = getattr(self, "_execution_mode", None)
         if exec_mode in ("light", "blank"):
@@ -915,143 +1091,152 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         target_series = target_series[valid_mask]
 
         # Build lookback candidates from the intelligent range, but restrict to
-        # windows up to 150 bars. Selection is purely data-driven: we choose
-        # the lookback that maximizes the absolute rolling correlation between
-        # feature and target, without any horizon weighting heuristic.
+        # windows up to 200 bars.
         lookback_candidates = [
             lb for lb in self.intelligent_lookbacks
-            if 2 <= lb <= 150 and lb < len(feature_series)
+            if 2 <= lb <= 200 and lb < len(feature_series)
         ]
         if not lookback_candidates:
             lookback_candidates = list(range(4, min(51, len(feature_series))))
 
-        # Use the 4-stage evaluation pipeline if available
-        if FEATURE_EVALUATION_AVAILABLE and FeatureEvaluationPipeline is not None:
+        # Prepare container for rolling features (one column per lookback)
+        X_df = pd.DataFrame(index=feature_series.index)
+        for lb in lookback_candidates:
+            rolled = feature_series.rolling(lb, min_periods=max(2, lb // 2)).mean()
+            X_df[f"lb_{lb}"] = rolled
+
+        # Require at least some non-NaN values per row across all lookbacks
+        row_mask = X_df.notna().any(axis=1)
+        X_df = X_df[row_mask]
+        target_aligned = target_series.loc[X_df.index]
+
+        if len(X_df) < min_samples:
+            return None
+
+        # Optional tail subsampling to cap cost
+        try:
+            max_samples = int(getattr(self, "max_samples_for_optimization", 5000) or 5000)
+        except Exception:
+            max_samples = 5000
+
+        if len(X_df) > max_samples:
+            X_df = X_df.iloc[-max_samples:]
+            target_aligned = target_aligned.loc[X_df.index]
+
+        n_rows = len(X_df)
+        if n_rows == 0:
+            return None
+
+        sample_fraction = 0.3
+        if n_rows > min_samples and sample_fraction < 1.0:
+            n_sample = max(min_samples, int(n_rows * sample_fraction))
+            if n_sample < n_rows:
+                indices = np.linspace(0, n_rows - 1, n_sample).astype(int)
+                X_df = X_df.iloc[indices]
+                target_aligned = target_aligned.iloc[indices]
+
+        X = X_df.values
+        y = target_aligned.values
+
+        if X.shape[0] < min_samples:
+            return None
+
+        # LightGBM GOSS model over all lookback-derived columns at once
+        try:
+            import lightgbm as lgb
+            from sklearn.metrics import r2_score
+        except Exception as e:
+            self.logger.warning(f"LightGBM not available for lookback optimisation of {feature_name}: {e}")
+            return None
+
+        unique_vals = np.unique(y[np.isfinite(y)])
+        # NOTE: This is a dedicated, light LightGBM configuration used *only* for
+        # lookback optimisation. It is intentionally much smaller than the main
+        # analyst/tactician models and does not use any HPO.
+        params = dict(
+            boosting_type='gbdt',
+            data_sample_strategy='goss',
+            n_estimators=100,
+            learning_rate=0.07,
+            max_depth=3,
+            num_leaves=12,
+            min_child_samples=80,
+            reg_alpha=1.0,
+            reg_lambda=1.0,
+            subsample=1.0,
+            colsample_bytree=0.8,
+            n_jobs=1,
+        )
+
+        try:
+            if unique_vals.size <= 10 and set(np.unique(unique_vals)).issubset({0.0, 1.0}):
+                model = lgb.LGBMClassifier(objective='binary', **params)
+            else:
+                model = lgb.LGBMRegressor(objective='regression', **params)
+
+            model.fit(X, y)
+
+            # Primary path: permutation importance over lookback-derived columns.
+            # If this fails, we *fail fast* and do not fall back to gain, to keep
+            # the optimisation method unambiguous.
             try:
-                # Create pipeline with configuration
-                pipeline = create_evaluation_pipeline(
-                    subsample_ratio=0.20,
-                    top_k=3,
-                    use_parallel=False,  # Per-feature already parallelized externally
-                    n_workers=1
+                from sklearn.inspection import permutation_importance
+
+                perm_result = permutation_importance(
+                    model,
+                    X,
+                    y,
+                    n_repeats=3,
+                    random_state=42,
+                    n_jobs=1,
                 )
-
-                # Run the 4-stage evaluation
-                candidates = pipeline.evaluate_lookbacks(
-                    data=data,
-                    feature_name=feature_name,
-                    lookback_candidates=lookback_candidates,
-                    target_column=target_column
-                )
-
-                if candidates and len(candidates) > 0:
-                    # Use the top-ranked candidate
-                    top_candidate = candidates[0]
-                    best_lookback = top_candidate.lookback
-                    best_score = top_candidate.final_score
-                    stability_score = top_candidate.regime_stability
-                    information_score = top_candidate.ic_mean
-
-                    # Store detailed metrics in metadata
-                    detailed_metrics = {
-                        'ic_tstat': top_candidate.ic_tstat,
-                        'ic_autocorr': top_candidate.ic_autocorr,
-                        'cv_score': top_candidate.cv_score,
-                        'mi_proxy': top_candidate.mi_proxy,
-                        'regime_stability': top_candidate.regime_stability,
-                        'variance': top_candidate.variance,
-                        'price_corr': top_candidate.price_corr,
-                        'future_corr': top_candidate.future_corr,
-                        'pipeline_stages_passed': top_candidate.survived_stage,
-                        'all_candidates': len(candidates),
-                        'stage_times': pipeline.stage_times
-                    }
-
-                    self.logger.info(
-                        f"4-Stage Pipeline: {feature_name} -> lookback={best_lookback}, "
-                        f"final_score={best_score:.4f}, IC_tstat={top_candidate.ic_tstat:.2f}, "
-                        f"CV_score={top_candidate.cv_score:.4f}"
-                    )
-                else:
-                    # No candidates survived - fallback to simple method
-                    self.logger.warning(
-                        f"4-Stage Pipeline: No candidates survived for {feature_name}, "
-                        "falling back to simple correlation"
-                    )
-                    raise ValueError("No candidates survived pipeline")
-
-            except Exception as e:
-                # Fallback to simple correlation-based method
+                importances = perm_result.importances_mean
+            except Exception as imp_exc:
                 self.logger.warning(
-                    f"4-Stage Pipeline failed for {feature_name}: {e}. "
-                    "Falling back to simple correlation method."
+                    f"Permutation importance failed for {feature_name}: {imp_exc}; "
+                    f"skipping feature for lookback optimisation."
                 )
+                return None
 
-                best_lookback = lookback_candidates[0]
-                best_score = 0.0
+            if importances is None or len(importances) == 0:
+                return None
 
-                for lb in lookback_candidates:
-                    if lb <= 1 or lb >= len(feature_series):
-                        continue
-                    rolled_feature = feature_series.rolling(lb, min_periods=max(2, lb // 2)).mean()
-                    rolled_target = target_series.rolling(lb, min_periods=max(2, lb // 2)).mean()
-                    corr = rolled_feature.corr(rolled_target)
-                    if corr is None or np.isnan(corr):
-                        continue
-                    score = abs(float(corr))
-                    if score > best_score:
-                        best_score = score
-                        best_lookback = lb
+            # Map importances back to lookback candidates via column order
+            scores = [float(v) if np.isfinite(v) else 0.0 for v in importances]
+            if all(s <= 0.0 for s in scores):
+                best_idx = int(np.argmax(scores))
+            else:
+                best_idx = int(np.argmax(scores))
 
-                if best_score == 0.0:
-                    corr = feature_series.corr(target_series)
-                    best_score = abs(float(corr)) if corr is not None and not np.isnan(corr) else 0.0
+            best_lookback = lookback_candidates[best_idx]
+            best_score = scores[best_idx]
 
-                stability_score = float(
-                    self._calculate_stability_score(
-                        data.fillna(method='ffill').fillna(0), feature_name, max(5, best_lookback)
-                    )
-                )
-                information_score = float((best_score + stability_score) / 2.0) if (
-                    best_score > 0 or stability_score > 0
-                ) else 0.0
-                detailed_metrics = {}
+            try:
+                y_pred = model.predict(X)
+                r2_val = r2_score(y, y_pred)
+                best_r2 = float(r2_val) if np.isfinite(r2_val) else 0.0
+            except Exception:
+                best_r2 = 0.0
 
-        else:
-            # Feature evaluation pipeline not available - use simple method
-            self.logger.info(
-                f"Feature evaluation pipeline not available, using simple correlation method"
+        except Exception as model_exc:
+            self.logger.warning(
+                f"LightGBM gain optimisation failed for {feature_name}: {model_exc}"
             )
+            return None
 
-            best_lookback = lookback_candidates[0]
-            best_score = 0.0
+        # We currently do not compute event metrics in this LGBM-only path
+        event_hit_rate = 0.0
+        false_alarm_rate = 0.0
+        event_auc = 0.0
 
-            for lb in lookback_candidates:
-                if lb <= 1 or lb >= len(feature_series):
-                    continue
-                rolled_feature = feature_series.rolling(lb, min_periods=max(2, lb // 2)).mean()
-                rolled_target = target_series.rolling(lb, min_periods=max(2, lb // 2)).mean()
-                corr = rolled_feature.corr(rolled_target)
-                if corr is None or np.isnan(corr):
-                    continue
-                score = abs(float(corr))
-                if score > best_score:
-                    best_score = score
-                    best_lookback = lb
-
-            if best_score == 0.0:
-                corr = feature_series.corr(target_series)
-                best_score = abs(float(corr)) if corr is not None and not np.isnan(corr) else 0.0
-
-            stability_score = float(
-                self._calculate_stability_score(
-                    data.fillna(method='ffill').fillna(0), feature_name, max(5, best_lookback)
-                )
+        stability_score = float(
+            self._calculate_stability_score(
+                data.fillna(method='ffill').fillna(0), feature_name, max(5, best_lookback)
             )
-            information_score = float((best_score + stability_score) / 2.0) if (
-                best_score > 0 or stability_score > 0
-            ) else 0.0
-            detailed_metrics = {}
+        )
+        information_score = float((best_score + stability_score) / 2.0) if (
+            best_score > 0 or stability_score > 0
+        ) else 0.0
 
         result = {
             'feature_name': feature_name,
@@ -1059,17 +1244,17 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             'performance_score': float(best_score),
             'stability_score': stability_score,
             'information_score': information_score,
+            'event_hit_rate': float(event_hit_rate),
+            'false_alarm_rate': float(false_alarm_rate),
+            'event_auc': float(event_auc),
             'lookback_range': '1-50',
-            'optimization_method': '4-stage-pipeline' if FEATURE_EVALUATION_AVAILABLE else 'memory_efficient_chunk',
-            'cv_folds': 2,
+            'optimization_method': 'lgbm_goss_permutation',
+            'cv_folds': 0,
             'optimization_time': 0.0,
             'memory_usage': 0.0,
+            'r2_score': float(best_r2) if 'best_r2' in locals() else 0.0,
             'success': True,
         }
-
-        # Add detailed metrics from pipeline if available
-        if 'detailed_metrics' in locals() and detailed_metrics:
-            result['detailed_metrics'] = detailed_metrics
 
         return result
 
@@ -2410,6 +2595,9 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 stab = float(res.get('stability_score', 0.0) or 0.0)
                 stab_phys = float(res.get('stability_phys_score', stab) or stab)
                 info_score = float(res.get('information_score', 0.0) or 0.0)
+                evt_hit = float(res.get('event_hit_rate', 0.0) or 0.0)
+                fa_rate = float(res.get('false_alarm_rate', 0.0) or 0.0)
+                evt_auc = float(res.get('event_auc', 0.0) or 0.0)
 
                 # Use any existing list of lookbacks if available, otherwise
                 # fall back to a single-element list containing optimal_lookback.
@@ -2429,6 +2617,9 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                     'stability_score': stab,
                     'stability_phys_score': stab_phys,
                     'information_score': info_score,
+                    'event_hit_rate': evt_hit,
+                    'false_alarm_rate': fa_rate,
+                    'event_auc': evt_auc,
                     'r2_score': float(res.get('r2_score', 0.0) or 0.0),
                     'optimization_method': res.get('optimization_method', 'memory_efficient_chunk'),
                 }
@@ -2519,6 +2710,9 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                     # Aggregate per-category performance and stability
                     perfs: List[float] = []
                     stabs: List[float] = []
+                    event_hits: List[float] = []
+                    false_alarms: List[float] = []
+                    event_aucs: List[float] = []
                     for feature_name, feature_info in features.items():
                         perf = feature_info.get('performance_score', 0)
                         stab = feature_info.get('stability_score', 0)
@@ -2529,6 +2723,13 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                         if stab > 0:
                             stabs.append(stab)
                             avg_stability_list.append(stab)
+
+                        evt_hit = float(feature_info.get('event_hit_rate', 0.0) or 0.0)
+                        fa_rate = float(feature_info.get('false_alarm_rate', 0.0) or 0.0)
+                        evt_auc = float(feature_info.get('event_auc', 0.0) or 0.0)
+                        event_hits.append(evt_hit)
+                        false_alarms.append(fa_rate)
+                        event_aucs.append(evt_auc)
 
                         # Build per-feature lookback mapping using final feature names
                         all_lookbacks = feature_info.get('all_optimized_lookbacks') or []
@@ -2549,10 +2750,11 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                                     'optimal_lookback': int(feature_info.get('optimal_lookback', 0)),
                                     'performance_score': float(perf),
                                     'stability_score': float(stab),
-                                    # Physical rolling-std stability for leak analysis
                                     'stability_phys_score': float(stab_phys),
-                                    # R² regression score
                                     'r2_score': float(feature_info.get('r2_score', 0.0)),
+                                    'event_hit_rate': evt_hit,
+                                    'false_alarm_rate': fa_rate,
+                                    'event_auc': evt_auc,
                                 }
 
                     if perfs or stabs:
@@ -2562,11 +2764,29 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                         category_perf = 0.0
                         category_stab = 0.0
 
+                    if event_hits:
+                        avg_event_hit = float(np.mean(event_hits))
+                    else:
+                        avg_event_hit = 0.0
+                    if false_alarms:
+                        avg_false_alarm = float(np.mean(false_alarms))
+                    else:
+                        avg_false_alarm = 0.0
+                    if event_aucs:
+                        avg_event_auc = float(np.mean(event_aucs))
+                    else:
+                        avg_event_auc = 0.0
+                    avg_event_specificity = 1.0 - avg_false_alarm
+
                     optimization_results[category_key] = {
                         'optimal_lookback': optimal_lookback,
                         'num_features_optimized': len(features),
                         'performance_score': category_perf,
                         'stability_score': category_stab,
+                        'avg_event_hit_rate': avg_event_hit,
+                        'avg_false_alarm_rate': avg_false_alarm,
+                        'avg_event_auc': avg_event_auc,
+                        'avg_event_specificity': avg_event_specificity,
                     }
 
         avg_performance = np.mean(avg_performance_list) if avg_performance_list else 0
@@ -3119,11 +3339,19 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                         performance_score = category_result.get('performance_score', 0.0)
                         stability_score = category_result.get('stability_score', 0.0)
                         num_features = category_result.get('num_features_optimized', 0)
+                        avg_event_hit = category_result.get('avg_event_hit_rate', 0.0)
+                        avg_false_alarm = category_result.get('avg_false_alarm_rate', 0.0)
+                        avg_event_auc = category_result.get('avg_event_auc', 0.0)
+                        avg_event_specificity = category_result.get('avg_event_specificity', 0.0)
                         
                         f.write("**Category Summary:**\n")
                         f.write(f"- **Best Individual Feature Lookback:** {optimal_lookback}\n")
                         f.write(f"- **Average Performance Score:** {performance_score:.3f}\n")
                         f.write(f"- **Average Stability Score:** {stability_score:.3f}\n")
+                        f.write(f"- **Average Event Hit Rate:** {avg_event_hit:.3f}\n")
+                        f.write(f"- **Average False Alarm Rate:** {avg_false_alarm:.3f}\n")
+                        f.write(f"- **Average Event AUC:** {avg_event_auc:.3f}\n")
+                        f.write(f"- **Average Event Specificity:** {avg_event_specificity:.3f}\n")
                         f.write(f"- **Features Optimized:** {num_features}\n")
                         f.write("\n")
                         
@@ -3497,6 +3725,10 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                         base_score = stab_score * information_score if (stab_score > 0 and information_score > 0) else 0.0
                         composite_score = 0.4 * base_score + 0.6 * r2
 
+                        evt_hit = float(feature_info.get('event_hit_rate', 0.0) or 0.0)
+                        fa_rate = float(feature_info.get('false_alarm_rate', 0.0) or 0.0)
+                        evt_auc = float(feature_info.get('event_auc', 0.0) or 0.0)
+
                         row_data = {
                             'feature_name': feature_name,
                             'category': category,
@@ -3509,6 +3741,9 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                             'stability_phys_score': feature_info.get('stability_phys_score', stab_score),
                             'r2_score': r2,
                             'information_score': information_score,
+                            'event_hit_rate': evt_hit,
+                            'false_alarm_rate': fa_rate,
+                            'event_auc': evt_auc,
                             'composite_score': composite_score,  # weighted: 0.4*(stability × information) + 0.6*R²
                             'optimization_method': feature_info.get('optimization_method', 'intelligent_ranges'),
                         }

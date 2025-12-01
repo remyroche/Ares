@@ -15,6 +15,9 @@ META_LABEL_TARGET_COLUMNS = [
     'target_short_fused',
     'target_long',
     'target_short',
+    # Fused directional aliases emitted by some labeling steps
+    'fused_target_long',
+    'fused_target_short',
     'target',
     'label',
     'return',
@@ -27,6 +30,8 @@ META_LABEL_PRIMARY_TRAINING_TARGETS = [
     'target_short_fused',
     'target_long',
     'target_short',
+    'fused_target_long',
+    'fused_target_short',
     'target',
     'label',
     'return',

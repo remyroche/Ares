@@ -8,14 +8,65 @@ Integrates with exchanges/shared/ modules for comprehensive functionality.
 
 import asyncio
 import logging
+import sys
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Union, Tuple, Callable
 from dataclasses import dataclass, field
 from enum import Enum
 from abc import ABC, abstractmethod
+from pathlib import Path
+import importlib.util
 
 import pandas as pd
 import numpy as np
+
+
+def _ensure_local_exchanges_package() -> None:
+    """Force-load the local Ares `exchanges` package from the project root.
+
+    This avoids conflicts with any third-party `exchanges` package that might
+    be installed in the environment and ensures that imports like
+    `exchanges.shared.*` always resolve to the project-local code.
+    """
+
+    project_root = Path(__file__).resolve().parent.parent.parent.parent
+
+    # Ensure project root is on sys.path so other local imports work as
+    # expected (e.g. exchanges.*, src.*).
+    project_root_str = str(project_root)
+    if project_root_str not in sys.path:
+        sys.path.insert(0, project_root_str)
+
+    exchanges_dir = project_root / "exchanges"
+    init_py = exchanges_dir / "__init__.py"
+
+    if not init_py.exists():
+        # If the local package truly doesn't exist, we let the normal import
+        # system raise a clear error later.
+        return
+
+    # Remove any existing `exchanges` modules (including submodules) that may
+    # have been imported from site-packages or elsewhere.
+    for name in list(sys.modules.keys()):
+        if name == "exchanges" or name.startswith("exchanges."):
+            sys.modules.pop(name, None)
+
+    # Explicitly load the local `exchanges` package from its __init__.py so
+    # that subsequent `import exchanges.shared.*` statements use it.
+    spec = importlib.util.spec_from_file_location(
+        "exchanges",
+        init_py,
+        submodule_search_locations=[str(exchanges_dir)],
+    )
+    if spec is None or spec.loader is None:
+        return
+
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["exchanges"] = module
+    spec.loader.exec_module(module)
+
+
+_ensure_local_exchanges_package()
 
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors, traced, log_execution_time
@@ -903,41 +954,188 @@ class ExchangeInterface:
         end_time: Optional[datetime] = None,
         limit: int = 500
     ) -> List[KlineData]:
-        """Get kline data for symbol."""
+        """Get recent or generic kline data for symbol.
+
+        Note:
+            This method prefers the exchange's "recent" klines path via the
+            dispatcher. For strict historical windows that must honor
+            start/end times on exchanges like BingX, use
+            `get_historical_klines` instead.
+        """
         from src.utils.tprint import tprint
-        tprint(f"📊 ExchangeInterface.get_klines: symbol={symbol}, interval={interval}, limit={limit}, start_time={start_time}, end_time={end_time}, exchange_type={self.exchange_type}", "DEBUG")
-        tprint_data_preview({"symbol": symbol, "interval": interval, "limit": limit, "start_time": start_time, "end_time": end_time}, "ExchangeInterface.get_klines - request")
-        print(f"DEBUG ExchangeInterface.get_klines: START")
+        tprint(
+            f"📊 ExchangeInterface.get_klines: symbol={symbol}, interval={interval}, "
+            f"limit={limit}, start_time={start_time}, end_time={end_time}, "
+            f"exchange_type={self.exchange_type}",
+            "DEBUG",
+        )
+        tprint_data_preview(
+            {
+                "symbol": symbol,
+                "interval": interval,
+                "limit": limit,
+                "start_time": start_time,
+                "end_time": end_time,
+            },
+            "ExchangeInterface.get_klines - request",
+        )
+        print("DEBUG ExchangeInterface.get_klines: START")
         print(f"DEBUG ExchangeInterface.get_klines: exchange_type={self.exchange_type}")
         print(f"DEBUG ExchangeInterface.get_klines: dispatcher={self.dispatcher}")
 
-        if self.exchange_type == 'simulated':
-            print(f"DEBUG ExchangeInterface.get_klines: Using simulated klines")
-            return await self._get_simulated_klines(symbol, interval, start_time, end_time, limit)
+        if self.exchange_type == "simulated":
+            print("DEBUG ExchangeInterface.get_klines: Using simulated klines")
+            return await self._get_simulated_klines(
+                symbol, interval, start_time, end_time, limit
+            )
 
         if self.dispatcher:
             # Calculate time gap duration for better visibility
             if isinstance(start_time, datetime) and isinstance(end_time, datetime):
                 time_gap = end_time - start_time
                 hours = time_gap.total_seconds() / 3600
-                print(f"📥 DOWNLOADING: {symbol} {interval} | {start_time.strftime('%Y-%m-%d %H:%M')} → {end_time.strftime('%Y-%m-%d %H:%M')} | Gap: {hours:.1f} hours ({limit} candles)")
+                print(
+                    f"📥 DOWNLOADING: {symbol} {interval} | "
+                    f"{start_time.strftime('%Y-%m-%d %H:%M')} → "
+                    f"{end_time.strftime('%Y-%m-%d %H:%M')} | "
+                    f"Gap: {hours:.1f} hours ({limit} candles)"
+                )
             else:
-                print(f"DEBUG ExchangeInterface.get_klines: Calling dispatcher.get_klines")
-                print(f"DEBUG ExchangeInterface.get_klines: symbol={symbol}, interval={interval}, start_time={start_time}, end_time={end_time}, limit={limit}")
-            
-            ohlcv_data = await self.dispatcher.get_klines(symbol, interval, start_time, end_time, limit)
-            
+                print("DEBUG ExchangeInterface.get_klines: Calling dispatcher.get_klines")
+                print(
+                    f"DEBUG ExchangeInterface.get_klines: symbol={symbol}, "
+                    f"interval={interval}, start_time={start_time}, "
+                    f"end_time={end_time}, limit={limit}"
+                )
+
+            ohlcv_data = await self.dispatcher.get_klines(
+                symbol, interval, start_time, end_time, limit
+            )
+
             if ohlcv_data:
-                from src.utils.tprint import tprint
-                tprint(f"✅ ExchangeInterface.get_klines: Received {len(ohlcv_data)} candles from {symbol}", "INFO")
+                tprint(
+                    f"✅ ExchangeInterface.get_klines: Received {len(ohlcv_data)} candles from {symbol}",
+                    "INFO",
+                )
                 print(f"✅ RECEIVED: {len(ohlcv_data)} candles from {symbol}")
             else:
-                from src.utils.tprint import tprint
-                tprint(f"⚠️ ExchangeInterface.get_klines: No data received for {symbol}", "WARNING")
+                tprint(
+                    f"⚠️ ExchangeInterface.get_klines: No data received for {symbol}",
+                    "WARNING",
+                )
                 print(f"⚠️ NO DATA received for {symbol}")
-            klines = []
+
+            klines: List[KlineData] = []
             for candle in ohlcv_data:
-                klines.append(KlineData(
+                klines.append(
+                    KlineData(
+                        symbol=candle.symbol,
+                        interval=interval,
+                        timestamp=candle.timestamp,
+                        open_price=candle.open,
+                        high_price=candle.high,
+                        low_price=candle.low,
+                        close_price=candle.close,
+                        volume=candle.volume,
+                        close_time=candle.timestamp,
+                        quote_asset_volume=candle.volume * candle.close,
+                        number_of_trades=0,
+                        taker_buy_base_asset_volume=candle.volume * 0.5,
+                        taker_buy_quote_asset_volume=candle.volume * candle.close * 0.5,
+                    )
+                )
+
+            tprint(
+                f"✅ ExchangeInterface.get_klines: Returning {len(klines)} klines for {symbol}",
+                "DEBUG",
+            )
+            return klines
+
+        tprint(
+            "⚠️ ExchangeInterface.get_klines: No dispatcher available, returning empty list",
+            "WARNING",
+        )
+        return []
+
+    @tprint_logged()
+    async def get_historical_klines(
+        self,
+        symbol: str,
+        interval: str,
+        start_time: datetime,
+        end_time: datetime,
+        limit: int = 1000,
+    ) -> List[KlineData]:
+        """Get *historical* kline data for a symbol over an explicit time window.
+
+        This method routes directly to the underlying exchange's
+        `get_historical_klines` implementation (via the dispatcher's
+        `exchange` object) so that exchanges which distinguish between
+        "recent" and "historical" data (e.g. BingX) will honor
+        start/end time windows.
+        """
+        from src.utils.tprint import tprint
+
+        tprint(
+            f"📊 ExchangeInterface.get_historical_klines: symbol={symbol}, interval={interval}, "
+            f"limit={limit}, start_time={start_time}, end_time={end_time}, exchange_type={self.exchange_type}",
+            "DEBUG",
+        )
+        tprint_data_preview(
+            {
+                "symbol": symbol,
+                "interval": interval,
+                "limit": limit,
+                "start_time": start_time,
+                "end_time": end_time,
+            },
+            "ExchangeInterface.get_historical_klines - request",
+        )
+
+        # Simulated path: reuse the simulated klines helper.
+        if self.exchange_type == "simulated":
+            return await self._get_simulated_klines(
+                symbol, interval, start_time, end_time, limit
+            )
+
+        if self.dispatcher is None:
+            tprint(
+                "⚠️ ExchangeInterface.get_historical_klines: No dispatcher available, returning empty list",
+                "WARNING",
+            )
+            return []
+
+        exchange = getattr(self.dispatcher, "exchange", None)
+        if exchange is None or not hasattr(exchange, "get_historical_klines"):
+            tprint(
+                "⚠️ ExchangeInterface.get_historical_klines: Underlying exchange does not "
+                "support get_historical_klines; falling back to empty result",
+                "WARNING",
+            )
+            return []
+
+        from datetime import datetime as _dt
+
+        if not isinstance(start_time, _dt) or not isinstance(end_time, _dt):
+            raise TypeError(
+                "start_time and end_time must be datetime instances for get_historical_klines"
+            )
+
+        ohlcv_data = await exchange.get_historical_klines(
+            symbol, interval, start_time, end_time, limit
+        )
+
+        if not ohlcv_data:
+            tprint(
+                f"⚠️ ExchangeInterface.get_historical_klines: No historical data received for {symbol}",
+                "WARNING",
+            )
+            return []
+
+        klines: List[KlineData] = []
+        for candle in ohlcv_data:
+            klines.append(
+                KlineData(
                     symbol=candle.symbol,
                     interval=interval,
                     timestamp=candle.timestamp,
@@ -950,22 +1148,25 @@ class ExchangeInterface:
                     quote_asset_volume=candle.volume * candle.close,
                     number_of_trades=0,
                     taker_buy_base_asset_volume=candle.volume * 0.5,
-                    taker_buy_quote_asset_volume=candle.volume * candle.close * 0.5
-                ))
-            from src.utils.tprint import tprint
-            tprint(f"✅ ExchangeInterface.get_klines: Returning {len(klines)} klines for {symbol}", "DEBUG")
-            return klines
+                    taker_buy_quote_asset_volume=candle.volume * candle.close * 0.5,
+                )
+            )
 
-        from src.utils.tprint import tprint
-        tprint(f"⚠️ ExchangeInterface.get_klines: No dispatcher available, returning empty list", "WARNING")
-        return []
+        tprint(
+            f"✅ ExchangeInterface.get_historical_klines: Returning {len(klines)} klines for {symbol}",
+            "DEBUG",
+        )
+        return klines
 
     @tprint_logged()
     async def get_recent_trades(self, symbol: str, limit: int = 500) -> List[Dict[str, Any]]:
         """Get recent trades for symbol."""
-        tprint_data_preview({"symbol": symbol, "limit": limit, "exchange_type": self.exchange_type}, "ExchangeInterface.get_recent_trades - request")
-        
-        if self.exchange_type == 'simulated':
+        tprint_data_preview(
+            {"symbol": symbol, "limit": limit, "exchange_type": self.exchange_type},
+            "ExchangeInterface.get_recent_trades - request",
+        )
+
+        if self.exchange_type == "simulated":
             return await self._get_simulated_recent_trades(symbol, limit)
 
         # For real exchanges, this would be implemented in the dispatcher

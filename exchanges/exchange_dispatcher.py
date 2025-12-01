@@ -253,8 +253,61 @@ class ExchangeDispatcher:
         self.risk_calculator = getattr(self.exchange, 'risk_calculator', None)
         self.balance_manager = getattr(self.exchange, 'balance_manager', None)
         self.rate_limit_manager = getattr(self.exchange, 'rate_limit_manager', None)
-    
+
     # Market Data Operations
+
+    @tprint_logged(LogLevel.INFO)
+    async def get_instruments(self) -> List[Dict[str, Any]]:
+        """Get instrument specifications from the underlying exchange.
+
+        This method is used by ExchangeInterface._get_instruments and should
+        work across exchanges that expose either a market_metadata manager or
+        a direct get_instruments implementation.
+        """
+
+        if not self._ensure_initialized():
+            return []
+
+        provider = None
+        provider_name = None
+
+        # Prefer the market metadata manager if it exposes instruments
+        if self.market_metadata and hasattr(self.market_metadata, 'get_instruments'):
+            provider = getattr(self.market_metadata, 'get_instruments')
+            provider_name = 'market_metadata'
+        elif hasattr(self.exchange, 'get_instruments'):
+            provider = getattr(self.exchange, 'get_instruments')
+            provider_name = 'exchange'
+
+        if provider is None:
+            tprint_warning("get_instruments not supported by this exchange")
+            self.logger.warning("get_instruments not supported by this exchange instance")
+            return []
+
+        with tprint_timer(f"ExchangeDispatcher.get_instruments - {provider_name}"):
+            try:
+                result = provider()
+                # Support both sync and async implementations
+                if asyncio.iscoroutine(result):
+                    result = await result
+
+                instruments = result or []
+                if instruments:
+                    tprint_data_preview(
+                        instruments[:3] if isinstance(instruments, list) else instruments,
+                        "Instrument specifications (sample)",
+                        max_rows=3,
+                    )
+                    tprint_performance(
+                        "ExchangeDispatcher.get_instruments - performance",
+                        0.0,
+                        metrics={"instrument_count": len(instruments) if isinstance(instruments, list) else 0},
+                    )
+                return instruments
+            except Exception as e:
+                tprint_error(f"Error getting instruments: {e}")
+                self.logger.error(f"Error getting instruments: {e}")
+                return []
     @tprint_logged(LogLevel.INFO)
     async def get_price(self, symbol: str) -> Optional[float]:
         """Get current price for symbol."""

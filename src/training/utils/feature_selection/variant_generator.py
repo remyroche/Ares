@@ -221,11 +221,23 @@ class OptimizedVariantGenerator:
             variants[f"{feature_name}_base"] = base_variant
             self.stats['variants_by_type']['base'] += 1
             tprint_info(f"    ✅ Generated base variant for {feature_name}")
-            
-            # 2. Volatility-normalized (PRIORITY 3: DISABLED - removed from variant generation)
-            # Volatility normalization has been disabled per Priority 3 requirements
-            skipped_variants.append(f"{feature_name}_volnorm (DISABLED per Priority 3)")
-            
+
+            # 2. Volatility-normalized (re-enabled)
+            if isinstance(ohlcv_data, pd.DataFrame) and 'close' in ohlcv_data.columns:
+                volnorm = self._generate_volatility_normalized_optimized(
+                    data[feature_name],
+                    ohlcv_data['close'],
+                    optimal_lookback,
+                )
+                if volnorm is not None:
+                    variants[f"{feature_name}_volnorm"] = volnorm
+                    self.stats['variants_by_type']['volnorm'] += 1
+                    tprint_info(f"    ✅ Generated volnorm variant for {feature_name}")
+                else:
+                    skipped_variants.append(f"{feature_name}_volnorm (generation failed)")
+            else:
+                skipped_variants.append(f"{feature_name}_volnorm (skipped: missing close column)")
+
             # 3. VWAP-weighted (generate for all features except volume category)
             if category.lower() != 'volume':
                 if isinstance(ohlcv_data, pd.DataFrame) and 'volume' in ohlcv_data.columns:
@@ -893,8 +905,8 @@ def generate_all_variants_optimized(
     tprint_success(f"✅ Generated {len(variants_df.columns)} total variants from {len(features_to_process)} dense features")
     tprint_info(f"  Breakdown: {stats['variants_by_type']}")
 
-    # Add detailed expansion analysis (note: volnorm disabled, so max is 3x not 4x)
-    expected_max_variants = len(features_to_process) * 3  # base, vwap, trend_adj (volnorm disabled)
+    # Add detailed expansion analysis (4 variants per feature: base, volnorm, vwap, trend_adj)
+    expected_max_variants = len(features_to_process) * 4
     actual_variants = len(variants_df.columns)
     expansion_ratio = actual_variants / len(features_to_process) if len(features_to_process) > 0 else 0
     expansion_percentage = (actual_variants / expected_max_variants) * 100 if expected_max_variants > 0 else 0
@@ -902,7 +914,7 @@ def generate_all_variants_optimized(
     tprint_info(f"📊 VARIANT EXPANSION SUMMARY:")
     tprint_info(f"  📈 Input features (dense only): {len(features_to_process)}")
     tprint_info(f"  📈 Sparse features skipped: {len(features_to_skip)}")
-    tprint_info(f"  📈 Expected maximum variants: {expected_max_variants} (3x per feature, volnorm disabled)")
+    tprint_info(f"  📈 Expected maximum variants: {expected_max_variants} (4x per feature: base, volnorm, vwap, trend_adj)")
     tprint_info(f"  📈 Actual variants generated: {actual_variants}")
     tprint_info(f"  📈 Expansion ratio: {expansion_ratio:.1f}x")
     tprint_info(f"  📈 Expansion percentage: {expansion_percentage:.1f}%")
@@ -948,7 +960,7 @@ def generate_cross_timeframe_features(
     selected_features: List[Dict],
     generated_features: pd.DataFrame,
     ohlcv_data: pd.DataFrame,
-    timeframe_multipliers: List[int] = [3, 6, 9, 27]
+    timeframe_multipliers: List[int] = [3, 6, 9, 15]
 ) -> Tuple[pd.DataFrame, Dict]:
     """
     Generate cross-timeframe features by creating ratio-based interactions between different lookback periods.

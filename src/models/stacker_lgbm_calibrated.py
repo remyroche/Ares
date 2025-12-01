@@ -219,6 +219,10 @@ class StackerLGBMCalibrated(BaseEstimator, RegressorMixin):
                     cv=self.config.cv_folds, method='predict'
                 )
 
+                # Expose OOF predictions for downstream consumers (e.g. unified training pipeline)
+                # Shape: (n_samples,)
+                self.meta_oof_predictions = oof_predictions
+
                 # Create a dummy classifier for calibration
                 from sklearn.base import BaseEstimator, ClassifierMixin
 

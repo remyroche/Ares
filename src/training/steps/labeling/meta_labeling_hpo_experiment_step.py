@@ -853,11 +853,14 @@ class MetaLabelingHPOExperimentStep(BaseStep):
         try:
             tprint_info("💧 Attempting to attach liquidity regime probabilities for HPO via specialist loader...")
 
+            config_for_specialists = dict(config)
+            config_for_specialists.setdefault("use_canonical_specialist_scalars", True)
+
             specialist_df = get_specialist_models_outputs(
                 artifact_router=self.artifact_router,
                 training_index=market_data.index,
-                config=config,
-                logger=logger,
+                config=config_for_specialists,
+                logger=self.logger,
                 strict=False,
             )
 

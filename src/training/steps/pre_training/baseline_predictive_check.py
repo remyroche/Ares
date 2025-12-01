@@ -16,7 +16,7 @@ from itertools import combinations
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import LinearRegression
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score, roc_auc_score, log_loss
 from sklearn.model_selection import train_test_split
 
 try:
@@ -121,6 +121,26 @@ class BaselinePredictiveCheck:
         if feature_df.empty:
             return None, None, []
 
+        # Exclude known pseudo-features and target columns from baseline diagnostics.
+        # Treat log_ret, primary_signal, and smoothed_label as non-trainable
+        # pseudo-targets for this check.
+        excluded_baseline_cols = {
+            "adaptive_stop_threshold",
+            "close_log_return",
+            "close_return",
+            "log_ret",
+            "primary_signal",
+            "smoothed_label",
+        }
+        remaining_cols = [
+            c
+            for c in feature_df.columns
+            if c not in excluded_baseline_cols and not str(c).startswith("target_")
+        ]
+        if not remaining_cols:
+            return None, None, []
+        feature_df = feature_df[remaining_cols]
+
         if feature_names:
             missing = [col for col in feature_names if col not in feature_df.columns]
             if missing:
@@ -137,7 +157,8 @@ class BaselinePredictiveCheck:
 
         feature_df = feature_df.fillna(feature_df.mean())
 
-        varying_mask = feature_df.std() > 1e-10
+        # Drop near-constant features for baseline diagnostics
+        varying_mask = feature_df.std() > 1e-5
         feature_df = feature_df.loc[:, varying_mask]
         if feature_df.empty:
             return None, None, []
@@ -167,6 +188,16 @@ class BaselinePredictiveCheck:
         )
         y_train = target_series.iloc[train_idx]
         y_test = target_series.iloc[test_idx]
+
+        target_is_binary = False
+        try:
+            unique_vals = target_series.dropna().unique()
+            if len(unique_vals) == 2:
+                vals = set(float(v) for v in unique_vals)
+                if vals.issubset({0.0, 1.0}):
+                    target_is_binary = True
+        except Exception:
+            target_is_binary = False
 
         # Cache split and data for multivariate diagnostics
         self._last_feature_df = feature_df
@@ -198,6 +229,32 @@ class BaselinePredictiveCheck:
             test_rmse = float(np.sqrt(test_mse))
             train_mae = mean_absolute_error(y_train, y_train_pred)
             test_mae = mean_absolute_error(y_test, y_test_pred)
+
+            clf_train_auc = None
+            clf_test_auc = None
+            clf_train_logloss = None
+            clf_test_logloss = None
+            if target_is_binary:
+                try:
+                    y_train_bin = y_train.astype(float)
+                    y_test_bin = y_test.astype(float)
+                    raw_train = series.iloc[train_idx].values.astype(float)
+                    raw_test = series.iloc[test_idx].values.astype(float)
+                    proba_train = 1.0 / (1.0 + np.exp(-raw_train))
+                    proba_test = 1.0 / (1.0 + np.exp(-raw_test))
+                    proba_train = np.clip(proba_train, 1e-6, 1.0 - 1e-6)
+                    proba_test = np.clip(proba_test, 1e-6, 1.0 - 1e-6)
+                    if np.unique(y_train_bin).size == 2:
+                        clf_train_auc = float(roc_auc_score(y_train_bin, proba_train))
+                        clf_train_logloss = float(log_loss(y_train_bin, proba_train, labels=[0.0, 1.0]))
+                    if np.unique(y_test_bin).size == 2:
+                        clf_test_auc = float(roc_auc_score(y_test_bin, proba_test))
+                        clf_test_logloss = float(log_loss(y_test_bin, proba_test, labels=[0.0, 1.0]))
+                except Exception:
+                    clf_train_auc = None
+                    clf_test_auc = None
+                    clf_train_logloss = None
+                    clf_test_logloss = None
 
             lgbm_train_r2 = None
             lgbm_test_r2 = None
@@ -235,7 +292,10 @@ class BaselinePredictiveCheck:
             pearson_corr = float(series.corr(target_series))
             spearman_corr = float(series.rank().corr(target_series.rank()))
 
-            quality_score = max(test_r2, 0.0) * 0.6 + abs(pearson_corr) * 0.4
+            if target_is_binary and clf_test_auc is not None:
+                quality_score = float(clf_test_auc)
+            else:
+                quality_score = max(test_r2, 0.0) * 0.6 + abs(pearson_corr) * 0.4
 
             metrics.append(
                 {
@@ -254,6 +314,10 @@ class BaselinePredictiveCheck:
                     'lgbm_test_mae': lgbm_test_mae,
                     'pearson_corr': pearson_corr,
                     'spearman_corr': spearman_corr,
+                    'clf_train_auc': clf_train_auc,
+                    'clf_test_auc': clf_test_auc,
+                    'clf_train_logloss': clf_train_logloss,
+                    'clf_test_logloss': clf_test_logloss,
                     'quality_score': float(quality_score),
                 }
             )
@@ -369,6 +433,16 @@ class BaselinePredictiveCheck:
             lgbm_best_feature = best_lgbm['feature']
             lgbm_best_test_r2 = best_lgbm['lgbm_test_r2']
 
+        clf_best_feature = None
+        clf_best_test_auc = None
+        clf_best_test_logloss = None
+        clf_metrics = [m for m in metrics if m.get('clf_test_auc') is not None]
+        if clf_metrics:
+            best_clf = max(clf_metrics, key=lambda m: m['clf_test_auc'])
+            clf_best_feature = best_clf['feature']
+            clf_best_test_auc = best_clf['clf_test_auc']
+            clf_best_test_logloss = best_clf.get('clf_test_logloss')
+
         summary: Dict[str, Any] = {
             'best_feature': best['feature'],
             'best_test_r2': best['test_r2'],
@@ -382,6 +456,11 @@ class BaselinePredictiveCheck:
         if lgbm_best_feature is not None and lgbm_best_test_r2 is not None:
             summary['lgbm_best_feature'] = lgbm_best_feature
             summary['lgbm_best_test_r2'] = float(lgbm_best_test_r2)
+        if clf_best_feature is not None and clf_best_test_auc is not None:
+            summary['clf_best_feature'] = clf_best_feature
+            summary['clf_best_test_auc'] = float(clf_best_test_auc)
+            if clf_best_test_logloss is not None:
+                summary['clf_best_test_logloss'] = float(clf_best_test_logloss)
         return summary
 
     @staticmethod
@@ -483,6 +562,24 @@ class BaselinePredictiveCheck:
                     'value': lgbm_test_r2,
                 })
 
+        for metric in per_feature_metrics:
+            clf_auc = metric.get('clf_test_auc')
+            if clf_auc is not None:
+                rows.append({
+                    'metric_category': 'per_feature_auc',
+                    'metric_name': metric['feature'],
+                    'value': clf_auc,
+                })
+
+        for metric in per_feature_metrics:
+            clf_logloss = metric.get('clf_test_logloss')
+            if clf_logloss is not None:
+                rows.append({
+                    'metric_category': 'per_feature_logloss',
+                    'metric_name': metric['feature'],
+                    'value': clf_logloss,
+                })
+
         summary = self.results.get('summary', {})
         rows.append({'metric_category': 'summary', 'metric_name': 'best_feature', 'value': summary.get('best_feature', '')})
         rows.append({'metric_category': 'summary', 'metric_name': 'best_test_r2', 'value': summary.get('best_test_r2', 0)})
@@ -575,13 +672,15 @@ class BaselinePredictiveCheck:
         md += f"**Dataset:** {data_info.get('n_samples', 0)} samples, {data_info.get('n_features', 0)} features\n\n"
 
         md += "### Top Single-Feature Signals\n\n"
-        md += "| Rank | Feature | Test R² | Pearson | Quality Score |\n"
-        md += "|------|---------|---------|---------|---------------|\n"
+        md += "| Rank | Feature | Test R² | Pearson | AUC | Quality Score |\n"
+        md += "|------|---------|---------|---------|-----|---------------|\n"
         top_features = self.results.get('summary', {}).get('top_features', [])
         for idx, metric in enumerate(top_features[:5], 1):
+            auc_val = metric.get('clf_test_auc')
+            auc_str = f"{auc_val:.3f}" if isinstance(auc_val, (int, float)) else "N/A"
             md += (
                 f"| {idx} | `{metric['feature']}` | {metric['test_r2']:.3f} | "
-                f"{metric['pearson_corr']:.3f} | {metric['quality_score']:.3f} |\n"
+                f"{metric['pearson_corr']:.3f} | {auc_str} | {metric['quality_score']:.3f} |\n"
             )
         md += "\n"
 

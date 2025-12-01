@@ -53,26 +53,58 @@ def _compute_basic_performance_metrics(returns: pd.Series, timeframe: str) -> Di
         }
 
     total_return = float((1.0 + returns).prod() - 1.0)
+
+    # ------------------------------------------------------------------
+    # Use approximate *daily* returns for annualization instead of
+    # per-bar scaling. This keeps Sharpe/Sortino/Calmar in a realistic
+    # numeric range for high-frequency strategies while preserving
+    # ordering between configurations.
+    # ------------------------------------------------------------------
     bars_per_year = _bars_per_year_from_timeframe(timeframe)
+    periods_per_year = 365.0
 
-    # Use mean per-bar return for annualization to avoid exploding
-    # annualized returns on short, high-frequency backtests with large
-    # total_return. This keeps Sharpe/Calmar/Sortino in a realistic
-    # numeric range while preserving direction and relative comparisons.
-    mean_bar_ret = float(returns.mean()) if n_bars > 0 else 0.0
-    vol_bar = float(returns.std()) if n_bars > 1 else 0.0
+    daily_returns: List[float] = []
+    if n_bars > 0 and bars_per_year > 0.0:
+        approx_bars_per_day = bars_per_year / periods_per_year
+        bars_per_day = int(round(approx_bars_per_day)) if approx_bars_per_day > 0.0 else 0
+        if bars_per_day <= 1:
+            # Treat each bar as one period when timeframe is already daily+
+            arr = returns.to_numpy(dtype=float)
+            for val in arr:
+                if np.isfinite(val):
+                    daily_returns.append(float(val))
+        else:
+            # Chunk contiguous bars into approximate "days" based on
+            # the inferred bars_per_day for this timeframe.
+            arr = returns.to_numpy(dtype=float)
+            for start in range(0, n_bars, bars_per_day):
+                segment = arr[start : start + bars_per_day]
+                if segment.size == 0:
+                    continue
+                day_ret = float((1.0 + segment).prod() - 1.0)
+                if np.isfinite(day_ret):
+                    daily_returns.append(day_ret)
 
-    annualized_return = float(mean_bar_ret * bars_per_year) if bars_per_year > 0 else 0.0
-    annualized_vol = float(vol_bar * np.sqrt(bars_per_year)) if vol_bar > 0 else 0.0
-    risk_free = 0.0
-    sharpe = float((annualized_return - risk_free) / annualized_vol) if annualized_vol > 0 else 0.0
+    daily_arr = np.array(daily_returns, dtype=float)
+    if daily_arr.size >= 2:
+        mean_daily = float(daily_arr.mean())
+        std_daily = float(daily_arr.std())
+        annualized_return = float(mean_daily * periods_per_year)
+        annualized_vol = float(std_daily * np.sqrt(periods_per_year)) if std_daily > 0.0 else 0.0
+        risk_free = 0.0
+        sharpe = float((annualized_return - risk_free) / annualized_vol) if annualized_vol > 0.0 else 0.0
 
-    downside = returns[returns < 0]
-    if len(downside) > 1:
-        downside_vol = float(downside.std() * np.sqrt(bars_per_year))
+        downside_daily = daily_arr[daily_arr < 0.0]
+        if downside_daily.size > 1:
+            downside_std = float(downside_daily.std() * np.sqrt(periods_per_year))
+            sortino = float((annualized_return - risk_free) / downside_std) if downside_std > 0.0 else sharpe
+        else:
+            sortino = sharpe
     else:
-        downside_vol = 0.0
-    sortino = float((annualized_return - risk_free) / downside_vol) if downside_vol > 0 else sharpe
+        annualized_return = 0.0
+        annualized_vol = 0.0
+        sharpe = 0.0
+        sortino = 0.0
 
     equity = (1.0 + returns).cumprod()
     running_max = equity.cummax()
@@ -412,6 +444,11 @@ def run_simple_long_grid_backtest(
                         avg_loss_trade_with = float(trade_returns_with_arr[~wins_with_mask].mean())
                     else:
                         avg_loss_trade_with = 0.0
+
+                    # Mean trade return (with/without fees) so we can inspect
+                    # average PnL per completed trade for this configuration
+                    avg_trade_return_wo = float(trade_returns_wo_arr.mean())
+                    avg_trade_return_with = float(trade_returns_with_arr.mean())
                 else:
                     win_rate_trades = 0.0
                     win_rate_trades_with = 0.0
@@ -419,6 +456,8 @@ def run_simple_long_grid_backtest(
                     avg_loss_trade = 0.0
                     avg_win_trade_with = 0.0
                     avg_loss_trade_with = 0.0
+                    avg_trade_return_wo = 0.0
+                    avg_trade_return_with = 0.0
 
                 rr_wo = 0.0
                 if avg_loss_trade < 0.0 and abs(avg_loss_trade) > 0.0:
@@ -525,6 +564,9 @@ def run_simple_long_grid_backtest(
                     "avg_trade_duration_bars": avg_trade_duration_bars,
                     "avg_trade_duration_days": avg_trade_duration_days,
                     "avg_trades_per_day": avg_trades_per_day,
+                    # Mean completed-trade return for this bucket/config
+                    "avg_trade_return_without_fees_%": avg_trade_return_wo * 100.0,
+                    "avg_trade_return_with_fees_%": avg_trade_return_with * 100.0,
                 }
 
                 if regimes is not None and unique_regimes is not None and metrics_wo["bars"] > 0:

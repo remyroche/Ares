@@ -1034,8 +1034,9 @@ class OptimizedCheapPruningPipeline:
             is_cross_timeframe = ('cross_timeframe' in column.lower() or 
                                 '_ratio_' in column or 
                                 '_3x_ratio' in column or 
+                                '_6x_ratio' in column or 
                                 '_9x_ratio' in column or 
-                                '_27x_ratio' in column)
+                                '_15x_ratio' in column)
             
             if is_cross_timeframe:
                 cross_timeframe_features.append(column)
@@ -1113,7 +1114,7 @@ class OptimizedCheapPruningPipeline:
                                   '_3x_ratio' in f or 
                                   '_6x_ratio' in f or 
                                   '_9x_ratio' in f or 
-                                  '_27x_ratio' in f)]
+                                  '_15x_ratio' in f)]
         
         tprint_info("="*80)
         tprint_info("📊 CROSS-TIMEFRAME FEATURE TRACKING - PRUNING ENTRY POINT")
@@ -1155,7 +1156,7 @@ class OptimizedCheapPruningPipeline:
                                        '_3x_ratio' in f or 
                                        '_6x_ratio' in f or 
                                        '_9x_ratio' in f or 
-                                       '_27x_ratio' in f)]
+                                       '_15x_ratio' in f)]
         
         if len(features_df_clean.columns) != len(features_df.columns):
             removed_problematic = len(features_df.columns) - len(features_df_clean.columns)
@@ -1191,8 +1192,9 @@ class OptimizedCheapPruningPipeline:
                                      ('cross_timeframe' in f.lower() or 
                                       '_ratio_' in f or 
                                       '_3x_ratio' in f or 
+                                      '_6x_ratio' in f or 
                                       '_9x_ratio' in f or 
-                                      '_27x_ratio' in f)]
+                                      '_15x_ratio' in f)]
             
             if cluster_cross_timeframe:
                 cross_timeframe_in_clusters.extend(cluster_cross_timeframe)
@@ -1213,8 +1215,9 @@ class OptimizedCheapPruningPipeline:
                                                    ('cross_timeframe' in f.lower() or 
                                                     '_ratio_' in f or 
                                                     '_3x_ratio' in f or 
+                                                    '_6x_ratio' in f or 
                                                     '_9x_ratio' in f or 
-                                                    '_27x_ratio' in f)]
+                                                    '_15x_ratio' in f)]
             
             if cross_timeframe_removed_from_cluster:
                 cross_timeframe_removed_from_clusters.extend(cross_timeframe_removed_from_cluster)
@@ -1257,7 +1260,7 @@ class OptimizedCheapPruningPipeline:
                               '_3x_ratio' in f or 
                               '_6x_ratio' in f or 
                               '_9x_ratio' in f or 
-                              '_27x_ratio' in f)]
+                              '_15x_ratio' in f)]
             
             tprint_info("="*80)
             tprint_info("📊 FINAL SELECTION BY COMPOSITE SCORE")
@@ -1306,7 +1309,7 @@ class OptimizedCheapPruningPipeline:
                                     '_3x_ratio' in f or 
                                     '_6x_ratio' in f or 
                                     '_9x_ratio' in f or 
-                                    '_27x_ratio' in f)]
+                                    '_15x_ratio' in f)]
             
             tprint_info("="*80)
             tprint_info("📊 FINAL SELECTION RESULTS")

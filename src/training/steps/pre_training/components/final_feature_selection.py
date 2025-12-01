@@ -142,6 +142,12 @@ class FinalFeatureSelectionComponent:
         self.baseline_comparison: Optional[Dict[str, Any]] = None
         self.method_results: Optional[Dict[str, Any]] = None
         
+        # LGBM multi-stage pipeline metrics (populated by select_features)
+        self.stage1_gain_importance: Dict[str, float] = {}
+        self.stage2_permutation_importance_cv3: Dict[str, float] = {}
+        self.stage3_permutation_importance_cv5: Dict[str, float] = {}
+        self.stage_summary: Dict[str, Any] = {}
+        
     def _filter_target_columns(self, feature_names: List[str], X: pd.DataFrame) -> tuple[List[str], pd.DataFrame]:
         """
         Filter out target columns from feature names and DataFrame.
@@ -169,7 +175,8 @@ class FinalFeatureSelectionComponent:
         self,
         X: pd.DataFrame,
         y: pd.Series,
-        feature_names: Optional[List[str]] = None
+        feature_names: Optional[List[str]] = None,
+        target_name: Optional[str] = None,
     ) -> List[str]:
         """
         Select final features using a clean 2-stage pipeline:
@@ -188,6 +195,7 @@ class FinalFeatureSelectionComponent:
             X: Feature matrix
             y: Target variable
             feature_names: Optional list of feature names
+            target_name: Optional name of the target column (for logging/diagnostics only)
 
         Returns:
             List of selected feature names
@@ -198,6 +206,9 @@ class FinalFeatureSelectionComponent:
             else:
                 feature_names_list = list(feature_names)
             feature_names = feature_names_list
+
+            # Human-readable label for the target used in this selection run
+            target_label = f"'{target_name}'" if target_name else "<unknown>"
 
             # CRITICAL: Filter out target columns to prevent target leakage
             self.logger.info("🔍 Checking for target column leakage...")
@@ -210,19 +221,21 @@ class FinalFeatureSelectionComponent:
             y_nan_count = y.isna().sum()
             if y_nan_count > 0:
                 self.logger.error(f"❌ Input y contains {y_nan_count} NaN values ({100*y_nan_count/len(y):.2f}%)")
-                raise ValueError(f"Input y contains {y_nan_count} NaN values. Please clean the target variable before feature selection.")
-            
+                raise ValueError(
+                    f"Input y contains {y_nan_count} NaN values. Please clean the target variable before feature selection."
+                )
+
             X_nan_count = X.isna().sum().sum()
             if X_nan_count > 0:
                 self.logger.warning(f"⚠️ Input X contains {X_nan_count} NaN values. Filling with median...")
                 X = X.fillna(X.median())
-            
+
             self.logger.info(f"✅ Input validation passed: X shape={X.shape}, y shape={y.shape}")
-            
+
             # Remove exact duplicate columns
             X = self._combine_features(X)
             feature_names = list(X.columns)
-            
+
             # Re-check for target columns after combination
             feature_names, X = self._filter_target_columns(feature_names, X)
             if len(feature_names) == 0:
@@ -233,149 +246,331 @@ class FinalFeatureSelectionComponent:
             if max_features <= 0:
                 self.logger.warning("No features to select")
                 return []
-            
-            self.logger.info("=" * 80)
-            self.logger.info("🚀 STAGE 1: FeatureSelectionPipeline (4-stage evaluation)")
-            self.logger.info("=" * 80)
-            
-            # ================================================================
-            # STAGE 1: FeatureSelectionPipeline - NO pre-selection
-            # ================================================================
-            # Target: reduce to 2-3x final count for LGBM/SHAP
-            pre_lgbm_target = max(max_features * 3, 100)  # At least 100 or 3x target
-            pre_lgbm_target = min(pre_lgbm_target, len(feature_names))  # Don't exceed available
-            
-            self.logger.info(f"📊 Input features: {len(feature_names)}")
-            self.logger.info(f"📊 Target for Stage 1: {pre_lgbm_target} features")
-            self.logger.info(f"📊 Final target: {max_features} features")
-            
-            # Use FeatureSelectionPipeline for complete 4-stage evaluation
-            if FEATURE_SELECTION_PIPELINE_AVAILABLE and FeatureSelectionPipeline is not None:
-                try:
-                    pipeline_config = EvaluationConfig(
-                        subsample_ratio=0.20,
-                        n_chunks=6,
-                        variance_quantile_threshold=0.20,
-                        price_corr_quantile_threshold=0.20,
-                        future_corr_quantile_threshold=0.20,
-                        ic_tstat_threshold=1.5,
-                        ic_autocorr_threshold=0.0,
-                        mi_proxy_threshold=0.02,
-                        n_cv_splits=5,
-                        embargo_bars=1,
-                        top_k_per_feature=pre_lgbm_target,
-                        use_parallel=False,
-                        n_workers=1,
-                        weights={
-                            'ic_tstat': 0.30,
-                            'ic_autocorr': 0.20,
-                            'cv_score': 0.30,
-                            'regime_stability': 0.15,
-                            'mi_proxy': 0.05
-                        }
-                    )
-                    
-                    pipeline = FeatureSelectionPipeline(pipeline_config)
-                    
-                    # Run 4-stage evaluation with full scores for reporting
-                    all_candidates = pipeline.evaluate_features(
-                        features=X[feature_names],
-                        target=y,
-                        target_column_name='close' if 'close' in X.columns else 'target',
-                        return_all_scores=True  # Get all for CSV export
-                    )
-                    
-                    # Export per-feature metrics to CSV
-                    if all_candidates and len(all_candidates) > 0:
-                        try:
-                            csv_path = pipeline.export_feature_metrics_csv(
-                                candidates=all_candidates,
-                                output_dir="outcomes",
-                                prefix="final_feature_selection"
-                            )
-                            self.logger.info(f"📊 Exported feature metrics to: {csv_path}")
-                        except Exception as csv_exc:
-                            self.logger.warning(f"⚠️ Failed to export CSV: {csv_exc}")
-                    
-                    # Select top-k candidates
-                    candidates = all_candidates[:pre_lgbm_target] if all_candidates else []
-                    
-                    if candidates and len(candidates) > 0:
-                        stage1_features = [c.feature_name for c in candidates]
-                        stage1_features = [f for f in stage1_features if f in X.columns]
-                        
-                        # Store pipeline scores for reporting
-                        self.feature_scores = {c.feature_name: c.final_score for c in candidates}
-                        
-                        self.logger.info(f"✅ Stage 1 complete: {len(feature_names)} → {len(stage1_features)} features")
-                    else:
-                        self.logger.warning("⚠️ Pipeline returned no candidates, using all features")
-                        stage1_features = feature_names
-                        
-                except Exception as e:
-                    self.logger.warning(f"⚠️ FeatureSelectionPipeline failed: {e}")
-                    self.logger.info("📊 Falling back to legacy pre-LGBM filtering")
-                    X_filtered, stage1_features = self._pre_lgbm_multi_criteria_filter_legacy(
-                        X, y, feature_names
-                    )
-            else:
-                self.logger.info("📊 FeatureSelectionPipeline not available, using legacy filtering")
-                X_filtered, stage1_features = self._pre_lgbm_multi_criteria_filter_legacy(
-                    X, y, feature_names
+
+            if not LGBM_AVAILABLE:
+                self.logger.error(
+                    "LightGBM is not available but is required for the multi-stage LGBM pipeline"
                 )
-            
-            if len(stage1_features) == 0:
-                self.logger.error("❌ No features after Stage 1!")
+                raise RuntimeError(
+                    "LightGBM is required for final feature selection but is not installed"
+                )
+
+            # Reset stage metrics for this run
+            self.stage1_gain_importance = {}
+            self.stage2_permutation_importance_cv3 = {}
+            self.stage3_permutation_importance_cv5 = {}
+            self.stage_summary = {}
+
+            # Determine task type (classification vs regression)
+            task_type = self._detect_task_type(y)
+
+            # Log target details once for this run so downstream logs are
+            # always anchored to a specific target description.
+            try:
+                unique_values = pd.unique(y.dropna())
+                if len(unique_values) <= 10:
+                    # Small discrete set – log full value_counts
+                    value_counts = y.value_counts(dropna=True).to_dict()
+                    self.logger.info(
+                        f"🎯 Final feature selection target {target_label}: "
+                        f"type={task_type}, samples={len(y)}, value_counts={value_counts}"
+                    )
+                else:
+                    # Continuous/regression-like target – log basic stats
+                    self.logger.info(
+                        f"🎯 Final feature selection target {target_label}: "
+                        f"type={task_type}, samples={len(y)}, "
+                        f"mean={float(y.mean()):.6f}, std={float(y.std()):.6f}"
+                    )
+            except Exception:
+                self.logger.info(
+                    f"🎯 Final feature selection target {target_label}: "
+                    f"samples={len(y)} (detailed stats unavailable)"
+                )
+
+            # Safety guard: never treat target_* columns as features
+            feature_names = [f for f in feature_names if not str(f).startswith("target_")]
+            if not feature_names:
+                self.logger.warning("No non-target features available after filtering target_* columns")
                 return []
-            
+
+            X_full = X[feature_names]
+
+            # Low-variance filter (drop near-constant features before tree-based selection)
+            try:
+                variances = X_full.var(axis=0, numeric_only=True)
+                low_var_threshold = 1e-6
+                low_var_features: List[str] = [
+                    str(col)
+                    for col, var_val in variances.items()
+                    if var_val is not None and not np.isnan(var_val) and float(var_val) < low_var_threshold
+                ]
+                if low_var_features:
+                    kept = [f for f in feature_names if f not in low_var_features]
+                    if kept:
+                        tprint(
+                            f"[FS] Dropping {len(low_var_features)} low-variance features before LGBM (var < {low_var_threshold})",
+                            "INFO",
+                        )
+                        feature_names = kept
+                        X_full = X[feature_names]
+            except Exception:
+                pass
+
+            # Redundancy filter (drop highly collinear features based on correlation)
+            try:
+                corr = X_full.corr().abs()
+                if corr is not None and not corr.empty:
+                    upper = corr.where(np.triu(np.ones(corr.shape), k=1).astype(bool))
+                    redundancy_threshold = 0.98
+                    to_drop: Set[str] = set()
+                    for col in upper.columns:
+                        if col in to_drop:
+                            continue
+                        high_corr = upper.index[upper[col] >= redundancy_threshold].tolist()
+                        for dup in high_corr:
+                            if dup not in to_drop:
+                                to_drop.add(str(dup))
+                    if to_drop:
+                        kept = [f for f in feature_names if f not in to_drop]
+                        if kept:
+                            tprint(
+                                f"[FS] Pre-LGBM redundancy filter removed {len(to_drop)} highly correlated features (|rho|>={redundancy_threshold})",
+                                "INFO",
+                            )
+                            feature_names = kept
+                            X_full = X[feature_names]
+            except Exception:
+                pass
+
+            n_total_features = len(feature_names)
+
             self.logger.info("=" * 80)
-            self.logger.info("🚀 STAGE 2: LGBM/SHAP Final Ranking")
+            self.logger.info(
+                "🚀 LGBM Multi-Stage Feature Selection (Gain + Permutation Importance)"
+            )
             self.logger.info("=" * 80)
-            
-            # ================================================================
-            # STAGE 2: LGBM/SHAP - NO intermediary steps
-            # ================================================================
-            X_stage2 = X[stage1_features]
-            
-            self.logger.info(f"📊 Input to LGBM/SHAP: {len(stage1_features)} features")
-            
-            # Apply LGBM/SHAP ranking
-            if self.config.use_tree_based:
-                ranked_features = self._apply_tree_based_selection(
-                    X_stage2, y, stage1_features
-                )
+            tprint(
+                "🚀 [FS] Starting LGBM multi-stage feature selection (Gain → PI CV3 → PI CV5)",
+                "INFO",
+            )
+
+            # ============================================================
+            # STAGE 1: LGBM Gain importance (GOSS, very light params)
+            #          → remove bottom 33% of features
+            # ============================================================
+            stage1_params: Dict[str, Any] = {
+                "objective": "regression" if task_type == "regression" else "binary",
+                "boosting_type": "gbdt",
+                "data_sample_strategy": "goss",
+                "n_estimators": 80,
+                "learning_rate": 0.05,
+                "num_leaves": 16,
+                "max_depth": 5,
+                "subsample": 1.0,
+                "colsample_bytree": 0.8,
+                "random_state": 42,
+                "n_jobs": -1,
+                "top_rate": 0.2,
+                "other_rate": 0.1,
+            }
+
+            self.logger.info("=" * 40)
+            self.logger.info("[STAGE 1] LGBM Gain (GOSS, very light)")
+            self.logger.info(f"Input features: {n_total_features}")
+            self.logger.info(f"[STAGE 1] Target: {target_label} (task_type={task_type})")
+            tprint(
+                f"[FS][Stage 1] Training LGBM ({task_type}) with GOSS – very light params, "
+                f"computing Gain importance on {n_total_features} features",
+                "INFO",
+            )
+
+            model_stage1 = self._fit_lgbm_model(X_full, y, task_type, stage1_params)
+            gain_importances = model_stage1.booster_.feature_importance(importance_type="gain")
+            gain_importances = np.asarray(gain_importances, dtype=float)
+
+            # Normalize gain for reporting (not for selection logic)
+            if gain_importances.sum() > 0:
+                gain_norm = gain_importances / float(gain_importances.sum())
             else:
-                ranked_features = stage1_features
-            
-            # Filter zero-importance features (SHAP can produce zeros)
-            if self.config.use_permutation_importance and self.all_permutation_importances:
-                sorted_features = sorted(
-                    self.all_permutation_importances.items(),
-                    key=lambda x: x[1],
-                    reverse=True
+                gain_norm = gain_importances
+
+            stage1_importance: Dict[str, float] = {
+                name: float(val) for name, val in zip(feature_names, gain_norm)
+            }
+            self.stage1_gain_importance = stage1_importance
+
+            # Drop bottom 33% by Gain
+            order_stage1 = np.argsort(gain_importances)[::-1]
+            sorted_features_stage1 = [feature_names[i] for i in order_stage1]
+            n_drop = int(np.floor(n_total_features * 0.33))
+            n_keep_stage1 = max(1, n_total_features - n_drop)
+            stage1_features = sorted_features_stage1[:n_keep_stage1]
+
+            self.stage_summary["stage1"] = {
+                "input_features": n_total_features,
+                "kept_features": len(stage1_features),
+                "drop_fraction": 0.33,
+            }
+
+            self.logger.info(
+                f"[STAGE 1] Kept {len(stage1_features)}/{n_total_features} features after dropping bottom 33% by Gain"
+            )
+            if stage1_features:
+                self.logger.info(f"[STAGE 1] Top 5 by Gain: {stage1_features[:5]}")
+            tprint(
+                f"[FS][Stage 1] Kept {len(stage1_features)}/{n_total_features} features after Gain filter",
+                "INFO",
+            )
+
+            # ============================================================
+            # STAGE 2: LGBM permutation importance (CV=3, GOSS, light)
+            #          → skim 50% of features beyond rank 60
+            # ============================================================
+            X_stage2 = X_full[stage1_features]
+
+            stage2_params: Dict[str, Any] = {
+                "objective": "regression" if task_type == "regression" else "binary",
+                "boosting_type": "gbdt",
+                "data_sample_strategy": "goss",
+                "n_estimators": 200,
+                "learning_rate": 0.05,
+                "num_leaves": 128,
+                "max_depth": 7,
+                "subsample": 1.0,
+                "colsample_bytree": 0.9,
+                "random_state": 42,
+                "n_jobs": -1,
+                "top_rate": 0.2,
+                "other_rate": 0.1,
+            }
+
+            self.logger.info("=" * 40)
+            self.logger.info("[STAGE 2] LGBM Permutation Importance (CV=3, GOSS, light)")
+            self.logger.info(f"Input features: {len(stage1_features)}")
+            self.logger.info(f"[STAGE 2] Target: {target_label} (task_type={task_type})")
+            tprint(
+                f"[FS][Stage 2] CV=3 permutation importance on {len(stage1_features)} features (GOSS, light params)",
+                "INFO",
+            )
+
+            pi_stage2 = self._compute_cv_permutation_importance(
+                X_stage2, y, task_type, stage2_params, n_splits=3
+            )
+            self.stage2_permutation_importance_cv3 = pi_stage2.copy()
+
+            # Sort by Stage 2 importance
+            if pi_stage2:
+                sorted_stage2 = sorted(pi_stage2.items(), key=lambda x: x[1], reverse=True)
+                ranked_stage2 = [f for f, _ in sorted_stage2]
+            else:
+                ranked_stage2 = stage1_features
+
+            if len(ranked_stage2) <= 60:
+                stage2_features = ranked_stage2
+            else:
+                top_60 = ranked_stage2[:60]
+                remaining = ranked_stage2[60:]
+                keep_rest = remaining[: max(1, len(remaining) // 2)]
+                stage2_features = top_60 + keep_rest
+
+            self.stage_summary["stage2"] = {
+                "input_features": len(stage1_features),
+                "kept_features": len(stage2_features),
+                "top_unchanged_prefix": min(60, len(ranked_stage2)),
+                "skim_fraction_beyond_60": 0.5,
+            }
+
+            self.logger.info(
+                f"[STAGE 2] Kept {len(stage2_features)}/{len(stage1_features)} features (top 60 preserved, 50% of remaining kept)"
+            )
+            if stage2_features:
+                self.logger.info(
+                    f"[STAGE 2] Top 5 by permutation importance (CV=3): {stage2_features[:5]}"
                 )
-                nonzero_features = [(f, imp) for f, imp in sorted_features if imp > 0]
-                if nonzero_features:
-                    ranked_features = [f for f, _ in nonzero_features]
-                    self.logger.info(f"📊 Filtered to {len(ranked_features)} features with non-zero SHAP importance")
-            
-            # Select top N
-            selected_features = ranked_features[:max_features]
-            
+            tprint(
+                f"[FS][Stage 2] Kept {len(stage2_features)}/{len(stage1_features)} features after CV3 permutation skim",
+                "INFO",
+            )
+
+            # ============================================================
+            # STAGE 3: LGBM permutation importance (CV=5, GOSS, normal)
+            #          → final ranking used for selection & subsets
+            # ============================================================
+            X_stage3 = X_full[stage2_features]
+
+            stage3_params: Dict[str, Any] = {
+                "objective": "regression" if task_type == "regression" else "binary",
+                "boosting_type": "gbdt",
+                "data_sample_strategy": "goss",
+                "n_estimators": 400,
+                "learning_rate": 0.03,
+                "num_leaves": 128,
+                "max_depth": 7,
+                "subsample": 1.0,
+                "colsample_bytree": 0.9,
+                "random_state": 42,
+                "n_jobs": -1,
+                "top_rate": 0.2,
+                "other_rate": 0.1,
+            }
+
+            self.logger.info("=" * 40)
+            self.logger.info("[STAGE 3] LGBM Permutation Importance (CV=5, GOSS, normal)")
+            self.logger.info(f"Input features: {len(stage2_features)}")
+            self.logger.info(f"[STAGE 3] Target: {target_label} (task_type={task_type})")
+            tprint(
+                f"[FS][Stage 3] CV=5 permutation importance on {len(stage2_features)} features (GOSS, normal params)",
+                "INFO",
+            )
+
+            pi_stage3 = self._compute_cv_permutation_importance(
+                X_stage3, y, task_type, stage3_params, n_splits=5
+            )
+            self.stage3_permutation_importance_cv5 = pi_stage3.copy()
+
+            if pi_stage3:
+                sorted_stage3 = sorted(pi_stage3.items(), key=lambda x: x[1], reverse=True)
+                ranked_stage3 = [f for f, _ in sorted_stage3]
+            else:
+                ranked_stage3 = stage2_features
+
+            self.stage_summary["stage3"] = {
+                "input_features": len(stage2_features),
+                "ranked_features": len(ranked_stage3),
+                "cv_splits": 5,
+            }
+
+            # Store final feature scores (Stage 3 permutation importance)
+            self.feature_scores = pi_stage3.copy() if pi_stage3 else {}
+
+            self.logger.info(
+                f"[STAGE 3] Ranked {len(ranked_stage3)} features by CV=5 permutation importance"
+            )
+            if ranked_stage3:
+                self.logger.info(f"[STAGE 3] Top 5 features: {ranked_stage3[:5]}")
+            tprint(
+                f"[FS][Stage 3] Completed CV5 permutation ranking; using top {max_features} for final selection",
+                "INFO",
+            )
+
+            # Final selection: top N features from Stage 3 ranking
+            selected_features = ranked_stage3[:max_features]
             self.selected_features = selected_features
-            self.logger.info(f"✅ Stage 2 complete: {len(stage1_features)} → {len(selected_features)} features")
-            self.logger.info(f"✅ Final selection: {len(selected_features)} features")
-            
+
+            self.logger.info(
+                f"✅ Final selection: {len(selected_features)} features (requested max={max_features})"
+            )
             if len(selected_features) >= 5:
-                self.logger.info(f"📊 Top 5: {selected_features[:5]}")
-            
+                self.logger.info(f"📊 Top 5 final features: {selected_features[:5]}")
+
             return selected_features
-            
+
         except Exception as e:
             self.logger.error(f"Error in feature selection: {e}")
             import traceback
             self.logger.error(f"Traceback: {traceback.format_exc()}")
-            
+
             # FALLBACK: Return at least some features based on simple correlation
             self.logger.warning("⚠️ Falling back to correlation-based selection due to error")
             try:
@@ -386,21 +581,103 @@ class FinalFeatureSelectionComponent:
                         corr = abs(X[col].corr(y))
                         if not np.isnan(corr):
                             correlations[col] = corr
-                    except:
+                    except Exception:
                         pass
-                
+
                 # Sort by correlation and select top features
-                sorted_features = sorted(correlations.items(), key=lambda x: x[1], reverse=True)
+                sorted_features = sorted(
+                    correlations.items(), key=lambda x: x[1], reverse=True
+                )
                 max_features = min(self.config.max_features, len(sorted_features))
                 selected_features = [feat for feat, _ in sorted_features[:max_features]]
-                
-                self.logger.info(f"✅ Fallback selection: {len(selected_features)} features selected by correlation")
+
+                self.logger.info(
+                    f"✅ Fallback selection: {len(selected_features)} features selected by correlation"
+                )
                 return selected_features
             except Exception as fallback_error:
                 self.logger.error(f"❌ Fallback selection also failed: {fallback_error}")
                 # Last resort: return first N features
                 max_features = min(self.config.max_features, len(feature_names))
                 return feature_names[:max_features]
+
+    def _detect_task_type(self, y: pd.Series) -> str:
+        """Detect whether the task is classification or regression based on y."""
+        try:
+            unique_values = pd.unique(y.dropna())
+            if len(unique_values) <= 2 and set(unique_values).issubset({0, 1}):
+                return "classification"
+        except Exception:
+            pass
+        return "regression"
+
+    def _fit_lgbm_model(
+        self,
+        X: pd.DataFrame,
+        y: pd.Series,
+        task_type: str,
+        params: Dict[str, Any],
+    ):
+        """Fit a LightGBM model with the given params and return it."""
+        if task_type == "classification":
+            model = lgb.LGBMClassifier(**params)
+        else:
+            model = lgb.LGBMRegressor(**params)
+        model.fit(X, y)
+        return model
+
+    def _compute_cv_permutation_importance(
+        self,
+        X: pd.DataFrame,
+        y: pd.Series,
+        task_type: str,
+        params: Dict[str, Any],
+        n_splits: int = 3,
+    ) -> Dict[str, float]:
+        """Compute permutation importance with TimeSeriesSplit CV using LightGBM."""
+        try:
+            if X.empty or y is None or len(y) == 0:
+                return {}
+
+            tscv = TimeSeriesSplit(n_splits=n_splits)
+            importances_sum = np.zeros(X.shape[1], dtype=float)
+            n_runs = 0
+
+            for split_idx, (train_idx, test_idx) in enumerate(tscv.split(X)):
+                X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
+                y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
+
+                # Skip degenerate folds
+                if len(pd.unique(y_train.dropna())) <= 1:
+                    continue
+
+                model = self._fit_lgbm_model(X_train, y_train, task_type, params)
+                pi = permutation_importance(
+                    model,
+                    X_test,
+                    y_test,
+                    n_repeats=5,
+                    random_state=42,
+                    n_jobs=-1,
+                )
+
+                importances_sum += pi.importances_mean
+                n_runs += 1
+
+            if n_runs == 0:
+                return {}
+
+            importances_mean = importances_sum / float(n_runs)
+            feature_importance = {
+                name: float(val) for name, val in zip(X.columns, importances_mean)
+            }
+
+            return feature_importance
+        except Exception as e:
+            self.logger.error(
+                f"Error computing CV permutation importance (n_splits={n_splits}): {e}"
+            )
+            return {}
     
     def _apply_tree_based_selection(
         self,
@@ -762,7 +1039,7 @@ class FinalFeatureSelectionComponent:
                 try:
                     # Configure pipeline for pre-LGBM filtering
                     pipeline_config = EvaluationConfig(
-                        subsample_ratio=0.20,  # 20% subsample for stages 1-2
+                        subsample_ratio=0.30,  # 30% subsample for stages 1-2
                         n_chunks=6,
                         variance_quantile_threshold=0.20,  # Less aggressive for pre-filtering
                         price_corr_quantile_threshold=0.20,

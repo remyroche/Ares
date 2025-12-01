@@ -33,6 +33,7 @@ Quality Features:
 # Type annotations for lazy-loaded quality utilities
 from typing import Optional, TYPE_CHECKING, Any, Union
 import sys
+import os
 from pathlib import Path
 
 if TYPE_CHECKING:
@@ -423,8 +424,12 @@ class EnhancedKlinesProcessingPipeline:
         self.data_standardizer = UnifiedOHLCVStandardizer()
         self.duplicate_analyzer = ComprehensiveDuplicateAnalyzer()
 
-        # Initialize parquet manager
-        self.klines_manager = KlinesParquetManager(self.config.data_dir)
+        # Initialize parquet manager with explicit exchange so data is stored
+        # under the correct exchange subdirectory (e.g., binance, bingx, etc.)
+        self.klines_manager = KlinesParquetManager(
+            data_dir=self.config.data_dir,
+            exchange=self.exchange,
+        )
 
         # Processing state
         self.current_symbol: Optional[str] = None
@@ -519,6 +524,51 @@ class EnhancedKlinesProcessingPipeline:
         df_with_ts[f"{column_name}_ms"] = pd.Series(timestamp_ms, index=df_with_ts.index, dtype='int64')
 
         return df_with_ts
+
+    def _build_quality_view(
+        self,
+        df: pd.DataFrame,
+        symbol: str,
+        interval: str,
+        quality_interval: str = "5m"
+    ) -> pd.DataFrame:
+        if df.empty:
+            return df
+
+        if interval != "1m":
+            return df
+
+        try:
+            freq = self._interval_to_pandas_freq(quality_interval)
+            if freq is None:
+                return df
+
+            df_ts = self._ensure_timestamp_column(df)
+            if "timestamp" not in df_ts.columns:
+                return df
+
+            temp = df_ts.set_index("timestamp")
+            temp = self._ensure_utc_index(temp)
+
+            resampled = temp.resample(freq).agg({
+                "open": "first",
+                "high": "max",
+                "low": "min",
+                "close": "last",
+                "volume": "sum"
+            }).dropna()
+
+            if resampled.empty:
+                return df
+
+            resampled["symbol"] = symbol
+            resampled["interval"] = quality_interval
+            resampled["exchange"] = self.exchange
+
+            resampled = self._ensure_timestamp_column(resampled)
+            return resampled
+        except Exception:
+            return df
 
     @staticmethod
     def _to_naive_timestamp(value: Any) -> Optional[pd.Timestamp]:
@@ -1413,48 +1463,78 @@ class EnhancedKlinesProcessingPipeline:
                 current_start = start_date
                 batch_size = 1000
                 batch_num = 1
-                
+
                 # For 1m interval, 1000 candles = ~16.67 hours
                 interval_minutes = 1  # TODO: Parse from interval string
                 batch_duration = timedelta(minutes=batch_size * interval_minutes)
-                
+
+                # Detect whether the underlying exchange exposes a dedicated
+                # historical klines API. When available (e.g. BingX), we
+                # prefer that path so start/end windows are honored instead of
+                # repeatedly fetching just the most recent window.
+                dispatcher = getattr(exchange_interface, "dispatcher", None)
+                underlying_exchange = getattr(dispatcher, "exchange", None) if dispatcher is not None else None
+                has_historical_klines = bool(
+                    underlying_exchange is not None
+                    and hasattr(underlying_exchange, "get_historical_klines")
+                )
+
                 while current_start < end_date:
                     batch_end = min(current_start + batch_duration, end_date)
-                    
+
                     # Log every 50th batch to show progress without spamming
                     if self.enable_logging and (batch_num == 1 or batch_num % 50 == 0):
                         progress_pct = ((current_start - start_date).days / (years * 365)) * 100
-                        tprint_info(f"📦 Batch {batch_num}: {current_start.strftime('%Y-%m-%d %H:%M')} ({progress_pct:.1f}%)")
-                    
-                    try:
-                        batch_data = await exchange_interface.get_klines(
-                            symbol=symbol,
-                            interval=interval,
-                            start_time=current_start,
-                            end_time=batch_end,
-                            limit=batch_size
+                        tprint_info(
+                            f"📦 Batch {batch_num}: {current_start.strftime('%Y-%m-%d %H:%M')} ({progress_pct:.1f}%)"
                         )
-                        
+
+                    try:
+                        if has_historical_klines and hasattr(
+                            exchange_interface, "get_historical_klines"
+                        ):
+                            # Prefer true historical path when available
+                            batch_data = await exchange_interface.get_historical_klines(
+                                symbol=symbol,
+                                interval=interval,
+                                start_time=current_start,
+                                end_time=batch_end,
+                                limit=batch_size,
+                            )
+                        else:
+                            # Fallback to generic recent klines
+                            batch_data = await exchange_interface.get_klines(
+                                symbol=symbol,
+                                interval=interval,
+                                start_time=current_start,
+                                end_time=batch_end,
+                                limit=batch_size,
+                            )
+
                         if batch_data and len(batch_data) > 0:
                             all_batches.append(batch_data)
                             # Log progress every 100 batches
                             if self.enable_logging and batch_num % 100 == 0:
                                 total_candles = sum(len(b) for b in all_batches)
                                 progress_pct = ((current_start - start_date).days / (years * 365)) * 100
-                                tprint_info(f"   📊 Progress: {len(all_batches)} batches, {total_candles:,} candles ({progress_pct:.1f}%)")
+                                tprint_info(
+                                    f"   📊 Progress: {len(all_batches)} batches, {total_candles:,} candles ({progress_pct:.1f}%)"
+                                )
                         else:
                             # No data returned, might have reached the end of available data
                             if self.enable_logging:
-                                tprint_info(f"   ℹ️ No data returned for batch {batch_num}, stopping download")
+                                tprint_info(
+                                    f"   ℹ️ No data returned for batch {batch_num}, stopping download"
+                                )
                             break
-                        
+
                         # Move to next batch
                         current_start = batch_end
                         batch_num += 1
-                        
+
                         # Small delay to respect rate limits (50ms = 20 requests/sec max)
                         await asyncio.sleep(0.05)
-                        
+
                     except Exception as e:
                         if self.enable_logging:
                             tprint_warning(f"⚠️ Batch {batch_num} failed: {e}")
@@ -1654,27 +1734,51 @@ class EnhancedKlinesProcessingPipeline:
             # Extract data based on klines format
             data = []
             for kline in klines_data:
-                if hasattr(kline, 'timestamp'):
-                    # KlineData object - normalize timestamp to UTC naive before storage
+                # New typed format: KlineData objects from ExchangeInterface
+                if hasattr(kline, 'timestamp') and hasattr(kline, 'open_price'):
+                    # Normalize timestamp to UTC naive before storage
                     ts_naive = self._to_utc_naive_timestamp(kline.timestamp)
                     if ts_naive is None:
                         continue
 
                     data.append({
                         'timestamp': ts_naive,
-                        'open': kline.open_price,
-                        'high': kline.high_price,
-                        'low': kline.low_price,
+                        'open': float(getattr(kline, 'open_price', 0.0)),
+                        'high': float(getattr(kline, 'high_price', 0.0)),
+                        'low': float(getattr(kline, 'low_price', 0.0)),
+                        'close': float(getattr(kline, 'close_price', 0.0)),
+                        'volume': float(getattr(kline, 'volume', 0.0)),
+                        'quote_volume': float(getattr(kline, 'quote_asset_volume', 0.0)),
+                        'trades': int(getattr(kline, 'number_of_trades', 0)),
+                        'taker_buy_base': float(getattr(kline, 'taker_buy_base_asset_volume', 0.0)),
+                        'taker_buy_quote': float(getattr(kline, 'taker_buy_quote_asset_volume', 0.0)),
+                    })
+
+                # Legacy format: raw list/tuple klines
+                elif isinstance(kline, (list, tuple)) and len(kline) >= 6:
+                    # Expected layout (Binance-style):
+                    # [open_time, open, high, low, close, volume, close_time, quote_volume,
+                    #  trades, taker_buy_base, taker_buy_quote, ...]
+                    ts_naive = self._to_utc_naive_timestamp(kline[0])
+                    if ts_naive is None:
+                        continue
+
+                    data.append({
+                        'timestamp': ts_naive,
                         'open': float(kline[1]),
                         'high': float(kline[2]),
                         'low': float(kline[3]),
                         'close': float(kline[4]),
                         'volume': float(kline[5]),
-                        'quote_volume': float(kline[6]) if len(kline) > 6 else 0,
+                        'quote_volume': float(kline[6]) if len(kline) > 6 else 0.0,
                         'trades': int(kline[7]) if len(kline) > 7 else 0,
-                        'taker_buy_base': float(kline[8]) if len(kline) > 8 else 0,
-                        'taker_buy_quote': float(kline[9]) if len(kline) > 9 else 0
+                        'taker_buy_base': float(kline[8]) if len(kline) > 8 else 0.0,
+                        'taker_buy_quote': float(kline[9]) if len(kline) > 9 else 0.0,
                     })
+
+                # Unknown format - skip gracefully
+                else:
+                    continue
 
             df = pd.DataFrame(data)
             
@@ -1778,12 +1882,14 @@ class EnhancedKlinesProcessingPipeline:
             if self.enable_logging:
                 tprint_info(f"🔍 Validating data quality for {symbol} {interval} using comprehensive framework")
 
-            df = self._ensure_timestamp_column(df)
+            df_full = self._ensure_timestamp_column(df)
 
             # Check required columns
-            missing_columns = [col for col in self.required_ohlcv_columns if col not in df.columns]
+            missing_columns = [col for col in self.required_ohlcv_columns if col not in df_full.columns]
             if missing_columns:
                 raise RuntimeError(f"Missing required columns: {missing_columns}")
+
+            quality_df = self._build_quality_view(df_full, symbol, interval)
 
             if not QUALITY_UTILITIES_AVAILABLE:
                 # Use basic validation without quality utilities
@@ -1813,7 +1919,7 @@ class EnhancedKlinesProcessingPipeline:
                     data_shape=df.shape
                 )
                 distribution_validation = {}
-                duplicate_analysis = _ANALYZE_DUPLICATES_COMPREHENSIVE(df) if callable(_ANALYZE_DUPLICATES_COMPREHENSIVE) else None
+                duplicate_analysis = _ANALYZE_DUPLICATES_COMPREHENSIVE(quality_df) if callable(_ANALYZE_DUPLICATES_COMPREHENSIVE) else None
             else:
                 # Import quality utilities locally to ensure they're available
                 from src.utils.data.quality.data_quality import QualityThresholds
@@ -1833,23 +1939,23 @@ class EnhancedKlinesProcessingPipeline:
                 )
 
                 # Perform comprehensive data quality validation
-                quality_result = quality_framework.validate_dataframe_quality(df, context="klines_validation")
+                quality_result = quality_framework.validate_dataframe_quality(quality_df, context="klines_validation")
 
                 # Get advanced quality assessment
-                quality_assessment = advanced_metrics.comprehensive_quality_assessment(df, context="klines_validation", step_name="data_validation")
+                quality_assessment = advanced_metrics.comprehensive_quality_assessment(quality_df, context="klines_validation", step_name="data_validation")
 
                 # Get comprehensive quality score
-                score = scorer.assess_data_quality(df, context="klines_validation", step_name="data_validation", data_type="klines")
+                score = scorer.assess_data_quality(quality_df, context="klines_validation", step_name="data_validation", data_type="klines")
 
                 # Perform statistical distribution validation
                 distribution_validation = {}
-                for col in df.select_dtypes(include=[np.number]).columns:
+                for col in quality_df.select_dtypes(include=[np.number]).columns:
                     if col in ['open', 'high', 'low', 'close', 'volume']:
-                        validation_results = statistical_validator.run_comprehensive_validation(df[col].values)
+                        validation_results = statistical_validator.run_comprehensive_validation(quality_df[col].values)
                         distribution_validation[col] = {
                             'results': [{'status': r.status.value, 'message': r.message} for r in validation_results]
                         }
-                duplicate_analysis = _ANALYZE_DUPLICATES_COMPREHENSIVE(df) if callable(_ANALYZE_DUPLICATES_COMPREHENSIVE) else None
+                duplicate_analysis = _ANALYZE_DUPLICATES_COMPREHENSIVE(quality_df) if callable(_ANALYZE_DUPLICATES_COMPREHENSIVE) else None
 
             # Determine quality level based on comprehensive assessment
             if score.overall_score >= 90:
@@ -1872,7 +1978,7 @@ class EnhancedKlinesProcessingPipeline:
                 all_warnings.append(f"Found {getattr(duplicate_analysis, 'total_duplicates', 0)} duplicate records")
 
             result.success = True
-            result.data = df
+            result.data = df_full
             result.metadata = {
                 "comprehensive_score": score.overall_score,
                 "quality_level": score.level.value,
@@ -2101,7 +2207,14 @@ class EnhancedKlinesProcessingPipeline:
         interval: str,
         exchange_interface: ExchangeInterface
     ) -> pd.DataFrame:
-        """Fill gaps by re-downloading data in batches."""
+        """Fill gaps by re-downloading data in batches.
+
+        This implementation is designed to be crash-resilient:
+        - It keeps the in-memory behavior identical (gap detection, stall handling, merging).
+        - Additionally, each successfully filled gap segment is *immediately* written to
+          raw monthly parquet files via KlinesParquetManager.write_data with overwrite=False,
+          so progress is persisted even if the pipeline crashes later in the run.
+        """
         filled_data = self._ensure_utc_index(df)
 
         if self.enable_logging and isinstance(filled_data.index, pd.DatetimeIndex):
@@ -2146,19 +2259,22 @@ class EnhancedKlinesProcessingPipeline:
                     continue
 
                 if self.enable_logging:
-                    tprint_info(f"📥 Re-downloading data for gap {gap_idx+1}/{len(gaps)}: {gap_start_utc} to {gap_end_utc}")
                     tprint_info(
-                        f"   Gap size: {gap.duration_minutes:.0f} minutes ({gap.duration_minutes/60:.1f} hours, {gap.duration_minutes/1440:.1f} days)"
+                        f"📥 Re-downloading data for gap {gap_idx+1}/{len(gaps)}: {gap_start_utc} to {gap_end_utc}"
+                    )
+                    tprint_info(
+                        f"   Gap size: {gap.duration_minutes:.0f} minutes "
+                        f"({gap.duration_minutes/60:.1f} hours, {gap.duration_minutes/1440:.1f} days)"
                     )
 
-                # For large gaps (> 1000 minutes), download in batches
+                # For large gaps (> 1000 minutes), download in batches.
                 # IMPORTANT: We work BACKWARDS from gap_end to gap_start because exchanges
-                # with both start_time and end_time return the LAST limit candles near end_time
+                # with both start_time and end_time return the LAST limit candles near end_time.
                 interval_minutes = self._interval_to_minutes(interval) or 1
                 batch_size = 1000
                 batch_duration = timedelta(minutes=batch_size * interval_minutes)
 
-                gap_batches = []
+                gap_batches: List[Any] = []
                 # Start from the END of the gap and work backwards
                 current_end = gap_end_utc
                 earliest_downloaded = gap_end_utc
@@ -2171,7 +2287,10 @@ class EnhancedKlinesProcessingPipeline:
                     batch_start = max(current_end - batch_duration, gap_start_utc)
 
                     if self.enable_logging and (batch_num == 1 or batch_num % 20 == 0):
-                        tprint_info(f"   Batch {batch_num}: {batch_start.strftime('%Y-%m-%d %H:%M')} → {current_end.strftime('%Y-%m-%d %H:%M')}")
+                        tprint_info(
+                            f"   Batch {batch_num}: {batch_start.strftime('%Y-%m-%d %H:%M')} "
+                            f"→ {current_end.strftime('%Y-%m-%d %H:%M')}"
+                        )
 
                     try:
                         batch_klines = await exchange_interface.get_klines(
@@ -2179,7 +2298,7 @@ class EnhancedKlinesProcessingPipeline:
                             interval=interval,
                             start_time=batch_start,
                             end_time=current_end,
-                            limit=batch_size
+                            limit=batch_size,
                         )
 
                         if batch_klines:
@@ -2194,19 +2313,29 @@ class EnhancedKlinesProcessingPipeline:
                                 actual_latest = max(actual_timestamps)
 
                                 if self.enable_logging and batch_num == 1:
-                                    tprint_info(f"   📊 Batch {batch_num} returned {len(batch_klines)} candles: {actual_earliest.strftime('%Y-%m-%d %H:%M')} → {actual_latest.strftime('%Y-%m-%d %H:%M')}")
+                                    tprint_info(
+                                        f"   📊 Batch {batch_num} returned {len(batch_klines)} candles: "
+                                        f"{actual_earliest.strftime('%Y-%m-%d %H:%M')} → "
+                                        f"{actual_latest.strftime('%Y-%m-%d %H:%M')}"
+                                    )
 
                                 # Check if we're making progress backwards
                                 if actual_earliest >= earliest_downloaded - timedelta(minutes=interval_minutes):
                                     # We're stalled - the API keeps returning similar/overlapping data
                                     stall_count += 1
                                     if self.enable_logging:
-                                        tprint_warning(f"   ⚠️ Batch {batch_num} stalled (earliest: {actual_earliest.strftime('%Y-%m-%d %H:%M')}, previous: {earliest_downloaded.strftime('%Y-%m-%d %H:%M')}), stall count: {stall_count}/{max_stalls}")
+                                        tprint_warning(
+                                            f"   ⚠️ Batch {batch_num} stalled (earliest: "
+                                            f"{actual_earliest.strftime('%Y-%m-%d %H:%M')}, previous: "
+                                            f"{earliest_downloaded.strftime('%Y-%m-%d %H:%M')}), "
+                                            f"stall count: {stall_count}/{max_stalls}"
+                                        )
 
                                     if stall_count >= max_stalls:
                                         if self.enable_logging:
                                             tprint_warning(
-                                                f"   ⚠️ Stall threshold reached. Switching to forward day-sized batching for remaining gap."
+                                                "   ⚠️ Stall threshold reached. Switching to forward "
+                                                "day-sized batching for remaining gap."
                                             )
                                         forward_df = await self._download_gap_forward(
                                             gap_start=gap_start_utc,
@@ -2216,12 +2345,15 @@ class EnhancedKlinesProcessingPipeline:
                                             interval=interval,
                                             interval_minutes=interval_minutes,
                                             batch_size=batch_size,
-                                            exchange_interface=exchange_interface
+                                            exchange_interface=exchange_interface,
                                         )
                                         if forward_df is not None and not forward_df.empty:
                                             gap_batches.extend(self._dataframe_to_klines_list(forward_df))
                                             earliest_downloaded = forward_df.index.min()
-                                            current_end = earliest_downloaded - timedelta(minutes=interval_minutes)
+                                            current_end = (
+                                                earliest_downloaded
+                                                - timedelta(minutes=interval_minutes)
+                                            )
                                             stall_count = 0
                                             continue
                                         break
@@ -2234,7 +2366,10 @@ class EnhancedKlinesProcessingPipeline:
                                     earliest_downloaded = actual_earliest
 
                                     if self.enable_logging and batch_num % 20 == 0:
-                                        tprint_info(f"   ✓ Progress: now at {earliest_downloaded.strftime('%Y-%m-%d %H:%M')}")
+                                        tprint_info(
+                                            f"   ✓ Progress: now at "
+                                            f"{earliest_downloaded.strftime('%Y-%m-%d %H:%M')}"
+                                        )
 
                                     gap_batches.extend(batch_klines)
 
@@ -2242,11 +2377,16 @@ class EnhancedKlinesProcessingPipeline:
                                     current_end = actual_earliest - timedelta(minutes=interval_minutes)
                             else:
                                 if self.enable_logging:
-                                    tprint_warning(f"   ⚠️ Could not extract timestamps from batch {batch_num}")
+                                    tprint_warning(
+                                        f"   ⚠️ Could not extract timestamps from batch {batch_num}"
+                                    )
                                 break
                         else:
                             if self.enable_logging:
-                                tprint_warning(f"   ⚠️ No klines returned for batch {batch_num} ({batch_start} → {current_end}), treating gap as exhausted")
+                                tprint_warning(
+                                    f"   ⚠️ No klines returned for batch {batch_num} "
+                                    f"({batch_start} → {current_end}), treating gap as exhausted"
+                                )
                             break
 
                         batch_num += 1
@@ -2263,7 +2403,9 @@ class EnhancedKlinesProcessingPipeline:
                 # Convert all batches to DataFrame
                 if gap_batches:
                     if self.enable_logging:
-                        tprint_success(f"   ✅ Downloaded {len(gap_batches)} candles in {batch_num-1} batches")
+                        tprint_success(
+                            f"   ✅ Downloaded {len(gap_batches)} candles in {batch_num-1} batches"
+                        )
 
                     gap_df = self._klines_to_dataframe(gap_batches, symbol, interval)
                     if not gap_df.empty:
@@ -2274,18 +2416,46 @@ class EnhancedKlinesProcessingPipeline:
                         standardized_gap_df = self._ensure_utc_index(standardized_gap_df)
                         standardized_gap_df = self._ensure_timestamp_column(standardized_gap_df)
 
-                        # Merge with existing data
+                        # Progressively persist newly filled gap data to raw storage so that
+                        # successfully downloaded candles are not lost if the pipeline crashes
+                        # later in the run. We only write the incremental gap segment and use
+                        # overwrite=False so existing monthly files are merged, not replaced.
+                        try:
+                            storage_df = self._normalize_calendar_columns(standardized_gap_df)
+                            if storage_df is None:
+                                storage_df = standardized_gap_df
+                            self.klines_manager.write_data(
+                                storage_df,
+                                symbol,
+                                interval,
+                                "raw",
+                                overwrite=False,
+                            )
+                        except Exception as e:
+                            if self.enable_logging:
+                                tprint_warning(
+                                    f"⚠️ Failed to persist gap {gap_idx+1} to raw storage: {e}"
+                                )
+
+                        # Merge with existing in-memory data
                         filled_data = pd.concat([filled_data, standardized_gap_df], ignore_index=False)
-                        filled_data = filled_data[~filled_data.index.duplicated(keep='first')]
+                        filled_data = filled_data[~filled_data.index.duplicated(keep="first")]
                         filled_data.sort_index(inplace=True)
 
                         if self.enable_logging:
-                            tprint_success(f"✅ Filled gap with {len(standardized_gap_df)} records (total now: {len(filled_data):,})")
+                            tprint_success(
+                                f"✅ Filled gap with {len(standardized_gap_df)} records "
+                                f"(total now: {len(filled_data):,})"
+                            )
                     elif self.enable_logging:
-                        tprint_warning(f"⚠️ Gap {gap_idx+1} returned no usable candles after standardization")
+                        tprint_warning(
+                            f"⚠️ Gap {gap_idx+1} returned no usable candles after standardization"
+                        )
                 else:
                     if self.enable_logging:
-                        tprint_warning(f"⚠️ Gap {gap_idx+1} produced no candle data; Binance may have no coverage for this period")
+                        tprint_warning(
+                            f"⚠️ Gap {gap_idx+1} produced no candle data; Binance may have no coverage for this period"
+                        )
 
             except Exception as e:
                 if self.enable_logging:
@@ -2293,8 +2463,7 @@ class EnhancedKlinesProcessingPipeline:
 
         return self._ensure_naive_datetime_index(filled_data)
 
-    @staticmethod
-    def _dataframe_to_klines_list(df: pd.DataFrame) -> List[List[Any]]:
+    def _dataframe_to_klines_list(self, df: pd.DataFrame) -> List[List[Any]]:
         """Convert a standardized DataFrame back into raw kline list format for downstream processing."""
         records: List[List[Any]] = []
         for ts, row in df.iterrows():
@@ -2611,16 +2780,18 @@ class EnhancedKlinesProcessingPipeline:
                 tprint_info(f"✅ Running comprehensive final quality check for {symbol} {interval}")
 
             # Ensure timestamp columns for downstream quality utilities
-            df = self._ensure_timestamp_column(df)
+            df_full = self._ensure_timestamp_column(df)
 
             # Check data completeness
-            if df.empty:
+            if df_full.empty:
                 raise RuntimeError("Final data is empty")
 
             # Check required columns
-            missing_columns = [col for col in self.required_ohlcv_columns if col not in df.columns]
+            missing_columns = [col for col in self.required_ohlcv_columns if col not in df_full.columns]
             if missing_columns:
                 raise RuntimeError(f"Missing required columns in final data: {missing_columns}")
+
+            quality_df = self._build_quality_view(df_full, symbol, interval)
 
             quality_alert_system = None
 
@@ -2634,7 +2805,7 @@ class EnhancedKlinesProcessingPipeline:
                     warnings=["Basic validation only"],
                     recommendations=["Install quality utilities for better assessment"],
                     assessment_timestamp=datetime.now(),
-                    data_shape=df.shape
+                    data_shape=quality_df.shape
                 )
                 final_quality_assessment = QualityAssessment(
                     overall_score=50.0,
@@ -2643,7 +2814,7 @@ class EnhancedKlinesProcessingPipeline:
                     warnings_found=1,
                     critical_issues=0,
                     assessment_timestamp=datetime.now(),
-                    data_shape=df.shape
+                    data_shape=quality_df.shape
                 )
                 final_distribution_validation = {}
                 quality_alerts = []
@@ -2655,14 +2826,14 @@ class EnhancedKlinesProcessingPipeline:
                 quality_alert_system = QualityAlertManager()
 
                 # Perform comprehensive final quality assessment
-                final_score = scorer.assess_data_quality(df, context="final_quality_check", step_name="final_validation", data_type="klines")
-                final_quality_assessment = advanced_metrics.comprehensive_quality_assessment(df, context="final_quality_check", step_name="final_validation")
+                final_score = scorer.assess_data_quality(quality_df, context="final_quality_check", step_name="final_validation", data_type="klines")
+                final_quality_assessment = advanced_metrics.comprehensive_quality_assessment(quality_df, context="final_quality_check", step_name="final_validation")
 
                 # Perform statistical validation on final data
                 final_distribution_validation = {}
-                for col in df.select_dtypes(include=[np.number]).columns:
+                for col in quality_df.select_dtypes(include=[np.number]).columns:
                     if col in ['open', 'high', 'low', 'close', 'volume']:
-                        validation_results = statistical_validator.run_comprehensive_validation(df[col].values)
+                        validation_results = statistical_validator.run_comprehensive_validation(quality_df[col].values)
                         final_distribution_validation[col] = {
                             'results': [{'status': r.status.value, 'message': r.message} for r in validation_results]
                         }
@@ -2679,36 +2850,30 @@ class EnhancedKlinesProcessingPipeline:
 
             # Check for data continuity and temporal consistency
             temporal_issues = []
-            if len(df) > 1:
-                time_diffs = df.index.to_series().diff().dropna()
-                expected_interval = self._interval_to_minutes(interval)
+            if len(quality_df) > 1:
+                time_diffs = quality_df.index.to_series().diff().dropna()
+                if interval == "1m":
+                    expected_interval = 5
+                else:
+                    expected_interval = self._interval_to_minutes(interval)
                 if expected_interval:
                     irregular_intervals = (time_diffs != timedelta(minutes=expected_interval)).sum()
                     if irregular_intervals > 0:
                         temporal_issues.append(f"Found {irregular_intervals} irregular intervals")
 
             # Check for null values in final data
-            null_counts = df[self.required_ohlcv_columns].isnull().sum()
+            null_counts = quality_df[self.required_ohlcv_columns].isnull().sum()
             null_issues = []
             if null_counts.sum() > 0:
                 null_issues.append(f"Final data contains null values: {null_counts.to_dict()}")
 
             # Perform final duplicate check
-            duplicate_timestamp_column = 'timestamp_ms' if 'timestamp_ms' in df.columns else 'timestamp'
+            duplicate_timestamp_column = 'timestamp_ms' if 'timestamp_ms' in quality_df.columns else 'timestamp'
             final_duplicate_analysis = (
-                _ANALYZE_DUPLICATES_COMPREHENSIVE(df, timestamp_column=duplicate_timestamp_column)
+                _ANALYZE_DUPLICATES_COMPREHENSIVE(quality_df, timestamp_column=duplicate_timestamp_column)
                 if callable(_ANALYZE_DUPLICATES_COMPREHENSIVE)
                 else None
             )
-
-            # Check quality alerts
-            if quality_alert_system is not None:
-                try:
-                    quality_alerts = quality_alert_system.check_alerts(final_score)
-                except Exception as e:
-                    if self.enable_logging:
-                        tprint_warning(f"⚠️ Quality alert system failed: {e}")
-                    quality_alerts = []
 
             # Determine final quality level based on comprehensive assessment
             if final_score.overall_score >= 95 and not temporal_issues and not null_issues:
@@ -2732,7 +2897,7 @@ class EnhancedKlinesProcessingPipeline:
                 all_warnings.append(f"Final data contains {getattr(final_duplicate_analysis, 'total_duplicates', 0)} duplicate records")
 
             result.success = True
-            result.data = df
+            result.data = df_full
             result.metadata = {
                 "final_comprehensive_score": final_score.overall_score,
                 "final_quality_level": final_score.level.value,
@@ -2750,12 +2915,12 @@ class EnhancedKlinesProcessingPipeline:
                     "false_duplicate_groups": getattr(final_duplicate_analysis, 'false_duplicate_groups', 0),
                     "mixed_duplicate_groups": getattr(final_duplicate_analysis, 'mixed_duplicate_groups', 0)
                 },
-                "final_records": len(df),
-                "final_columns": len(df.columns),
+                "final_records": len(df_full),
+                "final_columns": len(df_full.columns),
                 "null_counts": null_counts.to_dict(),
                 "date_range": {
-                    "start": df.index.min().isoformat(),
-                    "end": df.index.max().isoformat()
+                    "start": df_full.index.min().isoformat(),
+                    "end": df_full.index.max().isoformat()
                 },
                 "quality_alerts": quality_alerts,
                 "assessment_timestamp": final_score.assessment_timestamp.isoformat()
@@ -2806,7 +2971,9 @@ class EnhancedKlinesProcessingPipeline:
             if 'interval' not in df.columns:
                 df['interval'] = interval
 
-            df = self._normalize_calendar_columns(df) or df
+            normalized_df = self._normalize_calendar_columns(df)
+            if normalized_df is not None:
+                df = normalized_df
 
             # Create consolidated batch ID
             consolidated_batch_id = f"{batch_id}_consolidated" if batch_id else "consolidated"
@@ -2878,7 +3045,9 @@ class EnhancedKlinesProcessingPipeline:
             if self.enable_logging:
                 tprint_info(f"💾 Storing original data for {symbol} {interval}")
 
-            storage_df = self._normalize_calendar_columns(df) or df
+            storage_df = self._normalize_calendar_columns(df)
+            if storage_df is None:
+                storage_df = df
 
             # Store data using KlinesParquetManager
             # Use overwrite=False to merge with existing monthly files instead of replacing them
@@ -2909,7 +3078,10 @@ class EnhancedKlinesProcessingPipeline:
                         tprint_info(f"📊 Compression ratio: {compression_stats.get('overall_compression_ratio', 0):.1f}%")
                         tprint_info(f"💾 File size: {compression_stats.get('total_file_size_mb', 0):.2f} MB")
             else:
-                raise RuntimeError("Failed to store data using KlinesParquetManager")
+                error_message = "Failed to store data using KlinesParquetManager"
+                result.errors.append(error_message)
+                if self.enable_logging:
+                    tprint_warning(f"⚠️ {error_message}")
 
         except Exception as e:
             error_msg = f"Data storage failed: {str(e)}"
@@ -2946,24 +3118,24 @@ class EnhancedKlinesProcessingPipeline:
             
             # Handle timezone-aware vs timezone-naive comparison
             if max_time.tzinfo is not None and current_time.tzinfo is None:
-                # If max_time is timezone-aware but current_time is not, make current_time timezone-aware
                 current_time = current_time.replace(tzinfo=max_time.tzinfo)
             elif max_time.tzinfo is None and current_time.tzinfo is not None:
-                # If current_time is timezone-aware but max_time is not, make max_time timezone-aware
                 max_time = max_time.replace(tzinfo=current_time.tzinfo)
             
             data_age_days = (current_time - max_time).days
+            threshold_days = getattr(resampling_config, "resample_older_than_days", 0)
 
-            if data_age_days < resampling_config.resample_older_than_days:
+            # Only skip resampling when a positive threshold is configured
+            if threshold_days and threshold_days > 0 and data_age_days < threshold_days:
                 result.success = True
                 result.metadata = {
                     "resampled_intervals": [],
                     "stored_files": [],
-                    "reason": f"Data is only {data_age_days} days old, resampling threshold is {resampling_config.resample_older_than_days} days"
+                    "reason": f"Data is only {data_age_days} days old, resampling threshold is {threshold_days} days"
                 }
 
                 if self.enable_logging:
-                    tprint_info(f"⏭️ Skipping resampling: data is {data_age_days} days old (threshold: {resampling_config.resample_older_than_days} days)")
+                    tprint_info(f"⏭️ Skipping resampling: data is {data_age_days} days old (threshold: {threshold_days} days)")
 
                 return result
 
@@ -2980,7 +3152,9 @@ class EnhancedKlinesProcessingPipeline:
                     resampled_df = self._perform_resampling(df, target_interval, resampling_config)
 
                     if not resampled_df.empty:
-                        resampled_df = self._normalize_calendar_columns(resampled_df) or resampled_df
+                        normalized_resampled = self._normalize_calendar_columns(resampled_df)
+                        if normalized_resampled is not None:
+                            resampled_df = normalized_resampled
                         # Store resampled data
                         success = self.klines_manager.write_data(
                             resampled_df, symbol, target_interval, "processed", overwrite=True
@@ -3136,6 +3310,11 @@ if __name__ == "__main__":
     parser.add_argument('--no-resampling', action='store_true', help='Disable resampling')
     parser.add_argument('--no-quality-validation', action='store_true', help='Disable quality validation')
     args = parser.parse_args()
+
+    os.environ.setdefault("OMP_NUM_THREADS", "2")
+    os.environ.setdefault("MKL_NUM_THREADS", "2")
+    os.environ.setdefault("OPENBLAS_NUM_THREADS", "2")
+    os.environ.setdefault("NUMEXPR_NUM_THREADS", "2")
     
     # Example usage - simplified interface with exchange, asset, lookback period
     async def main_simple():
@@ -3171,11 +3350,13 @@ if __name__ == "__main__":
             )
             
             # Configure resampling
+            # Use resample_older_than_days=0 to always resample, letting the
+            # age-based skip logic be controlled explicitly by the config.
             resampling_config = ResamplingConfig(
                 target_intervals=['5m', '15m', '30m', '1h'],
                 method='ohlc',
                 preserve_volume=True,
-                resample_older_than_days=1,
+                resample_older_than_days=0,
                 enable_auto_resampling=True
             ) if not args.no_resampling else None
             

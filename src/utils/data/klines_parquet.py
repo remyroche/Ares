@@ -1334,6 +1334,20 @@ class KlinesParquetManager:
                     # Optimize data types
                     combined_df = self.data_processor.optimize_dataframe_dtypes(combined_df)
 
+                    # Ensure partition columns have consistent numeric dtypes before writing
+                    for col in ("year", "month", "day"):
+                        if col in combined_df.columns:
+                            try:
+                                # Coerce to numeric and use a nullable integer dtype to handle any NAs
+                                combined_df[col] = (
+                                    pd.to_numeric(combined_df[col], errors="coerce")
+                                    .astype("Int32")
+                                )
+                            except Exception as e:
+                                self.logger.warning(
+                                    f"⚠️ Could not normalize column '{col}' to Int32 before write: {e}"
+                                )
+
                     # Save file
                     combined_df.to_parquet(filepath, index=True, compression='snappy')
                     self.logger.info(f"💾 Saved {len(combined_df)} records to {filename}")

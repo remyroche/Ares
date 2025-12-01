@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Specialist Feature Diagnostics CLI.
 
-Analyzes specialist model outputs (Risk, HMM Alpha, Liquidity, Breakout/Bounce)
+Analyzes specialist model outputs (Risk, Liquidity, Breakout/Bounce)
 loaded via `get_specialist_models_outputs` against meta-labeling targets
 produced by `FeatureGenerationMetaLabelingStep`.
 
@@ -197,13 +197,39 @@ def _prepare_labels(
             f"available columns: {sorted(labeled_df.columns)}"
         )
 
-    # Normalize timestamp index
-    if "timestamp" in labeled_df.columns:
-        ts = pd.to_datetime(labeled_df["timestamp"], utc=True, errors="coerce")
+    # Normalize timestamp index. Prefer an existing DatetimeIndex on
+    # labeled_df if available; only fall back to timestamp/close_time
+    # columns when the index is not already datetime-like.
+    if isinstance(labeled_df.index, pd.DatetimeIndex):
+        idx = labeled_df.index
+        if idx.tz is not None:
+            try:
+                idx = idx.tz_convert("UTC").tz_localize(None)
+            except Exception:
+                idx = idx.tz_localize(None)
+        labeled_df = labeled_df.copy()
+        labeled_df.index = idx
+    elif "timestamp" in labeled_df.columns:
+        ts_raw = labeled_df["timestamp"]
+
+        # Handle both datetime-like and numeric Unix timestamp columns.
+        # Meta-labeling typically stores exchange timestamps in milliseconds,
+        # so we interpret numeric values as ms since epoch to avoid bogus
+        # 1970-01-01 ranges.
+        if pd.api.types.is_datetime64_any_dtype(ts_raw):
+            ts = pd.to_datetime(ts_raw, utc=True, errors="coerce")
+        else:
+            numeric = pd.to_numeric(ts_raw, errors="coerce")
+            if numeric.notna().any():
+                ts = pd.to_datetime(numeric, unit="ms", utc=True, errors="coerce")
+            else:
+                ts = pd.to_datetime(ts_raw, utc=True, errors="coerce")
+
         try:
             ts = ts.dt.tz_convert("UTC").dt.tz_localize(None)
         except Exception:
             ts = ts.dt.tz_localize(None)
+
         valid_mask = ~ts.isna()
         labeled_df = labeled_df.loc[valid_mask].copy()
         ts = ts[valid_mask]
@@ -216,9 +242,23 @@ def _prepare_labels(
             if pd.api.types.is_datetime64_any_dtype(close_col):
                 ts = pd.to_datetime(close_col, utc=True, errors="coerce")
             else:
-                # Most pipelines store Binance-style epochs in milliseconds.
+                # Infer epoch unit (s, ms, ns) from numeric magnitude to avoid
+                # misinterpreting seconds as milliseconds (which would produce
+                # bogus 1970-era timestamps).
                 close_numeric = pd.to_numeric(close_col, errors="coerce")
-                ts = pd.to_datetime(close_numeric, unit="ms", utc=True, errors="coerce")
+                if close_numeric.notna().any():
+                    q = float(close_numeric.dropna().quantile(0.5))
+                    if q > 1e14:
+                        unit = "ns"
+                    elif q > 1e11:
+                        unit = "ms"
+                    elif q > 1e9:
+                        unit = "s"
+                    else:
+                        unit = "ms"
+                    ts = pd.to_datetime(close_numeric, unit=unit, utc=True, errors="coerce")
+                else:
+                    ts = pd.to_datetime(close_col, utc=True, errors="coerce")
         except Exception:
             ts = pd.to_datetime(close_col, utc=True, errors="coerce")
         try:
@@ -229,15 +269,6 @@ def _prepare_labels(
         labeled_df = labeled_df.loc[valid_mask].copy()
         ts = ts[valid_mask]
         labeled_df.index = ts
-    elif isinstance(labeled_df.index, pd.DatetimeIndex):
-        idx = labeled_df.index
-        if idx.tz is not None:
-            try:
-                idx = idx.tz_convert("UTC").tz_localize(None)
-            except Exception:
-                idx = idx.tz_localize(None)
-        labeled_df = labeled_df.copy()
-        labeled_df.index = idx
     else:
         raise ValueError(
             "labeled_data has neither 'timestamp'/'close_time' column nor DatetimeIndex"
@@ -254,6 +285,19 @@ def _prepare_labels(
             y = y.loc[y.index >= cutoff]
         except Exception as lb_exc:
             logger.warning("Failed to apply lookback_days filter: %s", lb_exc)
+
+    # Debug: inspect target distribution after cleaning/lookback
+    try:
+        vc = y.value_counts(dropna=False).to_dict()
+        logger.info(
+            "🎯 Target '%s' distribution after cleaning/lookback_days=%s: n=%d, counts=%s",
+            target_col,
+            str(lookback_days),
+            len(y),
+            vc,
+        )
+    except Exception as dist_exc:
+        logger.warning("Failed to compute target distribution summary: %s", dist_exc)
 
     if len(y) < 100:
         logger.warning(
@@ -282,6 +326,7 @@ def _load_specialist_features(
     direction: str,
     model: str,
     training_index: pd.DatetimeIndex,
+    enable_risk_hmm_specialist: bool,
 ) -> pd.DataFrame:
     """Load specialist model outputs aligned to training_index.
 
@@ -303,6 +348,14 @@ def _load_specialist_features(
         "timeframe": base_timeframe,
         "regime_timeframe": regime_timeframe,
         "direction": direction,
+        # Mirror training behavior: include the optional HMM risk specialist
+        # only when explicitly enabled so diagnostics can match the exact
+        # specialist feature block used for training.
+        "enable_risk_hmm_specialist": enable_risk_hmm_specialist,
+        # Use the same canonical per-specialist scalar projection as unified
+        # training so diagnostics operate on the identical feature block when
+        # projection_mode="raw".
+        "use_canonical_specialist_scalars": True,
     }
 
     specialist_df = get_specialist_models_outputs(
@@ -324,7 +377,7 @@ def _load_specialist_features(
 
     # Keep only numeric columns; let downstream metrics logic drop degenerate
     # features (all-NaN or zero variance) rather than failing early here.
-    numeric = specialist_df.select_dtypes(include=[np.number]).copy()
+    numeric = specialist_df.select_dtypes(include=[np.number, "bool"]).copy()
     if numeric.shape[1] == 0:
         raise ValueError("No numeric specialist features found in specialist_df")
 
@@ -346,8 +399,35 @@ def _compute_feature_metrics(
     X = X.loc[mask]
     y = y.loc[mask]
 
-    # Fill remaining NaNs in X with 0 (cheap but robust for correlation-based metrics)
-    X = X.fillna(0.0)
+    # Replace infinities and fill remaining NaNs in X for robust correlation-based metrics
+    X = X.replace([np.inf, -np.inf], np.nan).fillna(0.0)
+
+    # Pre-compute numeric target array and detect binary vs continuous target
+    y_arr = y.to_numpy(dtype=float)
+    uniq = np.unique(y_arr[~np.isnan(y_arr)])
+    uniq_rounded = np.unique(np.round(uniq).astype(int)) if uniq.size > 0 else np.array([])
+    is_binary_target = bool(uniq_rounded.size > 0 and set(uniq_rounded).issubset({0, 1}))
+
+    # Debug: log alignment statistics and class distribution actually
+    # entering the MI / R^2 computation.
+    try:
+        logger.info(
+            "📊 Feature metrics alignment: n_samples=%d, n_features=%d, is_binary=%s, classes=%s",
+            len(y),
+            X.shape[1],
+            is_binary_target,
+            uniq_rounded.tolist() if uniq_rounded.size > 0 else [],
+        )
+        if is_binary_target:
+            class_counts = {
+                int(c): int((y_arr == c).sum()) for c in uniq_rounded
+            }
+            logger.info(
+                "📊 Binary target class counts after alignment: %s",
+                class_counts,
+            )
+    except Exception as align_exc:
+        logger.warning("Failed to log feature-metrics alignment statistics: %s", align_exc)
 
     if len(y) < max(cv_folds * 5, 50):
         logger.warning(
@@ -356,26 +436,76 @@ def _compute_feature_metrics(
             cv_folds,
         )
 
-    # Use FinalFeatureSelectionComponent utilities for MI proxy and stability
+    # Use FinalFeatureSelectionComponent utilities for MI proxy and stability by default
     config = FinalFeatureSelectionConfig()
     component = FinalFeatureSelectionComponent(config=config)
 
-    # Event-aware correlation-based MI proxy on full data
-    mi_full = component._event_aware_feature_scores(X, y).fillna(0.0)
+    if is_binary_target:
+        # Binary-aware MI proxy: use absolute Pearson correlation as a cheap MI proxy
+        mi_full_series = {}
+        for col in X.columns:
+            x_full = X[col].to_numpy(dtype=float)
+            try:
+                c_full = float(np.corrcoef(x_full, y_arr)[0, 1])
+            except Exception:
+                c_full = float("nan")
+            mi_full_series[col] = abs(c_full) if np.isfinite(c_full) else 0.0
+        mi_full = pd.Series(mi_full_series, index=X.columns)
 
-    # MI stability across TimeSeriesSplit folds
-    mi_stab = component.calculate_mi_stability(
-        X=X,
-        y=y,
-        selected_features=list(X.columns),
-        cv_folds=cv_folds,
-    )
+        # MI stability across TimeSeriesSplit folds using the same correlation proxy
+        mi_mean: Dict[str, float] = {}
+        mi_cv: Dict[str, float] = {}
+        tscv = TimeSeriesSplit(n_splits=cv_folds)
 
-    mi_mean: Dict[str, float] = mi_stab.get("mi_mean", {}) if isinstance(mi_stab, dict) else {}
-    mi_cv: Dict[str, float] = mi_stab.get("mi_cv", {}) if isinstance(mi_stab, dict) else {}
+        for col in X.columns:
+            fold_scores: list[float] = []
+            for train_idx, _ in tscv.split(X):
+                y_tr = y_arr[train_idx]
+                x_tr = X.iloc[train_idx][col].to_numpy(dtype=float)
+
+                # Clean NaNs in y
+                mask_tr = ~np.isnan(y_tr)
+                if not np.any(mask_tr):
+                    continue
+                y_tr_clean = y_tr[mask_tr]
+                x_tr_clean = x_tr[mask_tr]
+
+                # Require both classes and some variation in the feature
+                if len(np.unique(y_tr_clean)) < 2 or np.all(x_tr_clean == x_tr_clean[0]):
+                    continue
+
+                try:
+                    c_fold = float(np.corrcoef(x_tr_clean, y_tr_clean)[0, 1])
+                except Exception:
+                    continue
+
+                if np.isfinite(c_fold):
+                    fold_scores.append(abs(c_fold))
+
+            if fold_scores:
+                m = float(np.mean(fold_scores))
+                s = float(np.std(fold_scores))
+                mi_mean[col] = m
+                mi_cv[col] = float(s / max(abs(m), 1e-12))
+            else:
+                mi_mean[col] = 0.0
+                mi_cv[col] = float("inf")
+    else:
+        # Continuous/real-valued target: use event-aware MI proxy and stability utilities
+        mi_full = component._event_aware_feature_scores(X, y).fillna(0.0)
+
+        mi_stab = component.calculate_mi_stability(
+            X=X,
+            y=y,
+            selected_features=list(X.columns),
+            cv_folds=cv_folds,
+        )
+
+        mi_mean: Dict[str, float] = mi_stab.get("mi_mean", {}) if isinstance(mi_stab, dict) else {}
+        mi_cv: Dict[str, float] = mi_stab.get("mi_cv", {}) if isinstance(mi_stab, dict) else {}
 
     # Simple Pearson correlation and R^2 per feature
-    y_arr = y.to_numpy(dtype=float)
+    # (uses the same cleaned y_arr computed above)
     metrics: Dict[str, Dict[str, float]] = {}
 
     for col in X.columns:
@@ -409,7 +539,9 @@ def _compute_feature_metrics(
 
 def _infer_model_group(feature_name: str) -> str:
     name = feature_name.lower()
-    if name.startswith("risk_regime") or name.startswith("risk_pred") or "risk_regime" in name:
+    if name.startswith("path_risk") or "path_risk" in name:
+        return "path_risk"
+    if name.startswith("risk_regime") or name.startswith("risk_pred") or name.startswith("risk_") or "risk_regime" in name:
         return "risk"
     if name.startswith("smc_"):
         return "smc"
@@ -419,11 +551,125 @@ def _infer_model_group(feature_name: str) -> str:
         return "alpha"
     if name.startswith("liquidity_regime") or "liquidity" in name:
         return "liquidity"
-    if name.startswith("breakout_") or name in {"is_resistance", "is_support"}:
+    if name.startswith("breakout_") or name in {"is_resistance", "is_support", "resistance_scalar", "support_scalar"}:
         return "breakout_bounce"
     if name.startswith("mr_") or "mean_reversion" in name:
         return "mean_reversion"
     return "other"
+
+
+def _select_specialist_scalars(X: pd.DataFrame) -> pd.DataFrame:
+    """Collapse raw specialist outputs to canonical scalar features for diagnostics.
+
+    This function is diagnostics-only: it does not modify artifacts, only the
+    feature matrix used by specialist_feature_diagnostics. The goals are:
+
+    - Risk:    single scalar risk_score in [0, 1]
+    - Liquidity: keep regime probabilities as-is
+    - Breakout: two support scalars, two resistance scalars
+    - Path/macro: single scalar per path/macro specialist if available
+    - SMC:     single scalar smc_predicted
+    - MR:      single scalar mean-reversion score from XGB (mr_probability/raw)
+    """
+
+    X = X.copy()
+    cols = list(X.columns)
+
+    # ------------------------------------------------------------------
+    # Risk: prefer explicit risk_score, otherwise derive from risk_regime
+    # ------------------------------------------------------------------
+    if "risk_score" not in cols and "risk_regime" in cols:
+        rr = X["risk_regime"].astype(float)
+        max_rr = float(np.nanmax(rr)) if rr.notna().any() else 0.0
+        if np.isfinite(max_rr) and max_rr > 0.0:
+            X["risk_score"] = rr / max_rr
+        else:
+            X["risk_score"] = 0.0
+        cols = list(X.columns)
+
+    risk_cols = [c for c in cols if c.startswith("risk_")]
+    if "risk_score" in X.columns:
+        risk_keep = {"risk_score"}
+        risk_drop = [c for c in risk_cols if c not in risk_keep]
+        X = X.drop(columns=risk_drop, errors="ignore")
+        cols = list(X.columns)
+
+    # ------------------------------------------------------------------
+    # Breakout/Bounce: keep 2 support + 2 resistance scalars
+    # ------------------------------------------------------------------
+    breakout_keep = set()
+    for c in (
+        "resistance_scalar",
+        "breakout_scalar_resistance",
+        "support_scalar",
+        "breakout_scalar_support",
+        "breakout_success_prob",
+        "breakout_high_conf_signal",
+    ):
+        if c in X.columns:
+            breakout_keep.add(c)
+
+    breakout_cols = [
+        c
+        for c in cols
+        if c.startswith("breakout_") or c in {"is_resistance", "is_support"}
+    ]
+    breakout_drop = [c for c in breakout_cols if c not in breakout_keep]
+    if breakout_drop:
+        X = X.drop(columns=breakout_drop, errors="ignore")
+        cols = list(X.columns)
+
+    # ------------------------------------------------------------------
+    # Path: prefer dedicated risk-style scalar if present
+    # ------------------------------------------------------------------
+    path_cols = [c for c in cols if c.startswith("path_")]
+    path_scalar_col: Optional[str] = None
+    if "path_risk_score" in X.columns:
+        path_scalar_col = "path_risk_score"
+    elif "path_regime" in X.columns:
+        pr = X["path_regime"].astype(float)
+        max_pr = float(np.nanmax(pr)) if pr.notna().any() else 0.0
+        if np.isfinite(max_pr) and max_pr > 0.0:
+            X["path_risk_score"] = pr / max_pr
+        else:
+            X["path_risk_score"] = 0.0
+        path_scalar_col = "path_risk_score"
+
+    if path_scalar_col is not None:
+        path_keep = {path_scalar_col}
+        path_drop = [c for c in path_cols if c not in path_keep]
+        X = X.drop(columns=path_drop, errors="ignore")
+        cols = list(X.columns)
+
+    # SMC: keep a single scalar (smc_predicted) and drop auxiliary columns
+    smc_cols = [c for c in cols if c.startswith("smc_")]
+    smc_keep = set()
+    if "smc_predicted" in X.columns:
+        smc_keep.add("smc_predicted")
+
+    smc_drop = [c for c in smc_cols if c not in smc_keep]
+    if smc_drop:
+        X = X.drop(columns=smc_drop, errors="ignore")
+        cols = list(X.columns)
+
+    # ------------------------------------------------------------------
+    # Mean reversion: keep a single XGB score, preferring dense
+    # probabilities when available.
+    # ------------------------------------------------------------------
+    mr_cols = [c for c in cols if c.startswith("mr_")]
+    mr_keep: set[str] = set()
+    if "mr_probability_dense" in X.columns:
+        mr_keep.add("mr_probability_dense")
+    elif "mr_probability" in X.columns:
+        mr_keep.add("mr_probability")
+    elif "mr_raw_score" in X.columns:
+        mr_keep.add("mr_raw_score")
+
+    mr_drop = [c for c in mr_cols if c not in mr_keep]
+    if mr_drop:
+        X = X.drop(columns=mr_drop, errors="ignore")
+
+    return X
 
 
 def _compute_model_reliability(
@@ -504,6 +750,73 @@ def _compute_model_reliability(
         "ranked_by_mi": [g for g, _ in ranked_by_mi],
         "ranked_by_r2": [g for g, _ in ranked_by_r2],
     }
+
+
+def _compute_model_coverage(
+    X: pd.DataFrame,
+    y: pd.Series,
+) -> Dict[str, Any]:
+    """Compute data coverage (date range and sample count) per specialist group.
+
+    Coverage is defined over the intersection of the specialist feature index
+    and the target index. For each specialist group (alpha, macro_alpha,
+    liquidity, breakout_bounce, risk, smc, mean_reversion), we report:
+
+    - n_samples: number of target samples where at least one feature in that
+      group is non-null
+    - start / end: first and last timestamps (on the target index) where the
+      group has any non-null coverage
+    """
+    coverage: Dict[str, Dict[str, Any]] = {}
+
+    if not isinstance(X.index, pd.DatetimeIndex):
+        return coverage
+
+    common_index = X.index.intersection(y.index)
+    if len(common_index) == 0:
+        return coverage
+
+    Xc = X.loc[common_index]
+    yc = y.loc[common_index]
+
+    # Initialize groups based on features actually present
+    for feat in Xc.columns:
+        group = _infer_model_group(feat)
+        if group == "other":
+            continue
+        coverage.setdefault(
+            group,
+            {
+                "n_samples": 0,
+                "start": None,
+                "end": None,
+                "fraction_of_target": 0.0,
+            },
+        )
+
+    if not coverage:
+        return coverage
+
+    total = int(len(yc)) if len(yc) > 0 else 0
+
+    for group, info in coverage.items():
+        group_cols = [c for c in Xc.columns if _infer_model_group(c) == group]
+        if not group_cols:
+            continue
+        mask = (~Xc[group_cols].isna()).any(axis=1)
+        if not mask.any():
+            continue
+        idx = yc.index[mask]
+        if len(idx) == 0:
+            continue
+
+        n_samples = int(mask.sum())
+        info["n_samples"] = n_samples
+        info["start"] = idx.min()
+        info["end"] = idx.max()
+        info["fraction_of_target"] = float(n_samples / total) if total > 0 else 0.0
+
+    return coverage
 
 
 def _compute_model_pairwise_relationships(
@@ -962,6 +1275,8 @@ def run_diagnostics(
     target_col: str,
     cv_folds: int,
     lookback_days: Optional[float] = None,
+    enable_risk_hmm_specialist: bool = True,
+    projection_mode: str = "canonical_scalars",
 ) -> Tuple[Path, Path]:
     """Run full specialist feature diagnostics and export reports."""
     # 1) Load labels
@@ -976,7 +1291,7 @@ def run_diagnostics(
     )
 
     # 2) Load specialist features aligned to the same index
-    X = _load_specialist_features(
+    X_raw = _load_specialist_features(
         symbol=symbol,
         exchange=exchange,
         base_timeframe=timeframe,
@@ -984,7 +1299,16 @@ def run_diagnostics(
         direction=direction,
         model=model,
         training_index=training_index,
+        enable_risk_hmm_specialist=enable_risk_hmm_specialist,
     )
+
+    # Optionally collapse raw specialist outputs to canonical scalars. When
+    # projection_mode == "raw", use the specialist block exactly as training
+    # sees it (same get_specialist_models_outputs output).
+    if projection_mode == "canonical_scalars":
+        X = _select_specialist_scalars(X_raw)
+    else:
+        X = X_raw
 
     # 3) Compute per-feature metrics
     feature_metrics = _compute_feature_metrics(X=X, y=y, cv_folds=cv_folds)
@@ -993,6 +1317,7 @@ def run_diagnostics(
         raise ValueError("No feature metrics computed; check inputs and artifacts")
 
     model_reliability = _compute_model_reliability(feature_metrics=feature_metrics)
+    model_coverage = _compute_model_coverage(X=X, y=y)
     model_relationships = _compute_model_pairwise_relationships(X=X, feature_metrics=feature_metrics)
 
     # 4) Probe models (LogReg / LGBM), leakage, stability, interactions
@@ -1102,6 +1427,40 @@ def run_diagnostics(
             )
     else:
         md_lines.append("- Per-model reliability metrics unavailable")
+
+    md_lines.extend(
+        [
+            "",
+            "### Per-specialist data coverage",
+        ]
+    )
+
+    coverage_info = model_coverage if isinstance(model_coverage, dict) else {}
+    if coverage_info:
+        total_target = int(len(y))
+        for group_name in sorted(coverage_info.keys()):
+            info = coverage_info.get(group_name, {})
+            n_samples = int(info.get("n_samples", 0) or 0)
+            frac = float(info.get("fraction_of_target", 0.0) or 0.0)
+            start = info.get("start")
+            end = info.get("end")
+
+            if start is not None and end is not None:
+                md_lines.append(
+                    "- "
+                    + f"{group_name}: n={n_samples} "
+                    + f"({frac:.1%} of target samples), "
+                    + f"range={start} → {end}"
+                )
+            else:
+                md_lines.append(
+                    "- "
+                    + f"{group_name}: n={n_samples} "
+                    + f"({frac:.1%} of target samples), "
+                    + "coverage range unavailable"
+                )
+    else:
+        md_lines.append("- Per-specialist coverage unavailable")
 
     md_lines.extend(
         [
@@ -1235,6 +1594,7 @@ def run_diagnostics(
         "interactions": interactions,
         "model_reliability": model_reliability,
         "model_pairwise": model_relationships,
+        "model_coverage": model_coverage,
     }
 
     return _export_report(
@@ -1271,6 +1631,29 @@ def main() -> None:
             "specialist outputs (default: full history)."
         ),
     )
+    ap.add_argument(
+        "--projection-mode",
+        type=str,
+        choices=["canonical_scalars", "raw"],
+        default="canonical_scalars",
+        help=(
+            "How to project specialist outputs before diagnostics. "
+            "'canonical_scalars' (default) collapses each specialist to a "
+            "single scalar; 'raw' uses the full specialist feature block "
+            "exactly as training sees it from get_specialist_models_outputs."
+        ),
+    )
+    ap.add_argument(
+        "--disable-hmm-risk-specialist",
+        dest="enable_hmm_risk_specialist",
+        action="store_false",
+        help=(
+            "When set, disable the optional HMM risk specialist block "
+            "(enable_risk_hmm_specialist=False in get_specialist_models_outputs). "
+            "By default this is enabled so diagnostics and training include "
+            "the HMM risk specialist."
+        ),
+    )
 
     args = ap.parse_args()
 
@@ -1286,6 +1669,8 @@ def main() -> None:
         target_col=args.target_col,
         cv_folds=args.cv_folds,
         lookback_days=args.lookback_days,
+        enable_risk_hmm_specialist=args.enable_hmm_risk_specialist,
+        projection_mode=args.projection_mode,
     )
 
     print(

@@ -1,707 +1,707 @@
 {
   "advanced_cumulative_returns_10": [
-    115
+    2
   ],
   "advanced_cumulative_returns_20": [
-    100
+    2
   ],
   "advanced_momentum_10_30": [
-    100
+    35
   ],
   "advanced_momentum_5_20": [
-    115
+    35
   ],
   "adx_14_returns_vwap": [
-    150
+    45
   ],
   "amihud_illiquidity_20_price_returns": [
-    150
+    2
   ],
   "apo_12_26_returns_vwap": [
-    150
+    2
   ],
   "aroon_25_returns_vwap": [
-    100
+    45
   ],
   "cci_20_returns_vwap": [
-    150
+    90
   ],
   "cumulative_returns_10_price_returns": [
-    150
+    175
   ],
   "cumulative_returns_20_price_returns": [
-    90
+    150
   ],
   "dema_21_price_returns": [
-    115
+    12
   ],
   "ema_12_returns_vwap": [
-    100
+    175
   ],
   "ema_26_returns_vwap": [
-    90
+    2
   ],
   "ema_50_returns_vwap": [
-    90
+    2
   ],
   "fibonacci_0.236_10_price_returns": [
     150
   ],
   "fibonacci_0.236_20_price_returns": [
-    150
+    30
   ],
   "fibonacci_0.236_5_price_returns": [
-    150
+    30
   ],
   "fibonacci_0.382_10_price_returns": [
-    150
+    2
   ],
   "fibonacci_0.382_20_price_returns": [
-    150
+    2
   ],
   "fibonacci_0.382_5_price_returns": [
-    150
+    80
   ],
   "fibonacci_0.5_10_price_returns": [
-    150
+    175
   ],
   "fibonacci_0.5_20_price_returns": [
-    130
+    2
   ],
   "fibonacci_0.5_5_price_returns": [
-    150
+    70
   ],
   "fibonacci_0.618_10_price_returns": [
-    150
+    200
   ],
   "fibonacci_0.618_20_price_returns": [
-    150
+    200
   ],
   "fibonacci_0.618_5_price_returns": [
-    150
+    200
   ],
   "fibonacci_0.786_10_price_returns": [
-    150
+    115
   ],
   "fibonacci_0.786_20_price_returns": [
-    150
+    200
   ],
   "fibonacci_0.786_5_price_returns": [
-    150
+    115
   ],
   "kama_30_2_30_returns_vwap": [
-    90
+    2
   ],
   "kst_10_15_20_30_10_10_10_15_returns_vwap": [
-    90
+    2
   ],
   "log_returns_10_price_returns": [
-    90
+    130
   ],
   "log_returns_1_price_returns": [
     150
   ],
   "log_returns_5_price_returns": [
-    150
+    175
   ],
   "macd_12_26_9_returns_vwap": [
-    150
+    2
   ],
   "mama_21_0.05_price_returns": [
-    100
+    2
   ],
   "momentum_14_price_returns": [
-    80
+    2
   ],
   "momentum_21_price_returns": [
-    150
+    2
   ],
   "momentum_30_price_returns": [
-    150
+    2
   ],
   "momentum_endpoints_sma_20": [
-    115
+    30
   ],
   "momentum_features": [
-    100
+    35
   ],
   "pfe_12_returns_vwap": [
-    150
+    30
   ],
   "pivot_point_5_price_returns": [
-    130
+    40
   ],
   "resistance_level_1_10_price_returns": [
-    150
+    20
   ],
   "resistance_level_1_5_price_returns": [
-    150
+    20
   ],
   "resistance_level_2_20_price_returns": [
-    150
+    20
   ],
   "returns_kurtosis_20_price_returns": [
-    150
+    200
   ],
   "returns_skewness_20_price_returns": [
-    115
+    200
   ],
   "returns_volatility_20_price_returns": [
-    150
+    200
   ],
   "roc_14_price_returns": [
-    150
+    115
   ],
   "roc_21_price_returns": [
-    150
+    70
   ],
   "roc_30_price_returns": [
-    150
+    200
   ],
   "rolling_returns_10_price_returns": [
     150
   ],
   "rolling_returns_20_price_returns": [
-    90
+    30
   ],
   "rolling_zscore_returns_20": [
-    150
+    12
   ],
   "rsi_14_returns_vwap": [
-    150
+    115
   ],
   "rsi_21_returns_vwap": [
-    150
+    115
   ],
   "rsi_30_returns_vwap": [
-    115
+    100
   ],
   "rsi_zscore_14_20": [
-    150
+    20
   ],
   "sharpe_ratio_20_0.0_price_returns": [
-    150
+    200
   ],
   "simple_returns_10_price_returns": [
-    150
+    175
   ],
   "simple_returns_1_price_returns": [
-    130
+    150
   ],
   "simple_returns_5_price_returns": [
-    10
+    200
   ],
   "sma_100_returns_vwap": [
-    80
+    2
   ],
   "sma_10_returns_vwap": [
-    100
+    175
   ],
   "sma_20_returns_vwap": [
-    100
+    2
   ],
   "sma_50_returns_vwap": [
-    80
+    2
   ],
   "sma_5_returns_vwap": [
-    100
+    175
   ],
   "stochastic_14_3_price_returns": [
-    150
-  ],
-  "stochastic_21_3_price_returns": [
-    150
-  ],
-  "stochastic_30_3_price_returns": [
-    150
-  ],
-  "stochastic_kd_14_3": [
-    100
-  ],
-  "support_level_1_5_price_returns": [
-    150
-  ],
-  "support_level_2_20_price_returns": [
-    150
-  ],
-  "support_level_3_10_price_returns": [
-    150
-  ],
-  "t3_14_0.7_returns_vwap": [
-    100
-  ],
-  "tema_21_price_returns": [
     115
   ],
-  "ultimate_oscillator_7_14_28_returns_vwap": [
-    80
+  "stochastic_30_3_price_returns": [
+    115
   ],
-  "vectorbt_acceleration_10_price_returns": [
+  "stochastic_kd_14_3": [
+    200
+  ],
+  "support_level_1_10_price_returns": [
+    30
+  ],
+  "support_level_2_20_price_returns": [
+    115
+  ],
+  "support_level_2_5_price_returns": [
     35
   ],
+  "t3_14_0.7_returns_vwap": [
+    2
+  ],
+  "tema_21_price_returns": [
+    2
+  ],
+  "ultimate_oscillator_7_14_28_returns_vwap": [
+    2
+  ],
+  "vectorbt_acceleration_10_price_returns": [
+    200
+  ],
   "vectorbt_acceleration_5_price_returns": [
-    150
+    200
   ],
   "vectorbt_acceleration_consistency_10_10_price_returns": [
-    27
+    150
   ],
   "vectorbt_acceleration_consistency_10_20_price_returns": [
-    150
+    200
   ],
   "vectorbt_acceleration_consistency_5_10_price_returns": [
-    100
+    3
   ],
   "vectorbt_acceleration_consistency_5_20_price_returns": [
-    22
+    150
   ],
   "vectorbt_acceleration_divergence_20_price_returns": [
-    150
+    200
   ],
   "vectorbt_acceleration_momentum_10_10_price_returns": [
-    130
+    200
   ],
   "vectorbt_acceleration_momentum_10_20_price_returns": [
-    150
+    175
   ],
   "vectorbt_acceleration_momentum_5_10_price_returns": [
-    150
+    13
   ],
   "vectorbt_acceleration_momentum_5_20_price_returns": [
-    80
+    200
   ],
   "vectorbt_acceleration_regime_5_10_price_returns": [
-    15
+    80
   ],
   "vectorbt_acceleration_regime_5_20_price_returns": [
-    150
+    90
   ],
   "vectorbt_acceleration_trend_strength_10_10_price_returns": [
-    150
+    200
   ],
   "vectorbt_acceleration_trend_strength_10_20_price_returns": [
-    150
+    115
   ],
   "vectorbt_acceleration_trend_strength_5_10_price_returns": [
-    130
+    115
   ],
   "vectorbt_acceleration_trend_strength_5_20_price_returns": [
-    40
+    200
   ],
   "vectorbt_acceleration_volatility_10_10_price_returns": [
-    150
+    200
   ],
   "vectorbt_acceleration_volatility_10_20_price_returns": [
-    130
+    150
   ],
   "vectorbt_acceleration_volatility_5_10_price_returns": [
-    100
+    150
   ],
   "vectorbt_acceleration_volatility_5_20_price_returns": [
     150
   ],
   "vectorbt_jerk_10_price_returns": [
-    30
+    200
   ],
   "vectorbt_jerk_5_price_returns": [
-    150
+    175
   ],
   "vectorbt_momentum_50_price_returns": [
-    45
+    200
   ],
   "vectorbt_momentum_5_price_returns": [
-    150
+    200
   ],
   "vectorbt_momentum_acceleration_10_10_price_returns": [
-    150
+    10
   ],
   "vectorbt_momentum_acceleration_10_20_price_returns": [
-    90
+    2
   ],
   "vectorbt_momentum_acceleration_5_10_price_returns": [
-    150
+    10
   ],
   "vectorbt_momentum_acceleration_5_20_price_returns": [
-    60
+    10
   ],
   "vectorbt_momentum_comprehensive_14": [
-    100
+    70
   ],
   "vectorbt_momentum_comprehensive_21": [
-    100
+    175
   ],
   "vectorbt_momentum_comprehensive_30": [
-    100
+    175
   ],
   "vectorbt_momentum_comprehensive_9": [
-    100
+    150
   ],
   "vectorbt_trend_consistency_10_price_returns": [
-    150
+    25
   ],
   "vectorbt_trend_consistency_20_price_returns": [
-    150
+    25
   ],
   "vectorbt_trend_consistency_50_price_returns": [
-    150
+    2
   ],
   "vectorbt_trend_consistency_5_price_returns": [
-    150
+    22
   ],
   "vectorbt_trend_strength_10_price_returns": [
-    150
+    200
   ],
   "vectorbt_trend_strength_20_price_returns": [
-    150
+    200
   ],
   "vectorbt_trend_strength_50_price_returns": [
-    150
+    35
   ],
   "vectorbt_trend_strength_5_price_returns": [
     150
   ],
   "vectorbt_volatility_acceleration_5_20_price_returns": [
-    70
+    5
   ],
   "vectorbt_volume_acceleration_5_volume_returns": [
     150
   ],
   "volume_entropy_10_volume_returns": [
-    150
+    200
   ],
   "volume_entropy_20_volume_returns": [
-    150
+    100
   ],
   "volume_entropy_5_volume_returns": [
-    150
+    200
   ],
   "volume_entropy_ma_10_10_volume_returns": [
-    150
+    200
   ],
   "volume_entropy_ma_10_5_volume_returns": [
-    150
+    200
   ],
   "volume_entropy_ma_20_10_volume_returns": [
-    150
+    200
   ],
   "volume_entropy_ma_20_5_volume_returns": [
-    150
+    200
   ],
   "volume_entropy_ma_5_10_volume_returns": [
-    150
+    200
   ],
   "volume_entropy_ma_5_5_volume_returns": [
-    150
+    200
   ],
   "volume_momentum_10": [
-    150
+    40
   ],
   "volume_momentum_20": [
-    150
+    2
   ],
   "volume_momentum_5": [
-    150
+    200
   ],
   "volume_roc_1": [
-    150
+    200
   ],
   "volume_roc_10": [
-    150
+    200
   ],
   "volume_roc_20": [
-    150
+    175
   ],
   "volume_roc_5": [
-    150
+    200
   ],
   "vwma_20_price_returns": [
+    175
+  ],
+  "williams_r_21_price_returns": [
     90
   ],
   "wma_20_price_returns": [
-    100
+    175
   ],
   "analyst_volume_trend": [
-    150
-  ],
-  "macd_delta_12_26_9": [
-    150
-  ],
-  "macd_entropy_20_12_26": [
-    150
-  ],
-  "max_drawdown": [
-    150
-  ],
-  "order_flow_imbalance_20": [
-    100
-  ],
-  "price_volume_oscillator_10_20": [
-    150
-  ],
-  "price_volume_oscillator_5_15": [
-    150
-  ],
-  "trend_score_14": [
-    100
-  ],
-  "vectorbt_adx_14": [
-    40
-  ],
-  "vectorbt_adx_21": [
-    45
-  ],
-  "vectorbt_adx_9": [
-    35
-  ],
-  "vectorbt_ema_100": [
-    150
-  ],
-  "vectorbt_ema_5": [
-    150
-  ],
-  "vectorbt_garman_klass_volatility_10": [
-    150
-  ],
-  "vectorbt_garman_klass_volatility_14": [
-    150
-  ],
-  "vectorbt_garman_klass_volatility_20": [
-    150
-  ],
-  "vectorbt_garman_klass_volatility_30": [
-    150
-  ],
-  "vectorbt_garman_klass_volatility_50": [
-    150
-  ],
-  "vectorbt_trend_comprehensive_100": [
-    150
-  ],
-  "vectorbt_trend_comprehensive_50": [
-    150
-  ],
-  "volume_ema_10": [
-    150
-  ],
-  "volume_ema_20": [
-    150
-  ],
-  "volume_ema_5": [
-    150
-  ],
-  "volume_ema_50": [
-    150
-  ],
-  "volume_price_correlation_10": [
-    45
-  ],
-  "volume_price_correlation_20": [
-    150
-  ],
-  "volume_price_divergence_10": [
-    150
-  ],
-  "volume_price_divergence_20": [
-    150
-  ],
-  "volume_price_trend": [
-    150
-  ],
-  "volume_trend_strength_10_30": [
-    150
-  ],
-  "volume_trend_strength_20_50": [
     2
   ],
+  "macd_delta_12_26_9": [
+    2
+  ],
+  "macd_entropy_20_12_26": [
+    200
+  ],
+  "max_drawdown": [
+    80
+  ],
+  "order_flow_imbalance_20": [
+    2
+  ],
+  "price_volume_oscillator_10_20": [
+    200
+  ],
+  "price_volume_oscillator_5_15": [
+    200
+  ],
+  "trend_score_14": [
+    2
+  ],
+  "vectorbt_adx_14": [
+    115
+  ],
+  "vectorbt_adx_21": [
+    100
+  ],
+  "vectorbt_adx_9": [
+    200
+  ],
+  "vectorbt_ema_100": [
+    2
+  ],
+  "vectorbt_ema_5": [
+    2
+  ],
+  "vectorbt_garman_klass_volatility_10": [
+    25
+  ],
+  "vectorbt_garman_klass_volatility_14": [
+    25
+  ],
+  "vectorbt_garman_klass_volatility_20": [
+    25
+  ],
+  "vectorbt_garman_klass_volatility_30": [
+    2
+  ],
+  "vectorbt_garman_klass_volatility_50": [
+    2
+  ],
+  "vectorbt_trend_comprehensive_100": [
+    2
+  ],
+  "vectorbt_trend_comprehensive_50": [
+    2
+  ],
+  "volume_ema_10": [
+    20
+  ],
+  "volume_ema_20": [
+    27
+  ],
+  "volume_ema_5": [
+    30
+  ],
+  "volume_ema_50": [
+    100
+  ],
+  "volume_price_correlation_10": [
+    90
+  ],
+  "volume_price_correlation_20": [
+    90
+  ],
+  "volume_price_divergence_10": [
+    200
+  ],
+  "volume_price_divergence_20": [
+    2
+  ],
+  "volume_price_trend": [
+    200
+  ],
+  "volume_trend_strength_10_30": [
+    80
+  ],
+  "volume_trend_strength_20_50": [
+    80
+  ],
   "analyst_volume_pressure": [
-    130
+    200
   ],
   "band_limited_volatility": [
-    150
+    27
   ],
   "enhanced_volatility_10": [
-    150
+    200
   ],
   "enhanced_volatility_100": [
-    150
+    8
   ],
   "enhanced_volatility_14": [
-    150
+    130
   ],
   "enhanced_volatility_20": [
-    150
+    35
   ],
   "enhanced_volatility_30": [
-    150
+    130
   ],
   "enhanced_volatility_50": [
-    150
+    200
   ],
   "vectorbt_atr_10": [
-    150
+    130
   ],
   "vectorbt_atr_14": [
-    150
+    10
   ],
   "vectorbt_atr_20": [
-    150
+    10
   ],
   "vectorbt_atr_30": [
-    150
+    22
   ],
   "vectorbt_atr_50": [
-    150
+    200
   ],
-  "vectorbt_bbands_10_2.5": [
-    100
+  "vectorbt_bbands_10_2.0": [
+    200
   ],
   "vectorbt_bbands_14_1.5": [
-    100
+    175
   ],
-  "vectorbt_bbands_20_1.5": [
-    100
+  "vectorbt_bbands_20_2.0": [
+    175
   ],
   "vectorbt_parkinson_volatility_10": [
-    150
+    27
   ],
   "vectorbt_parkinson_volatility_14": [
-    150
+    15
   ],
   "vectorbt_parkinson_volatility_20": [
-    150
+    25
   ],
   "vectorbt_parkinson_volatility_30": [
-    150
+    27
   ],
   "vectorbt_parkinson_volatility_50": [
-    150
+    2
   ],
   "vectorbt_rogers_satchell_volatility_10": [
-    150
+    25
   ],
   "vectorbt_rogers_satchell_volatility_14": [
-    150
+    25
   ],
   "vectorbt_rogers_satchell_volatility_20": [
-    150
+    25
   ],
   "vectorbt_rogers_satchell_volatility_30": [
-    150
+    30
   ],
   "vectorbt_rogers_satchell_volatility_50": [
-    150
+    2
   ],
   "vectorbt_volatility_comprehensive_10": [
-    150
+    200
   ],
   "vectorbt_volatility_comprehensive_14": [
-    150
+    200
   ],
   "vectorbt_volatility_comprehensive_20": [
-    150
+    200
   ],
   "vectorbt_volatility_comprehensive_30": [
-    150
+    200
   ],
   "vectorbt_volatility_comprehensive_50": [
-    150
+    200
   ],
   "vectorbt_volume_weighted_ad_line_10": [
-    150
+    25
   ],
   "vectorbt_volume_weighted_ad_line_20": [
-    150
+    25
   ],
   "vectorbt_volume_weighted_ad_line_50": [
-    150
+    2
   ],
   "volatility_expansion_10_3": [
-    150
+    17
   ],
   "volatility_expansion_10_5": [
-    150
+    200
   ],
   "volatility_expansion_10_7": [
-    150
+    200
   ],
   "volatility_expansion_14_3": [
-    150
+    130
   ],
   "volatility_expansion_14_5": [
-    150
+    200
   ],
   "volatility_expansion_14_7": [
-    150
+    200
   ],
   "volatility_expansion_20_3": [
-    150
+    200
   ],
   "volatility_expansion_20_5": [
-    150
+    200
   ],
   "volatility_expansion_20_7": [
-    150
+    200
   ],
   "volume_oscillator_10_20": [
-    150
+    115
   ],
   "volume_oscillator_5_15": [
-    150
+    200
   ],
   "volume_percentile_100": [
-    150
+    115
   ],
   "volume_percentile_20": [
-    150
+    200
   ],
   "volume_percentile_50": [
-    150
+    115
   ],
   "volume_ratio_10": [
-    150
+    200
   ],
   "volume_ratio_20": [
-    150
+    175
   ],
   "volume_ratio_50": [
     150
   ],
   "volume_std_10": [
-    150
+    30
   ],
   "volume_std_20": [
-    150
+    45
   ],
   "volume_std_50": [
     150
   ],
   "volume_volatility_elasticity_20": [
-    150
-  ],
-  "volume_vwap_10": [
-    115
-  ],
-  "volume_vwap_20": [
     100
   ],
+  "volume_vwap_10": [
+    175
+  ],
+  "volume_vwap_20": [
+    2
+  ],
   "volume_vwap_50": [
-    90
+    3
   ],
   "volume_zscore_60_252": [
     30
   ],
   "vectorbt_enhanced_obv_10": [
-    150
+    175
   ],
   "vectorbt_enhanced_obv_20": [
-    150
+    200
   ],
   "vectorbt_enhanced_obv_50": [
-    150
+    90
   ],
   "vectorbt_smoothed_obv_20": [
-    150
+    5
   ],
   "vwap_deviations_20": [
-    100
+    35
   ]
 }

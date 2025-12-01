@@ -2264,7 +2264,8 @@ class RegimeVolatilityFeatureGenerator(VectorizedFeatureGenerator):
             parameters={
                 "regime_windows": [12, 30, 80],  # 3h, 7.5h, 20h in 15m periods
                 "persistence_windows": [8, 20, 64],  # 2h, 5h, 16h
-                "vol_of_vol_windows": [16, 40, 72],  # 4h, 10h, 18h
+                # Volatility-of-volatility now includes short 5–10 bar horizons as well
+                "vol_of_vol_windows": [5, 7, 10, 16, 40, 72],  # 5-10 bars plus 4h, 10h, 18h
                 "transition_windows": [4, 12, 32]  # 1h, 3h, 8h
             },
             matrix_optimized=True,

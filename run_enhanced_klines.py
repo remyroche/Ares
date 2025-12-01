@@ -24,24 +24,24 @@ async def main():
         
         print("🚀 Starting Enhanced Klines Processing Pipeline for ETHUSDT, 1 year, BingX")
         
-        # Configure pipeline
+        # Configure pipeline (lightweight: no gap filling, no heavy quality validation)
         pipeline_config = PipelineConfig(
             data_dir="historical_data",
             exchange="bingx",
             enable_logging=True,
-            enable_gap_filling=True,
+            enable_gap_filling=False,
             enable_resampling=True,
             enable_duplicate_handling=True,
-            enable_quality_validation=True,
+            enable_quality_validation=False,
             batch_compatible=True
         )
         
-        # Configure resampling
+        # Configure resampling: always resample regardless of recency
         resampling_config = ResamplingConfig(
             target_intervals=['5m', '15m', '30m', '1h'],
             method='ohlc',
             preserve_volume=True,
-            resample_older_than_days=1,
+            resample_older_than_days=0,
             enable_auto_resampling=True
         )
         

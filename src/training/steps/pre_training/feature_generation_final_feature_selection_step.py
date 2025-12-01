@@ -20,7 +20,16 @@ import re
 import pandas as pd
 import numpy as np
 
-from src.utils.tprint import tprint
+from src.utils.tprint import (
+    tprint,
+    tprint_info,
+    tprint_success,
+    tprint_warning,
+    tprint_error,
+    configure_tprint,
+    TPrintConfig,
+    LogLevel,
+)
 
 # Fix NumPy compatibility for older libraries
 if not hasattr(np, 'bool'):
@@ -457,6 +466,24 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             except Exception as e:
                 tprint_error(f"❌ Failed to load from versioned store: {e}")
                 data_source = "fallback_to_generic_artifact_after_error"
+
+            # FINAL FALLBACK: if versioned stores did not provide labeled_data,
+            # fall back to the generic 'labeled_data' artifact. This preserves
+            # the old working path for targets while the large feature matrix
+            # still comes from generated_features_15m, avoiding the 300-row
+            # bottleneck.
+            if labeled_df is None:
+                try:
+                    tprint_warning("⚠️ Versioned stores yielded no labeled_data; falling back to generic 'labeled_data' artifact")
+                    generic_labeled = self._get_artifact('labeled_data')
+                    if generic_labeled is not None and hasattr(generic_labeled, 'shape'):
+                        labeled_df = generic_labeled
+                        data_source = f"generic_artifact:labeled_data"
+                        tprint_success(f"✅ Fallback: loaded labeled_data via generic artifact: {labeled_df.shape}")
+                    else:
+                        tprint_warning("⚠️ Generic 'labeled_data' artifact missing or invalid; labeled_df remains None")
+                except Exception as generic_exc:
+                    tprint_warning(f"⚠️ Fallback generic labeled_data load failed: {generic_exc}")
             
             # REMOVED: Generic artifact fallback (was causing 300-row bottleneck)
             # The generic artifact contains pre-filtered small datasets
@@ -563,472 +590,228 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             tprint_info("⏱️ [3/10] Combining features...")
             combined_features_df = self._combine_features(features_data, labeled_df)
             tprint_info(f"✅ Combined {combined_features_df.shape} in {time.time()-t0:.2f}s")
-            
-            # Blank-mode specific shaping: compress extremes and normalize key feature blocks
+
+            # In blank mode, restrict to a contiguous recent window (default 365 days)
+            execution_mode_local = str(config.get('execution_mode', 'blank')).lower()
+            model_name_local = str(config.get('model', '') or config.get('model_name', '')).lower()
+            is_blank_mode = execution_mode_local == 'blank' or model_name_local == 'blank'
+            if is_blank_mode:
+                try:
+                    if isinstance(combined_features_df.index, pd.DatetimeIndex) and not combined_features_df.empty:
+                        target_days = int(config.get('blank_window_days', 365))
+                        end_ts = combined_features_df.index.max()
+                        start_ts = end_ts - pd.Timedelta(days=target_days)
+                        pre_rows = len(combined_features_df)
+                        combined_features_df = combined_features_df.loc[combined_features_df.index >= start_ts].copy()
+                        tprint_info(
+                            f"📅 [BLANK] Truncated feature window to last {target_days} days: "
+                            f"{pre_rows} → {len(combined_features_df)} rows "
+                        )
+                except Exception as e:
+                    tprint_warning(
+                        f"⚠️ [BLANK] Failed to truncate feature window based on blank_window_days: {e}; "
+                        "continuing without temporal truncation"
+                    )
+
             combined_features_df = self._apply_blank_mode_shaping(combined_features_df, config)
+
+            # Sanitize leakage and near-constant features before final selection
+            combined_features_df = self._sanitize_features_for_final_selection(combined_features_df, config)
             
-            # CRITICAL DEBUGGING: Check if we got the full dataset
-            tprint_error(f"🔍 CRITICAL CHECK: Combined features dataset size")
-            tprint_error(f"   Shape: {combined_features_df.shape}")
-            tprint_error(f"   Time range: {combined_features_df.index.min()} to {combined_features_df.index.max()}")
-            tprint_error(f"   Expected: ~16,000 rows (full dataset)")
-            tprint_error(f"   Actual: {len(combined_features_df)} rows")
-            
-            if len(combined_features_df) < 10000:
-                tprint_error(f"❌ STILL GETTING SMALL DATASET! Need to investigate further.")
-                tprint_error(f"   This means the _combine_features fix didn't work as expected.")
-            else:
-                tprint_success(f"✅ SUCCESS: Got large dataset as expected!")
+            # Log final combined feature matrix characteristics for all execution modes
+            execution_mode_local = str(config.get('execution_mode', 'blank')).lower()
+            tprint_info("📊 Combined features dataset after shaping/sanitization:")
+            tprint_info(f"   Execution mode: {execution_mode_local}")
+            tprint_info(f"   Shape: {combined_features_df.shape}")
+            if isinstance(combined_features_df.index, pd.DatetimeIndex) and not combined_features_df.empty:
+                tprint_info(
+                    f"   Time range: {combined_features_df.index.min()} "
+                    f"to {combined_features_df.index.max()}"
+                )
 
             if combined_features_df.empty:
                 raise ValueError("No features available for final selection")
 
             # Setup selection configuration
-            t0 = time.time()
-            tprint_info("⏱️ [4/10] Setting up selection config...")
             selection_config = self._setup_selection_config(config)
-            tprint_info(f"✅ Setup in {time.time()-t0:.2f}s")
 
-            # Initialize optimization components
-            t0 = time.time()
-            tprint_info("⏱️ [5/10] Initializing optimization components...")
-            await self._initialize_optimization_components(config)
-            await self._initialize_hardware_optimization_components(config)
-            tprint_info(f"✅ Initialized in {time.time()-t0:.2f}s")
+            if self.selection_component is None:
+                self.selection_component = FinalFeatureSelectionComponent(selection_config)
 
-            # Initialize selection component
-            t0 = time.time()
-            tprint_info("⏱️ [6/10] Initializing selection component...")
-            self.selection_component = FinalFeatureSelectionComponent(selection_config)
-            tprint_info(f"✅ Initialized in {time.time()-t0:.2f}s")
-
-            # Perform feature selection for different set sizes
-            t0 = time.time()
-            tprint_info("⏱️ [7/10] Performing multi-size selection...")
-            feature_sets = self._perform_multi_size_selection(combined_features_df, targets, config)
-            tprint_info(f"✅ Selection completed in {time.time()-t0:.2f}s")
-
-            # Perform enhanced analysis on the largest feature set
-            if feature_sets:
-                t0 = time.time()
-                tprint_info("⏱️ [8/10] Performing enhanced analysis...")
-                largest_set_key = max([k for k in feature_sets.keys() if k.startswith('selected_features_')], 
-                                     key=lambda x: int(x.split('_')[-1]))
-                largest_features = feature_sets[largest_set_key]
-                
-                # Separate features from targets for analysis
-                feature_cols = [
-                    col for col in combined_features_df.columns
-                    if col not in META_LABEL_EXCLUDED_FEATURE_COLUMNS + ['timestamp']
-                ]
-                X = combined_features_df[feature_cols]
-                y = combined_features_df[targets.name] if hasattr(targets, 'name') else combined_features_df.iloc[:, -1]
-                
-                # Perform comprehensive analysis
-                enhanced_analysis = self._perform_enhanced_analysis(X, y, largest_features)
-
-                # Add explicit meta-label diagnostics (IC/AUC vs binary_label and realized_return)
-                try:
-                    meta_diag = self._compute_meta_label_feature_diagnostics(
-                        combined_features_df, largest_features
-                    )
-                    enhanced_analysis['meta_label_diagnostics'] = meta_diag
-                except Exception as diag_exc:
-                    tprint_warning(f"⚠️ Meta-label diagnostics failed: {diag_exc}")
-                
-                # Store analysis results in feature_sets for report generation
-                feature_sets['enhanced_analysis'] = enhanced_analysis
-                tprint_info(f"✅ Enhanced analysis completed in {time.time()-t0:.2f}s")
-
-            # Generate SHAP values for interpretability
-            t0 = time.time()
-            tprint_info("⏱️ [9/10] Generating SHAP values...")
-            shap_values = self._generate_shap_values(feature_sets, combined_features_df, targets, config)
-            tprint_info(f"✅ SHAP values generated in {time.time()-t0:.2f}s")
-
-            # Run baseline predictive check if enabled
-            baseline_check_results = None
-            baseline_check_enabled = config.get('run_baseline_check', True)  # Default: enabled
-            if baseline_check_enabled:
-                t0 = time.time()
-                tprint_info("🔍 Running baseline predictive check on selected features...")
-                try:
-                    # Run check on the largest feature set (60 features)
-                    largest_set_name = None
-                    for name in ['selected_feature_dataframe_60', 'selected_feature_dataframe_50', 'selected_feature_dataframe_40']:
-                        if name in feature_sets:
-                            largest_set_name = name
-                            break
-
-                    if largest_set_name and isinstance(feature_sets[largest_set_name], pd.DataFrame):
-                        baseline_check_results = self._run_baseline_predictive_check(
-                            feature_sets[largest_set_name],
-                            targets,
-                            config
-                        )
-                        if baseline_check_results and baseline_check_results.get('success', False):
-                            tprint_success(f"✅ Baseline predictive check completed in {time.time()-t0:.2f}s")
-                            # Add to feature_sets so it's included in the report
-                            feature_sets['baseline_check'] = baseline_check_results
-                        else:
-                            tprint_warning(f"⚠️ Baseline predictive check failed or returned no results")
-                    else:
-                        tprint_warning(f"⚠️ No suitable feature set found for baseline check")
-                except Exception as e:
-                    tprint_warning(f"⚠️ Baseline predictive check failed: {e}")
-                    logger.warning(f"Baseline predictive check failed: {e}")
-            else:
-                tprint_info(f"ℹ️ Baseline predictive check disabled (run_baseline_check=False)")
-
-            # Generate artifacts
-            t0 = time.time()
-            tprint_info("⏱️ [10/10] Generating and saving artifacts...")
-            artifacts = self._generate_artifacts(feature_sets, shap_values, config, combined_features_df)
-
-            # Create comprehensive outcome report
-            outcome_report = self._create_outcome_report(feature_sets, shap_values, config, baseline_check_results)
-
-            # Save artifacts
-            saved_artifacts = []
-            for artifact_name, artifact_data in artifacts.items():
-                # Determine if this should go to versioned artifacts (HDF5)
-                is_feature_artifact = (
-                    artifact_name.startswith('selected_features_') or 
-                    artifact_name.startswith('selected_feature_dataframe_')
-                )
-                
-                # For feature artifacts, use data_category='features' to trigger HDF5 storage
-                # The artifact name will be clean (e.g., "selected_feature_dataframe_60")
-                # and the versioned artifacts system will add timestamp and context
-                data_category = 'features' if is_feature_artifact else None
-                
-                artifact_path = self._save_artifact(
-                    artifact_data,
-                    artifact_name,
-                    artifact_type="data",
-                    data_category=data_category
-                )
-                saved_artifacts.append({
-                    'name': artifact_name,
-                    'path': artifact_path,
-                    'type': 'data',
-                    'versioned': is_feature_artifact
-                })
-
-            # Save outcome report (pickle format)
-            report_path = self._save_artifact(
-                outcome_report,
-                "final_feature_selection_outcome_report",
-                artifact_type="report"
+            feature_sets = self._perform_multi_size_selection(
+                combined_features_df,
+                targets,
+                config,
             )
-            
-            # Generate and save markdown report
-            markdown_report = self._generate_markdown_report(outcome_report, feature_sets, shap_values, config)
-            markdown_path = self._save_markdown_report(markdown_report, "final_feature_selection_outcome_report")
-            tprint_info(f"✅ Artifacts saved in {time.time()-t0:.2f}s")
 
-            # Calculate metrics
-            tprint_info("📊 Calculating final metrics...")
+            shap_values = self._generate_shap_values(
+                feature_sets,
+                combined_features_df,
+                targets,
+                config,
+            )
+
+            baseline_check_results = None
+            try:
+                largest_key = max(
+                    [k for k in feature_sets.keys() if k.startswith('selected_feature_dataframe_')],
+                    default=None,
+                    key=lambda name: int(str(name).split('_')[-1]) if str(name).split('_')[-1].isdigit() else 0,
+                )
+                if largest_key is not None:
+                    largest_df = feature_sets[largest_key]
+                    if isinstance(largest_df, pd.DataFrame) and not largest_df.empty:
+                        baseline_check_results = self._run_baseline_predictive_check(
+                            largest_df,
+                            largest_df,
+                            config,
+                        )
+                        if isinstance(baseline_check_results, dict):
+                            feature_sets['baseline_check'] = baseline_check_results
+            except Exception as e:
+                tprint_warning(f"⚠️ Baseline predictive check skipped due to error: {e}")
+
+            artifacts = self._generate_artifacts(
+                feature_sets,
+                shap_values,
+                config,
+                combined_features_df,
+            )
+
+            saved_artifacts: List[Dict[str, Any]] = []
+            for artifact_name, artifact_data in artifacts.items():
+                if isinstance(artifact_data, pd.DataFrame) and artifact_name.startswith('selected_feature_dataframe_'):
+                    try:
+                        artifact_path = self._save_artifact(
+                            data=artifact_data,
+                            artifact_name=artifact_name,
+                            artifact_type='data',
+                            data_category='features',
+                        )
+                        saved_artifacts.append(
+                            {
+                                'name': artifact_name,
+                                'path': artifact_path,
+                                'type': 'data',
+                            }
+                        )
+                    except Exception as e:
+                        tprint_warning(f"⚠️ Failed to save artifact '{artifact_name}': {e}")
+
+            if saved_artifacts:
+                artifacts['saved_feature_dataframes'] = saved_artifacts
+
             metrics = self._calculate_metrics(feature_sets, shap_values, config)
-            
-            # Add optimization performance metrics
-            optimization_metrics = self._get_optimization_metrics()
-            metrics.update(optimization_metrics)
+            try:
+                optimization_metrics = self._get_optimization_metrics()
+                if isinstance(optimization_metrics, dict):
+                    metrics['optimization'] = optimization_metrics
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to collect optimization metrics: {e}")
 
-            total_time = time.time() - step_start
-            tprint_info(f"🎉 Step completed successfully in {total_time:.2f}s")
-            
-            execution_result = {
-                'success': True,
-                'artifacts': saved_artifacts,
-                'metrics': metrics,
-                'feature_sets': {k: len(v) for k, v in feature_sets.items()},
-                'shap_summary': self._summarize_shap_values(shap_values),
-                'outcome_report_path': report_path,
-                'markdown_report_path': markdown_path,
-                'execution_time': total_time,
-                'optimization_enabled': self.optimization_enabled,
-                'vectorization_stats': self._get_vectorization_stats()
-            }
-
-            tprint_success(f"✅ {self.step_name} completed successfully")
-            tprint_info(f"📊 Created feature sets: {metrics.get('total_features_selected', 0)} total features across {len(feature_sets)} sets")
-            tprint_info("✅ Using permutation importance - captures feature interactions for better predictions")
-            tprint_info("📊 Permutation importance is more reliable than Gini for complex trading strategies")
-
-            return execution_result
-
-        except Exception as e:
-            error_msg = f"Final feature selection step failed: {str(e)}"
-            tprint_error(error_msg)
+            outcome_report = self._create_outcome_report(
+                feature_sets,
+                shap_values,
+                config,
+                baseline_check_results=baseline_check_results if isinstance(baseline_check_results, dict) else None,
+            )
+            markdown_report = self._generate_markdown_report(
+                outcome_report,
+                feature_sets,
+                shap_values,
+                config,
+            )
+            report_path = self._save_markdown_report(
+                markdown_report,
+                base_name='feature_generation_final_feature_selection',
+            )
 
             return {
-                'success': False,
-                'error': error_msg,
-                'artifacts': [],
-                'metrics': {},
-                'execution_time': 0.0
+                'success': True,
+                'artifacts': artifacts,
+                'metrics': metrics,
+                'feature_sets': feature_sets,
+                'shap_values': shap_values,
+                'outcome_report_path': report_path,
+                'execution_time': 0.0,
             }
 
-    def _collect_features_from_previous_steps(self) -> Dict[str, Any]:
-        """Collect features from previous steps in the pipeline.
-        
-        CRITICAL FIX: Load the correct features:
-        1. Load generated_features (from feature_generation_step) - base features
-        2. Load analyst_interaction_features (from interaction_generation_step) - interaction features
-        3. Merge them together for comprehensive feature selection
-        
-        DO NOT load:
-        - feature_dataframe (generic, may be small 300 rows)
-        - lookback_optimization (may be small)
-        - selected_feature_dataframe_* (cached, we want fresh selection)
-        """
-        features_data = {}
-
-        tprint_info("🔍 Loading features for feature selection...")
-        tprint_info("🔍 FORCING fresh feature generation load (skipping cached selected_feature_dataframe_*)")
-        tprint_info("🔍 This ensures we always perform new feature selection with all available features")
-        
-        # DISABLED PRIORITY 1: Skip loading previously selected features
-        # This was causing the step to use buggy cached artifacts with only 2 columns
-        # We ALWAYS want to perform fresh feature selection from the full generated features
-        selected_loaded = False
-        tprint_info("⚠️ Skipping cached selected_feature_dataframe_* artifacts to force fresh selection")
-        
-        # PRIORITY 2: Load fresh generated features (ALWAYS)
-        if not selected_loaded:
-            tprint_info("🔍 No selected features found, loading generated features...")
-            try:
-                generated_features = None
-                for artifact_name in ['generated_features_15m', 'generated_features', 'generated_features_1h', 'generated_features_long']:
-                    try:
-                        generated_features = self._get_artifact(artifact_name)
-                        if generated_features is not None:
-                            # CRITICAL: Verify this is the large dataset (180 days, 16K+ rows)
-                            if hasattr(generated_features, 'shape') and len(generated_features) >= 10000:
-                                features_data['generated_features'] = generated_features
-                                tprint_success(f"✅ Retrieved LARGE generated features ({artifact_name}): {generated_features.shape}")
-                                tprint_success(f"✅ Time range: {generated_features.index.min()} to {generated_features.index.max()}")
-                                time_span = (generated_features.index.max() - generated_features.index.min()).days
-                                tprint_success(f"✅ Time span: {time_span} days (~{len(generated_features)} rows)")
-                                break
-                            else:
-                                tprint_warning(f"⚠️ Skipping {artifact_name} - too small ({len(generated_features) if hasattr(generated_features, 'shape') else 'N/A'} rows)")
-                    except Exception as e:
-                        tprint_warning(f"⚠️ Could not load {artifact_name}: {e}")
-                        continue
-                
-                if generated_features is None:
-                    tprint_error("❌ CRITICAL: Could not get large generated features from any artifact name!")
-                    tprint_error("❌ This will cause the feature selection to fail!")
-            except Exception as e:
-                tprint_error(f"❌ CRITICAL: Could not get main generated features: {e}")
-
-        # PRIORITY 3: Load interaction features from interaction generation step
-        tprint_info("🔍 Loading interaction features from interaction generation step...")
-        tprint_info("🔍 Trying multiple artifact names for interaction features...")
-        
-        interaction_artifact_names = [
-            'analyst_interaction_features',
-            'interaction_features',
-            'analyst_interactions',
-            'generated_interaction_features'
-        ]
-        
-        interaction_loaded = False
-        for artifact_name in interaction_artifact_names:
-            try:
-                tprint_info(f"🔍 Trying artifact name: {artifact_name}")
-                interaction_features = self._get_artifact(artifact_name)
-                if interaction_features is not None and hasattr(interaction_features, 'shape'):
-                    features_data['analyst_interactions'] = interaction_features
-                    tprint_success(f"✅ Retrieved interaction features from '{artifact_name}': {interaction_features.shape}")
-                    tprint_success(f"✅ Time range: {interaction_features.index.min()} to {interaction_features.index.max()}")
-                    time_span = (interaction_features.index.max() - interaction_features.index.min()).days
-                    tprint_success(f"✅ Time span: {time_span} days (~{len(interaction_features)} rows)")
-                    
-                    # Show sample of interaction feature names
-                    interaction_cols = [col for col in interaction_features.columns if 'interaction' in col.lower() or 'x_' in col.lower()]
-                    tprint_success(f"✅ Found {len(interaction_cols)} interaction columns")
-                    if interaction_cols:
-                        tprint_success(f"✅ Sample interaction features: {interaction_cols[:5]}")
-                    
-                    tprint_success(f"✅ Interaction features will be merged with generated features for selection")
-                    interaction_loaded = True
-                    break
-                else:
-                    tprint_info(f"   Artifact '{artifact_name}' not found or empty")
-            except Exception as e:
-                tprint_info(f"   Could not load '{artifact_name}': {e}")
-        
-        if not interaction_loaded:
-            error_msg = (
-                "❌ CRITICAL: No interaction features found from any artifact name. "
-                "Tried: " + ", ".join(interaction_artifact_names) + ". "
-                "The interaction generation step must run successfully and emit 'analyst_interaction_features' (or an accepted alias) before final selection."
-            )
-            tprint_error(error_msg)
-            raise ValueError(error_msg)
-
-        # FINAL VALIDATION
-        if 'generated_features' in features_data:
-            tprint_success(f"✅ FINAL: Using generated features: {features_data['generated_features'].shape}")
-            tprint_success(f"✅ This ensures we use the full 180-day dataset for feature selection")
-        else:
-            tprint_error("❌ CRITICAL: No large features found! Feature selection will fail!")
-        
-        if 'analyst_interactions' in features_data:
-            tprint_success(f"✅ FINAL: Using interaction features: {features_data['analyst_interactions'].shape}")
-            tprint_success(f"✅ Total feature sources: {len(features_data)}")
-        else:
-            tprint_warning("⚠️ No interaction features loaded - using only generated features")
-
-        return features_data
-
-    async def _initialize_optimization_components(self, config: Dict[str, Any]) -> None:
-        """Initialize VectorBT optimization components."""
-        try:
-            tprint_info("🚀 Initializing VectorBT optimization components...")
-            
-            # Initialize unified vectorization manager
-            vectorization_config = VectorizationConfig(
-                enable_vectorbt=True,
-                enable_gpu=config.get('enable_gpu', False),
-                enable_parallel=config.get('enable_parallel', True),
-                memory_efficient=config.get('memory_efficient', True),
-                max_memory_gb=config.get('max_memory_gb', 8.0),
-                chunk_size=config.get('chunk_size', 1000),
-                enable_monitoring=config.get('enable_monitoring', True),
-                batch_size=config.get('batch_size', 10000),
-                enable_batch_processing=True,
-                rolling_optimization_threshold=config.get('rolling_optimization_threshold', 1000),
-                enable_rolling_optimization=True
-            )
-            
-            self.vectorization_manager = get_unified_vectorization_manager(vectorization_config)
-            tprint_success("✅ Unified vectorization manager initialized")
-            
-            # Initialize VectorBT rolling optimizer
-            self.rolling_optimizer = get_vectorbt_rolling_optimizer(
-                enable_gpu=config.get('enable_gpu', False),
-                enable_parallel=config.get('enable_parallel', True),
-                memory_efficient=config.get('memory_efficient', True),
-                chunk_size=config.get('chunk_size', 1000),
-                fast_fail=config.get('fast_fail', True),
-                enable_logging=config.get('enable_logging', True)
-            )
-            tprint_success("✅ VectorBT rolling optimizer initialized")
-            
         except Exception as e:
-            tprint_warning(f"⚠️ Failed to initialize optimization components: {e}")
-            self.optimization_enabled = False
-            tprint_warning("⚠️ Continuing without VectorBT optimizations")
-
-    async def _initialize_hardware_optimization_components(self, config: Dict[str, Any]) -> None:
-        """Initialize hardware optimization components."""
-        try:
-            tprint_info("🚀 Initializing hardware optimization components...")
-            
-            # Initialize unified hardware manager
-            hardware_config = HardwareConfig(
-                cpu_optimization_level=OptimizationLevel.BALANCED,
-                gpu_optimization_level=OptimizationLevel.BALANCED,
-                memory_optimization_level=OptimizationLevel.BALANCED,
-                enable_adaptive_optimization=True,
-                enable_learning=True,
-                auto_tuning_enabled=True,
-                performance_monitoring_enabled=True,
-                memory_limit_gb=config.get('memory_limit_gb', 8.0),
-                enable_memory_pooling=True,
-                enable_predictive_allocation=True,
-                enable_compression=True
-            )
-            
-            self.hardware_manager = UnifiedHardwareManager(hardware_config)
-            init_result = self.hardware_manager.initialize()
-            if init_result:
-                tprint_success("✅ Unified hardware manager initialized")
-            else:
-                tprint_warning("⚠️ Unified hardware manager initialization failed")
-            
-            # Initialize adaptive optimization engine
-            self.adaptive_engine = AdaptiveOptimizationEngine(
-                database_path="optimization_performance.db"
-            )
-            # Initialize hardware managers for the adaptive engine
-            self.adaptive_engine.initialize_hardware_managers()
-            tprint_success("✅ Adaptive optimization engine initialized")
-            
-            # Initialize CPU optimizer with warning suppression
-            with warnings.catch_warnings():
-                warnings.filterwarnings("ignore", message=".*CoreAffinityManager.*")
-                warnings.filterwarnings("ignore", message=".*core affinity.*")
-                self.cpu_optimizer = AdvancedM1CPUOptimizer()
-                # Add custom workload profile for feature engineering
-                feature_engineering_profile = WorkloadProfile(
-                    name='feature_engineering',
-                    cpu_intensity=0.7,
-                    memory_intensity=0.8,
-                    thermal_sensitivity=0.4,
-                    power_sensitivity=0.5,
-                    preferred_cores=CoreType.PERFORMANCE,
-                    max_threads=6
-                )
-                self.cpu_optimizer.add_workload_profile(feature_engineering_profile)
-                # Optimize for feature engineering workload
-                self.cpu_optimizer.optimize_for_workload_profile('feature_engineering')
-            tprint_success("✅ Advanced CPU optimizer initialized")
-            
-            # Initialize GPU manager
-            self.gpu_manager = EnhancedM1GPUManager()
-            # EnhancedM1GPUManager doesn't have an initialize method
-            tprint_success("✅ Enhanced GPU manager initialized")
-            
-            # Initialize memory optimizer
-            self.memory_optimizer = AdvancedM1MemoryOptimizer(
-                memory_limit_gb=config.get('memory_limit_gb', 8.0),
-                strategy=MemoryStrategy.ADAPTIVE
-            )
-            # AdvancedM1MemoryOptimizer doesn't have an initialize method
-            tprint_success("✅ Advanced memory optimizer initialized")
-            
-            tprint_success("✅ All hardware optimization components initialized")
-            
-        except Exception as e:
-            tprint_warning(f"⚠️ Failed to initialize hardware optimization components: {e}")
-            self.hardware_optimization_enabled = False
-            tprint_warning("⚠️ Continuing without hardware optimizations")
+            tprint_error(f"❌ Error executing {self.step_name}: {e}")
+            self.logger.exception("Failed to execute final feature selection step")
+            return {
+                "success": False,
+                "error": str(e),
+                "artifacts": {},
+                "metrics": {},
+            }
 
     def _apply_blank_mode_shaping(self, combined_features_df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
-        """Apply blank-mode specific outlier compression and normalization to key feature blocks.
+        """Apply outlier compression and normalization to key feature blocks.
 
         This is a light, post-feature-generation shaping pass that:
-        - only runs when execution_mode == 'blank'
+        - runs in all execution modes (blank, light, full)
         - targets heavy-tailed blocks (wavelet / volatility / AD-line features)
         - applies modest quantile winsorization followed by robust normalization
         """
         try:
-            execution_mode = config.get("execution_mode", "blank")
-            if execution_mode != "blank":
-                return combined_features_df
+            execution_mode = str(config.get("execution_mode", "blank")).lower()
 
             if combined_features_df is None or combined_features_df.empty:
                 return combined_features_df
 
             df = combined_features_df.copy()
 
-            # Identify numeric feature columns (exclude targets and timestamp)
+            if execution_mode == "blank":
+                raw_ohlcv_cols = [
+                    "open", "high", "low", "close", "volume",
+                    "symbol", "exchange", "interval", "timeframe",
+                ]
+                meta_time_cols = [
+                    "open_time", "close_time", "day", "day_of_week", "hour",
+                    "is_weekend", "price_range", "quote_volume", "trades",
+                    "volatility_1d", "base_threshold",
+                ]
+                leakage_cols = [
+                    "log_ret", "primary_signal", "volume_return",
+                    "adaptive_profit_threshold", "wavelet_energy_vwap_9x_ratio",
+                ]
+
+                drop_candidates = [
+                    c
+                    for c in raw_ohlcv_cols + meta_time_cols + leakage_cols
+                    if c in df.columns
+                ]
+                if drop_candidates:
+                    df = df.drop(columns=drop_candidates, errors="ignore")
+
+                max_nan_pct = float(config.get("blank_mode_max_nan_pct", 99.0))
+                candidate_numeric = [
+                    c
+                    for c in df.columns
+                    if c not in TARGET_COLUMN_NAMES + ["timestamp"]
+                    and pd.api.types.is_numeric_dtype(df[c])
+                ]
+                high_nan_cols: List[str] = []
+                n_rows = len(df)
+                if n_rows > 0:
+                    for c in candidate_numeric:
+                        nan_pct = 100.0 * float(df[c].isna().sum()) / float(n_rows)
+                        if nan_pct > max_nan_pct:
+                            high_nan_cols.append(c)
+                if high_nan_cols:
+                    df = df.drop(columns=high_nan_cols, errors="ignore")
+
             feature_cols: List[str] = [
                 col
                 for col in df.columns
-                if col not in TARGET_COLUMN_NAMES + ["timestamp"]
+                if col not in TARGET_COLUMN_NAMES + ["timestamp", "log_ret", "primary_signal"]
                 and pd.api.types.is_numeric_dtype(df[col])
             ]
 
             if not feature_cols:
                 return df
 
-            # Focus on the heavy-tailed families highlighted in validation reports
             wavelet_cols = [col for col in feature_cols if "wavelet" in col.lower()]
             volatility_cols = [
                 col
@@ -1051,13 +834,13 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 ("ad_line", ad_line_cols),
             ]
 
-            # Default to conservative tails, but allow config override if needed
             lower_q = float(config.get("blank_mode_lower_quantile", 0.0025))
             upper_q = float(config.get("blank_mode_upper_quantile", 0.9975))
 
             tprint_info(
-                f"🔧 [BLANK_SHAPING] Applying quantile winsorization/robust normalization "
-                f"to key blocks (lower_q={lower_q}, upper_q={upper_q})"
+                f"🔧 [SHAPING] execution_mode={execution_mode}: applying quantile "
+                f"winsorization/robust normalization to key blocks "
+                f"(lower_q={lower_q}, upper_q={upper_q})"
             )
 
             for block_name, cols in blocks:
@@ -1066,29 +849,186 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
 
                 try:
                     block_df = df[cols]
-
-                    # Quantile-based clipping per column
                     lower_bounds = block_df.quantile(lower_q)
                     upper_bounds = block_df.quantile(upper_q)
                     block_clipped = block_df.clip(lower=lower_bounds, upper=upper_bounds, axis="columns")
-
-                    # Robust normalization (median/IQR-style) on the clipped block
                     block_normalized = robust_normalize(block_clipped)
-
                     df[cols] = block_normalized
                     tprint_info(
-                        f"📊 [BLANK_SHAPING] Block '{block_name}' shaped: {len(cols)} features"
+                        f"📊 [SHAPING] Block '{block_name}' shaped: {len(cols)} "
+                        f"features (mode={execution_mode})"
                     )
                 except Exception as e:
                     tprint_warning(
-                        f"⚠️ [BLANK_SHAPING] Skipping block '{block_name}' due to error: {e}"
+                        f"⚠️ [SHAPING] Skipping block '{block_name}' due to error "
+                        f"(mode={execution_mode}): {e}"
                     )
 
             return df
         except Exception as e:
-            # Fail safe: never break the pipeline because of shaping
-            tprint_warning(f"⚠️ [BLANK_SHAPING] Failed to apply shaping, returning original data: {e}")
+            tprint_warning(
+                f"⚠️ [SHAPING] Failed to apply shaping (mode={execution_mode}), "
+                f"returning original data: {e}"
+            )
             return combined_features_df
+
+    def _sanitize_features_for_final_selection(self, combined_features_df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
+        """Programmatically clean leakage and near-constant features before final selection.
+
+        This step is applied after blank-mode shaping and before final feature selection
+        so that downstream training never sees known leakage columns or effectively
+        constant features (which harm stability and diagnostics).
+        """
+        try:
+            if combined_features_df is None or combined_features_df.empty:
+                return combined_features_df
+
+            df = combined_features_df.copy()
+
+            default_leakage = {
+                "wavelet_energy_vwap_9x_ratio",
+                "volume_return",
+                "log_ret",
+                "primary_signal",
+                "adaptive_profit_threshold",
+            }
+            cfg_leakage = set(config.get("leakage_feature_blacklist", []))
+            leakage_cols = sorted((default_leakage | cfg_leakage) & set(df.columns))
+            if leakage_cols:
+                tprint_warning(
+                    f"⚠️ Dropping {len(leakage_cols)} known leakage feature(s) before selection: {leakage_cols}"
+                )
+                df = df.drop(columns=leakage_cols, errors="ignore")
+
+            near_const_std_threshold = float(config.get("near_constant_std_threshold", 1e-6))
+            near_const_max_freq = float(config.get("near_constant_max_frequency", 0.999))
+            candidate_cols: List[str] = [
+                c
+                for c in df.columns
+                if c not in TARGET_COLUMN_NAMES + ["timestamp"]
+                and pd.api.types.is_numeric_dtype(df[c])
+            ]
+            near_constant_cols: List[str] = []
+            n_rows = len(df)
+            for col in candidate_cols:
+                s = df[col]
+                non_null = s.notna().sum()
+                if non_null == 0:
+                    near_constant_cols.append(col)
+                    continue
+                try:
+                    std_val = float(s.std())
+                except Exception:
+                    std_val = np.nan
+                if np.isfinite(std_val) and std_val <= near_const_std_threshold:
+                    near_constant_cols.append(col)
+                    continue
+                try:
+                    vc = s.value_counts(normalize=True, dropna=True)
+                    if not vc.empty and float(vc.iloc[0]) >= near_const_max_freq:
+                        near_constant_cols.append(col)
+                except Exception:
+                    continue
+
+            if "adaptive_stop_threshold" in df.columns and "adaptive_stop_threshold" not in near_constant_cols:
+                near_constant_cols.append("adaptive_stop_threshold")
+
+            near_constant_cols = sorted(set(near_constant_cols))
+            if near_constant_cols:
+                preview = near_constant_cols[:10]
+                tprint_warning(
+                    f"⚠️ Dropping {len(near_constant_cols)} near-constant feature(s) before selection; "
+                    f"sample: {preview}{' ...' if len(near_constant_cols) > 10 else ''}"
+                )
+                df = df.drop(columns=near_constant_cols, errors="ignore")
+
+            tprint_info(
+                f"📊 Feature sanitization complete: {combined_features_df.shape[1]} → {df.shape[1]} columns "
+                f"({n_rows} rows)"
+            )
+            return df
+        except Exception as e:
+            tprint_warning(f"⚠️ Feature sanitization failed, returning original data: {e}")
+            return combined_features_df
+
+    def _collect_features_from_previous_steps(self) -> Dict[str, Any]:
+        features_data: Dict[str, Any] = {}
+
+        timeframe = self._current_context.get("timeframe", "15m")
+
+        generated_df = None
+        try:
+            main_name = f"generated_features_{timeframe}"
+            generated_df = self._get_artifact(main_name, "data")
+        except Exception:
+            generated_df = None
+
+        if generated_df is None:
+            try:
+                generated_df = self._get_artifact("generated_features", "data")
+            except Exception:
+                generated_df = None
+
+        if generated_df is not None and hasattr(generated_df, "shape"):
+            features_data["generated_features"] = generated_df
+            tprint_info(f"📊 Loaded generated features: {generated_df.shape}")
+
+        lookback_df = None
+        try:
+            lookback_df = self._get_artifact("lookback_optimization", "data")
+        except Exception:
+            lookback_df = None
+
+        if lookback_df is not None:
+            features_data["lookback_optimization"] = lookback_df
+
+        for name in ["analyst_interactions", "tactician_interactions"]:
+            inter_df = None
+            try:
+                inter_df = self._get_artifact(name, "data")
+            except Exception:
+                inter_df = None
+
+            # Cross-load analyst_interactions from the analyst model store when
+            # running in a different model context (e.g. blank) and the local
+            # store does not contain the artifact. This allows blank-mode final
+            # selection to reuse rich interaction features generated by the
+            # analyst interaction step.
+            if inter_df is None and name == "analyst_interactions":
+                try:
+                    ctx = self._current_context.copy()
+                    symbol = ctx.get("symbol", "UNKNOWN")
+                    exchange = ctx.get("exchange", "binance")
+                    timeframe = ctx.get("timeframe", "15m")
+                    direction = ctx.get("direction", "long")
+                    cross_context = {
+                        "symbol": symbol,
+                        "exchange": exchange,
+                        "timeframe": timeframe,
+                        "direction": direction,
+                        "model": "analyst",
+                        "step_name": "feature_generation_interaction_generation_step",
+                    }
+                    tprint_info(
+                        "📂 Cross-loading 'analyst_interactions' from analyst model store "
+                        "for use in final feature selection"
+                    )
+                    inter_df = self.artifact_router.load(
+                        artifact_name="analyst_interactions",
+                        artifact_type="data",
+                        data_category="features",
+                        context=cross_context,
+                    )
+                except Exception as e:
+                    tprint_warning(
+                        f"⚠️ Failed to cross-load analyst_interactions from analyst store: {e}"
+                    )
+
+            if inter_df is not None and hasattr(inter_df, "shape"):
+                features_data[name] = inter_df
+                tprint_info(f"📊 Loaded {name}: {inter_df.shape}")
+
+        return features_data
 
     def _combine_features(self, features_data: Dict[str, Any], labeled_df: pd.DataFrame) -> pd.DataFrame:
         """Combine features from different sources into a single DataFrame with VectorBT optimizations."""
@@ -1129,6 +1069,20 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         
         # PRIORITY 1: Start with labeled dataframe to preserve target column
         base_features = labeled_df.copy()
+
+        # If generated_features has the same number of rows but a different
+        # index (typically a DatetimeIndex), align base_features to use that
+        # index so that the engineered feature timestamps become canonical.
+        try:
+            if 'generated_features' in features_data and hasattr(features_data['generated_features'], 'shape'):
+                gf = features_data['generated_features']
+                if isinstance(gf, pd.DataFrame) and len(gf) == len(base_features):
+                    if not base_features.index.equals(gf.index):
+                        tprint_info("🔧 Aligning base_features index to generated_features index (shape matched)")
+                        base_features = base_features.copy()
+                        base_features.index = gf.index
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to align base_features index to generated_features index: {e}")
         tprint_error(f"📊 STEP 1: Using labeled_df as base: {base_features.shape}")
         
         # STEP 0: Remove exact duplicates before any processing
@@ -1236,11 +1190,8 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                                             tprint_success(f"   Including {len(interaction_cols)} columns with 'interaction' or '_x_' in name")
                                         else:
                                             tprint_warning(f"⚠️ All columns from {interaction_type} already exist in base_features")
-                                    else:
-                                        tprint_warning(f"⚠️ {interaction_type} is not a DataFrame")
                                 else:
-                                    tprint_info(f"   {interaction_type} not found in features_data")
-                            
+                                    tprint_warning(f"⚠️ {interaction_type} is not a DataFrame")
                             tprint_success(f"✅ Final base_features shape after interaction merge: {base_features.shape}")
                             
                             # Just clean up and return
@@ -1327,6 +1278,13 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         # This prevents repeatedly reducing base_features with each chunk
         all_dataframes = [base_features]
         dataframe_info = [{'name': 'base_features', 'df': base_features}]
+
+        # Also include generated_features as a primary engineered feature
+        # dataframe when available so we do not lose the main feature block.
+        if 'generated_features' in features_data and hasattr(features_data['generated_features'], 'shape'):
+            gf = features_data['generated_features']
+            if isinstance(gf, pd.DataFrame):
+                dataframe_info.append({'name': 'generated_features', 'df': gf})
         
         # PRIORITY 3: Add interaction features (complex feature interactions)
         tprint_error("=" * 80)
@@ -1361,77 +1319,6 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 tprint_error(f"❌ {interaction_type} not found in features_data")
         tprint_error("=" * 80)
 
-        # PRIORITY 4: Add features from feature dataframe if available
-        ohlcv_cols = ['open', 'high', 'low', 'close', 'volume', 'timestamp']
-        basic_time_cols = ['hour', 'day_of_week', 'base_threshold']
-        
-        if 'feature_dataframe' in features_data and features_data['feature_dataframe'] is not None:
-            feature_df = features_data['feature_dataframe']
-            if isinstance(feature_df, pd.DataFrame):
-                # Optimize if available
-                if self.vectorization_manager and self.optimization_enabled:
-                    try:
-                        feature_df = self.vectorization_manager.optimize_dataframe(feature_df)
-                    except Exception as e:
-                        tprint_warning(f"⚠️ Feature dataframe optimization failed: {e}")
-                
-                # Add to collection
-                dataframe_info.append({'name': 'feature_dataframe', 'df': feature_df})
-                tprint_info(f"📊 Collected feature_dataframe: {feature_df.shape}")
-        
-        # CRITICAL: Find common index across ALL dataframes, with a robust
-        # fallback when indices do not overlap (e.g. RangeIndex vs bytes
-        # datetime index). When the intersection is empty, fall back to
-        # positional alignment on the last min_len rows and reset to a shared
-        # RangeIndex so we never end up with a 0-row combined_features_df.
-        tprint_info(f"📊 Finding common index across {len(dataframe_info)} dataframes...")
-        common_index = dataframe_info[0]['df'].index
-        for info in dataframe_info[1:]:
-            common_index = common_index.intersection(info['df'].index)
-            tprint_info(f"📊 After {info['name']}: {len(common_index)} common indices")
-
-        if len(common_index) == 0:
-            tprint_error("❌ No common indices across dataframes; falling back to positional alignment")
-
-            # Positional fallback: align all dataframes on the last min_len
-            # rows and reset indices to a shared RangeIndex.
-            try:
-                min_len = min(len(info['df']) for info in dataframe_info)
-            except Exception as e:
-                tprint_error(f"❌ Failed to compute min_len for positional alignment: {e}")
-                min_len = 0
-
-            if min_len <= 0:
-                tprint_error("❌ Positional alignment failed: no non-empty dataframes")
-                common_index = dataframe_info[0]['df'].index[:0]
-            else:
-                tprint_info(f"📊 Positional alignment using last {min_len} rows from each dataframe")
-                for info in dataframe_info:
-                    df_local = info['df']
-                    if len(df_local) > min_len:
-                        df_local = df_local.iloc[-min_len:].copy()
-                    else:
-                        df_local = df_local.copy()
-                    df_local.index = pd.RangeIndex(min_len)
-                    info['df'] = df_local
-                    tprint_info(f"📊 Positional-aligned {info['name']}: {info['df'].shape}")
-
-                # After positional alignment, indices are already a shared
-                # RangeIndex, so we can define common_index accordingly.
-                common_index = dataframe_info[0]['df'].index
-        else:
-            if len(common_index) < 100:
-                tprint_error(f"❌ Too few common indices ({len(common_index)}). Minimum required: 100")
-                tprint_warning("⚠️ This may cause feature selection to be unstable. Check data alignment issues.")
-
-            tprint_success(f"✅ Found {len(common_index)} common indices across all dataframes")
-
-            # Align ALL dataframes to common index
-            tprint_info("📊 Aligning all dataframes to common index...")
-            for info in dataframe_info:
-                info['df'] = info['df'].loc[common_index]
-                tprint_info(f"📊 Aligned {info['name']}: {info['df'].shape}")
-        
         # Now extract base_features and build feature_chunks
         base_features = dataframe_info[0]['df']
         feature_chunks = []
@@ -1440,6 +1327,9 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         tprint_error("🔍 HYPOTHESIS TEST: Processing dataframes for concatenation")
         tprint_error(f"   Total dataframes to process: {len(dataframe_info) - 1}")
         tprint_error("=" * 80)
+        
+        ohlcv_cols = ['open', 'high', 'low', 'close', 'volume']
+        basic_time_cols = ['open_time', 'close_time', 'day', 'day_of_week', 'hour', 'is_weekend', 'price_range', 'quote_volume', 'trades']
         
         for info in dataframe_info[1:]:
             df = info['df']
@@ -1454,11 +1344,11 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             if interaction_cols_in_df:
                 tprint_error(f"   Sample interaction cols: {interaction_cols_in_df[:3]}")
             
-            if name == 'feature_dataframe':
+            if name in ('feature_dataframe', 'generated_features'):
                 # Exclude OHLCV, basic time, and target columns
                 feature_cols = [col for col in df.columns
                               if col not in ohlcv_cols and col not in basic_time_cols and col not in TARGET_COLUMN_NAMES]
-                tprint_error(f"   feature_dataframe: Filtered to {len(feature_cols)} columns (excluded OHLCV/time/targets)")
+                tprint_error(f"   {name}: Filtered to {len(feature_cols)} columns (excluded OHLCV/time/targets)")
             else:
                 # For interactions, exclude columns already in base_features
                 before_filter = len(df.columns)
@@ -1486,7 +1376,22 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         # Concatenate all feature chunks at once
         if feature_chunks:
             tprint_info(f"📊 Concatenating {len(feature_chunks)} feature chunks...")
-            base_features = pd.concat([base_features] + feature_chunks, axis=1)
+
+            # Ensure indices are unique before concatenation to avoid
+            # pandas.errors.InvalidIndexError: "Reindexing only valid with
+            # uniquely valued Index objects".
+            concat_dfs: List[pd.DataFrame] = []
+            for i, df in enumerate([base_features] + feature_chunks):
+                if not df.index.is_unique:
+                    dup_count = df.index.duplicated().sum()
+                    tprint_warning(
+                        f"⚠️ DataFrame #{i} has {dup_count} duplicate index entries; "
+                        "dropping duplicates (keep='first') before concat"
+                    )
+                    df = df[~df.index.duplicated(keep="first")]
+                concat_dfs.append(df)
+
+            base_features = pd.concat(concat_dfs, axis=1)
             tprint_success(f"✅ Successfully concatenated all feature chunks: {base_features.shape}")
 
         # Remove any non-numeric columns except timestamp and target columns
@@ -1907,64 +1812,169 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         elif is_tactician_mode and not cmi_available:
             tprint_warning("⚠️ Tactician mode detected but CMI not available - using standard selection")
         else:
-            tprint_info("📊 Standard mode - using permutation-based feature selection (captures interactions)")
+            # Standard Analyst mode now uses a dedicated 3-stage LightGBM pipeline:
+            #   1) Gain importance with GOSS + very light params to drop the bottom 33%
+            #   2) Permutation importance with TimeSeriesSplit CV=3 (GOSS, light params),
+            #      preserving the top 60 and skimming 50% of features beyond rank 60
+            #   3) Permutation importance with TimeSeriesSplit CV=5 (GOSS, normal params)
+            #      for the final ranking that drives the 40/50/60 subsets.
+            tprint_info("📊 Standard mode - using 3-stage LGBM selection (Gain → PI CV3 → PI CV5, captures interactions)")
 
         # Separate features from targets and exclude raw data columns
         raw_data_columns = ['open', 'high', 'low', 'close', 'volume', 'hour', 'day_of_week', 'base_threshold']
-        basic_features = ['open_time', 'close_time', 'body_size', 'close_return', 'price_range_pct', 
-                         'volume_return', 'close_log_return', 'volume_log_return', 'price_range', 
-                         'body_size_pct', 'trades', 'quote_volume', 'day', 'lookahead_periods', 'is_weekend']
+        basic_features = [
+            'open_time',
+            'close_time',
+            'body_size',
+            'close_return',
+            'price_range_pct',
+            'volume_return',
+            'close_log_return',
+            'volume_log_return',
+            'price_range',
+            'body_size_pct',
+            'trades',
+            'quote_volume',
+            'day',
+            'lookahead_periods',
+            'is_weekend',
+            # Simple microstructure/meta columns from labeled_dataframe that we
+            # still allow into the pool; they should not be hard-excluded.
+            'volatility_1d',
+            'adaptive_profit_threshold',
+        ]
         
         # CRITICAL: Exclude performance metrics and forward-looking columns that are NOT predictive features
-        # These are calculated from future data or are outcome metrics, not input features
+        # These are calculated from future data or are outcome/diagnostic metrics, not input features
         performance_metrics = [
             'max_drawdown', 'sharpe_ratio', 'sortino_ratio', 'calmar_ratio', 'recovery_factor',
             'win_rate', 'profit_factor', 'total_return', 'annualized_return', 'volatility',
             'var_95', 'cvar_95', 'downside_deviation', 'upside_capture', 'downside_capture',
             'information_ratio', 'treynor_ratio', 'jensen_alpha', 'max_consecutive_wins',
             'max_consecutive_losses', 'avg_win', 'avg_loss', 'largest_win', 'largest_loss',
-            'equity_curve', 'cumulative_returns', 'drawdown', 'underwater_curve'
+            'equity_curve', 'cumulative_returns', 'drawdown', 'underwater_curve',
+            # Treat these as non-features for final selection; they are base diagnostics/parameters
+            'volume_return', 'log_ret', 'primary_signal', 'adaptive_profit_threshold',
         ]
         
         # Debug: Show all available columns
         tprint_info(f"🔍 DEBUG: All columns in features_df: {list(features_df.columns)}")
         
-        # Combine all columns to exclude (including performance metrics)
-        excluded_columns = TARGET_COLUMN_NAMES + ['timestamp'] + raw_data_columns + performance_metrics
-        tprint_info(f"🔍 Excluding {len(excluded_columns)} columns: targets, timestamp, raw data, and performance metrics")
+        # Columns that we treat as meta/utility rather than final engineered
+        # features for selection. These should not dominate the selected
+        # feature sets in blank mode.
+        meta_utility_columns = [
+            'volatility_1d',
+            'day',
+            'quote_volume',
+            'is_weekend',
+            'price_range',
+            'trades',
+            'open_time',
+        ]
+
+        # Combine all columns to exclude (including performance metrics) but
+        # NOT basic engineered microstructure features. We only remove raw
+        # OHLCV/time columns, explicit target/label columns, outcome
+        # performance metrics, and simple meta/utility columns.
+        excluded_columns = (
+            TARGET_COLUMN_NAMES
+            + ['timestamp']
+            + raw_data_columns
+            + performance_metrics
+            + meta_utility_columns
+        )
+        tprint_info(f"🔍 Excluding {len(excluded_columns)} columns: targets, timestamp, raw OHLCV/time, and performance metrics")
         
-        # Prioritize sophisticated engineered features over basic ones
-        sophisticated_features = [col for col in features_df.columns
-                                if col not in excluded_columns
-                                and any(keyword in col.lower() for keyword in ['vectorbt', 'interaction', 'enhanced', 'optimized', 'advanced', 'statistical', 'wavelet', 'entropy', 'ad_line', 'obv', 'volatility', 'order_flow'])]
-        
-        basic_engineered_features = [col for col in features_df.columns
-                                   if col not in excluded_columns
-                                   and col not in sophisticated_features]
-        
-        # Prioritize sophisticated features first
+        # Candidate features are all non-excluded columns. Within this set we
+        # soft-prioritize more advanced engineered features by name pattern
+        # (vectorbt, wavelet, interactions, etc.), but basic engineered
+        # features remain eligible.
+        sophisticated_features = [
+            col
+            for col in features_df.columns
+            if col not in excluded_columns
+            and any(
+                keyword in str(col).lower()
+                for keyword in [
+                    'vectorbt', 'interaction', 'enhanced', 'optimized', 'advanced',
+                    'statistical', 'wavelet', 'entropy', 'ad_line', 'obv',
+                    'volatility', 'order_flow', 'sr_', 'gmm_', 'hmm_', 'cluster',
+                ]
+            )
+        ]
+        basic_engineered_features = [
+            col
+            for col in features_df.columns
+            if col not in excluded_columns and col not in sophisticated_features
+        ]
+
+        # Prioritize sophisticated features first, then remaining engineered
+        # features so that we preserve a large candidate pool (>> 2 features).
         feature_cols = sophisticated_features + basic_engineered_features
 
         # Prefer meta-label outputs from feature_generation_meta_labeling_step.
         # We no longer fall back to fused/simplified price-based targets here;
         # if meta-label outputs are missing or empty, this step should fail
-        # explicitly so the meta-labeling pipeline can be fixed.
         target_cols: List[str] = []
-        meta_preferred_targets = ['binary_label', 'smoothed_label', 'realized_return']
-        for col in meta_preferred_targets:
+
+        direction = str(config.get('direction', 'long')).lower()
+        directional_candidates: List[str] = []
+        if direction == 'long':
+            directional_candidates = ['target_long', 'target_long_fused']
+        elif direction == 'short':
+            directional_candidates = ['target_short', 'target_short_fused']
+        else:
+            directional_candidates = [
+                'target_long',
+                'target_short',
+                'target_long_fused',
+                'target_short_fused',
+            ]
+
+        for col in directional_candidates:
             if col in features_df.columns:
                 non_null = features_df[col].notna().sum()
-                tprint_info(f"📊 Meta-label column '{col}' non-NaN count: {non_null}")
+                tprint_info(f"📊 Directional target column '{col}' non-NaN count: {non_null}")
                 if non_null > 0:
                     target_cols = [col]
-                    tprint_info(f"📊 Using meta-label target: {col} (non-NaN={non_null})")
+                    tprint_info(f"📊 Using directional target: {col} (non-NaN={non_null})")
                     break
 
         if not target_cols:
+            # As a secondary fallback, allow non-directional meta-label targets
+            # (smoothed_label/realized_return). We avoid using binary_label as
+            # the primary training target for final feature selection so that
+            # downstream analyst models stay aligned with directional targets.
+            meta_preferred_targets = ['smoothed_label', 'realized_return']
+            for col in meta_preferred_targets:
+                if col in features_df.columns:
+                    non_null = features_df[col].notna().sum()
+                    tprint_info(f"📊 Meta-label column '{col}' non-NaN count: {non_null}")
+                    if non_null > 0:
+                        target_cols = [col]
+                        tprint_info(f"📊 Using meta-label target: {col} (non-NaN={non_null})")
+                        break
+
+        # Ultimate safety fallback: if we still have no target, allow
+        # binary_label only to avoid hard failures in legacy pipelines that lack
+        # directional or economic targets. This path should not be hit for
+        # analyst_base runs.
+        if not target_cols and 'binary_label' in features_df.columns:
+            non_null = features_df['binary_label'].notna().sum()
+            tprint_warning(
+                "⚠️ Falling back to 'binary_label' as target for final feature selection; "
+                "no directional or economic targets were found."
+            )
+            if non_null > 0:
+                target_cols = ['binary_label']
+                tprint_info(f"📊 Using fallback meta-label target: binary_label (non-NaN={non_null})")
+
+        if not target_cols:
             msg = (
-                "No usable meta-label target found for final feature selection. "
-                "Expected at least one of ['binary_label', 'smoothed_label', 'realized_return'] "
-                "with non-NaN values. Ensure feature_generation_meta_labeling_step has populated these."
+                "No usable directional or meta-label target found for final feature selection. "
+                "Expected one of ['target_long', 'target_short', 'binary_label', 'smoothed_label', 'realized_return'] "
+                "with non-NaN values. Ensure labeling/meta-labeling steps have populated these."
             )
             tprint_error(f"❌ {msg}")
             raise ValueError(msg)
@@ -1976,6 +1986,16 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         tprint_info(f"🔍 Sophisticated features: {sophisticated_features[:5]}...")  # Show first 5 sophisticated features
         tprint_info(f"🔍 Basic engineered features: {basic_engineered_features[:5]}...")  # Show first 5 basic features
         tprint_info(f"🔍 Target columns: {target_cols}")
+        tprint_info(f"🎯 Final 3-stage LGBM selection will use target: '{target_cols[0]}'")
+
+        # Expose the chosen primary target to downstream reporting via config
+        # so that Markdown outcome reports can clearly state which label was
+        # used for the final LGBM-based feature selection.
+        try:
+            config["final_selection_target_column"] = target_cols[0]
+        except Exception:
+            # Never break selection if config is not mutable for some reason.
+            pass
 
         if not target_cols:
             raise ValueError("No target column found in features dataframe")
@@ -2016,8 +2036,46 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         tprint_info("🔍 PRIORITY 2: Coverage-Aware Feature Filtering")
         tprint_info("=" * 80)
 
-        MIN_COVERAGE_PCT = 95.0  # Require at least 95% coverage (max 5% NaN)
+        # Coverage threshold: allow configuration and be more tolerant in
+        # blank-model diagnostics so we don't collapse to a tiny core set of
+        # always-present base features.
+        model_name_local = str(config.get('model', '') or config.get('model_name', '')).lower()
+        execution_mode_local = str(config.get('execution_mode', 'full')).lower()
+
+        # Default for normal analyst/tactician runs
+        default_min_cov = 95.0
+        # In blank execution mode, drastically relax the default coverage
+        # requirement unless the user explicitly overrides it. This preserves
+        # sparse engineered features for diagnostics instead of collapsing to
+        # a handful of always-present base/meta columns.
+        if execution_mode_local == 'blank':
+            default_min_cov = float(config.get('blank_mode_min_feature_coverage_pct', 5.0))
+
+        MIN_COVERAGE_PCT = float(config.get('min_feature_coverage_pct', default_min_cov))
         MAX_NAN_PCT = 100.0 - MIN_COVERAGE_PCT
+
+        # In blank mode, many engineered "event" features (signals/flags/patterns/
+        # interactions) are defined only on sparse event timestamps and NaN on
+        # other bars. For diagnostics we want "no event" on a bar to be treated
+        # as 0 instead of NaN so coverage reflects actual information rather
+        # than sparsity.
+        if model_name_local == 'blank':
+            event_keywords = ['signal', 'flag', 'pattern', 'event', 'interaction']
+            for col in list(X.columns):
+                name_lower = str(col).lower()
+                if any(kw in name_lower for kw in event_keywords):
+                    non_null = X[col].dropna()
+                    if non_null.empty:
+                        continue
+                    # Only treat low-cardinality discrete features this way.
+                    if non_null.nunique() <= 3:
+                        nan_pct_raw = 100.0 * X[col].isna().sum() / len(X)
+                        if nan_pct_raw > 0.0:
+                            tprint_info(
+                                f"🔧 Blank-mode: treating NaNs as 'no event' for sparse feature '{col}' "
+                                f"(raw NaN={nan_pct_raw:.1f}%) before coverage filtering"
+                            )
+                            X[col] = X[col].fillna(0.0)
 
         tprint_info(f"📊 Analyzing coverage for {len(X.columns)} candidate features...")
         tprint_info(f"📋 Coverage threshold: {MIN_COVERAGE_PCT}% (max {MAX_NAN_PCT}% NaN allowed)")
@@ -2107,9 +2165,9 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         else:
             tprint_success(f"✅ No NaN values in kept features")
 
-        tprint_info(f"🔍 Performing feature selection on {len(feature_cols)} features using permutation importance...")
+        tprint_info(f"🔍 Performing final feature selection on {len(feature_cols)} features using 3-stage LGBM pipeline...")
         tprint_info(f"📊 Final dataset: {len(X)} samples, {len(X.columns)} features")
-        tprint_info("📊 Using permutation importance to capture feature interactions (not just Gini splits)")
+        tprint_info("📊 Pipeline: Stage 1 Gain (GOSS, very light) → Stage 2 PI CV3 (GOSS, light) → Stage 3 PI CV5 (GOSS, normal)")
 
         # Use batch processing if vectorization manager is available
         if self.vectorization_manager and self.optimization_enabled and len(feature_cols) > 1000:
@@ -2154,28 +2212,30 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             except Exception as e:
                 tprint_warning(f"⚠️ Batch processing failed, falling back to sequential: {e}")
 
-        # OPTIMIZED: Select top 60 once, then slice for 50 and 40 (avoid redundant computations)
-        tprint_info("🔄 Using optimized feature selection with permutation importance...")
-        tprint_info("⚡ OPTIMIZATION: Selecting top 60 once, then slicing for 50 and 40 (no redundant computations)")
-        
-        # Get the maximum size we need to select
-        max_size = max(feature_set_sizes)
-        
-        # Create config for maximum size
-        max_size_config = FinalFeatureSelectionConfig(
-            max_features=max_size,
-            min_features=max(5, max_size // 2),
-            selection_method=config.get('selection_method', 'permutation'),
-            scoring_threshold=config.get('scoring_threshold', 0.01),
-            use_tree_based=config.get('use_tree_based', True),
-            use_permutation_importance=config.get('use_permutation_importance', True),
-            stability_weight=config.get('stability_weight', 0.2)  # Default 0.3 = balanced (30% stability, 70% importance)
-        )
+        # OPTIMIZED: Run the 3-stage LGBM pipeline ONCE for the maximum size,
+        # then slice the ranked list to create 50/40 subsets (no redundant work).
+        tprint_info("🔄 Using optimized 3-stage LGBM selection (single run, multiple set sizes)...")
 
-        # Perform selection ONCE for the maximum size
-        tprint_info(f"🎯 Selecting top {max_size} features using permutation importance (captures interactions)...")
-        temp_component = FinalFeatureSelectionComponent(max_size_config)
-        all_selected_features = temp_component.select_features(X, y, feature_cols)
+        # Get the maximum size we need to select (typically 60)
+        max_size = max(feature_set_sizes)
+
+        if self.selection_component is None:
+            raise RuntimeError("selection_component is not initialized before multi-size selection")
+
+        # Ensure the main selection component is configured for the maximum size
+        # so that its Stage 3 ranking can be reused for all subsets.
+        try:
+            # Update max_features/min_features on the existing config without re-instantiating
+            self.selection_component.config.max_features = max_size
+            if hasattr(self.selection_component.config, 'min_features'):
+                self.selection_component.config.min_features = max(5, max_size // 2)
+        except Exception:
+            # If anything goes wrong, we still proceed with selection; the component
+            # will fall back to its existing configuration.
+            tprint_warning("⚠️ Failed to update selection component config; using existing max_features")
+
+        tprint_info(f"🎯 Selecting top {max_size} features via 3-stage LGBM (will slice for smaller sets) using target '{target_cols[0]}'...")
+        all_selected_features = self.selection_component.select_features(X, y, feature_cols, target_name=target_cols[0])
 
         # CRITICAL DEBUG: Check what was selected
         tprint_error(f"🔍 CRITICAL DEBUG for max size {max_size}:")
@@ -2218,19 +2278,118 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             min_variant_features=int(config.get('min_variant_features', 4)),
         )
 
-        if not capped_features:
-            tprint_error("❌ CRITICAL: No features remain after applying interaction/cross-timeframe/variant caps")
+        # Guardrail: if caps are too aggressive and leave us with fewer
+        # features than the largest requested set size, but the underlying
+        # Stage 3 ranking produced enough candidates, fall back to the
+        # uncapped top-N. This prevents all 60/50/40/30 sets from collapsing
+        # down to a tiny core purely due to cap settings.
+        if len(capped_features) < max_size and len(all_selected_features) >= max_size:
+            tprint_warning(
+                f"⚠️ Feature caps reduced candidate pool to {len(capped_features)} "
+                f"(< max_size={max_size}); falling back to uncapped top-{max_size} "
+                f"features from Stage 3 ranking. Consider relaxing cap settings "
+                f"if you want stronger interaction/cross-timeframe limits."
+            )
+            capped_features = all_selected_features[:max_size]
+
+        if not capped_features and not all_selected_features and not feature_cols:
+            tprint_error("❌ CRITICAL: No features remain after selection and caps")
             return feature_sets
 
         tprint_error(f"   Selected features count after caps: {len(capped_features)}")
         tprint_error(f"   Selected features sample after caps: {capped_features[:5] if len(capped_features) > 0 else 'EMPTY'}")
         
+        # Econ-aware second-stage preference: re-rank features so that those with
+        # strong classification AUC vs label and positive economic alignment
+        # (rank IC / return uplift vs realized_return) are preferred first, while
+        # preserving the original LGBM ranking within each preference bucket.
+        try:
+            econ_diag = self._compute_meta_label_feature_diagnostics(features_df, capped_features)
+            overall = econ_diag.get('overall') or {}
+
+            econ_min_auc = float(config.get('econ_min_auc', 0.55))
+            high_conf: List[str] = []
+            mid_conf: List[str] = []
+            low_conf: List[str] = []
+
+            for name in capped_features:
+                metrics = overall.get(name) or {}
+                bin_m = metrics.get('binary_label') or {}
+                rr_m = metrics.get('realized_return') or {}
+                auc_val = bin_m.get('auc')
+                rank_ic = rr_m.get('rank_ic')
+                uplift = rr_m.get('return_uplift_top_vs_bottom')
+
+                is_good_auc = isinstance(auc_val, (int, float)) and np.isfinite(auc_val) and auc_val >= econ_min_auc
+                is_pos_rank = isinstance(rank_ic, (int, float)) and np.isfinite(rank_ic) and rank_ic > 0.0
+                is_pos_uplift = isinstance(uplift, (int, float)) and np.isfinite(uplift) and uplift > 0.0
+
+                if is_good_auc and (is_pos_rank or is_pos_uplift):
+                    high_conf.append(name)
+                elif is_good_auc or is_pos_rank or is_pos_uplift:
+                    mid_conf.append(name)
+                else:
+                    low_conf.append(name)
+
+            # Preserve original LGBM ordering within each bucket
+            bucketed_order = [
+                f for f in capped_features
+                if f in high_conf
+            ] + [
+                f for f in capped_features
+                if f in mid_conf
+            ] + [
+                f for f in capped_features
+                if f in low_conf
+            ]
+
+            if bucketed_order and len(bucketed_order) == len(capped_features):
+                tprint_info(
+                    f"📊 Econ-aware re-ranking applied: high_conf={len(high_conf)}, "
+                    f"mid_conf={len(mid_conf)}, low_conf={len(low_conf)}"
+                )
+                capped_features = bucketed_order
+            else:
+                tprint_warning("⚠️ Econ-aware re-ranking skipped due to inconsistent bucket sizes")
+        except Exception as econ_exc:
+            tprint_warning(f"⚠️ Econ-aware feature re-ranking failed, using original ranking: {econ_exc}")
+        
+        # Build a full ranked feature list that always uses as many candidate
+        # features as possible for the requested set sizes. We start from the
+        # capped/econ-ranked features, then append any remaining candidate
+        # features from feature_cols that were not selected, preserving their
+        # original order.
+        primary_rank = capped_features if capped_features else all_selected_features
+        full_ranked_features: List[str] = list(primary_rank) if primary_rank else []
+
+        # Append any remaining candidate features that did not make it into
+        # the primary ranking so that we can still fill 60/50/40/30 sets up
+        # to the total number of available features.
+        remaining_candidates = [
+            f for f in feature_cols
+            if f not in full_ranked_features
+        ]
+        if remaining_candidates:
+            tprint_info(
+                f"📊 Extending ranked feature list with {len(remaining_candidates)} "
+                f"additional candidate features to satisfy multi-size set sizes"
+            )
+            full_ranked_features.extend(remaining_candidates)
+
+        if not full_ranked_features:
+            tprint_error("❌ No features available after building full ranked feature list")
+            return feature_sets
+
         # Now create feature sets by slicing the ranked list (no redundant computation!)
         for size in sorted(feature_set_sizes, reverse=True):  # Process from largest to smallest
-            tprint_info(f"📊 Creating feature set for size {size} (slicing from capped list of length {len(capped_features)})...")
+            target_size = min(size, len(full_ranked_features))
+            tprint_info(
+                f"📊 Creating feature set for requested size {size} "
+                f"(using {target_size} features from pool of {len(full_ranked_features)})..."
+            )
             
-            # Slice the top N features from the already-ranked list after applying caps
-            selected_features = capped_features[:size]
+            # Slice the top N features from the full ranked list
+            selected_features = full_ranked_features[:target_size]
             
             tprint_error(f"🔍 DEBUG for size {size}:")
             tprint_error(f"   Selected features count: {len(selected_features)}")
@@ -2272,15 +2431,18 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         return feature_sets
 
     def _detect_tactician_mode(self, features_df: pd.DataFrame, config: Dict[str, Any]) -> bool:
-        """
-        Detect if we're in Tactician mode based on launcher commands and available features.
-        
+        """Detect whether we are in Tactician mode.
+
+        This uses the current step name, execution context, and presence of
+        Tactician/Analyst-specific features to infer whether the final feature
+        selection step is running for a Tactician model.
+
         Args:
-            features_df: Combined features dataframe
-            config: Configuration dictionary
-            
+            features_df: Combined features dataframe.
+            config: Configuration dictionary.
+
         Returns:
-            True if in Tactician mode, False otherwise
+            True if in Tactician mode, False otherwise.
         """
         # Primary detection: Check current step name for Tactician training steps
         # This is the most reliable method since it comes directly from ares_launcher.py
@@ -2526,11 +2688,81 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
 
                 if has_rr:
                     yr = rr_series.loc[mask]
+                    valid_ret = s_feat.notna() & yr.notna()
                     ic_ret = _safe_corr(s_feat, yr)
-                    n_ret = int((s_feat.notna() & yr.notna()).sum())
+
+                    rank_ic_ret: Optional[float] = None
+                    mean_ret_top: Optional[float] = None
+                    mean_ret_bottom: Optional[float] = None
+                    hit_rate_top: Optional[float] = None
+                    hit_rate_bottom: Optional[float] = None
+                    uplift_ret: Optional[float] = None
+                    uplift_hit: Optional[float] = None
+                    bucket_stats: Optional[Dict[str, Any]] = None
+
+                    if valid_ret.sum() >= 100:
+                        s_valid = s_feat[valid_ret]
+                        r_valid = yr[valid_ret]
+
+                        # Rank IC (Spearman-style)
+                        try:
+                            rank_ic_val = s_valid.rank().corr(r_valid.rank())
+                            if isinstance(rank_ic_val, (int, float)) and np.isfinite(rank_ic_val):
+                                rank_ic_ret = float(rank_ic_val)
+                        except Exception:
+                            rank_ic_ret = None
+
+                        # Quantile-based economic metrics (returns and hit-rate by feature quantile)
+                        try:
+                            # Use up to 5 quantiles; duplicates='drop' handles low-variance features gracefully
+                            q_labels = pd.qcut(s_valid, 5, labels=False, duplicates='drop')
+                            df_q = pd.DataFrame({'q': q_labels, 'ret': r_valid})
+                            grouped = df_q.groupby('q')
+
+                            mean_ret_by_q = grouped['ret'].mean()
+                            hit_rate_by_q = grouped['ret'].apply(lambda x: float((x > 0).mean()) if len(x) > 0 else np.nan)
+
+                            bucket_stats = {
+                                'mean_return_by_quantile': {int(k): float(v) for k, v in mean_ret_by_q.dropna().items()},
+                                'hit_rate_by_quantile': {int(k): float(v) for k, v in hit_rate_by_q.dropna().items()},
+                            }
+
+                            if len(mean_ret_by_q) >= 2 and len(hit_rate_by_q) >= 2:
+                                top_q = int(mean_ret_by_q.idxmax())
+                                bottom_q = int(mean_ret_by_q.idxmin())
+
+                                try:
+                                    mean_ret_top = float(mean_ret_by_q.loc[top_q])
+                                    mean_ret_bottom = float(mean_ret_by_q.loc[bottom_q])
+                                    uplift_ret = mean_ret_top - mean_ret_bottom
+                                except Exception:
+                                    mean_ret_top = None
+                                    mean_ret_bottom = None
+                                    uplift_ret = None
+
+                                try:
+                                    hit_rate_top = float(hit_rate_by_q.loc[top_q])
+                                    hit_rate_bottom = float(hit_rate_by_q.loc[bottom_q])
+                                    uplift_hit = hit_rate_top - hit_rate_bottom
+                                except Exception:
+                                    hit_rate_top = None
+                                    hit_rate_bottom = None
+                                    uplift_hit = None
+                        except Exception:
+                            bucket_stats = None
+
+                    n_ret = int(valid_ret.sum())
                     feat_metrics['realized_return'] = {
                         'ic': ic_ret,
+                        'rank_ic': rank_ic_ret,
                         'n': n_ret,
+                        'mean_return_top_quantile': mean_ret_top,
+                        'mean_return_bottom_quantile': mean_ret_bottom,
+                        'hit_rate_top_quantile': hit_rate_top,
+                        'hit_rate_bottom_quantile': hit_rate_bottom,
+                        'return_uplift_top_vs_bottom': uplift_ret,
+                        'hit_rate_uplift_top_vs_bottom': uplift_hit,
+                        'bucket_stats': bucket_stats,
                     }
 
                 if feat_metrics:
@@ -2573,6 +2805,31 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                             results['by_tto_bucket'][bucket_name] = slice_res
             except Exception as e:
                 results['by_tto_bucket'] = {'error': str(e)}
+
+        try:
+            overall = results.get('overall') or {}
+            econ_rank = []
+            econ_uplift = []
+            for name, metrics in overall.items():
+                if not isinstance(metrics, dict):
+                    continue
+                rr_metrics = metrics.get('realized_return') or {}
+                v_rank = rr_metrics.get('rank_ic')
+                v_uplift = rr_metrics.get('return_uplift_top_vs_bottom')
+                if isinstance(v_rank, (int, float)) and np.isfinite(v_rank):
+                    econ_rank.append((name, float(v_rank)))
+                if isinstance(v_uplift, (int, float)) and np.isfinite(v_uplift):
+                    econ_uplift.append((name, float(v_uplift)))
+            econ_rank = sorted(econ_rank, key=lambda x: abs(x[1]), reverse=True)[:5]
+            econ_uplift = sorted(econ_uplift, key=lambda x: abs(x[1]), reverse=True)[:5]
+            if econ_rank:
+                msg = ', '.join(f"{n}={v:.4f}" for n, v in econ_rank)
+                tprint_info(f"📊 Econ rank-IC (realized_return) top: {msg}")
+            if econ_uplift:
+                msg = ', '.join(f"{n}={v:.6f}" for n, v in econ_uplift)
+                tprint_info(f"📊 Econ return uplift (top-bottom) top: {msg}")
+        except Exception:
+            pass
 
         return results
 
@@ -2947,8 +3204,15 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 tprint_error(f"   Combined features columns: {len(combined_features_df.columns)}")
                 tprint_error(f"   Combined features sample: {list(combined_features_df.columns)[:5]}")
                 
-                # Get the actual feature data for these selected features + target columns
-                available_features = [f for f in feature_list if f in combined_features_df.columns]
+                # Get the actual feature data for these selected features + target columns.
+                # Treat log_ret/primary_signal/smoothed_label as pseudo-targets and
+                # never include them as training features.
+                pseudo_targets = {'log_ret', 'primary_signal', 'smoothed_label'}
+                available_features = [
+                    f
+                    for f in feature_list
+                    if f in combined_features_df.columns and f not in pseudo_targets
+                ]
                 
                 # Add target columns
                 target_cols = [col for col in combined_features_df.columns if 'target' in col.lower()]
@@ -2984,9 +3248,18 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 else:
                     tprint_warning(f"⚠️ Skipping {set_name} - not a valid dataframe or empty")
 
-        # Feature scores from selection component (regular artifact)
+        # Feature scores and LGBM stage summary from selection component (regular artifacts)
         if self.selection_component:
             artifacts['feature_scores'] = self.selection_component.get_feature_scores()
+            # Persist the per-stage LGBM pipeline summary so downstream tools and
+            # reports can see how many features were kept at each stage and
+            # which CV configuration was used.
+            try:
+                stage_summary = getattr(self.selection_component, 'stage_summary', None)
+            except Exception:
+                stage_summary = None
+            if stage_summary:
+                artifacts['lgbm_stage_summary'] = stage_summary
 
         # SHAP values (regular artifact)
         for shap_name, shap_data in shap_values.items():
@@ -3008,6 +3281,12 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             'mode': mode,
             'execution_mode': config.get('execution_mode', 'light')
         }
+        # Attach LGBM multi-stage pipeline summary if available
+        if self.selection_component is not None:
+            try:
+                selection_metadata['lgbm_stage_summary'] = getattr(self.selection_component, 'stage_summary', None)
+            except Exception:
+                selection_metadata['lgbm_stage_summary'] = None
         artifacts['selection_metadata'] = selection_metadata
 
         # Generate CSV quality report in outcomes/ with datetime
@@ -3069,6 +3348,17 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
         from sklearn.inspection import permutation_importance
 
+        # Prefer LightGBM for model-based diagnostics; fall back to RandomForest
+        try:
+            from lightgbm import LGBMClassifier, LGBMRegressor  # type: ignore
+            lgbm_available = True
+        except Exception as e:
+            lgbm_available = False
+            tprint_warning(
+                f"⚠️ LightGBM not available for feature quality CSV report; "
+                f"falling back to RandomForest: {e}"
+            )
+
         # Choose target: only use meta-label outputs. If these are not
         # available we skip the CSV report rather than falling back to fused
         # or legacy price-based targets.
@@ -3102,6 +3392,12 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
 
         if not selected_cols:
             tprint_warning("⚠️ No selected features found for quality CSV report; skipping")
+            return
+
+        # Never treat target_* columns as features in quality diagnostics
+        selected_cols = [c for c in selected_cols if not str(c).startswith("target_")]
+        if not selected_cols:
+            tprint_warning("⚠️ Only target_* columns were available for quality CSV report; skipping")
             return
 
         # PRIORITY 1 FIX: Handle sparse features properly instead of dropping all rows
@@ -3251,12 +3547,46 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             tprint_warning(f"⚠️ MI calculation for feature quality CSV failed: {e}")
             mi_scores = {}
 
-        # Model
+        # Model (use LGBM with Stage-3 style params when available)
         if is_classification:
-            model = RandomForestClassifier(n_estimators=200, random_state=42, n_jobs=-1)
+            if lgbm_available:
+                model = LGBMClassifier(
+                    objective="binary",
+                    boosting_type="gbdt",
+                    data_sample_strategy="goss",
+                    n_estimators=400,
+                    learning_rate=0.03,
+                    num_leaves=128,
+                    max_depth=7,
+                    subsample=1.0,
+                    colsample_bytree=0.9,
+                    random_state=42,
+                    n_jobs=-1,
+                    top_rate=0.2,
+                    other_rate=0.1,
+                )
+            else:
+                model = RandomForestClassifier(n_estimators=200, random_state=42, n_jobs=-1)
             score_fn = lambda yt, pr: roc_auc_score(yt, pr)
         else:
-            model = RandomForestRegressor(n_estimators=200, random_state=42, n_jobs=-1)
+            if lgbm_available:
+                model = LGBMRegressor(
+                    objective="regression",
+                    boosting_type="gbdt",
+                    data_sample_strategy="goss",
+                    n_estimators=400,
+                    learning_rate=0.03,
+                    num_leaves=128,
+                    max_depth=7,
+                    subsample=1.0,
+                    colsample_bytree=0.9,
+                    random_state=42,
+                    n_jobs=-1,
+                    top_rate=0.2,
+                    other_rate=0.1,
+                )
+            else:
+                model = RandomForestRegressor(n_estimators=200, random_state=42, n_jobs=-1)
             # Information Coefficient proxy: Spearman is costly; use Pearson IC
             score_fn = lambda yt, pr: np.corrcoef(yt, pr)[0,1] if np.std(pr) > 0 else 0.0
 
@@ -3572,6 +3902,29 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                     except Exception:
                         row['event_penalty_freq'] = np.nan
 
+            meta_diag = enhanced_analysis.get('meta_label_diagnostics')
+            if meta_diag and isinstance(meta_diag, dict):
+                overall = meta_diag.get('overall') or {}
+                for name, metrics in overall.items():
+                    if not isinstance(metrics, dict):
+                        continue
+                    row = row_map.get(name)
+                    if row is None:
+                        continue
+                    rr_metrics = metrics.get('realized_return') or {}
+                    v_ic = rr_metrics.get('ic')
+                    v_rank_ic = rr_metrics.get('rank_ic')
+                    v_ret_uplift = rr_metrics.get('return_uplift_top_vs_bottom')
+                    v_hit_uplift = rr_metrics.get('hit_rate_uplift_top_vs_bottom')
+                    if isinstance(v_ic, (int, float)) and np.isfinite(v_ic):
+                        row['econ_rr_ic'] = float(v_ic)
+                    if isinstance(v_rank_ic, (int, float)) and np.isfinite(v_rank_ic):
+                        row['econ_rr_rank_ic'] = float(v_rank_ic)
+                    if isinstance(v_ret_uplift, (int, float)) and np.isfinite(v_ret_uplift):
+                        row['econ_rr_return_uplift_top_vs_bottom'] = float(v_ret_uplift)
+                    if isinstance(v_hit_uplift, (int, float)) and np.isfinite(v_hit_uplift):
+                        row['econ_rr_hit_rate_uplift_top_vs_bottom'] = float(v_hit_uplift)
+
         outcomes_dir = Path('outcomes')
         outcomes_dir.mkdir(exist_ok=True)
         ts = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -3633,11 +3986,11 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 else:
                     # Use default values if method doesn't exist
                     metrics.update({
-                        'hardware_optimization_operations': 0,
+                        'hardwadaptive_optimization_operationsare_optimization_operations': 0,
                         'cpu_optimization_operations': 0,
                         'gpu_optimization_operations': 0,
                         'memory_optimization_operations': 0,
-                        'adaptive_optimization_operations': 0
+                        '': 0
                 })
             except Exception as e:
                 tprint_warning(f"⚠️ Failed to get hardware optimization stats: {e}")
@@ -3742,6 +4095,13 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             checker = BaselinePredictiveCheck(max_features=None, random_state=42)
             results = checker.run_check(X, target)
 
+            if results.get('success', False):
+                summary = results.get('summary', {}) or {}
+                best_auc = summary.get('clf_best_test_auc')
+                best_auc_feat = summary.get('clf_best_feature')
+                if isinstance(best_auc, (int, float)) and np.isfinite(best_auc):
+                    tprint_info(f"📊 Baseline best AUC: {best_auc:.3f} (feature={best_auc_feat})")
+
             # Save CSV to outcomes directory
             if results.get('success', False):
                 outcomes_dir = Path('outcomes')
@@ -3770,6 +4130,7 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
 - **Exchange:** {config.get('exchange', 'binance')}
 - **Timeframe:** {config.get('timeframe', '15m')}
 - **Execution Mode:** {config.get('execution_mode', 'light')}
+- **Final Selection Target Column:** {config.get('final_selection_target_column', 'unknown')}
 - **Timestamp:** {datetime.now().isoformat()}
 
 ## Feature Selection Summary
@@ -3931,8 +4292,22 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                         rows_sorted = sorted(rows, key=lambda x: abs(x[1]), reverse=True)
                         return rows_sorted[:top_n]
 
+                    def _collect_top_rr_metric(metric_key: str, top_n: int = 5) -> List[Tuple[str, float]]:
+                        rows: List[Tuple[str, float]] = []
+                        for feat_name, metrics in overall.items():
+                            if not isinstance(metrics, dict):
+                                continue
+                            rr_metrics = metrics.get('realized_return') or {}
+                            val = rr_metrics.get(metric_key)
+                            if isinstance(val, (int, float)) and np.isfinite(val):
+                                rows.append((feat_name, float(val)))
+                        rows_sorted = sorted(rows, key=lambda x: abs(x[1]), reverse=True)
+                        return rows_sorted[:top_n]
+
                     top_bin = _collect_top_ic('binary_label')
                     top_rr = _collect_top_ic('realized_return')
+                    top_rr_rank_ic = _collect_top_rr_metric('rank_ic')
+                    top_rr_uplift = _collect_top_rr_metric('return_uplift_top_vs_bottom')
 
                     if top_bin or top_rr:
                         report += "**Top 5 features by IC vs binary_label (overall):**\n\n"
@@ -3948,6 +4323,17 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                                 report += f"{rank}. {feat} (IC = {ic_val:.4f})\\n"
                         else:
                             report += "No valid IC scores for realized_return available.\\n"
+
+                    if top_rr_rank_ic or top_rr_uplift:
+                        report += "\n\n### Econ-Aligned Diagnostics vs realized_return\n\n"
+                        if top_rr_rank_ic:
+                            report += "**Top 5 features by rank IC vs realized_return:**\n\n"
+                            for rank, (feat, val) in enumerate(top_rr_rank_ic, 1):
+                                report += f"{rank}. {feat} (Rank IC = {val:.4f})\\n"
+                        if top_rr_uplift:
+                            report += "\n**Top 5 features by top-vs-bottom return uplift (by feature quantile):**\n\n"
+                            for rank, (feat, val) in enumerate(top_rr_uplift, 1):
+                                report += f"{rank}. {feat} (Return uplift = {val:.6f})\\n"
             except Exception:
                 # Do not fail report generation if diagnostics are missing
                 pass

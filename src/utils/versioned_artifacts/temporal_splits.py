@@ -72,7 +72,7 @@ class TemporalSplitConfig:
         """Validate no overlaps between periods."""
         # Check burn-in doesn't overlap with training if present
         if self.burnin is not None:
-            if self.burnin.effective_end >= self.training.start:
+            if self.burnin.effective_end > self.training.start:
                 raise ValueError(
                     f"Burn-in period (ends {self.burnin.effective_end}) "
                     f"overlaps with training period (starts {self.training.start}). "
@@ -80,7 +80,7 @@ class TemporalSplitConfig:
                 )
 
         # Check training doesn't overlap with validation
-        if self.training.effective_end >= self.validation.start:
+        if self.training.effective_end > self.validation.start:
             raise ValueError(
                 f"Training period (ends {self.training.effective_end}) "
                 f"overlaps with validation period (starts {self.validation.start}). "
@@ -88,7 +88,7 @@ class TemporalSplitConfig:
             )
 
         # Check validation doesn't overlap with test
-        if self.validation.effective_end >= self.test.start:
+        if self.validation.effective_end > self.test.start:
             raise ValueError(
                 f"Validation period (ends {self.validation.effective_end}) "
                 f"overlaps with test period (starts {self.test.start}). "
@@ -203,17 +203,20 @@ class TemporalSplitConfig:
             test_days = remaining_days - train_days - val_days - 2 * embargo_days
 
         # Calculate period boundaries
+        gap_days = max(1, embargo_days)
+
         if burnin_days > 0:
-            train_start = burnin_end + timedelta(days=embargo_days)
+            train_start = burnin_end + timedelta(days=gap_days)
         else:
             train_start = data_start
         train_end = train_start + timedelta(days=max(1, train_days))
 
-        val_start = train_end + timedelta(days=embargo_days)
+        # Use gap_days to enforce a strict non-overlap even when embargo_days == 0
+        val_start = train_end + timedelta(days=gap_days)
         val_end = val_start + timedelta(days=max(1, val_days))
 
-        # Ensure test period has at least 1 day
-        test_start = val_end + timedelta(days=embargo_days)
+        # Ensure test period has at least 1 day and does not overlap validation
+        test_start = val_end + timedelta(days=gap_days)
         test_end = data_end if data_end > test_start else test_start + timedelta(days=1)
 
         return cls(
@@ -234,7 +237,7 @@ class WalkForwardFold:
 
     def __post_init__(self):
         """Validate no overlap between training and validation."""
-        if self.training.effective_end >= self.validation.start:
+        if self.training.effective_end > self.validation.start:
             raise ValueError(
                 f"Fold {self.fold_num}: Training period (ends {self.training.effective_end}) "
                 f"overlaps with validation period (starts {self.validation.start}). "
@@ -492,13 +495,20 @@ def create_temporal_split_config_for_pipeline(
         config_path = config_dir / f"{symbol}_{exchange}_{timeframe}{burnin_suffix}.json"
 
     # Try to load existing config
+    config: Optional[TemporalSplitConfig] = None
     if config_path.exists():
-        config = TemporalSplitConfig.load(config_path)
+        try:
+            config = TemporalSplitConfig.load(config_path)
+        except Exception:
+            config = None
 
         # If data range is provided, ensure the config meaningfully overlaps it.
-        # If there is no overlap at all (e.g., legacy synthetic 2020 dates vs 2022+ data),
-        # regenerate the config based on the current data range.
-        if data_start is not None and data_end is not None:
+        # If there is no overlap at all (e.g., legacy synthetic dates vs recent data) or
+        # if the overlap covers only a small fraction of the current data span, regenerate
+        # the config based on the current data range. This avoids situations where most
+        # of the training/validation/test windows fall outside the actually loaded data,
+        # which can lead to too few samples within temporal windows for downstream steps.
+        if config is not None and data_start is not None and data_end is not None:
             data_is_datetime_like = isinstance(data_start, (datetime, pd.Timestamp)) and isinstance(
                 data_end, (datetime, pd.Timestamp)
             )
@@ -526,7 +536,14 @@ def create_temporal_split_config_for_pipeline(
                 overlap_start = max(data_start, cfg_start)
                 overlap_end = min(data_end, cfg_end)
 
-                if overlap_end <= overlap_start:
+                # Measure how much of the current data span is covered by the
+                # existing config. If the overlap is very small (e.g. < 50%),
+                # treat the config as stale and regenerate.
+                total_days_data = max(1, (data_end - data_start).days)
+                overlap_days = max(0, (overlap_end - overlap_start).days)
+                overlap_ratio = overlap_days / float(total_days_data)
+
+                if overlap_end <= overlap_start or overlap_ratio < 0.5:
                     config = TemporalSplitConfig.create_from_data(
                         data_start=data_start,
                         data_end=data_end,
@@ -549,7 +566,8 @@ def create_temporal_split_config_for_pipeline(
                 )
                 config.save(config_path)
 
-        return config
+        if config is not None:
+            return config
 
     # Create new config if data range provided
     if data_start is None or data_end is None:

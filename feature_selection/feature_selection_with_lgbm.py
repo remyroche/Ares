@@ -112,9 +112,19 @@ class FeatureSelector:
     
         # Normalize EWMA IC
         ic_norm = pd.Series(ic_ewma, index=X.columns).rank(pct=True)
-    
+
+        # Calculate IC volatility 
+        ic_volatility = np.std(ic_ewma) / (np.mean(np.abs(ic_ewma)) + eps)
+        max_ic_weight = 0.7
+        min_ic_weight = 0.3
+        ic_volatility = np.clip(ic_volatility, 0, 1)  # 0 = stable, 1 = very volatile
+        
+        # Map to IC weight: higher volatility → lower IC weight
+        w_ic = max_ic_weight - (max_ic_weight - min_ic_weight) * ic_volatility
+        w_stability = 1 - w_ic
+
         # Combined score: stability + IC
-        combined_score = 0.4 * stability_score + 0.6 * ic_norm
+        combined_score = w_stability * stability_score + w_ic * ic_norm
     
         self.ic_stats = {
             'stability_score': stability_score.values,

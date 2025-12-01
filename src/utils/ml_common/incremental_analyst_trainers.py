@@ -378,6 +378,7 @@ class BaseIncrementalTrainer(ABC):
         all_predictions = []
         all_metadata = []
         hpo_history = {}
+        previous_training_end = None  # Track previous window's training boundary
         
         for window in window_generator.windows:
             if verbose:
@@ -388,16 +389,42 @@ class BaseIncrementalTrainer(ABC):
             window_start_time = time.time()
             
             # Get training data (all data from start up to training_end)
+            # CRITICAL: training_end MUST be < prediction_start to ensure no leakage
             train_mask = (aligned_data.index >= window.training_start) & (aligned_data.index < window.training_end)
             train_data = aligned_data.loc[train_mask].copy()
             
+            # Get prediction data (data that model has NOT seen yet)
+            pred_mask = (aligned_data.index >= window.prediction_start) & (aligned_data.index < window.prediction_end)
+            pred_data = aligned_data.loc[pred_mask].copy()
+            
+            # VALIDATION: Ensure no overlap between training and prediction data
+            # Note: training uses `< training_end` (exclusive), prediction uses `>= prediction_start` (inclusive)
+            # So if training_end == prediction_start, there's no overlap
+            if len(train_data) > 0 and len(pred_data) > 0:
+                train_max_ts = train_data.index.max()  # Actual last training sample
+                pred_min_ts = pred_data.index.min()    # Actual first prediction sample
+                
+                # Check for actual data overlap (training sample timestamp >= prediction sample timestamp)
+                if train_max_ts >= pred_min_ts:
+                    logger.error(
+                        f"⚠️ DATA LEAKAGE DETECTED! Last training sample ({train_max_ts}) >= "
+                        f"First prediction sample ({pred_min_ts}). Skipping window."
+                    )
+                    previous_training_end = window.training_end
+                    continue
+                else:
+                    if verbose:
+                        gap_seconds = (pred_min_ts - train_max_ts).total_seconds()
+                        logger.info(f"   ✓ OOF integrity verified: {gap_seconds/60:.1f} min gap between train/predict")
+            
             if len(train_data) < 100:
                 logger.warning(f"Window {window.window_id}: Insufficient training samples ({len(train_data)}). Skipping.")
+                previous_training_end = window.training_end
                 continue
             
             # Train or resume training
             if window.is_burn_in or self._current_model is None:
-                # Full initial training
+                # Full initial training on burn-in data
                 self._current_model = self._train_initial(
                     train_data=train_data,
                     window=window,
@@ -405,21 +432,39 @@ class BaseIncrementalTrainer(ABC):
                 )
             else:
                 # Incremental training (resume from previous model)
-                # Get only the new data (from previous training_end to current training_end)
-                new_data_mask = (aligned_data.index >= window.prediction_start) & (aligned_data.index < window.training_end)
-                new_data = aligned_data.loc[new_data_mask].copy()
-                
-                if len(new_data) > 0:
-                    self._current_model = self._train_incremental(
-                        new_data=new_data,
-                        full_train_data=train_data,
+                # Get only the NEW data that wasn't in the previous training set
+                # This is the data from PREVIOUS training_end to CURRENT training_end
+                # (i.e., the previous OOF batch that we can now add to training)
+                if previous_training_end is not None:
+                    new_data_mask = (
+                        (aligned_data.index >= previous_training_end) & 
+                        (aligned_data.index < window.training_end)
+                    )
+                    new_data = aligned_data.loc[new_data_mask].copy()
+                    
+                    if verbose:
+                        logger.info(f"   New data for incremental training: {len(new_data)} samples")
+                    
+                    if len(new_data) > 0:
+                        self._current_model = self._train_incremental(
+                            new_data=new_data,
+                            full_train_data=train_data,
+                            window=window,
+                            verbose=verbose
+                        )
+                    else:
+                        # No new data, just continue with current model
+                        logger.info(f"   No new data for incremental training, using current model")
+                else:
+                    # Fallback: full training if we don't have previous boundary
+                    self._current_model = self._train_initial(
+                        train_data=train_data,
                         window=window,
                         verbose=verbose
                     )
             
-            # Get prediction data
-            pred_mask = (aligned_data.index >= window.prediction_start) & (aligned_data.index < window.prediction_end)
-            pred_data = aligned_data.loc[pred_mask].copy()
+            # Update previous training boundary for next iteration
+            previous_training_end = window.training_end
             
             if len(pred_data) == 0:
                 logger.warning(f"Window {window.window_id}: No prediction data. Skipping predictions.")
@@ -855,9 +900,11 @@ class IncrementalNGBoostTrainer(BaseIncrementalTrainer):
         """
         Incrementally train NGBoost.
         
-        NGBoost doesn't have native incremental training, so we:
-        1. Use warm_start if available
-        2. Otherwise retrain on full accumulated data
+        NGBoost doesn't have native incremental training with warm_start.
+        To prevent drift in probabilistic predictions, we:
+        1. Retrain on ALL accumulated data with CONSISTENT hyperparameters
+        2. Use the same n_estimators as initial training
+        3. Track distribution parameters across windows for drift monitoring
         """
         X = full_train_data[self._feature_cols].values.astype(np.float64)
         y = full_train_data['__target__'].values
@@ -872,27 +919,61 @@ class IncrementalNGBoostTrainer(BaseIncrementalTrainer):
             X, y, test_size=0.2, random_state=42
         )
         
+        # CRITICAL: Use SAME parameters as initial training to prevent drift
+        # Only update learning-related params, not structural ones
         params = self._get_default_params()
         params.update(self._best_params)
         
-        # NGBoost with warm_start - retrain but reuse previous learners as init
-        # Unfortunately NGBoost doesn't support true incremental training
-        # We train with additional estimators but less total iterations
-        params['n_estimators'] = max(100, params.get('n_estimators', 500) // 2)
+        # Keep n_estimators consistent - don't reduce it
+        # This ensures probabilistic calibration remains stable
+        # Early stopping will naturally limit actual iterations
         
         if self.config.task_type == 'classification':
             model = NGBClassifier(Dist=Normal, **params)
         else:
             model = NGBRegressor(Dist=Normal, **params)
         
+        # Store previous model's distribution stats for drift detection
+        prev_dist_stats = None
+        if self._current_model is not None:
+            try:
+                # Sample some predictions from previous model for comparison
+                sample_X = X_val[:min(100, len(X_val))]
+                prev_dist = self._current_model.pred_dist(sample_X)
+                if hasattr(prev_dist, 'params'):
+                    prev_dist_stats = {
+                        'mean_loc': float(np.mean(prev_dist.params.get('loc', [0]))),
+                        'mean_scale': float(np.mean(prev_dist.params.get('scale', [1])))
+                    }
+            except Exception:
+                pass
+        
         model.fit(
             X_train, y_train,
             X_val=X_val, Y_val=y_val,
-            early_stopping_rounds=self.config.early_stopping_rounds // 2
+            early_stopping_rounds=self.config.early_stopping_rounds
         )
         
+        # Check for drift in probabilistic predictions
+        if prev_dist_stats is not None:
+            try:
+                sample_X = X_val[:min(100, len(X_val))]
+                new_dist = model.pred_dist(sample_X)
+                if hasattr(new_dist, 'params'):
+                    new_mean_scale = float(np.mean(new_dist.params.get('scale', [1])))
+                    scale_drift = abs(new_mean_scale - prev_dist_stats['mean_scale']) / max(prev_dist_stats['mean_scale'], 1e-6)
+                    if scale_drift > 0.5:  # 50% drift threshold
+                        logger.warning(
+                            f"   ⚠️ NGBoost scale drift detected: {scale_drift:.2%}. "
+                            f"Previous mean_scale: {prev_dist_stats['mean_scale']:.4f}, "
+                            f"New mean_scale: {new_mean_scale:.4f}"
+                        )
+            except Exception as e:
+                logger.debug(f"Could not check NGBoost drift: {e}")
+        
+        n_est = getattr(model, 'n_estimators', 'N/A')
         if verbose:
-            logger.info(f"   Incremental NGBoost: {len(model.learners)} estimators")
+            logger.info(f"   Incremental NGBoost retrained on {len(X_train)} samples: {n_est} estimators")
         
         return model
     

@@ -986,6 +986,21 @@ def create_interaction_generators() -> List[FeatureGenerator]:
     # Volatility-trend interaction
     generators.append(VolatilityTrendGenerator(volatility_window=20, trend_window=20))
 
+    # Volatility-Range interaction
+    generators.append(VolRangeInteractionGenerator())
+
+    # Volatility-Momentum interaction (optimized)
+    generators.append(VolMomentumInteractionGenerator())
+
+    # ATR-Momentum interaction
+    generators.append(ATRMomentumGenerator())
+
+    # Range Position-Volatility Ratio interaction
+    generators.append(RangePositionVolRatioGenerator())
+
+    # High Distance-Volatility interaction
+    generators.append(HighDistVolGenerator())
+
     return generators
 
 # Legacy Interaction Generators
@@ -1235,6 +1250,200 @@ def create_default_interaction_generators() -> List[FeatureGenerator]:
 
     return generators
 
+# Volatility Range Interaction Generator
+
+class VolRangeInteractionGenerator(OptimizedInteractionFeatureGenerator):
+    """
+    Generator for Volatility-Range Interaction.
+
+    Calculates interaction between volatility ratio and price range position.
+    """
+
+    def __init__(self, vol_window: int = 96, range_window: int = 20):
+        config = FeatureConfig(
+            name=f"vol_range_interaction",
+            category=FeatureCategory.INTERACTION,
+            description="Interaction between volatility ratio and range position",
+            required_columns=["close", "high", "low"],
+            default_lookback=max(vol_window * 2, range_window),
+            parameters={'vol_window': vol_window, 'range_window': range_window},
+            matrix_optimized=True,
+            gpu_accelerated=True
+        )
+        super().__init__(config)
+        self.vol_window = vol_window
+        self.range_window = range_window
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        close = data['close']
+        high = data['high']
+        low = data['low']
+
+        # Calculate Volatility Ratio (vol / baseline)
+        log_ret = np.log(close).diff()
+        vol = self._optimized_rolling_operation(log_ret, 'std', self.vol_window)
+        # Using a longer window for baseline, or just mean of vol?
+        # In meta_labeling step: features['volatility_1d'].rolling(96).mean()
+        # So baseline is rolling mean of vol
+        vol_baseline = self._optimized_rolling_operation(vol, 'mean', self.vol_window)
+        vol_ratio = vol / (vol_baseline + 1e-8)
+
+        # Calculate Range Position
+        recent_high = self._optimized_rolling_operation(high, 'max', self.range_window)
+        recent_low = self._optimized_rolling_operation(low, 'min', self.range_window)
+        range_position = (close - recent_low) / (recent_high - recent_low + 1e-8)
+
+        return vol_ratio * range_position
+
+class VolMomentumInteractionGenerator(OptimizedInteractionFeatureGenerator):
+    """
+    Generator for Volatility-Momentum Interaction.
+
+    Calculates interaction between volatility and momentum.
+    """
+
+    def __init__(self, vol_window: int = 96, mom_period: int = 20):
+        config = FeatureConfig(
+            name=f"vol_momentum_interaction",
+            category=FeatureCategory.INTERACTION,
+            description="Interaction between volatility and momentum",
+            required_columns=["close"],
+            default_lookback=max(vol_window, mom_period),
+            parameters={'vol_window': vol_window, 'mom_period': mom_period},
+            matrix_optimized=True,
+            gpu_accelerated=True
+        )
+        super().__init__(config)
+        self.vol_window = vol_window
+        self.mom_period = mom_period
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        close = data['close']
+
+        # Volatility (1d usually 96 bars on 15m)
+        log_ret = np.log(close).diff()
+        vol = self._optimized_rolling_operation(log_ret, 'std', self.vol_window)
+
+        # Momentum
+        mom = close.pct_change(self.mom_period)
+
+        return vol * mom
+
+class ATRMomentumGenerator(OptimizedInteractionFeatureGenerator):
+    """
+    Generator for ATR-Momentum Interaction.
+
+    Calculates interaction between ATR ratio and momentum.
+    """
+
+    def __init__(self, atr_period: int = 14, mom_period: int = 20):
+        config = FeatureConfig(
+            name=f"atr_momentum",
+            category=FeatureCategory.INTERACTION,
+            description="Interaction between ATR ratio and momentum",
+            required_columns=["close", "high", "low"],
+            default_lookback=max(atr_period, mom_period),
+            parameters={'atr_period': atr_period, 'mom_period': mom_period},
+            matrix_optimized=True,
+            gpu_accelerated=True
+        )
+        super().__init__(config)
+        self.atr_period = atr_period
+        self.mom_period = mom_period
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        close = data['close']
+        high = data['high']
+        low = data['low']
+
+        # Calculate ATR (Simplified)
+        tr = np.maximum(high - low, np.abs(high - close.shift(1)))
+        tr = np.maximum(tr, np.abs(low - close.shift(1)))
+        atr = self._optimized_rolling_operation(tr, 'mean', self.atr_period)
+        atr_ratio = atr / (close + 1e-8)
+
+        # Momentum
+        mom = close.pct_change(self.mom_period)
+
+        return atr_ratio * mom
+
+class RangePositionVolRatioGenerator(OptimizedInteractionFeatureGenerator):
+    """
+    Generator for Range Position x Volatility Ratio.
+
+    This is effectively the same logic as VolRangeInteractionGenerator but
+    exposed with the requested name 'range_position_x_vol_ratio'.
+    """
+
+    def __init__(self, vol_window: int = 96, range_window: int = 20):
+        config = FeatureConfig(
+            name=f"range_position_x_vol_ratio",
+            category=FeatureCategory.INTERACTION,
+            description="Interaction between range position and volatility ratio",
+            required_columns=["close", "high", "low"],
+            default_lookback=max(vol_window * 2, range_window),
+            parameters={'vol_window': vol_window, 'range_window': range_window},
+            matrix_optimized=True,
+            gpu_accelerated=True
+        )
+        super().__init__(config)
+        self.vol_window = vol_window
+        self.range_window = range_window
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Re-use logic or call VolRangeInteractionGenerator if instantiated
+        # For simplicity, inline calculation (same as above)
+        close = data['close']
+        high = data['high']
+        low = data['low']
+
+        log_ret = np.log(close).diff()
+        vol = self._optimized_rolling_operation(log_ret, 'std', self.vol_window)
+        vol_baseline = self._optimized_rolling_operation(vol, 'mean', self.vol_window)
+        vol_ratio = vol / (vol_baseline + 1e-8)
+
+        recent_high = self._optimized_rolling_operation(high, 'max', self.range_window)
+        recent_low = self._optimized_rolling_operation(low, 'min', self.range_window)
+        range_position = (close - recent_low) / (recent_high - recent_low + 1e-8)
+
+        return range_position * vol_ratio
+
+class HighDistVolGenerator(OptimizedInteractionFeatureGenerator):
+    """
+    Generator for High Distance x Volatility.
+
+    Calculates interaction between distance from recent high and volatility.
+    """
+
+    def __init__(self, vol_window: int = 96, dist_window: int = 50):
+        config = FeatureConfig(
+            name=f"high_dist_x_vol",
+            category=FeatureCategory.INTERACTION,
+            description="Interaction between distance from recent high and volatility",
+            required_columns=["close", "high"],
+            default_lookback=max(vol_window, dist_window),
+            parameters={'vol_window': vol_window, 'dist_window': dist_window},
+            matrix_optimized=True,
+            gpu_accelerated=True
+        )
+        super().__init__(config)
+        self.vol_window = vol_window
+        self.dist_window = dist_window
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        close = data['close']
+        high = data['high']
+
+        # Volatility
+        log_ret = np.log(close).diff()
+        vol = self._optimized_rolling_operation(log_ret, 'std', self.vol_window)
+
+        # Distance from recent high
+        recent_high = self._optimized_rolling_operation(high, 'max', self.dist_window)
+        dist_from_high = (close - recent_high) / (recent_high + 1e-8)
+
+        return dist_from_high * vol
+
 # Export all generators
 __all__ = [
     # Optimized generators
@@ -1249,6 +1458,11 @@ __all__ = [
     'VolatilityHighLowGenerator',
     'VolatilityMomentumGenerator',
     'VolatilityTrendGenerator',
+    'VolRangeInteractionGenerator',
+    'VolMomentumInteractionGenerator',
+    'ATRMomentumGenerator',
+    'RangePositionVolRatioGenerator',
+    'HighDistVolGenerator',
     'create_interaction_generators',
     # Legacy interaction generators (now optimized)
     'CrossTimeframeInteractionGenerator',

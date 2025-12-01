@@ -2457,6 +2457,9 @@ def create_default_volume_generators() -> List[FeatureGenerator]:
     generators.append(AnalystVolumePressureGenerator())
     generators.append(AnalystVolumeTrendGenerator())
 
+    # Volume Trend Ratio (short / long)
+    generators.append(VolumeTrendRatioGenerator())
+
     # NEW FEATURES - Enhanced Volume Analysis
     # Volume z-score generators
     for short_window in [60]:
@@ -3334,6 +3337,41 @@ class AnalystVolumeTrendGenerator(VectorizedFeatureGenerator):
             volume_trend_values = volume.rolling(self.lookback).apply(volume_trend)
             return volume_trend_values
 
+class VolumeTrendRatioGenerator(VectorizedFeatureGenerator):
+    """
+    Generator for Volume Trend Ratio (short / long).
+
+    Matches `volume_trend` in feature_generation_meta_labeling_step.py:
+    volume.rolling(short).mean() / volume.rolling(long).mean().
+    """
+
+    def __init__(self, short_window: int = 5, long_window: int = 20):
+        config = FeatureConfig(
+            name="volume_trend_ratio",
+            category=FeatureCategory.VOLUME,
+            description=f"Volume trend ratio (SMA{short_window} / SMA{long_window})",
+            required_columns=["volume"],
+            default_lookback=long_window,
+            min_lookback=short_window,
+            max_lookback=long_window * 2,
+            parameters={"short_window": short_window, "long_window": long_window},
+            matrix_optimized=True,
+            gpu_accelerated=True
+        )
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        self.short_window = short_window
+        self.long_window = long_window
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        volume = data['volume']
+
+        # Calculate moving averages
+        short_ma = volume.rolling(self.short_window).mean()
+        long_ma = volume.rolling(self.long_window).mean()
+
+        # Avoid division by zero
+        return short_ma / (long_ma + 1e-8)
+
 __all__ = [
     'VolumeFeatureGenerator',
     'VolumeSMAGenerator',
@@ -3353,6 +3391,7 @@ __all__ = [
     'PriceVolumeOscillatorGenerator',
     'AnalystVolumePressureGenerator',
     'AnalystVolumeTrendGenerator',
+    'VolumeTrendRatioGenerator',
     'create_default_volume_generators'
 ]
 

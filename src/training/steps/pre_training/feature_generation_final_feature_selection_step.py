@@ -77,6 +77,16 @@ from src.feature_generation.utils.unified_vectorization_manager import (
     get_unified_vectorization_manager
 )
 
+# Import FeatureSelector
+try:
+    from feature_selection.feature_selection_with_lgbm import FeatureSelector
+    FEATURE_SELECTOR_AVAILABLE = True
+    tprint_info("✅ FeatureSelector loaded from feature_selection.feature_selection_with_lgbm")
+except ImportError as e:
+    FEATURE_SELECTOR_AVAILABLE = False
+    FeatureSelector = None
+    tprint_warning(f"⚠️ FeatureSelector not available: {e}")
+
 # Note: Hardware optimization components are optional for feature selection
 
 # Import hardware optimization tools
@@ -590,6 +600,12 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             tprint_info("⏱️ [3/10] Combining features...")
             combined_features_df = self._combine_features(features_data, labeled_df)
             tprint_info(f"✅ Combined {combined_features_df.shape} in {time.time()-t0:.2f}s")
+
+            # Cap data to most recent 6 months (approx 180 days) for ALL modes
+            MAX_BARS_6_MONTHS = 17280  # 180 days * 96 15-min bars
+            if len(combined_features_df) > MAX_BARS_6_MONTHS:
+                tprint_info(f"📅 Capping combined features to most recent 6 months ({MAX_BARS_6_MONTHS} rows)")
+                combined_features_df = combined_features_df.iloc[-MAX_BARS_6_MONTHS:]
 
             # In blank mode, restrict to a contiguous recent window (default 365 days)
             execution_mode_local = str(config.get('execution_mode', 'blank')).lower()
@@ -2164,6 +2180,46 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             tprint_success(f"✅ Imputed all remaining NaN values")
         else:
             tprint_success(f"✅ No NaN values in kept features")
+
+        # Use FeatureSelector to pre-select top 80 features
+        if FEATURE_SELECTOR_AVAILABLE:
+            tprint_info("🚀 Running FeatureSelector to pre-select top 80 features...")
+            try:
+                # Initialize FeatureSelector
+                # Note: FeatureSelector signature is (target_n_features)
+                # We want 80 features.
+                fs = FeatureSelector(target_n_features=80)
+
+                # Select features
+                # FeatureSelector.select_features(X, y, feature_names=None, target_name='target')
+
+                # Ensure y is a Series
+                if isinstance(y, pd.DataFrame):
+                    y_series = y.iloc[:, 0]
+                else:
+                    y_series = y
+
+                # Run selection
+                top_80_features = fs.select_features(X, y_series, feature_names=list(X.columns), target_name=y_series.name)
+
+                if top_80_features:
+                    tprint_success(f"✅ FeatureSelector selected {len(top_80_features)} features (target 80)")
+
+                    # Update X and feature_cols
+                    valid_top_80 = [f for f in top_80_features if f in X.columns]
+                    if len(valid_top_80) < len(top_80_features):
+                        tprint_warning(f"⚠️ Some selected features missing from columns: {set(top_80_features) - set(valid_top_80)}")
+
+                    X = X[valid_top_80]
+                    feature_cols = valid_top_80
+                    tprint_info(f"📊 Reduced feature set to {len(feature_cols)} features for final refinement")
+                else:
+                    tprint_warning("⚠️ FeatureSelector returned no features, proceeding with all features")
+            except Exception as e:
+                tprint_error(f"❌ FeatureSelector failed: {e}")
+                tprint_warning("⚠️ Proceeding with all features")
+        else:
+             tprint_warning("⚠️ FeatureSelector not available, skipping pre-selection")
 
         tprint_info(f"🔍 Performing final feature selection on {len(feature_cols)} features using 3-stage LGBM pipeline...")
         tprint_info(f"📊 Final dataset: {len(X)} samples, {len(X.columns)} features")

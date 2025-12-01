@@ -1647,6 +1647,13 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 merged_data = self._clean_duplicate_columns(merged_data)
                 tprint(f"🧹 Cleaned duplicate columns - Final shape: {merged_data.shape}")
 
+                # Cap data to most recent 6 months (approx 180 days)
+                # Standardize on 15m timeframe assumption (96 bars/day)
+                MAX_BARS_6_MONTHS = 17280  # 180 days * 96 15-min bars
+                if len(merged_data) > MAX_BARS_6_MONTHS:
+                    tprint(f"📅 Capping data to most recent 6 months ({MAX_BARS_6_MONTHS} rows)")
+                    merged_data = merged_data.iloc[-MAX_BARS_6_MONTHS:]
+
                 # Select a single primary target column and ensure we have real
                 # overlap by dropping rows where that target is NaN. This
                 # mirrors the behavior in the final feature selection step and

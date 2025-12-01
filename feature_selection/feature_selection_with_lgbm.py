@@ -59,6 +59,9 @@ class FeatureSelector:
         # --- 2. Remove features with > 5% NaN ---
         nan_cols = (X.isnull().sum() / len(X) > 0.05).index
         X = X.drop(columns=nan_cols)
+
+        if X.shape[1] == 0:
+            return X
     
         # --- 3. EWMA-based IC + stability analysis ---
         T_ic_window = 672  # 15-min bars per IC window
@@ -223,9 +226,13 @@ class FeatureSelector:
 
         # Fast RFE with shadow features
         X_train_shadow = X_train[features].copy()
+        X_val_shadow = X_val[features].copy()
         n_shadow = min(20, len(features))
         for i in range(n_shadow):
-            X_train_shadow[f'shadow_{i}'] = np.random.permutation(X_train_shadow.iloc[:, i % len(features)])
+            col_name = f'shadow_{i}'
+            col_idx = i % len(features)
+            X_train_shadow[col_name] = np.random.permutation(X_train_shadow.iloc[:, col_idx])
+            X_val_shadow[col_name] = np.random.permutation(X_val_shadow.iloc[:, col_idx])
 
         model = lgb.LGBMRegressor(
             objective='regression',
@@ -246,7 +253,7 @@ class FeatureSelector:
             other_rate=0.2
         )
         model.fit(X_train_shadow, y_train,
-                  eval_set=[(X_val[top_features], y_val)],
+                  eval_set=[(X_val_shadow, y_val)],
                   callbacks=[lgb.early_stopping(5, verbose=False)])
 
         importances = pd.Series(model.feature_importances_, index=X_train_shadow.columns)

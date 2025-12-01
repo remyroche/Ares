@@ -256,6 +256,16 @@ except ImportError as e:
     create_feature_selection_pipeline = None
     tprint_warning(f"⚠️ FeatureSelectionPipeline not available: {e}")
 
+# Import FeatureSelector
+try:
+    from feature_selection.feature_selection_with_lgbm import FeatureSelector
+    FEATURE_SELECTOR_AVAILABLE = True
+    tprint_info("✅ FeatureSelector loaded from feature_selection.feature_selection_with_lgbm")
+except ImportError as e:
+    FEATURE_SELECTOR_AVAILABLE = False
+    FeatureSelector = None
+    tprint_warning(f"⚠️ FeatureSelector not available: {e}")
+
 logger = logging.getLogger(__name__)
 
 
@@ -828,6 +838,17 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             )
             generated_features = generated_features[~generated_features.index.duplicated(keep="first")]
             tprint_success(f"✅ Deduplicated generated_features to {len(generated_features)} unique indices")
+
+        # Cap data to most recent 6 months (approx 180 days)
+        MAX_BARS_6_MONTHS = 17280  # 180 days * 96 15-min bars
+
+        if len(generated_features) > MAX_BARS_6_MONTHS:
+            tprint_info(f"📅 Capping generated_features to most recent 6 months ({MAX_BARS_6_MONTHS} rows)")
+            generated_features = generated_features.iloc[-MAX_BARS_6_MONTHS:]
+
+        if len(labeled_data) > MAX_BARS_6_MONTHS:
+            tprint_info(f"📅 Capping labeled_data to most recent 6 months ({MAX_BARS_6_MONTHS} rows)")
+            labeled_data = labeled_data.iloc[-MAX_BARS_6_MONTHS:]
 
         # 5) Apply light-mode filtering
         tprint_info("📊 PHASE 0: Initial feature counts before filtering:")
@@ -3006,97 +3027,50 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                 }
             }
 
-        # Step 5: LightGBM gain + permutation-based feature selection (interactions + base/CT/variants)
+        # Step 5: Feature Selector (replaces LightGBM gain + permutation-based feature selection)
         lgbm_fs_stats: Dict[str, Any] = {}
         try:
-            if LGBM_AVAILABLE and (len(normalized_features.columns) + len(interactions.columns)) > 0:
-                tprint_info("  🌟 Phase 3.4: LGBM gain + permutation-based feature selection (bypassing 4-stage FS for interactions)")
+            if FEATURE_SELECTOR_AVAILABLE and (len(normalized_features.columns) + len(interactions.columns)) > 0:
+                tprint_info("  🌟 Phase 3.4: FeatureSelector (Pre-filters -> Clustering -> LGBM RFE)")
 
                 primary_target = targets.iloc[:, 0]
-
-                base_cols_for_corr = list(normalized_features.columns)
-                if base_cols_for_corr:
-                    corr_scores: Dict[str, float] = {}
-                    target_valid = primary_target.notna()
-                    for col in base_cols_for_corr:
-                        col_series = normalized_features[col]
-                        mask = target_valid & col_series.notna()
-                        if mask.sum() > 1:
-                            try:
-                                corr_val = col_series[mask].corr(primary_target[mask])
-                            except Exception:
-                                corr_val = 0.0
-                            if pd.isna(corr_val):
-                                corr_val = 0.0
-                        else:
-                            corr_val = 0.0
-                        corr_scores[col] = float(abs(corr_val))
-
-                    sorted_corr = sorted(corr_scores.items(), key=lambda x: x[1], reverse=True)
-                    keep_n = int(len(sorted_corr) * 0.75)
-                    if keep_n <= 0:
-                        keep_n = len(sorted_corr)
-                    kept_base = [name for name, _ in sorted_corr[:keep_n]]
-                    if kept_base and len(kept_base) < len(base_cols_for_corr):
-                        normalized_features = normalized_features[kept_base]
-                        tprint_info(
-                            f"  📊 Correlation prefilter: keeping {len(kept_base)}/{len(base_cols_for_corr)} base features (top 75% by |corr|)"
-                        )
-
                 combined_for_fs = pd.concat([normalized_features, interactions], axis=1)
 
-                gain_top200, perm_top100, gain_importances, perm_importances = (
-                    self._select_features_with_lgbm_gain_and_permutation(
-                        combined_for_fs,
-                        primary_target,
-                        config,
-                    )
-                )
+                # Determine target number of features (e.g. 150)
+                target_n_features = int(config.get('target_n_features_selector', 150))
 
-                selected_set = set(perm_top100)
+                selector = FeatureSelector(target_n_features=target_n_features)
 
-                base_cols = list(normalized_features.columns)
+                # Select features using the pipeline
+                tprint_info(f"  🔍 Running FeatureSelector.select_features (target_n={target_n_features})...")
+                selected_features_list = selector.select_features(combined_for_fs, primary_target)
 
-                base_scores: Dict[str, float] = {}
-                for col in base_cols:
-                    score = 0.0
-                    if col in perm_importances:
-                        score = float(perm_importances.get(col, 0.0))
-                    elif col in gain_importances:
-                        score = float(gain_importances.get(col, 0.0))
-                    base_scores[col] = score
+                tprint_success(f"  ✅ FeatureSelector selected {len(selected_features_list)} features")
 
-                sorted_base = sorted(base_scores.items(), key=lambda x: x[1], reverse=True)
-                top_k = min(100, len(sorted_base))
-                base_top = [name for name, _ in sorted_base[:top_k]]
-                if not base_top:
-                    base_top = base_cols
+                # Separate back into normalized base and interactions
+                selected_set = set(selected_features_list)
 
+                base_cols = [c for c in normalized_features.columns if c in selected_set]
                 interaction_cols = [c for c in interactions.columns if c in selected_set]
 
-                normalized_features = normalized_features[base_top]
+                normalized_features = normalized_features[base_cols]
                 interactions = interactions[interaction_cols]
 
-                tprint_info(
-                    f"  📊 LGBM FS: {len(gain_top200)} features in gain_top200, {len(perm_top100)} in perm_top100"
-                )
-                tprint_info(f"    🔝 Top 5 by gain: {gain_top200[:5]}")
-                tprint_info(f"    🔝 Top 5 by permutation importance: {perm_top100[:5]}")
-
                 lgbm_fs_stats = {
-                    "method": "lgbm_gain_then_permutation",
-                    "gain_top_k": len(gain_top200),
-                    "perm_top_k": len(perm_top100),
-                    "gain_top200": gain_importances,
-                    "perm_top100": perm_importances,
+                    "method": "FeatureSelector_pipeline",
+                    "target_n_features": target_n_features,
+                    "selected_count": len(selected_features_list),
+                    "selected_features": selected_features_list,
+                    "ic_stats": selector.ic_stats if hasattr(selector, 'ic_stats') else None
                 }
             else:
-                tprint_warning(
-                    "  ⚠️ Skipping LGBM gain+permutation selection (LGBM unavailable or no features)"
-                )
+                if not FEATURE_SELECTOR_AVAILABLE:
+                    tprint_warning("  ⚠️ FeatureSelector not available, skipping Phase 3.4 selection")
+                else:
+                    tprint_warning("  ⚠️ No features to select from")
         except Exception as exc:
             tprint_warning(
-                f"  ⚠️ LGBM gain+permutation feature selection failed: {exc}"
+                f"  ⚠️ FeatureSelector selection failed: {exc}"
             )
             lgbm_fs_stats = {"error": str(exc)}
 

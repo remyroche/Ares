@@ -4945,12 +4945,12 @@ class MLBreakoutBounceRegimeStep(BaseStep):
 
             defaults: Dict[str, Any] = {
                 "breakout_kill_zone_pct": 0.005,
-                "breakout_chop_band_pct": 0.002,
+                "breakout_chop_band_pct": 0.015,  # Increased from 0.002 to capture 96-bar chop
                 "breakout_horizon_bars": 96,
-                "breakout_cross_buffer_pct": 0.0025,
-                "breakout_hold_buffer_pct": 0.0020,
-                "breakout_bounce_move_pct": 0.0030,
-                "breakout_trap_revert_pct": 0.0025,
+                "breakout_cross_buffer_pct": 0.0040,  # Increased from 0.0025 to filter noise
+                "breakout_hold_buffer_pct": 0.0030,  # Increased from 0.0020
+                "breakout_bounce_move_pct": 0.0015,  # Decreased from 0.0030 to capture more bounces
+                "breakout_trap_revert_pct": 0.0030,  # Increased from 0.0025
                 "breakout_meta_enable": True,
             }
             for k, v in defaults.items():
@@ -5156,9 +5156,10 @@ class MLBreakoutBounceRegimeStep(BaseStep):
                 output_df["meta_breakout_success"] = meta_aligned
 
             try:
-                high_conf_threshold = float(config.get("breakout_high_conf_threshold", 0.7))
+                # Use a stricter threshold (top 20%) now that we use robust percentile ranking
+                high_conf_threshold = float(config.get("breakout_high_conf_threshold", 0.8))
             except Exception:
-                high_conf_threshold = 0.7
+                high_conf_threshold = 0.8
 
             try:
                 n_regimes = int(probs_full.shape[1])
@@ -5205,12 +5206,18 @@ class MLBreakoutBounceRegimeStep(BaseStep):
                     success_q_low = q_low
                     success_q_high = q_high
 
-                    if q_high > q_low:
+                    if q_high > q_low + 1e-9:
                         scaled = (raw_success_prob - q_low) / (q_high - q_low)
                         scaled = np.clip(scaled, 0.0, 1.0)
                     else:
-                        max_prob = np.max(probs_full, axis=1)
-                        scaled = np.clip(max_prob * global_success_rate, 0.0, 1.0)
+                        # Edge case: constant or degenerate distribution (max <= min)
+                        # Default to 0.5 confidence if we can't differentiate
+                        scaled = np.full_like(raw_success_prob, 0.5, dtype=float)
+                        tprint_warning(
+                            f"⚠️ Breakout success prob distribution is degenerate "
+                            f"(q_low={q_low:.6f}, q_high={q_high:.6f}); "
+                            "defaulting to 0.5 confidence."
+                        )
 
                     success_prob = scaled
                 else:
@@ -5916,48 +5923,6 @@ class MLBreakoutBounceRegimeStep(BaseStep):
         meta_labels = meta_df["label"].astype(int)
         meta_labels = meta_labels.reindex(labels.index).dropna().astype(int)
         return meta_labels
-
-    def _safe_log_loss(
-        self,
-        y_true: Any,
-        probs: np.ndarray,
-        labels: Optional[List[int]] = None,
-    ) -> float:
-        """Robust multi-class log-loss with defensive normalization.
-
-        Ensures probabilities are finite, row-normalised, and clipped to (0, 1)
-        before delegating to sklearn.metrics.log_loss. Returns NaN on failure.
-        """
-
-        arr = np.asarray(probs, dtype=float)
-        if arr.size == 0:
-            return float("nan")
-
-        y_arr = np.asarray(y_true)
-        if y_arr.size == 0:
-            return float("nan")
-
-        # Replace NaN/Inf and renormalise rows to sum to 1.
-        arr = np.nan_to_num(arr, nan=0.0, posinf=0.0, neginf=0.0)
-        row_sum = arr.sum(axis=1, keepdims=True)
-        row_sum[row_sum <= 0.0] = 1.0
-        arr = arr / row_sum
-
-        # Clip to a safe open interval and renormalise again.
-        eps = 1e-12
-        arr = np.clip(arr, eps, 1.0 - eps)
-        row_sum = arr.sum(axis=1, keepdims=True)
-        row_sum[row_sum <= 0.0] = 1.0
-        arr = arr / row_sum
-
-        try:
-            return float(log_loss(y_arr, arr, labels=labels))
-        except Exception as exc:  # pragma: no cover - defensive
-            try:
-                tprint_warning(f"Log-loss computation failed; returning NaN: {exc}")
-            except Exception:
-                pass
-            return float("nan")
 
     def _apply_temperature(self, probs: np.ndarray, temperature: float) -> np.ndarray:
         arr = np.asarray(probs, dtype=float)
@@ -8001,9 +7966,9 @@ class MLBreakoutBounceRegimeStep(BaseStep):
             stage1_test_probs = None
 
         # Stage 1 metrics
-        from sklearn.metrics import roc_auc_score, log_loss
+        from sklearn.metrics import roc_auc_score
         stage1_val_auc = roc_auc_score(y_val, stage1_val_probs)
-        stage1_val_logloss = log_loss(y_val, stage1_val_probs)
+        stage1_val_logloss = self._safe_log_loss(y_val, stage1_val_probs)
 
         tprint_success(f"✅ Stage 1: Val AUC={stage1_val_auc:.3f}, Log Loss={stage1_val_logloss:.3f}")
 
@@ -8481,11 +8446,7 @@ class MLBreakoutBounceRegimeStep(BaseStep):
         # Stage 1 metrics
         val_preds = (stage1_val_probs >= 0.5).astype(int)
         val_accuracy = accuracy_score(y_val, val_preds)
-
-        try:
-            val_log_loss = log_loss(y_val, stage1_val_probs)
-        except Exception:
-            val_log_loss = float("nan")
+        val_log_loss = self._safe_log_loss(y_val, stage1_val_probs)
 
         tprint_success(f"✅ Stage 1 Val: accuracy={val_accuracy:.4f}, log_loss={val_log_loss:.4f}")
 
@@ -8687,10 +8648,7 @@ class MLBreakoutBounceRegimeStep(BaseStep):
         if X_test is not None and y_test is not None and stage1_test_probs is not None:
             test_preds = (stage1_test_probs >= 0.5).astype(int)
             test_accuracy = accuracy_score(y_test, test_preds)
-            try:
-                test_log_loss = log_loss(y_test, stage1_test_probs)
-            except Exception:
-                test_log_loss = float("nan")
+            test_log_loss = self._safe_log_loss(y_test, stage1_test_probs)
 
             metrics["test_accuracy"] = float(test_accuracy)
             metrics["test_log_loss"] = float(test_log_loss)
@@ -8715,3 +8673,46 @@ class MLBreakoutBounceRegimeStep(BaseStep):
         )
 
         return stage1_model, metrics, probs_full, classes_full
+
+    def _safe_log_loss(
+        self,
+        y_true: Any,
+        probs: np.ndarray,
+        labels: Optional[List[int]] = None,
+    ) -> float:
+        """Robust multi-class log-loss with defensive normalization.
+
+        Ensures probabilities are finite, row-normalised, and clipped to (0, 1)
+        before delegating to sklearn.metrics.log_loss. Returns NaN on failure.
+        """
+
+        arr = np.asarray(probs, dtype=float)
+        if arr.size == 0:
+            return float("nan")
+
+        y_arr = np.asarray(y_true)
+        if y_arr.size == 0:
+            return float("nan")
+
+        # Replace NaN/Inf and renormalise rows to sum to 1.
+        arr = np.nan_to_num(arr, nan=0.0, posinf=0.0, neginf=0.0)
+        row_sum = arr.sum(axis=1, keepdims=True)
+        row_sum[row_sum <= 0.0] = 1.0
+        arr = arr / row_sum
+
+        # Clip to a safe open interval and renormalise again.
+        eps = 1e-12
+        arr = np.clip(arr, eps, 1.0 - eps)
+        row_sum = arr.sum(axis=1, keepdims=True)
+        row_sum[row_sum <= 0.0] = 1.0
+        arr = arr / row_sum
+
+        try:
+            from sklearn.metrics import log_loss
+            return float(log_loss(y_arr, arr, labels=labels))
+        except Exception as exc:  # pragma: no cover - defensive
+            try:
+                tprint_warning(f"Log-loss computation failed; returning NaN: {exc}")
+            except Exception:
+                pass
+            return float("nan")

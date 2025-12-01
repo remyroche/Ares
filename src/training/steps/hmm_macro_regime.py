@@ -45,19 +45,6 @@ from src.utils.versioned_artifacts.temporal_splits import (
     create_temporal_split_config_for_pipeline,
     TemporalSplitConfig,
 )
-from src.training.steps.market_analysis.clusters.cluster_quality_assessor import (
-    ClusterQualityAssessor,
-    ClusterQualityMetrics,
-)
-from src.training.steps.market_analysis.rolling_hmm_clustering.feature_engineering import (
-    RollingHMMFeatureEngineer,
-    FeatureEngineeringConfig,
-    DEFAULT_EWMA_CONFIGS,
-)
-from src.training.steps.market_analysis.rolling_hmm_clustering.sticky_hmm_model import (
-    StickyHMMModel,
-    StickyHMMConfig,
-)
 from src.utils.ml_common.optimization import (
     HierarchicalParameterOptimizer,
     ParameterGroup,
@@ -197,7 +184,7 @@ class HMMMLMacroTrendStep(BaseStep):
             # Macro scaling factor is applied to horizon/smoothing/volatility
             # windows so that all macro horizons live noticeably above the
             # core alpha horizons.
-            macro_scaling_factor = 3
+            macro_scaling_factor = int(config.get("macro_scaling_factor", 3))
 
             for key, default in [
                 # Use longer maximum horizon in 1h bars so macro alpha focuses
@@ -1353,6 +1340,16 @@ class HMMMLMacroTrendStep(BaseStep):
         market_data: pd.DataFrame,
         config: Dict[str, Any],
     ) -> Tuple[pd.DataFrame, Optional[pd.DataFrame], Optional[pd.DataFrame]]:
+        from src.training.steps.market_analysis.rolling_hmm_clustering.feature_engineering import (
+            RollingHMMFeatureEngineer,
+            FeatureEngineeringConfig,
+            DEFAULT_EWMA_CONFIGS,
+        )
+        from src.training.steps.market_analysis.rolling_hmm_clustering.sticky_hmm_model import (
+            StickyHMMModel,
+            StickyHMMConfig,
+        )
+
         if not isinstance(market_data, pd.DataFrame) or market_data.empty:
             raise ValueError("Market data must be a non-empty DataFrame for internal HMM estimation")
 
@@ -1893,6 +1890,12 @@ class HMMMLMacroTrendStep(BaseStep):
         market_data: pd.DataFrame,
         config: Dict[str, Any],
     ) -> pd.DataFrame:
+        from src.training.steps.market_analysis.rolling_hmm_clustering.feature_engineering import (
+            RollingHMMFeatureEngineer,
+            FeatureEngineeringConfig,
+            DEFAULT_EWMA_CONFIGS,
+        )
+
         if not isinstance(market_data, pd.DataFrame) or market_data.empty:
             raise ValueError("Market data must be a non-empty DataFrame for economic feature extraction")
 
@@ -4315,13 +4318,18 @@ class HMMMLMacroTrendStep(BaseStep):
         alpha_df: pd.DataFrame,
         regime_col: Optional[str],
         config: Dict[str, Any],
-    ) -> Tuple[Optional[ClusterQualityMetrics], Optional[str]]:
+    ) -> Tuple[Optional[Any], Optional[str]]:
         """Assess quality of alpha regimes using ClusterQualityAssessor.
 
         This uses the unified assess_quality interface and persists metrics as a
         dedicated artifact. The minimum regime size defaults to 3 but can be
         overridden via config["alpha_min_regime_size"].
         """
+        from src.training.steps.market_analysis.clusters.cluster_quality_assessor import (
+            ClusterQualityAssessor,
+            ClusterQualityMetrics,
+        )
+
         if regime_col is None or regime_col not in alpha_df.columns:
             tprint_warning("No alpha regime column provided; skipping regime quality assessment")
             return None, None

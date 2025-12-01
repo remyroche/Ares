@@ -8,6 +8,11 @@ import fastcluster
 import os
 from datetime import datetime
 
+# Limits the analysis to 6 months of data (even 3 months would be enough)
+# 1/ EWMA Spearman IC + Spearman IC stability analysis pre-filters (higher weight on more recent windows)
+# 2/ Hierarchical clustering (avoids colinearity, keep the best in class, reduces number of features)
+# 3/ 2-steps RFE with light then strong LGBM
+
 class FeatureSelector:
     def __init__(self, target_n_features):
         self.target_n_features = target_n_features
@@ -186,16 +191,11 @@ class FeatureSelector:
         features = list(X.columns)
         X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
 
-        # Select top 50% features by stability score
-        n_top_features = int(len(features) * 0.5)
-        stability_scores = pd.Series(self.ic_stats['stability_score'], index=self.original_columns)
-        top_features = stability_scores[features].nlargest(n_top_features).index
-
         # Fast RFE with shadow features
-        X_train_shadow = X_train[top_features].copy()
-        n_shadow = min(20, len(top_features))
+        X_train_shadow = X_train[features].copy()
+        n_shadow = min(20, len(features))
         for i in range(n_shadow):
-            X_train_shadow[f'shadow_{i}'] = np.random.permutation(X_train_shadow.iloc[:, i % len(top_features)])
+            X_train_shadow[f'shadow_{i}'] = np.random.permutation(X_train_shadow.iloc[:, i % len(features)])
 
         model = lgb.LGBMRegressor(
             objective='regression',

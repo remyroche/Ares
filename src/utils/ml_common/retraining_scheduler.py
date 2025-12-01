@@ -61,14 +61,40 @@ class RetrainingSchedule:
         )
 
     @classmethod
-    def for_analyst_base(cls) -> 'RetrainingSchedule':
-        """Standard schedule for analyst base models."""
+    def for_analyst_base(cls, execution_mode: str = 'blank') -> 'RetrainingSchedule':
+        """
+        Standard schedule for analyst base models.
+        
+        Burn-in = full_period - 4 months:
+        - blank mode: 360 days - 120 days = 240 days (~8 months burn-in)
+        - full mode: 1095 days - 120 days = 975 days (~32 months burn-in)
+        - light mode: 30 days - 120 days = 0 (no burn-in, uses minimum)
+        
+        Args:
+            execution_mode: One of 'light', 'blank', 'full'
+        """
+        # Mode lookback days (from ares_launcher)
+        MODE_LOOKBACK_DAYS = {
+            "light": 30,
+            "blank": 360,  # 1 year
+            "full": 365 * 3  # 3 years
+        }
+        
+        full_period_days = MODE_LOOKBACK_DAYS.get(execution_mode, 360)
+        burn_in_buffer_days = 120  # 4 months
+        
+        # Calculate burn-in as full_period - 4 months
+        burn_in_days = max(30, full_period_days - burn_in_buffer_days)
+        
+        # Convert to percentage for backward compatibility
+        burnin_pct = burn_in_days / full_period_days if full_period_days > 0 else 0.5
+        
         return cls(
             model_type='analyst_base',
-            retrain_interval_days=5,
-            burnin_pct=1/6,  # 6-month burn-in so base models start predicting after sufficient history
-            min_samples_for_training=2000,
-            enable_warm_start=False
+            retrain_interval_days=14,  # 14-day OOF batches for incremental training
+            burnin_pct=burnin_pct,
+            min_samples_for_training=500,  # Lowered for incremental approach
+            enable_warm_start=True  # Enable warm start for incremental training
         )
 
     @classmethod

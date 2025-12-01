@@ -3681,15 +3681,92 @@ class UnifiedModelsTrainingStep(BaseStep):
         tprint_info("=" * 80)
         try:
             if training_type == 'analyst_base':
-                # Regime probabilities are already added by _get_additional_model_outputs
-                # Just pass the training_data directly to the pipeline
-                tprint_info(f"🔧 Training analyst base models with {training_data.shape[1]} features...")
+                # Use IncrementalAnalystTrainer for rolling OOF predictions
+                # Train on burn-in -> generate OOF for next 14 days -> resume training
+                tprint_info(f"🔧 Training analyst base models INCREMENTALLY with {training_data.shape[1]} features...")
                 
-                return await self.unified_pipeline.train_analyst_models(
-                    data=training_data,
-                    targets=analyst_targets,
-                    config=yaml_config
+                # Import incremental trainer
+                from src.utils.ml_common.incremental_analyst_trainers import IncrementalAnalystTrainer
+                
+                # Get execution mode from config
+                execution_mode = config.get('execution_mode', 'blank')
+                symbol = config.get('symbol', 'ETHUSDT')
+                exchange = config.get('exchange', 'binance')
+                timeframe = config.get('timeframe', '15m')
+                
+                # Determine data start/end from index
+                if hasattr(training_data.index, 'min') and hasattr(training_data.index, 'max'):
+                    data_start = training_data.index.min()
+                    data_end = training_data.index.max()
+                    
+                    # Convert to datetime if needed
+                    if hasattr(data_start, 'to_pydatetime'):
+                        data_start = data_start.to_pydatetime()
+                    if hasattr(data_end, 'to_pydatetime'):
+                        data_end = data_end.to_pydatetime()
+                else:
+                    # Fallback: use datetime.now and calculate based on data length
+                    from datetime import datetime, timedelta
+                    data_end = datetime.now()
+                    # Estimate days based on timeframe and data length
+                    samples_per_day = {'1m': 1440, '5m': 288, '15m': 96, '1h': 24, '4h': 6, '1d': 1}.get(timeframe, 96)
+                    total_days = len(training_data) // samples_per_day
+                    data_start = data_end - timedelta(days=total_days)
+                
+                tprint_info(f"   Data range: {data_start} → {data_end}")
+                tprint_info(f"   Execution mode: {execution_mode}")
+                
+                # Create incremental trainer
+                model_id = f"{symbol}_{exchange}_{timeframe}"
+                incremental_trainer = IncrementalAnalystTrainer(
+                    model_id=model_id,
+                    execution_mode=execution_mode,
+                    task_type='regression',
+                    enable_incremental_hpo=True
                 )
+                
+                # Train all models incrementally
+                incremental_results = incremental_trainer.train_all_models(
+                    X=training_data,
+                    y=analyst_targets,
+                    data_start=data_start,
+                    data_end=data_end,
+                    verbose=True
+                )
+                
+                # Combine OOF predictions from all models
+                combined_oof = incremental_trainer.get_combined_oof_predictions(incremental_results)
+                
+                # Build result dict in expected format
+                models_dict = {}
+                predictions_dict = {}
+                
+                for model_name, result in incremental_results.items():
+                    models_dict[model_name] = result.final_model
+                    if result.oof_predictions is not None and not result.oof_predictions.empty:
+                        predictions_dict[model_name] = result.oof_predictions.get('prediction', result.oof_predictions.iloc[:, 0])
+                
+                tprint_success(f"✅ Incremental training complete for {len(models_dict)} models")
+                tprint_info(f"   Total OOF predictions: {len(combined_oof)}")
+                
+                return {
+                    'success': True,
+                    'models': models_dict,
+                    'predictions': pd.DataFrame(predictions_dict) if predictions_dict else None,
+                    'oof_predictions': combined_oof,
+                    'training_metadata': {
+                        model_name: result.window_metadata 
+                        for model_name, result in incremental_results.items()
+                    },
+                    'hpo_history': {
+                        model_name: result.hpo_history
+                        for model_name, result in incremental_results.items()
+                    },
+                    'best_params': {
+                        model_name: result.best_params
+                        for model_name, result in incremental_results.items()
+                    }
+                }
             elif training_type == 'analyst_ensemble':
                 tprint_info(f"🔍 [DEBUG] Calling train_ensemble_models with config keys: {list(config.keys())}")
                 if 'ensemble_features' in config:

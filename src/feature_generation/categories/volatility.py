@@ -1543,10 +1543,12 @@ def create_default_volatility_generators() -> List[FeatureGenerator]:
         for period in [14, 20, 30]:
             for expansion_window in [3, 5, 7]:
                 generators.append(VectorBTVolatilityExpansionGenerator(period, expansion_window))
-    else:
+
+    # Volatility Ratio
+    generators.append(VolatilityRatioGenerator(short_window=96))
         # Fallback to original generators
-        for period in [10, 14, 20, 30, 50]:
-            generators.append(VolatilityFeatureGenerator(period))
+    for period in [10, 14, 20, 30, 50]:
+        generators.append(VolatilityFeatureGenerator(period))
 
     return generators
 
@@ -1934,6 +1936,40 @@ class MemoryEfficientVolatilityGenerator(VectorizedFeatureGenerator):
             results.append(chunk_vol.iloc[self.window:])
 
         return pd.concat(results, ignore_index=False)
+
+class VolatilityRatioGenerator(VectorizedFeatureGenerator):
+    """
+    Generator for Volatility Ratio (current / baseline).
+
+    Calculates volatility / rolling_mean(volatility).
+    """
+
+    def __init__(self, short_window: int = 96, baseline_window: int = 96):
+        config = FeatureConfig(
+            name=f"vol_ratio",
+            category=FeatureCategory.VOLATILITY,
+            description=f"Volatility ratio (current {short_window} / baseline {baseline_window})",
+            required_columns=["close"],
+            default_lookback=max(short_window, baseline_window),
+            parameters={'short_window': short_window, 'baseline_window': baseline_window},
+            matrix_optimized=True,
+            gpu_accelerated=True
+        )
+        super().__init__(config)
+        self.short_window = short_window
+        self.baseline_window = baseline_window
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        close = data['close']
+        log_ret = np.log(close).diff()
+
+        # Volatility
+        vol = log_ret.rolling(self.short_window).std()
+
+        # Baseline (rolling mean of vol)
+        vol_baseline = vol.rolling(self.baseline_window).mean()
+
+        return vol / (vol_baseline + 1e-8)
 
 # Additional advanced volatility features from advanced_volatility_features.py
 class VolatilityConfig:

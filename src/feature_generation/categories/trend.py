@@ -2091,6 +2091,13 @@ def create_trend_generators(periods: Dict[str, List[int]] = None) -> List[Featur
     for period in periods.get('trend_score', [14]):
         generators.append(TrendScoreGenerator(adx_period=period))
 
+    # Distance From Recent High generators
+    generators.append(DistFromRecentHighGenerator(window=50))
+    generators.append(DistFromRecentHighGenerator(window=20))
+
+    # Drawdown generators
+    generators.append(DrawdownGenerator(window=100))
+
     return generators
 
 class OptimizedTrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
@@ -2964,6 +2971,70 @@ class VectorBTZigZagGenerator(VectorBTFeatureGenerator):
         except Exception as e:
             self.logger.error(f"Error generating ZigZag indicator: {e}")
             return pd.Series(np.random.normal(0, 1e-4, len(data)), index=data.index, name=f'vectorbt_zigzag_{self.deviation}')
+
+class DistFromRecentHighGenerator(VectorizedFeatureGenerator):
+    """
+    Generator for distance from recent high.
+
+    Calculates (close - rolling_max) / (rolling_max + epsilon).
+    """
+
+    def __init__(self, window: int = 50):
+        config = FeatureConfig(
+            name=f"dist_from_recent_high_{window}",
+            category=FeatureCategory.TREND,
+            description=f"Distance from {window}-period rolling high",
+            required_columns=["close"],
+            default_lookback=window,
+            min_lookback=window,
+            max_lookback=window,
+            parameters={'window': window},
+            matrix_optimized=True,
+            gpu_accelerated=True
+        )
+        super().__init__(config)
+        self.window = window
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        close = data['close']
+        # Rolling max
+        rolling_max = close.rolling(self.window).max()
+
+        # Calculate distance
+        dist = (close - rolling_max) / (rolling_max + 1e-8)
+
+        return dist
+
+class DrawdownGenerator(VectorizedFeatureGenerator):
+    """
+    Generator for drawdown from rolling maximum.
+
+    Calculates (close - rolling_max) / (rolling_max + epsilon).
+    Identical to DistFromRecentHighGenerator but specific naming convention
+    often implies a risk metric.
+    """
+
+    def __init__(self, window: int = 100):
+        config = FeatureConfig(
+            name=f"drawdown_{window}",
+            category=FeatureCategory.TREND,
+            description=f"Drawdown from {window}-period rolling high",
+            required_columns=["close"],
+            default_lookback=window,
+            min_lookback=window,
+            max_lookback=window,
+            parameters={'window': window},
+            matrix_optimized=True,
+            gpu_accelerated=True
+        )
+        super().__init__(config)
+        self.window = window
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        close = data['close']
+        rolling_max = close.rolling(self.window).max()
+        drawdown = (close - rolling_max) / (rolling_max + 1e-8)
+        return drawdown
 
 def create_optimized_trend_generators(periods: List[int] = None, use_unified_manager: bool = True) -> List[FeatureGenerator]:
     """Create a list of optimized trend feature generators using VectorBTRollingOptimizer and UnifiedVectorizationManager."""

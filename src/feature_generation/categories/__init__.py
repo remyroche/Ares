@@ -449,4 +449,7 @@ __all__ = [
     "MarketFeaturesGenerator",
     "SignalFeaturesGenerator",
     "LabelingFeatureConfig",
+    # Meta features
+    "BarsSinceLastEventGenerator",
+    "EventMeanReturnGenerator",
 ]

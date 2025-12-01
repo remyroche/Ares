@@ -18,19 +18,28 @@ class FeatureSelector:
         self.original_columns = X.columns
         X = X.astype(np.float32)
         y = y.astype(np.float32)
-
+    
+        # --- Pre-filter: keep only last 6 months of data if longer ---
+        bars_per_day = 24 * 4  # 15-min bars
+        bars_per_month = 30 * bars_per_day
+        bars_6_months = 6 * bars_per_month
+    
+        if X.shape[0] > bars_6_months:
+            X = X.iloc[-bars_6_months:]
+            y = y.iloc[-bars_6_months:]
+    
         # Stage 1: EWMA-based Pre-Filters
         X_filtered = self.run_pre_filters(X, y)
-
+    
         # Stage 2: Hierarchical Clustering
         X_clustered = self._hierarchical_clustering(X_filtered, y)
-
+    
         # Stage 3: LGBM-Based RFE
         selected_features = self._lgbm_rfe(X_clustered, y)
-
+    
         # Generate report
         self._generate_report(X_filtered)
-
+    
         return selected_features
 
     def run_pre_filters(self, X, y):
@@ -48,7 +57,7 @@ class FeatureSelector:
         # EWMA-based stability analysis
         T_ic_window = 672  # samples per IC window (15-min bars)
         K = 12             # number of windows
-        hl_days = 30       # half-life in days
+        hl_days = 60       # half-life in days
         bars_per_day = 24 * 4  # 15-min bars
         hl_samples = hl_days * bars_per_day
         alpha = 1 - np.exp(-np.log(2) / hl_samples)

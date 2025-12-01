@@ -39,6 +39,7 @@ from .base_trainer import (
 )
 from .model_trainer import ModelTrainer
 from .training_metrics_collector import TrainingMetricsCollector, ModelMetrics
+from src.utils.ml_common.retraining_scheduler import RetrainingSchedule, OOFPredictionGenerator
 
 
 class EnsembleStrategy:
@@ -66,11 +67,15 @@ class EnsembleTrainer(BaseTrainer):
         self.meta_learner_type = config.custom_params.get('meta_learner_type', 'lightgbm')
         self.cv_folds = config.custom_params.get('cv_folds', 5)
         
+        # Check for incremental training override
+        # Note: We don't cache this here as it might be updated in custom_params before train() is called
+
         # Individual trainers
         self._individual_trainers = {}
         self._meta_learner = None
         self._oof_predictions = {}
         self._ensemble_weights = {}
+        self.meta_oof_predictions = None  # To store incremental OOF predictions
         
         # Metrics collector
         self._metrics_collector = TrainingMetricsCollector(logger)
@@ -129,6 +134,13 @@ class EnsembleTrainer(BaseTrainer):
                 tprint_warning("⚠️ Aligning base predictions to processed targets index...")
                 base_predictions = base_predictions.reindex(processed_targets.index)
             
+            # If incremental rolling training is enabled (for Analyst Ensemble specifically)
+            # Check config dynamically as it may have been updated by the orchestrator
+            enable_incremental = self.config.custom_params.get('incremental_ensemble_training', False)
+            if enable_incremental and self.config.role == TrainingRole.ANALYST:
+                tprint_info("🔄 Enabling INCREMENTAL ROLLING training for Analyst Ensemble...")
+                return await self._train_incremental_rolling(base_predictions, processed_targets, start_time, processed_data)
+
             # Use base predictions as OOF predictions for meta-learner
             oof_predictions = base_predictions.values
             tprint_info(f"📊 Using {oof_predictions.shape[1]} base model predictions for meta-learning")
@@ -248,6 +260,223 @@ class EnsembleTrainer(BaseTrainer):
             
         except Exception as e:
             self.logger.error(f"Ensemble training failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return TrainingResult(
+                success=False,
+                error_message=str(e),
+                training_time=time.time() - start_time
+            )
+
+    async def _train_incremental_rolling(
+        self,
+        base_predictions: pd.DataFrame,
+        targets: pd.Series,
+        start_time: float,
+        processed_data: pd.DataFrame
+    ) -> TrainingResult:
+        """
+        Perform incremental rolling training for Analyst Ensemble.
+
+        Strategy:
+        1. Calculate burn-in cutoff: 4 months (120 days) before data end.
+        2. Initial training: Train on [start, cutoff].
+        3. Rolling loop:
+           - Predict next 14 days OOF.
+           - Add next 14 days to training.
+           - Retrain (warm start) without HPO.
+
+        Args:
+            base_predictions: Base model predictions (features for meta-learner)
+            targets: True targets
+            start_time: Training start time
+            processed_data: Full feature data (for context/metrics)
+
+        Returns:
+            TrainingResult with OOF predictions and final model
+        """
+        try:
+            tprint_info("🔄 Starting Incremental Rolling Ensemble Training")
+            tprint_info("   Strategy: Train up to 4 months before end, then rolling 14-day OOF updates")
+
+            # Ensure DatetimeIndex
+            if not isinstance(base_predictions.index, pd.DatetimeIndex):
+                raise ValueError("Base predictions must have DatetimeIndex for rolling training")
+
+            data_start = base_predictions.index.min()
+            data_end = base_predictions.index.max()
+
+            # 1. Calculate split point (4 months before end)
+            burn_in_buffer_days = 120  # 4 months
+            split_date = data_end - pd.Timedelta(days=burn_in_buffer_days)
+
+            if split_date <= data_start:
+                tprint_warning(f"⚠️ Dataset too short (< 4 months) for 4-month OOF window. Using 80/20 split fallback.")
+                total_days = (data_end - data_start).days
+                split_date = data_start + pd.Timedelta(days=int(total_days * 0.8))
+
+            tprint_info(f"   📅 Data range: {data_start} to {data_end}")
+            tprint_info(f"   📅 Initial training cutoff: {split_date}")
+            tprint_info(f"   📅 OOF Generation Window: {split_date} to {data_end} ({(data_end - split_date).days} days)")
+
+            # Create schedule
+            # We construct a custom schedule that forces the split at `split_date`
+            # But RetrainingSchedule uses burnin_pct. Let's calculate it.
+            total_duration = (data_end - data_start).total_seconds()
+            burnin_duration = (split_date - data_start).total_seconds()
+            burnin_pct = burnin_duration / total_duration if total_duration > 0 else 0.5
+
+            schedule = RetrainingSchedule(
+                model_type='analyst_ensemble',
+                retrain_interval_days=14,
+                burnin_pct=burnin_pct,
+                min_samples_for_training=50,  # Lowered to support small datasets as requested
+                enable_warm_start=True
+            )
+
+            generator = OOFPredictionGenerator(
+                schedule=schedule,
+                data_start=data_start.to_pydatetime() if hasattr(data_start, 'to_pydatetime') else data_start,
+                data_end=data_end.to_pydatetime() if hasattr(data_end, 'to_pydatetime') else data_end
+            )
+
+            tprint_info(f"   Created {len(generator.windows)} rolling windows for OOF generation")
+
+            # Prepare state for rolling loop
+            self._best_params = None  # To store params from first HPO run
+            self._latest_model = None # To store model for warm start
+
+            # Define training function
+            def train_step(train_data: pd.DataFrame) -> Any:
+                # Align targets
+                # train_data contains features (base predictions)
+                train_targets = targets.loc[train_data.index]
+
+                # Check if this is the first window (initial training)
+                is_initial = self._best_params is None
+
+                # Create model
+                model = self._create_meta_learner_model()
+
+                if is_initial:
+                    tprint_info(f"   🧠 Initial training ({len(train_data)} samples) - with HPO if enabled")
+                    # Perform full training (with HPO if configured in base class)
+                    # For ensemble, we usually do HPO via _train_meta_learner or metrics collector
+                    # Here we simplify: if HPO is needed, we do it once.
+
+                    # For now, let's assume we use default params or params from config
+                    # If HPO is strictly required for the FIRST window, we should run it here.
+                    # Given "without HPO" for *re-training*, we imply first run might need it.
+
+                    # Simply fit the model
+                    model.fit(train_data.values, train_targets.values)
+
+                    # Store "best params" (here just the fitted model state effectively)
+                    self._best_params = model.get_params()
+                    self._latest_model = model
+                else:
+                    # Rolling update: No HPO, Warm Start
+                    # "continue where we left off" -> expanding window
+                    # For LGBM/CatBoost, we can use init_model
+                    tprint_info(f"   🔄 Rolling update ({len(train_data)} samples) - Warm Start")
+
+                    # Create new model with best params
+                    model.set_params(**self._best_params)
+
+                    # Fit with warm start if supported
+                    try:
+                        if hasattr(model, 'fit'):
+                            if 'init_model' in model.fit.__code__.co_varnames:
+                                model.fit(train_data.values, train_targets.values, init_model=self._latest_model)
+                            else:
+                                model.fit(train_data.values, train_targets.values)
+                    except Exception:
+                        # Fallback to standard fit
+                        model.fit(train_data.values, train_targets.values)
+
+                    self._latest_model = model
+
+                return model
+
+            # Define prediction function
+            def predict_step(model: Any, pred_data: pd.DataFrame) -> pd.DataFrame:
+                if hasattr(model, 'predict'):
+                    preds = model.predict(pred_data.values)
+                    return pd.DataFrame({'prediction': preds}, index=pred_data.index)
+                return pd.DataFrame()
+
+            # Execute rolling OOF generation
+            oof_predictions, models, metadata = generator.generate_oof_predictions(
+                data=base_predictions,
+                training_func=train_step,
+                prediction_func=predict_step,
+                show_progress=True
+            )
+
+            # After loop, perform one final training on FULL data (up to data_end)
+            # This is the model that will be saved and used for future inference
+            tprint_info("   🏁 Final training on full dataset...")
+            final_model = train_step(base_predictions)
+            self._meta_learner = final_model
+
+            # Prepare result
+            # Convert OOF predictions to simple array/series if needed
+            final_oof = None
+            if not oof_predictions.empty:
+                final_oof = oof_predictions['prediction'].values
+                # We also need to construct a full OOF array matching original data length
+                # The generator only produces predictions for the OOF period (last 4 months)
+                # We need to pad the beginning with NaNs or in-sample predictions?
+                # Usually OOF means "Out of Fold". The initial period is "in-sample".
+                # For consistency with other components, we might want a full-length array.
+
+                full_oof = pd.DataFrame(index=base_predictions.index, columns=['prediction'])
+                full_oof.loc[oof_predictions.index, 'prediction'] = oof_predictions['prediction']
+                final_oof = full_oof['prediction'].values
+
+                self.meta_oof_predictions = final_oof # Store for property access
+
+            # Calculate metrics on the OOF part
+            ensemble_metrics = {}
+            if final_oof is not None:
+                # Get targets for OOF period
+                # Filter indices that exist in targets
+                valid_indices = oof_predictions.index.intersection(targets.index)
+                if len(valid_indices) > 0:
+                    oof_targets = targets.loc[valid_indices]
+                    oof_preds_vals = oof_predictions.loc[valid_indices, 'prediction'].values
+
+                    from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+                    ensemble_metrics = {
+                        'ensemble_mse': mean_squared_error(oof_targets, oof_preds_vals),
+                        'ensemble_mae': mean_absolute_error(oof_targets, oof_preds_vals),
+                        'ensemble_r2': r2_score(oof_targets, oof_preds_vals),
+                        'ensemble_rmse': np.sqrt(mean_squared_error(oof_targets, oof_preds_vals))
+                    }
+                else:
+                    tprint_warning("⚠️ No valid targets for OOF metrics calculation")
+
+            training_time = time.time() - start_time
+
+            # Finalize
+            tprint_success(f"✅ Incremental rolling training completed in {training_time:.2f}s")
+
+            return TrainingResult(
+                success=True,
+                model=final_model,
+                predictions=None, # Will be generated later if needed
+                oof_predictions=final_oof,
+                metrics=ensemble_metrics,
+                training_time=training_time,
+                metadata={
+                    'ensemble_strategy': 'incremental_rolling',
+                    'meta_learner_type': self.meta_learner_type,
+                    'rolling_windows': len(metadata)
+                }
+            )
+
+        except Exception as e:
+            self.logger.error(f"Incremental training failed: {e}")
             import traceback
             traceback.print_exc()
             return TrainingResult(

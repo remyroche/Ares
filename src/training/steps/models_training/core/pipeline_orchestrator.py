@@ -1028,8 +1028,15 @@ class TrainingPipelineOrchestrator:
             # The ensemble trainer will use these predictions for meta-learning
             # Do NOT add them as features - they are the input to the meta-learner
             
+            # Enable incremental rolling strategy for Analyst Ensemble
+            # This ensures we train up to 4 months before end, then rolling 14-day OOF
+            self._ensemble_trainer.config.custom_params['incremental_ensemble_training'] = True
+
             # Train analyst ensemble with base predictions
             result = await self._ensemble_trainer.train(data, targets, base_predictions=base_predictions)
+
+            # Reset the flag to avoid side effects if the trainer is reused
+            self._ensemble_trainer.config.custom_params['incremental_ensemble_training'] = False
 
             if result.success:
                 # Prefer explicitly returned OOF predictions from meta-learner when available

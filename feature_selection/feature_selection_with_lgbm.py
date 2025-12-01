@@ -47,30 +47,31 @@ class FeatureSelector:
     
         return selected_features
 
+    
     def run_pre_filters(self, X, y):
-        # Remove constant/near-constant features
+        # --- 1. Remove constant/near-constant features ---
         to_drop = X.columns[
-            (X.nunique() <= 1) | 
+            (X.nunique() <= 1) |
             (X.apply(lambda col: col.value_counts(normalize=True).max()) > 0.99)
         ]
         X = X.drop(columns=to_drop)
-
-        # Remove features with > 5% NaN
+    
+        # --- 2. Remove features with > 5% NaN ---
         nan_cols = (X.isnull().sum() / len(X) > 0.05).index
         X = X.drop(columns=nan_cols)
-
-        # EWMA-based stability analysis
-        T_ic_window = 672  # samples per IC window (15-min bars)
+    
+        # --- 3. EWMA-based IC + stability analysis ---
+        T_ic_window = 672  # 15-min bars per IC window
         K = 12             # number of windows
         hl_days = 60       # half-life in days
         bars_per_day = 24 * 4  # 15-min bars
         hl_samples = hl_days * bars_per_day
         alpha = 1 - np.exp(-np.log(2) / hl_samples)
         eps = 1e-9
-
+    
         n_samples = X.shape[0]
         ic_series = []
-
+    
         for i in range(K):
             start = n_samples - (K - i) * T_ic_window
             end = start + T_ic_window
@@ -80,45 +81,64 @@ class FeatureSelector:
             y_window = y.iloc[start:end]
             ic = self._calculate_spearman_correlation(X_window, y_window)
             ic_series.append(ic)
-
+    
         ic_series = np.array(ic_series)
         if ic_series.shape[0] == 0:
-            return X
-
-        # EWMA calculations
+            return X  # not enough data
+    
+        # EWMA IC calculations
         ic_ewma = pd.DataFrame(ic_series).ewm(alpha=alpha, adjust=False).mean().iloc[-1].values
         ic_ewm_var = pd.DataFrame(ic_series).ewm(alpha=alpha, adjust=False).var().iloc[-1].values
         ic_ewm_std = np.sqrt(ic_ewm_var)
-
+    
         # Stability metrics
         ewma_sharpe = ic_ewma / (ic_ewm_std + eps)
         cv = ic_ewm_std / (np.abs(ic_ewma) + eps)
         positivity = (ic_series > 0).mean(axis=0)
-
-        # CUSUM: max deviation from EWMA in last few windows
+    
+        # Adaptive CUSUM
         cusum = np.cumsum(ic_series - ic_ewma, axis=0)
         cusum_recent = np.max(np.abs(cusum[-5:]), axis=0)
-
+        cusum_weight = min(0.5, cusum_recent.std() / (cusum_recent.mean() + eps))
+    
         # Normalize metrics
-        ewma_sharpe_norm = pd.Series(ewma_sharpe).rank(pct=True)
-        cv_norm = pd.Series(cv).rank(pct=True, ascending=False)
-        positivity_norm = pd.Series(positivity).rank(pct=True)
-        cusum_norm = pd.Series(cusum_recent).rank(pct=True, ascending=False)
-
-        # Adaptive CUSUM weight: scales with std of cusum_recent across features
-        cusum_weight = min(0.5, cusum_recent.std() / (cusum_recent.mean() + eps))  # max 0.5
+        ewma_sharpe_norm = pd.Series(ewma_sharpe, index=X.columns).rank(pct=True)
+        cv_norm = pd.Series(cv, index=X.columns).rank(pct=True, ascending=False)
+        positivity_norm = pd.Series(positivity, index=X.columns).rank(pct=True)
+        cusum_norm = pd.Series(cusum_recent, index=X.columns).rank(pct=True, ascending=False)
+    
+        # Stability score
         stability_score = ewma_sharpe_norm - 0.8 * cv_norm + 0.5 * positivity_norm - cusum_weight * cusum_norm
-
+    
+        # Normalize EWMA IC
+        ic_norm = pd.Series(ic_ewma, index=X.columns).rank(pct=True)
+    
+        # Combined score: stability + IC
+        combined_score = 0.4 * stability_score + 0.6 * ic_norm
+    
         self.ic_stats = {
             'stability_score': stability_score.values,
+            'ic_ewma': ic_ewma,
             'ewma_sharpe': ewma_sharpe,
             'cv': cv,
             'positivity': positivity,
-            'cusum_recent': cusum_recent
+            'cusum_recent': cusum_recent,
+            'combined_score': combined_score.values
         }
-
-        stable_features = X.columns[stability_score.rank(pct=True) > 0.3]  # top 70%
+    
+        # --- 4. Percentile + hard cap ---
+        percentile_cut = 0.3  # keep top 70%
+        candidate_features = combined_score[combined_score.rank(pct=True) > percentile_cut]
+    
+        max_features = 5 * self.target_n_features
+        n_keep = min(len(candidate_features), max_features)
+    
+        # Select top features by combined score
+        stable_features = candidate_features.nlargest(n_keep).index
+    
         return X[stable_features]
+
+
 
     def _hierarchical_clustering(self, X, y):
         corr = np.corrcoef(rankdata(X.values, axis=0).T)

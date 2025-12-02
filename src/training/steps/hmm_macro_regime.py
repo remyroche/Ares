@@ -2552,21 +2552,45 @@ class HMMMLMacroTrendStep(BaseStep):
             if model is None:
                 raise ValueError("StandardizedXGBTrainer returned no models for macro alpha")
 
-            # Predict on full scaled feature matrix using Booster
+            # Construct full scores using OOF predictions to prevent lookahead bias
+            # OOF predictions cover the training/validation period without leakage.
+            # We only use the final model for segments not covered by OOF (e.g. burn-in or future).
             try:
                 import xgboost as _xgb  # local import to avoid global dependency issues
 
+                # 1. Get model predictions for the full dataset (retrodiction, for filling gaps)
                 d_full = _xgb.DMatrix(
                     X_scaled_full.to_numpy(dtype=float, copy=False),
                     feature_names=list(X_scaled_full.columns),
                 )
-                full_scores_arr = model.predict(d_full)
+                model_preds_full = model.predict(d_full)
+                full_scores_series = pd.Series(
+                    model_preds_full, index=X_scaled_full.index, name="alpha_pred_return"
+                )
+
+                # 2. Overlay OOF predictions where available (Training/Validation data)
+                oof_preds = results.oof_predictions
+                if oof_preds is not None and not oof_preds.empty:
+                    # Identify the prediction column ('prediction' or 'probability')
+                    pred_col = 'prediction' if 'prediction' in oof_preds.columns else 'probability'
+
+                    if pred_col in oof_preds.columns:
+                        # Align indices (OOF index should be a subset of full index)
+                        common_idx = oof_preds.index.intersection(full_scores_series.index)
+                        if not common_idx.empty:
+                            full_scores_series.loc[common_idx] = oof_preds.loc[common_idx, pred_col]
+                            tprint_info(
+                                f"  Merged {len(common_idx)} OOF predictions into full score series"
+                            )
+
+                # Reindex to original dataframe to ensure alignment
+                scores = full_scores_series.reindex(df.index)
+
             except Exception as pred_exc:
                 raise ValueError(
                     f"Failed to generate macro alpha predictions with standardized XGBoost: {pred_exc}"
                 ) from pred_exc
 
-            scores = pd.Series(full_scores_arr, index=df.index, name="alpha_pred_return")
             pred_col_name = "alpha_pred_return"
 
             # We rely on downstream expectation calibration to map to [0, 1].

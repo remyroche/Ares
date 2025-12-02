@@ -8582,8 +8582,29 @@ class MLBreakoutBounceRegimeStep(BaseStep):
         dfull = create_dmatrix(X)
         full_stage1_probs = stage1_model.predict(dfull)
 
+        # Overlay OOF predictions for stage 1 to prevent lookahead bias in training set
+        if stage1_oof is not None:
+            # Align OOF predictions to the full index
+            # stage1_oof index should match X_train index
+            oof_series = stage1_oof["probability"].reindex(X.index)
+            valid_oof = oof_series.notna()
+            if valid_oof.any():
+                full_stage1_probs[valid_oof] = oof_series[valid_oof].values
+                tprint_info(f"Overlaying {valid_oof.sum()} OOF predictions for Stage 1")
+
         if stage2_model is not None:
             full_stage2_preds = stage2_model.predict(dfull)
+
+            # Overlay OOF predictions for stage 2
+            if stage2_results is not None and stage2_results.oof_predictions is not None:
+                # Stage 2 OOF is regression prediction
+                # stage2_results.oof_predictions has column "prediction" for regression
+                oof_pred_series = stage2_results.oof_predictions["prediction"].reindex(X.index)
+                valid_oof_s2 = oof_pred_series.notna()
+                if valid_oof_s2.any():
+                    full_stage2_preds[valid_oof_s2] = oof_pred_series[valid_oof_s2].values
+                    tprint_info(f"Overlaying {valid_oof_s2.sum()} OOF predictions for Stage 2")
+
             if stage2_range > 0:
                 full_stage2_norm = (full_stage2_preds - stage2_min) / stage2_range
             else:

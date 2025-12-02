@@ -2747,3 +2747,208 @@ class MLMeanReversionRegimeStep(BaseStep):
             tprint_warning(f"Failed to run/write grid backtest: {exc}")
 
         return artifacts, reports
+
+    async def run_config_batch(self, configs: List[Dict[str, Any]], symbol: str, exchange: str) -> List[Dict[str, Any]]:
+        """Run a batch of configurations and collect results."""
+        results = []
+        total_configs = len(configs)
+
+        for i, base_config in enumerate(configs):
+            # Ensure proper HPO control flags are set for the sweep
+            config = dict(base_config)
+
+            # Use cached market data where possible to speed up repeated runs
+            config.setdefault("use_cached_market_data", True)
+
+            # Setup logging for this trial
+            config_sig = self.get_config_signature(config)
+            tprint_info(f"🚀 Running config {i+1}/{total_configs}: {config_sig}")
+
+            try:
+                # Run the step with this configuration
+                start_time = time.time()
+
+                # Execute step
+                result = await self.execute(config)
+
+                execution_time = time.time() - start_time
+
+                if not result.get("success", False):
+                    tprint_warning(f"⚠️ Config {i+1} failed: {result.get('error')}")
+                    results.append({
+                        "config_signature": config_sig,
+                        "config_id": i + 1,
+                        "execution_time": execution_time,
+                        "success": False,
+                        "error": result.get("error", "Unknown error"),
+                    })
+                    continue
+
+                # Extract key metrics
+                metrics = result.get("metrics", {})
+                student_metrics = metrics.get("student", {})
+                teacher_metrics = metrics.get("teacher", {})
+                forward_metrics = metrics.get("forward", {})
+
+                # We prioritize OOF (test) metrics if available, else standard test split
+                test_cal = student_metrics.get("test_calibrated", {})
+
+                trial_result = {
+                    "config_signature": config_sig,
+                    "config_id": i + 1,
+                    "execution_time": execution_time,
+                    "success": True,
+
+                    # Primary ranking metrics (OOF/Test performance)
+                    "student_test_auc": float(test_cal.get("auc", 0.0) or 0.0),
+                    "student_test_acc": float(test_cal.get("acc", 0.0) or 0.0),
+                    "student_test_logloss": float(test_cal.get("logloss", 0.0) or 0.0),
+
+                    # Teacher stats
+                    "teacher_positive_rate": float(teacher_metrics.get("teacher_positive_rate", 0.0) or 0.0),
+                    "n_regimes": teacher_metrics.get("n_components"),
+                    "mean_reversion_cluster": teacher_metrics.get("mean_reversion_cluster"),
+
+                    # Forward Analysis (using horizon 4 or 12 as available)
+                    "fwd_dir_acc": 0.0,
+                    "fwd_corr": 0.0,
+                }
+
+                # Populate forward metrics (prefer horizon 12, then 8, then 4)
+                for h in [12, 8, 4]:
+                    if h in forward_metrics:
+                        fm = forward_metrics[h]
+                        trial_result["fwd_dir_acc"] = float(fm.get("directional_accuracy", 0.0) or 0.0)
+                        trial_result["fwd_corr"] = float(fm.get("corr_prob_fwd", 0.0) or 0.0)
+                        break
+
+                # Add configuration details
+                # Capture all mr_ keys that are not huge objects
+                trial_result.update({
+                    f"config_{k}": v for k, v in config.items()
+                    if k.startswith("mr_") and not callable(v) and not isinstance(v, (list, dict))
+                })
+
+                results.append(trial_result)
+
+                tprint_info(
+                    f"✅ Config {i+1} done: AUC={trial_result['student_test_auc']:.4f}, "
+                    f"ACC={trial_result['student_test_acc']:.4f}, "
+                    f"TeacherRate={trial_result['teacher_positive_rate']:.4f}"
+                )
+
+            except Exception as e:
+                tprint_error(f"❌ Config {i+1} crashed: {e}")
+                results.append({
+                    "config_signature": config_sig,
+                    "config_id": i + 1,
+                    "execution_time": 0,
+                    "success": False,
+                    "error": str(e),
+                })
+
+        return results
+
+    def get_config_signature(self, config: Dict[str, Any]) -> str:
+        """Generate a compact signature for configuration identification."""
+        key_params = [
+            "mr_hurst_threshold",
+            "mr_half_life_threshold",
+            "mr_adf_p_threshold",
+            "mr_ma_fast_window",
+            "mr_ma_slow_window",
+            "mr_rsi_window",
+            "mr_enable_hpo"
+        ]
+
+        parts = []
+        for param in key_params:
+            if param in config:
+                val = config[param]
+                # Shorten key name
+                short_key = param.replace("mr_", "").replace("threshold", "thr").replace("window", "win")
+                parts.append(f"{short_key}={val}")
+
+        if not parts:
+            return "default_config"
+
+        return "|".join(parts)
+
+    def analyze_and_rank_results(self, results: List[Dict[str, Any]]) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+        """Analyze results and rank configurations by quality."""
+
+        if not results:
+            return pd.DataFrame(), {}
+
+        df = pd.DataFrame(results)
+
+        # Filter successful runs
+        successful = df[df["success"] == True].copy()
+        failed = df[df["success"] == False].copy()
+
+        tprint_info(f"📊 Analysis: {len(successful)} successful, {len(failed)} failed runs")
+
+        if len(successful) == 0:
+            tprint_warning("⚠️ No successful configurations to analyze")
+            return df, {"best_config": None, "analysis": "no_successful_runs"}
+
+        # Calculate Composite Score
+        # Priority:
+        # 1. AUC (discrimination capability) - 50%
+        # 2. Forward Directional Accuracy (real-world predictive power) - 30%
+        # 3. Test Accuracy (binary classification correctness) - 20%
+        # Penalty: Teacher Positive Rate < 0.01 (too rare) or > 0.5 (too common)
+
+        def calculate_score(row):
+            auc = row.get("student_test_auc", 0.5)
+            fwd_acc = row.get("fwd_dir_acc", 0.5)
+            acc = row.get("student_test_acc", 0.5)
+            tp_rate = row.get("teacher_positive_rate", 0.0)
+
+            base_score = (0.5 * auc) + (0.3 * fwd_acc) + (0.2 * acc)
+
+            # Penalize extreme teacher rates (regime is either non-existent or trivial)
+            penalty = 1.0
+            if tp_rate < 0.01 or tp_rate > 0.6:
+                penalty = 0.8
+            if tp_rate < 0.001:
+                penalty = 0.5
+
+            return base_score * penalty
+
+        successful["composite_score"] = successful.apply(calculate_score, axis=1)
+
+        # Sort by composite score
+        successful = successful.sort_values("composite_score", ascending=False)
+
+        # Get best configuration
+        best_row = successful.iloc[0]
+        best_config = best_row.to_dict()
+
+        # Analysis summary
+        analysis = {
+            "best_config": best_config,
+            "total_runs": len(results),
+            "successful_runs": len(successful),
+            "failed_runs": len(failed),
+            "best_composite_score": float(best_row["composite_score"]),
+            "best_auc": float(best_row.get("student_test_auc", 0)),
+            "top_5_configs": successful.head(5).to_dict("records"),
+        }
+
+        # Helper to print summary
+        print("\n" + "="*80)
+        print("🏆 MEAN REVERSION THRESHOLD SWEEP RESULTS")
+        print("="*80)
+        print(f"\n🥇 BEST CONFIGURATION (Score: {best_row['composite_score']:.4f})")
+        print(f"   Signature: {best_row.get('config_signature', 'N/A')}")
+        print(f"   AUC: {best_row.get('student_test_auc', 0):.4f} | Fwd Acc: {best_row.get('fwd_dir_acc', 0):.4f}")
+        print(f"   Teacher Rate: {best_row.get('teacher_positive_rate', 0):.4f}")
+
+        print(f"\n🏅 TOP 5 CONFIGURATIONS:")
+        cols = ["config_id", "composite_score", "student_test_auc", "fwd_dir_acc", "teacher_positive_rate", "config_signature"]
+        available_cols = [c for c in cols if c in successful.columns]
+        print(successful[available_cols].head(5).to_string(index=False))
+        print("\n" + "="*80)
+
+        return pd.concat([successful, failed], ignore_index=True), analysis

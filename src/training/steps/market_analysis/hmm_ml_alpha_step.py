@@ -94,13 +94,16 @@ logger = logging.getLogger(__name__)
 
 
 class HMMMLMesoTrendStep(BaseStep):
-    """Pipeline step to construct alpha labels from 1h Rolling HMM regimes."""
+    """Pipeline step to construct alpha labels from 1h Rolling HMM regimes.
+
+    Renamed to HMMMLMesoTrendStep to align with the 'meso_trend' terminology used internally.
+    """
 
     def __init__(self, step_name: str = "hmm_ml_alpha_step"):
         """Initialize the HMM ML alpha step with versioned artifacts enabled."""
         super().__init__(step_name, use_versioned_artifacts=True)
         self.logger = logger.getChild("HMMMLMesoTrendStep") if hasattr(logger, "getChild") else logger
-        tprint(f"ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Initialized {step_name} step", "SUCCESS")
+        tprint(f"✅ Initialized {step_name} step", "SUCCESS")
 
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Execute the alpha label construction from 1h HMM regimes.

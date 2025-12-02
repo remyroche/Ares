@@ -608,406 +608,157 @@ class TrainingPipelineOrchestrator:
     async def _execute_analyst_base_training(self, data: pd.DataFrame, targets: Optional[pd.Series]) -> Dict[str, Any]:
         """Execute analyst base models training phase."""
         try:
-            if self._analyst_trainer is None:
-                raise ValueError("Analyst trainer not initialized")
-
             tprint_info("📊 Starting analyst base models training...")
 
-            # Generate OOF predictions using a rolling retrain schedule (specialist-style)
-            # instead of fold-based TimeSeriesSplit. This mirrors the regime specialists:
-            # - Retrain every ~10 days
-            # - Burn-in of 30–60 days before first predictions
-            # - No leakage (train only on history strictly before prediction window)
-            try:
-                analyst_params = getattr(self.config, 'custom_params', {}) or {}
+            # Use IncrementalAnalystTrainer for rolling OOF predictions
+            # Train on burn-in -> generate OOF for next 14 days -> resume training
+            tprint_info(f"🔧 Training analyst base models INCREMENTALLY with {data.shape[1]} features...")
 
-                # Historical window
-                if not isinstance(data.index, pd.DatetimeIndex):
-                    raise ValueError("Analyst base data index must be a DatetimeIndex for OOF scheduling")
+            # Import incremental trainer
+            from src.utils.ml_common.incremental_analyst_trainers import IncrementalAnalystTrainer
 
+            # Get execution mode from config
+            # Handle config being either PipelineConfig object or dict
+            execution_mode = 'blank'
+            symbol = 'ETHUSDT'
+            exchange = 'binance'
+            timeframe = '15m'
+
+            if isinstance(self.config, dict):
+                execution_mode = self.config.get('execution_mode', 'blank')
+                symbol = self.config.get('symbol', 'ETHUSDT')
+                timeframe = self.config.get('timeframe', '15m')
+                # Exchange is not directly in PipelineConfig, might be in custom_params
+                if 'custom_params' in self.config:
+                    exchange = self.config['custom_params'].get('exchange', 'binance')
+            else:
+                execution_mode = getattr(self.config, 'execution_mode', 'blank')
+                symbol = getattr(self.config, 'symbol', 'ETHUSDT')
+                timeframe = getattr(self.config, 'timeframe', '15m')
+                custom_params = getattr(self.config, 'custom_params', {})
+                exchange = custom_params.get('exchange', 'binance') if custom_params else 'binance'
+
+            # Determine data start/end from index
+            if hasattr(data.index, 'min') and hasattr(data.index, 'max'):
                 data_start = data.index.min()
                 data_end = data.index.max()
-                total_days = max(1, (data_end - data_start).days)
-
-                # Defaults: 10-day retrain interval, 60-day burn-in (30 for light mode)
-                execution_mode = str(getattr(self.config, 'execution_mode', 'full')).lower()
-                default_burnin_days = 30 if execution_mode == 'light' else 60
-
-                retrain_days = int(analyst_params.get('analyst_oof_retrain_days', 10))
-                burnin_days = int(analyst_params.get('analyst_oof_burnin_days', default_burnin_days))
-                min_samples = int(analyst_params.get('analyst_oof_min_samples', 2000))
-
-                # HPO interval (in historical days). With retrain_days=10 and
-                # hpo_interval_days=30 this gives HPO every 3rd window, matching
-                # the standardized XGB trainers.
-                hpo_interval_days = int(analyst_params.get('analyst_oof_hpo_interval_days', 30))
-                if hpo_interval_days <= 0:
-                    windows_per_hpo = None
-                else:
-                    effective_retrain = max(1, retrain_days)
-                    windows_per_hpo = max(1, hpo_interval_days // effective_retrain)
-
-                # Convert burn-in days to fraction of available history, clamp to [0, 0.9]
-                burnin_pct = min(max(burnin_days / float(total_days), 0.0), 0.9)
-
-                schedule = RetrainingSchedule(
-                    model_type='analyst_base',
-                    retrain_interval_days=retrain_days,
-                    burnin_pct=burnin_pct,
-                    min_samples_for_training=min_samples,
-                    enable_warm_start=False,
-                )
-
-                oof_generator = OOFPredictionGenerator(
-                    schedule=schedule,
-                    data_start=data_start.to_pydatetime() if hasattr(data_start, 'to_pydatetime') else data_start,
-                    data_end=data_end.to_pydatetime() if hasattr(data_end, 'to_pydatetime') else data_end,
-                )
-
-                tprint_info(
-                    f"🧪 Generating OOF predictions with rolling schedule: "
-                    f"windows={len(oof_generator.windows)}, "
-                    f"retrain_interval_days={schedule.retrain_interval_days}, "
-                    f"burnin_days≈{int(burnin_pct * total_days)} (requested={burnin_days}), "
-                    f"min_samples_for_training={schedule.min_samples_for_training}, "
-                    f"hpo_interval_days={hpo_interval_days}, "
-                    f"windows_per_hpo={windows_per_hpo if hpo_interval_days > 0 else 'disabled'}"
-                )
-            except Exception as sched_exc:
-                tprint_error(f"❌ Failed to initialize analyst OOF schedule: {sched_exc}")
-                return {'success': False, 'error_message': str(sched_exc)}
-
-            # Preserve original HPO flag for the final full-data pass; OOF windows
-            # will control HPO per-window based on the schedule above.
-            _orig_hpo_flag = getattr(self._analyst_trainer.config, 'enable_hyperparameter_optimization', False)
-            # In BLANK mode, pre-configure smaller HPO trials (applies to both
-            # scheduled OOF HPO windows and the later final pass).
-            if getattr(self.config, 'execution_mode', '').lower() == 'blank':
-                self._analyst_trainer.config.custom_params['hpo_n_trials'] = min(
-                    int(self._analyst_trainer.config.custom_params.get('hpo_n_trials', 10)), 5
-                )
-            oof_df = pd.DataFrame(index=data.index)
-
-            window_num = 0
-            for window in oof_generator.windows:
-                window_num += 1
-                # Decide whether this window should run HPO
-                use_window_hpo = False
-                if 'windows_per_hpo' in locals() and windows_per_hpo is not None:
-                    use_window_hpo = (window.window_id % windows_per_hpo) == 0
-
-                tprint_info(
-                    f"   ↪ OOF window {window_num}/{len(oof_generator.windows)}: "
-                    f"train={window.training_start}→{window.training_end}, "
-                    f"predict={window.prediction_start}→{window.prediction_end}, "
-                    f"HPO={'on' if use_window_hpo else 'off'} "
-                    f"(window_id={window.window_id}, windows_per_hpo={windows_per_hpo if 'windows_per_hpo' in locals() else 'n/a'})"
-                )
-
-                train_mask = (data.index >= window.training_start) & (data.index < window.training_end)
-                pred_mask = (data.index >= window.prediction_start) & (data.index <= window.prediction_end)
-
-                train_data = data.loc[train_mask].copy()
-                val_data = data.loc[pred_mask].copy()
-
-                if len(train_data) < schedule.min_samples_for_training or len(val_data) == 0:
-                    tprint_warning(
-                        f"⚠️ OOF window {window.window_id}: insufficient samples "
-                        f"(train={len(train_data)}, val={len(val_data)}; min_train={schedule.min_samples_for_training}). Skipping."
-                    )
-                    continue
-
-                train_targets = targets.loc[train_data.index] if targets is not None else None
-
-                # Sanity: drop potential leak columns
-                leak_cols = [
-                    c
-                    for c in train_data.columns
-                    if any(term in c.lower() for term in ['label', 'target', 'future_', 'lead_'])
-                ]
-                if leak_cols:
-                    tprint_info(
-                        f"   🔍 Dropping potential leakage columns from window data: "
-                        f"{len(leak_cols)} (e.g., {leak_cols[:5]})"
-                    )
-                    train_data = train_data.drop(columns=leak_cols, errors='ignore')
-                    val_data = val_data.drop(columns=leak_cols, errors='ignore')
-
-                # Train on window history only, with per-window HPO scheduling
-                # similar to standardized XGB/analyst trainers (e.g. HPO every
-                # 3rd window when hpo_interval_days=30 and retrain_days=10).
-                self._analyst_trainer.config.enable_hyperparameter_optimization = bool(use_window_hpo)
-                fold_result = await self._analyst_trainer.train(train_data, train_targets)
-                if not getattr(fold_result, 'success', False):
-                    tprint_warning(f"⚠️ OOF window {window.window_id} training failed, skipping window")
-                    continue
-
-                # Determine models to predict
-                models_to_predict: Dict[str, Any] = {}
-                if hasattr(fold_result, 'metadata') and 'trained_models' in fold_result.metadata:
-                    models_to_predict = fold_result.metadata['trained_models']
-                elif hasattr(fold_result, 'metadata') and 'model_instances' in fold_result.metadata:
-                    models_to_predict = fold_result.metadata['model_instances']
-                elif hasattr(fold_result, 'models') and fold_result.models is not None:
-                    models_to_predict = fold_result.models
-                else:
-                    models_to_predict = {'best_model': getattr(fold_result, 'model', None)}
-
-                # Select trained features if available
-                data_for_prediction = val_data
-                if hasattr(fold_result, 'metadata') and 'trained_feature_columns' in fold_result.metadata:
-                    trained_features = fold_result.metadata['trained_feature_columns']
-                    missing = set(trained_features) - set(data_for_prediction.columns)
-                    if missing:
-                        tprint_warning(
-                            f"⚠️ OOF window {window.window_id}: missing {len(missing)} trained features; "
-                            "skipping window predictions"
-                        )
-                        continue
-                    data_for_prediction = data_for_prediction[trained_features]
-
-                # Predict on window prediction period
-                fold_preds = await self._generate_predictions(models_to_predict, data_for_prediction)
-                if fold_preds is None or fold_preds.empty:
-                    tprint_warning(f"⚠️ OOF window {window.window_id}: no predictions generated")
-                    continue
-
-                # Allocate columns in oof_df as needed and fill window indices by timestamp
-                for col in fold_preds.columns:
-                    if col not in oof_df.columns:
-                        oof_df[col] = np.nan
-                    # Align by index to be safe
-                    common_idx = oof_df.index.intersection(fold_preds.index)
-                    if not common_idx.empty:
-                        oof_df.loc[common_idx, col] = fold_preds.loc[common_idx, col].values
-
-            # End OOF window loop
-            if not oof_df.empty and oof_df.isna().any().any():
-                filled = oof_df.notna().sum().min()
-                tprint_info(f"   OOF coverage: min non-NaN count per column = {filled}")
-            # If walk-forward config is available, compute honest fold-aggregated metrics
-            wf_cfg = self.config.custom_params.get('walkforward_config') if hasattr(self.config, 'custom_params') else None
-            walkforward_metrics = []
-            if wf_cfg is not None and hasattr(wf_cfg, 'folds') and len(wf_cfg.folds) > 0:
-                import pandas as _pd
-                from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
-                embargo_days = int(self.config.custom_params.get('wf_embargo_days', 1))
-                def _bars_per_day(tf: str) -> int:
-                    mapping = {'1m': 1440, '5m': 288, '15m': 96, '30m': 48, '1h': 24, '2h': 12, '4h': 6, '1d': 1}
-                    return mapping.get(str(self.config.timeframe).lower(), 96)
-                gap_bars = max(0, embargo_days * _bars_per_day(str(self.config.timeframe)))
-
-                for fold in wf_cfg.folds:
-                    tr_start, tr_end = fold.training.start, fold.training.effective_end
-                    va_start, va_end = fold.validation.start, fold.validation.effective_end
-                    train_mask = (data.index >= _pd.Timestamp(tr_start)) & (data.index <= _pd.Timestamp(tr_end))
-                    val_mask = (data.index >= _pd.Timestamp(va_start)) & (data.index <= _pd.Timestamp(va_end))
-                    train_idx = data.index[train_mask]
-                    val_idx = data.index[val_mask]
-                    if len(train_idx) == 0 or len(val_idx) == 0:
-                        continue
-                    # Apply gap by trimming trailing/leading bars
-                    if gap_bars > 0:
-                        if len(train_idx) > gap_bars:
-                            train_idx = train_idx[:-gap_bars]
-                        if len(val_idx) > gap_bars:
-                            val_idx = val_idx[gap_bars:]
-                    if len(train_idx) == 0 or len(val_idx) == 0:
-                        continue
-                    X_tr = data.loc[train_idx]
-                    X_va = data.loc[val_idx]
-                    y_tr = targets.loc[train_idx] if targets is not None else None
-                    # Sanity: drop potential leak columns
-                    leak_cols = [c for c in X_tr.columns if any(term in c.lower() for term in ['label', 'target', 'future_', 'lead_'])]
-                    if leak_cols:
-                        X_tr = X_tr.drop(columns=leak_cols, errors='ignore')
-                        X_va = X_va.drop(columns=leak_cols, errors='ignore')
-                    fold_result = await self._analyst_trainer.train(X_tr, y_tr)
-                    if not getattr(fold_result, 'success', False):
-                        continue
-                    models_to_predict = {}
-                    if hasattr(fold_result, 'metadata') and 'trained_models' in fold_result.metadata:
-                        models_to_predict = fold_result.metadata['trained_models']
-                    elif hasattr(fold_result, 'metadata') and 'model_instances' in fold_result.metadata:
-                        models_to_predict = fold_result.metadata['model_instances']
-                    elif hasattr(fold_result, 'models') and fold_result.models is not None:
-                        models_to_predict = fold_result.models
-                    else:
-                        models_to_predict = {'best_model': getattr(fold_result, 'model', None)}
-                    X_pred = X_va
-                    if hasattr(fold_result, 'metadata') and 'trained_feature_columns' in fold_result.metadata:
-                        trained_features = fold_result.metadata['trained_feature_columns']
-                        if set(trained_features).issubset(set(X_pred.columns)):
-                            X_pred = X_pred[trained_features]
-                    y_va = targets.loc[val_idx] if targets is not None else None
-                    preds = await self._generate_predictions(models_to_predict, X_pred)
-                    if preds is None or preds.empty or y_va is None:
-                        continue
-                    # Use average across model columns for fold metric
-                    y_hat = preds.mean(axis=1).loc[y_va.index]
-                    fold_metrics = {
-                        'val_mse': mean_squared_error(y_va, y_hat),
-                        'val_mae': mean_absolute_error(y_va, y_hat),
-                        'val_r2': r2_score(y_va, y_hat),
-                        'n_train': len(X_tr),
-                        'n_val': len(X_va),
-                    }
-                    walkforward_metrics.append(fold_metrics)
-                # Aggregate
-                if walkforward_metrics:
-                    import numpy as _np
-                    agg = {
-                        'wf_val_mse_mean': float(_np.mean([m['val_mse'] for m in walkforward_metrics])),
-                        'wf_val_mae_mean': float(_np.mean([m['val_mae'] for m in walkforward_metrics])),
-                        'wf_val_r2_mean': float(_np.mean([m['val_r2'] for m in walkforward_metrics])),
-                        'wf_folds': len(walkforward_metrics),
-                    }
-                else:
-                    agg = None
+                
+                # Convert to datetime if needed
+                if hasattr(data_start, 'to_pydatetime'):
+                    data_start = data_start.to_pydatetime()
+                if hasattr(data_end, 'to_pydatetime'):
+                    data_end = data_end.to_pydatetime()
             else:
-                agg = None
+                # Fallback: use datetime.now and calculate based on data length
+                from datetime import datetime, timedelta
+                data_end = datetime.now()
+                # Estimate days based on timeframe and data length
+                samples_per_day = {'1m': 1440, '5m': 288, '15m': 96, '1h': 24, '4h': 6, '1d': 1}.get(timeframe, 96)
+                total_days = len(data) // samples_per_day
+                data_start = data_end - timedelta(days=total_days)
 
-            # Train analyst base models on full data after OOF generation
-            # Re-enable HPO for the single final training pass
-            self._analyst_trainer.config.enable_hyperparameter_optimization = _orig_hpo_flag or True
-            result = await self._analyst_trainer.train(data, targets)
+            tprint_info(f"   Data range: {data_start} → {data_end}")
+            tprint_info(f"   Execution mode: {execution_mode}")
 
-            if result.success:
-                # Attach walk-forward metrics if available
-                if agg is not None:
-                    if not hasattr(result, 'metrics') or result.metrics is None:
-                        result.metrics = {}
-                    result.metrics.update(agg)
-                # CRITICAL: Models were trained on 104 features (60 base + analyst engineered features)
-                # We need to use the SAME feature set for predictions
-                # The training data flow is: base features (60) -> analyst feature engineering -> 104 features
-                # So for prediction, we need to apply the same analyst feature engineering
-                
-                # Use the original 60 selected features as input
-                data_for_prediction = data
-                
-                # Get all trained models for per-model predictions
-                models_to_predict = {}
-                if hasattr(result, 'metadata') and 'trained_models' in result.metadata:
-                    models_to_predict = result.metadata['trained_models']
-                elif hasattr(result, 'metadata') and 'model_instances' in result.metadata:
-                    models_to_predict = result.metadata['model_instances']
-                else:
-                    # Fallback to single best model
-                    models_to_predict = {'best_model': result.model}
-                
-                # CRITICAL: Use the EXACT same features that models were trained on
-                # Models expect: base features (~60) + regime probabilities (3-7) = ~63-67 features
-                # We should NOT apply analyst feature engineering here - that happens inside model_trainer
-                # We just need to ensure we have the same features that were used for training
-                
-                tprint_info("🔧 Preparing prediction features (base + regime probabilities)...")
-                tprint_info(f"   Input data shape: {data_for_prediction.shape}")
-                tprint_info(f"   Input columns (first 10): {list(data_for_prediction.columns[:10])}")
-                tprint_info(f"   Input columns (last 10): {list(data_for_prediction.columns[-10:])}")
-                
-                # The data_for_prediction should already have regime probabilities if they were loaded
-                # Just verify we have reasonable feature count
-                expected_min = 63  # ~60 base + 3 regime
-                expected_max = 67  # ~60 base + 7 regime
-                if data_for_prediction.shape[1] < expected_min:
-                    tprint_warning(f"⚠️ Expected {expected_min}-{expected_max} features, got {data_for_prediction.shape[1]}")
-                    tprint_warning("   This may cause prediction failures for some models")
-                elif data_for_prediction.shape[1] > expected_max:
-                    tprint_warning(f"⚠️ More features than expected: {data_for_prediction.shape[1]} > {expected_max}")
-                else:
-                    tprint_success(f"✅ Prediction data has {data_for_prediction.shape[1]} features (within expected range)")
-                
-                # Step 2: Select ONLY the features that models were trained on (from metadata)
-                if hasattr(result, 'metadata') and 'trained_feature_columns' in result.metadata:
-                    trained_features = result.metadata['trained_feature_columns']
-                    tprint_info(f"📊 Using stored feature columns from training: {len(trained_features)} features")
-                    
-                    # Ensure all required features are available
-                    missing_features = set(trained_features) - set(data_for_prediction.columns)
-                    if missing_features:
-                        tprint_error(f"❌ Missing required features ({len(missing_features)}): {list(missing_features)[:10]}...")
-                        tprint_error("   Cannot generate predictions without all training features!")
-                        predictions = None
+            # Get base models config
+            base_models_config = {}
+            if isinstance(self.config, dict):
+                analyst_cfg = self.config.get('analyst_config', {})
+                if analyst_cfg:
+                    base_models_config = analyst_cfg.get('base_models', {})
+            else:
+                analyst_cfg = getattr(self.config, 'analyst_config', {})
+                if analyst_cfg:
+                    base_models_config = analyst_cfg.get('base_models', {})
+
+            # Create incremental trainer
+            model_id = f"{symbol}_{exchange}_{timeframe}"
+            incremental_trainer = IncrementalAnalystTrainer(
+                model_id=model_id,
+                execution_mode=execution_mode,
+                task_type='regression',
+                enable_incremental_hpo=True,
+                model_configs=base_models_config
+            )
+
+            # Train all models incrementally
+            # Pass specialist feature names if available (from self or config)
+            specialist_features = None
+            if hasattr(self, '_specialist_feature_names'):
+                specialist_features = self._specialist_feature_names
+
+            incremental_results = incremental_trainer.train_all_models(
+                X=data,
+                y=targets,
+                data_start=data_start,
+                data_end=data_end,
+                sample_weight=None,
+                verbose=True,
+                specialist_feature_names=specialist_features
+            )
+
+            # Combine OOF predictions from all models
+            combined_oof = incremental_trainer.get_combined_oof_predictions(incremental_results)
+
+            # Build result dict in expected format
+            models_dict = {}
+            predictions_dict = {}
+            metrics = {}
+
+            for model_name, result in incremental_results.items():
+                models_dict[model_name] = result.final_model
+                if result.oof_predictions is not None and not result.oof_predictions.empty:
+                    # Use 'prediction' column if available, else first column
+                    if 'prediction' in result.oof_predictions.columns:
+                        predictions_dict[model_name] = result.oof_predictions['prediction']
                     else:
-                        # Select ONLY the features used during training
-                        data_for_prediction = data_for_prediction[trained_features]
-                        tprint_success(f"✅ Selected {len(trained_features)} features for prediction (matches training)")
-                        predictions = await self._generate_predictions(models_to_predict, data_for_prediction)
-                else:
-                    # Fallback: try to infer from model
-                    tprint_warning("⚠️ No stored feature columns found, trying to infer from models...")
-                    for model_name, model_obj in models_to_predict.items():
-                        if hasattr(model_obj, 'feature_names_in_'):
-                            expected_features = list(model_obj.feature_names_in_)
-                            tprint_info(f"📊 {model_name} expects {len(expected_features)} features")
-                            
-                            missing_features = set(expected_features) - set(data_for_prediction.columns)
-                            if missing_features:
-                                tprint_error(f"❌ Missing features: {missing_features}")
-                                predictions = None
-                            else:
-                                data_for_prediction = data_for_prediction[expected_features]
-                                tprint_success(f"✅ Selected {len(expected_features)} features for prediction")
-                                predictions = await self._generate_predictions(models_to_predict, data_for_prediction)
-                            break
-                        else:
-                            tprint_error(f"❌ Model {model_name} has no feature_names_in_ attribute")
-                            predictions = None
+                        predictions_dict[model_name] = result.oof_predictions.iloc[:, 0]
 
-                # Store predictions for ensemble training (will be saved by calling step)
-                if predictions is not None:
-                    tprint_info("=" * 80)
-                    tprint_info("📊 PREDICTION GENERATION SUMMARY")
-                    tprint_info("=" * 80)
-                    tprint_info(f"✅ Generated predictions from {len(models_to_predict)} models")
-                    tprint_info(f"   Prediction shape: {predictions.shape}")
-                    tprint_info(f"   Prediction columns: {list(predictions.columns)}")
-                    tprint_info(f"   Models used: {list(models_to_predict.keys())}")
-                    
-                    # Verify we have predictions from all models
-                    if predictions.shape[1] != len(models_to_predict):
-                        tprint_error(f"❌ MISMATCH: Expected {len(models_to_predict)} prediction columns, got {predictions.shape[1]}")
-                        tprint_error(f"   Missing models: {set(models_to_predict.keys()) - set(predictions.columns)}")
-                    else:
-                        tprint_success(f"✅ All {len(models_to_predict)} models have predictions")
-                    
-                    # Also compute confidence scores
-                    confidence = predictions.abs()
-                    tprint_info(f"   Confidence shape: {confidence.shape}")
-                    tprint_info("=" * 80)
-                else:
-                    tprint_error("❌ No predictions generated!")
+                # Add metrics from last window or aggregated
+                if result.window_metadata:
+                    last_meta = result.window_metadata[-1]
+                    if 'calibration_metrics' in last_meta:
+                        for metric_name, value in last_meta['calibration_metrics'].items():
+                            metrics[f"{model_name}_{metric_name}"] = value
 
-                tprint_success("✅ Analyst base models trained successfully")
-                # Extract models from metadata if not available as attribute
-                trained_models = {}
-                if hasattr(result, 'models'):
-                    trained_models = result.models
-                elif hasattr(result, 'metadata') and 'trained_models' in result.metadata:
-                    trained_models = result.metadata['trained_models']
-                elif hasattr(result, 'metadata') and 'model_instances' in result.metadata:
-                    trained_models = result.metadata['model_instances']
-                
-                return {
-                    'success': True,
-                    'model': result.model,
-                    'models': trained_models,
-                    'predictions': predictions,
-                    'confidence': confidence if predictions is not None else None,
-                    'oof_predictions': oof_df if 'oof_df' in locals() and not oof_df.empty else None,
-                    'metrics': result.metrics,
-                    'training_time': result.training_time,
-                    'validation_metrics': result.validation_metrics,
-                    'feature_importance': result.feature_importance,
-                    'metadata': result.metadata
+            tprint_success(f"✅ Incremental training complete for {len(models_dict)} models")
+            tprint_info(f"   Total OOF predictions: {len(combined_oof)}")
+
+            # Construct predictions DataFrame
+            predictions_df = pd.DataFrame(predictions_dict) if predictions_dict else None
+
+            # Also return confidence if available (probability column)
+            confidence_dict = {}
+            for model_name, result in incremental_results.items():
+                if result.oof_predictions is not None and 'probability' in result.oof_predictions.columns:
+                    confidence_dict[model_name] = result.oof_predictions['probability']
+            confidence_df = pd.DataFrame(confidence_dict) if confidence_dict else None
+
+            return {
+                'success': True,
+                'models': models_dict,
+                'predictions': predictions_df,
+                'confidence': confidence_df,
+                'oof_predictions': combined_oof,
+                'metrics': metrics,
+                'training_metadata': {
+                    model_name: result.window_metadata
+                    for model_name, result in incremental_results.items()
+                },
+                'hpo_history': {
+                    model_name: result.hpo_history
+                    for model_name, result in incremental_results.items()
+                },
+                'best_params': {
+                    model_name: result.best_params
+                    for model_name, result in incremental_results.items()
                 }
-            else:
-                tprint_error(f"❌ Analyst base models training failed: {result.error_message}")
-                return {'success': False, 'error_message': result.error_message}
+            }
 
         except Exception as e:
             tprint_error(f"❌ Analyst base models training execution failed: {e}")
+            import traceback
+            traceback.print_exc()
             return {'success': False, 'error_message': str(e)}
     
     async def _execute_analyst_ensemble_training(self, data: pd.DataFrame, targets: Optional[pd.Series], base_models: Dict[str, Any], base_predictions: Optional[pd.DataFrame]) -> Dict[str, Any]:

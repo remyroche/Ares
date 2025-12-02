@@ -123,9 +123,9 @@ class HMMMLMacroTrendStep(BaseStep):
             - execution_mode: 'full', 'light', 'blank', etc. (used for data loading)
 
         Optional alpha configuration:
-            - alpha_horizon_bars: Forward horizon in bars (default: 1)
-            - alpha_return_type: 'log' or 'simple' (default: 'log')
-            - alpha_target_type: 'classification' or 'regression'
+            - macro_trend_horizon_bars: Forward horizon in bars (default: 1)
+            - macro_trend_return_type: 'log' or 'simple' (default: 'log')
+            - macro_trend_target_type: 'classification' or 'regression'
               (default: 'classification')
         """
         start_time = time.time()
@@ -143,55 +143,55 @@ class HMMMLMacroTrendStep(BaseStep):
             # horizons and more structural regimes than the core HMM ML
             # alpha step. Defaults here are therefore slower/smoother and
             # use coarser, more persistent regimes.
-            alpha_defaults: Dict[str, Any] = {
-                "alpha_target_smoothing_method": "ewm",
+            macro_trend_defaults: Dict[str, Any] = {
+                "macro_trend_target_smoothing_method": "ewm",
                 # Slightly slower target smoothing than core alpha
-                "alpha_target_smoothing_window": 16,
-                "alpha_score_smoothing_method": "ewm",
+                "macro_trend_target_smoothing_window": 16,
+                "macro_trend_score_smoothing_method": "ewm",
                 # Much smoother score for macro trend
-                "alpha_score_smoothing_window": 48,
+                "macro_trend_score_smoothing_window": 48,
                 # Keep HPO opt-in; these defaults are used when explicitly enabled
-                "alpha_enable_hpo": False,
-                "alpha_hpo_cv_folds": 3,
-                "alpha_hpo_final_trials": 20,
-                "alpha_early_stopping_rounds": 30,
-                "alpha_enable_regression_calibration": True,
-                "alpha_enable_expectation_calibration": True,
-                "alpha_expectation_positive_threshold": 0.0,
-                "alpha_expectation_min_samples": 200,
+                "macro_trend_enable_hpo": False,
+                "macro_trend_hpo_cv_folds": 3,
+                "macro_trend_hpo_final_trials": 20,
+                "macro_trend_early_stopping_rounds": 30,
+                "macro_trend_enable_regression_calibration": True,
+                "macro_trend_enable_expectation_calibration": True,
+                "macro_trend_expectation_positive_threshold": 0.0,
+                "macro_trend_expectation_min_samples": 200,
                 # Slower EMA for longer macro regimes
-                "alpha_expectation_ema_period": 12,
-                "alpha_expectation_ema_weight_recent": 0.06,
+                "macro_trend_expectation_ema_period": 12,
+                "macro_trend_expectation_ema_weight_recent": 0.06,
                 # Use a much longer volatility window so macro targets are
                 # normalized by structural rather than short-term volatility.
-                "alpha_target_vol_window": 1000,
+                "macro_trend_target_vol_window": 1000,
                 # Enable trend feature engineering on aligned market data with
                 # slower windows than the core alpha step.
-                "alpha_enable_trend_features": True,
-                "alpha_trend_ema_fast_window": 96,
-                "alpha_trend_ema_slow_window": 240,
-                "alpha_trend_slope_window": 168,
+                "macro_trend_enable_trend_features": True,
+                "macro_trend_trend_ema_fast_window": 96,
+                "macro_trend_trend_ema_slow_window": 240,
+                "macro_trend_trend_slope_window": 168,
                 # Auto-pruning experiment enabled by default with a small R^2 threshold
-                "alpha_enable_auto_prune_rerun": True,
-                "alpha_auto_prune_min_delta": 0.0005,
+                "macro_trend_enable_auto_prune_rerun": True,
+                "macro_trend_auto_prune_min_delta": 0.0005,
                 # Quantile-based auto-prune thresholds over permutation importance.
                 # Try slightly more aggressive thresholds; still require a small
                 # positive improvement in validation R^2 before adopting.
-                "alpha_auto_prune_quantiles": [0.15, 0.25, 0.35, 0.45],
+                "macro_trend_auto_prune_quantiles": [0.15, 0.25, 0.35, 0.45],
                 # Minimum run length for regime persistence (NOT scaled). Use a
                 # small positive value so macro regimes are more persistent than
                 # the core alpha regimes.
-                "alpha_regime_min_run_bars": 4,
+                "macro_trend_regime_min_run_bars": 4,
                 # Enable quality report generation
-                "alpha_enable_quality_report": True,
+                "macro_trend_enable_quality_report": True,
                 # Regime configuration: macro trend should use fewer, smoother
                 # regimes than the core alpha step. Default to 3 bins and
                 # explore 2–4 in experiments, allowing a 4-regime optimized
                 # configuration when economically justified.
-                "alpha_regime_counts": [2, 3, 4],
-                "alpha_regime_bins": 3,
+                "macro_trend_regime_counts": [2, 3, 4],
+                "macro_trend_regime_bins": 3,
             }
-            for k, v in alpha_defaults.items():
+            for k, v in macro_trend_defaults.items():
                 config.setdefault(k, v)
 
             # Macro scaling factor is applied to horizon/smoothing/volatility
@@ -203,12 +203,12 @@ class HMMMLMacroTrendStep(BaseStep):
                 # Use longer maximum horizon in 1h bars so macro alpha focuses
                 # on 8–24h behavior instead of the 1–4h band used by the core
                 # alpha step.
-                ("alpha_max_horizon_bars", 8),
-                ("alpha_horizon_bars", 1),
-                ("alpha_target_smoothing_window", 16),
-                ("alpha_score_smoothing_window", 24),
-                ("alpha_target_vol_window", 1000),
-                ("alpha_expectation_ema_period", 8),
+                ("macro_trend_max_horizon_bars", 8),
+                ("macro_trend_horizon_bars", 1),
+                ("macro_trend_target_smoothing_window", 16),
+                ("macro_trend_score_smoothing_window", 24),
+                ("macro_trend_target_vol_window", 1000),
+                ("macro_trend_expectation_ema_period", 8),
             ]:
                 value = config.get(key, default)
                 try:
@@ -232,8 +232,8 @@ class HMMMLMacroTrendStep(BaseStep):
                     except Exception:
                         config[name] = raw
 
-            _scale_periods("alpha_ewm_periods", [2, 4, 8])
-            _scale_periods("alpha_score_ewm_periods", [2, 4])
+            _scale_periods("macro_trend_ewm_periods", [2, 4, 8])
+            _scale_periods("macro_trend_score_ewm_periods", [2, 4])
 
             if not symbol or not exchange:
                 raise ValueError("Config must include 'symbol' and 'exchange'")
@@ -370,7 +370,7 @@ class HMMMLMacroTrendStep(BaseStep):
                 # When HMM is disabled for the macro step, we still want to
                 # reuse the same economic feature set that powered the HMM,
                 # but computed directly from OHLCV without fitting any HMM.
-                if bool(config.get("alpha_enable_economic_features", True)):
+                if bool(config.get("macro_trend_enable_economic_features", True)):
                     try:
                         econ_df = self._compute_economic_features_from_market_data(
                             market_data=aligned_df,
@@ -407,20 +407,20 @@ class HMMMLMacroTrendStep(BaseStep):
                         "Aligned dataset became empty after light-mode filtering; check HMM and market data coverage"
                     )
 
-            if bool(config.get("alpha_enable_macro_features", True)):
+            if bool(config.get("macro_trend_enable_macro_features", True)):
                 try:
                     aligned_df = self._generate_macro_features(aligned_df, config)
                 except Exception as macro_exc:
                     tprint_warning(f"Macro feature engineering failed (ignored): {macro_exc}")
 
-            if bool(config.get("alpha_enable_trend_features", True)):
+            if bool(config.get("macro_trend_enable_trend_features", True)):
                 try:
                     if "close" in aligned_df.columns:
                         price_series = aligned_df["close"].astype(float)
 
-                        fast_w = int(config.get("alpha_trend_ema_fast_window", 12))
-                        slow_w = int(config.get("alpha_trend_ema_slow_window", 26))
-                        slope_w = int(config.get("alpha_trend_slope_window", 20))
+                        fast_w = int(config.get("macro_trend_trend_ema_fast_window", 12))
+                        slow_w = int(config.get("macro_trend_trend_ema_slow_window", 26))
+                        slope_w = int(config.get("macro_trend_trend_slope_window", 20))
 
                         if fast_w > 0:
                             ema_fast = price_series.ewm(span=fast_w, adjust=False).mean()
@@ -469,18 +469,18 @@ class HMMMLMacroTrendStep(BaseStep):
             # ------------------------------------------------------------------
             # 4) Compute alpha labels
             # ------------------------------------------------------------------
-            alpha_df = self._compute_alpha_labels(aligned_df, config)
+            macro_trend_df = self._compute_macro_trend_labels(aligned_df, config)
 
-            if alpha_df.empty:
+            if macro_trend_df.empty:
                 raise ValueError("Alpha dataset is empty after label construction")
 
             # ------------------------------------------------------------------
             # 5) Train LightGBM alpha model and derive alpha regimes
             # ------------------------------------------------------------------
             model = None
-            alpha_scores = None
+            macro_trend_scores = None
             training_metrics: Dict[str, Any] = {}
-            training_metrics["alpha_fallback_used"] = False
+            training_metrics["macro_trend_fallback_used"] = False
             regime_stats_df: Optional[pd.DataFrame] = None
             model_path: Optional[str] = None
             regime_stats_path: Optional[str] = None
@@ -491,79 +491,79 @@ class HMMMLMacroTrendStep(BaseStep):
             feature_pipeline_path: Optional[str] = None
 
             try:
-                alpha_enable_hpo = bool(config.get("alpha_enable_hpo", False))
+                macro_trend_enable_hpo = bool(config.get("macro_trend_enable_hpo", False))
                 tprint_info(
-                    f" Starting alpha model training: samples={len(alpha_df)}, "
-                    f"features={len([c for c in alpha_df.select_dtypes(include=[np.number]).columns if c != 'alpha_target' and not c.startswith('alpha_forward_return_')])}, "
-                    f"target_type={config.get('alpha_target_type', 'regression')}, "
-                    f"alpha_enable_hpo={alpha_enable_hpo}"
+                    f" Starting alpha model training: samples={len(macro_trend_df)}, "
+                    f"features={len([c for c in macro_trend_df.select_dtypes(include=[np.number]).columns if c != 'macro_trend_target' and not c.startswith('macro_trend_forward_return_')])}, "
+                    f"target_type={config.get('macro_trend_target_type', 'regression')}, "
+                    f"macro_trend_enable_hpo={macro_trend_enable_hpo}"
                 )
 
-                model, alpha_scores, pred_col_name, training_metrics, feature_pipeline_artifacts = self._train_alpha_model(
-                    alpha_df,
+                model, macro_trend_scores, pred_col_name, training_metrics, feature_pipeline_artifacts = self._train_macro_trend_model(
+                    macro_trend_df,
                     config,
                     split_config=split_config,
                 )
 
                 # Mark successful model training in metrics for downstream diagnostics
-                training_metrics["alpha_model_training_failed"] = 0
+                training_metrics["macro_trend_model_training_failed"] = 0
 
                 tprint_info(
                     f" Alpha model training complete: model_type="
                     f"{training_metrics.get('model_type', 'unknown')} | "
-                    f"alpha_hpo_used={training_metrics.get('alpha_hpo_used', False)}"
+                    f"macro_trend_hpo_used={training_metrics.get('macro_trend_hpo_used', False)}"
                 )
-                if alpha_scores is not None:
-                    alpha_df[pred_col_name] = alpha_scores
+                if macro_trend_scores is not None:
+                    macro_trend_df[pred_col_name] = macro_trend_scores
                     # Derive calibrated 01 expectation score from alpha predictions
-                    # and make this the canonical alpha_score_continuous signal.
+                    # and make this the canonical macro_trend_score_continuous signal.
                     canonical_score: Optional[pd.Series] = None
                     try:
-                        target_type_local = str(config.get("alpha_target_type", "regression")).lower()
+                        target_type_local = str(config.get("macro_trend_target_type", "regression")).lower()
                         expectation_series = None
 
                         if target_type_local == "classification":
                             # Classification branch already produces calibrated probabilities
-                            expectation_series = alpha_scores.clip(0.0, 1.0)
+                            expectation_series = macro_trend_scores.clip(0.0, 1.0)
                             canonical_score = expectation_series
                         else:
                             expectation_calibration_enabled = bool(
-                                config.get("alpha_enable_expectation_calibration", True)
+                                config.get("macro_trend_enable_expectation_calibration", True)
                             )
                             positive_threshold = float(
-                                config.get("alpha_expectation_positive_threshold", 0.0)
+                                config.get("macro_trend_expectation_positive_threshold", 0.0)
                             )
                             min_samples = int(
-                                config.get("alpha_expectation_min_samples", 200)
+                                config.get("macro_trend_expectation_min_samples", 200)
                             )
 
                             if expectation_calibration_enabled:
                                 try:
                                     from sklearn.isotonic import IsotonicRegression
 
-                                    y_target = alpha_df["alpha_target"].reindex(alpha_scores.index)
+                                    y_target = macro_trend_df["macro_trend_target"].reindex(macro_trend_scores.index)
                                     base_mask = (
-                                        alpha_scores.notna()
+                                        macro_trend_scores.notna()
                                         & y_target.notna()
-                                        & np.isfinite(alpha_scores)
+                                        & np.isfinite(macro_trend_scores)
                                         & np.isfinite(y_target)
                                     )
 
                                     # Use an out-of-fold style calibration: fit isotonic only on
-                                    # the validation tail defined by alpha_train_fraction.
+                                    # the validation tail defined by macro_trend_train_fraction.
                                     n_valid = int(base_mask.sum())
                                     if n_valid >= max(min_samples, 50):
-                                        train_frac_local = float(config.get("alpha_train_fraction", 0.8))
+                                        train_frac_local = float(config.get("macro_trend_train_fraction", 0.8))
                                         train_frac_local = min(max(train_frac_local, 0.5), 0.95)
 
                                         # Chronological ordering for effective validation split
-                                        valid_index = alpha_scores.index[base_mask]
+                                        valid_index = macro_trend_scores.index[base_mask]
                                         split_idx_local = int(n_valid * train_frac_local)
                                         split_idx_local = max(min(split_idx_local, n_valid - 1), 1)
 
                                         val_index = valid_index[split_idx_local:]
                                         if len(val_index) >= max(50, min_samples // 2):
-                                            scores_val = alpha_scores.loc[val_index]
+                                            scores_val = macro_trend_scores.loc[val_index]
                                             y_val = y_target.loc[val_index]
                                             y_bin_val = (y_val > positive_threshold).astype(float)
 
@@ -584,40 +584,40 @@ class HMMMLMacroTrendStep(BaseStep):
                                             )
 
                                             calibrated_vals = iso.predict(
-                                                alpha_scores.to_numpy(
+                                                macro_trend_scores.to_numpy(
                                                     dtype=float,
                                                     copy=False,
                                                 )
                                             )
                                             expectation_series = pd.Series(
                                                 calibrated_vals,
-                                                index=alpha_scores.index,
-                                                name="alpha_expectation_raw_01",
+                                                index=macro_trend_scores.index,
+                                                name="macro_trend_expectation_raw_01",
                                             ).clip(0.0, 1.0)
 
-                                            training_metrics["alpha_expectation_calibration_used"] = True
+                                            training_metrics["macro_trend_expectation_calibration_used"] = True
                                             training_metrics[
-                                                "alpha_expectation_positive_threshold"
+                                                "macro_trend_expectation_positive_threshold"
                                             ] = positive_threshold
                                             training_metrics[
-                                                "alpha_expectation_calibration_method"
+                                                "macro_trend_expectation_calibration_method"
                                             ] = "isotonic_regression_binary_oof"
                                         else:
-                                            training_metrics["alpha_expectation_calibration_used"] = False
+                                            training_metrics["macro_trend_expectation_calibration_used"] = False
                                     else:
-                                        training_metrics["alpha_expectation_calibration_used"] = False
+                                        training_metrics["macro_trend_expectation_calibration_used"] = False
                                 except ImportError:
-                                    training_metrics["alpha_expectation_calibration_used"] = False
+                                    training_metrics["macro_trend_expectation_calibration_used"] = False
                                 except Exception as exp_calib_exc:
-                                    training_metrics["alpha_expectation_calibration_used"] = False
-                                    training_metrics["alpha_expectation_calibration_error"] = str(
+                                    training_metrics["macro_trend_expectation_calibration_used"] = False
+                                    training_metrics["macro_trend_expectation_calibration_error"] = str(
                                         exp_calib_exc
                                     )
 
                             if expectation_series is None:
-                                # Monotonic fallback: logistic mapping of centered alpha_scores
+                                # Monotonic fallback: logistic mapping of centered macro_trend_scores
                                 try:
-                                    scores_clean = alpha_scores.replace(
+                                    scores_clean = macro_trend_scores.replace(
                                         [np.inf, -np.inf], np.nan
                                     ).dropna()
                                     if not scores_clean.empty:
@@ -629,7 +629,7 @@ class HMMMLMacroTrendStep(BaseStep):
                                         scale = iqr if iqr > 1e-8 else max(
                                             float(scores_clean.std()), 1e-8
                                         )
-                                        z = (alpha_scores - median_val) / scale
+                                        z = (macro_trend_scores - median_val) / scale
                                         expectation_series = 1.0 / (1.0 + np.exp(-z))
                                         expectation_series = expectation_series.clip(
                                             0.0, 1.0
@@ -638,18 +638,18 @@ class HMMMLMacroTrendStep(BaseStep):
                                     expectation_series = None
 
                             if expectation_series is not None:
-                                alpha_df["alpha_expectation_raw_01"] = expectation_series
+                                macro_trend_df["macro_trend_expectation_raw_01"] = expectation_series
                                 canonical_score = expectation_series
 
                                 # EMA smoothing on expectation score
                                 try:
                                     ema_weight_raw = config.get(
-                                        "alpha_expectation_ema_weight_recent",
+                                        "macro_trend_expectation_ema_weight_recent",
                                         None,
                                     )
                                     ema_period = int(
                                         config.get(
-                                            "alpha_expectation_ema_period",
+                                            "macro_trend_expectation_ema_period",
                                             4,
                                         )
                                     )
@@ -664,39 +664,39 @@ class HMMMLMacroTrendStep(BaseStep):
                                         alpha=ema_weight,
                                         adjust=False,
                                     ).mean()
-                                    alpha_df[
-                                        "alpha_expectation_ema_01"
+                                    macro_trend_df[
+                                        "macro_trend_expectation_ema_01"
                                     ] = expectation_ema
                                     canonical_score = expectation_ema
                                     training_metrics[
-                                        "alpha_expectation_ema_weight_recent"
+                                        "macro_trend_expectation_ema_weight_recent"
                                     ] = ema_weight
                                     training_metrics[
-                                        "alpha_expectation_ema_period"
+                                        "macro_trend_expectation_ema_period"
                                     ] = ema_period
                                 except Exception as ema_exc:
-                                    training_metrics["alpha_expectation_ema_error"] = str(
+                                    training_metrics["macro_trend_expectation_ema_error"] = str(
                                         ema_exc
                                     )
 
                     except Exception as expectation_exc:
-                        training_metrics["alpha_expectation_error"] = str(
+                        training_metrics["macro_trend_expectation_error"] = str(
                             expectation_exc
                         )
 
-                    # Finalize canonical alpha_score_continuous: prefer calibrated expectation,
-                    # fall back to the underlying alpha_scores if calibration was unavailable.
+                    # Finalize canonical macro_trend_score_continuous: prefer calibrated expectation,
+                    # fall back to the underlying macro_trend_scores if calibration was unavailable.
                     if canonical_score is not None:
-                        alpha_df["alpha_score_continuous"] = canonical_score
+                        macro_trend_df["macro_trend_score_continuous"] = canonical_score
                     else:
-                        alpha_df["alpha_score_continuous"] = alpha_scores
+                        macro_trend_df["macro_trend_score_continuous"] = macro_trend_scores
 
-                        # Best-effort monotonic mapping of raw alpha_scores into a stable [0, 1]
-                        # range so that downstream consumers can always treat alpha_score_continuous
+                        # Best-effort monotonic mapping of raw macro_trend_scores into a stable [0, 1]
+                        # range so that downstream consumers can always treat macro_trend_score_continuous
                         # as a 0-1 expectation-like scalar even when explicit calibration failed.
                         try:
                             score_base = (
-                                alpha_df["alpha_score_continuous"]
+                                macro_trend_df["macro_trend_score_continuous"]
                                 .astype(float)
                                 .replace([np.inf, -np.inf], np.nan)
                             )
@@ -714,27 +714,27 @@ class HMMMLMacroTrendStep(BaseStep):
                                     z = (score_base - mean_val) / denom
                                     scaled = 1.0 / (1.0 + np.exp(-z))
 
-                                alpha_df["alpha_score_continuous"] = scaled.clip(0.0, 1.0)
+                                macro_trend_df["macro_trend_score_continuous"] = scaled.clip(0.0, 1.0)
                         except Exception:
-                            # If normalization fails, keep the raw alpha_scores as-is.
+                            # If normalization fails, keep the raw macro_trend_scores as-is.
                             pass
 
-                    # Add EWM-smoothed variants of alpha_score_continuous as additional features
+                    # Add EWM-smoothed variants of macro_trend_score_continuous as additional features
                     try:
                         score_base = (
-                            alpha_df["alpha_score_continuous"]
+                            macro_trend_df["macro_trend_score_continuous"]
                             .astype(float)
                             .replace([np.inf, -np.inf], np.nan)
                         )
-                        ewm_periods_cfg = config.get("alpha_score_ewm_periods", [3, 5])
+                        ewm_periods_cfg = config.get("macro_trend_score_ewm_periods", [3, 5])
                         try:
                             ewm_periods = [int(p) for p in ewm_periods_cfg if int(p) > 0]
                         except Exception:
                             ewm_periods = [3, 5]
 
                         for period in ewm_periods:
-                            col_name = f"alpha_score_continuous_ewm_{period}"
-                            alpha_df[col_name] = score_base.ewm(
+                            col_name = f"macro_trend_score_continuous_ewm_{period}"
+                            macro_trend_df[col_name] = score_base.ewm(
                                 span=period,
                                 adjust=False,
                             ).mean()
@@ -742,14 +742,14 @@ class HMMMLMacroTrendStep(BaseStep):
                         pass
 
                     # For regime binning, prefer a lightly transformed raw
-                    # alpha_pred_return signal when available so that regimes
+                    # macro_trend_pred_return signal when available so that regimes
                     # react faster than the fully processed
-                    # alpha_score_continuous.
+                    # macro_trend_score_continuous.
                     regime_score_series = None
-                    if "alpha_pred_return" in alpha_df.columns:
+                    if "macro_trend_pred_return" in macro_trend_df.columns:
                         try:
                             raw_scores = (
-                                alpha_df["alpha_pred_return"]
+                                macro_trend_df["macro_trend_pred_return"]
                                 .astype(float)
                                 .replace([np.inf, -np.inf], np.nan)
                             )
@@ -770,32 +770,32 @@ class HMMMLMacroTrendStep(BaseStep):
                             regime_score_series = None
 
                     if regime_score_series is None:
-                        if "alpha_expectation_raw_01" in alpha_df.columns:
-                            regime_score_series = alpha_df["alpha_expectation_raw_01"]
-                        elif "alpha_expectation_ema_01" in alpha_df.columns:
-                            regime_score_series = alpha_df["alpha_expectation_ema_01"]
-                        elif "alpha_score_continuous" in alpha_df.columns:
-                            regime_score_series = alpha_df["alpha_score_continuous"]
+                        if "macro_trend_expectation_raw_01" in macro_trend_df.columns:
+                            regime_score_series = macro_trend_df["macro_trend_expectation_raw_01"]
+                        elif "macro_trend_expectation_ema_01" in macro_trend_df.columns:
+                            regime_score_series = macro_trend_df["macro_trend_expectation_ema_01"]
+                        elif "macro_trend_score_continuous" in macro_trend_df.columns:
+                            regime_score_series = macro_trend_df["macro_trend_score_continuous"]
 
                     if regime_score_series is not None:
-                        alpha_df, regime_stats_df, regime_col_name = self._assign_alpha_regimes(
-                            alpha_df,
+                        macro_trend_df, regime_stats_df, regime_col_name = self._assign_macro_trend_regimes(
+                            macro_trend_df,
                             regime_score_series,
                             config,
                         )
 
                     # Record whether primary regime assignment produced a usable regime column
-                    if regime_col_name is not None and regime_col_name in alpha_df.columns:
+                    if regime_col_name is not None and regime_col_name in macro_trend_df.columns:
                         try:
                             n_regimes_primary = int(
-                                pd.Series(alpha_df[regime_col_name].dropna().astype(int)).nunique()
+                                pd.Series(macro_trend_df[regime_col_name].dropna().astype(int)).nunique()
                             )
                         except Exception:
                             n_regimes_primary = -1
-                        training_metrics["alpha_primary_regimes_success"] = 1
-                        training_metrics["alpha_primary_regimes_n_regimes"] = n_regimes_primary
+                        training_metrics["macro_trend_primary_regimes_success"] = 1
+                        training_metrics["macro_trend_primary_regimes_n_regimes"] = n_regimes_primary
                     else:
-                        training_metrics["alpha_primary_regimes_success"] = 0
+                        training_metrics["macro_trend_primary_regimes_success"] = 0
             except ImportError as xgb_err:
                 tprint_warning(
                     f"XGBoost not available; skipping alpha model training: {xgb_err}"
@@ -804,35 +804,35 @@ class HMMMLMacroTrendStep(BaseStep):
                 tprint_warning(
                     f"Alpha model training failed; continuing with labels only: {model_exc}"
                 )
-                training_metrics["alpha_model_training_failed"] = 1
+                training_metrics["macro_trend_model_training_failed"] = 1
 
             # Only trigger fallback if we genuinely have no regime column.
-            # This keeps alpha_fallback_used=False for healthy runs where
+            # This keeps macro_trend_fallback_used=False for healthy runs where
             # primary regime assignment succeeded.
-            if regime_col_name is None or regime_col_name not in alpha_df.columns:
+            if regime_col_name is None or regime_col_name not in macro_trend_df.columns:
                 try:
                     forward_ret_cols = [
                         col
-                        for col in alpha_df.columns
-                        if col.startswith("alpha_forward_return_")
+                        for col in macro_trend_df.columns
+                        if col.startswith("macro_trend_forward_return_")
                     ]
                     if forward_ret_cols:
-                        fallback_series = alpha_df[forward_ret_cols[0]].astype(float)
+                        fallback_series = macro_trend_df[forward_ret_cols[0]].astype(float)
                         valid_count = fallback_series.notna().sum()
                         if valid_count >= 3:
                             pred_col_name_fallback = f"alpha_fallback_score_{forward_ret_cols[0].split('_')[-1]}"
-                            alpha_scores = fallback_series
-                            alpha_df[pred_col_name_fallback] = alpha_scores
-                            alpha_df["alpha_score_continuous"] = alpha_scores
+                            macro_trend_scores = fallback_series
+                            macro_trend_df[pred_col_name_fallback] = macro_trend_scores
+                            macro_trend_df["macro_trend_score_continuous"] = macro_trend_scores
                             try:
                                 score_base = (
-                                    alpha_df["alpha_score_continuous"]
+                                    macro_trend_df["macro_trend_score_continuous"]
                                     .astype(float)
                                     .replace([np.inf, -np.inf], np.nan)
                                 )
 
                                 # Map fallback alpha scores into a robust [0, 1] range so the
-                                # resulting alpha_score_continuous is always a bounded scalar.
+                                # resulting macro_trend_score_continuous is always a bounded scalar.
                                 try:
                                     score_clean = score_base.dropna()
                                     if not score_clean.empty:
@@ -849,31 +849,31 @@ class HMMMLMacroTrendStep(BaseStep):
                                             scaled = 1.0 / (1.0 + np.exp(-z))
 
                                         score_base = scaled.clip(0.0, 1.0)
-                                        alpha_df["alpha_score_continuous"] = score_base
+                                        macro_trend_df["macro_trend_score_continuous"] = score_base
                                 except Exception:
                                     pass
 
-                                ewm_periods_cfg = config.get("alpha_score_ewm_periods", [3, 5])
+                                ewm_periods_cfg = config.get("macro_trend_score_ewm_periods", [3, 5])
                                 try:
                                     ewm_periods = [int(p) for p in ewm_periods_cfg if int(p) > 0]
                                 except Exception:
                                     ewm_periods = [3, 5]
 
                                 for period in ewm_periods:
-                                    col_name = f"alpha_score_continuous_ewm_{period}"
-                                    alpha_df[col_name] = score_base.ewm(
+                                    col_name = f"macro_trend_score_continuous_ewm_{period}"
+                                    macro_trend_df[col_name] = score_base.ewm(
                                         span=period,
                                         adjust=False,
                                     ).mean()
                             except Exception:
                                 pass
-                            alpha_df, regime_stats_df, regime_col_name = self._assign_alpha_regimes(
-                                alpha_df,
-                                alpha_df["alpha_score_continuous"],
+                            macro_trend_df, regime_stats_df, regime_col_name = self._assign_macro_trend_regimes(
+                                macro_trend_df,
+                                macro_trend_df["macro_trend_score_continuous"],
                                 config,
                             )
-                            training_metrics["alpha_fallback_used"] = True
-                            training_metrics["alpha_fallback_source"] = "forward_return"
+                            training_metrics["macro_trend_fallback_used"] = True
+                            training_metrics["macro_trend_fallback_source"] = "forward_return"
                         else:
                             tprint_warning(
                                 f"Not enough samples ({valid_count}) for fallback alpha regime assignment"
@@ -884,12 +884,12 @@ class HMMMLMacroTrendStep(BaseStep):
                     )
 
             # ------------------------------------------------------------------
-            # 5b) Diagnostics for alpha_score_continuous distribution & economics
+            # 5b) Diagnostics for macro_trend_score_continuous distribution & economics
             # ------------------------------------------------------------------
             try:
-                if "alpha_score_continuous" in alpha_df.columns:
+                if "macro_trend_score_continuous" in macro_trend_df.columns:
                     score_series = (
-                        alpha_df["alpha_score_continuous"]
+                        macro_trend_df["macro_trend_score_continuous"]
                         .astype(float)
                         .replace([np.inf, -np.inf], np.nan)
                         .dropna()
@@ -907,13 +907,13 @@ class HMMMLMacroTrendStep(BaseStep):
                             "q95": float(score_series.quantile(0.95)),
                             "n": int(score_series.shape[0]),
                         }
-                        training_metrics["alpha_score_continuous_distribution"] = dist
+                        training_metrics["macro_trend_score_continuous_distribution"] = dist
 
                         # Economic deciles on 1h forward return
-                        fwd_col = "alpha_forward_return_1h" if "alpha_forward_return_1h" in alpha_df.columns else None
+                        fwd_col = "macro_trend_forward_return_1h" if "macro_trend_forward_return_1h" in macro_trend_df.columns else None
                         if fwd_col is not None:
                             fwd_ret = (
-                                alpha_df.loc[score_series.index, fwd_col]
+                                macro_trend_df.loc[score_series.index, fwd_col]
                                 .astype(float)
                                 .replace([np.inf, -np.inf], np.nan)
                                 .dropna()
@@ -947,7 +947,7 @@ class HMMMLMacroTrendStep(BaseStep):
                                         )
                                     if decile_stats:
                                         training_metrics[
-                                            "alpha_score_decile_forward_returns"
+                                            "macro_trend_score_decile_forward_returns"
                                         ] = decile_stats
                                 except Exception:
                                     # Decile diagnostics are best-effort only
@@ -962,11 +962,11 @@ class HMMMLMacroTrendStep(BaseStep):
             regime_thresholds: Optional[Dict[str, Any]] = None
             regime_thresholds_path: Optional[str] = None
 
-            if alpha_scores is not None and regime_col_name is not None and regime_col_name in alpha_df.columns:
+            if macro_trend_scores is not None and regime_col_name is not None and regime_col_name in macro_trend_df.columns:
                 try:
                     regime_thresholds = self._extract_and_save_regime_thresholds(
-                        alpha_scores=alpha_scores,
-                        regime_labels=alpha_df[regime_col_name],
+                        macro_trend_scores=macro_trend_scores,
+                        regime_labels=macro_trend_df[regime_col_name],
                         regime_col_name=regime_col_name,
                         symbol=symbol,
                         config=config,
@@ -1024,25 +1024,25 @@ class HMMMLMacroTrendStep(BaseStep):
                 exchange=exchange,
                 timeframe=regime_timeframe,
                 direction=direction,
-                model="regime_alpha",
+                model="regime_macro_trend",
             )
 
             # Run unified cluster quality assessment on alpha regimes (if any)
             try:
-                alpha_quality_metrics, alpha_quality_path = self._assess_alpha_regime_quality(
-                    alpha_df=alpha_df,
+                alpha_quality_metrics, alpha_quality_path = self._assess_macro_trend_regime_quality(
+                    macro_trend_df=macro_trend_df,
                     regime_col=regime_col_name,
                     config=config,
                 )
             except Exception as quality_exc:
                 tprint_warning(f"Alpha regime quality assessment failed: {quality_exc}")
 
-            alpha_to_save = alpha_df.reset_index().rename(
-                columns={alpha_df.index.name or "index": "timestamp"}
+            macro_trend_to_save = macro_trend_df.reset_index().rename(
+                columns={macro_trend_df.index.name or "index": "timestamp"}
             )
 
             tprint_info(
-                f" Saving alpha training dataset with shape {alpha_to_save.shape} "
+                f" Saving alpha training dataset with shape {macro_trend_to_save.shape} "
                 f"to versioned HDF5 store"
             )
             # Build metadata with temporal split information
@@ -1064,7 +1064,7 @@ class HMMMLMacroTrendStep(BaseStep):
                 metadata["burnin_end"] = str(split_config.burnin.effective_end)
 
             training_data_path = self._save_artifact(
-                data=alpha_to_save,
+                data=macro_trend_to_save,
                 artifact_name="hmm_macro_trend_training_data_15m",
                 artifact_type="data",
                 metadata=metadata,
@@ -1135,10 +1135,10 @@ class HMMMLMacroTrendStep(BaseStep):
             # ------------------------------------------------------------------
             # Generate comprehensive quality report if enabled
             # ------------------------------------------------------------------
-            if config.get("alpha_enable_quality_report", True):
+            if config.get("macro_trend_enable_quality_report", True):
                 try:
                     report_result = self._generate_hmm_macro_quality_report(
-                        alpha_df=alpha_df,
+                        macro_trend_df=macro_trend_df,
                         regime_col=regime_col_name,
                         symbol=symbol,
                         exchange=exchange,
@@ -1155,7 +1155,7 @@ class HMMMLMacroTrendStep(BaseStep):
             execution_time = time.time() - start_time
             tprint_info(
                 f" {self.step_name} completed in {execution_time:.2f}s "
-                f"with {len(alpha_df)} samples"
+                f"with {len(macro_trend_df)} samples"
             )
 
             result: Dict[str, Any] = {
@@ -1163,7 +1163,7 @@ class HMMMLMacroTrendStep(BaseStep):
                 "symbol": symbol,
                 "exchange": exchange,
                 "timeframe": regime_timeframe,
-                "n_samples": int(len(alpha_df)),
+                "n_samples": int(len(macro_trend_df)),
                 "training_data_path": training_data_path,
                 "model_path": model_path,
                 "training_metrics": training_metrics,
@@ -1175,7 +1175,7 @@ class HMMMLMacroTrendStep(BaseStep):
             tprint_error(f" {self.step_name} failed: {exc}")
             return {"success": False, "error": str(exc)}
 
-    def _compute_alpha_labels(
+    def _compute_macro_trend_labels(
         self,
         aligned_df: pd.DataFrame,
         config: Dict[str, Any],
@@ -1192,8 +1192,8 @@ class HMMMLMacroTrendStep(BaseStep):
               1h sign so that even classification targets remain slower than
               the core HMM ML alpha step.
         """
-        return_type = str(config.get("alpha_return_type", "log")).lower()
-        target_type = str(config.get("alpha_target_type", "regression")).lower()
+        return_type = str(config.get("macro_trend_return_type", "log")).lower()
+        target_type = str(config.get("macro_trend_target_type", "regression")).lower()
 
         df = aligned_df.copy()
         if "close" not in df.columns:
@@ -1206,18 +1206,18 @@ class HMMMLMacroTrendStep(BaseStep):
             fwd_ret_1h = close.shift(-4) / close - 1.0
         else:
             fwd_ret_1h = np.log(close.shift(-4) / close)
-        df["alpha_forward_return_1h"] = fwd_ret_1h
+        df["macro_trend_forward_return_1h"] = fwd_ret_1h
 
         # This prevents extreme events (flash crashes, +50% bars) from dominating
         # the Loss Function (MSE) of LightGBM/XGBoost models.
-        winsorize_enabled = config.get("alpha_winsorize_targets", True)
-        winsorize_lower = config.get("alpha_winsorize_lower_quantile", 0.01)
-        winsorize_upper = config.get("alpha_winsorize_upper_quantile", 0.99)
+        winsorize_enabled = config.get("macro_trend_winsorize_targets", True)
+        winsorize_lower = config.get("macro_trend_winsorize_lower_quantile", 0.01)
+        winsorize_upper = config.get("macro_trend_winsorize_upper_quantile", 0.99)
 
         # Build forward-return columns for multiple horizons
         # For macro, default to a 1–8h horizon set so we can construct
         # longer-horizon blends (e.g. 6–8h) while still allowing overrides.
-        max_h = int(config.get("alpha_max_horizon_bars", 8))
+        max_h = int(config.get("macro_trend_max_horizon_bars", 8))
         max_h = max(max_h, 1)
         fwd_cols: Dict[int, str] = {}
 
@@ -1226,21 +1226,21 @@ class HMMMLMacroTrendStep(BaseStep):
                 fwd_ret = close.shift(-4 * h) / close - 1.0
             else:
                 fwd_ret = np.log(close.shift(-4 * h) / close)
-            col_name = f"alpha_forward_return_{h}h"
+            col_name = f"macro_trend_forward_return_{h}h"
             df[col_name] = fwd_ret
             fwd_cols[h] = col_name
 
         # For macro alpha, focus the effective target on longer horizons
         # (by default 6–8h) so that it captures slower macro swings. The
         # minimum horizon for the macro blend can be overridden via config.
-        long_h_min = int(config.get("alpha_macro_min_horizon_bars", 6))
+        long_h_min = int(config.get("macro_trend_min_horizon_bars", 6))
         candidate_horizons = [h for h in sorted(fwd_cols.keys()) if h >= long_h_min]
         if not candidate_horizons:
             # Fallback to all horizons if config is misaligned; this preserves
             # backward compatibility while still allowing explicit overrides.
             candidate_horizons = sorted(fwd_cols.keys())
 
-        target_h = int(config.get("alpha_macro_target_horizon_bars", 8))
+        target_h = int(config.get("macro_trend_target_horizon_bars", 8))
         if target_h in candidate_horizons:
             macro_horizons = [target_h]
         else:
@@ -1278,47 +1278,47 @@ class HMMMLMacroTrendStep(BaseStep):
             else:
                 base_returns = np.log(close).diff()
 
-            vol_window = int(config.get("alpha_target_vol_window", 160))
+            vol_window = int(config.get("macro_trend_target_vol_window", 160))
             vol_window = max(vol_window, 1)
             realized_vol = base_returns.rolling(vol_window).std()
 
-            df["alpha_target_raw"] = multi_target
-            df["alpha_target_vol"] = realized_vol
+            df["macro_trend_target_raw"] = multi_target
+            df["macro_trend_target_vol"] = realized_vol
 
-            alpha_target = multi_target / (realized_vol + 1e-8)
+            macro_trend_target = multi_target / (realized_vol + 1e-8)
 
             # Optional robust clipping on the normalized target itself
             target_winsorize_enabled = bool(
-                config.get("alpha_target_winsorize_enabled", True)
+                config.get("macro_trend_target_winsorize_enabled", True)
             )
             target_q_lower = float(
-                config.get("alpha_target_winsorize_lower_quantile", 0.01)
+                config.get("macro_trend_target_winsorize_lower_quantile", 0.01)
             )
             target_q_upper = float(
-                config.get("alpha_target_winsorize_upper_quantile", 0.99)
+                config.get("macro_trend_target_winsorize_upper_quantile", 0.99)
             )
 
             if target_winsorize_enabled:
                 try:
                     tgt_clean = (
-                        pd.Series(alpha_target)
+                        pd.Series(macro_trend_target)
                         .replace([np.inf, -np.inf], np.nan)
                         .dropna()
                     )
                     if not tgt_clean.empty:
                         t_low = float(tgt_clean.quantile(target_q_lower))
                         t_high = float(tgt_clean.quantile(target_q_upper))
-                        alpha_target = alpha_target.clip(t_low, t_high)
+                        macro_trend_target = macro_trend_target.clip(t_low, t_high)
                         tprint_info(
-                            f"ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ§ Winsorizing alpha_target at {target_q_lower:.1%}/{target_q_upper:.1%}: "
+                            f"ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ§ Winsorizing macro_trend_target at {target_q_lower:.1%}/{target_q_upper:.1%}: "
                             f"[{t_low:.6f}, {t_high:.6f}]"
                         )
                 except Exception as tgt_wins_exc:
                     tprint_warning(
-                        f"ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ¸ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Failed to winsorize alpha_target (vol-normalized): {tgt_wins_exc}"
+                        f"ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ¸ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Failed to winsorize macro_trend_target (vol-normalized): {tgt_wins_exc}"
                     )
 
-            df["alpha_target"] = alpha_target
+            df["macro_trend_target"] = macro_trend_target
             effective_horizon = f"{min(macro_horizons)}-{max(macro_horizons)}h_mean_vol_norm"
         else:
             # Classification: sign of the long-horizon averaged return rather
@@ -1327,11 +1327,11 @@ class HMMMLMacroTrendStep(BaseStep):
             multi_target = pd.concat(fwd_stack, axis=1).mean(axis=1)
             target = (multi_target > 0).astype(float)
             target = target.where(~multi_target.isna())
-            df["alpha_target"] = target
+            df["macro_trend_target"] = target
             effective_horizon = f"{min(macro_horizons)}-{max(macro_horizons)}h_classification"
 
         # Drop rows where we cannot compute all required forward returns
-        required_cols = ["alpha_target"] + [fwd_cols[h] for h in sorted(fwd_cols.keys())]
+        required_cols = ["macro_trend_target"] + [fwd_cols[h] for h in sorted(fwd_cols.keys())]
         before = len(df)
         df = df.dropna(subset=required_cols)
         dropped = before - len(df)
@@ -1813,10 +1813,10 @@ class HMMMLMacroTrendStep(BaseStep):
             except Exception:
                 bars_per_hour = 1
 
-        h3 = int(config.get("alpha_macro_3h_bars", 3 * bars_per_hour))
-        h6 = int(config.get("alpha_macro_6h_bars", 6 * bars_per_hour))
-        h12 = int(config.get("alpha_macro_12h_bars", 12 * bars_per_hour))
-        h24 = int(config.get("alpha_macro_24h_bars", 24 * bars_per_hour))
+        h3 = int(config.get("macro_trend_3h_bars", 3 * bars_per_hour))
+        h6 = int(config.get("macro_trend_6h_bars", 6 * bars_per_hour))
+        h12 = int(config.get("macro_trend_12h_bars", 12 * bars_per_hour))
+        h24 = int(config.get("macro_trend_24h_bars", 24 * bars_per_hour))
 
         horizons: List[Tuple[str, int]] = [
             ("3h", max(h3, 1)),
@@ -1950,9 +1950,9 @@ class HMMMLMacroTrendStep(BaseStep):
 
         return economic_features
 
-    def _train_alpha_model(
+    def _train_macro_trend_model(
         self,
-        alpha_df: pd.DataFrame,
+        macro_trend_df: pd.DataFrame,
         config: Dict[str, Any],
         split_config: Optional[TemporalSplitConfig] = None,
     ) -> Tuple[Any, Optional[pd.Series], str, Dict[str, Any], Dict[str, Any]]:
@@ -1987,7 +1987,7 @@ class HMMMLMacroTrendStep(BaseStep):
             except TypeError:
                 return float(np.sqrt(mean_squared_error(y_true, y_pred)))  # type: ignore[call-arg]
 
-        def _alpha_hpo_objective(
+        def _macro_trend_hpo_objective(
             params: Dict[str, Any],
             X_train: np.ndarray,
             y_train: np.ndarray,
@@ -2007,7 +2007,7 @@ class HMMMLMacroTrendStep(BaseStep):
 
             try:
                 model.set_params(**params)
-                es_rounds = int(config.get("alpha_early_stopping_rounds", 0))
+                es_rounds = int(config.get("macro_trend_early_stopping_rounds", 0))
 
                 if es_rounds > 0 and X_val is not None and y_val is not None and X_val.shape[0] > 0:
                     try:
@@ -2078,18 +2078,18 @@ class HMMMLMacroTrendStep(BaseStep):
             # Model complexity from num_leaves (higher -> larger penalty)
             try:
                 num_leaves_val = float(
-                    params.get("num_leaves", config.get("alpha_num_leaves", 64))
+                    params.get("num_leaves", config.get("macro_trend_num_leaves", 64))
                 )
             except Exception:
-                num_leaves_val = float(config.get("alpha_num_leaves", 64))
+                num_leaves_val = float(config.get("macro_trend_num_leaves", 64))
             complexity_penalty = float(np.log1p(max(num_leaves_val, 1.0)))
 
             # Weights are configurable via config with sensible defaults
-            w_ic = float(config.get("alpha_hpo_weight_ic_pearson", 1.0))
-            w_ic_spearman = float(config.get("alpha_hpo_weight_ic_spearman", 0.5))
-            w_r2 = float(config.get("alpha_hpo_weight_r2", 0.3))
-            w_smooth = float(config.get("alpha_hpo_weight_smoothness", 0.1))
-            w_complex = float(config.get("alpha_hpo_weight_complexity", 0.05))
+            w_ic = float(config.get("macro_trend_hpo_weight_ic_pearson", 1.0))
+            w_ic_spearman = float(config.get("macro_trend_hpo_weight_ic_spearman", 0.5))
+            w_r2 = float(config.get("macro_trend_hpo_weight_r2", 0.3))
+            w_smooth = float(config.get("macro_trend_hpo_weight_smoothness", 0.1))
+            w_complex = float(config.get("macro_trend_hpo_weight_complexity", 0.05))
 
             score = (
                 w_ic * ic_pearson
@@ -2102,62 +2102,62 @@ class HMMMLMacroTrendStep(BaseStep):
             return float(score)
 
         # Default to regression model for continuous alpha
-        target_type = str(config.get("alpha_target_type", "regression")).lower()
-        horizon = int(config.get("alpha_horizon_bars", 1))
+        target_type = str(config.get("macro_trend_target_type", "regression")).lower()
+        horizon = int(config.get("macro_trend_horizon_bars", 1))
 
-        df = alpha_df.copy()
-        if "alpha_target" not in df.columns:
-            raise ValueError("alpha_target column not found in dataset")
+        df = macro_trend_df.copy()
+        if "macro_trend_target" not in df.columns:
+            raise ValueError("macro_trend_target column not found in dataset")
 
-        df = df.dropna(subset=["alpha_target"])
+        df = df.dropna(subset=["macro_trend_target"])
         if df.empty:
             raise ValueError("No valid samples for alpha model training after dropping NaNs")
 
         teacher_exclude_cols: List[str] = []
         teacher_metrics: Dict[str, Any] = {}
 
-        # Optional teacher/distillation path for regression: blend alpha_target
+        # Optional teacher/distillation path for regression: blend macro_trend_target
         # with an external teacher signal, without using the teacher as a model input.
-        if target_type == "regression" and bool(config.get("alpha_use_teacher", False)):
-            teacher_col_name = str(config.get("alpha_teacher_column", "alpha_teacher_signal"))
+        if target_type == "regression" and bool(config.get("macro_trend_use_teacher", False)):
+            teacher_col_name = str(config.get("macro_trend_teacher_column", "macro_trend_teacher_signal"))
             if teacher_col_name in df.columns:
                 try:
                     teacher_series = df[teacher_col_name].astype(float)
-                    mask = teacher_series.notna() & df["alpha_target"].notna()
-                    min_samples_teacher = int(config.get("alpha_teacher_min_samples", 200))
+                    mask = teacher_series.notna() & df["macro_trend_target"].notna()
+                    min_samples_teacher = int(config.get("macro_trend_teacher_min_samples", 200))
                     if mask.sum() >= max(min_samples_teacher, 50):
-                        w = float(config.get("alpha_teacher_weight", 0.5))
+                        w = float(config.get("macro_trend_teacher_weight", 0.5))
                         w = min(max(w, 0.0), 1.0)
-                        base_target = df.loc[mask, "alpha_target"].astype(float)
+                        base_target = df.loc[mask, "macro_trend_target"].astype(float)
                         teacher_vals = teacher_series.loc[mask]
                         blended = (1.0 - w) * base_target + w * teacher_vals
-                        df.loc[mask, "alpha_target"] = blended
+                        df.loc[mask, "macro_trend_target"] = blended
 
                         teacher_exclude_cols.append(teacher_col_name)
-                        teacher_metrics["alpha_teacher_used"] = True
-                        teacher_metrics["alpha_teacher_column"] = teacher_col_name
-                        teacher_metrics["alpha_teacher_weight"] = w
-                        teacher_metrics["alpha_teacher_samples"] = int(mask.sum())
+                        teacher_metrics["macro_trend_teacher_used"] = True
+                        teacher_metrics["macro_trend_teacher_column"] = teacher_col_name
+                        teacher_metrics["macro_trend_teacher_weight"] = w
+                        teacher_metrics["macro_trend_teacher_samples"] = int(mask.sum())
                     else:
-                        teacher_metrics["alpha_teacher_used"] = False
-                        teacher_metrics["alpha_teacher_reason"] = (
+                        teacher_metrics["macro_trend_teacher_used"] = False
+                        teacher_metrics["macro_trend_teacher_reason"] = (
                             f"insufficient_samples_{int(mask.sum())}"
                         )
                 except Exception as teacher_exc:
-                    teacher_metrics["alpha_teacher_used"] = False
-                    teacher_metrics["alpha_teacher_error"] = str(teacher_exc)
+                    teacher_metrics["macro_trend_teacher_used"] = False
+                    teacher_metrics["macro_trend_teacher_error"] = str(teacher_exc)
             else:
-                teacher_metrics["alpha_teacher_used"] = False
-                teacher_metrics["alpha_teacher_reason"] = "column_missing"
+                teacher_metrics["macro_trend_teacher_used"] = False
+                teacher_metrics["macro_trend_teacher_reason"] = "column_missing"
 
-        y = df["alpha_target"]
+        y = df["macro_trend_target"]
 
         numeric_df = df.select_dtypes(include=[np.number])
         feature_cols = [
             col
             for col in numeric_df.columns
-            if col != "alpha_target"
-            and not col.startswith("alpha_forward_return_")
+            if col != "macro_trend_target"
+            and not col.startswith("macro_trend_forward_return_")
             and col not in teacher_exclude_cols
         ]
 
@@ -2175,12 +2175,12 @@ class HMMMLMacroTrendStep(BaseStep):
             )
             feature_cols = [c for c in feature_cols if c not in regime_feature_cols]
 
-        use_allowlist = bool(config.get("alpha_use_feature_allowlist", True))
+        use_allowlist = bool(config.get("macro_trend_use_feature_allowlist", True))
         if use_allowlist and feature_cols:
-            alpha_feature_allowlist_cfg = config.get("alpha_feature_allowlist")
+            macro_trend_feature_allowlist_cfg = config.get("macro_trend_feature_allowlist")
 
-            if isinstance(alpha_feature_allowlist_cfg, (list, tuple)) and alpha_feature_allowlist_cfg:
-                macro_feature_allowlist = [str(c) for c in alpha_feature_allowlist_cfg]
+            if isinstance(macro_trend_feature_allowlist_cfg, (list, tuple)) and macro_trend_feature_allowlist_cfg:
+                macro_feature_allowlist = [str(c) for c in macro_trend_feature_allowlist_cfg]
             else:
                 macro_feature_allowlist: List[str] = [
                     # Economic core features from RollingHMMFeatureEngineer
@@ -2216,7 +2216,7 @@ class HMMMLMacroTrendStep(BaseStep):
                     )
 
             allowlist_cols = [c for c in feature_cols if c in macro_feature_allowlist]
-            min_allowed = int(config.get("alpha_min_allowed_features", 10))
+            min_allowed = int(config.get("macro_trend_min_allowed_features", 10))
 
             if len(allowlist_cols) >= max(1, min_allowed):
                 feature_cols = allowlist_cols
@@ -2233,7 +2233,7 @@ class HMMMLMacroTrendStep(BaseStep):
         # excessively long log lines, only display a truncated prefix of the
         # feature list while still reporting the full count.
         try:
-            max_log_features = int(config.get("alpha_log_max_features", 64))
+            max_log_features = int(config.get("macro_trend_log_max_features", 64))
         except Exception:
             max_log_features = 64
         if max_log_features <= 0:
@@ -2247,7 +2247,7 @@ class HMMMLMacroTrendStep(BaseStep):
 
         X = numeric_df[feature_cols]
 
-        min_samples = int(config.get("alpha_min_samples", 200))
+        min_samples = int(config.get("macro_trend_min_samples", 200))
         if len(X) < max(min_samples, 20):
             raise ValueError(
                 f"Insufficient samples for alpha model training: {len(X)} < {min_samples}"
@@ -2272,7 +2272,7 @@ class HMMMLMacroTrendStep(BaseStep):
         else:
             # Fallback to percentage-based split if no split_config provided
             tprint_warning("No split_config provided, using percentage-based split (legacy fallback)")
-            train_frac = float(config.get("alpha_train_fraction", 0.8))
+            train_frac = float(config.get("macro_trend_train_fraction", 0.8))
             train_frac = min(max(train_frac, 0.5), 0.95)
             split_idx = int(len(X) * train_frac)
             split_idx = max(min(split_idx, len(X) - 1), 1)
@@ -2285,15 +2285,15 @@ class HMMMLMacroTrendStep(BaseStep):
         # Apply rolling window normalization to features to prevent look-ahead bias.
         # Use adaptive routing so spatial distance/level features get ATR normalization,
         # pure volume series can use log1p+zscore, and the rest keep winsorized z-score.
-        window_size = int(config.get("alpha_normalization_window", 250))
+        window_size = int(config.get("macro_trend_normalization_window", 250))
 
-        # Use OHLC from alpha_df when available for ATR calculation
-        high = alpha_df["high"] if "high" in alpha_df.columns else None
-        low = alpha_df["low"] if "low" in alpha_df.columns else None
-        close = alpha_df["close"] if "close" in alpha_df.columns else None
+        # Use OHLC from macro_trend_df when available for ATR calculation
+        high = macro_trend_df["high"] if "high" in macro_trend_df.columns else None
+        low = macro_trend_df["low"] if "low" in macro_trend_df.columns else None
+        close = macro_trend_df["close"] if "close" in macro_trend_df.columns else None
 
         # Prepare robust-scaling configuration up front so it is always defined
-        outlier_threshold = float(config.get("alpha_outlier_threshold", 3.0))
+        outlier_threshold = float(config.get("macro_trend_outlier_threshold", 3.0))
         normalizer_config: Dict[str, Any] = {
             "default_strategy": "robust",
             "auto_select": False,
@@ -2339,8 +2339,8 @@ class HMMMLMacroTrendStep(BaseStep):
             X_scaled_full = scaler.transform(X)
 
         # Optionally apply EWMA temporal smoothing on the scaled space
-        use_ewm_features = bool(config.get("alpha_use_ewm_features", True))
-        ewma_periods_cfg = config.get("alpha_ewm_periods", [2, 6, 10])
+        use_ewm_features = bool(config.get("macro_trend_use_ewm_features", True))
+        ewma_periods_cfg = config.get("macro_trend_ewm_periods", [2, 6, 10])
         try:
             ewma_periods = [int(p) for p in ewma_periods_cfg if int(p) > 0]
         except Exception:
@@ -2456,9 +2456,9 @@ class HMMMLMacroTrendStep(BaseStep):
 
         training_metrics: Dict[str, Any] = {}
         training_metrics["scaling_strategy"] = scaling_strategy
-        training_metrics["alpha_outlier_threshold"] = outlier_threshold
-        training_metrics["alpha_use_ewm_features"] = use_ewm_features
-        training_metrics["alpha_ewm_periods"] = ewma_periods
+        training_metrics["macro_trend_outlier_threshold"] = outlier_threshold
+        training_metrics["macro_trend_use_ewm_features"] = use_ewm_features
+        training_metrics["macro_trend_ewm_periods"] = ewma_periods
 
         # Propagate any teacher/distillation diagnostics captured earlier.
         training_metrics.update(teacher_metrics)
@@ -2472,7 +2472,7 @@ class HMMMLMacroTrendStep(BaseStep):
 
         # Disable LightGBM-specific HPO for this XGBoost-based macro model.
         best_hpo_params: Dict[str, Any] = {}
-        training_metrics["alpha_hpo_used"] = False
+        training_metrics["macro_trend_hpo_used"] = False
 
         if target_type == "regression":
             # Use the shared StandardizedXGBTrainer for macro alpha regression
@@ -2481,7 +2481,7 @@ class HMMMLMacroTrendStep(BaseStep):
             symbol = str(config.get("symbol", "ETHUSDT"))
             exchange = str(config.get("exchange", "binance"))
             regime_timeframe = str(config.get("regime_timeframe", config.get("timeframe", "15m")))
-            model_id = f"{symbol}_{exchange}_{regime_timeframe}_macro_alpha"
+            model_id = f"{symbol}_{exchange}_{regime_timeframe}_macro_trend"
 
             # Build training features from the scaled feature space
             X_for_trainer = X_scaled_full[extended_feature_names].copy()
@@ -2492,21 +2492,21 @@ class HMMMLMacroTrendStep(BaseStep):
                 task_type="regression",
                 objective="reg:squarederror",
                 num_class=None,
-                retrain_interval_days=int(config.get("alpha_retrain_interval_days", 10)),
-                hpo_interval_days=int(config.get("alpha_hpo_interval_days", 30)),
-                burnin_pct=float(config.get("alpha_burnin_pct", 1.0 / 12.0)),
-                min_samples_for_training=int(config.get("alpha_min_samples_for_xgb", 1000)),
-                tree_method=str(config.get("alpha_tree_method", "hist")),
-                n_estimators=int(config.get("alpha_n_estimators", 500)),
-                learning_rate=float(config.get("alpha_learning_rate", 0.05)),
-                max_depth=int(config.get("alpha_max_depth", 6)),
-                min_child_weight=float(config.get("alpha_min_child_weight", 30.0)),
-                subsample=float(config.get("alpha_subsample", 0.8)),
-                colsample_bytree=float(config.get("alpha_colsample_bytree", 0.8)),
-                gamma=float(config.get("alpha_gamma", 1.0)),
-                reg_lambda=float(config.get("alpha_reg_lambda", 3.0)),
-                reg_alpha=float(config.get("alpha_reg_alpha", 0.5)),
-                early_stopping_rounds=int(config.get("alpha_early_stopping_rounds", 20)),
+                retrain_interval_days=int(config.get("macro_trend_retrain_interval_days", 10)),
+                hpo_interval_days=int(config.get("macro_trend_hpo_interval_days", 30)),
+                burnin_pct=float(config.get("macro_trend_burnin_pct", 1.0 / 12.0)),
+                min_samples_for_training=int(config.get("macro_trend_min_samples_for_xgb", 1000)),
+                tree_method=str(config.get("macro_trend_tree_method", "hist")),
+                n_estimators=int(config.get("macro_trend_n_estimators", 500)),
+                learning_rate=float(config.get("macro_trend_learning_rate", 0.05)),
+                max_depth=int(config.get("macro_trend_max_depth", 6)),
+                min_child_weight=float(config.get("macro_trend_min_child_weight", 30.0)),
+                subsample=float(config.get("macro_trend_subsample", 0.8)),
+                colsample_bytree=float(config.get("macro_trend_colsample_bytree", 0.8)),
+                gamma=float(config.get("macro_trend_gamma", 1.0)),
+                reg_lambda=float(config.get("macro_trend_reg_lambda", 3.0)),
+                reg_alpha=float(config.get("macro_trend_reg_alpha", 0.5)),
+                early_stopping_rounds=int(config.get("macro_trend_early_stopping_rounds", 20)),
             )
 
             trainer = StandardizedXGBTrainer(model_id=model_id, config=training_config)
@@ -2517,7 +2517,7 @@ class HMMMLMacroTrendStep(BaseStep):
                 data_start=X_for_trainer.index.min(),
                 data_end=X_for_trainer.index.max(),
                 eval_metric="rmse",
-                verbose=bool(config.get("alpha_xgb_verbose", True)),
+                verbose=bool(config.get("macro_trend_xgb_verbose", True)),
             )
 
             oof_df = results.oof_predictions if results.oof_predictions is not None else pd.DataFrame()
@@ -2526,8 +2526,8 @@ class HMMMLMacroTrendStep(BaseStep):
             training_metrics["xgb_oof_predictions"] = int(oof_df.shape[0])
             if window_metadata:
                 hpo_windows = [m for m in window_metadata if m.get("used_hpo", False)]
-                training_metrics["alpha_hpo_used"] = bool(hpo_windows)
-                training_metrics["alpha_hpo_windows"] = len(hpo_windows)
+                training_metrics["macro_trend_hpo_used"] = bool(hpo_windows)
+                training_metrics["macro_trend_hpo_windows"] = len(hpo_windows)
 
             if not oof_df.empty and "prediction" in oof_df.columns:
                 try:
@@ -2565,7 +2565,7 @@ class HMMMLMacroTrendStep(BaseStep):
                 )
                 model_preds_full = model.predict(d_full)
                 full_scores_series = pd.Series(
-                    model_preds_full, index=X_scaled_full.index, name="alpha_pred_return"
+                    model_preds_full, index=X_scaled_full.index, name="macro_trend_pred_return"
                 )
 
                 # 2. Overlay OOF predictions where available (Training/Validation data)
@@ -2591,7 +2591,7 @@ class HMMMLMacroTrendStep(BaseStep):
                     f"Failed to generate macro alpha predictions with standardized XGBoost: {pred_exc}"
                 ) from pred_exc
 
-            pred_col_name = "alpha_pred_return"
+            pred_col_name = "macro_trend_pred_return"
 
             # We rely on downstream expectation calibration to map to [0, 1].
             training_metrics["regression_calibration_enabled"] = False
@@ -2600,15 +2600,15 @@ class HMMMLMacroTrendStep(BaseStep):
 
         else:
             base_model = xgb.XGBClassifier(
-                n_estimators=int(config.get("alpha_n_estimators", 300)),
-                learning_rate=float(config.get("alpha_learning_rate", 0.05)),
-                max_depth=int(config.get("alpha_max_depth", 6)),
-                subsample=float(config.get("alpha_subsample", 0.8)),
-                colsample_bytree=float(config.get("alpha_colsample_bytree", 0.8)),
-                reg_alpha=float(config.get("alpha_reg_alpha", 0.1)),
-                reg_lambda=float(config.get("alpha_reg_lambda", 0.1)),
-                random_state=int(config.get("alpha_random_state", 42)),
-                n_jobs=int(config.get("alpha_n_jobs", -1)),
+                n_estimators=int(config.get("macro_trend_n_estimators", 300)),
+                learning_rate=float(config.get("macro_trend_learning_rate", 0.05)),
+                max_depth=int(config.get("macro_trend_max_depth", 6)),
+                subsample=float(config.get("macro_trend_subsample", 0.8)),
+                colsample_bytree=float(config.get("macro_trend_colsample_bytree", 0.8)),
+                reg_alpha=float(config.get("macro_trend_reg_alpha", 0.1)),
+                reg_lambda=float(config.get("macro_trend_reg_lambda", 0.1)),
+                random_state=int(config.get("macro_trend_random_state", 42)),
+                n_jobs=int(config.get("macro_trend_n_jobs", -1)),
                 eval_metric="logloss",
             )
             base_model.fit(X_train, y_train)
@@ -2622,7 +2622,7 @@ class HMMMLMacroTrendStep(BaseStep):
                 training_metrics["train_accuracy_uncalibrated"] = float(accuracy_score(y_train, train_pred))
 
             # Probability calibration using CalibratedClassifierCV with Isotonic Regression
-            calibration_enabled = bool(config.get("alpha_enable_probability_calibration", True))
+            calibration_enabled = bool(config.get("macro_trend_enable_probability_calibration", True))
             training_metrics["probability_calibration_enabled"] = calibration_enabled
 
             model = base_model
@@ -2728,14 +2728,14 @@ class HMMMLMacroTrendStep(BaseStep):
 
             # Get predictions on full dataset using calibrated model
             proba_all = model.predict_proba(X_scaled_full)[:, 1]
-            scores = pd.Series(proba_all, index=df.index, name="alpha_pred_prob")
-            pred_col_name = "alpha_pred_prob"
+            scores = pd.Series(proba_all, index=df.index, name="macro_trend_pred_prob")
+            pred_col_name = "macro_trend_pred_prob"
             training_metrics["model_type"] = "xgboost_classification"
 
-        full_scores = scores.reindex(alpha_df.index)
+        full_scores = scores.reindex(macro_trend_df.index)
 
         # Optional SHAP analysis add-on (config-gated)
-        if bool(config.get("alpha_enable_shap", False)):
+        if bool(config.get("macro_trend_enable_shap", False)):
             try:
                 from src.utils.ml_common.explainability.model_explanations import (
                     explain_model_with_shap_lime,
@@ -2750,7 +2750,7 @@ class HMMMLMacroTrendStep(BaseStep):
                 shap_cfg: Dict[str, Any] = {
                     "enable_shap": True,
                     "enable_lime": False,
-                    "shap_sample_size": int(config.get("alpha_shap_sample_size", 128)),
+                    "shap_sample_size": int(config.get("macro_trend_shap_sample_size", 128)),
                 }
 
                 shap_results = explain_model_with_shap_lime(
@@ -2764,8 +2764,8 @@ class HMMMLMacroTrendStep(BaseStep):
 
                 shap_expl = shap_results.get("shap_explanations", {}) if isinstance(shap_results, dict) else {}
                 if isinstance(shap_expl, dict):
-                    training_metrics["alpha_shap_top_features"] = shap_expl.get("top_features", [])
-                    training_metrics["alpha_shap_mean_importance"] = shap_expl.get("mean_importance")
+                    training_metrics["macro_trend_shap_top_features"] = shap_expl.get("top_features", [])
+                    training_metrics["macro_trend_shap_mean_importance"] = shap_expl.get("mean_importance")
             except Exception as shap_exc:
                 tprint_warning(f"Alpha SHAP analysis failed (ignored): {shap_exc}")
 
@@ -2774,7 +2774,7 @@ class HMMMLMacroTrendStep(BaseStep):
             f"on {len(X_train)} train / {len(X_val)} val samples"
         )
 
-        training_metrics["alpha_horizon_bars"] = horizon
+        training_metrics["macro_trend_horizon_bars"] = horizon
         training_metrics["target_type"] = target_type
 
         # Comprehensive feature analysis (IC, importance metrics, mRMR, learning curves)
@@ -2963,7 +2963,7 @@ class HMMMLMacroTrendStep(BaseStep):
     def _optimize_regime_boundaries(
         self,
         *,
-        alpha_scores: pd.Series,
+        macro_trend_scores: pd.Series,
         forward_returns: pd.Series,
         n_regimes: int,
         min_bin_pct: float = 0.10,
@@ -2977,7 +2977,7 @@ class HMMMLMacroTrendStep(BaseStep):
         then systematically shifts each boundary to improve the objective.
 
         Args:
-            alpha_scores: Predicted alpha scores (feature)
+            macro_trend_scores: Predicted alpha scores (feature)
             forward_returns: Forward returns (target)
             n_regimes: Number of regimes to create
             min_bin_pct: Minimum percentage of samples per bin (default: 10%)
@@ -2989,8 +2989,8 @@ class HMMMLMacroTrendStep(BaseStep):
             Tuple of (optimal_labels, best_score, metrics_dict)
         """
         # Sort data by alpha scores
-        sorted_indices = alpha_scores.argsort()
-        sorted_scores = alpha_scores.iloc[sorted_indices].values
+        sorted_indices = macro_trend_scores.argsort()
+        sorted_scores = macro_trend_scores.iloc[sorted_indices].values
         sorted_returns = forward_returns.iloc[sorted_indices]
 
         n_samples = len(sorted_scores)
@@ -3143,10 +3143,10 @@ class HMMMLMacroTrendStep(BaseStep):
 
         return labels
 
-    def _assign_alpha_regimes(
+    def _assign_macro_trend_regimes(
         self,
-        alpha_df: pd.DataFrame,
-        alpha_scores: pd.Series,
+        macro_trend_df: pd.DataFrame,
+        macro_trend_scores: pd.Series,
         config: Dict[str, Any],
     ) -> Tuple[pd.DataFrame, Optional[pd.DataFrame], Optional[str]]:
         """Derive alpha regimes using flexible quantile optimization.
@@ -3159,10 +3159,10 @@ class HMMMLMacroTrendStep(BaseStep):
         5. Reports both CV and Winsorized CV metrics
         """
         # Get configuration for regime optimization
-        use_flexible_regimes = bool(config.get("alpha_use_flexible_regimes", True))
-        regime_counts_to_test = config.get("alpha_regime_counts", [2, 3, 4])
-        min_bin_pct = float(config.get("alpha_min_bin_pct", 0.15))
-        max_bin_pct = float(config.get("alpha_max_bin_pct", 0.35))
+        use_flexible_regimes = bool(config.get("macro_trend_use_flexible_regimes", True))
+        regime_counts_to_test = config.get("macro_trend_regime_counts", [2, 3, 4])
+        min_bin_pct = float(config.get("macro_trend_min_bin_pct", 0.15))
+        max_bin_pct = float(config.get("macro_trend_max_bin_pct", 0.35))
 
         # Validate regime counts within compact 2–4 range
         if isinstance(regime_counts_to_test, int):
@@ -3173,18 +3173,18 @@ class HMMMLMacroTrendStep(BaseStep):
 
         tprint_info(
             "HMM macro regime assignment starting: "
-            f"samples={len(alpha_scores)}, "
-            f"alpha_df_rows={len(alpha_df)}, "
+            f"samples={len(macro_trend_scores)}, "
+            f"macro_trend_df_rows={len(macro_trend_df)}, "
             f"use_flexible_regimes={use_flexible_regimes}, "
             f"regime_counts_to_test={regime_counts_to_test}"
         )
 
         # Optional smoothing of alpha scores before constructing regimes
         score_smoothing_method = str(
-            config.get("alpha_score_smoothing_method", "none")
+            config.get("macro_trend_score_smoothing_method", "none")
         ).lower()
-        score_smoothing_window = int(config.get("alpha_score_smoothing_window", 1))
-        scores_for_binning = alpha_scores.copy()
+        score_smoothing_window = int(config.get("macro_trend_score_smoothing_window", 1))
+        scores_for_binning = macro_trend_scores.copy()
         if score_smoothing_method != "none" and score_smoothing_window > 1:
             try:
                 if score_smoothing_method == "ewm":
@@ -3216,7 +3216,7 @@ class HMMMLMacroTrendStep(BaseStep):
                     "Alpha score smoothing failed (ignored, using raw scores): "
                     f"{score_smooth_exc}"
                 )
-                scores_for_binning = alpha_scores
+                scores_for_binning = macro_trend_scores
 
         valid_scores = scores_for_binning.dropna()
         if valid_scores.empty:
@@ -3225,17 +3225,17 @@ class HMMMLMacroTrendStep(BaseStep):
             )
             tprint_info(
                 "HMM macro regime assignment diagnostics: "
-                f"total_scores={len(alpha_scores)}, "
+                f"total_scores={len(macro_trend_scores)}, "
                 f"non_nan_scores={len(valid_scores)}, "
-                f"nan_scores={int(len(alpha_scores) - len(valid_scores))}"
+                f"nan_scores={int(len(macro_trend_scores) - len(valid_scores))}"
             )
-            return alpha_df, None, None
+            return macro_trend_df, None, None
 
         # ------------------------------------------------------------------
         # SIMPLE SCORE-ONLY REGIME ASSIGNMENT (robust default)
         # ------------------------------------------------------------------
         try:
-            num_bins_simple = int(config.get("alpha_regime_bins", 4))
+            num_bins_simple = int(config.get("macro_trend_regime_bins", 4))
         except Exception:
             num_bins_simple = 3
         # Clamp to a compact 2–4 regime range to avoid overly fragmented regimes
@@ -3252,7 +3252,7 @@ class HMMMLMacroTrendStep(BaseStep):
                 tprint_warning(
                     f"Not enough valid alpha scores ({len(valid_scores)}) to define score-only regimes"
                 )
-                return alpha_df, None, None
+                return macro_trend_df, None, None
 
         ranks_simple = valid_scores.rank(method="first")
         try:
@@ -3276,24 +3276,24 @@ class HMMMLMacroTrendStep(BaseStep):
             bucket_codes_simple = (ranks_simple > median_rank).astype(int)
             num_bins_simple = 2
 
-        bucket_col_simple = f"alpha_regime_bucket_{num_bins_simple}"
-        alpha_df[bucket_col_simple] = bucket_codes_simple.reindex(alpha_df.index)
+        bucket_col_simple = f"macro_trend_regime_bucket_{num_bins_simple}"
+        macro_trend_df[bucket_col_simple] = bucket_codes_simple.reindex(macro_trend_df.index)
 
         # For now, skip regime_stats_df from this simplified path; downstream
         # consumers already guard on regime_stats_df being None.
 
         # Get forward returns for optimization
-        fwd_cols = [col for col in alpha_df.columns if col.startswith("alpha_forward_return_")]
+        fwd_cols = [col for col in macro_trend_df.columns if col.startswith("macro_trend_forward_return_")]
         if not fwd_cols:
-            tprint_warning("No alpha_forward_return column found for regime optimization")
+            tprint_warning("No macro_trend_forward_return column found for regime optimization")
             tprint_info(
                 "HMM macro regime assignment diagnostics: "
-                f"available_columns={list(alpha_df.columns)}"
+                f"available_columns={list(macro_trend_df.columns)}"
             )
-            return alpha_df, None, None
+            return macro_trend_df, None, None
 
         fwd_col = fwd_cols[0]
-        forward_returns = alpha_df[fwd_col].dropna()
+        forward_returns = macro_trend_df[fwd_col].dropna()
 
         # Align scores and returns
         common_idx = valid_scores.index.intersection(forward_returns.index)
@@ -3341,13 +3341,13 @@ class HMMMLMacroTrendStep(BaseStep):
 
                 try:
                     labels, score, metrics = self._optimize_regime_boundaries(
-                        alpha_scores=aligned_scores,
+                        macro_trend_scores=aligned_scores,
                         forward_returns=aligned_returns,
                         n_regimes=n_regimes,
                         min_bin_pct=min_bin_pct,
                         max_bin_pct=max_bin_pct,
-                        jiggle_pct=float(config.get("alpha_jiggle_pct", 0.01)),
-                        max_iterations=int(config.get("alpha_max_opt_iterations", 100)),
+                        jiggle_pct=float(config.get("macro_trend_jiggle_pct", 0.01)),
+                        max_iterations=int(config.get("macro_trend_max_opt_iterations", 100)),
                     )
 
                     competition_results.append({
@@ -3392,7 +3392,7 @@ class HMMMLMacroTrendStep(BaseStep):
 
         # Fallback to simple quantile binning if flexible optimization is disabled or failed
         if not use_flexible_regimes:
-            num_bins = int(config.get("alpha_regime_bins", 5))
+            num_bins = int(config.get("macro_trend_regime_bins", 5))
             num_bins = max(3, min(num_bins, 6))
 
             if len(aligned_scores) < num_bins:
@@ -3405,7 +3405,7 @@ class HMMMLMacroTrendStep(BaseStep):
                     tprint_warning(
                         f"Not enough valid alpha scores ({len(aligned_scores)}) to define regimes"
                     )
-                    return alpha_df, None, None
+                    return macro_trend_df, None, None
 
             try:
                 ranks = aligned_scores.rank(method="first")
@@ -3442,13 +3442,13 @@ class HMMMLMacroTrendStep(BaseStep):
                 bucket_codes = (ranks > median_rank).astype(int)
                 num_bins = 2
 
-        bucket_col = f"alpha_regime_bucket_{num_bins}"
-        alpha_df[bucket_col] = bucket_codes.reindex(alpha_df.index)
+        bucket_col = f"macro_trend_regime_bucket_{num_bins}"
+        macro_trend_df[bucket_col] = bucket_codes.reindex(macro_trend_df.index)
 
-        min_run_bars = int(config.get("alpha_regime_min_run_bars", 0))
+        min_run_bars = int(config.get("macro_trend_regime_min_run_bars", 0))
         if min_run_bars > 1:
             try:
-                series = alpha_df[bucket_col]
+                series = macro_trend_df[bucket_col]
                 vals = series.to_numpy(copy=True)
                 n = len(vals)
 
@@ -3475,7 +3475,7 @@ class HMMMLMacroTrendStep(BaseStep):
 
                     i = j
 
-                alpha_df[bucket_col] = vals
+                macro_trend_df[bucket_col] = vals
                 tprint_info(
                     f"ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ§ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Enforced minimum run length on alpha regimes (min_run_bars={min_run_bars})"
                 )
@@ -3489,8 +3489,8 @@ class HMMMLMacroTrendStep(BaseStep):
 
         stats_records = []
         for bucket in sorted(bucket_codes.unique()):
-            mask = alpha_df[bucket_col] == bucket
-            group = alpha_df.loc[mask]
+            mask = macro_trend_df[bucket_col] == bucket
+            group = macro_trend_df.loc[mask]
             if group.empty:
                 continue
 
@@ -3518,7 +3518,7 @@ class HMMMLMacroTrendStep(BaseStep):
             skewness = float(ret.skew()) if len(ret) > 2 else 0.0
             kurtosis = float(ret.kurtosis()) if len(ret) > 3 else 0.0
 
-            var_level = float(config.get("alpha_var_quantile", 0.05))
+            var_level = float(config.get("macro_trend_var_quantile", 0.05))
             var_level = min(max(var_level, 0.001), 0.2)
             try:
                 var_ret = float(ret.quantile(var_level))
@@ -3540,7 +3540,7 @@ class HMMMLMacroTrendStep(BaseStep):
                 tail_ratio = 0.0
 
             # Vol-of-vol: dispersion of rolling volatility within the regime
-            vol_of_vol_window = int(config.get("alpha_vol_of_vol_window", 10))
+            vol_of_vol_window = int(config.get("macro_trend_vol_of_vol_window", 10))
             if vol_of_vol_window >= 2 and len(ret) >= vol_of_vol_window:
                 rolling_vol = ret.rolling(vol_of_vol_window).std()
                 vol_of_vol = float(rolling_vol.std(skipna=True))
@@ -3571,14 +3571,14 @@ class HMMMLMacroTrendStep(BaseStep):
                 trendiness = 0.0
 
             hit_rate = float((ret > 0).mean())
-            mean_target = float(group["alpha_target"].mean())
+            mean_target = float(group["macro_trend_target"].mean())
 
             # Calculate bin percentage
-            bin_pct = float(len(group)) / float(len(alpha_df))
+            bin_pct = float(len(group)) / float(len(macro_trend_df))
 
             stats_records.append(
                 {
-                    "alpha_regime_bucket": int(bucket),
+                    "macro_trend_regime_bucket": int(bucket),
                     "n_samples": int(len(group)),
                     "bin_percentage": bin_pct,
                     "mean_forward_return": mean_ret,
@@ -3597,15 +3597,15 @@ class HMMMLMacroTrendStep(BaseStep):
                     "vol_of_vol_forward_return": vol_of_vol,
                     "trendiness_forward_return": trendiness,
                     "hit_rate_positive_return": hit_rate,
-                    "mean_alpha_target": mean_target,
+                    "mean_macro_trend_target": mean_target,
                 }
             )
 
         if not stats_records:
             tprint_warning("No stats records generated for alpha regimes")
-            return alpha_df, None, bucket_col
+            return macro_trend_df, None, bucket_col
 
-        regime_stats_df = pd.DataFrame(stats_records).set_index("alpha_regime_bucket").sort_index()
+        regime_stats_df = pd.DataFrame(stats_records).set_index("macro_trend_regime_bucket").sort_index()
 
         # Calculate overall economic metrics (Between/Within CV ratios)
         if use_flexible_regimes and best_metrics is not None:
@@ -3637,12 +3637,12 @@ class HMMMLMacroTrendStep(BaseStep):
                 f"Within WCV={best_metrics.get('within_wcv', 0.0):.4f}"
             )
 
-        return alpha_df, regime_stats_df, bucket_col
+        return macro_trend_df, regime_stats_df, bucket_col
 
     def _extract_and_save_regime_thresholds(
         self,
         *,
-        alpha_scores: pd.Series,
+        macro_trend_scores: pd.Series,
         regime_labels: pd.Series,
         regime_col_name: str,
         symbol: str,
@@ -3655,7 +3655,7 @@ class HMMMLMacroTrendStep(BaseStep):
         to regime buckets in live trading.
 
         Args:
-            alpha_scores: Series of alpha predictions (continuous)
+            macro_trend_scores: Series of alpha predictions (continuous)
             regime_labels: Series of assigned regime labels (discrete)
             regime_col_name: Name of the regime column
             symbol: Trading symbol for artifact metadata
@@ -3687,7 +3687,7 @@ class HMMMLMacroTrendStep(BaseStep):
 
             for regime in unique_regimes:
                 mask = regime_labels == regime
-                regime_scores = alpha_scores[mask]
+                regime_scores = macro_trend_scores[mask]
 
                 if len(regime_scores) > 0:
                     min_score = float(regime_scores.min())
@@ -3727,12 +3727,12 @@ class HMMMLMacroTrendStep(BaseStep):
             percentiles = [0, 25, 50, 75, 100]
             percentile_thresholds = {}
             for p in percentiles:
-                percentile_thresholds[p] = float(np.percentile(alpha_scores, p))
+                percentile_thresholds[p] = float(np.percentile(macro_trend_scores, p))
             threshold_data["percentile_thresholds"] = percentile_thresholds
 
             tprint_info(
                 f"ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Regime thresholds extracted: {len(unique_regimes)} regimes, "
-                f"min_score={min(alpha_scores):.6f}, max_score={max(alpha_scores):.6f}"
+                f"min_score={min(macro_trend_scores):.6f}, max_score={max(macro_trend_scores):.6f}"
             )
 
             return threshold_data
@@ -3741,10 +3741,10 @@ class HMMMLMacroTrendStep(BaseStep):
             tprint_warning(f"Regime threshold extraction failed: {e}")
             return {"extraction_error": str(e)}
 
-    def _assign_alpha_regimes_with_thresholds(
+    def _assign_macro_trend_regimes_with_thresholds(
         self,
         *,
-        alpha_scores: np.ndarray,
+        macro_trend_scores: np.ndarray,
         regime_thresholds: Dict[int, Dict[str, float]],
     ) -> np.ndarray:
         """Apply saved regime thresholds to new alpha predictions (for live trading).
@@ -3754,13 +3754,13 @@ class HMMMLMacroTrendStep(BaseStep):
         each prediction to the appropriate regime.
 
         Args:
-            alpha_scores: Array of new alpha predictions
+            macro_trend_scores: Array of new alpha predictions
             regime_thresholds: Dict from _extract_and_save_regime_thresholds()["regime_thresholds"]
 
         Returns:
             Array of regime assignments matching the input scores
         """
-        assignments = np.full(len(alpha_scores), -1, dtype=int)
+        assignments = np.full(len(macro_trend_scores), -1, dtype=int)
 
         for regime_id, threshold_info in regime_thresholds.items():
             min_score = threshold_info["min_score"]
@@ -3768,13 +3768,13 @@ class HMMMLMacroTrendStep(BaseStep):
 
             # Assign to this regime if score falls within bounds
             # Use <= for max to handle boundary scores
-            mask = (alpha_scores >= min_score) & (alpha_scores <= max_score)
+            mask = (macro_trend_scores >= min_score) & (macro_trend_scores <= max_score)
             assignments[mask] = regime_id
 
         # For scores outside all ranges (shouldn't happen in production), assign to nearest regime
         unassigned_mask = assignments == -1
         if unassigned_mask.any():
-            unassigned_scores = alpha_scores[unassigned_mask]
+            unassigned_scores = macro_trend_scores[unassigned_mask]
             for idx in np.where(unassigned_mask)[0]:
                 # Assign to regime with closest mean score
                 closest_regime = min(
@@ -3817,7 +3817,7 @@ class HMMMLMacroTrendStep(BaseStep):
             Dictionary with comprehensive feature analysis results
         """
         feature_analysis_results = {
-            "feature_analysis_enabled": bool(config.get("alpha_enable_comprehensive_feature_analysis", True)),
+            "feature_analysis_enabled": bool(config.get("macro_trend_enable_comprehensive_feature_analysis", True)),
             "features_analyzed": len(feature_names),
         }
 
@@ -3913,16 +3913,16 @@ class HMMMLMacroTrendStep(BaseStep):
                 tprint_warning(f"LGBM importance calculation failed: {lgbm_err}")
 
             # 3. Permutation Importance with stability checking
-            if PERMUTATION_IMPORTANCE_AVAILABLE and bool(config.get("alpha_enable_permutation_importance", True)):
+            if PERMUTATION_IMPORTANCE_AVAILABLE and bool(config.get("macro_trend_enable_permutation_importance", True)):
                 try:
                     X_train_arr = X_train.to_numpy(dtype=float, copy=False) if hasattr(X_train, 'to_numpy') else X_train
                     y_train_arr = y_train.to_numpy(dtype=float, copy=False) if hasattr(y_train, 'to_numpy') else y_train
 
                     perm_config = PermutationConfig(
-                        n_repeats=int(config.get("alpha_permutation_n_repeats", 5)),
+                        n_repeats=int(config.get("macro_trend_permutation_n_repeats", 5)),
                         scoring='r2' if not is_classification else 'accuracy',
                         enable_stability_check=True,
-                        n_jobs=int(config.get("alpha_n_jobs", -1)),
+                        n_jobs=int(config.get("macro_trend_n_jobs", -1)),
                     )
 
                     perm_calc = PermutationImportanceCalculator(perm_config)
@@ -3953,9 +3953,9 @@ class HMMMLMacroTrendStep(BaseStep):
 
             # 4. Improved mRMR for redundancy analysis
             # Disabled by default for production/fast runs; enable explicitly via
-            # alpha_enable_mrmr_analysis=True in the config when heavy diagnostics
+            # macro_trend_enable_mrmr_analysis=True in the config when heavy diagnostics
             # are desired.
-            if IMPROVED_MRMR_AVAILABLE and bool(config.get("alpha_enable_mrmr_analysis", False)):
+            if IMPROVED_MRMR_AVAILABLE and bool(config.get("macro_trend_enable_mrmr_analysis", False)):
                 try:
                     X_full_arr = X_full.to_numpy(dtype=float, copy=False) if hasattr(X_full, 'to_numpy') else X_full
                     y_full_arr = y_full.to_numpy(dtype=float, copy=False) if hasattr(y_full, 'to_numpy') else y_full
@@ -3964,7 +3964,7 @@ class HMMMLMacroTrendStep(BaseStep):
                     # long histories. By default, cap at ~20k samples with a
                     # deterministic stride-based subsample to maintain temporal
                     # coverage while reducing CPU load.
-                    max_mrmr_samples = int(config.get("alpha_mrmr_max_samples", 20000))
+                    max_mrmr_samples = int(config.get("macro_trend_mrmr_max_samples", 20000))
                     if max_mrmr_samples > 0 and X_full_arr.shape[0] > max_mrmr_samples:
                         stride = int(np.ceil(X_full_arr.shape[0] / max_mrmr_samples))
                         stride = max(stride, 1)
@@ -3984,12 +3984,12 @@ class HMMMLMacroTrendStep(BaseStep):
                     mrmr_config = {
                         'mi_weight': 0.7,
                         'spearman_weight': 0.3,
-                        'target_ratio': float(config.get("alpha_mrmr_target_ratio", 0.5)),
+                        'target_ratio': float(config.get("macro_trend_mrmr_target_ratio", 0.5)),
                         'use_mi_proxy': True,
                         'enable_hardware_optimization': True,
-                        'quantile_bins': int(config.get("alpha_mrmr_quantile_bins", 8)),
-                        'cv_folds': int(config.get("alpha_mrmr_cv_folds", 3)),
-                        'enable_cv_relevance': bool(config.get("alpha_mrmr_enable_cv_relevance", False)),
+                        'quantile_bins': int(config.get("macro_trend_mrmr_quantile_bins", 8)),
+                        'cv_folds': int(config.get("macro_trend_mrmr_cv_folds", 3)),
+                        'enable_cv_relevance': bool(config.get("macro_trend_mrmr_enable_cv_relevance", False)),
                     }
 
                     mrmr = ImprovedMRMR(mrmr_config)
@@ -4005,21 +4005,21 @@ class HMMMLMacroTrendStep(BaseStep):
                     tprint_warning(f"mRMR analysis failed: {mrmr_err}")
 
             # 5. Learning curve analysis for overfitting detection
-            if ENHANCED_LEARNING_CURVE_AVAILABLE and X_val is not None and y_val is not None and bool(config.get("alpha_enable_learning_curve_analysis", True)):
+            if ENHANCED_LEARNING_CURVE_AVAILABLE and X_val is not None and y_val is not None and bool(config.get("macro_trend_enable_learning_curve_analysis", True)):
                 try:
                     X_train_arr = X_train.to_numpy(dtype=float, copy=False) if hasattr(X_train, 'to_numpy') else X_train
                     y_train_arr = y_train.to_numpy(dtype=float, copy=False) if hasattr(y_train, 'to_numpy') else y_train
                     X_val_arr = X_val.to_numpy(dtype=float, copy=False) if hasattr(X_val, 'to_numpy') else X_val
                     y_val_arr = y_val.to_numpy(dtype=float, copy=False) if hasattr(y_val, 'to_numpy') else y_val
 
-                    lc_analyzer = EnhancedLearningCurveAnalyzer(random_state=int(config.get("alpha_random_state", 42)))
+                    lc_analyzer = EnhancedLearningCurveAnalyzer(random_state=int(config.get("macro_trend_random_state", 42)))
                     lc_result = lc_analyzer.analyze_learning_curve(
                         model,
                         X_train_arr,
                         y_train_arr,
                         X_val_arr,
                         y_val_arr,
-                        cv_folds=int(config.get("alpha_hpo_cv_folds", 3)),
+                        cv_folds=int(config.get("macro_trend_hpo_cv_folds", 3)),
                         scoring='r2' if not is_classification else 'accuracy',
                     )
 
@@ -4043,7 +4043,7 @@ class HMMMLMacroTrendStep(BaseStep):
                     tprint_warning(f"Learning curve analysis failed: {lc_err}")
 
             # 6. SHAP analysis (if available)
-            if SHAP_AVAILABLE and bool(config.get("alpha_enable_shap_importance", False)):
+            if SHAP_AVAILABLE and bool(config.get("macro_trend_enable_shap_importance", False)):
                 try:
                     X_train_sample = X_train.head(min(100, len(X_train))) if isinstance(X_train, pd.DataFrame) else X_train[:min(100, len(X_train))]
                     X_train_sample_arr = X_train_sample.to_numpy(dtype=float, copy=False) if hasattr(X_train_sample, 'to_numpy') else X_train_sample
@@ -4085,7 +4085,7 @@ class HMMMLMacroTrendStep(BaseStep):
             # feature matrix for this run. Downstream consumers can choose to
             # use this recommended set.
             try:
-                enable_pruning = bool(config.get("alpha_enable_feature_pruning", True))
+                enable_pruning = bool(config.get("macro_trend_enable_feature_pruning", True))
                 if enable_pruning and feature_names:
                     selected_feature_names = list(feature_names)
 
@@ -4108,7 +4108,7 @@ class HMMMLMacroTrendStep(BaseStep):
                         positive_imp = imp_series[imp_series > 0.0]
                         if not positive_imp.empty:
                             # Gentle floor: near the bottom tail of positive importances
-                            q_low = float(config.get("alpha_feature_pruning_importance_q_low", 0.05))
+                            q_low = float(config.get("macro_trend_feature_pruning_importance_q_low", 0.05))
                             q_low = min(max(q_low, 0.0), 0.25)
                             floor_val = positive_imp.quantile(q_low)
 
@@ -4127,13 +4127,13 @@ class HMMMLMacroTrendStep(BaseStep):
                             if drop_candidates:
                                 # Do not be harsh: keep at least a minimum fraction
                                 min_fraction = float(
-                                    config.get("alpha_feature_pruning_min_fraction", 0.6)
+                                    config.get("macro_trend_feature_pruning_min_fraction", 0.6)
                                 )
                                 min_fraction = min(max(min_fraction, 0.2), 0.9)
                                 min_keep = int(
                                     max(
                                         len(feature_names) * min_fraction,
-                                        float(config.get("alpha_feature_pruning_min_absolute", 5)),
+                                        float(config.get("macro_trend_feature_pruning_min_absolute", 5)),
                                     )
                                 )
 
@@ -4333,10 +4333,10 @@ class HMMMLMacroTrendStep(BaseStep):
             tprint_warning(f"Walk-Forward Validation calculation failed: {e}")
             return {}
 
-    def _assess_alpha_regime_quality(
+    def _assess_macro_trend_regime_quality(
         self,
         *,
-        alpha_df: pd.DataFrame,
+        macro_trend_df: pd.DataFrame,
         regime_col: Optional[str],
         config: Dict[str, Any],
     ) -> Tuple[Optional[ClusterQualityMetrics], Optional[str]]:
@@ -4344,13 +4344,13 @@ class HMMMLMacroTrendStep(BaseStep):
 
         This uses the unified assess_quality interface and persists metrics as a
         dedicated artifact. The minimum regime size defaults to 3 but can be
-        overridden via config["alpha_min_regime_size"].
+        overridden via config["macro_trend_min_regime_size"].
         """
-        if regime_col is None or regime_col not in alpha_df.columns:
+        if regime_col is None or regime_col not in macro_trend_df.columns:
             tprint_warning("No alpha regime column provided; skipping regime quality assessment")
             return None, None
 
-        regime_series = alpha_df[regime_col]
+        regime_series = macro_trend_df[regime_col]
         valid_mask = regime_series.notna()
         if valid_mask.sum() == 0:
             tprint_warning("No valid alpha regime labels for quality assessment")
@@ -4358,13 +4358,13 @@ class HMMMLMacroTrendStep(BaseStep):
 
         regime_labels = np.asarray(regime_series[valid_mask].astype(int), dtype=int)
 
-        numeric_df = alpha_df.select_dtypes(include=[np.number])
-        drop_cols = ["alpha_target", regime_col]
-        drop_cols.extend([c for c in numeric_df.columns if c.startswith("alpha_forward_return_")])
+        numeric_df = macro_trend_df.select_dtypes(include=[np.number])
+        drop_cols = ["macro_trend_target", regime_col]
+        drop_cols.extend([c for c in numeric_df.columns if c.startswith("macro_trend_forward_return_")])
         feature_cols = [c for c in numeric_df.columns if c not in drop_cols]
         if not feature_cols:
             forward_ret_feature_cols = [
-                c for c in numeric_df.columns if c.startswith("alpha_forward_return_")
+                c for c in numeric_df.columns if c.startswith("macro_trend_forward_return_")
             ]
             if forward_ret_feature_cols:
                 feature_cols = forward_ret_feature_cols
@@ -4374,25 +4374,25 @@ class HMMMLMacroTrendStep(BaseStep):
 
         feature_data = numeric_df[feature_cols].loc[valid_mask]
 
-        forward_ret_cols = [c for c in alpha_df.columns if c.startswith("alpha_forward_return_")]
+        forward_ret_cols = [c for c in macro_trend_df.columns if c.startswith("macro_trend_forward_return_")]
         forward_returns = None
         if forward_ret_cols:
-            forward_returns = alpha_df[forward_ret_cols[0]].loc[valid_mask]
+            forward_returns = macro_trend_df[forward_ret_cols[0]].loc[valid_mask]
 
-        timestamps = alpha_df.index[valid_mask]
-        min_regime_size = int(config.get("alpha_min_regime_size", 3))
-        temporal_mode = str(config.get("alpha_temporal_sensitivity_mode", "regime_persistence_focused"))
+        timestamps = macro_trend_df.index[valid_mask]
+        min_regime_size = int(config.get("macro_trend_min_regime_size", 3))
+        temporal_mode = str(config.get("macro_trend_temporal_sensitivity_mode", "regime_persistence_focused"))
         # For macro runs, default to FAST quality assessment to avoid the
         # heaviest O(n^2) metrics (silhouette, DBI, full economic analysis).
-        # This can be overridden via alpha_quality_fast_mode=False if you
+        # This can be overridden via macro_trend_quality_fast_mode=False if you
         # explicitly want the comprehensive assessment.
-        fast_mode = bool(config.get("alpha_quality_fast_mode", True))
+        fast_mode = bool(config.get("macro_trend_quality_fast_mode", True))
 
         # Optionally subsample rows before calling ClusterQualityAssessor to
         # keep runtime manageable on long histories. By default, cap at
         # ~12k samples with stride-based sampling to preserve temporal
         # coverage while reducing cost.
-        max_quality_samples = int(config.get("alpha_quality_max_samples", 12000))
+        max_quality_samples = int(config.get("macro_trend_quality_max_samples", 12000))
         if max_quality_samples > 0:
             n_samples = len(regime_labels)
             if n_samples > max_quality_samples:
@@ -4454,23 +4454,23 @@ class HMMMLMacroTrendStep(BaseStep):
     def _build_fallback_regime_column_for_report(
         self,
         *,
-        alpha_df: pd.DataFrame,
+        macro_trend_df: pd.DataFrame,
         config: Dict[str, Any],
         prefix: str = "macro_regime_bucket_report_",
     ) -> Optional[str]:
         """Best-effort helper to ensure a regime column exists for quality reporting."""
         try:
             score_series = None
-            if "alpha_score_continuous" in alpha_df.columns:
-                score_series = alpha_df["alpha_score_continuous"].astype(float)
-            elif "alpha_target" in alpha_df.columns:
-                score_series = alpha_df["alpha_target"].astype(float)
+            if "macro_trend_score_continuous" in macro_trend_df.columns:
+                score_series = macro_trend_df["macro_trend_score_continuous"].astype(float)
+            elif "macro_trend_target" in macro_trend_df.columns:
+                score_series = macro_trend_df["macro_trend_target"].astype(float)
             else:
                 fwd_cols_local = [
-                    c for c in alpha_df.columns if c.startswith("alpha_forward_return_")
+                    c for c in macro_trend_df.columns if c.startswith("macro_trend_forward_return_")
                 ]
                 if fwd_cols_local:
-                    score_series = alpha_df[fwd_cols_local[0]].astype(float)
+                    score_series = macro_trend_df[fwd_cols_local[0]].astype(float)
 
             if score_series is None:
                 return None
@@ -4479,7 +4479,7 @@ class HMMMLMacroTrendStep(BaseStep):
             if len(score_series) < 50:
                 return None
 
-            num_bins = int(config.get("alpha_regime_bins", 5))
+            num_bins = int(config.get("macro_trend_regime_bins", 5))
             num_bins = max(3, min(num_bins, 6))
 
             ranks = score_series.rank(method="first")
@@ -4506,7 +4506,7 @@ class HMMMLMacroTrendStep(BaseStep):
                 return None
 
             bucket_col = f"{prefix}{effective_bins}"
-            alpha_df[bucket_col] = bucket_codes.reindex(alpha_df.index)
+            macro_trend_df[bucket_col] = bucket_codes.reindex(macro_trend_df.index)
             return bucket_col
         except Exception as exc:
             tprint_warning(
@@ -4517,7 +4517,7 @@ class HMMMLMacroTrendStep(BaseStep):
     def _generate_hmm_macro_quality_report(
         self,
         *,
-        alpha_df: pd.DataFrame,
+        macro_trend_df: pd.DataFrame,
         regime_col: Optional[str],
         symbol: str,
         exchange: str,
@@ -4533,7 +4533,7 @@ class HMMMLMacroTrendStep(BaseStep):
         - Global metrics: transition matrix, overall Sharpe, regime duration stats
 
         Args:
-            alpha_df: DataFrame with regime assignments and alpha_score_continuous
+            macro_trend_df: DataFrame with regime assignments and macro_trend_score_continuous
             regime_col: Name of the regime column
             symbol: Trading symbol
             exchange: Exchange name
@@ -4547,7 +4547,7 @@ class HMMMLMacroTrendStep(BaseStep):
         import os
         from datetime import datetime
 
-        if regime_col is None or regime_col not in alpha_df.columns:
+        if regime_col is None or regime_col not in macro_trend_df.columns:
             tprint_warning(
                 "No regime column for quality report generation; "
                 "skipping HMM macro trend quality report"
@@ -4561,7 +4561,7 @@ class HMMMLMacroTrendStep(BaseStep):
             csv_path = os.path.join("outcomes", base_name + ".csv")
             md_path = os.path.join("outcomes", base_name + ".md")
             
-            regime_series = alpha_df[regime_col].dropna().astype(int)
+            regime_series = macro_trend_df[regime_col].dropna().astype(int)
             if regime_series.empty:
                 tprint_warning("No valid regime labels for quality report")
                 return None
@@ -4570,12 +4570,12 @@ class HMMMLMacroTrendStep(BaseStep):
             # 1. Per-Regime Metrics
             # ================================================================
             regime_metrics_list = []
-            fwd_cols = [c for c in alpha_df.columns if c.startswith("alpha_forward_return_")]
-            score_col = "alpha_score_continuous" if "alpha_score_continuous" in alpha_df.columns else None
+            fwd_cols = [c for c in macro_trend_df.columns if c.startswith("macro_trend_forward_return_")]
+            score_col = "macro_trend_score_continuous" if "macro_trend_score_continuous" in macro_trend_df.columns else None
             
             for regime_id in sorted(regime_series.unique()):
-                regime_mask = alpha_df[regime_col] == regime_id
-                regime_data = alpha_df[regime_mask]
+                regime_mask = macro_trend_df[regime_col] == regime_id
+                regime_data = macro_trend_df[regime_mask]
                 
                 if len(regime_data) == 0:
                     continue
@@ -4635,8 +4635,8 @@ class HMMMLMacroTrendStep(BaseStep):
             # 2. Per-Quantile Metrics (based on 0-1 scalar)
             # ================================================================
             quantile_metrics_list = []
-            if score_col and score_col in alpha_df.columns:
-                score_series = alpha_df[score_col].dropna()
+            if score_col and score_col in macro_trend_df.columns:
+                score_series = macro_trend_df[score_col].dropna()
                 if len(score_series) > 0:
                     quantiles = [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
                     for i in range(len(quantiles) - 1):
@@ -4646,7 +4646,7 @@ class HMMMLMacroTrendStep(BaseStep):
                         if i == len(quantiles) - 2:  # Include upper bound for last quantile
                             q_mask = (score_series >= q_low) & (score_series <= q_high)
                         
-                        q_data = alpha_df.loc[q_mask.index[q_mask]]
+                        q_data = macro_trend_df.loc[q_mask.index[q_mask]]
                         if len(q_data) == 0:
                             continue
                         
@@ -4746,7 +4746,7 @@ class HMMMLMacroTrendStep(BaseStep):
                             f.write(f"{key},{training_metrics[key]}\n")
 
                     # Basic distribution of the 0-1 alpha scalar
-                    dist = training_metrics.get("alpha_score_continuous_distribution")
+                    dist = training_metrics.get("macro_trend_score_continuous_distribution")
                     if isinstance(dist, dict) and dist:
                         f.write("\n## Alpha Score Distribution\n")
                         f.write("stat,value\n")
@@ -4852,8 +4852,8 @@ class HMMMLMacroTrendStep(BaseStep):
                         "xgb_oof_predictions",
                         "ic_pearson_correlation",
                         "ic_spearman_correlation",
-                        "alpha_model_training_failed",
-                        "alpha_fallback_used",
+                        "macro_trend_model_training_failed",
+                        "macro_trend_fallback_used",
                     ]
 
                     for key in core_scalar_keys:
@@ -4867,9 +4867,9 @@ class HMMMLMacroTrendStep(BaseStep):
                             f.write(f"- **{key}**: {value}\n")
 
                     # Alpha score distribution summary
-                    dist = training_metrics.get("alpha_score_continuous_distribution")
+                    dist = training_metrics.get("macro_trend_score_continuous_distribution")
                     if isinstance(dist, dict) and dist:
-                        f.write("\n### Alpha Score Distribution (alpha_score_continuous)\n\n")
+                        f.write("\n### Alpha Score Distribution (macro_trend_score_continuous)\n\n")
                         f.write("| Stat | Value |\n")
                         f.write("|------|-------|\n")
                         for stat_key in ["mean", "std", "min", "max", "q05", "q50", "q95", "n"]:

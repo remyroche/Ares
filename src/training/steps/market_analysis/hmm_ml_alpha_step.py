@@ -93,10 +93,10 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-class HMMMLAlphaStep(BaseStep):
+class HMMMLMesoTrendStep(BaseStep):
     """Pipeline step to construct alpha labels from 1h Rolling HMM regimes.
 
-    Renamed from HMMMLMesoTrendStep to HMMMLAlphaStep to match file name and usage.
+    Renamed to HMMMLMesoTrendStep to align with the 'meso_trend' terminology used internally.
     """
 
     def __init__(self, step_name: str = "hmm_ml_alpha_step"):

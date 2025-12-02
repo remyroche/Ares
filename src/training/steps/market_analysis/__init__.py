@@ -40,7 +40,7 @@ RollingHMMRegimeDiscoveryStep = None
 
 # Import HMM ML alpha step (derives alpha labels and regimes from 1h HMM outputs)
 from .xgb_meso_regime_step import XGBMesoTrendStep
-from .hmm_ml_alpha_step import HMMMLAlphaStep
+from .hmm_ml_alpha_step import HMMMLMesoTrendStep
 from ..hmm_macro_regime import HMMMLMacroTrendStep as HMMMacroRegimeStep
 
 # Import ML Risk Regime HMM step (risk-based regime classification)
@@ -89,7 +89,7 @@ if StickyFiniteHMMRegimeDiscoveryStep is not None:
     step_registry.register("sticky_finite_hmm_regime_discovery", StickyFiniteHMMRegimeDiscoveryStep)
 if RollingHMMRegimeDiscoveryStep is not None:
     step_registry.register("rolling_hmm_regime_discovery", RollingHMMRegimeDiscoveryStep)
-step_registry.register("hmm_ml_alpha_step", HMMMLAlphaStep)
+step_registry.register("hmm_ml_alpha_step", HMMMLMesoTrendStep)
 step_registry.register("hmm_macro_regime", HMMMacroRegimeStep)
 step_registry.register("ml_risk_regime_step", MLRiskRegimeStepHMM)
 step_registry.register("ml_smc_regime_step", MLSMCRegimeStep)

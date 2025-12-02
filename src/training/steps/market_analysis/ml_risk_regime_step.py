@@ -8,8 +8,8 @@ Primary Goal: Distinguish between turbulent, calm, crash-prone, and volatile mar
 using HMM with learned regime transitions and risk feature analysis.
 
 Key Features:
-- Uses ONLY 5 core risk features (parkinson_volatility, hurst_exponent, rolling_kurtosis,
-  rolling_skewness, volatility_of_volatility)
+- Uses core risk features (parkinson_volatility, hurst_exponent, rolling_kurtosis,
+  rolling_skewness, volatility_of_volatility) AND volume volatility features.
 - All features scaled with winsorized_zscore_normalize
 - HMM-Direct inference with full covariance (NO XGBoost classifier)
 - Temporal structure learning via transition matrix
@@ -31,10 +31,13 @@ Risk Features (30-50 bar windows for 30m-3h trades on 1h data):
 - rolling_kurtosis (window: 36 bars = 36h)
 - rolling_skewness (window: 36 bars = 36h)
 - volatility_of_volatility (window: 30 bars = 30h)
+- volatility_of_volume (new)
+- rolling_volume_kurtosis (new)
+- volume_cv (new)
 
 Responsibilities:
 - Load 1h OHLCV market data
-- Generate 5 core risk features with appropriate windows
+- Generate core risk features with appropriate windows
 - Apply winsorized zscore normalization
 - Create optimal regime labels using HMM with temporal structure
 - Calculate Mahalanobis distance from "safe" state (log-stabilized)
@@ -489,7 +492,7 @@ class MLRiskRegimeStepHMM(BaseStep):
         return market_data
 
     def _generate_risk_features(self, df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
-        """Generate the 5 core risk features via the feature bank.
+        """Generate the core risk features via the feature bank.
 
         Delegates to ``generate_risk_regime_features`` in the
         ``feature_generation.categories`` package so that feature
@@ -499,19 +502,24 @@ class MLRiskRegimeStepHMM(BaseStep):
         risk_df = df.copy()
 
         feature_frame = generate_risk_regime_features(risk_df, config)
+
+        # Include new volume volatility features if available
         feature_cols = [
             'parkinson_volatility',
             'hurst_exponent',
             'rolling_kurtosis',
             'rolling_skewness',
             'volatility_of_volatility',
+            'volatility_of_volume',
+            'rolling_volume_kurtosis',
+            'volume_cv',
         ]
 
         for col in feature_cols:
             if col in feature_frame.columns:
                 risk_df[col] = feature_frame[col].values
 
-        tprint_success(f"✅ Generated {len(feature_cols)} risk features with windows 30-50 bars")
+        tprint_success(f"✅ Generated risk features (incl. vol-of-vol, vol-of-volume)")
 
         return risk_df
 
@@ -562,12 +570,18 @@ class MLRiskRegimeStepHMM(BaseStep):
         tprint_info("🎯 HMM RISK REGIME DETECTION (Temporal Structure Learning)")
         tprint_info("=" * 80)
 
-        # Select risk features
+        # Select risk features for HMM (keeping core 5 for stability if preferred, or add volume)
+        # Note: Adding too many features to HMM can degrade performance or stability.
+        # User requested adding "Volume Volatility features to ml_risk_regime_step".
+        # I will include 'volatility_of_volume' in the HMM feature set to fulfill this.
+
         feature_cols = [
             'parkinson_volatility',
             'rolling_kurtosis',
             'rolling_skewness',
             'volatility_of_volatility',
+            'volatility_of_volume',  # Added
+            'volume_cv', # Added
         ]
 
         # Filter to available features
@@ -652,9 +666,11 @@ class MLRiskRegimeStepHMM(BaseStep):
                         else:
                             candidate = loaded
                         if isinstance(candidate, GaussianHMM):
-                            previous_hmm = candidate
-                            tprint_info(f"♻️ Using previous HMM for warm-start: {path}")
-                            break
+                            # Check feature compatibility (dimension must match)
+                            if candidate.n_features == risk_features_strided.shape[1]:
+                                previous_hmm = candidate
+                                tprint_info(f"♻️ Using previous HMM for warm-start: {path}")
+                                break
                     except Exception as load_exc:
                         tprint_warning(f"HMM warm-start: failed to load {path}: {load_exc}")
             except Exception as ws_exc:
@@ -834,6 +850,8 @@ class MLRiskRegimeStepHMM(BaseStep):
             'rolling_kurtosis',
             'rolling_skewness',
             'volatility_of_volatility',
+            'volatility_of_volume',  # Added
+            'volume_cv', # Added
         ]
 
         available_features = [c for c in feature_cols if c in risk_df.columns]
@@ -1466,7 +1484,9 @@ class MLRiskRegimeStepHMM(BaseStep):
             'hurst_exponent',
             'rolling_kurtosis',
             'rolling_skewness',
-            'volatility_of_volatility'
+            'volatility_of_volatility',
+            'volatility_of_volume', # Added to saved features
+            'volume_cv', # Added to saved features
         ]
         available_features = [c for c in feature_cols if c in risk_features.columns]
 

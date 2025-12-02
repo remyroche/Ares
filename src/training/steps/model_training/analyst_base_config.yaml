@@ -89,6 +89,7 @@ analyst_config:
       model_type: KNeighborsRegressor
       use_float32: true
       use_isotonic_calibration: true
+      use_specialist_outputs_only: true
       use_soft_clipping: true
       soft_clip_stretch: 2.0
       use_pca: true
@@ -141,6 +142,7 @@ analyst_config:
       model_type: BayesianRidge
       use_float32: true
       use_isotonic_calibration: true
+      use_specialist_outputs_only: true
       use_soft_clipping: true
       soft_clip_stretch: 2.0
       standardize_features: true
@@ -159,7 +161,6 @@ analyst_config:
       model_type: NGBoost
       use_float32: true
       use_isotonic_calibration: true
-      use_specialist_outputs_only: true
       output_mean_and_variance: true
       params:
         n_estimators: 500

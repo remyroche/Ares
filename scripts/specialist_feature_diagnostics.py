@@ -1320,6 +1320,11 @@ def run_diagnostics(
     model_coverage = _compute_model_coverage(X=X, y=y)
     model_relationships = _compute_model_pairwise_relationships(X=X, feature_metrics=feature_metrics)
 
+    # 3b) Compute target date range
+    y_start = y.index.min()
+    y_end = y.index.max()
+    y_duration = (y_end - y_start).days if len(y) > 0 else 0
+
     # 4) Probe models (LogReg / LGBM), leakage, stability, interactions
     probe_models = _compute_probe_models(X=X, y=y, n_splits=cv_folds)
 
@@ -1371,6 +1376,12 @@ def run_diagnostics(
         f"**Model**: {model}",
         f"**Regime timeframe**: {regime_timeframe}",
         f"**Target column**: {target_col}",
+        "",
+        "## Data Range Analysis",
+        f"- Target start date: {y_start}",
+        f"- Target end date: {y_end}",
+        f"- Target duration: {y_duration} days",
+        f"- Target samples: {len(y)}",
         "",
         "## Overview",
         f"- Number of specialist features: {summary['n_features']}",
@@ -1438,6 +1449,9 @@ def run_diagnostics(
     coverage_info = model_coverage if isinstance(model_coverage, dict) else {}
     if coverage_info:
         total_target = int(len(y))
+        if total_target > 0:
+            md_lines.append(f"*(Target samples: {total_target})*")
+
         for group_name in sorted(coverage_info.keys()):
             info = coverage_info.get(group_name, {})
             n_samples = int(info.get("n_samples", 0) or 0)
@@ -1445,20 +1459,22 @@ def run_diagnostics(
             start = info.get("start")
             end = info.get("end")
 
+            line = f"- **{group_name}**: n={n_samples} ({frac:.1%} coverage)"
             if start is not None and end is not None:
-                md_lines.append(
-                    "- "
-                    + f"{group_name}: n={n_samples} "
-                    + f"({frac:.1%} of target samples), "
-                    + f"range={start} → {end}"
-                )
+                line += f", range: {start} → {end}"
+
+                # Check for significant mismatch
+                if start > y_start + pd.Timedelta(days=7):
+                    line += " ⚠️ Starts late"
+                if end < y_end - pd.Timedelta(days=7):
+                    line += " ⚠️ Ends early"
             else:
-                md_lines.append(
-                    "- "
-                    + f"{group_name}: n={n_samples} "
-                    + f"({frac:.1%} of target samples), "
-                    + "coverage range unavailable"
-                )
+                line += ", range unavailable"
+
+            if frac < 0.5:
+                line += " ⚠️ Low coverage (<50%)"
+
+            md_lines.append(line)
     else:
         md_lines.append("- Per-specialist coverage unavailable")
 

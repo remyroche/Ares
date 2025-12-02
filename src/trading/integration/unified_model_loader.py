@@ -6,12 +6,9 @@ trained in src/steps/training/ and stored through BaseStep's artifact_management
 or standardized_model_manager.
 
 Supports loading:
-1. Regime base ML models
-2. Regime ensemble ML model
-3. Analyst base ML models (dispatched to Analyst)
-4. Analyst ensemble ML model (dispatched to Analyst)
-5. Tactician base ML models (dispatched to Tactician)
-6. Tactician ensemble ML model (dispatched to Tactician)
+1. Specialist models (Risk, SMC, Liquidity, Breakout, Meso, Macro, Mean Reversion)
+2. Analyst Base models (Generic loading of all base models)
+3. Legacy Regime/Tactician models (for backward compatibility where needed)
 
 Also loads optimized parameters from final_parameters_optimization.
 """
@@ -72,7 +69,15 @@ class UnifiedModelLoader:
             'analyst_base': 'analyst_base_training',
             'analyst_ensemble': 'analyst_ensemble_training',
             'tactician_base': 'tactician_base_training',
-            'tactician_ensemble': 'tactician_ensemble_training'
+            'tactician_ensemble': 'tactician_ensemble_training',
+            # Specialists
+            'risk': 'ml_risk_regime_step',
+            'smc': 'ml_smc_regime_step',
+            'liquidity': 'ml_liquidity_regime_step',
+            'breakout': 'ml_breakout_bounce_regime_step',
+            'meso': 'xgb_meso_regime_step',
+            'macro': 'hmm_macro_regime',
+            'reversion': 'ml_mean_reversion_step'
         }
         tprint("✅ Unified model loader initialized")
 
@@ -89,18 +94,6 @@ class UnifiedModelLoader:
         """
         Find the most recent artifact file matching the context criteria.
         Uses file modification time to determine the most recent.
-
-        Args:
-            artifact_key: Artifact key to search for
-            step_name: Step name
-            symbol: Symbol filter
-            exchange: Exchange filter
-            timeframe: Timeframe filter
-            direction: Direction filter
-            model_type: Model type filter ('Analyst' or 'Tactician')
-
-        Returns:
-            Path to most recent artifact file or None
         """
         try:
             step_category = self._get_step_category(step_name)
@@ -162,20 +155,6 @@ class UnifiedModelLoader:
     ) -> Optional[Any]:
         """
         Get artifact with proper context filtering.
-        When multiple artifacts exist, selects the most recent one by timestamp.
-
-        Args:
-            artifact_key: Artifact key
-            step_name: Step name where artifact was saved
-            artifact_type: Artifact type ('model', 'data', etc.)
-            symbol: Trading symbol filter
-            exchange: Exchange filter
-            timeframe: Timeframe filter
-            direction: Direction filter ('long', 'short', 'both')
-            model_type: Model type filter ('Analyst', 'Tactician', etc.)
-
-        Returns:
-            Artifact data or None
         """
         try:
             # Set context before calling get_artifact
@@ -278,208 +257,72 @@ class UnifiedModelLoader:
         severity=TradingErrorSeverity.HIGH,
         raise_on_error=True
     )
-    async def load_regime_base_models(
+    async def load_specialist_models(
         self,
         symbol: str = "ETHUSDT",
         exchange: str = "binance",
-        timeframe: str = "1h",
-        direction: str = "long"
+        timeframe: str = "15m",
+        direction: str = "long",
+        regime_timeframe: str = "1h"
     ) -> Dict[str, Any]:
         """
-        Load regime base ML models.
-
-        Args:
-            symbol: Trading symbol
-            exchange: Exchange name
-            timeframe: Timeframe (defaults to 1h for regime models)
-            direction: Trading direction
-
-        Returns:
-            Dictionary of loaded models
+        Load all specialist models required for feature generation.
         """
-        tprint(f"🔄 Loading regime base ML models for {symbol} ({timeframe})...")
-        
-        step_name = self.step_mappings['regime_base']
+        tprint(f"🔄 Loading specialist models for {symbol} ({timeframe})...")
         models = {}
 
-        try:
-            # Try loading from artifact manager with proper context
-            artifact_key = "regime_models_training_result"
-            artifact_data = self._get_artifact_with_context(
-                artifact_key=artifact_key,
-                step_name=step_name,
-                artifact_type='model',
+        # Helper to load artifact safely
+        def _load_spec(key, step, type_='model', tf=timeframe):
+            return self._get_artifact_with_context(
+                artifact_key=key,
+                step_name=self.step_mappings.get(step, step),
+                artifact_type=type_,
                 symbol=symbol,
                 exchange=exchange,
-                timeframe=timeframe,
-                direction=direction,
-                model_type=None  # Regime models don't have Analyst/Tactician distinction
-            )
-            
-            if artifact_data:
-                if isinstance(artifact_data, dict):
-                    training_result = artifact_data.get('regime_models_training_result', artifact_data)
-                    model_dict = training_result.get('models', {})
-                    
-                    for model_name, model_data in model_dict.items():
-                        if isinstance(model_data, dict) and 'model' in model_data:
-                            models[model_name] = model_data['model']
-                        elif hasattr(model_data, 'predict'):
-                            models[model_name] = model_data
-
-            # Also try standardized_model_manager
-            available_model_ids = standardized_model_manager.list_available_models(step_name)
-            
-            for model_id in available_model_ids:
-                if model_id not in models:
-                    try:
-                        model_result = standardized_model_manager.load_model(model_id, step_name)
-                        if model_result:
-                            model, metadata = model_result
-                            models[model_id] = model
-                            self.model_metadata[model_id] = metadata
-                    except Exception as e:
-                        tprint(f"⚠️ Could not load regime model {model_id}: {e}")
-                        self.logger.debug(f"Could not load regime model {model_id}: {e}")
-
-            # Try common artifact names
-            common_artifact_keys = [
-                'regime_catboost_model',
-                'regime_extratrees_model',
-                'regime_greedy_rule_list_model'
-            ]
-            
-            for artifact_key in common_artifact_keys:
-                if artifact_key not in models:
-                    artifact_data = self._get_artifact_with_context(
-                        artifact_key=artifact_key,
-                        step_name=step_name,
-                        artifact_type='model',
-                        symbol=symbol,
-                        exchange=exchange,
-                        timeframe=timeframe,
-                        direction=direction
-                    )
-                    if artifact_data:
-                        models[artifact_key] = artifact_data
-
-            self.loaded_models.update({f'regime_base_{k}': v for k, v in models.items()})
-            
-            if models:
-                tprint(f"✅ Loaded {len(models)} regime base ML models")
-            else:
-                tprint("⚠️ No regime base models found")
-
-            return models
-
-        except Exception as e:
-            raise TradingError(
-                f"Failed to load regime base models: {e}",
-                error_code="REGIME_BASE_MODELS_LOAD_ERROR",
-                severity=TradingErrorSeverity.HIGH,
-                context={'symbol': symbol, 'timeframe': timeframe}
-            )
-
-    @trading_error_handler(
-        error_types=(Exception,),
-        severity=TradingErrorSeverity.HIGH,
-        raise_on_error=True
-    )
-    async def load_regime_ensemble_model(
-        self,
-        symbol: str = "ETHUSDT",
-        exchange: str = "binance",
-        timeframe: str = "1h",
-        direction: str = "long"
-    ) -> Optional[Any]:
-        """
-        Load regime ensemble ML model.
-
-        Args:
-            symbol: Trading symbol
-            exchange: Exchange name
-            timeframe: Timeframe (defaults to 1h for regime models)
-            direction: Trading direction
-
-        Returns:
-            Ensemble model or None
-        """
-        tprint(f"🔄 Loading regime ensemble ML model for {symbol} ({timeframe})...")
-        
-        step_name = self.step_mappings['regime_ensemble']
-        model = None
-
-        try:
-            # Try loading from artifact manager with proper context
-            artifact_key = "regime_ensemble_training_result"
-            artifact_data = self._get_artifact_with_context(
-                artifact_key=artifact_key,
-                step_name=step_name,
-                artifact_type='model',
-                symbol=symbol,
-                exchange=exchange,
-                timeframe=timeframe,
+                timeframe=tf,
                 direction=direction
             )
-            
-            if artifact_data:
-                if isinstance(artifact_data, dict):
-                    training_result = artifact_data.get('regime_ensemble_training_result', artifact_data)
-                    model = training_result.get('ensemble_model') or training_result.get('stacker_lgbm_calibrated')
 
-            # Also try standardized_model_manager
-            if model is None:
-                available_model_ids = standardized_model_manager.list_available_models(step_name)
-                
-                for model_id in available_model_ids:
-                    if 'ensemble' in model_id.lower() or 'stacker' in model_id.lower():
-                        try:
-                            model_result = standardized_model_manager.load_model(model_id, step_name)
-                            if model_result:
-                                model, metadata = model_result
-                                self.model_metadata[model_id] = metadata
-                                break
-                        except Exception as e:
-                            tprint(f"⚠️ Could not load regime ensemble model {model_id}: {e}")
-                            self.logger.debug(f"Could not load regime ensemble model {model_id}: {e}")
+        # 1. Risk Model
+        risk_step = 'risk'
+        models['risk_model'] = _load_spec('ml_risk_model_1h', risk_step, tf='1h')
+        models['risk_hmm'] = _load_spec('risk_live_hmm', risk_step, type_='model', tf='1h')
+        models['risk_pipeline'] = _load_spec('ml_risk_feature_pipeline_1h', risk_step, tf='1h')
 
-            # Try common artifact names
-            if model is None:
-                common_artifact_keys = [
-                    'regime_ensemble_model',
-                    'regime_stacker_model',
-                    'regime_stacker_lgbm_calibrated'
-                ]
-                
-                for artifact_key in common_artifact_keys:
-                    artifact_data = self._get_artifact_with_context(
-                        artifact_key=artifact_key,
-                        step_name=step_name,
-                        artifact_type='model',
-                        symbol=symbol,
-                        exchange=exchange,
-                        timeframe=timeframe,
-                        direction=direction
-                    )
-                    if artifact_data:
-                        model = artifact_data
-                        break
+        # 2. SMC Model
+        models['smc_model'] = _load_spec('smc_xgb_model', 'smc')
+        # Assuming SMC might have a pipeline too, though not explicitly seen.
+        # If needed, can add here.
 
-            if model:
-                self.loaded_models['regime_ensemble'] = model
-                tprint("✅ Loaded regime ensemble ML model")
-            else:
-                tprint("⚠️ No regime ensemble model found")
+        # 3. Liquidity
+        models['liquidity_tree'] = _load_spec('ml_liquidity_regime_tree_15m', 'liquidity', tf='15m')
 
-            return model
+        # 4. Breakout Model
+        models['breakout_model'] = _load_spec(f'ml_breakout_bounce_model_{timeframe}', 'breakout', tf=timeframe)
 
-        except Exception as e:
-            raise TradingError(
-                f"Failed to load regime ensemble model: {e}",
-                error_code="REGIME_ENSEMBLE_MODEL_LOAD_ERROR",
-                severity=TradingErrorSeverity.HIGH,
-                context={'symbol': symbol, 'timeframe': timeframe}
-            )
+        # 5. Meso Trend
+        models['meso_model'] = _load_spec('xgb_meso_trend_model_15m', 'meso', tf='15m')
+        models['meso_pipeline'] = _load_spec('xgb_meso_trend_feature_pipeline_15m', 'meso', tf='15m')
+
+        # 6. Macro Trend
+        models['macro_model'] = _load_spec('hmm_macro_trend_model_15m', 'macro', tf='15m')
+        models['macro_pipeline'] = _load_spec('hmm_macro_trend_feature_pipeline_15m', 'macro', tf='15m')
+        models['macro_thresholds'] = _load_spec('hmm_macro_trend_regime_thresholds_15m', 'macro', type_='data', tf='15m')
+
+        # 7. Mean Reversion
+        models['reversion_model'] = _load_spec(f'ml_mean_reversion_model_base_{timeframe}_{direction}', 'reversion', tf=timeframe)
+        models['reversion_calibrated'] = _load_spec(f'ml_mean_reversion_model_calibrated_{timeframe}_{direction}', 'reversion', tf=timeframe)
+
+        # Filter out Nones
+        loaded = {k: v for k, v in models.items() if v is not None}
+        
+        if loaded:
+            tprint(f"✅ Loaded {len(loaded)} specialist artifacts")
+            self.loaded_models.update(loaded)
+        else:
+            tprint("⚠️ No specialist models found")
+
+        return loaded
 
     @trading_error_handler(
         error_types=(Exception,),
@@ -494,420 +337,66 @@ class UnifiedModelLoader:
         direction: str = "long"
     ) -> Dict[str, Any]:
         """
-        Load analyst base ML models (dispatched to Analyst components).
-
-        Args:
-            symbol: Trading symbol
-            exchange: Exchange name
-            timeframe: Timeframe
-            direction: Trading direction
-
-        Returns:
-            Dictionary of loaded models
+        Load all analyst base ML models generically.
+        This loads the dictionary of models produced by UnifiedModelsTrainingStep.
         """
-        tprint(f"🔄 Loading analyst base ML models for {symbol} ({timeframe})...")
-        
+        tprint(f"🔄 Loading Analyst Base models for {symbol}...")
         step_name = self.step_mappings['analyst_base']
         models = {}
 
-        try:
-            # Try loading from artifact manager with proper context (Analyst models)
-            artifact_key = "analyst_base_training_result"
-            artifact_data = self._get_artifact_with_context(
-                artifact_key=artifact_key,
-                step_name=step_name,
-                artifact_type='model',
-                symbol=symbol,
-                exchange=exchange,
-                timeframe=timeframe,
-                direction=direction,
-                model_type='Analyst'  # Explicitly filter for Analyst models
-            )
-            
-            if artifact_data:
-                if isinstance(artifact_data, dict):
-                    training_result = artifact_data.get('analyst_base_training_result', artifact_data)
-                    model_dict = training_result.get('models', {})
-                    
-                    for model_name, model_data in model_dict.items():
-                        if isinstance(model_data, dict) and 'model' in model_data:
-                            models[model_name] = model_data['model']
-                        elif hasattr(model_data, 'predict'):
-                            models[model_name] = model_data
-
-            # Also try standardized_model_manager
-            available_model_ids = standardized_model_manager.list_available_models(step_name)
-            
-            for model_id in available_model_ids:
-                if model_id not in models and 'analyst' in model_id.lower():
-                    try:
-                        model_result = standardized_model_manager.load_model(model_id, step_name)
-                        if model_result:
-                            model, metadata = model_result
-                            models[model_id] = model
-                            self.model_metadata[model_id] = metadata
-                    except Exception as e:
-                        tprint(f"⚠️ Could not load analyst model {model_id}: {e}")
-                        self.logger.debug(f"Could not load analyst model {model_id}: {e}")
-
-            # Try common artifact names
-            common_artifact_keys = [
-                'analyst_base_models',
-                'analyst_models',
-                'analyst_training_result'
-            ]
-            
-            for artifact_key in common_artifact_keys:
-                if artifact_key not in models:
-                    artifact_data = self._get_artifact_with_context(
-                        artifact_key=artifact_key,
-                        step_name=step_name,
-                        artifact_type='model',
-                        symbol=symbol,
-                        exchange=exchange,
-                        timeframe=timeframe,
-                        direction=direction,
-                        model_type='Analyst'  # Explicitly filter for Analyst
-                    )
-                    if artifact_data:
-                        if isinstance(artifact_data, dict):
-                            models.update(artifact_data)
-                        else:
-                            models[artifact_key] = artifact_data
-
-            self.loaded_models.update({f'analyst_base_{k}': v for k, v in models.items()})
-            
-            if models:
-                tprint(f"✅ Loaded {len(models)} analyst base ML models (dispatched to Analyst)")
-            else:
-                tprint("⚠️ No analyst base models found")
-
-            return models
-
-        except Exception as e:
-            raise TradingError(
-                f"Failed to load analyst base models: {e}",
-                error_code="ANALYST_BASE_MODELS_LOAD_ERROR",
-                severity=TradingErrorSeverity.HIGH,
-                context={'symbol': symbol, 'timeframe': timeframe}
-            )
-
-    @trading_error_handler(
-        error_types=(Exception,),
-        severity=TradingErrorSeverity.HIGH,
-        raise_on_error=True
-    )
-    async def load_analyst_ensemble_model(
-        self,
-        symbol: str = "ETHUSDT",
-        exchange: str = "binance",
-        timeframe: str = "15m",
-        direction: str = "long"
-    ) -> Optional[Any]:
-        """
-        Load analyst ensemble ML model (dispatched to Analyst components).
-
-        Args:
-            symbol: Trading symbol
-            exchange: Exchange name
-            timeframe: Timeframe
-            direction: Trading direction
-
-        Returns:
-            Ensemble model or None
-        """
-        tprint(f"🔄 Loading analyst ensemble ML model for {symbol} ({timeframe})...")
+        # Try loading from artifact manager with proper context
+        artifact_key = "analyst_base_training_result"
+        artifact_data = self._get_artifact_with_context(
+            artifact_key=artifact_key,
+            step_name=step_name,
+            artifact_type='model',
+            symbol=symbol,
+            exchange=exchange,
+            timeframe=timeframe,
+            direction=direction,
+            model_type='Analyst'
+        )
         
-        step_name = self.step_mappings['analyst_ensemble']
-        model = None
-
-        try:
-            # Try loading from artifact manager with proper context (Analyst models)
-            artifact_key = "analyst_ensemble_training_result"
-            artifact_data = self._get_artifact_with_context(
-                artifact_key=artifact_key,
-                step_name=step_name,
-                artifact_type='model',
-                symbol=symbol,
-                exchange=exchange,
-                timeframe=timeframe,
-                direction=direction,
-                model_type='Analyst'  # Explicitly filter for Analyst models
-            )
-            
-            if artifact_data:
-                if isinstance(artifact_data, dict):
-                    training_result = artifact_data.get('analyst_ensemble_training_result', artifact_data)
-                    model = training_result.get('ensemble_model') or training_result.get('meta_model')
-
-            # Also try standardized_model_manager
-            if model is None:
-                available_model_ids = standardized_model_manager.list_available_models(step_name)
+        if artifact_data:
+            if isinstance(artifact_data, dict):
+                # Extract models from result dict
+                training_result = artifact_data.get('analyst_base_training_result', artifact_data)
+                model_dict = training_result.get('models', {})
                 
-                for model_id in available_model_ids:
-                    if ('ensemble' in model_id.lower() or 'meta' in model_id.lower()) and 'analyst' in model_id.lower():
-                        try:
-                            model_result = standardized_model_manager.load_model(model_id, step_name)
-                            if model_result:
-                                model, metadata = model_result
-                                self.model_metadata[model_id] = metadata
-                                break
-                        except Exception as e:
-                            tprint(f"⚠️ Could not load analyst ensemble model {model_id}: {e}")
-                            self.logger.debug(f"Could not load analyst ensemble model {model_id}: {e}")
-
-            # Try common artifact names
-            if model is None:
-                common_artifact_keys = [
-                    'analyst_ensemble_model',
-                    'analyst_meta_model',
-                    'analyst_ensemble'
-                ]
-                
-                for artifact_key in common_artifact_keys:
-                    artifact_data = self._get_artifact_with_context(
-                        artifact_key=artifact_key,
-                        step_name=step_name,
-                        artifact_type='model',
-                        symbol=symbol,
-                        exchange=exchange,
-                        timeframe=timeframe,
-                        direction=direction,
-                        model_type='Analyst'  # Explicitly filter for Analyst
-                    )
-                    if artifact_data:
-                        model = artifact_data
-                        break
-
-            if model:
-                self.loaded_models['analyst_ensemble'] = model
-                tprint("✅ Loaded analyst ensemble ML model (dispatched to Analyst)")
+                for model_name, model_data in model_dict.items():
+                    if isinstance(model_data, dict) and 'model' in model_data:
+                        models[model_name] = model_data['model']
+                    elif hasattr(model_data, 'predict'):
+                        models[model_name] = model_data
             else:
-                tprint("⚠️ No analyst ensemble model found")
+                 tprint("⚠️ Unexpected artifact format for analyst_base_training_result")
 
-            return model
+        # Fallback: try common individual artifact names if dict not found
+        if not models:
+             tprint("⚠️ No model dict found, trying individual artifacts...")
+             # Common model names (LGBM, NGBoost, CatBoost, XGBoost)
+             for name in ['lgbm', 'ngboost', 'catboost', 'xgboost', 'tcn']:
+                 model = self._get_artifact_with_context(
+                    artifact_key=f'analyst_base_{name}',
+                    step_name=step_name,
+                    artifact_type='model',
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    direction=direction,
+                    model_type='Analyst'
+                 )
+                 if model:
+                     models[name] = model
 
-        except Exception as e:
-            raise TradingError(
-                f"Failed to load analyst ensemble model: {e}",
-                error_code="ANALYST_ENSEMBLE_MODEL_LOAD_ERROR",
-                severity=TradingErrorSeverity.HIGH,
-                context={'symbol': symbol, 'timeframe': timeframe}
-            )
-
-    @trading_error_handler(
-        error_types=(Exception,),
-        severity=TradingErrorSeverity.HIGH,
-        raise_on_error=True
-    )
-    async def load_tactician_base_models(
-        self,
-        symbol: str = "ETHUSDT",
-        exchange: str = "binance",
-        timeframe: str = "5m",
-        direction: str = "long"
-    ) -> Dict[str, Any]:
-        """
-        Load tactician base ML models (dispatched to Tactician components).
-
-        Args:
-            symbol: Trading symbol
-            exchange: Exchange name
-            timeframe: Timeframe
-            direction: Trading direction
-
-        Returns:
-            Dictionary of loaded models
-        """
-        tprint(f"🔄 Loading tactician base ML models for {symbol} ({timeframe})...")
+        self.loaded_models.update({f'analyst_base_{k}': v for k, v in models.items()})
         
-        step_name = self.step_mappings['tactician_base']
-        models = {}
-
-        try:
-            # Try loading from artifact manager with proper context (Tactician models)
-            artifact_key = "tactician_base_training_result"
-            artifact_data = self._get_artifact_with_context(
-                artifact_key=artifact_key,
-                step_name=step_name,
-                artifact_type='model',
-                symbol=symbol,
-                exchange=exchange,
-                timeframe=timeframe,
-                direction=direction,
-                model_type='Tactician'  # Explicitly filter for Tactician models
-            )
+        if models:
+            tprint(f"✅ Loaded {len(models)} Analyst Base models: {list(models.keys())}")
+        else:
+            tprint("⚠️ No Analyst Base models found")
             
-            if artifact_data:
-                if isinstance(artifact_data, dict):
-                    training_result = artifact_data.get('tactician_base_training_result', artifact_data)
-                    model_dict = training_result.get('models', {})
-                    
-                    for model_name, model_data in model_dict.items():
-                        if isinstance(model_data, dict) and 'model' in model_data:
-                            models[model_name] = model_data['model']
-                        elif hasattr(model_data, 'predict'):
-                            models[model_name] = model_data
-
-            # Also try standardized_model_manager
-            available_model_ids = standardized_model_manager.list_available_models(step_name)
-            
-            for model_id in available_model_ids:
-                if model_id not in models and 'tactician' in model_id.lower():
-                    try:
-                        model_result = standardized_model_manager.load_model(model_id, step_name)
-                        if model_result:
-                            model, metadata = model_result
-                            models[model_id] = model
-                            self.model_metadata[model_id] = metadata
-                    except Exception as e:
-                        tprint(f"⚠️ Could not load tactician model {model_id}: {e}")
-                        self.logger.debug(f"Could not load tactician model {model_id}: {e}")
-
-            # Try common artifact names
-            common_artifact_keys = [
-                'tactician_base_models',
-                'tactician_models',
-                'tactician_training_result'
-            ]
-            
-            for artifact_key in common_artifact_keys:
-                if artifact_key not in models:
-                    artifact_data = self._get_artifact_with_context(
-                        artifact_key=artifact_key,
-                        step_name=step_name,
-                        artifact_type='model',
-                        symbol=symbol,
-                        exchange=exchange,
-                        timeframe=timeframe,
-                        direction=direction,
-                        model_type='Tactician'  # Explicitly filter for Tactician
-                    )
-                    if artifact_data:
-                        if isinstance(artifact_data, dict):
-                            models.update(artifact_data)
-                        else:
-                            models[artifact_key] = artifact_data
-
-            self.loaded_models.update({f'tactician_base_{k}': v for k, v in models.items()})
-            
-            if models:
-                tprint(f"✅ Loaded {len(models)} tactician base ML models (dispatched to Tactician)")
-            else:
-                tprint("⚠️ No tactician base models found")
-
-            return models
-
-        except Exception as e:
-            raise TradingError(
-                f"Failed to load tactician base models: {e}",
-                error_code="TACTICIAN_BASE_MODELS_LOAD_ERROR",
-                severity=TradingErrorSeverity.HIGH,
-                context={'symbol': symbol, 'timeframe': timeframe}
-            )
-
-    @trading_error_handler(
-        error_types=(Exception,),
-        severity=TradingErrorSeverity.HIGH,
-        raise_on_error=True
-    )
-    async def load_tactician_ensemble_model(
-        self,
-        symbol: str = "ETHUSDT",
-        exchange: str = "binance",
-        timeframe: str = "5m",
-        direction: str = "long"
-    ) -> Optional[Any]:
-        """
-        Load tactician ensemble ML model (dispatched to Tactician components).
-
-        Args:
-            symbol: Trading symbol
-            exchange: Exchange name
-            timeframe: Timeframe
-            direction: Trading direction
-
-        Returns:
-            Ensemble model or None
-        """
-        tprint(f"🔄 Loading tactician ensemble ML model for {symbol} ({timeframe})...")
-        
-        step_name = self.step_mappings['tactician_ensemble']
-        model = None
-
-        try:
-            # Try loading from artifact manager with proper context (Tactician models)
-            artifact_key = "tactician_ensemble_training_result"
-            artifact_data = self._get_artifact_with_context(
-                artifact_key=artifact_key,
-                step_name=step_name,
-                artifact_type='model',
-                symbol=symbol,
-                exchange=exchange,
-                timeframe=timeframe,
-                direction=direction,
-                model_type='Tactician'  # Explicitly filter for Tactician models
-            )
-            
-            if artifact_data:
-                if isinstance(artifact_data, dict):
-                    training_result = artifact_data.get('tactician_ensemble_training_result', artifact_data)
-                    model = training_result.get('ensemble_model') or training_result.get('meta_model')
-
-            # Also try standardized_model_manager
-            if model is None:
-                available_model_ids = standardized_model_manager.list_available_models(step_name)
-                
-                for model_id in available_model_ids:
-                    if ('ensemble' in model_id.lower() or 'meta' in model_id.lower()) and 'tactician' in model_id.lower():
-                        try:
-                            model_result = standardized_model_manager.load_model(model_id, step_name)
-                            if model_result:
-                                model, metadata = model_result
-                                self.model_metadata[model_id] = metadata
-                                break
-                        except Exception as e:
-                            tprint(f"⚠️ Could not load tactician ensemble model {model_id}: {e}")
-                            self.logger.debug(f"Could not load tactician ensemble model {model_id}: {e}")
-
-            # Try common artifact names
-            if model is None:
-                common_artifact_keys = [
-                    'tactician_ensemble_model',
-                    'tactician_meta_model',
-                    'tactician_ensemble'
-                ]
-                
-                for artifact_key in common_artifact_keys:
-                    artifact_data = self._get_artifact_with_context(
-                        artifact_key=artifact_key,
-                        step_name=step_name,
-                        artifact_type='model',
-                        symbol=symbol,
-                        exchange=exchange,
-                        timeframe=timeframe,
-                        direction=direction,
-                        model_type='Tactician'  # Explicitly filter for Tactician
-                    )
-                    if artifact_data:
-                        model = artifact_data
-                        break
-
-            if model:
-                self.loaded_models['tactician_ensemble'] = model
-                tprint("✅ Loaded tactician ensemble ML model (dispatched to Tactician)")
-            else:
-                tprint("⚠️ No tactician ensemble model found")
-
-            return model
-
-        except Exception as e:
-            raise TradingError(
-                f"Failed to load tactician ensemble model: {e}",
-                error_code="TACTICIAN_ENSEMBLE_MODEL_LOAD_ERROR",
-                severity=TradingErrorSeverity.HIGH,
-                context={'symbol': symbol, 'timeframe': timeframe}
-            )
+        return models
 
     @trading_error_handler(
         error_types=(Exception,),
@@ -923,15 +412,6 @@ class UnifiedModelLoader:
     ) -> Dict[str, Any]:
         """
         Load optimized parameters from final_parameters_optimization with proper context.
-
-        Args:
-            symbol: Trading symbol
-            exchange: Exchange name
-            timeframe: Timeframe
-            direction: Trading direction
-
-        Returns:
-            Dictionary of optimized parameters
         """
         tprint(f"🔄 Loading optimized parameters for {symbol} ({timeframe})...")
         
@@ -962,7 +442,7 @@ class UnifiedModelLoader:
                         tprint(f"✅ Loaded optimized parameters from artifacts")
                         return parameters
 
-            # Try loading from file path
+            # Try loading from file path (fallback)
             optimization_dir = Path("data_cache/optimization")
             results_file = optimization_dir / f"{exchange}_{symbol}_final_parameters.json"
             
@@ -972,16 +452,6 @@ class UnifiedModelLoader:
                     if isinstance(parameters, dict):
                         self.optimized_parameters = parameters
                         tprint(f"✅ Loaded optimized parameters from {results_file}")
-                        return parameters
-
-            # Try loading from pickle file
-            pickle_file = optimization_dir / f"{exchange}_{symbol}_final_parameters.pkl"
-            if pickle_file.exists():
-                with open(pickle_file, 'rb') as f:
-                    parameters = pickle.load(f)
-                    if isinstance(parameters, dict):
-                        self.optimized_parameters = parameters
-                        tprint(f"✅ Loaded optimized parameters from {pickle_file}")
                         return parameters
 
             tprint("⚠️ No optimized parameters found, using defaults")
@@ -1000,16 +470,11 @@ class UnifiedModelLoader:
             'leverage_multiplier': 1.5,
             'stop_loss_pct': 0.03,
             'take_profit_pct': 0.06,
-            'ensemble_weight_analyst': 0.6,
-            'ensemble_weight_tactician': 0.4,
-            'analyst_confidence_weight': 0.6,
-            'tactician_confidence_weight': 0.4,
-            'regime_confidence_threshold': 0.7,
+            # Defaults for new architecture
             'signal_confidence_threshold': 0.6,
             'exit_confidence_threshold': 0.5,
-            'tactician_exit_confidence_weight': 0.6,
-            'analyst_exit_confidence_weight': 0.4,
-            'exit_confidence_combination_method': 'multiplicative'
+            'uncertainty_threshold': 0.5,
+            'uncertainty_penalty_factor': 0.5
         }
 
     async def load_all_models(
@@ -1023,20 +488,29 @@ class UnifiedModelLoader:
     ) -> Dict[str, Any]:
         """
         Load all models and optimized parameters with proper context.
-
-        Returns:
-            Dictionary containing all loaded models and parameters
+        Updated to load Specialist and Analyst Base models (Generically).
         """
         tprint("🚀 Loading all trained models and optimized parameters...")
 
+        # Load specialists
+        specialists = await self.load_specialist_models(symbol, exchange, analyst_timeframe, direction, regime_timeframe)
+
+        # Load Analyst Base models (Generic load, returns dict)
+        analyst_base_models = await self.load_analyst_base_models(symbol, exchange, analyst_timeframe, direction)
+
+        # Load parameters
+        params = await self.load_optimized_parameters(symbol, exchange, analyst_timeframe, direction)
+
         result = {
-            'regime_base_models': await self.load_regime_base_models(symbol, exchange, regime_timeframe, direction),
-            'regime_ensemble_model': await self.load_regime_ensemble_model(symbol, exchange, regime_timeframe, direction),
-            'analyst_base_models': await self.load_analyst_base_models(symbol, exchange, analyst_timeframe, direction),
-            'analyst_ensemble_model': await self.load_analyst_ensemble_model(symbol, exchange, analyst_timeframe, direction),
-            'tactician_base_models': await self.load_tactician_base_models(symbol, exchange, tactician_timeframe, direction),
-            'tactician_ensemble_model': await self.load_tactician_ensemble_model(symbol, exchange, tactician_timeframe, direction),
-            'optimized_parameters': await self.load_optimized_parameters(symbol, exchange, analyst_timeframe, direction)
+            'specialists': specialists,
+            'analyst_base_models': analyst_base_models,
+            'optimized_parameters': params,
+            # Legacy keys kept for backward compatibility
+            'regime_base_models': {},
+            'regime_ensemble_model': None,
+            'analyst_ensemble_model': None,
+            'tactician_base_models': {},
+            'tactician_ensemble_model': None,
         }
 
         tprint("✅ All models and parameters loaded successfully")

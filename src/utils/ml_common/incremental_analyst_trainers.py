@@ -135,7 +135,7 @@ class IncrementalTrainingConfig:
         'learning_rate', 'num_leaves', 'max_depth', 'reg_alpha', 'reg_lambda'
     ])
     sensitive_params_ngboost: List[str] = field(default_factory=lambda: [
-        'learning_rate', 'n_estimators', 'minibatch_frac'
+        'learning_rate', 'n_estimators', 'minibatch_frac', 'base_learner_max_depth'
     ])
     sensitive_params_knn: List[str] = field(default_factory=lambda: [
         'n_neighbors', 'leaf_size'
@@ -847,6 +847,33 @@ class IncrementalNGBoostTrainer(BaseIncrementalTrainer):
             'verbose': False,
         }
     
+    def _create_base_learner(self, params: Dict[str, Any]) -> Any:
+        """Create base learner with correct depth."""
+        from ngboost.learners import default_tree_learner
+
+        # Get target parameters
+        max_depth = int(params.get('base_learner_max_depth', 3))
+
+        # Copy default params from default_tree_learner (DecisionTreeRegressor)
+        try:
+            default_params = default_tree_learner.get_params(deep=True)
+        except Exception:
+            default_params = {}
+
+        tree_params = dict(default_params)
+
+        # Override with our specific constraints
+        tree_params['max_depth'] = max_depth
+
+        # Ensure we don't lose min_samples_leaf if provided in base params or config
+        if 'base_learner_min_samples_leaf' in params:
+            tree_params['min_samples_leaf'] = int(params['base_learner_min_samples_leaf'])
+        elif 'min_samples_leaf' in params:
+             tree_params['min_samples_leaf'] = int(params['min_samples_leaf'])
+
+        # Instantiate fresh tree with preserved settings
+        return default_tree_learner.__class__(**tree_params)
+
     def _train_initial(
         self,
         train_data: pd.DataFrame,
@@ -873,10 +900,18 @@ class IncrementalNGBoostTrainer(BaseIncrementalTrainer):
         params = self._get_default_params()
         params.update(self._best_params)
         
+        # Extract base learner params from main params if mixed
+        # (NGBoost init uses **params, but Base needs separate instantiation)
+        base_learner = self._create_base_learner(params)
+
+        # Remove base_learner_max_depth from params passed to NGBoost init
+        # to avoid "unexpected keyword argument"
+        ngboost_params = {k: v for k, v in params.items() if k != 'base_learner_max_depth'}
+
         if self.config.task_type == 'classification':
-            model = NGBClassifier(Dist=Normal, **params)
+            model = NGBClassifier(Dist=Normal, Base=base_learner, **ngboost_params)
         else:
-            model = NGBRegressor(Dist=Normal, **params)
+            model = NGBRegressor(Dist=Normal, Base=base_learner, **ngboost_params)
         
         model.fit(
             X_train, y_train,
@@ -886,7 +921,8 @@ class IncrementalNGBoostTrainer(BaseIncrementalTrainer):
         
         if verbose:
             n_est = getattr(model, 'n_estimators', 'N/A')
-            logger.info(f"   Initial NGBoost trained: {n_est} estimators")
+            depth = params.get('base_learner_max_depth', 3)
+            logger.info(f"   Initial NGBoost trained: {n_est} estimators, depth={depth}")
         
         return model
     
@@ -924,14 +960,18 @@ class IncrementalNGBoostTrainer(BaseIncrementalTrainer):
         params = self._get_default_params()
         params.update(self._best_params)
         
+        # Create base learner
+        base_learner = self._create_base_learner(params)
+        ngboost_params = {k: v for k, v in params.items() if k != 'base_learner_max_depth'}
+
         # Keep n_estimators consistent - don't reduce it
         # This ensures probabilistic calibration remains stable
         # Early stopping will naturally limit actual iterations
         
         if self.config.task_type == 'classification':
-            model = NGBClassifier(Dist=Normal, **params)
+            model = NGBClassifier(Dist=Normal, Base=base_learner, **ngboost_params)
         else:
-            model = NGBRegressor(Dist=Normal, **params)
+            model = NGBRegressor(Dist=Normal, Base=base_learner, **ngboost_params)
         
         # Store previous model's distribution stats for drift detection
         prev_dist_stats = None
@@ -1030,8 +1070,8 @@ class IncrementalNGBoostTrainer(BaseIncrementalTrainer):
                     base = current_val or 0.01
                     params['learning_rate'] = trial.suggest_float(
                         'learning_rate',
-                        max(0.001, base * (1 - radius)),
-                        min(0.1, base * (1 + radius)),
+                        max(0.01, base * (1 - radius)),
+                        min(0.05, base * (1 + radius)),
                         log=True
                     )
                 elif param_name == 'n_estimators':
@@ -1048,17 +1088,33 @@ class IncrementalNGBoostTrainer(BaseIncrementalTrainer):
                         max(0.1, base * (1 - radius)),
                         min(1.0, base * (1 + radius))
                     )
+                elif param_name == 'base_learner_max_depth':
+                    base = current_val or 3
+                    params['base_learner_max_depth'] = trial.suggest_int(
+                        'base_learner_max_depth',
+                        3, 5
+                    )
             
             try:
+                # Construct base learner for HPO trial
+                from ngboost.learners import default_tree_learner
+                max_depth = params.get('base_learner_max_depth', 3)
+                default_params = default_tree_learner.get_params(deep=True)
+                tree_params = dict(default_params)
+                tree_params['max_depth'] = max_depth
+                base_learner = default_tree_learner.__class__(**tree_params)
+
+                ngboost_params = {k: v for k, v in params.items() if k != 'base_learner_max_depth'}
+
                 if self.config.task_type == 'classification':
-                    model = NGBClassifier(Dist=Normal, **params)
+                    model = NGBClassifier(Dist=Normal, Base=base_learner, **ngboost_params)
                 else:
-                    model = NGBRegressor(Dist=Normal, **params)
+                    model = NGBRegressor(Dist=Normal, Base=base_learner, **ngboost_params)
                 
                 model.fit(
                     X_train, y_train,
                     X_val=X_val, Y_val=y_val,
-                    early_stopping_rounds=20
+                    early_stopping_rounds=self.config.early_stopping_rounds
                 )
                 
                 preds = model.predict(X_val)

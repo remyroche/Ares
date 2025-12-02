@@ -207,6 +207,23 @@ class DampenedKellyEngine:
         tprint_info("✅ Dampened Kelly Engine initialized")
         self.logger.info(f"Initialized with config version {self._config_version}")
     
+    @staticmethod
+    def calculate_shannon_entropy(p: float) -> float:
+        """
+        Calculate Shannon entropy for binary outcome.
+
+        Args:
+            p: Probability of positive outcome
+
+        Returns:
+            Shannon entropy (bits)
+        """
+        if p <= 0.0 or p >= 1.0:
+            return 0.0
+
+        # H(p) = -p*log2(p) - (1-p)*log2(1-p)
+        return -(p * np.log2(p) + (1 - p) * np.log2(1 - p))
+
     def _create_config_version(self, params: Dict[str, Any]) -> KellyConfigVersion:
         """Create a versioned config snapshot."""
         return KellyConfigVersion(

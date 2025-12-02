@@ -76,6 +76,7 @@ from src.utils.ml_common.optimization import (
 )
 from src.utils.ml_common.feature_engineering.feature_smoothing import apply_ewm_smoothing
 from src.feature_generation.categories.entropy import PermutationEntropyGenerator
+import itertools
 
 # Feature analysis and selection tools
 try:
@@ -4933,6 +4934,208 @@ class MLBreakoutBounceRegimeStep(BaseStep):
         else:
             self.hardware_manager = None
         tprint(f"✅ Initialized {step_name} step", "SUCCESS")
+
+    def get_config_signature(self, config: Dict[str, Any]) -> str:
+        """Generate a compact signature for configuration identification."""
+        key_params = [
+            "breakout_horizon_bars",
+            "breakout_cross_buffer_pct",
+            "breakout_hold_buffer_pct",
+            "breakout_bounce_move_pct",
+            "breakout_trap_revert_pct",
+            "breakout_lookback_days"
+        ]
+
+        parts = []
+        for param in key_params:
+            value = config.get(param, "default")
+            # Format floats compactly
+            if isinstance(value, float):
+                val_str = f"{value:.5f}".rstrip("0").rstrip(".")
+            else:
+                val_str = str(value)
+            parts.append(f"{param.replace('breakout_', '')}={val_str}")
+
+        return "|".join(parts)
+
+    async def run_config_batch(self, configs: List[Dict[str, Any]], symbol: str, exchange: str) -> List[Dict[str, Any]]:
+        """Run a batch of configurations and collect results."""
+
+        results = []
+        total_configs = len(configs)
+
+        for i, base_config in enumerate(configs):
+            # Ensure critical keys are set
+            config = dict(base_config)
+            config["symbol"] = symbol
+            config["exchange"] = exchange
+
+            tprint_info(f"🚀 Running config {i+1}/{total_configs}: {self.get_config_signature(config)}")
+
+            try:
+                # Run the step with this configuration
+                start_time = time.time()
+                result = await self.execute(config)
+                execution_time = time.time() - start_time
+
+                # Extract key metrics
+                metrics = result.get("metrics", {})
+                quality_metrics = {
+                    "config_signature": self.get_config_signature(config),
+                    "config_id": i + 1,
+                    "execution_time": execution_time,
+                    "success": result.get("success", False),
+                    # Primary Objectives
+                    "val_sharpe_gated_75pct": metrics.get("val_sharpe_gated_75pct", float("-inf")),
+                    "test_sharpe_gated_75pct": metrics.get("test_sharpe_gated_75pct", float("-inf")),
+                    "val_log_loss": metrics.get("val_log_loss", float("inf")),
+                    "val_accuracy": metrics.get("val_accuracy", 0.0),
+                    # Diagnostics
+                    "binary_break_ratio": metrics.get("binary_break_ratio", 0.0),
+                    "error": result.get("error", ""),
+                }
+
+                # Add configuration details
+                quality_metrics.update({
+                    f"config_{k}": v for k, v in config.items()
+                    if k.startswith("breakout_") and not callable(v)
+                })
+
+                results.append(quality_metrics)
+
+                if result.get("success", False):
+                    sharpe = quality_metrics['val_sharpe_gated_75pct']
+                    tprint_info(f"✅ Config {i+1} completed: Val Sharpe (Top 25%)={sharpe:.3f}")
+                else:
+                    tprint_warning(f"⚠️ Config {i+1} failed: {quality_metrics['error']}")
+
+            except Exception as e:
+                tprint_error(f"❌ Config {i+1} crashed: {e}")
+                results.append({
+                    "config_signature": self.get_config_signature(config),
+                    "config_id": i + 1,
+                    "execution_time": 0,
+                    "success": False,
+                    "error": str(e),
+                    "val_sharpe_gated_75pct": float("-inf"),
+                })
+
+        return results
+
+    def analyze_and_rank_results(self, results: List[Dict[str, Any]]) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+        """Analyze results and rank configurations by quality (Sharpe Ratio)."""
+
+        if not results:
+            return pd.DataFrame(), {}
+
+        df = pd.DataFrame(results)
+
+        # Filter successful runs
+        successful = df[df["success"] == True].copy()
+        failed = df[df["success"] == False].copy()
+
+        tprint_info(f"📊 Analysis: {len(successful)} successful, {len(failed)} failed runs")
+
+        if len(successful) == 0:
+            tprint_warning("⚠️ No successful configurations to analyze")
+            return df, {"best_config": None, "analysis": "no_successful_runs"}
+
+        # Use validation Sharpe as the primary ranking metric
+        # Handle -inf values
+        successful["val_sharpe_gated_75pct"] = successful["val_sharpe_gated_75pct"].replace([np.inf, -np.inf], -999.0)
+        successful = successful.sort_values("val_sharpe_gated_75pct", ascending=False)
+
+        # Get best configuration
+        best_config = successful.iloc[0].to_dict()
+
+        # Analysis summary
+        analysis = {
+            "best_config": best_config,
+            "total_runs": len(results),
+            "successful_runs": len(successful),
+            "failed_runs": len(failed),
+            "best_val_sharpe": best_config["val_sharpe_gated_75pct"],
+            "top_5_configs": successful.head(5).to_dict("records"),
+            "parameter_importance": self.analyze_parameter_importance(successful),
+        }
+
+        # Display results
+        self.display_results_summary(successful, failed, analysis)
+
+        return pd.concat([successful, failed], ignore_index=True), analysis
+
+    def analyze_parameter_importance(self, successful: pd.DataFrame) -> Dict[str, Any]:
+        """Analyze which parameters correlate with better results."""
+
+        importance = {}
+
+        # Analyze key parameters
+        key_params = [
+            "config_breakout_horizon_bars",
+            "config_breakout_cross_buffer_pct",
+            "config_breakout_hold_buffer_pct",
+            "config_breakout_bounce_move_pct",
+            "config_breakout_trap_revert_pct",
+            "config_breakout_lookback_days"
+        ]
+
+        for param in key_params:
+            if param in successful.columns:
+                # Group by parameter value and compute mean scores
+                param_analysis = successful.groupby(param)["val_sharpe_gated_75pct"].agg([
+                    "count", "mean", "std", "min", "max"
+                ]).round(4)
+                importance[param] = param_analysis.to_dict()
+
+        return importance
+
+    def display_results_summary(self, successful: pd.DataFrame, failed: pd.DataFrame, analysis: Dict[str, Any]) -> None:
+        """Display comprehensive results summary."""
+
+        print("\n" + "="*80)
+        print("🏆 BREAKOUT/BOUNCE CONFIGURATION OPTIMIZATION RESULTS")
+        print("="*80)
+
+        print(f"\n📊 SUMMARY:")
+        print(f"   Total configurations tested: {analysis['total_runs']}")
+        print(f"   Successful runs: {analysis['successful_runs']}")
+        print(f"   Failed runs: {analysis['failed_runs']}")
+        print(f"   Success rate: {analysis['successful_runs']/analysis['total_runs']*100:.1f}%")
+
+        if analysis['best_config']:
+            print(f"\n🥇 BEST CONFIGURATION:")
+            print(f"   Signature: {analysis['best_config']['config_signature']}")
+            print(f"   Val Sharpe (Top 25%): {analysis['best_val_sharpe']:.4f}")
+            print(f"   Val Log Loss: {analysis['best_config'].get('val_log_loss', 999):.4f}")
+            print(f"   Execution Time: {analysis['best_config']['execution_time']:.1f}s")
+
+        print(f"\n🏅 TOP 5 CONFIGURATIONS:")
+        cols = [
+            "config_id", "config_signature", "val_sharpe_gated_75pct",
+            "val_log_loss", "execution_time"
+        ]
+        # Ensure cols exist
+        avail_cols = [c for c in cols if c in successful.columns]
+        print(successful[avail_cols].head(5).to_string(index=False))
+
+        # Parameter importance analysis
+        if analysis["parameter_importance"]:
+            print(f"\n🔍 PARAMETER IMPORTANCE (by Val Sharpe):")
+            for param, stats in analysis["parameter_importance"].items():
+                param_name = param.replace("config_", "")
+                print(f"\n   {param_name}:")
+                for value, metrics in stats.items():
+                    if isinstance(metrics, dict) and "count" in metrics:
+                        print(f"      {value}: sharpe={metrics['mean']:.3f} (count={metrics['count']})")
+
+        if len(failed) > 0:
+            print(f"\n❌ COMMON FAILURE MODES:")
+            if "error" in failed.columns:
+                error_counts = failed["error"].value_counts().head(5)
+                for error, count in error_counts.items():
+                    print(f"   {count}x: {str(error)[:100]}...")
+
+        print("\n" + "="*80)
 
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         start_time = time.time()

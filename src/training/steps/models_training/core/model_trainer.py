@@ -1156,6 +1156,7 @@ class ModelTrainer(BaseTrainer):
             base_learner_params = model_params.get('base_learner_params', {}) or {}
             base_max_depth = int(base_learner_params.get('max_depth', 4))
             base_min_samples_leaf = int(base_learner_params.get('min_samples_leaf', 20))
+            es_rounds = int(model_params.get('early_stopping_rounds', 50))
 
             # NGBoost expects `Base` to be an instantiated sklearn regressor
             # (see ngboost.api.NGBRegressor). The library's own default is the
@@ -1190,7 +1191,11 @@ class ModelTrainer(BaseTrainer):
                 f"min_samples_leaf={base_min_samples_leaf}"
             )
 
-            ngb.fit(X_train, y_train)
+            ngb.fit(
+                X_train, y_train,
+                X_val=X_val, Y_val=y_val,
+                early_stopping_rounds=es_rounds
+            )
 
             # Evaluate on splits
             train_pred = ngb.predict(X_train)

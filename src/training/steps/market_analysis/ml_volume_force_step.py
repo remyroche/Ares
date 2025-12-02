@@ -19,6 +19,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 import xgboost as xgb
+from sklearn.metrics import log_loss
 
 from src.training.steps.base_step import BaseStep
 from src.utils.tprint import (
@@ -55,7 +56,134 @@ class MLVolumeForceStep(BaseStep):
         self._cached_market_data = None
         self._cached_market_source = None
         self._cached_market_cache_key = None
+        # Cache for feature generation in batch mode
+        self._feature_cache = {}
         tprint(f"✅ Initialized {step_name} step", "SUCCESS")
+
+    async def run_config_batch(
+        self, configs: List[Dict[str, Any]], symbol: str, exchange: str
+    ) -> List[Dict[str, Any]]:
+        """Run a batch of configurations and collect results."""
+        results = []
+        total_configs = len(configs)
+
+        for i, config in enumerate(configs):
+            # Ensure symbol/exchange are set
+            config["symbol"] = symbol
+            config["exchange"] = exchange
+            config["execution_mode"] = config.get("execution_mode", "light")
+
+            # Enable batch mode flags if useful for speed
+            config["is_batch_run"] = True
+
+            tprint_info(
+                f"🚀 Running config {i+1}/{total_configs}: {self.get_config_signature(config)}"
+            )
+
+            try:
+                start_time = time.time()
+                result = await self.execute(config)
+                execution_time = time.time() - start_time
+
+                metrics = result.get("metrics", {})
+
+                # Extract key metrics
+                run_metrics = {
+                    "config_id": i + 1,
+                    "config_signature": self.get_config_signature(config),
+                    "execution_time": execution_time,
+                    "success": result.get("success", False),
+                    "error": result.get("error", ""),
+
+                    # Performance Metrics
+                    "oof_log_loss": metrics.get("oof_log_loss", float("inf")),
+                    "oof_accuracy": metrics.get("accuracy", 0.0),
+                    "scalar_pred_mean": metrics.get("scalar_pred_mean", 0.0),
+                    "scalar_pred_std": metrics.get("scalar_pred_std", 0.0),
+
+                    # Data Stats
+                    "n_samples": metrics.get("n_samples", 0),
+                    "class_balance": metrics.get("class_distribution", {}),
+                }
+
+                # Add config params
+                run_metrics.update({
+                    f"config_{k}": v for k, v in config.items()
+                    if k.startswith("volume_force_")
+                })
+
+                results.append(run_metrics)
+
+                if result.get("success", False):
+                    tprint_success(
+                        f"✅ Config {i+1} done. Loss: {run_metrics['oof_log_loss']:.4f}, "
+                        f"Acc: {run_metrics['oof_accuracy']:.4f}"
+                    )
+                else:
+                    tprint_warning(f"⚠️ Config {i+1} failed: {run_metrics['error']}")
+
+            except Exception as e:
+                tprint_error(f"❌ Config {i+1} crashed: {e}")
+                results.append({
+                    "config_id": i + 1,
+                    "config_signature": self.get_config_signature(config),
+                    "success": False,
+                    "error": str(e),
+                    "oof_log_loss": float("inf")
+                })
+
+        return results
+
+    def analyze_and_rank_results(
+        self, results: List[Dict[str, Any]]
+    ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+        """Analyze results and rank configurations."""
+        if not results:
+            return pd.DataFrame(), {}
+
+        df = pd.DataFrame(results)
+
+        # Filter successful runs
+        successful = df[df["success"] == True].copy()
+
+        if successful.empty:
+            return df, {"best_config": None, "analysis": "no_successful_runs"}
+
+        # Sort by Log Loss (Lower is better)
+        successful = successful.sort_values("oof_log_loss", ascending=True)
+
+        # Get best config
+        best_run = successful.iloc[0].to_dict()
+
+        # Construct best config dict (stripping 'config_' prefix)
+        best_config = {}
+        for k, v in best_run.items():
+            if k.startswith("config_"):
+                best_config[k.replace("config_", "")] = v
+
+        analysis = {
+            "best_config": best_config,
+            "best_log_loss": best_run["oof_log_loss"],
+            "best_accuracy": best_run["oof_accuracy"],
+            "total_runs": len(results),
+            "successful_runs": len(successful),
+        }
+
+        return df, analysis
+
+    def get_config_signature(self, config: Dict[str, Any]) -> str:
+        """Generate a compact signature for configuration identification."""
+        keys = [
+            "volume_force_target_threshold_atr",
+            "volume_force_lookahead",
+            "volume_force_normalization_window"
+        ]
+        parts = []
+        for k in keys:
+            if k in config:
+                val = config[k]
+                parts.append(f"{k.replace('volume_force_', '')}={val}")
+        return "|".join(parts)
 
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Execute the volume force step."""
@@ -105,33 +233,41 @@ class MLVolumeForceStep(BaseStep):
             # 3. Generate Features
             tprint_info("🛠️ Generating Volume Force features...")
 
-            # Core Volume Force Features
-            force_df = generate_volume_force_features(market_data, config)
+            # Check cache if in batch mode
+            # Cache key includes normalization window as it affects feature values
+            norm_window = config.get("volume_force_normalization_window", 500)
+            cache_key = (symbol, exchange, timeframe, norm_window)
 
-            # Shared Liquidity Features (for context)
-            liquidity_df = generate_liquidity_regime_features(market_data, config)
+            if config.get("is_batch_run", False) and cache_key in self._feature_cache:
+                tprint_info("Using cached features for batch run")
+                feature_df = self._feature_cache[cache_key].copy()
+            else:
+                # Core Volume Force Features
+                force_df = generate_volume_force_features(market_data, config)
 
-            # Combine
-            # Filter shared features to key ones to avoid noise/collinearity if needed
-            # We keep valuable ones like rvol, amihud_spike_ratio, delta_alignment if present
-            # Liquidity features often have 'rvol_24', 'amihud_spike_ratio' etc.
-            # Let's verify overlap.
+                # Shared Liquidity Features (for context)
+                liquidity_df = generate_liquidity_regime_features(market_data, config)
 
-            feature_df = pd.concat([force_df, liquidity_df], axis=1)
+                feature_df = pd.concat([force_df, liquidity_df], axis=1)
 
-            # Remove duplicates if any
-            feature_df = feature_df.loc[:, ~feature_df.columns.duplicated()]
+                # Remove duplicates if any
+                feature_df = feature_df.loc[:, ~feature_df.columns.duplicated()]
 
-            # Save features artifact
-            feature_df_reset = feature_df.reset_index().rename(columns={feature_df.index.name or "index": "timestamp"})
-            features_path = self._save_artifact(
-                data=feature_df_reset,
-                artifact_name="ml_volume_force_features",
-                artifact_type="data",
-                data_category="features",
-                metadata={"source": market_source}
-            )
-            artifacts.append(features_path)
+                # Cache if in batch mode
+                if config.get("is_batch_run", False):
+                    self._feature_cache[cache_key] = feature_df.copy()
+
+            # Save features artifact (skip in batch mode to save disk I/O unless needed)
+            if not config.get("is_batch_run", False):
+                feature_df_reset = feature_df.reset_index().rename(columns={feature_df.index.name or "index": "timestamp"})
+                features_path = self._save_artifact(
+                    data=feature_df_reset,
+                    artifact_name="ml_volume_force_features",
+                    artifact_type="data",
+                    data_category="features",
+                    metadata={"source": market_source}
+                )
+                artifacts.append(features_path)
 
             # 4. Prepare Training Data
             lookahead = int(config.get("volume_force_lookahead", 12))  # 12 * 15m = 3h
@@ -175,7 +311,9 @@ class MLVolumeForceStep(BaseStep):
             X = feature_df.loc[valid_mask]
             y = y.loc[valid_mask]
 
-            tprint_info(f"🎯 Target class distribution: {y.value_counts().to_dict()}")
+            class_counts = y.value_counts().to_dict()
+            metrics["class_distribution"] = {str(k): int(v) for k, v in class_counts.items()}
+            tprint_info(f"🎯 Target class distribution: {class_counts}")
 
             # 5. Train Model
             model_id = f"{symbol}_{exchange}_{timeframe}_volume_force"
@@ -236,7 +374,23 @@ class MLVolumeForceStep(BaseStep):
                 # Metrics
                 acc = (oof_preds["pred_class"] == y.loc[oof_preds.index]).mean()
                 metrics["accuracy"] = float(acc)
-                tprint_success(f"✅ Training complete. OOF Accuracy: {acc:.4f}")
+                metrics["scalar_pred_mean"] = float(scalar_pred.mean())
+                metrics["scalar_pred_std"] = float(scalar_pred.std())
+
+                # Calculate Log Loss
+                # Extract prob columns in order
+                prob_cols_sorted = sorted([c for c in oof_preds.columns if c.startswith('prob_class_')])
+                y_true = y.loc[oof_preds.index]
+                y_probs = oof_preds[prob_cols_sorted].values
+
+                try:
+                    ll = log_loss(y_true, y_probs, labels=[0, 1, 2])
+                    metrics["oof_log_loss"] = float(ll)
+                except Exception as e:
+                    tprint_warning(f"Log loss calculation failed: {e}")
+                    metrics["oof_log_loss"] = float("inf")
+
+                tprint_success(f"✅ Training complete. OOF Accuracy: {acc:.4f}, LogLoss: {metrics.get('oof_log_loss', 'N/A'):.4f}")
                 tprint_info(f"   Scalar prediction stats: Mean={scalar_pred.mean():.3f}, Std={scalar_pred.std():.3f}")
             else:
                 tprint_warning("Could not map predictions to scalar (unexpected columns).")

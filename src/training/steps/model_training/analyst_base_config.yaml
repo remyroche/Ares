@@ -182,7 +182,7 @@ analyst_config:
             high: 800
           learning_rate:
             type: float
-            low: 0.005
+            low: 0.01
             high: 0.05
             log: true
           minibatch_frac:
@@ -192,7 +192,7 @@ analyst_config:
           base_learner_max_depth:
             type: int
             low: 3
-            high: 6
+            high: 5
           base_learner_min_samples_leaf:
             type: int
             low: 10

@@ -489,7 +489,7 @@ class MLRiskRegimeStepHMM(BaseStep):
         return market_data
 
     def _generate_risk_features(self, df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
-        """Generate the 5 core risk features via the feature bank.
+        """Generate the core risk features via the feature bank.
 
         Delegates to ``generate_risk_regime_features`` in the
         ``feature_generation.categories`` package so that feature
@@ -499,6 +499,8 @@ class MLRiskRegimeStepHMM(BaseStep):
         risk_df = df.copy()
 
         feature_frame = generate_risk_regime_features(risk_df, config)
+
+        # Include core risk features
         feature_cols = [
             'parkinson_volatility',
             'hurst_exponent',
@@ -511,7 +513,7 @@ class MLRiskRegimeStepHMM(BaseStep):
             if col in feature_frame.columns:
                 risk_df[col] = feature_frame[col].values
 
-        tprint_success(f"✅ Generated {len(feature_cols)} risk features with windows 30-50 bars")
+        tprint_success(f"✅ Generated 5 core risk features")
 
         return risk_df
 
@@ -562,7 +564,7 @@ class MLRiskRegimeStepHMM(BaseStep):
         tprint_info("🎯 HMM RISK REGIME DETECTION (Temporal Structure Learning)")
         tprint_info("=" * 80)
 
-        # Select risk features
+        # Select risk features for HMM (keeping core 5 for stability)
         feature_cols = [
             'parkinson_volatility',
             'rolling_kurtosis',
@@ -652,9 +654,11 @@ class MLRiskRegimeStepHMM(BaseStep):
                         else:
                             candidate = loaded
                         if isinstance(candidate, GaussianHMM):
-                            previous_hmm = candidate
-                            tprint_info(f"♻️ Using previous HMM for warm-start: {path}")
-                            break
+                            # Check feature compatibility (dimension must match)
+                            if candidate.n_features == risk_features_strided.shape[1]:
+                                previous_hmm = candidate
+                                tprint_info(f"♻️ Using previous HMM for warm-start: {path}")
+                                break
                     except Exception as load_exc:
                         tprint_warning(f"HMM warm-start: failed to load {path}: {load_exc}")
             except Exception as ws_exc:

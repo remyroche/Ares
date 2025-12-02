@@ -267,17 +267,17 @@ class FinalParametersOptimizer(BaseStep):
         # Initialize essential components
         self._initialize_optimization_components()
 
-        # Parameter categories for optimization (updated for new Analyst & Tactician models)
+        # Parameter categories for optimization (updated for new Analyst Base models)
         self.categories = [
             'confidence', 'intensity', 'position_sizing', 'leverage', 'tpsl', 'exit_strategy',
-            'ensemble', 'sr', 'two_tier', 'technical_indicators',
+            'uncertainty', 'sr', 'two_tier', 'technical_indicators',
             'system_monitoring', 'training_optimization', 'regime_transitions',
             'signal_aggregation', 'turnover_cost_penalty', 'entry_timing_optimization',
-            'confidence_aware_ensemble', 'model_specific_parameters',
+            'confidence_aware_signal', 'model_specific_parameters',
             # New directional categories
             'long_specific_parameters', 'short_specific_parameters',
             'directional_thresholds', 'asymmetric_risk_management',
-            # Analyst integration (Tactician deprecated - using Analyst only)
+            # Analyst integration (Analyst Only)
             'analyst_integration', 'analyst_oof_weights', 'analyst_feature_importance'
         ]
 
@@ -2244,16 +2244,10 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 'trailing_ensemble_mult_weight': {'type': 'float', 'min': 0.0, 'max': 1.0},
                 'trailing_ensemble_log_weight': {'type': 'float', 'min': 0.0, 'max': 1.0}
             },
-            'ensemble': {
-                'analyst_weight': {'type': 'float', 'min': 0.2, 'max': 0.5},
-                'tactician_weight': {'type': 'float', 'min': 0.2, 'max': 0.5},
-                'strategist_weight': {'type': 'float', 'min': 0.1, 'max': 0.3},
-                # Ensemble method parameters for Analyst (Elastic Net meta) & Tactician (LightGBM meta)
-                'ensemble_method': {'type': 'categorical', 'choices': ['stacking', 'weighted_average', 'voting', 'meta_learner']},
-                'analyst_meta_model_type': {'type': 'categorical', 'choices': ['elastic_net']},
-                'tactician_meta_model_type': {'type': 'categorical', 'choices': ['lightgbm']},
-                'stacking_cv_folds': {'type': 'int', 'min': 3, 'max': 10},
-                'meta_learner_weight': {'type': 'float', 'min': 0.1, 'max': 0.4}
+            'uncertainty': {
+                'uncertainty_threshold': {'type': 'float', 'min': 0.3, 'max': 0.8},
+                'uncertainty_penalty_factor': {'type': 'float', 'min': 0.1, 'max': 1.0},
+                'min_valid_samples': {'type': 'int', 'min': 100, 'max': 500}
             },
             'sr': {
                 'touch_count_weight': {'type': 'float', 'min': 0.1, 'max': 0.4},
@@ -2298,17 +2292,13 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 'transition_risk_multiplier': {'type': 'float', 'min': 1.0, 'max': 1.5}
             },
             'signal_aggregation': {
-                'analyst_weight': {'type': 'float', 'min': 0.2, 'max': 0.4},
-                'tactician_weight': {'type': 'float', 'min': 0.2, 'max': 0.4},
-                'scenario_weight': {'type': 'float', 'min': 0.1, 'max': 0.3},
-                'sr_breakout_weight': {'type': 'float', 'min': 0.1, 'max': 0.3},
+                'analyst_signal_weight': {'type': 'float', 'min': 0.6, 'max': 0.9},
+                'specialist_confirmation_weight': {'type': 'float', 'min': 0.1, 'max': 0.3},
                 'regime_weight': {'type': 'float', 'min': 0.1, 'max': 0.3},
                 'conflict_penalty_factor': {'type': 'float', 'min': 0.4, 'max': 0.6},
-                'min_source_weight': {'type': 'float', 'min': 0.05, 'max': 0.15},
                 'min_signal_confidence': {'type': 'float', 'min': 0.2, 'max': 0.4},
                 'min_aggregated_confidence': {'type': 'float', 'min': 0.4, 'max': 0.6},
                 'regime_alignment_bonus': {'type': 'float', 'min': 0.1, 'max': 0.25},
-                'multi_signal_alignment_bonus': {'type': 'float', 'min': 0.05, 'max': 0.15},
                 'use_multiplicative': {'type': 'bool', 'value': True}
             },
             'turnover_cost_penalty': {
@@ -2329,35 +2319,19 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 'adverse_movement_threshold': {'type': 'float', 'min': 0.6, 'max': 0.8},
                 'entry_timing_lookback_periods': {'type': 'int', 'min': 5, 'max': 20}
             },
-            'confidence_aware_ensemble': {
-                # Confidence-aware ensemble parameters for updated models
+            'confidence_aware_signal': {
+                # Confidence-aware signal parameters for Analyst Base
                 'confidence_threshold_entry': {'type': 'float', 'min': 0.6, 'max': 0.85},
                 'confidence_threshold_exit': {'type': 'float', 'min': 0.5, 'max': 0.75},
-                'confidence_weight_analyst': {'type': 'float', 'min': 0.2, 'max': 0.5},
-                'confidence_weight_tactician': {'type': 'float', 'min': 0.3, 'max': 0.6},
-                'confidence_combination_method': {'type': 'categorical', 'choices': ['multiplicative', 'weighted_average', 'harmonic_mean', 'geometric_mean']},
-                'ensemble_confidence_threshold': {'type': 'float', 'min': 0.65, 'max': 0.9},
-                'base_model_confidence_weight': {'type': 'float', 'min': 0.4, 'max': 0.8},
-                'meta_model_confidence_weight': {'type': 'float', 'min': 0.2, 'max': 0.6}
+                'signal_strength_threshold': {'type': 'float', 'min': 0.1, 'max': 0.5},
+                'uncertainty_adjustment_mode': {'type': 'categorical', 'choices': ['penalty', 'threshold', 'hybrid']}
             },
             'model_specific_parameters': {
-                # Analyst model weights (Base models)
-                'analyst_tcn_weight': {'type': 'float', 'min': 0.2, 'max': 0.4},
-                'analyst_catboost_weight': {'type': 'float', 'min': 0.2, 'max': 0.4},
-                'analyst_lightgbm_weight': {'type': 'float', 'min': 0.2, 'max': 0.4},
-                # Analyst meta-learner weight
-                'analyst_elastic_net_weight': {'type': 'float', 'min': 0.1, 'max': 0.3},
-
-                # Tactician model weights (Base models)
-                'tactician_xgboost_weight': {'type': 'float', 'min': 0.2, 'max': 0.35},
-                'tactician_randomforest_weight': {'type': 'float', 'min': 0.15, 'max': 0.3},
-                'tactician_catboost_weight': {'type': 'float', 'min': 0.2, 'max': 0.35},
-                'tactician_elastic_net_weight': {'type': 'float', 'min': 0.15, 'max': 0.3},
-                # Tactician meta-learner weight
-                'tactician_lightgbm_weight': {'type': 'float', 'min': 0.1, 'max': 0.3},
+                # Analyst model parameters
+                'lgbm_signal_weight': {'type': 'float', 'min': 0.6, 'max': 1.0},
+                'ngboost_uncertainty_weight': {'type': 'float', 'min': 0.1, 'max': 0.5},
 
                 # General model parameters
-                'model_diversity_bonus': {'type': 'float', 'min': 0.05, 'max': 0.15},
                 'model_complexity_penalty': {'type': 'float', 'min': 0.01, 'max': 0.1}
             }
         }
@@ -2794,8 +2768,9 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 base_score = self._evaluate_tpsl_params(params, calibration_results)
             elif category == 'exit_strategy':
                 base_score = self._evaluate_exit_strategy_params(params, calibration_results)
-            elif category == 'ensemble':
-                base_score = self._evaluate_ensemble_params(params, calibration_results)
+            elif category == 'uncertainty':
+                # Use uncertainty evaluation (new method)
+                base_score = self._evaluate_uncertainty_params(params, calibration_results)
             elif category == 'sr':
                 base_score = self._evaluate_sr_params(params, calibration_results)
             elif category == 'two_tier':
@@ -2816,8 +2791,8 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 base_score = self._evaluate_intensity_params(params, calibration_results)
             elif category == 'entry_timing_optimization':
                 base_score = self._evaluate_entry_timing_optimization_params(params, calibration_results)
-            elif category == 'confidence_aware_ensemble':
-                base_score = self._evaluate_confidence_aware_ensemble_params(params, calibration_results)
+            elif category == 'confidence_aware_signal':
+                base_score = self._evaluate_confidence_aware_signal_params(params, calibration_results)
             elif category == 'model_specific_parameters':
                 base_score = self._evaluate_model_specific_params(params, calibration_results)
 
@@ -4633,15 +4608,24 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
 
         return stats
 
-    def _evaluate_ensemble_params(self, params: Dict[str, Any],
+    def _evaluate_uncertainty_params(self, params: Dict[str, Any],
                                 calibration_results: Dict[str, Any]) -> float:
-        """Evaluate ensemble parameters."""
+        """Evaluate uncertainty parameters."""
         score = 0.0
 
-        if all(key in params for key in ['analyst_weight', 'tactician_weight', 'strategist_weight']):
-            weights = [params['analyst_weight'], params['tactician_weight'], params['strategist_weight']]
-            if abs(sum(weights) - 1.0) < 0.1:
+        if 'uncertainty_threshold' in params:
+            thresh = params['uncertainty_threshold']
+            if 0.4 <= thresh <= 0.7:
                 score += 0.3
+            elif 0.3 <= thresh <= 0.8:
+                score += 0.2
+            else:
+                score += 0.1
+
+        if 'uncertainty_penalty_factor' in params:
+            penalty = params['uncertainty_penalty_factor']
+            if 0.3 <= penalty <= 0.7:
+                score += 0.2
             else:
                 score += 0.1
 
@@ -4996,9 +4980,9 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
 
         return score
 
-    def _evaluate_confidence_aware_ensemble_params(self, params: Dict[str, Any],
+    def _evaluate_confidence_aware_signal_params(self, params: Dict[str, Any],
                                                  calibration_results: Dict[str, Any]) -> float:
-        """Evaluate confidence-aware ensemble parameters for updated models."""
+        """Evaluate confidence-aware signal parameters for Analyst Base."""
         score = 0.0
 
         if 'confidence_threshold_entry' in params and 'confidence_threshold_exit' in params:
@@ -5010,18 +4994,16 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
             else:
                 score += 0.15
 
-        if 'confidence_weight_tactician' in params and 'confidence_weight_analyst' in params:
-            tactician_weight = params['confidence_weight_tactician']
-            analyst_weight = params['confidence_weight_analyst']
-            # Tactician should have higher weight for timing decisions
-            if tactician_weight > analyst_weight and tactician_weight >= 0.4:
+        if 'signal_strength_threshold' in params:
+            thresh = params['signal_strength_threshold']
+            if 0.2 <= thresh <= 0.4:
                 score += 0.25
             else:
                 score += 0.15
 
-        if 'ensemble_confidence_threshold' in params:
-            threshold = params['ensemble_confidence_threshold']
-            if 0.7 <= threshold <= 0.85:
+        if 'uncertainty_adjustment_mode' in params:
+            mode = params['uncertainty_adjustment_mode']
+            if mode in ['penalty', 'hybrid']:
                 score += 0.2
             else:
                 score += 0.1

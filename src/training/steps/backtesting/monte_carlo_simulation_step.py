@@ -89,6 +89,22 @@ class MonteCarloSimulationStep(BaseStep):
             
             tprint(f"📊 Loaded {len(returns_data)} return samples from market data", "INFO")
             
+            # Load optimized parameters for realistic simulation settings
+            try:
+                from src.trading.integration.unified_model_loader import get_unified_model_loader
+                unified_loader = get_unified_model_loader()
+                opt_params = await unified_loader.load_optimized_parameters(
+                    symbol=config.get('symbol'),
+                    exchange=config.get('exchange'),
+                    timeframe=config.get('timeframe'),
+                    direction=config.get('direction')
+                )
+                if opt_params:
+                    tprint("✅ Loaded optimized parameters for Monte Carlo context", "INFO")
+            except Exception as e:
+                self.logger.warning(f"Could not load optimized parameters: {e}")
+                opt_params = {}
+
             # Configure Monte Carlo engine
             n_simulations = config.get('n_simulations', 1000)
             portfolio_value = config.get('portfolio_value', 100000.0)

@@ -202,24 +202,26 @@ class BasicBacktestingPostStep(BaseStep):
         try:
             direction = config.get('direction', 'long')
             
-            # Try tactician first (most sophisticated)
-            for model_type in ['tactician', 'analyst']:
+            # Try analyst (now the primary model type)
+            for model_type in ['analyst']:
                 try:
-                    artifact_name = f"ml_scored_historical_data_{model_type}_{direction}"
-                    ml_data = self._get_artifact(artifact_name, 'data')
+                    # Try OOS first (preferred)
+                    for suffix in ['_oos', '']:
+                        artifact_name = f"ml_scored_historical_data_{model_type}_{direction}{suffix}"
+                        ml_data = self._get_artifact(artifact_name, 'data')
 
-                    if ml_data is not None and not ml_data.empty:
-                        # Normalize index to avoid tz-naive vs tz-aware issues and
-                        # ensure deterministic ordering before any alignment.
-                        if isinstance(ml_data, pd.DataFrame):
-                            ml_data = ml_data.copy()
-                            ml_data = self._normalize_datetime_index(
-                                ml_data, f"ML-scored data ({model_type})"
-                            )
-                            ml_data = ml_data.sort_index()
+                        if ml_data is not None and not ml_data.empty:
+                            # Normalize index to avoid tz-naive vs tz-aware issues and
+                            # ensure deterministic ordering before any alignment.
+                            if isinstance(ml_data, pd.DataFrame):
+                                ml_data = ml_data.copy()
+                                ml_data = self._normalize_datetime_index(
+                                    ml_data, f"ML-scored data ({model_type}{suffix})"
+                                )
+                                ml_data = ml_data.sort_index()
 
-                        self.logger.info(f"Loaded ML-scored data from {model_type}: {len(ml_data)} samples")
-                        return ml_data
+                            self.logger.info(f"Loaded ML-scored data from {model_type}{suffix}: {len(ml_data)} samples")
+                            return ml_data
                         
                 except Exception as e:
                     self.logger.debug(f"ML-scored data not found for {model_type}: {e}")

@@ -69,7 +69,6 @@ class RegimeOutput:
     regime_strength: float
     transition_probability: float
     features_used: Dict[str, Any]
-    specialist_outputs: Dict[str, Any]
 
 @dataclass
 class AnalystBaseOutput:
@@ -960,8 +959,7 @@ class SignalGenerationPipeline:
                 confidence=regime_prediction.get('confidence', 0.5),
                 regime_strength=regime_prediction.get('regime_strength', 0.5),
                 transition_probability=regime_prediction.get('transition_probability', 0.5),
-                features_used=regime_prediction.get('features_used', {}),
-                specialist_outputs=regime_prediction.get('specialist_outputs', {})
+                features_used=regime_prediction.get('features_used', {})
             )
 
         except Exception as e:
@@ -1404,44 +1402,6 @@ class SignalGenerationPipeline:
                 timestamp
             )
 
-            # Prepare specialist scalar features (SMC, Volume Force, Path Score, etc.)
-            # These must match the order and presence of features used during training.
-            # While the ensemble model likely expects a specific order, we can pass
-            # a dictionary or dataframe if the model supports it, or construct the vector
-            # if we know the order.
-            # Assuming StandardizedXGBTrainer or similar was used which might rely on
-            # feature names if input is DataFrame, or strict order if numpy.
-            #
-            # If the trained model expects specific specialist features that were present
-            # in get_specialist_models_outputs, we should append them here.
-            # Since we don't have the exact training column order here without the model metadata,
-            # we rely on the fact that for many ML frameworks (like XGBoost/LightGBM with sklearn API),
-            # passing a numpy array requires strict order, but we can try to extract
-            # feature names from the model if available.
-
-            # Extract scalar specialist features from RegimeOutput
-            specialist_vals = []
-            specialist_keys = []
-            if regime_output.specialist_outputs:
-                # We prioritize specific known scalar keys that match get_specialist_models_outputs
-                # Priority list based on get_specialist_models_outputs.py:
-                # 1. Risk Score (already partially covered by regime probs but often used as scalar)
-                # 2. Liquidity (probs covered)
-                # 3. Breakout/Bounce (resistance_scalar, support_scalar, breakout_success_prob)
-                # 4. Path (path_risk_score)
-                # 5. Meso (meso_trend_score_continuous)
-                # 6. Macro (macro_trend_score_continuous)
-                # 7. SMC (smc_predicted)
-                # 8. Mean Reversion (mr_probability_dense or mr_probability)
-                # 9. Volume Force (vol_force_scalar)
-
-                # NOTE: The exact order MUST match training. If we append everything found,
-                # it might be risky. Ideally, we should check model.feature_names_in_ if available.
-
-                # For now, we will append them to a list but only if we can verify order or
-                # if we are constructing a DataFrame.
-                pass
-
             # Combine all inputs: market_features + regime_probs + base_outputs + meta_features
             ensemble_input_parts = []
             if len(market_features) > 0:
@@ -1452,70 +1412,8 @@ class SignalGenerationPipeline:
             if len(live_meta_features) > 0:
                 ensemble_input_parts.append(live_meta_features)
             
-            # Append specialist scalars if available and relevant (experimental)
-            # This is a placeholder for where full wiring would happen if the ensemble
-            # was retrained to expect them. Currently, to avoid breaking existing models
-            # that expect a fixed input size, we do NOT blindly append them unless
-            # we are sure the model handles named features (DataFrame input).
-
             ensemble_input = np.concatenate(ensemble_input_parts) if ensemble_input_parts else np.array([])
-
-            # If the model supports named features (DataFrame), we should construct one.
-            # This is much safer than guessing numpy array order.
-            if hasattr(self.analyst_ensemble_model, "feature_names_in_"):
-                try:
-                    # Construct a dictionary of all available features
-                    feature_dict = {}
-
-                    # 1. Market features (we need names from feature engineer)
-                    eng_names = self.analyst_feature_engineer.get_engineered_feature_names()
-                    if len(market_features) == len(eng_names):
-                        for i, name in enumerate(eng_names):
-                            feature_dict[name] = market_features[i]
-
-                    # 2. Regime probs
-                    for i, rt in enumerate(RegimeType):
-                        feature_dict[f"regime_prob_{rt.value}"] = regime_probs_values[i]
-                        # Also add legacy/alternative names if needed by model
-                        feature_dict[f"regime_{i}_prob"] = regime_probs_values[i]
-
-                    # 3. Base predictions
-                    for i, val in enumerate(base_confidences):
-                        feature_dict[f"base_model_{i}"] = val
-
-                    # 4. Meta features
-                    # (Meta feature names need to be known. live_meta_features has 9 elements)
-                    meta_names = [
-                        "meta_disagreement_variance", "meta_disagreement_range", "meta_disagreement_std",
-                        "meta_disagreement_entropy", "meta_disagreement_pairwise", "meta_disagreement_max",
-                        "meta_disagreement_rate", "meta_bars_since_last_event", "meta_event_mean_return"
-                    ]
-                    for i, name in enumerate(meta_names):
-                        if i < len(live_meta_features):
-                            feature_dict[name] = live_meta_features[i]
-
-                    # 5. Specialist Outputs
-                    if regime_output.specialist_outputs:
-                        feature_dict.update(regime_output.specialist_outputs)
-
-                    # Create DataFrame with columns matching model's expected features
-                    expected_features = self.analyst_ensemble_model.feature_names_in_
-                    df_input = pd.DataFrame([feature_dict])
-
-                    # Ensure all expected columns exist (fill 0 if missing)
-                    for col in expected_features:
-                        if col not in df_input.columns:
-                            df_input[col] = 0.0
-
-                    # Reorder to match model expectation
-                    ensemble_input = df_input[expected_features]
-                    self.logger.debug(f"constructed dataframe input with {len(expected_features)} features")
-
-                except Exception as e:
-                    self.logger.warning(f"Failed to construct named feature input: {e}; falling back to numpy array")
-                    ensemble_input = ensemble_input.reshape(1, -1) if ensemble_input.ndim == 1 else ensemble_input
-            else:
-                ensemble_input = ensemble_input.reshape(1, -1) if ensemble_input.ndim == 1 else ensemble_input
+            ensemble_input = ensemble_input.reshape(1, -1) if ensemble_input.ndim == 1 else ensemble_input
             
             self.logger.debug(
                 f"Analyst ensemble input prepared: "
@@ -1826,55 +1724,7 @@ class SignalGenerationPipeline:
                 ensemble_input_parts.append(base_predictions_array.flatten())
             
             ensemble_input = np.concatenate(ensemble_input_parts) if ensemble_input_parts else np.array([])
-
-            # Use DataFrame input if the model expects named features (e.g. including specialist scalars)
-            if hasattr(self.tactician_ensemble_model, "feature_names_in_"):
-                try:
-                    # Construct feature dictionary
-                    feature_dict = {}
-
-                    # 1. Market features
-                    eng_names = self.tactician_feature_engineer.get_engineered_feature_names()
-                    if len(market_features) == len(eng_names):
-                        for i, name in enumerate(eng_names):
-                            feature_dict[name] = market_features[i]
-
-                    # 2. Regime probs
-                    for i, rt in enumerate(RegimeType):
-                        feature_dict[f"regime_prob_{rt.value}"] = regime_probs_values[i]
-                        feature_dict[f"regime_{i}_prob"] = regime_probs_values[i]
-
-                    # 3. Analyst inputs (fixed names)
-                    feature_dict["analyst_confidence"] = analyst_output.analyst_confidence
-                    feature_dict["analyst_market_health"] = analyst_output.market_health_score
-                    feature_dict["analyst_regime_adjusted"] = analyst_output.regime_adjusted_confidence
-
-                    # 4. Base predictions
-                    for i, val in enumerate(base_confidences):
-                        feature_dict[f"base_model_{i}"] = val
-
-                    # 5. Specialist Outputs (SMC, Volume Force, Path, etc.)
-                    if regime_output.specialist_outputs:
-                        feature_dict.update(regime_output.specialist_outputs)
-
-                    # Create DataFrame
-                    expected_features = self.tactician_ensemble_model.feature_names_in_
-                    df_input = pd.DataFrame([feature_dict])
-
-                    # Ensure all expected columns exist
-                    for col in expected_features:
-                        if col not in df_input.columns:
-                            df_input[col] = 0.0
-
-                    # Reorder
-                    ensemble_input = df_input[expected_features]
-                    self.logger.debug(f"Tactician: constructed dataframe input with {len(expected_features)} features")
-
-                except Exception as e:
-                    self.logger.warning(f"Tactician: Failed to construct named feature input: {e}; fallback to numpy")
-                    ensemble_input = ensemble_input.reshape(1, -1) if ensemble_input.ndim == 1 else ensemble_input
-            else:
-                ensemble_input = ensemble_input.reshape(1, -1) if ensemble_input.ndim == 1 else ensemble_input
+            ensemble_input = ensemble_input.reshape(1, -1) if ensemble_input.ndim == 1 else ensemble_input
             
             self.logger.debug(
                 f"Tactician ensemble input prepared: "

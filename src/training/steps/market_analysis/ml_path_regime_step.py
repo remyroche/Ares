@@ -706,7 +706,7 @@ class MLPathRegimeStep(BaseStep):
 
                             regime_thresholds_path = self._save_artifact(
                                 data=regime_thresholds_for_save,
-                                artifact_name="ml_path_regime_thresholds_15m",
+                                artifact_name="ml_risk_regime_thresholds_15m",
                                 artifact_type="model",
                                 data_category="config",
                                 metadata={
@@ -787,7 +787,7 @@ class MLPathRegimeStep(BaseStep):
             )
             training_data_path = self._save_artifact(
                 data=risk_to_save,
-                artifact_name="ml_path_training_data_15m",
+                artifact_name="ml_risk_training_data_15m",
                 artifact_type="data",
                 metadata={
                     "symbol": symbol,
@@ -885,7 +885,7 @@ class MLPathRegimeStep(BaseStep):
                     # Canonical native-timeframe probabilities artifact
                     self._save_artifact(
                         data=risk_probs_save,
-                        artifact_name=f"ml_path_regime_probabilities_{regime_timeframe}",
+                        artifact_name=f"ml_risk_regime_probabilities_{regime_timeframe}",
                         artifact_type="data",
                         metadata={
                             "symbol": symbol,
@@ -896,12 +896,12 @@ class MLPathRegimeStep(BaseStep):
                     )
 
                     # For 15m specifically, also emit a standardized
-                    # ml_path_regime_probs_15m artifact to mirror the
+                    # ml_risk_regime_probs_15m artifact to mirror the
                     # liquidity regime step convention.
                     if regime_timeframe == "15m":
                         self._save_artifact(
                             data=risk_probs_save,
-                            artifact_name="ml_path_regime_probs_15m",
+                            artifact_name="ml_risk_regime_probs_15m",
                             artifact_type="data",
                             metadata={
                                 "symbol": symbol,
@@ -923,7 +923,7 @@ class MLPathRegimeStep(BaseStep):
                 try:
                     feature_pipeline_path = self._save_artifact(
                         data=feature_pipeline_artifacts,
-                        artifact_name="ml_path_feature_pipeline_15m",
+                        artifact_name="ml_risk_feature_pipeline_15m",
                         artifact_type="model",
                         metadata={
                             "symbol": symbol,
@@ -941,7 +941,7 @@ class MLPathRegimeStep(BaseStep):
                     regime_stats_to_save = regime_stats_df.reset_index()
                     regime_stats_path = self._save_artifact(
                         data=regime_stats_to_save,
-                        artifact_name="ml_path_regime_stats_15m",
+                        artifact_name="ml_risk_regime_stats_15m",
                         artifact_type="data",
                         metadata={
                             "symbol": symbol,
@@ -8655,7 +8655,7 @@ class MLPathRegimeStep(BaseStep):
 
             quality_path = self._save_artifact(
                 data=quality_metrics_dict,
-                artifact_name="ml_path_quality_metrics_15m",
+                artifact_name="ml_risk_quality_metrics_15m",
                 artifact_type="data",
                 metadata={
                     "overall_quality_score": risk_quality_metrics.overall_quality_score,

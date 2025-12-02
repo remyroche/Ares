@@ -21,7 +21,6 @@ Covered specialist steps:
 - ``ml_risk_regime_step``        → ML risk regime probabilities
 - ``ml_path_regime_step``        → Path-regime features (when available)
 - ``ml_risk_regime_step`` (HMM flavor) → HMM-based risk regimes
-- ``ml_volume_force_step``       → Volume Force scalar (0=Down, 1=Up)
 - ``ml_mean_reversion_step``     → Mean-reversion probability / score
 
 Implementation notes

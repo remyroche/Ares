@@ -571,7 +571,7 @@ def get_specialist_models_outputs(
         }
 
         breakout_training = artifact_router.load(
-            artifact_name="ml_breakout_bounce_training_data_15m",
+            artifact_name=f"ml_breakout_bounce_training_data_{base_timeframe}",
             artifact_type="data",
             data_category="features",
             context=breakout_context,

@@ -370,6 +370,7 @@ Examples:
     regime_group.add_argument('--regime-models-training', action='store_true', help='Train machine learning models for regime classification')
     regime_group.add_argument('--regime-ensemble-training', action='store_true', help='Train ensemble models for regime classification using meta-learning')
     regime_group.add_argument('--hmm-macro-regime', action='store_true', help='Run HMM macro alpha / macro regime step from Rolling HMM outputs')
+    regime_group.add_argument('--xgb-meso-regime', action='store_true', help='Run XGB Meso Trend regime step')
     regime_group.add_argument('--final_parameters_optimization', action='store_true', help='Run final parameters optimization')
 
     # Feature generation step shortcuts
@@ -682,7 +683,7 @@ async def main():
         args.rolling_hmm_regime_discovery,
         args.regime_models_training, args.regime_ensemble_training,
         args.regime_models_training, args.regime_ensemble_training,
-        args.hmm_macro_regime, args.final_parameters_optimization,
+        args.hmm_macro_regime, args.xgb_meso_regime, args.final_parameters_optimization,
     ])
 
     if not has_execution_mode:
@@ -857,6 +858,10 @@ async def main():
             result = await launcher.run_step('hmm_macro_regime', config)
             print(f"HMM macro regime step completed: {'✅ Success' if result.get('success') else '❌ Failed'}")
 
+        elif args.xgb_meso_regime:
+            logger.info("Running XGB Meso Trend regime step")
+            result = await launcher.run_step("xgb_meso_regime", config)
+            print(f"XGB Meso Trend regime step completed: {'✅ Success' if result.get(success) else '❌ Failed'}")
         elif args.regime_models_training:
             # Regime models training execution
             logger.info("Training machine learning models for regime classification")

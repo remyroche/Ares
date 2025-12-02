@@ -545,10 +545,10 @@ def _infer_model_group(feature_name: str) -> str:
         return "risk"
     if name.startswith("smc_"):
         return "smc"
-    if name.startswith("macro_alpha") or (name.startswith("macro_") and "alpha" in name):
-        return "macro_alpha"
-    if "alpha" in name:
-        return "alpha"
+    if name.startswith("macro_trend") or (name.startswith("macro_") and "alpha" in name):
+        return "macro_trend"
+    if "meso_trend" in name:
+        return "meso_trend"
     if name.startswith("liquidity_regime") or "liquidity" in name:
         return "liquidity"
     if name.startswith("breakout_") or name in {"is_resistance", "is_support", "resistance_scalar", "support_scalar"}:
@@ -759,7 +759,7 @@ def _compute_model_coverage(
     """Compute data coverage (date range and sample count) per specialist group.
 
     Coverage is defined over the intersection of the specialist feature index
-    and the target index. For each specialist group (alpha, macro_alpha,
+    and the target index. For each specialist group (alpha, macro_trend,
     liquidity, breakout_bounce, risk, smc, mean_reversion), we report:
 
     - n_samples: number of target samples where at least one feature in that

@@ -39,6 +39,7 @@ except Exception:  # pragma: no cover - optional dependency (e.g. torch)
 RollingHMMRegimeDiscoveryStep = None
 
 # Import HMM ML alpha step (derives alpha labels and regimes from 1h HMM outputs)
+from .xgb_meso_regime_step import XGBMesoTrendStep
 from .hmm_ml_alpha_step import HMMMLAlphaStep
 from ..hmm_macro_regime import HMMMLMacroTrendStep as HMMMacroRegimeStep
 

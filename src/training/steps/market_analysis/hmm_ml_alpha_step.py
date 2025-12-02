@@ -93,13 +93,13 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-class HMMMLAlphaStep(BaseStep):
+class HMMMLMesoTrendStep(BaseStep):
     """Pipeline step to construct alpha labels from 1h Rolling HMM regimes."""
 
     def __init__(self, step_name: str = "hmm_ml_alpha_step"):
         """Initialize the HMM ML alpha step with versioned artifacts enabled."""
         super().__init__(step_name, use_versioned_artifacts=True)
-        self.logger = logger.getChild("HMMMLAlphaStep") if hasattr(logger, "getChild") else logger
+        self.logger = logger.getChild("HMMMLMesoTrendStep") if hasattr(logger, "getChild") else logger
         tprint(f"ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Initialized {step_name} step", "SUCCESS")
 
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
@@ -113,9 +113,9 @@ class HMMMLAlphaStep(BaseStep):
             - execution_mode: 'full', 'light', 'blank', etc. (used for data loading)
 
         Optional alpha configuration:
-            - alpha_horizon_bars: Forward horizon in bars (default: 1)
-            - alpha_return_type: 'log' or 'simple' (default: 'log')
-            - alpha_target_type: 'classification' or 'regression'
+            - meso_trend_horizon_bars: Forward horizon in bars (default: 1)
+            - meso_trend_return_type: 'log' or 'simple' (default: 'log')
+            - meso_trend_target_type: 'classification' or 'regression'
               (default: 'classification')
         """
         start_time = time.time()
@@ -131,66 +131,66 @@ class HMMMLAlphaStep(BaseStep):
             # Set default alpha-specific configuration if not provided
             # Smoothing defaults are chosen to target ~3ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ5 bar regime persistence
             # while allowing overrides via config/CLI when needed.
-            alpha_defaults: Dict[str, Any] = {
-                "alpha_target_smoothing_method": "ewm",
-                "alpha_target_smoothing_window": 8,  # Adjusted for 4-8h regimes (was 5)
-                "alpha_score_smoothing_method": "ewm",
-                "alpha_score_smoothing_window": 16,  # Further increased window for smoother 4-8h regimes (was 12)
+            meso_trend_defaults: Dict[str, Any] = {
+                "meso_trend_target_smoothing_method": "ewm",
+                "meso_trend_target_smoothing_window": 8,  # Adjusted for 4-8h regimes (was 5)
+                "meso_trend_score_smoothing_method": "ewm",
+                "meso_trend_score_smoothing_window": 16,  # Further increased window for smoother 4-8h regimes (was 12)
                 # Keep HPO opt-in; these defaults are used when explicitly enabled
-                "alpha_enable_hpo": False,
-                "alpha_hpo_cv_folds": 3,
-                "alpha_hpo_final_trials": 20,
-                "alpha_early_stopping_rounds": 30,
-                "alpha_enable_regression_calibration": True,
-                "alpha_enable_expectation_calibration": True,
-                "alpha_expectation_positive_threshold": 0.0,
-                "alpha_expectation_min_samples": 200,
-                "alpha_expectation_ema_period": 6,  # Adjusted for 4-8h regimes (was 4)
-                "alpha_expectation_ema_weight_recent": 0.15,  # Moderate EMA for 4-8h regimes (was None ~0.4)
-                "alpha_target_vol_window": 400,  # Adjusted rolling window (was 320)
+                "meso_trend_enable_hpo": False,
+                "meso_trend_hpo_cv_folds": 3,
+                "meso_trend_hpo_final_trials": 20,
+                "meso_trend_early_stopping_rounds": 30,
+                "meso_trend_enable_regression_calibration": True,
+                "meso_trend_enable_expectation_calibration": True,
+                "meso_trend_expectation_positive_threshold": 0.0,
+                "meso_trend_expectation_min_samples": 200,
+                "meso_trend_expectation_ema_period": 6,  # Adjusted for 4-8h regimes (was 4)
+                "meso_trend_expectation_ema_weight_recent": 0.15,  # Moderate EMA for 4-8h regimes (was None ~0.4)
+                "meso_trend_target_vol_window": 400,  # Adjusted rolling window (was 320)
                 # Enable trend feature engineering on aligned market data
-                "alpha_enable_trend_features": True,
-                "alpha_trend_ema_fast_window": 56,  # Adjusted for 4-8h regimes (was 48)
-                "alpha_trend_ema_slow_window": 120,  # Adjusted for 4-8h regimes (was 104)
-                "alpha_trend_slope_window": 96,  # Adjusted for 4-8h regimes (was 80)
+                "meso_trend_enable_trend_features": True,
+                "meso_trend_trend_ema_fast_window": 56,  # Adjusted for 4-8h regimes (was 48)
+                "meso_trend_trend_ema_slow_window": 120,  # Adjusted for 4-8h regimes (was 104)
+                "meso_trend_trend_slope_window": 96,  # Adjusted for 4-8h regimes (was 80)
                 # Auto-pruning experiment enabled by default with a small R^2 threshold
-                "alpha_enable_auto_prune_rerun": True,
-                "alpha_auto_prune_min_delta": 0.0005,
+                "meso_trend_enable_auto_prune_rerun": True,
+                "meso_trend_auto_prune_min_delta": 0.0005,
                 # Quantile-based auto-prune thresholds over permutation importance.
                 # Try slightly more aggressive thresholds; still require a small
                 # positive improvement in validation R^2 before adopting.
-                "alpha_auto_prune_quantiles": [0.15, 0.25, 0.35, 0.45],
+                "meso_trend_auto_prune_quantiles": [0.15, 0.25, 0.35, 0.45],
                 # Minimum run length for regime persistence (NOT scaled)
                 # Leave at 0 by default; prefer HMM/smoothing to control persistence
-                "alpha_regime_min_run_bars": 0,
+                "meso_trend_regime_min_run_bars": 0,
                 # Enable quality report generation
-                "alpha_enable_quality_report": True,
+                "meso_trend_enable_quality_report": True,
                 # Regime configuration: default to 4 regimes, with 2–4 explored in
                 # flexible optimization / experimentation.
-                "alpha_regime_counts": [2, 3, 4],
-                "alpha_regime_bins": 4,
+                "meso_trend_regime_counts": [2, 3, 4],
+                "meso_trend_regime_bins": 4,
             }
-            for k, v in alpha_defaults.items():
+            for k, v in meso_trend_defaults.items():
                 config.setdefault(k, v)
 
-            alpha_scaling_factor = 4
+            meso_trend_scaling_factor = 4
 
             for key, default in [
-                ("alpha_max_horizon_bars", 3),
-                ("alpha_horizon_bars", 1),
-                ("alpha_target_smoothing_window", 8),  # Updated for 4-8h regimes
-                ("alpha_score_smoothing_window", 16),  # Updated for slightly smoother 4-8h regimes
-                ("alpha_target_vol_window", 400),  # Updated for 4-8h regimes
-                ("alpha_expectation_ema_period", 6),  # Updated for 4-8h regimes
-                ("alpha_normalization_window", 500),
-                ("alpha_vol_of_vol_window", 10),
-                ("alpha_trend_ema_fast_window", 56),  # Updated for 4-8h regimes
-                ("alpha_trend_ema_slow_window", 120),  # Updated for 4-8h regimes
-                ("alpha_trend_slope_window", 96),  # Updated for 4-8h regimes
+                ("meso_trend_max_horizon_bars", 3),
+                ("meso_trend_horizon_bars", 1),
+                ("meso_trend_target_smoothing_window", 8),  # Updated for 4-8h regimes
+                ("meso_trend_score_smoothing_window", 16),  # Updated for slightly smoother 4-8h regimes
+                ("meso_trend_target_vol_window", 400),  # Updated for 4-8h regimes
+                ("meso_trend_expectation_ema_period", 6),  # Updated for 4-8h regimes
+                ("meso_trend_normalization_window", 500),
+                ("meso_trend_vol_of_vol_window", 10),
+                ("meso_trend_trend_ema_fast_window", 56),  # Updated for 4-8h regimes
+                ("meso_trend_trend_ema_slow_window", 120),  # Updated for 4-8h regimes
+                ("meso_trend_trend_slope_window", 96),  # Updated for 4-8h regimes
             ]:
                 value = config.get(key, default)
                 try:
-                    config[key] = int(value) * alpha_scaling_factor
+                    config[key] = int(value) * meso_trend_scaling_factor
                 except Exception:
                     config[key] = value
 
@@ -200,18 +200,18 @@ class HMMMLAlphaStep(BaseStep):
                     scaled: List[int] = []
                     for p in raw:
                         try:
-                            scaled.append(int(p) * alpha_scaling_factor)
+                            scaled.append(int(p) * meso_trend_scaling_factor)
                         except Exception:
                             scaled.append(p)  # type: ignore[arg-type]
                     config[name] = scaled
                 else:
                     try:
-                        config[name] = int(raw) * alpha_scaling_factor
+                        config[name] = int(raw) * meso_trend_scaling_factor
                     except Exception:
                         config[name] = raw
 
-            _scale_periods("alpha_ewm_periods", [2, 6, 10])
-            _scale_periods("alpha_score_ewm_periods", [3, 5])
+            _scale_periods("meso_trend_ewm_periods", [2, 6, 10])
+            _scale_periods("meso_trend_score_ewm_periods", [3, 5])
 
             if not symbol or not exchange:
                 raise ValueError("Config must include 'symbol' and 'exchange'")
@@ -234,7 +234,7 @@ class HMMMLAlphaStep(BaseStep):
                 model="regime",
             )
 
-            use_internal_hmm = bool(config.get("alpha_generate_hmm_internally", True))
+            use_internal_hmm = bool(config.get("meso_trend_generate_hmm_internally", True))
 
             if use_internal_hmm:
                 labels_df, probs_df, economic_df = await self._generate_hmm_artifacts_internal(
@@ -352,14 +352,14 @@ class HMMMLAlphaStep(BaseStep):
                         "Aligned dataset became empty after light-mode filtering; check HMM and market data coverage"
                     )
 
-            if bool(config.get("alpha_enable_trend_features", True)):
+            if bool(config.get("meso_trend_enable_trend_features", True)):
                 try:
                     if "close" in aligned_df.columns:
                         price_series = aligned_df["close"].astype(float)
 
-                        fast_w = int(config.get("alpha_trend_ema_fast_window", 12))
-                        slow_w = int(config.get("alpha_trend_ema_slow_window", 26))
-                        slope_w = int(config.get("alpha_trend_slope_window", 20))
+                        fast_w = int(config.get("meso_trend_trend_ema_fast_window", 12))
+                        slow_w = int(config.get("meso_trend_trend_ema_slow_window", 26))
+                        slope_w = int(config.get("meso_trend_trend_slope_window", 20))
 
                         if fast_w > 0:
                             ema_fast = price_series.ewm(span=fast_w, adjust=False).mean()
@@ -408,18 +408,18 @@ class HMMMLAlphaStep(BaseStep):
             # ------------------------------------------------------------------
             # 4) Compute alpha labels
             # ------------------------------------------------------------------
-            alpha_df = self._compute_alpha_labels(aligned_df, config)
+            meso_trend_df = self._compute_meso_trend_labels(aligned_df, config)
 
-            if alpha_df.empty:
+            if meso_trend_df.empty:
                 raise ValueError("Alpha dataset is empty after label construction")
 
             # ------------------------------------------------------------------
             # 5) Train LightGBM alpha model and derive alpha regimes
             # ------------------------------------------------------------------
             model = None
-            alpha_scores = None
+            meso_trend_scores = None
             training_metrics: Dict[str, Any] = {}
-            training_metrics["alpha_fallback_used"] = False
+            training_metrics["meso_trend_fallback_used"] = False
             regime_stats_df: Optional[pd.DataFrame] = None
             model_path: Optional[str] = None
             regime_stats_path: Optional[str] = None
@@ -430,79 +430,79 @@ class HMMMLAlphaStep(BaseStep):
             feature_pipeline_path: Optional[str] = None
 
             try:
-                alpha_enable_hpo = bool(config.get("alpha_enable_hpo", False))
+                meso_trend_enable_hpo = bool(config.get("meso_trend_enable_hpo", False))
                 tprint_info(
-                    f" Starting alpha model training: samples={len(alpha_df)}, "
-                    f"features={len([c for c in alpha_df.select_dtypes(include=[np.number]).columns if c != 'alpha_target' and not c.startswith('alpha_forward_return_')])}, "
-                    f"target_type={config.get('alpha_target_type', 'regression')}, "
-                    f"alpha_enable_hpo={alpha_enable_hpo}"
+                    f" Starting alpha model training: samples={len(meso_trend_df)}, "
+                    f"features={len([c for c in meso_trend_df.select_dtypes(include=[np.number]).columns if c != 'meso_trend_target' and not c.startswith('meso_trend_forward_return_')])}, "
+                    f"target_type={config.get('meso_trend_target_type', 'regression')}, "
+                    f"meso_trend_enable_hpo={meso_trend_enable_hpo}"
                 )
 
-                model, alpha_scores, pred_col_name, training_metrics, feature_pipeline_artifacts = self._train_alpha_model(
-                    alpha_df,
+                model, meso_trend_scores, pred_col_name, training_metrics, feature_pipeline_artifacts = self._train_meso_trend_model(
+                    meso_trend_df,
                     config,
                     split_config=split_config,
                 )
 
                 # Mark successful model training in metrics for downstream diagnostics
-                training_metrics["alpha_model_training_failed"] = 0
+                training_metrics["meso_trend_model_training_failed"] = 0
 
                 tprint_info(
                     f" Alpha model training complete: model_type="
                     f"{training_metrics.get('model_type', 'unknown')} | "
-                    f"alpha_hpo_used={training_metrics.get('alpha_hpo_used', False)}"
+                    f"meso_trend_hpo_used={training_metrics.get('meso_trend_hpo_used', False)}"
                 )
-                if alpha_scores is not None:
-                    alpha_df[pred_col_name] = alpha_scores
+                if meso_trend_scores is not None:
+                    meso_trend_df[pred_col_name] = meso_trend_scores
                     # Derive calibrated 01 expectation score from alpha predictions
-                    # and make this the canonical alpha_score_continuous signal.
+                    # and make this the canonical meso_trend_score_continuous signal.
                     canonical_score: Optional[pd.Series] = None
                     try:
-                        target_type_local = str(config.get("alpha_target_type", "regression")).lower()
+                        target_type_local = str(config.get("meso_trend_target_type", "regression")).lower()
                         expectation_series = None
 
                         if target_type_local == "classification":
                             # Classification branch already produces calibrated probabilities
-                            expectation_series = alpha_scores.clip(0.0, 1.0)
+                            expectation_series = meso_trend_scores.clip(0.0, 1.0)
                             canonical_score = expectation_series
                         else:
                             expectation_calibration_enabled = bool(
-                                config.get("alpha_enable_expectation_calibration", True)
+                                config.get("meso_trend_enable_expectation_calibration", True)
                             )
                             positive_threshold = float(
-                                config.get("alpha_expectation_positive_threshold", 0.0)
+                                config.get("meso_trend_expectation_positive_threshold", 0.0)
                             )
                             min_samples = int(
-                                config.get("alpha_expectation_min_samples", 200)
+                                config.get("meso_trend_expectation_min_samples", 200)
                             )
 
                             if expectation_calibration_enabled:
                                 try:
                                     from sklearn.isotonic import IsotonicRegression
 
-                                    y_target = alpha_df["alpha_target"].reindex(alpha_scores.index)
+                                    y_target = meso_trend_df["meso_trend_target"].reindex(meso_trend_scores.index)
                                     base_mask = (
-                                        alpha_scores.notna()
+                                        meso_trend_scores.notna()
                                         & y_target.notna()
-                                        & np.isfinite(alpha_scores)
+                                        & np.isfinite(meso_trend_scores)
                                         & np.isfinite(y_target)
                                     )
 
                                     # Use an out-of-fold style calibration: fit isotonic only on
-                                    # the validation tail defined by alpha_train_fraction.
+                                    # the validation tail defined by meso_trend_train_fraction.
                                     n_valid = int(base_mask.sum())
                                     if n_valid >= max(min_samples, 50):
-                                        train_frac_local = float(config.get("alpha_train_fraction", 0.8))
+                                        train_frac_local = float(config.get("meso_trend_train_fraction", 0.8))
                                         train_frac_local = min(max(train_frac_local, 0.5), 0.95)
 
                                         # Chronological ordering for effective validation split
-                                        valid_index = alpha_scores.index[base_mask]
+                                        valid_index = meso_trend_scores.index[base_mask]
                                         split_idx_local = int(n_valid * train_frac_local)
                                         split_idx_local = max(min(split_idx_local, n_valid - 1), 1)
 
                                         val_index = valid_index[split_idx_local:]
                                         if len(val_index) >= max(50, min_samples // 2):
-                                            scores_val = alpha_scores.loc[val_index]
+                                            scores_val = meso_trend_scores.loc[val_index]
                                             y_val = y_target.loc[val_index]
                                             y_bin_val = (y_val > positive_threshold).astype(float)
 
@@ -523,40 +523,40 @@ class HMMMLAlphaStep(BaseStep):
                                             )
 
                                             calibrated_vals = iso.predict(
-                                                alpha_scores.to_numpy(
+                                                meso_trend_scores.to_numpy(
                                                     dtype=float,
                                                     copy=False,
                                                 )
                                             )
                                             expectation_series = pd.Series(
                                                 calibrated_vals,
-                                                index=alpha_scores.index,
-                                                name="alpha_expectation_raw_01",
+                                                index=meso_trend_scores.index,
+                                                name="meso_trend_expectation_raw_01",
                                             ).clip(0.0, 1.0)
 
-                                            training_metrics["alpha_expectation_calibration_used"] = True
+                                            training_metrics["meso_trend_expectation_calibration_used"] = True
                                             training_metrics[
-                                                "alpha_expectation_positive_threshold"
+                                                "meso_trend_expectation_positive_threshold"
                                             ] = positive_threshold
                                             training_metrics[
-                                                "alpha_expectation_calibration_method"
+                                                "meso_trend_expectation_calibration_method"
                                             ] = "isotonic_regression_binary_oof"
                                         else:
-                                            training_metrics["alpha_expectation_calibration_used"] = False
+                                            training_metrics["meso_trend_expectation_calibration_used"] = False
                                     else:
-                                        training_metrics["alpha_expectation_calibration_used"] = False
+                                        training_metrics["meso_trend_expectation_calibration_used"] = False
                                 except ImportError:
-                                    training_metrics["alpha_expectation_calibration_used"] = False
+                                    training_metrics["meso_trend_expectation_calibration_used"] = False
                                 except Exception as exp_calib_exc:
-                                    training_metrics["alpha_expectation_calibration_used"] = False
-                                    training_metrics["alpha_expectation_calibration_error"] = str(
+                                    training_metrics["meso_trend_expectation_calibration_used"] = False
+                                    training_metrics["meso_trend_expectation_calibration_error"] = str(
                                         exp_calib_exc
                                     )
 
                             if expectation_series is None:
-                                # Monotonic fallback: logistic mapping of centered alpha_scores
+                                # Monotonic fallback: logistic mapping of centered meso_trend_scores
                                 try:
-                                    scores_clean = alpha_scores.replace(
+                                    scores_clean = meso_trend_scores.replace(
                                         [np.inf, -np.inf], np.nan
                                     ).dropna()
                                     if not scores_clean.empty:
@@ -568,7 +568,7 @@ class HMMMLAlphaStep(BaseStep):
                                         scale = iqr if iqr > 1e-8 else max(
                                             float(scores_clean.std()), 1e-8
                                         )
-                                        z = (alpha_scores - median_val) / scale
+                                        z = (meso_trend_scores - median_val) / scale
                                         expectation_series = 1.0 / (1.0 + np.exp(-z))
                                         expectation_series = expectation_series.clip(
                                             0.0, 1.0
@@ -577,18 +577,18 @@ class HMMMLAlphaStep(BaseStep):
                                     expectation_series = None
 
                             if expectation_series is not None:
-                                alpha_df["alpha_expectation_raw_01"] = expectation_series
+                                meso_trend_df["meso_trend_expectation_raw_01"] = expectation_series
                                 canonical_score = expectation_series
 
                                 # EMA smoothing on expectation score
                                 try:
                                     ema_weight_raw = config.get(
-                                        "alpha_expectation_ema_weight_recent",
+                                        "meso_trend_expectation_ema_weight_recent",
                                         None,
                                     )
                                     ema_period = int(
                                         config.get(
-                                            "alpha_expectation_ema_period",
+                                            "meso_trend_expectation_ema_period",
                                             4,
                                         )
                                     )
@@ -603,73 +603,73 @@ class HMMMLAlphaStep(BaseStep):
                                         alpha=ema_weight,
                                         adjust=False,
                                     ).mean()
-                                    alpha_df[
-                                        "alpha_expectation_ema_01"
+                                    meso_trend_df[
+                                        "meso_trend_expectation_ema_01"
                                     ] = expectation_ema
                                     canonical_score = expectation_ema
                                     training_metrics[
-                                        "alpha_expectation_ema_weight_recent"
+                                        "meso_trend_expectation_ema_weight_recent"
                                     ] = ema_weight
                                     training_metrics[
-                                        "alpha_expectation_ema_period"
+                                        "meso_trend_expectation_ema_period"
                                     ] = ema_period
                                 except Exception as ema_exc:
-                                    training_metrics["alpha_expectation_ema_error"] = str(
+                                    training_metrics["meso_trend_expectation_ema_error"] = str(
                                         ema_exc
                                     )
 
                     except Exception as expectation_exc:
-                        training_metrics["alpha_expectation_error"] = str(
+                        training_metrics["meso_trend_expectation_error"] = str(
                             expectation_exc
                         )
 
-                    # Finalize canonical alpha_score_continuous: prefer calibrated expectation,
-                    # fall back to the underlying alpha_scores if calibration was unavailable.
+                    # Finalize canonical meso_trend_score_continuous: prefer calibrated expectation,
+                    # fall back to the underlying meso_trend_scores if calibration was unavailable.
                     if canonical_score is not None:
-                        alpha_df["alpha_score_continuous"] = canonical_score
+                        meso_trend_df["meso_trend_score_continuous"] = canonical_score
                     else:
-                        alpha_df["alpha_score_continuous"] = alpha_scores
+                        meso_trend_df["meso_trend_score_continuous"] = meso_trend_scores
 
-                    # Add EWM-smoothed variants of alpha_score_continuous as additional features
+                    # Add EWM-smoothed variants of meso_trend_score_continuous as additional features
                     try:
                         score_base = (
-                            alpha_df["alpha_score_continuous"]
+                            meso_trend_df["meso_trend_score_continuous"]
                             .astype(float)
                             .replace([np.inf, -np.inf], np.nan)
                         )
-                        ewm_periods_cfg = config.get("alpha_score_ewm_periods", [3, 5])
+                        ewm_periods_cfg = config.get("meso_trend_score_ewm_periods", [3, 5])
                         try:
                             ewm_periods = [int(p) for p in ewm_periods_cfg if int(p) > 0]
                         except Exception:
                             ewm_periods = [3, 5]
 
                         for period in ewm_periods:
-                            col_name = f"alpha_score_continuous_ewm_{period}"
-                            alpha_df[col_name] = score_base.ewm(
+                            col_name = f"meso_trend_score_continuous_ewm_{period}"
+                            meso_trend_df[col_name] = score_base.ewm(
                                 span=period,
                                 adjust=False,
                             ).mean()
                     except Exception:
                         pass
 
-                    alpha_df, regime_stats_df, regime_col_name = self._assign_alpha_regimes(
-                        alpha_df,
-                        alpha_df["alpha_score_continuous"],
+                    meso_trend_df, regime_stats_df, regime_col_name = self._assign_meso_trend_regimes(
+                        meso_trend_df,
+                        meso_trend_df["meso_trend_score_continuous"],
                         config,
                     )
 
                     # Record whether primary regime assignment produced a usable regime column
-                    if regime_col_name is not None and regime_col_name in alpha_df.columns:
+                    if regime_col_name is not None and regime_col_name in meso_trend_df.columns:
                         try:
                             n_regimes_primary = int(
-                                pd.Series(alpha_df[regime_col_name].dropna().astype(int)).nunique()
+                                pd.Series(meso_trend_df[regime_col_name].dropna().astype(int)).nunique()
                             )
                         except Exception:
                             n_regimes_primary = -1
-                        training_metrics["alpha_primary_regimes_success"] = 1
-                        training_metrics["alpha_primary_regimes_n_regimes"] = n_regimes_primary
+                        training_metrics["meso_trend_primary_regimes_success"] = 1
+                        training_metrics["meso_trend_primary_regimes_n_regimes"] = n_regimes_primary
                     else:
-                        training_metrics["alpha_primary_regimes_success"] = 0
+                        training_metrics["meso_trend_primary_regimes_success"] = 0
             except ImportError as lgb_err:
                 tprint_warning(
                     f"LightGBM not available; skipping alpha model training: {lgb_err}"
@@ -678,13 +678,13 @@ class HMMMLAlphaStep(BaseStep):
                 tprint_warning(
                     f"Alpha model training failed; continuing with labels only: {model_exc}"
                 )
-                training_metrics["alpha_model_training_failed"] = 1
-                training_metrics["alpha_model_training_error"] = str(model_exc)
+                training_metrics["meso_trend_model_training_failed"] = 1
+                training_metrics["meso_trend_model_training_error"] = str(model_exc)
 
             # Only trigger fallback if we genuinely have no regime column.
-            # This avoids marking alpha_fallback_used=True when primary
+            # This avoids marking meso_trend_fallback_used=True when primary
             # regime assignment has already succeeded.
-            if regime_col_name is None or regime_col_name not in alpha_df.columns:
+            if regime_col_name is None or regime_col_name not in meso_trend_df.columns:
                 raise RuntimeError(
                     "Alpha regime assignment failed: no regime column produced from primary "
                     "alpha model / score. Fallback to forward returns has been disabled to "
@@ -692,12 +692,12 @@ class HMMMLAlphaStep(BaseStep):
                 )
 
             # ------------------------------------------------------------------
-            # 5b) Diagnostics for alpha_score_continuous distribution & economics
+            # 5b) Diagnostics for meso_trend_score_continuous distribution & economics
             # ------------------------------------------------------------------
             try:
-                if "alpha_score_continuous" in alpha_df.columns:
+                if "meso_trend_score_continuous" in meso_trend_df.columns:
                     score_series = (
-                        alpha_df["alpha_score_continuous"]
+                        meso_trend_df["meso_trend_score_continuous"]
                         .astype(float)
                         .replace([np.inf, -np.inf], np.nan)
                         .dropna()
@@ -715,13 +715,13 @@ class HMMMLAlphaStep(BaseStep):
                             "q95": float(score_series.quantile(0.95)),
                             "n": int(score_series.shape[0]),
                         }
-                        training_metrics["alpha_score_continuous_distribution"] = dist
+                        training_metrics["meso_trend_score_continuous_distribution"] = dist
 
                         # Economic deciles on 1h forward return
-                        fwd_col = "alpha_forward_return_1h" if "alpha_forward_return_1h" in alpha_df.columns else None
+                        fwd_col = "meso_trend_forward_return_1h" if "meso_trend_forward_return_1h" in meso_trend_df.columns else None
                         if fwd_col is not None:
                             fwd_ret = (
-                                alpha_df.loc[score_series.index, fwd_col]
+                                meso_trend_df.loc[score_series.index, fwd_col]
                                 .astype(float)
                                 .replace([np.inf, -np.inf], np.nan)
                                 .dropna()
@@ -755,7 +755,7 @@ class HMMMLAlphaStep(BaseStep):
                                         )
                                     if decile_stats:
                                         training_metrics[
-                                            "alpha_score_decile_forward_returns"
+                                            "meso_trend_score_decile_forward_returns"
                                         ] = decile_stats
                                 except Exception:
                                     # Decile diagnostics are best-effort only
@@ -770,11 +770,11 @@ class HMMMLAlphaStep(BaseStep):
             regime_thresholds: Optional[Dict[str, Any]] = None
             regime_thresholds_path: Optional[str] = None
 
-            if alpha_scores is not None and regime_col_name is not None and regime_col_name in alpha_df.columns:
+            if meso_trend_scores is not None and regime_col_name is not None and regime_col_name in meso_trend_df.columns:
                 try:
                     regime_thresholds = self._extract_and_save_regime_thresholds(
-                        alpha_scores=alpha_scores,
-                        regime_labels=alpha_df[regime_col_name],
+                        meso_trend_scores=meso_trend_scores,
+                        regime_labels=meso_trend_df[regime_col_name],
                         regime_col_name=regime_col_name,
                         symbol=symbol,
                         config=config,
@@ -803,7 +803,7 @@ class HMMMLAlphaStep(BaseStep):
 
                             regime_thresholds_path = self._save_artifact(
                                 data=regime_thresholds_for_save,
-                                artifact_name="hmm_alpha_regime_thresholds_15m",
+                                artifact_name="hmm_meso_trend_regime_thresholds_15m",
                                 artifact_type="model",
                                 data_category="config",
                                 metadata={
@@ -832,25 +832,25 @@ class HMMMLAlphaStep(BaseStep):
                 exchange=exchange,
                 timeframe=regime_timeframe,
                 direction=direction,
-                model="regime_alpha",
+                model="regime_meso_trend",
             )
 
             # Run unified cluster quality assessment on alpha regimes (if any)
             try:
-                alpha_quality_metrics, alpha_quality_path = self._assess_alpha_regime_quality(
-                    alpha_df=alpha_df,
+                alpha_quality_metrics, alpha_quality_path = self._assess_meso_trend_regime_quality(
+                    meso_trend_df=meso_trend_df,
                     regime_col=regime_col_name,
                     config=config,
                 )
             except Exception as quality_exc:
                 tprint_warning(f"Alpha regime quality assessment failed: {quality_exc}")
 
-            alpha_to_save = alpha_df.reset_index().rename(
-                columns={alpha_df.index.name or "index": "timestamp"}
+            meso_trend_to_save = meso_trend_df.reset_index().rename(
+                columns={meso_trend_df.index.name or "index": "timestamp"}
             )
 
             tprint_info(
-                f" Saving alpha training dataset with shape {alpha_to_save.shape} "
+                f" Saving alpha training dataset with shape {meso_trend_to_save.shape} "
                 f"to versioned HDF5 store"
             )
             # Build metadata with temporal split information
@@ -872,8 +872,8 @@ class HMMMLAlphaStep(BaseStep):
                 metadata["burnin_end"] = str(split_config.burnin.effective_end)
 
             training_data_path = self._save_artifact(
-                data=alpha_to_save,
-                artifact_name="hmm_alpha_training_data_15m",
+                data=meso_trend_to_save,
+                artifact_name="hmm_meso_trend_training_data_15m",
                 artifact_type="data",
                 metadata=metadata,
             )
@@ -897,7 +897,7 @@ class HMMMLAlphaStep(BaseStep):
 
                     model_path = self._save_artifact(
                         data=model,
-                        artifact_name="hmm_alpha_model_15m",
+                        artifact_name="hmm_meso_trend_model_15m",
                         artifact_type="model",
                         metadata=model_metadata,
                     )
@@ -909,7 +909,7 @@ class HMMMLAlphaStep(BaseStep):
                 try:
                     feature_pipeline_path = self._save_artifact(
                         data=feature_pipeline_artifacts,
-                        artifact_name="hmm_alpha_feature_pipeline_15m",
+                        artifact_name="hmm_meso_trend_feature_pipeline_15m",
                         artifact_type="model",
                         metadata={
                             "symbol": symbol,
@@ -927,7 +927,7 @@ class HMMMLAlphaStep(BaseStep):
                     regime_stats_to_save = regime_stats_df.reset_index()
                     regime_stats_path = self._save_artifact(
                         data=regime_stats_to_save,
-                        artifact_name="hmm_alpha_regime_stats_15m",
+                        artifact_name="hmm_meso_trend_regime_stats_15m",
                         artifact_type="data",
                         metadata={
                             "symbol": symbol,
@@ -943,18 +943,18 @@ class HMMMLAlphaStep(BaseStep):
             # ------------------------------------------------------------------
             # Generate comprehensive quality report if enabled
             # ------------------------------------------------------------------
-            enable_quality_report = bool(config.get("alpha_enable_quality_report", True))
+            enable_quality_report = bool(config.get("meso_trend_enable_quality_report", True))
             if not enable_quality_report:
                 tprint_info(
-                    "alpha_enable_quality_report is False in config; "
+                    "meso_trend_enable_quality_report is False in config; "
                     "overriding to True for alpha regime diagnostics"
                 )
                 enable_quality_report = True
 
             if enable_quality_report:
                 try:
-                    report_result = self._generate_hmm_alpha_quality_report(
-                        alpha_df=alpha_df,
+                    report_result = self._generate_hmm_meso_trend_quality_report(
+                        meso_trend_df=meso_trend_df,
                         regime_col=regime_col_name,
                         symbol=symbol,
                         exchange=exchange,
@@ -971,7 +971,7 @@ class HMMMLAlphaStep(BaseStep):
             execution_time = time.time() - start_time
             tprint_info(
                 f" {self.step_name} completed in {execution_time:.2f}s "
-                f"with {len(alpha_df)} samples"
+                f"with {len(meso_trend_df)} samples"
             )
 
             result: Dict[str, Any] = {
@@ -979,7 +979,7 @@ class HMMMLAlphaStep(BaseStep):
                 "symbol": symbol,
                 "exchange": exchange,
                 "timeframe": regime_timeframe,
-                "n_samples": int(len(alpha_df)),
+                "n_samples": int(len(meso_trend_df)),
                 "training_data_path": training_data_path,
                 "model_path": model_path,
                 "training_metrics": training_metrics,
@@ -991,7 +991,7 @@ class HMMMLAlphaStep(BaseStep):
             tprint_error(f" {self.step_name} failed: {exc}")
             return {"success": False, "error": str(exc)}
 
-    def _compute_alpha_labels(
+    def _compute_meso_trend_labels(
         self,
         aligned_df: pd.DataFrame,
         config: Dict[str, Any],
@@ -1006,8 +1006,8 @@ class HMMMLAlphaStep(BaseStep):
             - Use the sign of the 1h forward return.
         """
 
-        return_type = str(config.get("alpha_return_type", "log")).lower()
-        target_type = str(config.get("alpha_target_type", "regression")).lower()
+        return_type = str(config.get("meso_trend_return_type", "log")).lower()
+        target_type = str(config.get("meso_trend_target_type", "regression")).lower()
 
         df = aligned_df.copy()
         if "close" not in df.columns:
@@ -1020,16 +1020,16 @@ class HMMMLAlphaStep(BaseStep):
             fwd_ret_1h = close.shift(-4) / close - 1.0
         else:
             fwd_ret_1h = np.log(close.shift(-4) / close)
-        df["alpha_forward_return_1h"] = fwd_ret_1h
+        df["meso_trend_forward_return_1h"] = fwd_ret_1h
 
         # This prevents extreme events (flash crashes, +50% bars) from dominating
         # the Loss Function (MSE) of LightGBM/XGBoost models.
-        winsorize_enabled = config.get("alpha_winsorize_targets", True)
-        winsorize_lower = config.get("alpha_winsorize_lower_quantile", 0.01)
-        winsorize_upper = config.get("alpha_winsorize_upper_quantile", 0.99)
+        winsorize_enabled = config.get("meso_trend_winsorize_targets", True)
+        winsorize_lower = config.get("meso_trend_winsorize_lower_quantile", 0.01)
+        winsorize_upper = config.get("meso_trend_winsorize_upper_quantile", 0.99)
 
         # Build forward-return columns for multiple horizons
-        max_h = int(config.get("alpha_max_horizon_bars", 3))
+        max_h = int(config.get("meso_trend_max_horizon_bars", 3))
         max_h = max(max_h, 1)
         fwd_cols: Dict[int, str] = {}
 
@@ -1038,7 +1038,7 @@ class HMMMLAlphaStep(BaseStep):
                 fwd_ret = close.shift(-4 * h) / close - 1.0
             else:
                 fwd_ret = np.log(close.shift(-4 * h) / close)
-            col_name = f"alpha_forward_return_{h}h"
+            col_name = f"meso_trend_forward_return_{h}h"
             df[col_name] = fwd_ret
             fwd_cols[h] = col_name
 
@@ -1075,7 +1075,7 @@ class HMMMLAlphaStep(BaseStep):
             else:
                 base_returns = np.log(close).diff()
 
-            vol_window_cfg = int(config.get("alpha_target_vol_window", 320))
+            vol_window_cfg = int(config.get("meso_trend_target_vol_window", 320))
             vol_window_cfg = max(vol_window_cfg, 1)
             n_returns = int(base_returns.shape[0])
 
@@ -1089,60 +1089,60 @@ class HMMMLAlphaStep(BaseStep):
                     adaptive_base = max(n_returns // 3, 10)
                     effective_window = max(10, min(vol_window_cfg, adaptive_base))
                     tprint_warning(
-                        f"alpha_target_vol_window={vol_window_cfg} exceeds available samples ({n_returns}); using adaptive window={effective_window}"
+                        f"meso_trend_target_vol_window={vol_window_cfg} exceeds available samples ({n_returns}); using adaptive window={effective_window}"
                     )
                 else:
                     effective_window = vol_window_cfg
 
                 realized_vol = base_returns.rolling(effective_window).std()
 
-            df["alpha_target_raw"] = multi_target
-            df["alpha_target_vol"] = realized_vol
+            df["meso_trend_target_raw"] = multi_target
+            df["meso_trend_target_vol"] = realized_vol
 
-            alpha_target = multi_target / (realized_vol + 1e-8)
+            meso_trend_target = multi_target / (realized_vol + 1e-8)
 
             # Optional robust clipping on the normalized target itself
             target_winsorize_enabled = bool(
-                config.get("alpha_target_winsorize_enabled", True)
+                config.get("meso_trend_target_winsorize_enabled", True)
             )
             target_q_lower = float(
-                config.get("alpha_target_winsorize_lower_quantile", 0.01)
+                config.get("meso_trend_target_winsorize_lower_quantile", 0.01)
             )
             target_q_upper = float(
-                config.get("alpha_target_winsorize_upper_quantile", 0.99)
+                config.get("meso_trend_target_winsorize_upper_quantile", 0.99)
             )
 
             if target_winsorize_enabled:
                 try:
                     tgt_clean = (
-                        pd.Series(alpha_target)
+                        pd.Series(meso_trend_target)
                         .replace([np.inf, -np.inf], np.nan)
                         .dropna()
                     )
                     if not tgt_clean.empty:
                         t_low = float(tgt_clean.quantile(target_q_lower))
                         t_high = float(tgt_clean.quantile(target_q_upper))
-                        alpha_target = alpha_target.clip(t_low, t_high)
+                        meso_trend_target = meso_trend_target.clip(t_low, t_high)
                         tprint_info(
-                            f"ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ§ Winsorizing alpha_target at {target_q_lower:.1%}/{target_q_upper:.1%}: "
+                            f"ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ§ Winsorizing meso_trend_target at {target_q_lower:.1%}/{target_q_upper:.1%}: "
                             f"[{t_low:.6f}, {t_high:.6f}]"
                         )
                 except Exception as tgt_wins_exc:
                     tprint_warning(
-                        f"ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ¸ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Failed to winsorize alpha_target (vol-normalized): {tgt_wins_exc}"
+                        f"ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ¸ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Failed to winsorize meso_trend_target (vol-normalized): {tgt_wins_exc}"
                     )
 
-            df["alpha_target"] = alpha_target
+            df["meso_trend_target"] = meso_trend_target
             effective_horizon = f"1-{max_h}h_mean_vol_norm"
         else:
             # Classification: sign of 1h forward return
             target = (fwd_ret_1h > 0).astype(float)
             target = target.where(~fwd_ret_1h.isna())
-            df["alpha_target"] = target
+            df["meso_trend_target"] = target
             effective_horizon = "1h_classification"
 
         # Drop rows where we cannot compute all required forward returns
-        required_cols = ["alpha_target"] + [fwd_cols[h] for h in sorted(fwd_cols.keys())]
+        required_cols = ["meso_trend_target"] + [fwd_cols[h] for h in sorted(fwd_cols.keys())]
         before = len(df)
         df = df.dropna(subset=required_cols)
         dropped = before - len(df)
@@ -1288,8 +1288,8 @@ class HMMMLAlphaStep(BaseStep):
             "execution_mode": str(config.get("execution_mode", "full")).lower(),
         }
 
-        reuse_hpo_best = bool(config.get("alpha_hmm_reuse_best_params", True))
-        force_hpo = bool(config.get("alpha_hmm_force_hpo", False))
+        reuse_hpo_best = bool(config.get("meso_trend_hmm_reuse_best_params", True))
+        force_hpo = bool(config.get("meso_trend_hmm_force_hpo", False))
         if bool(config.get("enable_hpo", False)):
             force_hpo = True
 
@@ -1302,15 +1302,15 @@ class HMMMLAlphaStep(BaseStep):
 
         if "max_samples_for_hpo" not in rolling_params:
             rolling_params["max_samples_for_hpo"] = int(
-                config.get("alpha_hmm_max_samples_for_hpo", 8000)
+                config.get("meso_trend_hmm_max_samples_for_hpo", 8000)
             )
         if "hpo_sample_fraction" not in rolling_params:
             rolling_params["hpo_sample_fraction"] = float(
-                config.get("alpha_hmm_hpo_sample_fraction", 0.3)
+                config.get("meso_trend_hmm_hpo_sample_fraction", 0.3)
             )
         if "hpo_stratified_sampling" not in rolling_params:
             rolling_params["hpo_stratified_sampling"] = bool(
-                config.get("alpha_hmm_hpo_stratified_sampling", True)
+                config.get("meso_trend_hmm_hpo_stratified_sampling", True)
             )
 
         if rolling_params:
@@ -1408,9 +1408,9 @@ class HMMMLAlphaStep(BaseStep):
 
         return aligned
 
-    def _train_alpha_model(
+    def _train_meso_trend_model(
         self,
-        alpha_df: pd.DataFrame,
+        meso_trend_df: pd.DataFrame,
         config: Dict[str, Any],
         split_config: Optional[TemporalSplitConfig] = None,
     ) -> Tuple[Any, Optional[pd.Series], str, Dict[str, Any], Dict[str, Any]]:
@@ -1445,7 +1445,7 @@ class HMMMLAlphaStep(BaseStep):
             except TypeError:
                 return float(np.sqrt(mean_squared_error(y_true, y_pred)))  # type: ignore[call-arg]
 
-        def _alpha_hpo_objective(
+        def _meso_trend_hpo_objective(
             params: Dict[str, Any],
             X_train: np.ndarray,
             y_train: np.ndarray,
@@ -1465,7 +1465,7 @@ class HMMMLAlphaStep(BaseStep):
 
             try:
                 model.set_params(**params)
-                es_rounds = int(config.get("alpha_early_stopping_rounds", 0))
+                es_rounds = int(config.get("meso_trend_early_stopping_rounds", 0))
 
                 if es_rounds > 0 and X_val is not None and y_val is not None and X_val.shape[0] > 0:
                     try:
@@ -1536,18 +1536,18 @@ class HMMMLAlphaStep(BaseStep):
             # Model complexity from num_leaves (higher -> larger penalty)
             try:
                 num_leaves_val = float(
-                    params.get("num_leaves", config.get("alpha_num_leaves", 64))
+                    params.get("num_leaves", config.get("meso_trend_num_leaves", 64))
                 )
             except Exception:
-                num_leaves_val = float(config.get("alpha_num_leaves", 64))
+                num_leaves_val = float(config.get("meso_trend_num_leaves", 64))
             complexity_penalty = float(np.log1p(max(num_leaves_val, 1.0)))
 
             # Weights are configurable via config with sensible defaults
-            w_ic = float(config.get("alpha_hpo_weight_ic_pearson", 1.0))
-            w_ic_spearman = float(config.get("alpha_hpo_weight_ic_spearman", 0.5))
-            w_r2 = float(config.get("alpha_hpo_weight_r2", 0.3))
-            w_smooth = float(config.get("alpha_hpo_weight_smoothness", 0.1))
-            w_complex = float(config.get("alpha_hpo_weight_complexity", 0.05))
+            w_ic = float(config.get("meso_trend_hpo_weight_ic_pearson", 1.0))
+            w_ic_spearman = float(config.get("meso_trend_hpo_weight_ic_spearman", 0.5))
+            w_r2 = float(config.get("meso_trend_hpo_weight_r2", 0.3))
+            w_smooth = float(config.get("meso_trend_hpo_weight_smoothness", 0.1))
+            w_complex = float(config.get("meso_trend_hpo_weight_complexity", 0.05))
 
             score = (
                 w_ic * ic_pearson
@@ -1560,24 +1560,24 @@ class HMMMLAlphaStep(BaseStep):
             return float(score)
 
         # Default to regression model for continuous alpha
-        target_type = str(config.get("alpha_target_type", "regression")).lower()
-        horizon = int(config.get("alpha_horizon_bars", 1))
+        target_type = str(config.get("meso_trend_target_type", "regression")).lower()
+        horizon = int(config.get("meso_trend_horizon_bars", 1))
 
-        df = alpha_df.copy()
-        if "alpha_target" not in df.columns:
-            raise ValueError("alpha_target column not found in dataset")
+        df = meso_trend_df.copy()
+        if "meso_trend_target" not in df.columns:
+            raise ValueError("meso_trend_target column not found in dataset")
 
-        df = df.dropna(subset=["alpha_target"])
+        df = df.dropna(subset=["meso_trend_target"])
         if df.empty:
             raise ValueError("No valid samples for alpha model training after dropping NaNs")
 
-        y = df["alpha_target"]
+        y = df["meso_trend_target"]
 
         numeric_df = df.select_dtypes(include=[np.number])
         feature_cols = [
             col
             for col in numeric_df.columns
-            if col != "alpha_target" and not col.startswith("alpha_forward_return_")
+            if col != "meso_trend_target" and not col.startswith("meso_trend_forward_return_")
         ]
 
         # Treat regime probability channels as model outputs, not training inputs
@@ -1597,7 +1597,7 @@ class HMMMLAlphaStep(BaseStep):
 
         X = numeric_df[feature_cols]
 
-        min_samples = int(config.get("alpha_min_samples", 200))
+        min_samples = int(config.get("meso_trend_min_samples", 200))
         if len(X) < max(min_samples, 20):
             raise ValueError(
                 f"Insufficient samples for alpha model training: {len(X)} < {min_samples}"
@@ -1622,11 +1622,11 @@ class HMMMLAlphaStep(BaseStep):
 
             if len(X_train_raw) == 0 or len(X_val_raw) == 0:
                 tprint_warning(
-                    "Temporal split config produced empty train/val segments for alpha_df; "
+                    "Temporal split config produced empty train/val segments for meso_trend_df; "
                     "falling back to percentage-based split on available alpha samples"
                 )
                 split_config = None
-                train_frac = float(config.get("alpha_train_fraction", 0.8))
+                train_frac = float(config.get("meso_trend_train_fraction", 0.8))
                 train_frac = min(max(train_frac, 0.5), 0.95)
                 split_idx = int(len(X) * train_frac)
                 split_idx = max(min(split_idx, len(X) - 1), 1)
@@ -1638,7 +1638,7 @@ class HMMMLAlphaStep(BaseStep):
         else:
             # Fallback to percentage-based split if no split_config provided
             tprint_warning("No split_config provided, using percentage-based split (legacy fallback)")
-            train_frac = float(config.get("alpha_train_fraction", 0.8))
+            train_frac = float(config.get("meso_trend_train_fraction", 0.8))
             train_frac = min(max(train_frac, 0.5), 0.95)
             split_idx = int(len(X) * train_frac)
             split_idx = max(min(split_idx, len(X) - 1), 1)
@@ -1651,15 +1651,15 @@ class HMMMLAlphaStep(BaseStep):
         # Apply rolling window normalization to features to prevent look-ahead bias.
         # Use adaptive routing so spatial distance/level features get ATR normalization,
         # pure volume series can use log1p+zscore, and the rest keep winsorized z-score.
-        window_size = int(config.get("alpha_normalization_window", 500))
+        window_size = int(config.get("meso_trend_normalization_window", 500))
 
-        # Use OHLC from alpha_df when available for ATR calculation
-        high = alpha_df["high"] if "high" in alpha_df.columns else None
-        low = alpha_df["low"] if "low" in alpha_df.columns else None
-        close = alpha_df["close"] if "close" in alpha_df.columns else None
+        # Use OHLC from meso_trend_df when available for ATR calculation
+        high = meso_trend_df["high"] if "high" in meso_trend_df.columns else None
+        low = meso_trend_df["low"] if "low" in meso_trend_df.columns else None
+        close = meso_trend_df["close"] if "close" in meso_trend_df.columns else None
 
         # Prepare robust-scaling configuration up front so it is always defined
-        outlier_threshold = float(config.get("alpha_outlier_threshold", 3.0))
+        outlier_threshold = float(config.get("meso_trend_outlier_threshold", 3.0))
         normalizer_config: Dict[str, Any] = {
             "default_strategy": "robust",
             "auto_select": False,
@@ -1705,8 +1705,8 @@ class HMMMLAlphaStep(BaseStep):
             X_scaled_full = scaler.transform(X)
 
         # Optionally apply EWMA temporal smoothing on the scaled space
-        use_ewm_features = bool(config.get("alpha_use_ewm_features", True))
-        ewma_periods_cfg = config.get("alpha_ewm_periods", [2, 6, 10])
+        use_ewm_features = bool(config.get("meso_trend_use_ewm_features", True))
+        ewma_periods_cfg = config.get("meso_trend_ewm_periods", [2, 6, 10])
         try:
             ewma_periods = [int(p) for p in ewma_periods_cfg if int(p) > 0]
         except Exception:
@@ -1824,9 +1824,9 @@ class HMMMLAlphaStep(BaseStep):
         # and also enriched throughout the training pipeline.
         training_metrics: Dict[str, Any] = {}
         training_metrics["scaling_strategy"] = scaling_strategy
-        training_metrics["alpha_outlier_threshold"] = outlier_threshold
-        training_metrics["alpha_use_ewm_features"] = use_ewm_features
-        training_metrics["alpha_ewm_periods"] = ewma_periods
+        training_metrics["meso_trend_outlier_threshold"] = outlier_threshold
+        training_metrics["meso_trend_use_ewm_features"] = use_ewm_features
+        training_metrics["meso_trend_ewm_periods"] = ewma_periods
 
         # Prepare feature pipeline artifacts for persistence (feature names + scaler state)
         feature_pipeline_artifacts: Dict[str, Any] = {
@@ -1837,7 +1837,7 @@ class HMMMLAlphaStep(BaseStep):
 
         # Optional hierarchical HPO for LightGBM hyperparameters (regression only, config-gated)
         best_hpo_params: Dict[str, Any] = {}
-        enable_hpo = bool(config.get("alpha_enable_hpo", False)) and target_type == "regression"
+        enable_hpo = bool(config.get("meso_trend_enable_hpo", False)) and target_type == "regression"
         if enable_hpo:
             try:
                 hpo_param_groups = [
@@ -1854,20 +1854,20 @@ class HMMMLAlphaStep(BaseStep):
                 ]
 
                 base_model_for_hpo = lgb.LGBMRegressor(
-                    n_estimators=int(config.get("alpha_n_estimators", 300)),
-                    random_state=int(config.get("alpha_random_state", 42)),
+                    n_estimators=int(config.get("meso_trend_n_estimators", 300)),
+                    random_state=int(config.get("meso_trend_random_state", 42)),
                 )
 
                 optimizer = HierarchicalParameterOptimizer(
                     param_groups=hpo_param_groups,
-                    objective_func=_alpha_hpo_objective,
+                    objective_func=_meso_trend_hpo_objective,
                     stages=[OptimizationStage.COARSE_GRID, OptimizationStage.TPE],
-                    cv_folds=int(config.get("alpha_hpo_cv_folds", 3)),
+                    cv_folds=int(config.get("meso_trend_hpo_cv_folds", 3)),
                     scoring_metric="r2",
                     direction="maximize",
                     n_rounds=1,
                     enable_final_refinement=False,
-                    final_refinement_trials=int(config.get("alpha_hpo_final_trials", 20)),
+                    final_refinement_trials=int(config.get("meso_trend_hpo_final_trials", 20)),
                     verbose=True,
                     use_custom_balanced_score=False,
                 )
@@ -1886,24 +1886,24 @@ class HMMMLAlphaStep(BaseStep):
                 )
 
                 best_hpo_params = hpo_result.best_params or {}
-                training_metrics["alpha_hpo_best_score"] = float(hpo_result.best_score)
-                training_metrics["alpha_hpo_best_params"] = best_hpo_params
-                training_metrics["alpha_hpo_used"] = True
+                training_metrics["meso_trend_hpo_best_score"] = float(hpo_result.best_score)
+                training_metrics["meso_trend_hpo_best_params"] = best_hpo_params
+                training_metrics["meso_trend_hpo_used"] = True
             except Exception as hpo_exc:
                 tprint_warning(f"Alpha HPO failed; proceeding with default hyperparameters: {hpo_exc}")
                 best_hpo_params = {}
-                training_metrics["alpha_hpo_used"] = False
+                training_metrics["meso_trend_hpo_used"] = False
         else:
-            training_metrics["alpha_hpo_used"] = False
+            training_metrics["meso_trend_hpo_used"] = False
 
         if target_type == "regression":
             base_params: Dict[str, Any] = {
-                "n_estimators": int(config.get("alpha_n_estimators", 300)),
-                "learning_rate": float(config.get("alpha_learning_rate", 0.05)),
-                "num_leaves": int(config.get("alpha_num_leaves", 64)),
-                "subsample": float(config.get("alpha_subsample", 0.8)),
-                "colsample_bytree": float(config.get("alpha_colsample_bytree", 0.8)),
-                "random_state": int(config.get("alpha_random_state", 42)),
+                "n_estimators": int(config.get("meso_trend_n_estimators", 300)),
+                "learning_rate": float(config.get("meso_trend_learning_rate", 0.05)),
+                "num_leaves": int(config.get("meso_trend_num_leaves", 64)),
+                "subsample": float(config.get("meso_trend_subsample", 0.8)),
+                "colsample_bytree": float(config.get("meso_trend_colsample_bytree", 0.8)),
+                "random_state": int(config.get("meso_trend_random_state", 42)),
             }
 
             if best_hpo_params:
@@ -1912,7 +1912,7 @@ class HMMMLAlphaStep(BaseStep):
                         base_params[key] = value
 
             model = lgb.LGBMRegressor(**base_params)
-            es_rounds = int(config.get("alpha_early_stopping_rounds", 0))
+            es_rounds = int(config.get("meso_trend_early_stopping_rounds", 0))
             if es_rounds > 0 and len(X_val) > 0:
                 try:
                     model.fit(
@@ -1936,7 +1936,7 @@ class HMMMLAlphaStep(BaseStep):
                 if rmse_val is not None:
                     training_metrics["train_rmse"] = rmse_val
 
-            regression_calibration_enabled = bool(config.get("alpha_enable_regression_calibration", True))
+            regression_calibration_enabled = bool(config.get("meso_trend_enable_regression_calibration", True))
             training_metrics["regression_calibration_enabled"] = regression_calibration_enabled
 
             calibrator = None
@@ -1982,7 +1982,7 @@ class HMMMLAlphaStep(BaseStep):
                         tprint_warning(f"ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ¸ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Regression calibration failed: {calib_err}")
                 elif not regression_calibration_enabled:
                     training_metrics["regression_calibration_used"] = False
-                    tprint_info("ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂÄÂÄšÄÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ¸ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ  Regression calibration disabled (alpha_enable_regression_calibration=False)")
+                    tprint_info("ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂÄÂÄšÄÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ¸ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ  Regression calibration disabled (meso_trend_enable_regression_calibration=False)")
                 elif IsotonicRegression is None:
                     training_metrics["regression_calibration_used"] = False
                     tprint_warning("ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ¸ĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Regression calibration unavailable (IsotonicRegression not imported)")
@@ -1993,18 +1993,18 @@ class HMMMLAlphaStep(BaseStep):
             else:
                 full_scores = model.predict(X_scaled_full)
 
-            scores = pd.Series(full_scores, index=df.index, name="alpha_pred_return")
-            pred_col_name = "alpha_pred_return"
+            scores = pd.Series(full_scores, index=df.index, name="meso_trend_pred_return")
+            pred_col_name = "meso_trend_pred_return"
             training_metrics["model_type"] = "lightgbm_regression"
 
         else:
             base_model = lgb.LGBMClassifier(
-                n_estimators=int(config.get("alpha_n_estimators", 300)),
-                learning_rate=float(config.get("alpha_learning_rate", 0.05)),
-                num_leaves=int(config.get("alpha_num_leaves", 64)),
-                subsample=float(config.get("alpha_subsample", 0.8)),
-                colsample_bytree=float(config.get("alpha_colsample_bytree", 0.8)),
-                random_state=int(config.get("alpha_random_state", 42)),
+                n_estimators=int(config.get("meso_trend_n_estimators", 300)),
+                learning_rate=float(config.get("meso_trend_learning_rate", 0.05)),
+                num_leaves=int(config.get("meso_trend_num_leaves", 64)),
+                subsample=float(config.get("meso_trend_subsample", 0.8)),
+                colsample_bytree=float(config.get("meso_trend_colsample_bytree", 0.8)),
+                random_state=int(config.get("meso_trend_random_state", 42)),
             )
             base_model.fit(X_train, y_train)
 
@@ -2017,7 +2017,7 @@ class HMMMLAlphaStep(BaseStep):
                 training_metrics["train_accuracy_uncalibrated"] = float(accuracy_score(y_train, train_pred))
 
             # Probability calibration using CalibratedClassifierCV with Isotonic Regression
-            calibration_enabled = bool(config.get("alpha_enable_probability_calibration", True))
+            calibration_enabled = bool(config.get("meso_trend_enable_probability_calibration", True))
             training_metrics["probability_calibration_enabled"] = calibration_enabled
 
             model = base_model
@@ -2123,14 +2123,14 @@ class HMMMLAlphaStep(BaseStep):
 
             # Get predictions on full dataset using calibrated model
             proba_all = model.predict_proba(X_scaled_full)[:, 1]
-            scores = pd.Series(proba_all, index=df.index, name="alpha_pred_prob")
-            pred_col_name = "alpha_pred_prob"
+            scores = pd.Series(proba_all, index=df.index, name="meso_trend_pred_prob")
+            pred_col_name = "meso_trend_pred_prob"
             training_metrics["model_type"] = "lightgbm_classification"
 
-        full_scores = scores.reindex(alpha_df.index)
+        full_scores = scores.reindex(meso_trend_df.index)
 
         # Optional SHAP analysis add-on (config-gated)
-        if bool(config.get("alpha_enable_shap", False)):
+        if bool(config.get("meso_trend_enable_shap", False)):
             try:
                 from src.utils.ml_common.explainability.model_explanations import (
                     explain_model_with_shap_lime,
@@ -2145,7 +2145,7 @@ class HMMMLAlphaStep(BaseStep):
                 shap_cfg: Dict[str, Any] = {
                     "enable_shap": True,
                     "enable_lime": False,
-                    "shap_sample_size": int(config.get("alpha_shap_sample_size", 128)),
+                    "shap_sample_size": int(config.get("meso_trend_shap_sample_size", 128)),
                 }
 
                 shap_results = explain_model_with_shap_lime(
@@ -2153,14 +2153,14 @@ class HMMMLAlphaStep(BaseStep):
                     X_train=X_train_arr,
                     X_test=X_test_arr,
                     feature_names=extended_feature_names,
-                    model_name="hmm_alpha_model",
+                    model_name="hmm_meso_trend_model",
                     config=shap_cfg,
                 )
 
                 shap_expl = shap_results.get("shap_explanations", {}) if isinstance(shap_results, dict) else {}
                 if isinstance(shap_expl, dict):
-                    training_metrics["alpha_shap_top_features"] = shap_expl.get("top_features", [])
-                    training_metrics["alpha_shap_mean_importance"] = shap_expl.get("mean_importance")
+                    training_metrics["meso_trend_shap_top_features"] = shap_expl.get("top_features", [])
+                    training_metrics["meso_trend_shap_mean_importance"] = shap_expl.get("mean_importance")
             except Exception as shap_exc:
                 tprint_warning(f"Alpha SHAP analysis failed (ignored): {shap_exc}")
 
@@ -2169,7 +2169,7 @@ class HMMMLAlphaStep(BaseStep):
             f"on {len(X_train)} train / {len(X_val)} val samples"
         )
 
-        training_metrics["alpha_horizon_bars"] = horizon
+        training_metrics["meso_trend_horizon_bars"] = horizon
         training_metrics["target_type"] = target_type
 
         # Comprehensive feature analysis (IC, importance metrics, mRMR, learning curves)
@@ -2192,10 +2192,10 @@ class HMMMLAlphaStep(BaseStep):
 
                 # Optional auto-prune experiment: try multiple quantile-based thresholds
                 # over permutation importance and adopt the best pruned model if it
-                # improves validation R^2 by more than alpha_auto_prune_min_delta.
+                # improves validation R^2 by more than meso_trend_auto_prune_min_delta.
                 if (
                     target_type == "regression"
-                    and bool(config.get("alpha_enable_auto_prune_rerun", False))
+                    and bool(config.get("meso_trend_enable_auto_prune_rerun", False))
                 ):
                     try:
                         perm_info = feature_analysis.get("permutation_importance") or training_metrics.get("permutation_importance")
@@ -2220,7 +2220,7 @@ class HMMMLAlphaStep(BaseStep):
                                     )
 
                                 # Configuration for quantile-based pruning
-                                quantiles_cfg = config.get("alpha_auto_prune_quantiles", [0.1, 0.2, 0.3])
+                                quantiles_cfg = config.get("meso_trend_auto_prune_quantiles", [0.1, 0.2, 0.3])
                                 try:
                                     quantiles = sorted(
                                         {
@@ -2241,11 +2241,11 @@ class HMMMLAlphaStep(BaseStep):
 
                                 # Reuse gentle minimum-keep heuristics from pruning config
                                 min_fraction = float(
-                                    config.get("alpha_feature_pruning_min_fraction", 0.6)
+                                    config.get("meso_trend_feature_pruning_min_fraction", 0.6)
                                 )
                                 min_fraction = min(max(min_fraction, 0.2), 0.9)
                                 min_absolute = int(
-                                    config.get("alpha_feature_pruning_min_absolute", 5)
+                                    config.get("meso_trend_feature_pruning_min_absolute", 5)
                                 )
                                 n_features_total = len(extended_feature_names)
                                 min_keep = int(
@@ -2317,7 +2317,7 @@ class HMMMLAlphaStep(BaseStep):
                                 )
 
                                 epsilon = float(
-                                    config.get("alpha_auto_prune_min_delta", 0.0)
+                                    config.get("meso_trend_auto_prune_min_delta", 0.0)
                                 )
 
                                 adopt_pruned = (
@@ -2359,7 +2359,7 @@ class HMMMLAlphaStep(BaseStep):
                                             index=df.index,
                                             name=pred_col_name,
                                         )
-                                        full_scores = scores.reindex(alpha_df.index)
+                                        full_scores = scores.reindex(meso_trend_df.index)
                                     except Exception as pred_err:
                                         tprint_warning(
                                             f"Auto-prune adoption prediction failed (non-fatal): {pred_err}"
@@ -2546,7 +2546,7 @@ class HMMMLAlphaStep(BaseStep):
     def _optimize_regime_boundaries(
         self,
         *,
-        alpha_scores: pd.Series,
+        meso_trend_scores: pd.Series,
         forward_returns: pd.Series,
         n_regimes: int,
         min_bin_pct: float = 0.10,
@@ -2560,7 +2560,7 @@ class HMMMLAlphaStep(BaseStep):
         then systematically shifts each boundary to improve the objective.
 
         Args:
-            alpha_scores: Predicted alpha scores (feature)
+            meso_trend_scores: Predicted alpha scores (feature)
             forward_returns: Forward returns (target)
             n_regimes: Number of regimes to create
             min_bin_pct: Minimum percentage of samples per bin (default: 10%)
@@ -2572,8 +2572,8 @@ class HMMMLAlphaStep(BaseStep):
             Tuple of (optimal_labels, best_score, metrics_dict)
         """
         # Sort data by alpha scores
-        sorted_indices = alpha_scores.argsort()
-        sorted_scores = alpha_scores.iloc[sorted_indices].values
+        sorted_indices = meso_trend_scores.argsort()
+        sorted_scores = meso_trend_scores.iloc[sorted_indices].values
         sorted_returns = forward_returns.iloc[sorted_indices]
 
         n_samples = len(sorted_scores)
@@ -2726,10 +2726,10 @@ class HMMMLAlphaStep(BaseStep):
 
         return labels
 
-    def _assign_alpha_regimes(
+    def _assign_meso_trend_regimes(
         self,
-        alpha_df: pd.DataFrame,
-        alpha_scores: pd.Series,
+        meso_trend_df: pd.DataFrame,
+        meso_trend_scores: pd.Series,
         config: Dict[str, Any],
     ) -> Tuple[pd.DataFrame, Optional[pd.DataFrame], Optional[str]]:
         """Derive alpha regimes using flexible quantile optimization.
@@ -2742,10 +2742,10 @@ class HMMMLAlphaStep(BaseStep):
         5. Reports both CV and Winsorized CV metrics
         """
         # Get configuration for regime optimization
-        use_flexible_regimes = bool(config.get("alpha_use_flexible_regimes", True))
-        regime_counts_to_test = config.get("alpha_regime_counts", [2, 3, 4])
-        min_bin_pct = float(config.get("alpha_min_bin_pct", 0.15))
-        max_bin_pct = float(config.get("alpha_max_bin_pct", 0.35))
+        use_flexible_regimes = bool(config.get("meso_trend_use_flexible_regimes", True))
+        regime_counts_to_test = config.get("meso_trend_regime_counts", [2, 3, 4])
+        min_bin_pct = float(config.get("meso_trend_min_bin_pct", 0.15))
+        max_bin_pct = float(config.get("meso_trend_max_bin_pct", 0.35))
 
         # Validate regime counts within compact 2–4 range
         if isinstance(regime_counts_to_test, int):
@@ -2756,18 +2756,18 @@ class HMMMLAlphaStep(BaseStep):
 
         tprint_info(
             "HMM alpha regime assignment starting: "
-            f"samples={len(alpha_scores)}, "
-            f"alpha_df_rows={len(alpha_df)}, "
+            f"samples={len(meso_trend_scores)}, "
+            f"meso_trend_df_rows={len(meso_trend_df)}, "
             f"use_flexible_regimes={use_flexible_regimes}, "
             f"regime_counts_to_test={regime_counts_to_test}"
         )
 
         # Optional smoothing of alpha scores before constructing regimes
         score_smoothing_method = str(
-            config.get("alpha_score_smoothing_method", "none")
+            config.get("meso_trend_score_smoothing_method", "none")
         ).lower()
-        score_smoothing_window = int(config.get("alpha_score_smoothing_window", 1))
-        scores_for_binning = alpha_scores.copy()
+        score_smoothing_window = int(config.get("meso_trend_score_smoothing_window", 1))
+        scores_for_binning = meso_trend_scores.copy()
         if score_smoothing_method != "none" and score_smoothing_window > 1:
             try:
                 if score_smoothing_method == "ewm":
@@ -2799,7 +2799,7 @@ class HMMMLAlphaStep(BaseStep):
                     "Alpha score smoothing failed (ignored, using raw scores): "
                     f"{score_smooth_exc}"
                 )
-                scores_for_binning = alpha_scores
+                scores_for_binning = meso_trend_scores
 
         valid_scores = scores_for_binning.dropna()
         if valid_scores.empty:
@@ -2808,17 +2808,17 @@ class HMMMLAlphaStep(BaseStep):
             )
             tprint_info(
                 "HMM alpha regime assignment diagnostics: "
-                f"total_scores={len(alpha_scores)}, "
+                f"total_scores={len(meso_trend_scores)}, "
                 f"non_nan_scores={len(valid_scores)}, "
-                f"nan_scores={int(len(alpha_scores) - len(valid_scores))}"
+                f"nan_scores={int(len(meso_trend_scores) - len(valid_scores))}"
             )
-            return alpha_df, None, None
+            return meso_trend_df, None, None
 
         # ------------------------------------------------------------------
         # SIMPLE SCORE-ONLY REGIME ASSIGNMENT (robust default)
         # ------------------------------------------------------------------
         try:
-            num_bins_simple = int(config.get("alpha_regime_bins", 4))
+            num_bins_simple = int(config.get("meso_trend_regime_bins", 4))
         except Exception:
             num_bins_simple = 4
         # Clamp to a compact 2–4 regime range to avoid overly fragmented regimes
@@ -2835,7 +2835,7 @@ class HMMMLAlphaStep(BaseStep):
                 tprint_warning(
                     f"Not enough valid alpha scores ({len(valid_scores)}) to define score-only regimes"
                 )
-                return alpha_df, None, None
+                return meso_trend_df, None, None
 
         ranks_simple = valid_scores.rank(method="first")
         try:
@@ -2859,25 +2859,25 @@ class HMMMLAlphaStep(BaseStep):
             bucket_codes_simple = (ranks_simple > median_rank).astype(int)
             num_bins_simple = 2
 
-        bucket_col_simple = f"alpha_regime_bucket_{num_bins_simple}"
-        alpha_df[bucket_col_simple] = bucket_codes_simple.reindex(alpha_df.index)
+        bucket_col_simple = f"meso_trend_regime_bucket_{num_bins_simple}"
+        meso_trend_df[bucket_col_simple] = bucket_codes_simple.reindex(meso_trend_df.index)
 
         # For now, skip regime_stats_df from this simplified path; downstream
         # consumers already guard on regime_stats_df being None.
-        return alpha_df, None, bucket_col_simple
+        return meso_trend_df, None, bucket_col_simple
 
         # Get forward returns for optimization
-        fwd_cols = [col for col in alpha_df.columns if col.startswith("alpha_forward_return_")]
+        fwd_cols = [col for col in meso_trend_df.columns if col.startswith("meso_trend_forward_return_")]
         if not fwd_cols:
-            tprint_warning("No alpha_forward_return column found for regime optimization")
+            tprint_warning("No meso_trend_forward_return column found for regime optimization")
             tprint_info(
                 "HMM alpha regime assignment diagnostics: "
-                f"available_columns={list(alpha_df.columns)}"
+                f"available_columns={list(meso_trend_df.columns)}"
             )
-            return alpha_df, None, None
+            return meso_trend_df, None, None
 
         fwd_col = fwd_cols[0]
-        forward_returns = alpha_df[fwd_col].dropna()
+        forward_returns = meso_trend_df[fwd_col].dropna()
 
         # Align scores and returns
         common_idx = valid_scores.index.intersection(forward_returns.index)
@@ -2925,13 +2925,13 @@ class HMMMLAlphaStep(BaseStep):
 
                 try:
                     labels, score, metrics = self._optimize_regime_boundaries(
-                        alpha_scores=aligned_scores,
+                        meso_trend_scores=aligned_scores,
                         forward_returns=aligned_returns,
                         n_regimes=n_regimes,
                         min_bin_pct=min_bin_pct,
                         max_bin_pct=max_bin_pct,
-                        jiggle_pct=float(config.get("alpha_jiggle_pct", 0.01)),
-                        max_iterations=int(config.get("alpha_max_opt_iterations", 100)),
+                        jiggle_pct=float(config.get("meso_trend_jiggle_pct", 0.01)),
+                        max_iterations=int(config.get("meso_trend_max_opt_iterations", 100)),
                     )
 
                     competition_results.append({
@@ -2976,7 +2976,7 @@ class HMMMLAlphaStep(BaseStep):
 
         # Fallback to simple quantile binning if flexible optimization is disabled or failed
         if not use_flexible_regimes:
-            num_bins = int(config.get("alpha_regime_bins", 5))
+            num_bins = int(config.get("meso_trend_regime_bins", 5))
             num_bins = max(3, min(num_bins, 6))
 
             if len(aligned_scores) < num_bins:
@@ -2989,7 +2989,7 @@ class HMMMLAlphaStep(BaseStep):
                     tprint_warning(
                         f"Not enough valid alpha scores ({len(aligned_scores)}) to define regimes"
                     )
-                    return alpha_df, None, None
+                    return meso_trend_df, None, None
 
             try:
                 ranks = aligned_scores.rank(method="first")
@@ -3026,16 +3026,16 @@ class HMMMLAlphaStep(BaseStep):
                 bucket_codes = (ranks > median_rank).astype(int)
                 num_bins = 2
 
-        bucket_col = f"alpha_regime_bucket_{num_bins}"
-        alpha_df[bucket_col] = bucket_codes.reindex(alpha_df.index)
+        bucket_col = f"meso_trend_regime_bucket_{num_bins}"
+        meso_trend_df[bucket_col] = bucket_codes.reindex(meso_trend_df.index)
 
         # Compute comprehensive regime statistics with CV and WCV metrics
         fwd_col = fwd_cols[0]
 
         stats_records = []
         for bucket in sorted(bucket_codes.unique()):
-            mask = alpha_df[bucket_col] == bucket
-            group = alpha_df.loc[mask]
+            mask = meso_trend_df[bucket_col] == bucket
+            group = meso_trend_df.loc[mask]
             if group.empty:
                 continue
 
@@ -3063,7 +3063,7 @@ class HMMMLAlphaStep(BaseStep):
             skewness = float(ret.skew()) if len(ret) > 2 else 0.0
             kurtosis = float(ret.kurtosis()) if len(ret) > 3 else 0.0
 
-            var_level = float(config.get("alpha_var_quantile", 0.05))
+            var_level = float(config.get("meso_trend_var_quantile", 0.05))
             var_level = min(max(var_level, 0.001), 0.2)
             try:
                 var_ret = float(ret.quantile(var_level))
@@ -3085,7 +3085,7 @@ class HMMMLAlphaStep(BaseStep):
                 tail_ratio = 0.0
 
             # Vol-of-vol: dispersion of rolling volatility within the regime
-            vol_of_vol_window = int(config.get("alpha_vol_of_vol_window", 10))
+            vol_of_vol_window = int(config.get("meso_trend_vol_of_vol_window", 10))
             if vol_of_vol_window >= 2 and len(ret) >= vol_of_vol_window:
                 rolling_vol = ret.rolling(vol_of_vol_window).std()
                 vol_of_vol = float(rolling_vol.std(skipna=True))
@@ -3116,14 +3116,14 @@ class HMMMLAlphaStep(BaseStep):
                 trendiness = 0.0
 
             hit_rate = float((ret > 0).mean())
-            mean_target = float(group["alpha_target"].mean())
+            mean_target = float(group["meso_trend_target"].mean())
 
             # Calculate bin percentage
-            bin_pct = float(len(group)) / float(len(alpha_df))
+            bin_pct = float(len(group)) / float(len(meso_trend_df))
 
             stats_records.append(
                 {
-                    "alpha_regime_bucket": int(bucket),
+                    "meso_trend_regime_bucket": int(bucket),
                     "n_samples": int(len(group)),
                     "bin_percentage": bin_pct,
                     "mean_forward_return": mean_ret,
@@ -3142,15 +3142,15 @@ class HMMMLAlphaStep(BaseStep):
                     "vol_of_vol_forward_return": vol_of_vol,
                     "trendiness_forward_return": trendiness,
                     "hit_rate_positive_return": hit_rate,
-                    "mean_alpha_target": mean_target,
+                    "mean_meso_trend_target": mean_target,
                 }
             )
 
         if not stats_records:
             tprint_warning("No stats records generated for alpha regimes")
-            return alpha_df, None, bucket_col
+            return meso_trend_df, None, bucket_col
 
-        regime_stats_df = pd.DataFrame(stats_records).set_index("alpha_regime_bucket").sort_index()
+        regime_stats_df = pd.DataFrame(stats_records).set_index("meso_trend_regime_bucket").sort_index()
 
         # Calculate overall economic metrics (Between/Within CV ratios)
         if use_flexible_regimes and best_metrics is not None:
@@ -3182,12 +3182,12 @@ class HMMMLAlphaStep(BaseStep):
                 f"Within WCV={best_metrics.get('within_wcv', 0.0):.4f}"
             )
 
-        return alpha_df, regime_stats_df, bucket_col
+        return meso_trend_df, regime_stats_df, bucket_col
 
     def _extract_and_save_regime_thresholds(
         self,
         *,
-        alpha_scores: pd.Series,
+        meso_trend_scores: pd.Series,
         regime_labels: pd.Series,
         regime_col_name: str,
         symbol: str,
@@ -3200,7 +3200,7 @@ class HMMMLAlphaStep(BaseStep):
         to regime buckets in live trading.
 
         Args:
-            alpha_scores: Series of alpha predictions (continuous)
+            meso_trend_scores: Series of alpha predictions (continuous)
             regime_labels: Series of assigned regime labels (discrete)
             regime_col_name: Name of the regime column
             symbol: Trading symbol for artifact metadata
@@ -3232,7 +3232,7 @@ class HMMMLAlphaStep(BaseStep):
 
             for regime in unique_regimes:
                 mask = regime_labels == regime
-                regime_scores = alpha_scores[mask]
+                regime_scores = meso_trend_scores[mask]
 
                 if len(regime_scores) > 0:
                     min_score = float(regime_scores.min())
@@ -3272,12 +3272,12 @@ class HMMMLAlphaStep(BaseStep):
             percentiles = [0, 25, 50, 75, 100]
             percentile_thresholds = {}
             for p in percentiles:
-                percentile_thresholds[p] = float(np.percentile(alpha_scores, p))
+                percentile_thresholds[p] = float(np.percentile(meso_trend_scores, p))
             threshold_data["percentile_thresholds"] = percentile_thresholds
 
             tprint_info(
                 f"ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Regime thresholds extracted: {len(unique_regimes)} regimes, "
-                f"min_score={min(alpha_scores):.6f}, max_score={max(alpha_scores):.6f}"
+                f"min_score={min(meso_trend_scores):.6f}, max_score={max(meso_trend_scores):.6f}"
             )
 
             return threshold_data
@@ -3286,10 +3286,10 @@ class HMMMLAlphaStep(BaseStep):
             tprint_warning(f"Regime threshold extraction failed: {e}")
             return {"extraction_error": str(e)}
 
-    def _assign_alpha_regimes_with_thresholds(
+    def _assign_meso_trend_regimes_with_thresholds(
         self,
         *,
-        alpha_scores: np.ndarray,
+        meso_trend_scores: np.ndarray,
         regime_thresholds: Dict[int, Dict[str, float]],
     ) -> np.ndarray:
         """Apply saved regime thresholds to new alpha predictions (for live trading).
@@ -3299,13 +3299,13 @@ class HMMMLAlphaStep(BaseStep):
         each prediction to the appropriate regime.
 
         Args:
-            alpha_scores: Array of new alpha predictions
+            meso_trend_scores: Array of new alpha predictions
             regime_thresholds: Dict from _extract_and_save_regime_thresholds()["regime_thresholds"]
 
         Returns:
             Array of regime assignments matching the input scores
         """
-        assignments = np.full(len(alpha_scores), -1, dtype=int)
+        assignments = np.full(len(meso_trend_scores), -1, dtype=int)
 
         for regime_id, threshold_info in regime_thresholds.items():
             min_score = threshold_info["min_score"]
@@ -3313,13 +3313,13 @@ class HMMMLAlphaStep(BaseStep):
 
             # Assign to this regime if score falls within bounds
             # Use <= for max to handle boundary scores
-            mask = (alpha_scores >= min_score) & (alpha_scores <= max_score)
+            mask = (meso_trend_scores >= min_score) & (meso_trend_scores <= max_score)
             assignments[mask] = regime_id
 
         # For scores outside all ranges (shouldn't happen in production), assign to nearest regime
         unassigned_mask = assignments == -1
         if unassigned_mask.any():
-            unassigned_scores = alpha_scores[unassigned_mask]
+            unassigned_scores = meso_trend_scores[unassigned_mask]
             for idx in np.where(unassigned_mask)[0]:
                 # Assign to regime with closest mean score
                 closest_regime = min(
@@ -3362,7 +3362,7 @@ class HMMMLAlphaStep(BaseStep):
             Dictionary with comprehensive feature analysis results
         """
         feature_analysis_results = {
-            "feature_analysis_enabled": bool(config.get("alpha_enable_comprehensive_feature_analysis", True)),
+            "feature_analysis_enabled": bool(config.get("meso_trend_enable_comprehensive_feature_analysis", True)),
             "features_analyzed": len(feature_names),
         }
 
@@ -3424,16 +3424,16 @@ class HMMMLAlphaStep(BaseStep):
                 tprint_warning(f"LGBM importance calculation failed: {lgbm_err}")
 
             # 3. Permutation Importance with stability checking
-            if PERMUTATION_IMPORTANCE_AVAILABLE and bool(config.get("alpha_enable_permutation_importance", True)):
+            if PERMUTATION_IMPORTANCE_AVAILABLE and bool(config.get("meso_trend_enable_permutation_importance", True)):
                 try:
                     X_train_arr = X_train.to_numpy(dtype=float, copy=False) if hasattr(X_train, 'to_numpy') else X_train
                     y_train_arr = y_train.to_numpy(dtype=float, copy=False) if hasattr(y_train, 'to_numpy') else y_train
 
                     perm_config = PermutationConfig(
-                        n_repeats=int(config.get("alpha_permutation_n_repeats", 5)),
+                        n_repeats=int(config.get("meso_trend_permutation_n_repeats", 5)),
                         scoring='r2' if not is_classification else 'accuracy',
                         enable_stability_check=True,
-                        n_jobs=int(config.get("alpha_n_jobs", -1)),
+                        n_jobs=int(config.get("meso_trend_n_jobs", -1)),
                     )
 
                     perm_calc = PermutationImportanceCalculator(perm_config)
@@ -3464,9 +3464,9 @@ class HMMMLAlphaStep(BaseStep):
 
             # 4. Improved mRMR for redundancy analysis
             # Disabled by default for production/fast runs; enable explicitly via
-            # alpha_enable_mrmr_analysis=True in the config when heavy diagnostics
+            # meso_trend_enable_mrmr_analysis=True in the config when heavy diagnostics
             # are desired.
-            if IMPROVED_MRMR_AVAILABLE and bool(config.get("alpha_enable_mrmr_analysis", False)):
+            if IMPROVED_MRMR_AVAILABLE and bool(config.get("meso_trend_enable_mrmr_analysis", False)):
                 try:
                     X_full_arr = X_full.to_numpy(dtype=float, copy=False) if hasattr(X_full, 'to_numpy') else X_full
                     y_full_arr = y_full.to_numpy(dtype=float, copy=False) if hasattr(y_full, 'to_numpy') else y_full
@@ -3474,7 +3474,7 @@ class HMMMLAlphaStep(BaseStep):
                     mrmr_config = {
                         'mi_weight': 0.7,
                         'spearman_weight': 0.3,
-                        'target_ratio': float(config.get("alpha_mrmr_target_ratio", 0.7)),
+                        'target_ratio': float(config.get("meso_trend_mrmr_target_ratio", 0.7)),
                         'use_mi_proxy': True,
                         'enable_hardware_optimization': True,
                     }
@@ -3492,21 +3492,21 @@ class HMMMLAlphaStep(BaseStep):
                     tprint_warning(f"mRMR analysis failed: {mrmr_err}")
 
             # 5. Learning curve analysis for overfitting detection
-            if ENHANCED_LEARNING_CURVE_AVAILABLE and X_val is not None and y_val is not None and bool(config.get("alpha_enable_learning_curve_analysis", True)):
+            if ENHANCED_LEARNING_CURVE_AVAILABLE and X_val is not None and y_val is not None and bool(config.get("meso_trend_enable_learning_curve_analysis", True)):
                 try:
                     X_train_arr = X_train.to_numpy(dtype=float, copy=False) if hasattr(X_train, 'to_numpy') else X_train
                     y_train_arr = y_train.to_numpy(dtype=float, copy=False) if hasattr(y_train, 'to_numpy') else y_train
                     X_val_arr = X_val.to_numpy(dtype=float, copy=False) if hasattr(X_val, 'to_numpy') else X_val
                     y_val_arr = y_val.to_numpy(dtype=float, copy=False) if hasattr(y_val, 'to_numpy') else y_val
 
-                    lc_analyzer = EnhancedLearningCurveAnalyzer(random_state=int(config.get("alpha_random_state", 42)))
+                    lc_analyzer = EnhancedLearningCurveAnalyzer(random_state=int(config.get("meso_trend_random_state", 42)))
                     lc_result = lc_analyzer.analyze_learning_curve(
                         model,
                         X_train_arr,
                         y_train_arr,
                         X_val_arr,
                         y_val_arr,
-                        cv_folds=int(config.get("alpha_hpo_cv_folds", 3)),
+                        cv_folds=int(config.get("meso_trend_hpo_cv_folds", 3)),
                         scoring='r2' if not is_classification else 'accuracy',
                     )
 
@@ -3530,7 +3530,7 @@ class HMMMLAlphaStep(BaseStep):
                     tprint_warning(f"Learning curve analysis failed: {lc_err}")
 
             # 6. SHAP analysis (if available)
-            if SHAP_AVAILABLE and bool(config.get("alpha_enable_shap_importance", False)):
+            if SHAP_AVAILABLE and bool(config.get("meso_trend_enable_shap_importance", False)):
                 try:
                     X_train_sample = X_train.head(min(100, len(X_train))) if isinstance(X_train, pd.DataFrame) else X_train[:min(100, len(X_train))]
                     X_train_sample_arr = X_train_sample.to_numpy(dtype=float, copy=False) if hasattr(X_train_sample, 'to_numpy') else X_train_sample
@@ -3572,7 +3572,7 @@ class HMMMLAlphaStep(BaseStep):
             # feature matrix for this run. Downstream consumers can choose to
             # use this recommended set.
             try:
-                enable_pruning = bool(config.get("alpha_enable_feature_pruning", True))
+                enable_pruning = bool(config.get("meso_trend_enable_feature_pruning", True))
                 if enable_pruning and feature_names:
                     selected_feature_names = list(feature_names)
 
@@ -3595,7 +3595,7 @@ class HMMMLAlphaStep(BaseStep):
                         positive_imp = imp_series[imp_series > 0.0]
                         if not positive_imp.empty:
                             # Gentle floor: near the bottom tail of positive importances
-                            q_low = float(config.get("alpha_feature_pruning_importance_q_low", 0.05))
+                            q_low = float(config.get("meso_trend_feature_pruning_importance_q_low", 0.05))
                             q_low = min(max(q_low, 0.0), 0.25)
                             floor_val = positive_imp.quantile(q_low)
 
@@ -3614,13 +3614,13 @@ class HMMMLAlphaStep(BaseStep):
                             if drop_candidates:
                                 # Do not be harsh: keep at least a minimum fraction
                                 min_fraction = float(
-                                    config.get("alpha_feature_pruning_min_fraction", 0.6)
+                                    config.get("meso_trend_feature_pruning_min_fraction", 0.6)
                                 )
                                 min_fraction = min(max(min_fraction, 0.2), 0.9)
                                 min_keep = int(
                                     max(
                                         len(feature_names) * min_fraction,
-                                        float(config.get("alpha_feature_pruning_min_absolute", 5)),
+                                        float(config.get("meso_trend_feature_pruning_min_absolute", 5)),
                                     )
                                 )
 
@@ -3820,10 +3820,10 @@ class HMMMLAlphaStep(BaseStep):
             tprint_warning(f"Walk-Forward Validation calculation failed: {e}")
             return {}
 
-    def _assess_alpha_regime_quality(
+    def _assess_meso_trend_regime_quality(
         self,
         *,
-        alpha_df: pd.DataFrame,
+        meso_trend_df: pd.DataFrame,
         regime_col: Optional[str],
         config: Dict[str, Any],
     ) -> Tuple[Optional[ClusterQualityMetrics], Optional[str]]:
@@ -3831,13 +3831,13 @@ class HMMMLAlphaStep(BaseStep):
 
         This uses the unified assess_quality interface and persists metrics as a
         dedicated artifact. The minimum regime size defaults to 3 but can be
-        overridden via config["alpha_min_regime_size"].
+        overridden via config["meso_trend_min_regime_size"].
         """
-        if regime_col is None or regime_col not in alpha_df.columns:
+        if regime_col is None or regime_col not in meso_trend_df.columns:
             tprint_warning("No alpha regime column provided; skipping regime quality assessment")
             return None, None
 
-        regime_series = alpha_df[regime_col]
+        regime_series = meso_trend_df[regime_col]
         valid_mask = regime_series.notna()
         if valid_mask.sum() == 0:
             tprint_warning("No valid alpha regime labels for quality assessment")
@@ -3845,13 +3845,13 @@ class HMMMLAlphaStep(BaseStep):
 
         regime_labels = np.asarray(regime_series[valid_mask].astype(int), dtype=int)
 
-        numeric_df = alpha_df.select_dtypes(include=[np.number])
-        drop_cols = ["alpha_target", regime_col]
-        drop_cols.extend([c for c in numeric_df.columns if c.startswith("alpha_forward_return_")])
+        numeric_df = meso_trend_df.select_dtypes(include=[np.number])
+        drop_cols = ["meso_trend_target", regime_col]
+        drop_cols.extend([c for c in numeric_df.columns if c.startswith("meso_trend_forward_return_")])
         feature_cols = [c for c in numeric_df.columns if c not in drop_cols]
         if not feature_cols:
             forward_ret_feature_cols = [
-                c for c in numeric_df.columns if c.startswith("alpha_forward_return_")
+                c for c in numeric_df.columns if c.startswith("meso_trend_forward_return_")
             ]
             if forward_ret_feature_cols:
                 feature_cols = forward_ret_feature_cols
@@ -3861,15 +3861,15 @@ class HMMMLAlphaStep(BaseStep):
 
         feature_data = numeric_df[feature_cols].loc[valid_mask]
 
-        forward_ret_cols = [c for c in alpha_df.columns if c.startswith("alpha_forward_return_")]
+        forward_ret_cols = [c for c in meso_trend_df.columns if c.startswith("meso_trend_forward_return_")]
         forward_returns = None
         if forward_ret_cols:
-            forward_returns = alpha_df[forward_ret_cols[0]].loc[valid_mask]
+            forward_returns = meso_trend_df[forward_ret_cols[0]].loc[valid_mask]
 
-        timestamps = alpha_df.index[valid_mask]
-        min_regime_size = int(config.get("alpha_min_regime_size", 3))
-        temporal_mode = str(config.get("alpha_temporal_sensitivity_mode", "regime_persistence_focused"))
-        fast_mode = bool(config.get("alpha_quality_fast_mode", False))
+        timestamps = meso_trend_df.index[valid_mask]
+        min_regime_size = int(config.get("meso_trend_min_regime_size", 3))
+        temporal_mode = str(config.get("meso_trend_temporal_sensitivity_mode", "regime_persistence_focused"))
+        fast_mode = bool(config.get("meso_trend_quality_fast_mode", False))
 
         try:
             metrics = self.quality_assessor.assess_quality(
@@ -3898,7 +3898,7 @@ class HMMMLAlphaStep(BaseStep):
         try:
             quality_path = self._save_artifact(
                 data=quality_df,
-                artifact_name="hmm_alpha_regime_quality_1h",
+                artifact_name="hmm_meso_trend_regime_quality_1h",
                 artifact_type="data",
                 metadata={
                     "min_regime_size": min_regime_size,
@@ -3913,23 +3913,23 @@ class HMMMLAlphaStep(BaseStep):
     def _build_fallback_regime_column_for_report(
         self,
         *,
-        alpha_df: pd.DataFrame,
+        meso_trend_df: pd.DataFrame,
         config: Dict[str, Any],
-        prefix: str = "alpha_regime_bucket_report_",
+        prefix: str = "meso_trend_regime_bucket_report_",
     ) -> Optional[str]:
         """Best-effort helper to ensure a regime column exists for quality reporting."""
         try:
             score_series = None
-            if "alpha_score_continuous" in alpha_df.columns:
-                score_series = alpha_df["alpha_score_continuous"].astype(float)
-            elif "alpha_target" in alpha_df.columns:
-                score_series = alpha_df["alpha_target"].astype(float)
+            if "meso_trend_score_continuous" in meso_trend_df.columns:
+                score_series = meso_trend_df["meso_trend_score_continuous"].astype(float)
+            elif "meso_trend_target" in meso_trend_df.columns:
+                score_series = meso_trend_df["meso_trend_target"].astype(float)
             else:
                 fwd_cols_local = [
-                    c for c in alpha_df.columns if c.startswith("alpha_forward_return_")
+                    c for c in meso_trend_df.columns if c.startswith("meso_trend_forward_return_")
                 ]
                 if fwd_cols_local:
-                    score_series = alpha_df[fwd_cols_local[0]].astype(float)
+                    score_series = meso_trend_df[fwd_cols_local[0]].astype(float)
 
             if score_series is None:
                 return None
@@ -3938,7 +3938,7 @@ class HMMMLAlphaStep(BaseStep):
             if len(score_series) < 50:
                 return None
 
-            num_bins = int(config.get("alpha_regime_bins", 5))
+            num_bins = int(config.get("meso_trend_regime_bins", 5))
             num_bins = max(3, min(num_bins, 6))
 
             ranks = score_series.rank(method="first")
@@ -3965,7 +3965,7 @@ class HMMMLAlphaStep(BaseStep):
                 return None
 
             bucket_col = f"{prefix}{effective_bins}"
-            alpha_df[bucket_col] = bucket_codes.reindex(alpha_df.index)
+            meso_trend_df[bucket_col] = bucket_codes.reindex(meso_trend_df.index)
             return bucket_col
         except Exception as exc:
             tprint_warning(
@@ -3973,10 +3973,10 @@ class HMMMLAlphaStep(BaseStep):
             )
             return None
 
-    def _generate_hmm_alpha_quality_report(
+    def _generate_hmm_meso_trend_quality_report(
         self,
         *,
-        alpha_df: pd.DataFrame,
+        meso_trend_df: pd.DataFrame,
         regime_col: Optional[str],
         symbol: str,
         exchange: str,
@@ -3992,7 +3992,7 @@ class HMMMLAlphaStep(BaseStep):
         - Global metrics: transition matrix, overall Sharpe, regime duration stats
 
         Args:
-            alpha_df: DataFrame with regime assignments and alpha_score_continuous
+            meso_trend_df: DataFrame with regime assignments and meso_trend_score_continuous
             regime_col: Name of the regime column
             symbol: Trading symbol
             exchange: Exchange name
@@ -4006,7 +4006,7 @@ class HMMMLAlphaStep(BaseStep):
         import os
         from datetime import datetime
 
-        if regime_col is None or regime_col not in alpha_df.columns:
+        if regime_col is None or regime_col not in meso_trend_df.columns:
             tprint_warning(
                 "No regime column for quality report generation; "
                 "skipping HMM alpha quality report"
@@ -4020,7 +4020,7 @@ class HMMMLAlphaStep(BaseStep):
             csv_path = os.path.join("outcomes", base_name + ".csv")
             md_path = os.path.join("outcomes", base_name + ".md")
             
-            regime_series = alpha_df[regime_col].dropna().astype(int)
+            regime_series = meso_trend_df[regime_col].dropna().astype(int)
             if regime_series.empty:
                 tprint_warning("No valid regime labels for quality report")
                 return None
@@ -4029,12 +4029,12 @@ class HMMMLAlphaStep(BaseStep):
             # 1. Per-Regime Metrics
             # ================================================================
             regime_metrics_list = []
-            fwd_cols = [c for c in alpha_df.columns if c.startswith("alpha_forward_return_")]
-            score_col = "alpha_score_continuous" if "alpha_score_continuous" in alpha_df.columns else None
+            fwd_cols = [c for c in meso_trend_df.columns if c.startswith("meso_trend_forward_return_")]
+            score_col = "meso_trend_score_continuous" if "meso_trend_score_continuous" in meso_trend_df.columns else None
             
             for regime_id in sorted(regime_series.unique()):
-                regime_mask = alpha_df[regime_col] == regime_id
-                regime_data = alpha_df[regime_mask]
+                regime_mask = meso_trend_df[regime_col] == regime_id
+                regime_data = meso_trend_df[regime_mask]
                 
                 if len(regime_data) == 0:
                     continue
@@ -4094,8 +4094,8 @@ class HMMMLAlphaStep(BaseStep):
             # 2. Per-Quantile Metrics (based on 0-1 scalar)
             # ================================================================
             quantile_metrics_list = []
-            if score_col and score_col in alpha_df.columns:
-                score_series = alpha_df[score_col].dropna()
+            if score_col and score_col in meso_trend_df.columns:
+                score_series = meso_trend_df[score_col].dropna()
                 if len(score_series) > 0:
                     quantiles = [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
                     for i in range(len(quantiles) - 1):
@@ -4105,7 +4105,7 @@ class HMMMLAlphaStep(BaseStep):
                         if i == len(quantiles) - 2:  # Include upper bound for last quantile
                             q_mask = (score_series >= q_low) & (score_series <= q_high)
                         
-                        q_data = alpha_df.loc[q_mask.index[q_mask]]
+                        q_data = meso_trend_df.loc[q_mask.index[q_mask]]
                         if len(q_data) == 0:
                             continue
                         

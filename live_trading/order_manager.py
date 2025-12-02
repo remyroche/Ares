@@ -14,7 +14,7 @@ import logging
 import uuid
 
 from .config import OrderType, OrderSide, TradingConfig
-from ..src.interfaces.base_interfaces import TradeDecision
+from src.interfaces.base_interfaces import TradeDecision
 from src.trading.reporting.trade_reporting_manager import (
     TradeRecord, trade_reporting_manager, generate_daily_recap
 )

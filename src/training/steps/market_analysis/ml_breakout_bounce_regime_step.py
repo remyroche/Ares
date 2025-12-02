@@ -4940,7 +4940,14 @@ class MLBreakoutBounceRegimeStep(BaseStep):
         try:
             symbol = str(config.get("symbol", "ETHUSDT"))
             exchange = str(config.get("exchange", "binance"))
-            regime_timeframe = str(config.get("regime_timeframe", config.get("timeframe", "15m")))
+            # Force usage of base timeframe (e.g. 15m) for breakout/bounce, ignoring any 'regime_timeframe'
+            # override that might be present in config for other specialists.
+            analysis_timeframe = str(config.get("timeframe", "15m"))
+            regime_timeframe = analysis_timeframe
+
+            # Ensure config reflects this choice for downstream helper methods
+            config["regime_timeframe"] = analysis_timeframe
+
             direction = str(config.get("direction", "long"))
 
             defaults: Dict[str, Any] = {
@@ -5406,7 +5413,7 @@ class MLBreakoutBounceRegimeStep(BaseStep):
 
             training_data_path = self._save_artifact(
                 data=to_save,
-                artifact_name="ml_breakout_bounce_training_data_15m",
+                artifact_name=f"ml_breakout_bounce_training_data_{regime_timeframe}",
                 artifact_type="data",
                 metadata=metadata,
             )
@@ -5473,7 +5480,7 @@ class MLBreakoutBounceRegimeStep(BaseStep):
 
                     model_path = self._save_artifact(
                         data=model,
-                        artifact_name="ml_breakout_bounce_model_15m",
+                        artifact_name=f"ml_breakout_bounce_model_{regime_timeframe}",
                         artifact_type="model",
                         metadata=model_metadata,
                     )

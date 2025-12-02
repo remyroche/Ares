@@ -1083,8 +1083,55 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         
         tprint_info("🔄 Combining features with VectorBT optimizations...")
         
-        # PRIORITY 1: Start with labeled dataframe to preserve target column
-        base_features = labeled_df.copy()
+        # CRITICAL FIX: Detect if labeled_df contains only target columns (no actual features)
+        # If so, use generated_features as the base and merge targets onto it
+        target_like_cols = [c for c in labeled_df.columns 
+                          if any(t in c.lower() for t in ['target', 'label', 'weight', 'fused'])]
+        non_target_cols = [c for c in labeled_df.columns if c not in target_like_cols]
+        
+        labeled_df_has_features = len(non_target_cols) > 5  # More than just timestamp/index cols
+        
+        if not labeled_df_has_features and 'generated_features' in features_data:
+            gf = features_data.get('generated_features')
+            if gf is not None and isinstance(gf, pd.DataFrame) and not gf.empty:
+                tprint_warning(f"⚠️ labeled_df has only {len(non_target_cols)} non-target columns: {non_target_cols}")
+                tprint_info(f"🔧 FIX: Using generated_features ({gf.shape}) as base instead of labeled_df")
+                
+                # Start with generated_features as the base
+                base_features = gf.copy()
+                
+                # Merge target columns from labeled_df onto generated_features
+                # Handle index alignment
+                if len(labeled_df) == len(gf):
+                    # Same length: align by position
+                    labeled_df_aligned = labeled_df.copy()
+                    labeled_df_aligned.index = gf.index
+                    for tc in target_like_cols:
+                        if tc in labeled_df_aligned.columns:
+                            base_features[tc] = labeled_df_aligned[tc].values
+                            tprint_info(f"   ✅ Added target '{tc}' by position alignment")
+                else:
+                    # Different lengths: try index-based merge
+                    try:
+                        for tc in target_like_cols:
+                            if tc in labeled_df.columns:
+                                base_features[tc] = labeled_df[tc].reindex(gf.index)
+                                non_null = base_features[tc].notna().sum()
+                                tprint_info(f"   ✅ Added target '{tc}' by index merge ({non_null} non-null)")
+                    except Exception as e:
+                        tprint_warning(f"   ⚠️ Failed to merge targets by index: {e}")
+                
+                tprint_success(f"✅ base_features now has {len(base_features.columns)} columns "
+                             f"({len([c for c in base_features.columns if c not in target_like_cols])} features + targets)")
+                
+                # Remove generated_features from features_data to avoid duplicate merging
+                features_data = {k: v for k, v in features_data.items() if k != 'generated_features'}
+            else:
+                tprint_warning(f"⚠️ labeled_df has no features and generated_features is not available/valid")
+                base_features = labeled_df.copy()
+        else:
+            # PRIORITY 1: Start with labeled dataframe to preserve target column
+            base_features = labeled_df.copy()
 
         # If generated_features has the same number of rows but a different
         # index (typically a DatetimeIndex), align base_features to use that

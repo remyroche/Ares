@@ -19,6 +19,16 @@ from src.utils.tprint import tprint
 
 logger = logging.getLogger(__name__)
 
+# Import FeatureSelector for LGBM-based feature gating
+try:
+    from feature_selection.feature_selection_with_lgbm import FeatureSelector
+    FEATURE_SELECTOR_AVAILABLE = True
+    tprint("✅ FeatureSelector loaded from feature_selection.feature_selection_with_lgbm")
+except ImportError as e:
+    FEATURE_SELECTOR_AVAILABLE = False
+    FeatureSelector = None
+    tprint(f"⚠️ FeatureSelector not available: {e}")
+
 
 class FeatureGenerationFeatureGenerationStep(BaseStep):
     """
@@ -206,6 +216,101 @@ class FeatureGenerationFeatureGenerationStep(BaseStep):
                     }
                 )
                 artifacts['generated_features'] = features_artifact_path
+
+            # LGBM FeatureSelector gating - reduce features using IC stability + hierarchical clustering + LGBM RFE
+            target_n_features_selector = config.get('target_n_features_selector', 200)
+            enable_lgbm_gating = config.get('enable_lgbm_feature_gating', True)
+            
+            if enable_lgbm_gating and FEATURE_SELECTOR_AVAILABLE and len(features.columns) > target_n_features_selector:
+                tprint(f"🌟 LGBM FeatureSelector gating on base feature set (pre-interactions)")
+                tprint(f"   Input: {len(features.columns)} features → Target: {target_n_features_selector}")
+                
+                try:
+                    # Try to attach labels for feature selection
+                    features_with_labels = self._attach_labels_for_baseline(features.copy(), config)
+                    
+                    if features_with_labels is not None:
+                        # Find a suitable target column for feature selection
+                        target_col = None
+                        direction = str(config.get('direction', 'long')).lower()
+                        
+                        # Priority order for target selection
+                        target_candidates = [
+                            'binary_label',
+                            f'fused_target_{direction}' if direction in ['long', 'short'] else 'fused_target_long',
+                            'target_long_fused', 'target_short_fused',
+                            'target_long', 'target_short',
+                            'price_target_vol_normalized',
+                        ]
+                        
+                        for candidate in target_candidates:
+                            if candidate in features_with_labels.columns:
+                                non_null = features_with_labels[candidate].notna().sum()
+                                if non_null > 100:  # Need enough samples
+                                    target_col = candidate
+                                    tprint(f"   Using target: {target_col} ({non_null} non-null samples)")
+                                    break
+                        
+                        if target_col:
+                            # Prepare feature matrix (exclude target columns)
+                            target_like_cols = [c for c in features_with_labels.columns 
+                                              if any(t in c.lower() for t in ['target', 'label', 'weight'])]
+                            feature_cols = [c for c in features_with_labels.columns if c not in target_like_cols]
+                            
+                            X_fs = features_with_labels[feature_cols].copy()
+                            y_fs = features_with_labels[target_col].copy()
+                            
+                            # Run FeatureSelector
+                            fs = FeatureSelector(target_n_features=target_n_features_selector, verbose=True)
+                            selected_features = fs.select_features(X_fs, y_fs, target_name=target_col)
+                            
+                            if selected_features and len(selected_features) > 0:
+                                tprint(f"✅ FeatureSelector selected {len(selected_features)} features")
+                                tprint(f"📜 Base selected features (first 20): {selected_features[:20]}")
+                                
+                                # Keep only selected features
+                                features = features[selected_features].copy()
+                                metrics['lgbm_gating'] = {
+                                    'enabled': True,
+                                    'input_features': len(feature_cols),
+                                    'selected_features': len(selected_features),
+                                    'target_used': target_col,
+                                }
+                                
+                                # Re-save artifact with selected features
+                                tprint("💾 Re-saving artifact after LGBM feature gating...")
+                                features_artifact_path = self._save_artifact(
+                                    data=features,
+                                    artifact_name=artifact_name,
+                                    artifact_type='data',
+                                    metadata={
+                                        'symbol': config['symbol'],
+                                        'exchange': config['exchange'],
+                                        'timeframe': timeframe,
+                                        'execution_mode': config.get('execution_mode', 'light'),
+                                        'created_at': datetime.now().isoformat(),
+                                        'n_features': len(features.columns),
+                                        'lgbm_gating_applied': True,
+                                        'lgbm_target_used': target_col,
+                                    }
+                                )
+                                artifacts['generated_features'] = features_artifact_path
+                            else:
+                                tprint("⚠️ FeatureSelector returned no features, keeping original set")
+                        else:
+                            tprint("⚠️ FeatureSelector gating skipped: no suitable primary target available")
+                    else:
+                        tprint("⚠️ FeatureSelector gating skipped: could not attach labels from labeling step")
+                        
+                except Exception as e:
+                    tprint(f"⚠️ FeatureSelector gating failed: {e}")
+                    self.logger.warning(f"FeatureSelector gating failed: {e}")
+            elif not FEATURE_SELECTOR_AVAILABLE:
+                tprint("⚠️ FeatureSelector not available, skipping LGBM-based base feature selection")
+            elif len(features.columns) <= target_n_features_selector:
+                tprint(f"ℹ️ Feature count ({len(features.columns)}) already at or below target ({target_n_features_selector}), skipping LGBM gating")
+            elif not enable_lgbm_gating:
+                tprint("ℹ️ LGBM feature gating disabled via config (enable_lgbm_feature_gating=False)")
 
             analysis_include_results = self.basic_feature_analysis_include.run(features, config)
             if analysis_include_results:

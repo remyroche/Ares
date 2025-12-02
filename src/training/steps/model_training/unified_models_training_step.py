@@ -10,7 +10,7 @@ import yaml
 import os
 import pandas as pd
 import numpy as np
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime
 
 # HPO imports (only those actually used)
@@ -1721,6 +1721,95 @@ class UnifiedModelsTrainingStep(BaseStep):
                 raise ValueError(error_msg)
 
             if training_data is not None and isinstance(training_data, pd.DataFrame):
+                # ================================================================
+                # ANALYST_BASE DENSE FEATURE RECONSTRUCTION
+                # ================================================================
+                # For analyst_base training, the selected_feature_dataframe_50 may
+                # be sparse (event-only rows). We want dense OOF predictions over
+                # the full 15m grid. To achieve this:
+                # 1. Extract selected feature column names from the sparse frame
+                # 2. Load dense analyst_combined_features from interaction step
+                # 3. Apply selected columns to dense frame, preserving all rows
+                #
+                # This ensures analyst_base models can predict on all 15m bars.
+                if 'analyst_base' in training_type_local:
+                    selected_feature_cols = [
+                        c for c in training_data.columns
+                        if c not in {'timestamp', 'target', 'label', 'target_long', 'target_short'}
+                        and not c.lower().endswith('_target')
+                        and not c.lower().endswith('_label')
+                    ]
+                    
+                    # Try to load dense analyst_combined_features
+                    dense_base = None
+                    try:
+                        # First try from interaction generation step context
+                        original_step = getattr(self.artifact_manager, '_current_step_name', None)
+                        try:
+                            self.artifact_manager.set_context(
+                                step_name='feature_generation_interaction_generation_step',
+                                symbol=config.get('symbol', 'ETHUSDT'),
+                                exchange=config.get('exchange', 'binance'),
+                                timeframe=config.get('timeframe', '15m'),
+                                direction=config.get('direction', 'long'),
+                                model='analyst',
+                            )
+                            dense_base = self._get_artifact('analyst_combined_features', 'data')
+                        finally:
+                            # Restore original context
+                            if original_step:
+                                self.artifact_manager.set_context(step_name=original_step)
+                    except Exception as e:
+                        tprint_info(f"   ↪ Could not load analyst_combined_features: {e}")
+                        dense_base = None
+                    
+                    if dense_base is not None and isinstance(dense_base, pd.DataFrame):
+                        # Find overlap between selected features and dense base
+                        overlap_cols = [c for c in selected_feature_cols if c in dense_base.columns]
+                        
+                        if len(overlap_cols) >= len(selected_feature_cols) * 0.5:  # At least 50% overlap
+                            sparse_rows = len(training_data)
+                            dense_rows = len(dense_base)
+                            
+                            tprint_info("=" * 80)
+                            tprint_info("🔄 ANALYST_BASE DENSE FEATURE RECONSTRUCTION")
+                            tprint_info("=" * 80)
+                            tprint_info(f"   Sparse selected_feature_dataframe: {sparse_rows} rows")
+                            tprint_info(f"   Dense analyst_combined_features: {dense_rows} rows")
+                            tprint_info(f"   Selected feature columns: {len(selected_feature_cols)}")
+                            tprint_info(f"   Overlap columns: {len(overlap_cols)}")
+                            
+                            # Use dense base with selected columns
+                            new_training_data = dense_base[overlap_cols].copy()
+                            
+                            # Preserve target columns from the sparse frame if needed
+                            target_cols = [c for c in training_data.columns 
+                                         if 'target' in c.lower() or 'label' in c.lower()]
+                            for tc in target_cols:
+                                if tc in training_data.columns:
+                                    # Reindex targets to dense index
+                                    try:
+                                        new_training_data[tc] = training_data[tc].reindex(dense_base.index)
+                                        non_null = new_training_data[tc].notna().sum()
+                                        tprint_info(f"   ✅ Merged target '{tc}': {non_null} non-null values")
+                                    except Exception as e:
+                                        tprint_warning(f"   ⚠️ Could not merge target '{tc}': {e}")
+                            
+                            training_data = new_training_data
+                            feature_source_name = f"dense_reconstruction:{feature_source_name}"
+                            tprint_success(
+                                f"✅ Reconstructed dense training data: {training_data.shape} "
+                                f"({dense_rows} rows vs {sparse_rows} sparse)"
+                            )
+                            tprint_info("=" * 80)
+                        else:
+                            tprint_info(
+                                f"   ℹ️ Skipping dense reconstruction: only {len(overlap_cols)}/{len(selected_feature_cols)} "
+                                f"columns overlap with analyst_combined_features"
+                            )
+                    else:
+                        tprint_info("   ℹ️ Dense analyst_combined_features not available; using sparse frame")
+
                 # Comprehensive feature loading verification and logging
                 tprint_info("=" * 80)
                 tprint_info("📊 COMPREHENSIVE FEATURE LOADING VERIFICATION")

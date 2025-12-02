@@ -283,6 +283,38 @@ class DampenedKellyEngine:
         return self.global_fallback.copy()
     
     @staticmethod
+    def calculate_shannon_entropy(p: float) -> float:
+        """
+        Calculate Shannon entropy for binary outcome.
+
+        This calculates the information entropy H(p) of a Bernoulli process with
+        probability p. It serves as a measure of epistemic uncertainty for a
+        single classifier prediction, independent of ensemble disagreement.
+
+        H(p) = -p*log2(p) - (1-p)*log2(1-p)
+
+        Properties:
+        - Maximum (1.0 bit) at p = 0.5 (maximum uncertainty)
+        - Minimum (0.0 bit) at p = 0.0 or p = 1.0 (maximum certainty)
+        - Symmetric around p = 0.5
+
+        This metric allows the Kelly engine to penalize "low confidence"
+        predictions (near 0.5) even if they come from a single model or
+        a consensus of models that are all uncertain.
+
+        Args:
+            p: Probability of positive outcome
+
+        Returns:
+            Shannon entropy (bits)
+        """
+        if p <= 0.0 or p >= 1.0:
+            return 0.0
+
+        # H(p) = -p*log2(p) - (1-p)*log2(1-p)
+        return -(p * np.log2(p) + (1 - p) * np.log2(1 - p))
+
+    @staticmethod
     def calculate_system_half_life_params(
         system_half_life: float,
         target_samples: int = 200

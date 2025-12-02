@@ -24,7 +24,7 @@ def generate_risk_regime_features(
     This mirrors the logic of ``MLRiskRegimeStep._generate_risk_features`` so
     that the computation of the risk features is centralized in the
     feature bank. The returned DataFrame contains the five core risk
-    features already normalized with a rolling winsorized z-score.
+    features normalized with a rolling winsorized z-score.
 
     OPTIMIZED: Uses EWM instead of rolling for volatility features.
     EWM is O(1) per update vs O(window) for rolling windows.
@@ -42,8 +42,9 @@ def generate_risk_regime_features(
         ``parkinson_volatility``, ``hurst_exponent``, ``rolling_kurtosis``,
         ``rolling_skewness``, ``volatility_of_volatility``.
     """
-    if not {"high", "low", "close"}.issubset(df.columns):
-        raise ValueError("Market data must contain 'high', 'low', and 'close' columns")
+    required = {"high", "low", "close"}
+    if not required.issubset(df.columns):
+        raise ValueError(f"Market data must contain {required} columns")
 
     # Use float32 for memory efficiency
     use_ewm = config.get("risk_use_ewm", True)  # OPTIMIZED: Use EWM by default

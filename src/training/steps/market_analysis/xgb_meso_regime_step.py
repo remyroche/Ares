@@ -19,6 +19,8 @@ Responsibilities:
 
 import logging
 import time
+import itertools
+import random
 from typing import Any, Dict, Optional, Tuple, List
 from dataclasses import asdict, is_dataclass
 from datetime import datetime
@@ -162,8 +164,11 @@ class XGBMesoTrendStep(BaseStep):
             # For 15m bars: 12 bars (3h) and 24 bars (6h) seems appropriate for meso
             # For 1h bars: 3 bars and 6 bars
 
-            ewma_short = 12 if 'm' in regime_timeframe else 3
-            ewma_long = 24 if 'm' in regime_timeframe else 6
+            default_short = 12 if 'm' in regime_timeframe else 3
+            default_long = 24 if 'm' in regime_timeframe else 6
+
+            ewma_short = int(config.get("meso_ewma_short", default_short))
+            ewma_long = int(config.get("meso_ewma_long", default_long))
 
             fe_config = FeatureEngineeringConfig(
                 ewma_configs=[EWMAConfig(ewma_short, ewma_long, "meso")],
@@ -187,7 +192,7 @@ class XGBMesoTrendStep(BaseStep):
             )
 
             # Generate Cross-Timeframe Features
-            htf_df = self._generate_cross_timeframe_features(market_data, regime_timeframe)
+            htf_df = self._generate_cross_timeframe_features(market_data, regime_timeframe, config)
 
             # Merge Features
             # Join HTF features (they are already reindexed to market_data index)
@@ -301,19 +306,166 @@ class XGBMesoTrendStep(BaseStep):
     # Helper Methods
     # --------------------------------------------------------------------------
 
-    def _generate_cross_timeframe_features(self, market_data: pd.DataFrame, base_tf: str) -> pd.DataFrame:
+    def generate_config_variations(self, base_config: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Generate a grid/random search of feature parameter variations."""
+
+        # Define parameter grid
+        variations = {
+            # Target Vol Window
+            "meso_trend_target_vol_window": [192, 320, 480],
+
+            # EWMA Spans (Short, Long)
+            "meso_ewma_short": [8, 12, 16],
+            "meso_ewma_long": [16, 24, 32],
+
+            # HTF Lookbacks
+            "meso_htf_rsi_period": [14, 21],
+            "meso_htf_atr_period": [14, 21],
+            "meso_htf_macd_fast": [12, 8],
+            "meso_htf_macd_slow": [26, 21],
+        }
+
+        # Generate all combinations (Grid Search)
+        # Note: We filter for ewma_short < ewma_long
+
+        keys = list(variations.keys())
+        values = list(variations.values())
+
+        configs = []
+        max_configs = int(base_config.get("meso_sweep_max_configs", 30))
+
+        all_combinations = list(itertools.product(*values))
+
+        # Shuffle for random search effect if limiting count
+        random.shuffle(all_combinations)
+
+        for combo in all_combinations:
+            if len(configs) >= max_configs:
+                break
+
+            cfg_update = dict(zip(keys, combo))
+
+            # Logic constraints
+            if cfg_update["meso_ewma_short"] >= cfg_update["meso_ewma_long"]:
+                continue
+
+            if cfg_update["meso_htf_macd_fast"] >= cfg_update["meso_htf_macd_slow"]:
+                continue
+
+            new_config = base_config.copy()
+            new_config.update(cfg_update)
+            # Add a signature
+            sig_parts = [f"{k}={v}" for k, v in cfg_update.items()]
+            new_config["config_signature"] = "|".join(sig_parts)
+            configs.append(new_config)
+
+        tprint_info(f"🔧 Generated {len(configs)} configuration variations for sweep")
+        return configs
+
+    async def run_config_batch(self, configs: List[Dict[str, Any]], symbol: str, exchange: str) -> List[Dict[str, Any]]:
+        """Run a batch of configurations and collect results."""
+        results = []
+        total = len(configs)
+
+        for i, config in enumerate(configs):
+            tprint_info(f"🚀 Running sweep config {i+1}/{total}")
+
+            try:
+                # Ensure execution mode is efficient
+                config.setdefault("execution_mode", "light")
+
+                # Execute
+                result = await self.execute(config)
+
+                metrics = result.get("training_metrics", {})
+                success = result.get("success", False)
+
+                # Extract RMSE
+                rmse = metrics.get("train_rmse", None) # StandardizedXGBTrainer puts val/oof metric here typically
+
+                res_entry = {
+                    "config_id": i + 1,
+                    "config_signature": config.get("config_signature", "unknown"),
+                    "success": success,
+                    "rmse": rmse,
+                    "n_samples": result.get("n_samples", 0),
+                    "error": result.get("error", ""),
+                }
+
+                # Add config params
+                for k in config:
+                    if k.startswith("meso_"):
+                        res_entry[k] = config[k]
+
+                results.append(res_entry)
+
+                if success:
+                    tprint_info(f"✅ Config {i+1} done. RMSE: {rmse}")
+                else:
+                    tprint_warning(f"⚠️ Config {i+1} failed: {res_entry['error']}")
+
+            except Exception as e:
+                tprint_error(f"❌ Config {i+1} crashed: {e}")
+                results.append({
+                    "config_id": i + 1,
+                    "success": False,
+                    "error": str(e)
+                })
+
+        return results
+
+    def analyze_and_rank_results(self, results: List[Dict[str, Any]]) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+        """Rank results by RMSE."""
+        df = pd.DataFrame(results)
+
+        if df.empty:
+            return df, {}
+
+        successful = df[df["success"] == True].copy()
+
+        if successful.empty:
+            return df, {"analysis": "no_successful_runs"}
+
+        # Convert RMSE to float
+        successful["rmse"] = pd.to_numeric(successful["rmse"], errors="coerce")
+        successful = successful.dropna(subset=["rmse"])
+
+        # Sort ascending (lower RMSE is better)
+        successful = successful.sort_values("rmse", ascending=True)
+
+        best_config_row = successful.iloc[0]
+
+        analysis = {
+            "best_rmse": float(best_config_row["rmse"]),
+            "best_config_id": int(best_config_row["config_id"]),
+            "best_signature": best_config_row["config_signature"],
+            "total_runs": len(results),
+            "successful_runs": len(successful)
+        }
+
+        return pd.concat([successful, df[df["success"] == False]], ignore_index=True), analysis
+
+    def _generate_cross_timeframe_features(self, market_data: pd.DataFrame, base_tf: str, config: Optional[Dict[str, Any]] = None) -> pd.DataFrame:
         """Generate features from higher timeframes (1h, 4h)."""
         # Only generating for 15m base for now to ensure reliability
         if "15m" not in base_tf:
             tprint_info(f"Skipping HTF features for base timeframe {base_tf} (only 15m supported for now)")
             return pd.DataFrame(index=market_data.index)
 
+        config = config or {}
+
         htf_features = pd.DataFrame(index=market_data.index)
 
         # Define HTFs to process
         htfs = ["1h", "4h"]
 
-        tprint_info(f"Generating HTF features for: {htfs}")
+        # Param lookups
+        rsi_period = int(config.get("meso_htf_rsi_period", 14))
+        atr_period = int(config.get("meso_htf_atr_period", 14))
+        macd_fast = int(config.get("meso_htf_macd_fast", 12))
+        macd_slow = int(config.get("meso_htf_macd_slow", 26))
+
+        tprint_info(f"Generating HTF features for: {htfs} with RSI={rsi_period}, ATR={atr_period}, MACD=({macd_fast}, {macd_slow})")
 
         for htf in htfs:
             try:
@@ -325,16 +477,16 @@ class XGBMesoTrendStep(BaseStep):
                 if resampled.empty:
                     continue
 
-                # HTF RSI (14 period)
+                # HTF RSI
                 delta = resampled["close"].diff()
-                gain = (delta.where(delta > 0, 0)).rolling(14).mean()
-                loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+                gain = (delta.where(delta > 0, 0)).rolling(rsi_period).mean()
+                loss = (-delta.where(delta < 0, 0)).rolling(rsi_period).mean()
                 rs = gain / (loss + 1e-8)
                 rsi = 100 - (100 / (1 + rs))
 
-                # HTF Trend (MACD-like: EMA 12 - EMA 26 normalized)
-                ema_fast = resampled["close"].ewm(span=12, adjust=False).mean()
-                ema_slow = resampled["close"].ewm(span=26, adjust=False).mean()
+                # HTF Trend (MACD-like)
+                ema_fast = resampled["close"].ewm(span=macd_fast, adjust=False).mean()
+                ema_slow = resampled["close"].ewm(span=macd_slow, adjust=False).mean()
                 trend = (ema_fast - ema_slow) / (resampled["close"] + 1e-8)
 
                 # HTF Volatility (ATR-like normalized by price)
@@ -342,7 +494,7 @@ class XGBMesoTrendStep(BaseStep):
                 tr2 = (resampled["high"] - resampled["close"].shift()).abs()
                 tr3 = (resampled["low"] - resampled["close"].shift()).abs()
                 tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-                atr = tr.rolling(14).mean()
+                atr = tr.rolling(atr_period).mean()
                 vol = atr / (resampled["close"] + 1e-8)
 
                 # Reindex to base index (broadcast)

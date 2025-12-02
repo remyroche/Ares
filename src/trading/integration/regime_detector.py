@@ -95,6 +95,7 @@ class HybridRegimeDetector:
             Dict with at least:
             - 'primary_regime': int index (used by SignalGenerationPipeline)
             - 'regime_probabilities': mapping from 'regime_i' to float
+            - 'specialist_outputs': Dict of all aligned specialist values (scalars)
             - Optional diagnostics: 'confidence', 'regime_strength',
               'transition_probability', 'features_used'
         """
@@ -130,6 +131,7 @@ class HybridRegimeDetector:
             return {
                 "primary_regime": primary_idx,
                 "regime_probabilities": regime_probs_dict,
+                "specialist_outputs": {},
                 "confidence": float(probs[primary_idx]),
                 "regime_strength": float(probs[primary_idx]),
                 "transition_probability": 0.5,
@@ -137,6 +139,23 @@ class HybridRegimeDetector:
             }
 
         last = regime_df.iloc[-1]
+
+        # Convert the full last row to a dictionary for downstream consumers
+        # (e.g. SignalPipeline) to access specific specialist scalars like
+        # smc_predicted, vol_force_scalar, etc.
+        specialist_outputs = {}
+        try:
+            for k, v in last.items():
+                if isinstance(v, (int, float, bool, np.number)):
+                    if pd.isna(v):
+                        specialist_outputs[str(k)] = None
+                    else:
+                        specialist_outputs[str(k)] = float(v)
+                else:
+                    specialist_outputs[str(k)] = v
+        except Exception as e:
+            tprint_warning(f"Failed to serialize specialist outputs: {e}")
+            specialist_outputs = {}
 
         # Prefer ML Risk regime probabilities when available
         risk_cols = [
@@ -196,6 +215,7 @@ class HybridRegimeDetector:
         return {
             "primary_regime": primary_idx,
             "regime_probabilities": regime_probs_dict,
+            "specialist_outputs": specialist_outputs,
             "confidence": confidence,
             "regime_strength": confidence,
             "transition_probability": 0.5,

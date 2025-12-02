@@ -701,7 +701,7 @@ def get_specialist_models_outputs(
 
         # Reuse the standardized training artifact produced by MLPathRegimeStep.
         path_training = artifact_router.load(
-            artifact_name="ml_risk_training_data_15m",
+            artifact_name="ml_path_training_data_15m",
             artifact_type="data",
             data_category="features",
             context=path_context,
@@ -714,7 +714,7 @@ def get_specialist_models_outputs(
 
             if isinstance(path_training.index, pd.DatetimeIndex) and len(path_training.index) > 0:
                 log_info(
-                    "📈 Path (ml_risk_training_data_15m under ml_path_regime_step) index range: %s → %s (n=%d)"
+                    "📈 Path (ml_path_training_data_15m under ml_path_regime_step) index range: %s → %s (n=%d)"
                     % (
                         path_training.index.min(),
                         path_training.index.max(),
@@ -723,14 +723,17 @@ def get_specialist_models_outputs(
                 )
 
             # Select path-specific features plus a dedicated path_regime label
-            # derived from the stored risk_regime column.
+            # derived from the stored risk_regime column (if present, otherwise trust path_regime).
             path_cols: List[str] = [
                 c for c in path_training.columns if c.startswith("path_")
             ]
 
-            if "risk_regime" in path_training.columns:
+            # If the artifact still uses 'risk_regime' as the label column, alias it to 'path_regime'
+            if "risk_regime" in path_training.columns and "path_regime" not in path_training.columns:
                 path_training = path_training.copy()
                 path_training["path_regime"] = path_training["risk_regime"]
+                path_cols.append("path_regime")
+            elif "path_regime" in path_training.columns:
                 path_cols.append("path_regime")
 
             if path_cols:
@@ -743,7 +746,7 @@ def get_specialist_models_outputs(
                 nnz_after = int(block.notna().sum().sum())
                 blocks.append(block)
                 log_success(
-                    "✅ Added Path specialist block from 'ml_risk_training_data_15m' (ml_path_regime_step): "
+                    "✅ Added Path specialist block from 'ml_path_training_data_15m' (ml_path_regime_step): "
                     f"shape={block.shape}, non_null_before={nnz_before}, "
                     f"non_null_after={nnz_after}"
                 )
@@ -973,7 +976,92 @@ def get_specialist_models_outputs(
         log_warning(f"⚠️ Failed to load Macro Trend specialist outputs: {e}")
 
     # ------------------------------------------------------------------
-    # 7) ML Risk HMM regimes – optional second risk flavor
+    # 7) Volume Force specialist – scalar directional prediction
+    # ------------------------------------------------------------------
+    try:
+        log_info("=" * 80)
+        log_info("🌪️ LOADING SPECIALIST: VOLUME FORCE OUTPUTS")
+        log_info("=" * 80)
+
+        vol_force_context = {
+            "symbol": symbol,
+            "exchange": exchange,
+            "timeframe": base_timeframe,
+            "direction": direction,
+            "model": "volume_force",
+            "step_name": "ml_volume_force_step",
+        }
+
+        vol_force_preds = artifact_router.load(
+            artifact_name="ml_volume_force_predictions",
+            artifact_type="data",
+            data_category="predictions",
+            context=vol_force_context,
+        )
+
+        if vol_force_preds is not None and not getattr(vol_force_preds, "empty", True):
+            if not isinstance(vol_force_preds, pd.DataFrame):
+                vol_force_preds = pd.DataFrame(vol_force_preds)
+            vol_force_preds = _standardize_index(vol_force_preds)
+
+            if isinstance(vol_force_preds.index, pd.DatetimeIndex) and len(vol_force_preds.index) > 0:
+                log_info(
+                    "📈 Volume Force (ml_volume_force_predictions) index range: %s → %s (n=%d)"
+                    % (
+                        vol_force_preds.index.min(),
+                        vol_force_preds.index.max(),
+                        len(vol_force_preds.index),
+                    )
+                )
+
+            # Expose 'predicted' (scalar 0-1) and rename to vol_force_scalar
+            vol_cols: List[str] = []
+            rename_map = {}
+            if "predicted" in vol_force_preds.columns:
+                vol_cols.append("predicted")
+                rename_map["predicted"] = "vol_force_scalar"
+            elif "scalar_pred" in vol_force_preds.columns:
+                vol_cols.append("scalar_pred")
+                rename_map["scalar_pred"] = "vol_force_scalar"
+
+            if vol_cols:
+                before_block = vol_force_preds[vol_cols].copy()
+                if rename_map:
+                    before_block = before_block.rename(columns=rename_map)
+
+                nnz_before = int(before_block.notna().sum().sum())
+                # Align to training_index with forward-fill. Note: Volume Force predictions
+                # are typically OOF or next-bar forecasts. If used as a feature for
+                # ensemble models predicting the *same* horizon, we might use them directly.
+                # However, consistent with other regime signals which are states *entering*
+                # the bar, we should check if shift(1) is needed.
+                # Standard practice here: if the artifact is indexed by prediction time (entry),
+                # we don't shift. If indexed by result time, we shift.
+                # MLVolumeForceStep saves predictions indexed by entry time.
+                # To be safe and prevent lookahead if the ensemble is trained on t+1 target,
+                # we usually use features available at t.
+                # Most specialist blocks here use shift(1) + ffill.
+                # We will follow the pattern: shift(1) to represent "value available at open/close of previous bar".
+                block = before_block.shift(1).fillna(method="ffill")
+                block = block.reindex(training_index, method="ffill")
+                nnz_after = int(block.notna().sum().sum())
+
+                blocks.append(block)
+                log_success(
+                    "✅ Added Volume Force specialist block from 'ml_volume_force_predictions': "
+                    f"shape={block.shape}, non_null_before={nnz_before}, "
+                    f"non_null_after={nnz_after}"
+                )
+                if nnz_after == 0:
+                    log_warning(
+                        "⚠️ Volume Force block aligned to training_index is all-NaN. "
+                        "Check volume force timestamps."
+                    )
+    except Exception as e:
+        log_warning(f"⚠️ Failed to load Volume Force specialist outputs: {e}")
+
+    # ------------------------------------------------------------------
+    # 8) ML Risk HMM regimes – optional second risk flavor
     # ------------------------------------------------------------------
     if config.get("enable_risk_hmm_specialist", True):
         try:

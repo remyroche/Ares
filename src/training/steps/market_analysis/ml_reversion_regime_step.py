@@ -1352,25 +1352,27 @@ class MLMeanReversionRegimeStep(BaseStep):
             if close.iloc[i] > 0 and close.iloc[i + forward_horizon] > 0:
                 fwd_returns[i] = (close.iloc[i + forward_horizon] - close.iloc[i]) / close.iloc[i]
 
-        # Quick PnL-aligned approximation: subtract an approximate round-trip
+        # Quick PnL-aligned approximation: account for fees symmetrically
         # fee from the forward return so that labels reflect whether a trade
         # would have been profitable after fees at this horizon.
         fee_rate = float(config.get("mr_fee_rate", 0.0015))  # ~0.15% round trip
         effective_fee = float(config.get("mr_effective_roundtrip_fee", 2.0 * fee_rate))
-        net_returns = fwd_returns - effective_fee
+
+        # Hurdle needed to clear costs and minimum profit threshold
+        hurdle = min_threshold + effective_fee
 
         # Classification:
-        # - If net return > +min_threshold: label = 0 (bullish, price went up)
-        # - If net return < -min_threshold: label = 1 (bearish, price went down)
-        # - If |net return| < min_threshold: leave unlabeled (NaN) so these are dropped
+        # - Long profitable:  return > hurdle (return > threshold + fee)
+        # - Short profitable: return < -hurdle (return < -(threshold + fee))
+        # - Otherwise: leave unlabeled (NaN)
         y_direction = np.full(len(close), np.nan)
-        finite_mask = np.isfinite(net_returns)
+        finite_mask = np.isfinite(fwd_returns)
         if bool(finite_mask.any()):
-            net_valid = net_returns[finite_mask]
-            labels = np.full(net_valid.shape, np.nan)
+            fwd_valid = fwd_returns[finite_mask]
+            labels = np.full(fwd_valid.shape, np.nan)
 
-            large_up = net_valid > min_threshold
-            large_down = net_valid < -min_threshold
+            large_up = fwd_valid > hurdle
+            large_down = fwd_valid < -hurdle
 
             labels[large_up] = 0
             labels[large_down] = 1

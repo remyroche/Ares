@@ -62,11 +62,80 @@ from src.training.steps.pre_training.components.final_feature_selection import (
     FinalFeatureSelectionConfig,
     FinalFeatureSelectionComponent,
 )
+from src.training.steps.market_analysis import step_registry  # type: ignore
 
 
 logger = system_logger.getChild("specialist_feature_diagnostics")
 
 OUTCOMES_DIR = Path("outcomes")
+
+
+async def _run_specialist_training(
+    symbol: str,
+    exchange: str,
+    timeframe: str,
+    direction: str,
+    regime_timeframe: str,
+    lookback_days: Optional[float] = None,
+) -> None:
+    """Run training for all specialist models sequentially."""
+    logger.info("🚀 Starting full specialist model training sequence")
+
+    # Order matters: some steps might depend on artifacts from others,
+    # though ideally they should be independent or use shared feature generation.
+    specialist_steps = [
+        "ml_volume_force_step",
+        "ml_breakout_bounce_regime_step",
+        "ml_mean_reversion_step",
+        "xgb_meso_regime",
+        "hmm_macro_regime",
+        "ml_smc_regime_step",
+        "ml_liquidity_regime_step",
+        "ml_risk_regime_step",
+        "ml_path_regime_step",
+    ]
+
+    config_base = {
+        "symbol": symbol,
+        "exchange": exchange,
+        "timeframe": timeframe,
+        "direction": direction,
+        "regime_timeframe": regime_timeframe,
+        "execution_mode": "full", # default to full for training
+    }
+
+    if lookback_days:
+        config_base["lookback_days"] = lookback_days
+
+    for step_key in specialist_steps:
+        # Verify registry key and handle potential aliases (e.g. missing _step suffix)
+        try:
+             if not step_registry.is_registered(step_key):
+                 if step_registry.is_registered(step_key + "_step"):
+                     step_key = step_key + "_step"
+                 else:
+                     logger.warning(f"⚠️ Step '{step_key}' not found in registry. Skipping.")
+                     continue
+        except Exception:
+             logger.warning(f"⚠️ Error checking registry for '{step_key}'. Skipping.")
+             continue
+
+        logger.info(f"▶️ Running {step_key}...")
+        try:
+            StepClass = step_registry.get_step(step_key)
+            step_instance = StepClass(step_name=step_key)
+
+            # Run the step
+            result = await step_instance.run(config_base)
+
+            if result.get("success"):
+                logger.info(f"✅ {step_key} completed successfully.")
+            else:
+                logger.error(f"❌ {step_key} failed: {result.get('error')}")
+        except Exception as exc:
+            logger.error(f"❌ Exception running {step_key}: {exc}")
+
+    logger.info("🏁 Specialist model training sequence finished.")
 
 
 def _ensure_outcomes_dir() -> Path:
@@ -1654,10 +1723,27 @@ def main() -> None:
             "the HMM risk specialist."
         ),
     )
+    ap.add_argument(
+        "--train-specialists",
+        action="store_true",
+        help="Run training for all specialist models before diagnostics.",
+    )
 
     args = ap.parse_args()
 
     logging.getLogger().setLevel(logging.INFO)
+
+    # Optional: Run training first if requested
+    if args.train_specialists:
+        import asyncio
+        asyncio.run(_run_specialist_training(
+            symbol=args.symbol,
+            exchange=args.exchange,
+            timeframe=args.timeframe,
+            direction=args.direction,
+            regime_timeframe=args.regime_timeframe,
+            lookback_days=args.lookback_days,
+        ))
 
     md_path, csv_path = run_diagnostics(
         symbol=args.symbol,

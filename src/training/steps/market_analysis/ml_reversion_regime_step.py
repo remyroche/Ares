@@ -1342,40 +1342,95 @@ class MLMeanReversionRegimeStep(BaseStep):
         """
         close = df["close"].astype(float)
 
-        # For 15m timeframe, prefer a slightly longer 4–8 bar horizon
-        # (default 8 bars ≈ 2 hours) to reduce micro-noise.
-        forward_horizon = int(config.get("mr_forward_target_horizon", 8))
-        min_threshold = float(config.get("mr_direction_min_threshold", 0.01))  # 1.0% minimum move
+        # For 15m timeframe, prefer a longer horizon to capture mean reversion
+        # (default 12 bars ≈ 3 hours)
+        forward_horizon = int(config.get("mr_forward_target_horizon", 12))
+        min_fixed_target = float(config.get("mr_direction_min_threshold", 0.015))  # 1.5% default
+        atr_mult = float(config.get("mr_dynamic_target_atr_multiplier", 2.0))
 
-        fwd_returns = np.full(len(close), np.nan)
-        for i in range(len(close) - forward_horizon):
-            if close.iloc[i] > 0 and close.iloc[i + forward_horizon] > 0:
-                fwd_returns[i] = (close.iloc[i + forward_horizon] - close.iloc[i]) / close.iloc[i]
-
-        # Quick PnL-aligned approximation: subtract an approximate round-trip
-        # fee from the forward return so that labels reflect whether a trade
-        # would have been profitable after fees at this horizon.
-        fee_rate = float(config.get("mr_fee_rate", 0.0015))  # ~0.15% round trip
+        # Fee calc
+        fee_rate = float(config.get("mr_fee_rate", 0.0015))
         effective_fee = float(config.get("mr_effective_roundtrip_fee", 2.0 * fee_rate))
-        net_returns = fwd_returns - effective_fee
 
-        # Classification:
-        # - If net return > +min_threshold: label = 0 (bullish, price went up)
-        # - If net return < -min_threshold: label = 1 (bearish, price went down)
-        # - If |net return| < min_threshold: leave unlabeled (NaN) so these are dropped
+        # Need ATR for dynamic target. Calculate if not already present,
+        # otherwise approximate or use re-calculation.
+        # Since this method might be called independently, let's re-calculate ATR-14 efficiently.
+        high = df["high"].values
+        low = df["low"].values
+        # close is already defined as float array
+
+        # Simple ATR calculation (Wilder's smoothing not strictly necessary for target generation, rolling mean is fine)
+        tr = np.maximum(high - low, np.abs(high - np.roll(close, 1)))
+        tr = np.maximum(tr, np.abs(low - np.roll(close, 1)))
+        # Handle first element
+        tr[0] = high[0] - low[0]
+
+        # Use pandas for easy rolling
+        atr_series = pd.Series(tr).rolling(14).mean().fillna(0.0).values
+
         y_direction = np.full(len(close), np.nan)
-        finite_mask = np.isfinite(net_returns)
-        if bool(finite_mask.any()):
-            net_valid = net_returns[finite_mask]
-            labels = np.full(net_valid.shape, np.nan)
 
-            large_up = net_valid > min_threshold
-            large_down = net_valid < -min_threshold
+        # Triple Barrier Logic with Dynamic Threshold
+        # Iterate through bars (performance note: this loop is generally fast enough for <1M bars,
+        # but could be vectorized if needed. For clarity/correctness of triple-barrier, loops are safer).
 
-            labels[large_up] = 0
-            labels[large_down] = 1
+        # Pre-calculate lookahead windows to avoid slicing in loop?
+        # For simplicity and correctness, we'll loop standardly.
 
-            y_direction[finite_mask] = labels
+        n_bars = len(close)
+
+        for i in range(n_bars - forward_horizon):
+            entry_price = close[i]
+            if entry_price <= 0:
+                continue
+
+            # Dynamic Target: max(1.5%, 2.0 * ATR/Price)
+            current_atr = atr_series[i]
+            vol_target_pct = 0.0
+            if entry_price > 0:
+                vol_target_pct = atr_mult * (current_atr / entry_price)
+
+            base_threshold_pct = max(min_fixed_target, vol_target_pct)
+
+            # Hurdle includes fee
+            hurdle_pct = base_threshold_pct + effective_fee
+
+            upper_barrier = entry_price * (1.0 + hurdle_pct)
+            lower_barrier = entry_price * (1.0 - hurdle_pct)
+
+            # Check horizon for touches
+            # Slice strictly forward: i+1 to i+horizon (inclusive)
+            # indices: i+1 ... i+horizon+1 (exclusive for python slice)
+            start_idx = i + 1
+            end_idx = i + 1 + forward_horizon
+
+            w_high = high[start_idx:end_idx]
+            w_low = low[start_idx:end_idx]
+
+            # Boolean arrays of touches
+            hit_upper = w_high >= upper_barrier
+            hit_lower = w_low <= lower_barrier
+
+            has_upper = hit_upper.any()
+            has_lower = hit_lower.any()
+
+            if not has_upper and not has_lower:
+                continue
+
+            # Find first index
+            idx_upper = np.argmax(hit_upper) if has_upper else 999999
+            idx_lower = np.argmax(hit_lower) if has_lower else 999999
+
+            if idx_upper < idx_lower:
+                # Bullish win (hit upper barrier first)
+                y_direction[i] = 0
+            elif idx_lower < idx_upper:
+                # Bearish win (hit lower barrier first)
+                # Note: "Bearish" label means price dropped.
+                y_direction[i] = 1
+            else:
+                # Simultaneous touch in the same bar (volatility) -> Ambiguous, skip
+                pass
 
         y_series = pd.Series(y_direction, index=df.index)
 
@@ -1392,7 +1447,8 @@ class MLMeanReversionRegimeStep(BaseStep):
 
             if "mr_teacher_score" in df.columns:
                 score = df["mr_teacher_score"].astype(float)
-                q_conf = float(config.get("mr_teacher_score_quantile", 0.8))
+                # Relaxed gating from 0.8 to 0.65 to expand scope
+                q_conf = float(config.get("mr_teacher_score_quantile", 0.65))
                 try:
                     thr = float(score.quantile(q_conf))
                     hi_band = score >= thr
@@ -1409,11 +1465,12 @@ class MLMeanReversionRegimeStep(BaseStep):
                 gating_mask = (teacher_mask & y_series.notna()).to_numpy()
 
             # RSI gating: drop labels where RSI is in a neutral range.
+            # Relaxed neutral band (40-60 instead of 35-65) to expand scope
             if "rsi" in df.columns:
                 rsi = df["rsi"].astype(float)
                 rsi_norm = rsi / 100.0
-                rsi_low = float(config.get("mr_rsi_neutral_low", 0.35))
-                rsi_high = float(config.get("mr_rsi_neutral_high", 0.65))
+                rsi_low = float(config.get("mr_rsi_neutral_low", 0.40))
+                rsi_high = float(config.get("mr_rsi_neutral_high", 0.60))
                 rsi_tradable = (rsi_norm < rsi_low) | (rsi_norm > rsi_high)
                 gating_mask = gating_mask & rsi_tradable.to_numpy()
 

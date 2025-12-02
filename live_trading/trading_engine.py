@@ -15,7 +15,9 @@ from .config import TradingConfig, TradingMode
 from .order_manager import OrderManager, Order
 from .data_streamer import DataStreamer, StreamData
 from .risk_manager import RiskManager
-from ..src.interfaces.base_interfaces import TradeDecision, AnalysisResult, StrategyResult, MarketData
+from src.interfaces.base_interfaces import TradeDecision, AnalysisResult, StrategyResult, MarketData
+import os
+from pathlib import Path
 from src.trading.signal_generation import (
     SignalGenerationPipeline,
     SignalGenerationResult,
@@ -86,6 +88,9 @@ class TradingEngine:
         # Rolling 1m OHLCV buffers per symbol (for resampling to 15m)
         self._ohlcv_buffers: Dict[str, pd.DataFrame] = {}
 
+        # Rolling standard 15m OHLCV history per symbol (for feature generation)
+        self._ohlcv_history_15m: Dict[str, pd.DataFrame] = {}
+
         # Regime monitoring
         self.regime_monitor: Optional[RegimeMonitor] = None
         
@@ -101,6 +106,9 @@ class TradingEngine:
             if hasattr(self.exchange_client, '_initialize_exchange'):
                 await self.exchange_client._initialize_exchange()
             
+            # Load warm-up data
+            await self._load_warmup_data()
+
             # Start components
             await self.order_manager.start()
             await self.data_streamer.start()
@@ -672,32 +680,21 @@ class TradingEngine:
             index=[market_data.timestamp],
         )
 
+        # Save raw 1m data immediately
+        await self._save_market_data(symbol, row, "1m")
+
         buf = self._ohlcv_buffers.get(symbol)
         if buf is None:
             buf = row
         else:
+            # Handle duplicates if timestamp already exists
+            if market_data.timestamp in buf.index:
+                buf = buf.drop(market_data.timestamp)
             buf = pd.concat([buf, row])
-            # Keep a reasonable history window (e.g., last 500 minutes)
-            buf = buf.sort_index().last("500min")
+            # Keep a large enough history window for 15m resampling and rolling windows
+            # 5 days * 24 hours * 60 minutes = 7200 rows. Let's keep 10000.
+            buf = buf.sort_index().last("10000min")
         self._ohlcv_buffers[symbol] = buf
-
-        # Resample to 15m bars for signal generation
-        try:
-            ohlcv_15m = (
-                buf.sort_index()
-                .resample("15T")
-                .agg({
-                    "open": "first",
-                    "high": "max",
-                    "low": "min",
-                    "close": "last",
-                    "volume": "sum",
-                })
-                .dropna()
-            )
-        except Exception as exc:
-            self.logger.warning(f"⚠️ Failed to resample OHLCV for {symbol}: {exc}")
-            ohlcv_15m = None
 
         # Notify external handlers with raw kline data (unchanged behavior)
         await self._notify_handlers(
@@ -710,13 +707,122 @@ class TradingEngine:
             },
         )
 
-        # If we have a signal pipeline for this symbol and enough 15m history, generate a live signal
+        # --- 15m Bar Maintenance ---
+
+        # Check if a standard 15m bar has closed (00, 15, 30, 45)
+        # Assuming the kline timestamp represents the OPEN time or CLOSE time?
+        # StreamData usually has close time or we infer it.
+        # If timestamp is 10:14:00 (1m bar), it closes at 10:15:00.
+        # Let's assume `market_data.timestamp` is the closing time of the 1m bar.
+        # If timestamp.minute is 0, 15, 30, 45, a 15m interval just finished.
+
+        if market_data.timestamp.minute % 15 == 0:
+            # Resample strictly up to this timestamp to get the closed 15m bar
+            try:
+                # Resample whole buffer to standard 15T
+                resampled_15m = (
+                    buf.sort_index()
+                    .resample("15T", label='right', closed='right') # align to close time
+                    .agg({
+                        "open": "first",
+                        "high": "max",
+                        "low": "min",
+                        "close": "last",
+                        "volume": "sum",
+                    })
+                    .dropna()
+                )
+
+                # Get the last bar which should match current timestamp
+                if not resampled_15m.empty:
+                    last_bar = resampled_15m.iloc[[-1]]
+                    if last_bar.index[-1] == market_data.timestamp:
+                        # Update persistent 15m history
+                        hist_15m = self._ohlcv_history_15m.get(symbol)
+                        if hist_15m is None:
+                            hist_15m = last_bar
+                        else:
+                            # Avoid duplicates
+                            if last_bar.index[-1] in hist_15m.index:
+                                hist_15m = hist_15m.drop(last_bar.index[-1])
+                            hist_15m = pd.concat([hist_15m, last_bar])
+                            # Keep ~60 days of 15m data (4 * 24 * 60 = 5760 rows)
+                            hist_15m = hist_15m.sort_index().tail(6000)
+
+                        self._ohlcv_history_15m[symbol] = hist_15m
+
+                        # Save the closed 15m bar
+                        await self._save_market_data(symbol, last_bar, "15m")
+            except Exception as exc:
+                self.logger.warning(f"⚠️ Failed to process standard 15m bar for {symbol}: {exc}")
+
+        # --- Signal Generation Logic ---
+
+        # If we have a signal pipeline for this symbol and enough 15m history
         pipeline = self.signal_pipelines.get(symbol)
-        if pipeline is None or ohlcv_15m is None or len(ohlcv_15m) < 20:
+
+        # Check if we should update signal (every 5 minutes)
+        # Trigger on 0, 5, 10, 15... minutes
+        if market_data.timestamp.minute % 5 != 0:
             return
 
-        # Only generate a signal when a 15m bar has just closed (minute divisible by 15)
-        if market_data.timestamp.minute % 15 != 0:
+        if pipeline is None:
+            return
+
+        # Prepare input data for pipeline:
+        # 1. Start with standard closed 15m history
+        input_data = self._ohlcv_history_15m.get(symbol)
+        if input_data is None or len(input_data) < 50: # Need decent history for indicators
+            # Try to build from buffer if history is missing (e.g. cold start without warmup)
+            try:
+                input_data = (
+                    buf.sort_index()
+                    .resample("15T", label='right', closed='right')
+                    .agg({
+                        "open": "first",
+                        "high": "max",
+                        "low": "min",
+                        "close": "last",
+                        "volume": "sum",
+                    })
+                    .dropna()
+                )
+            except Exception:
+                return # Not enough data
+
+        # 2. Construct "Ghost Bar" (Rolling 15m window ending NOW)
+        # This captures the latest 15m of market action, even if off-grid.
+        # e.g. at 10:05, window is 09:51 - 10:05
+        # We need the last 15 minutes of 1m data from buffer
+        try:
+            last_15_mins_1m = buf.sort_index().last("15min")
+            if not last_15_mins_1m.empty:
+                ghost_bar = pd.DataFrame({
+                    "open": [last_15_mins_1m["open"].iloc[0]],
+                    "high": [last_15_mins_1m["high"].max()],
+                    "low": [last_15_mins_1m["low"].min()],
+                    "close": [last_15_mins_1m["close"].iloc[-1]],
+                    "volume": [last_15_mins_1m["volume"].sum()]
+                }, index=[market_data.timestamp]) # Use current 1m timestamp as ghost bar timestamp
+
+                # 3. Append Ghost Bar to history (if it's not already the last closed bar)
+                # If we are at 10:00 (divisible by 15), the standard logic above might have added it.
+                # If prediction triggers at 10:00, standard logic puts 10:00 bar in history.
+                # If prediction triggers at 10:05, history has 10:00. We append 10:05.
+
+                # Copy to avoid modifying persistent history
+                prediction_input = input_data.copy()
+
+                if ghost_bar.index[-1] not in prediction_input.index:
+                    prediction_input = pd.concat([prediction_input, ghost_bar])
+                else:
+                    # Update existing (if for some reason it exists)
+                    prediction_input.loc[ghost_bar.index[-1]] = ghost_bar.iloc[0]
+            else:
+                # Should not happen if buf is populated
+                return
+        except Exception as exc:
+            self.logger.warning(f"⚠️ Failed to construct ghost bar for {symbol}: {exc}")
             return
 
         # Get current account balance for position sizing (best-effort)
@@ -733,7 +839,7 @@ class TradingEngine:
         try:
             result: SignalGenerationResult = await pipeline.generate_signal(
                 symbol=symbol,
-                market_data=ohlcv_15m,
+                market_data=prediction_input,
                 additional_features=None,
             )
 
@@ -754,7 +860,7 @@ class TradingEngine:
             # Map SignalGenerationResult -> TradeDecision and execute it
             decision = await self._map_signal_to_trade_decision(
                 result,
-                ohlcv_15m,
+                prediction_input,
                 account_balance,
             )
             if decision is not None:
@@ -762,6 +868,92 @@ class TradingEngine:
 
         except Exception as exc:
             self.logger.error(f"❌ Failed to generate or execute signal for {symbol}: {exc}")
+
+    async def _save_market_data(self, symbol: str, data: pd.DataFrame, timeframe: str) -> None:
+        """Save market data to Parquet files."""
+        try:
+            exchange = getattr(self.config, "exchange_name", "binance")
+            base_dir = Path(f"live_data/{exchange}/{symbol}/{timeframe}")
+            base_dir.mkdir(parents=True, exist_ok=True)
+
+            # Partition by date to avoid huge files
+            # Assuming data has DatetimeIndex
+            for date, group in data.groupby(data.index.date):
+                filename = base_dir / f"{date}.parquet"
+
+                # Check if file exists to append or create
+                if filename.exists():
+                    try:
+                        existing = pd.read_parquet(filename)
+                        # Combine and drop duplicates
+                        combined = pd.concat([existing, group])
+                        combined = combined[~combined.index.duplicated(keep='last')]
+                        combined = combined.sort_index()
+                        combined.to_parquet(filename)
+                    except Exception as e:
+                        self.logger.error(f"Failed to append to {filename}: {e}")
+                        # Fallback: save separate file with timestamp
+                        ts_str = datetime.now().strftime("%H%M%S")
+                        fallback = base_dir / f"{date}_{ts_str}.parquet"
+                        group.to_parquet(fallback)
+                else:
+                    group.to_parquet(filename)
+
+        except Exception as e:
+            self.logger.error(f"❌ Failed to save market data for {symbol}: {e}")
+
+    async def _load_warmup_data(self) -> None:
+        """Load warm-up data for indicators."""
+        try:
+            exchange = getattr(self.config, "exchange_name", "binance")
+
+            for symbol in self.config.symbols:
+                # Path pattern: data/historical/{exchange}/{symbol}/1m.parquet
+                warmup_path = Path(f"data/historical/{exchange}/{symbol}/1m.parquet")
+
+                if warmup_path.exists():
+                    self.logger.info(f"🔄 Loading warm-up data for {symbol} from {warmup_path}")
+                    try:
+                        df = pd.read_parquet(warmup_path)
+                        if not df.empty:
+                            # Ensure index is datetime and sorted
+                            if not isinstance(df.index, pd.DatetimeIndex):
+                                df.index = pd.to_datetime(df.index)
+                            df = df.sort_index()
+
+                            # Populate 1m buffer
+                            # Keep last ~5-7 days for 1m buffer
+                            one_week_ago = df.index[-1] - pd.Timedelta(days=7)
+                            recent_1m = df[df.index >= one_week_ago]
+                            self._ohlcv_buffers[symbol] = recent_1m
+
+                            # Populate 15m history
+                            # Resample all available history to 15m
+                            hist_15m = (
+                                df.resample("15T", label='right', closed='right')
+                                .agg({
+                                    "open": "first",
+                                    "high": "max",
+                                    "low": "min",
+                                    "close": "last",
+                                    "volume": "sum",
+                                })
+                                .dropna()
+                            )
+                            # Keep last 6000 bars
+                            hist_15m = hist_15m.tail(6000)
+                            self._ohlcv_history_15m[symbol] = hist_15m
+
+                            self.logger.info(f"✅ Loaded {len(recent_1m)} 1m bars and {len(hist_15m)} 15m bars for {symbol}")
+                    except Exception as e:
+                        self.logger.error(f"❌ Failed to read warm-up file {warmup_path}: {e}")
+                else:
+                    self.logger.warning(
+                        f"⚠️ Warm-up data not found at {warmup_path}. "
+                        "Indicators will need time to converge."
+                    )
+        except Exception as e:
+            self.logger.error(f"❌ Error during warm-up data loading: {e}")
 
     async def _map_signal_to_trade_decision(
         self,

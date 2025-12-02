@@ -12,7 +12,7 @@ import logging
 
 from .config import TradingConfig
 from .order_manager import Order, OrderStatus
-from ..src.interfaces.base_interfaces import TradeDecision, MarketData
+from src.interfaces.base_interfaces import TradeDecision, MarketData
 
 
 @dataclass

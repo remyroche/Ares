@@ -77,13 +77,14 @@ async def _run_specialist_training(
     direction: str,
     regime_timeframe: str,
     lookback_days: Optional[float] = None,
+    selected_specialists: Optional[list[str]] = None,
 ) -> None:
-    """Run training for all specialist models sequentially."""
-    logger.info("🚀 Starting full specialist model training sequence")
+    """Run training for all (or selected) specialist models sequentially."""
+    logger.info("🚀 Starting specialist model training sequence")
 
     # Order matters: some steps might depend on artifacts from others,
     # though ideally they should be independent or use shared feature generation.
-    specialist_steps = [
+    default_specialist_steps = [
         "ml_volume_force_step",
         "ml_breakout_bounce_regime_step",
         "ml_mean_reversion_step",
@@ -94,6 +95,8 @@ async def _run_specialist_training(
         "ml_risk_regime_step",
         "ml_path_regime_step",
     ]
+
+    specialist_steps = selected_specialists if selected_specialists else default_specialist_steps
 
     config_base = {
         "symbol": symbol,
@@ -1741,8 +1744,9 @@ def main() -> None:
     )
     ap.add_argument(
         "--train-specialists",
-        action="store_true",
-        help="Run training for all specialist models before diagnostics.",
+        nargs="*",
+        default=None,
+        help="Run training for specialist models before diagnostics. Specify list of models or leave empty for all.",
     )
 
     args = ap.parse_args()
@@ -1750,7 +1754,7 @@ def main() -> None:
     logging.getLogger().setLevel(logging.INFO)
 
     # Optional: Run training first if requested
-    if args.train_specialists:
+    if args.train_specialists is not None:
         import asyncio
         asyncio.run(_run_specialist_training(
             symbol=args.symbol,
@@ -1759,6 +1763,7 @@ def main() -> None:
             direction=args.direction,
             regime_timeframe=args.regime_timeframe,
             lookback_days=args.lookback_days,
+            selected_specialists=args.train_specialists,
         ))
 
     md_path, csv_path = run_diagnostics(

@@ -31,6 +31,8 @@ from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_compl
 import multiprocessing as mp
 
 from src.training.steps.base_step import BaseStep
+from src.utils.data.real_data_loader import real_data_loader
+import asyncio
 
 # Artifact and version management
 from src.training.steps.pre_training.utils.artifact_manager import PreTrainingArtifactManager
@@ -259,6 +261,7 @@ class FinalParametersOptimizer(BaseStep):
         self.calibration_results: Dict[str, Any] = {}
         self.previous_results: Optional[Dict[str, Any]] = None
         self.direction_mode: str = "both"
+        self.ohlcv_data: Optional[pd.DataFrame] = None
 
         # Non-linear optimization configuration
         self.nonlinear_config = nonlinear_config or NonLinearConfig()
@@ -514,6 +517,15 @@ class FinalParametersOptimizer(BaseStep):
             if self.disagreement_features is not None:
                 tprint(f"✅ Loaded disagreement_features: {self.disagreement_features.shape}", "success")
 
+            # NEW: Load OHLCV data for custom indicators
+            tprint("📥 Loading OHLCV data for hierarchical optimization...", "info")
+            try:
+                self.ohlcv_data = await self._load_ohlcv_data(symbol, exchange, timeframe)
+                tprint(f"✅ Loaded OHLCV data: {len(self.ohlcv_data)} rows", "success")
+            except Exception as e:
+                tprint(f"⚠️ Failed to load OHLCV data: {e}", "warning")
+                self.ohlcv_data = None
+
             # Load supporting data (calibration + previous optimization)
             self.calibration_results = await self._load_calibration_results(config)
             self.previous_results = await self._load_previous_results(symbol, exchange, config)
@@ -539,9 +551,18 @@ class FinalParametersOptimizer(BaseStep):
                 }
 
             # Perform final parameters optimization
+            # 1. Run Standard Optimization (Base parameters, Confidence, etc.)
             optimization_result = await self._perform_final_parameters_optimization(
                 symbol, exchange, timeframe, direction, execution_mode, config
             )
+
+            # 2. Run Hierarchical Optimization (Specific TP/SL/Trailing Strategy)
+            # This runs alongside standard optimization and merges/overrides specific parameters
+            use_hierarchical = self.config.get('use_custom_hierarchical_optimization', True)
+            if use_hierarchical and self.ohlcv_data is not None:
+                optimization_result = await self.optimize_hierarchical_strategy(
+                    self.calibration_results, self.ohlcv_data, optimization_result
+                )
 
             # Save optimization result as artifact (will auto-generate CSV if < 2000 rows)
             artifact_path = self._save_artifact(
@@ -622,6 +643,419 @@ class FinalParametersOptimizer(BaseStep):
                 'metrics': {},
                 'error': str(e)
             }
+
+    async def _load_ohlcv_data(self, symbol: str, exchange: str, timeframe: str) -> pd.DataFrame:
+        """
+        Load OHLCV data using RealDataLoader.
+
+        Args:
+            symbol: Trading symbol
+            exchange: Exchange name
+            timeframe: Timeframe string
+
+        Returns:
+            DataFrame with OHLCV data
+        """
+        try:
+            # Load data (default to last 90 days to ensure coverage)
+            # In production, this should match the training/calibration range
+            df = await real_data_loader.load_market_data(
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=timeframe,
+                lookback_days=90,
+                use_cache=True
+            )
+
+            if df is None or df.empty:
+                raise ValueError(f"No data loaded for {symbol} {timeframe}")
+
+            # Ensure standard columns lower case
+            df.columns = [c.lower() for c in df.columns]
+
+            # Ensure datetime index
+            if 'timestamp' in df.columns and not isinstance(df.index, pd.DatetimeIndex):
+                df.set_index('timestamp', inplace=True)
+
+            if not isinstance(df.index, pd.DatetimeIndex):
+                df.index = pd.to_datetime(df.index)
+
+            return df
+
+        except Exception as e:
+            self.logger.error(f"Failed to load OHLCV data: {e}")
+            raise
+
+    def _calculate_indicators_pandas(self, df: pd.DataFrame,
+                                   atr_windows: List[str],
+                                   adx_windows: List[int]) -> Dict[str, pd.DataFrame]:
+        """
+        Calculate ATR and ADX indicators for specified windows using pure pandas.
+
+        Args:
+            df: 15m OHLCV DataFrame
+            atr_windows: List of ATR windows (e.g. ['1h', '2h'])
+            adx_windows: List of ADX windows (integers, hours)
+
+        Returns:
+            Dictionary of DataFrames with indicators, keyed by window identifier
+        """
+        indicators = {}
+
+        # Helper for Wilder's Smoothing (alpha=1/n)
+        def wilders_smoothing(series, window):
+            return series.ewm(alpha=1/window, adjust=False).mean()
+
+        try:
+            # Base 15m resampling mapping
+            tf_map = {
+                '1h': '1h', '2h': '2h', '4h': '4h', '8h': '8h', '12h': '12h'
+            }
+
+            # 1. Calculate ATR for requested windows
+            for win_str in atr_windows:
+                if win_str not in tf_map:
+                    continue
+
+                resample_freq = tf_map[win_str]
+
+                # Resample (using label='right' to mark end of interval)
+                # We do NOT shift here because we want the indicator value at the end of the interval
+                # Backtesting logic must ensure it uses prior values for decision making
+                resampled = df.resample(resample_freq, label='right', closed='right').agg({
+                    'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'
+                }).dropna()
+
+                # Calculate TR
+                prev_close = resampled['close'].shift(1)
+                tr1 = resampled['high'] - resampled['low']
+                tr2 = (resampled['high'] - prev_close).abs()
+                tr3 = (resampled['low'] - prev_close).abs()
+                tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+
+                # Calculate ATR (14 period standard on resampled data)
+                atr = wilders_smoothing(tr, 14)
+
+                # Reindex back to 15m and ffill (forward fill known values)
+                aligned_atr = atr.reindex(df.index, method='ffill')
+
+                indicators[f'ATR_{win_str}'] = aligned_atr
+
+            # 2. Calculate ADX/DI for requested windows
+            for win_hours in adx_windows:
+                win_str = f'{win_hours}h'
+
+                # Resample (right labeled)
+                resampled = df.resample(win_str, label='right', closed='right').agg({
+                    'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last'
+                }).dropna()
+
+                # ADX Calculation
+                up = resampled['high'] - resampled['high'].shift(1)
+                down = resampled['low'].shift(1) - resampled['low']
+
+                # DM
+                plus_dm = np.where((up > down) & (up > 0), up, 0.0)
+                minus_dm = np.where((down > up) & (down > 0), down, 0.0)
+
+                plus_dm = pd.Series(plus_dm, index=resampled.index)
+                minus_dm = pd.Series(minus_dm, index=resampled.index)
+
+                # TR
+                prev_close = resampled['close'].shift(1)
+                tr1 = resampled['high'] - resampled['low']
+                tr2 = (resampled['high'] - prev_close).abs()
+                tr3 = (resampled['low'] - prev_close).abs()
+                tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+
+                # Smooth (14 period)
+                tr_smooth = wilders_smoothing(tr, 14)
+                plus_di = 100 * wilders_smoothing(plus_dm, 14) / tr_smooth
+                minus_di = 100 * wilders_smoothing(minus_dm, 14) / tr_smooth
+
+                dx = 100 * (plus_di - minus_di).abs() / (plus_di + minus_di)
+                adx = wilders_smoothing(dx, 14)
+
+                # Store
+                indicators[f'ADX_{win_hours}h'] = adx.reindex(df.index, method='ffill')
+                indicators[f'PDI_{win_hours}h'] = plus_di.reindex(df.index, method='ffill')
+                indicators[f'MDI_{win_hours}h'] = minus_di.reindex(df.index, method='ffill')
+
+            return indicators
+
+        except Exception as e:
+            self.logger.error(f"Failed to calculate indicators: {e}")
+            raise
+
+    async def optimize_hierarchical_strategy(self, calibration_results: Dict[str, Any],
+                                           ohlcv_data: Optional[pd.DataFrame],
+                                           optimization_result: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Execute strict 5-step hierarchical optimization for custom Trailing Stop strategy.
+        And merges results into the main optimization result.
+
+        Steps:
+        1. Optimize TP/SL Multipliers (x, y)
+        2. Optimize ATR Multiplier (for Trailing Stop)
+        3. Optimize ATR Window (1h, 2h, 4h, 8h, 12h)
+        4. Optimize Trailing Stop Weight (wATR)
+        5. Optimize ADX Window (2h-8h)
+        """
+        tprint("=" * 80, "header")
+        tprint("🚀 STARTING HIERARCHICAL OPTIMIZATION (5-STEP STRICT SEQUENCE)", "header")
+        tprint("=" * 80, "header")
+
+        if ohlcv_data is None:
+            tprint("❌ Missing OHLCV data, cannot proceed with custom indicator optimization", "error")
+            return optimization_result
+
+        # 0. Pre-calculate Indicators
+        tprint("📊 Pre-calculating indicators for all candidate windows...", "info")
+        atr_windows = ['1h', '2h', '4h', '8h', '12h']
+        adx_windows = [2, 4, 6, 8] # Discretized 2-8h
+        indicators = self._calculate_indicators_pandas(ohlcv_data, atr_windows, adx_windows)
+
+        # Prepare signal data (timestamps and directions)
+        analyst_conf = calibration_results.get('analyst_confidence', np.array([]))
+
+        # Extract base threshold from standard optimization result if available
+        base_threshold = 0.6
+        if 'optimized_parameters' in optimization_result:
+            for cat_res in optimization_result['optimized_parameters'].values():
+                if isinstance(cat_res, dict) and 'best_params' in cat_res:
+                    params = cat_res['best_params']
+                    if 'analyst_confidence_threshold' in params:
+                        base_threshold = params['analyst_confidence_threshold']
+                    elif 'confidence_threshold' in params:
+                        base_threshold = params['confidence_threshold']
+
+        # Use analyst confidence threshold as default for signals
+        signals = np.where(analyst_conf > base_threshold, 1, 0) # Assuming long only for now or provided direction
+
+        # Note: If direction is short, we need short logic.
+        # Using loaded 'direction' from config would be better but let's assume long for now or infer
+        direction = self.config.get('direction', 'long')
+        if direction == 'short':
+            signals = np.where(analyst_conf > base_threshold, -1, 0)
+
+        # Current State:
+        best_params = {
+            'tp_mult': 3.0, 'sl_mult': 1.5,
+            'atr_trail_mult': 1.0,
+            'atr_window': '4h',
+            'w_atr': 0.7, # wADX = 0.3
+            'adx_window': 4,
+            'confidence_threshold': base_threshold
+        }
+
+        # Helper for objective
+        def run_step(step_name, param_names, ranges, objective_func):
+            tprint(f"🔄 Optimizing Step: {step_name}", "header")
+            study = optuna.create_study(direction='maximize')
+
+            def obj(trial):
+                # Suggest parameters for this step
+                step_params = {}
+                for p, r in zip(param_names, ranges):
+                    if isinstance(r, list): # Categorical
+                        step_params[p] = trial.suggest_categorical(p, r)
+                    else: # Float tuple (min, max)
+                        step_params[p] = trial.suggest_float(p, r[0], r[1])
+
+                # Merge with current best
+                current_trial_params = best_params.copy()
+                current_trial_params.update(step_params)
+
+                return objective_func(current_trial_params, signals, ohlcv_data, indicators)
+
+            study.optimize(obj, n_trials=30) # Fast trials
+            tprint(f"✅ {step_name} Best: {study.best_params} (Score: {study.best_value:.4f})", "success")
+            best_params.update(study.best_params)
+            return study.best_value
+
+        # Simulation Function Wrapper
+        def evaluate(p, sigs, df, inds):
+            return self._run_fast_custom_backtest(p, sigs, df, inds)
+
+        # Step 1: TP/SL Multipliers (x, y)
+        run_step("1. TP/SL Multipliers",
+                 ['tp_mult', 'sl_mult'],
+                 [(1.0, 5.0), (0.5, 3.0)],
+                 evaluate)
+
+        # Step 2: ATR Multiplier (for Trailing)
+        run_step("2. ATR Multiplier (Trailing)",
+                 ['atr_trail_mult'],
+                 [(0.5, 3.0)],
+                 evaluate)
+
+        # Step 3: ATR Window
+        run_step("3. ATR Window",
+                 ['atr_window'],
+                 [atr_windows],
+                 evaluate)
+
+        # Step 4: Trailing Weight (wATR)
+        run_step("4. Trailing Weight (wATR)",
+                 ['w_atr'],
+                 [(0.0, 1.0)],
+                 evaluate)
+
+        # Step 5: ADX Window
+        run_step("5. ADX Window",
+                 ['adx_window'],
+                 [adx_windows],
+                 evaluate)
+
+        tprint("=" * 80, "header")
+        tprint("🏆 FINAL OPTIMIZED PARAMETERS", "success")
+        tprint(str(best_params), "info")
+        tprint("=" * 80, "header")
+
+        # Merge results into optimization_result
+        if 'optimized_parameters' not in optimization_result:
+            optimization_result['optimized_parameters'] = {}
+
+        optimization_result['optimized_parameters']['hierarchical_strategy'] = {
+            'best_params': best_params
+        }
+
+        return optimization_result
+
+    def _run_fast_custom_backtest(self, params: Dict[str, Any],
+                                signals: np.ndarray,
+                                ohlcv: pd.DataFrame,
+                                indicators: Dict[str, pd.DataFrame]) -> float:
+        """
+        Fast numpy-based backtester for the custom trailing strategy.
+        """
+        # Extract params
+        tp_mult = params['tp_mult']
+        sl_mult = params['sl_mult']
+        atr_trail_mult = params['atr_trail_mult']
+        atr_win = params['atr_window']
+        w_atr = params['w_atr']
+        w_adx = 1.0 - w_atr
+        adx_win = params['adx_window']
+
+        # Get indicator arrays (aligned with OHLCV)
+        atr_arr = indicators[f'ATR_{atr_win}'].values
+        adx_arr = indicators[f'ADX_{adx_win}h'].values
+        pdi_arr = indicators[f'PDI_{adx_win}h'].values
+        mdi_arr = indicators[f'MDI_{adx_win}h'].values
+
+        high_arr = ohlcv['high'].values
+        low_arr = ohlcv['low'].values
+        close_arr = ohlcv['close'].values
+
+        # Ensure signals match length (truncate if needed)
+        n = min(len(signals), len(high_arr))
+
+        # Identify entries (indices)
+        entry_indices = np.where(signals[:n] != 0)[0]
+
+        trades = []
+        fee = 0.0015
+
+        last_exit_idx = -1
+
+        for idx in entry_indices:
+            if idx <= last_exit_idx:
+                continue
+
+            entry_price = close_arr[idx]
+            direction = signals[idx] # 1 or -1
+
+            # Initial TP/SL
+            atr_val = atr_arr[idx]
+            if np.isnan(atr_val): continue
+
+            if direction == 1:
+                tp_price = entry_price + tp_mult * atr_val
+                sl_price = entry_price - sl_mult * atr_val
+                stop_price = sl_price
+            else:
+                tp_price = entry_price - tp_mult * atr_val
+                sl_price = entry_price + sl_mult * atr_val
+                stop_price = sl_price
+
+            # Simulate forward
+            exit_price = entry_price
+            pnl = 0.0
+
+            for t in range(idx + 1, min(idx + 500, n)): # Max duration 500 bars safety
+                current_high = high_arr[t]
+                current_low = low_arr[t]
+                current_atr = atr_arr[t]
+                current_adx = adx_arr[t]
+
+                # Check Exits
+                if direction == 1:
+                    # Check TP
+                    if current_high >= tp_price:
+                        exit_price = tp_price
+                        pnl = (exit_price - entry_price) / entry_price - fee
+                        last_exit_idx = t
+                        break
+                    # Check Stop
+                    if current_low <= stop_price:
+                        exit_price = stop_price
+                        pnl = (exit_price - entry_price) / entry_price - fee
+                        last_exit_idx = t
+                        break
+
+                    # Update Trailing
+                    # Condition: +DI > -DI
+                    if pdi_arr[t] > mdi_arr[t]:
+                        dist = w_atr * (current_atr * atr_trail_mult) + w_adx * current_adx
+                        dist = max(0.0, dist)
+
+                        potential_stop = current_high - dist
+                        potential_stop = max(0.0001, potential_stop)
+
+                        # Only move up
+                        if potential_stop > stop_price:
+                            stop_price = potential_stop
+
+                else: # Short
+                    # Check TP
+                    if current_low <= tp_price:
+                        exit_price = tp_price
+                        pnl = (entry_price - exit_price) / entry_price - fee
+                        last_exit_idx = t
+                        break
+                    # Check Stop
+                    if current_high >= stop_price:
+                        exit_price = stop_price
+                        pnl = (entry_price - exit_price) / entry_price - fee
+                        last_exit_idx = t
+                        break
+
+                    # Update Trailing
+                    # Condition: -DI > +DI
+                    if mdi_arr[t] > pdi_arr[t]:
+                        dist = w_atr * (current_atr * atr_trail_mult) + w_adx * current_adx
+                        dist = max(0.0, dist)
+
+                        potential_stop = current_low + dist
+                        # Only move down
+                        if potential_stop < stop_price:
+                            stop_price = potential_stop
+
+            trades.append(pnl)
+
+        # Score: Total Return * Profit Factor (simple metric)
+        if not trades:
+            return 0.0
+
+        trades_arr = np.array(trades)
+        total_ret = np.sum(trades_arr)
+        wins = trades_arr[trades_arr > 0]
+        losses = trades_arr[trades_arr <= 0]
+        pf = np.sum(wins) / abs(np.sum(losses)) if len(losses) > 0 else 10.0
+
+        # Combined Score
+        return total_ret * min(pf, 3.0)
 
     async def _perform_final_parameters_optimization(self, symbol: str, exchange: str,
                                                    timeframe: str, direction: str,

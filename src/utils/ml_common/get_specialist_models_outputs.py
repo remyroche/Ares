@@ -1,4 +1,4 @@
-"""Shared loader for specialist model outputs (ML Risk, HMM Alpha, Liquidity, Breakout/Bounce).
+"""Shared loader for specialist model outputs (ML Risk, HMM Meso Trend, Liquidity, Breakout/Bounce).
 
 This utility loads specialist regime outputs from versioned artifacts and
 aligns them to a common training index, returning a single DataFrame with
@@ -756,7 +756,7 @@ def get_specialist_models_outputs(
         log_warning(f"⚠️ Failed to load Path specialist outputs: {e}")
 
     # ------------------------------------------------------------------
-    # 6) Short-horizon alpha specialist – XGB meso trend (fallback to HMM Alpha)
+    # 6) Short-horizon alpha specialist – XGB meso trend (fallback to HMM Meso Trend)
     # ------------------------------------------------------------------
     try:
         log_info("=" * 80)
@@ -764,12 +764,12 @@ def get_specialist_models_outputs(
         log_info("=" * 80)
 
         # Primary source: XGB meso trend training data from xgb_meso_regime.
-        alpha_context = {
+        meso_context = {
             "symbol": symbol,
             "exchange": exchange,
             "timeframe": base_timeframe,
             "direction": direction,
-            "model": "regime_alpha",
+            "model": "regime_meso_trend",
             "step_name": "xgb_meso_regime",
         }
 
@@ -777,7 +777,7 @@ def get_specialist_models_outputs(
             artifact_name="xgb_meso_trend_training_data_15m",
             artifact_type="data",
             data_category="features",
-            context=alpha_context,
+            context=meso_context,
         )
 
         if alpha_training is not None and not getattr(alpha_training, "empty", True):
@@ -787,7 +787,7 @@ def get_specialist_models_outputs(
 
             if isinstance(alpha_training.index, pd.DatetimeIndex) and len(alpha_training.index) > 0:
                 log_info(
-                    "📈 XGB Meso Alpha (xgb_meso_trend_training_data_15m) index range: %s → %s (n=%d)"
+                    "📈 XGB Meso Trend (xgb_meso_trend_training_data_15m) index range: %s → %s (n=%d)"
                     % (
                         alpha_training.index.min(),
                         alpha_training.index.max(),
@@ -798,10 +798,10 @@ def get_specialist_models_outputs(
             # Prefer the canonical continuous alpha score; fall back to calibrated
             # expectation-style columns if necessary.
             alpha_cols: List[str] = []
-            if "alpha_score_continuous" in alpha_training.columns:
-                alpha_cols.append("alpha_score_continuous")
+            if "meso_trend_score_continuous" in alpha_training.columns:
+                alpha_cols.append("meso_trend_score_continuous")
             if not alpha_cols:
-                for c in ("alpha_expectation_raw_01", "alpha_expectation_ema_01"):
+                for c in ("meso_trend_expectation_raw_01", "meso_trend_expectation_ema_01"):
                     if c in alpha_training.columns:
                         alpha_cols.append(c)
                         break
@@ -814,18 +814,18 @@ def get_specialist_models_outputs(
                 nnz_after = int(block.notna().sum().sum())
                 blocks.append(block)
                 log_success(
-                    "✅ Added XGB Meso Alpha specialist block from 'xgb_meso_trend_training_data_15m': "
+                    "✅ Added XGB Meso Trend specialist block from 'xgb_meso_trend_training_data_15m': "
                     f"shape={block.shape}, non_null_before={nnz_before}, "
                     f"non_null_after={nnz_after}"
                 )
                 if nnz_after == 0:
                     log_warning(
-                        "⚠️ XGB Meso Alpha block aligned to training_index is all-NaN. "
+                        "⚠️ XGB Meso Trend block aligned to training_index is all-NaN. "
                         "Check meso alpha timestamps and values."
                     )
         else:
             log_warning(
-                "⚠️ XGB Meso Alpha artifacts not found; falling back to legacy HMM Alpha specialist."
+                "⚠️ XGB Meso Trend artifacts not found; falling back to legacy HMM Meso Trend specialist."
             )
 
             try:
@@ -834,12 +834,12 @@ def get_specialist_models_outputs(
                     "exchange": exchange,
                     "timeframe": base_timeframe,
                     "direction": direction,
-                    "model": "regime_alpha",
+                    "model": "regime_meso_trend",
                     "step_name": "hmm_ml_alpha_step",
                 }
 
                 legacy_training = artifact_router.load(
-                    artifact_name="hmm_alpha_training_data_15m",
+                    artifact_name="hmm_meso_trend_training_data_15m",
                     artifact_type="data",
                     data_category="features",
                     context=legacy_context,
@@ -852,7 +852,7 @@ def get_specialist_models_outputs(
 
                     if isinstance(legacy_training.index, pd.DatetimeIndex) and len(legacy_training.index) > 0:
                         log_info(
-                            "📈 HMM Alpha (hmm_alpha_training_data_15m) index range: %s → %s (n=%d)"
+                            "📈 HMM Meso Trend (hmm_meso_trend_training_data_15m) index range: %s → %s (n=%d)"
                             % (
                                 legacy_training.index.min(),
                                 legacy_training.index.max(),
@@ -861,10 +861,10 @@ def get_specialist_models_outputs(
                         )
 
                     legacy_cols: List[str] = []
-                    if "alpha_score_continuous" in legacy_training.columns:
-                        legacy_cols.append("alpha_score_continuous")
+                    if "meso_trend_score_continuous" in legacy_training.columns:
+                        legacy_cols.append("meso_trend_score_continuous")
                     if not legacy_cols:
-                        for c in ("alpha_expectation_raw_01", "alpha_expectation_ema_01"):
+                        for c in ("meso_trend_expectation_raw_01", "meso_trend_expectation_ema_01"):
                             if c in legacy_training.columns:
                                 legacy_cols.append(c)
                                 break
@@ -877,26 +877,26 @@ def get_specialist_models_outputs(
                         nnz_after = int(block.notna().sum().sum())
                         blocks.append(block)
                         log_success(
-                            "✅ Added legacy HMM Alpha specialist block from 'hmm_alpha_training_data_15m': "
+                            "✅ Added legacy HMM Meso Trend specialist block from 'hmm_meso_trend_training_data_15m': "
                             f"shape={block.shape}, non_null_before={nnz_before}, "
                             f"non_null_after={nnz_after}"
                         )
                         if nnz_after == 0:
                             log_warning(
-                                "⚠️ HMM Alpha block aligned to training_index is all-NaN. "
+                                "⚠️ HMM Meso Trend block aligned to training_index is all-NaN. "
                                 "Check HMM alpha timestamps and values."
                             )
             except Exception as legacy_e:
-                log_warning(f"⚠️ Failed to load legacy HMM Alpha specialist outputs: {legacy_e}")
+                log_warning(f"⚠️ Failed to load legacy HMM Meso Trend specialist outputs: {legacy_e}")
     except Exception as e:
-        log_warning(f"⚠️ Failed to load short-horizon alpha specialist outputs: {e}")
+        log_warning(f"⚠️ Failed to load meso-horizon trend specialist outputs: {e}")
 
     # ------------------------------------------------------------------
-    # 6b) Macro Alpha specialist – macro regime alpha signal from hmm_macro_regime
+    # 6b) Macro Trend specialist – macro regime alpha signal from hmm_macro_regime
     # ------------------------------------------------------------------
     try:
         log_info("=" * 80)
-        log_info("🌍 LOADING SPECIALIST: MACRO ALPHA (XGB) OUTPUTS")
+        log_info("🌍 LOADING SPECIALIST: MACRO TREND (XGB) OUTPUTS")
         log_info("=" * 80)
 
         macro_context = {
@@ -904,7 +904,7 @@ def get_specialist_models_outputs(
             "exchange": exchange,
             "timeframe": regime_timeframe,
             "direction": direction,
-            "model": "regime_alpha",
+            "model": "regime_meso_trend",
             "step_name": "hmm_macro_regime",
         }
 
@@ -925,7 +925,7 @@ def get_specialist_models_outputs(
                 and len(macro_training.index) > 0
             ):
                 log_info(
-                    "📈 Macro Alpha (hmm_macro_trend_training_data_15m) index range: %s → %s (n=%d)"
+                    "📈 Macro Trend (hmm_macro_trend_training_data_15m) index range: %s → %s (n=%d)"
                     % (
                         macro_training.index.min(),
                         macro_training.index.max(),
@@ -936,7 +936,7 @@ def get_specialist_models_outputs(
             # Prefer the canonical 0-1 continuous macro alpha score; fall back to
             # calibrated expectation-style columns if necessary.
             score_col: Optional[str] = None
-            for c in ("alpha_score_continuous", "alpha_expectation_ema_01", "alpha_expectation_raw_01"):
+            for c in ("macro_trend_score_continuous", "macro_trend_expectation_ema_01", "macro_trend_expectation_raw_01"):
                 if c in macro_training.columns:
                     score_col = c
                     break
@@ -946,10 +946,10 @@ def get_specialist_models_outputs(
                 # Expose the canonical 0-1 macro trend scalar under the
                 # established name used in analyst training and diagnostics.
                 # This ensures downstream users see a single
-                # `macro_alpha_score_continuous` feature backed by the new
+                # `macro_trend_score_continuous` feature backed by the new
                 # XGB macro regime model rather than any legacy macro outputs.
                 before_block = before_block.rename(
-                    columns={score_col: "macro_alpha_score_continuous"}
+                    columns={score_col: "macro_trend_score_continuous"}
                 )
                 nnz_before = int(before_block.notna().sum().sum())
 
@@ -961,16 +961,16 @@ def get_specialist_models_outputs(
 
                 blocks.append(block)
                 log_success(
-                    "✅ Added Macro Alpha specialist block from 'hmm_macro_trend_training_data_15m': "
+                    "✅ Added Macro Trend specialist block from 'hmm_macro_trend_training_data_15m': "
                     f"shape={block.shape}, non_null_before={nnz_before}, non_null_after={nnz_after}"
                 )
                 if nnz_after == 0:
                     log_warning(
-                        "⚠️ Macro Alpha block aligned to training_index is all-NaN. "
+                        "⚠️ Macro Trend block aligned to training_index is all-NaN. "
                         "Check macro alpha timestamps and values."
                     )
     except Exception as e:
-        log_warning(f"⚠️ Failed to load Macro Alpha specialist outputs: {e}")
+        log_warning(f"⚠️ Failed to load Macro Trend specialist outputs: {e}")
 
     # ------------------------------------------------------------------
     # 7) ML Risk HMM regimes – optional second risk flavor

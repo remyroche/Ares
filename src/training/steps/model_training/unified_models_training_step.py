@@ -89,6 +89,7 @@ class UnifiedModelsTrainingStep(BaseStep):
         self.unified_pipeline = None
         self.param_groups_factory = ModelParameterGroups()
         self.hpo_orchestrator = None
+        self._specialist_feature_names = []
 
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -3234,6 +3235,10 @@ class UnifiedModelsTrainingStep(BaseStep):
                             )
                         specialist_df = specialist_df[active_cols]
 
+                        # Capture specialist feature names
+                        self._specialist_feature_names = list(specialist_df.columns)
+                        tprint_info(f"📝 Captured {len(self._specialist_feature_names)} specialist feature names for model filtering")
+
                         # Diagnostic: log non-null coverage for key alpha/liquidity/SMC features
                         try:
                             key_prefixes = ("alpha_", "liquidity_", "smc_", "risk_score")
@@ -3807,11 +3812,13 @@ class UnifiedModelsTrainingStep(BaseStep):
                 
                 # Create incremental trainer
                 model_id = f"{symbol}_{exchange}_{timeframe}"
+                base_models_config = yaml_config.get('analyst_config', {}).get('base_models', {})
                 incremental_trainer = IncrementalAnalystTrainer(
                     model_id=model_id,
                     execution_mode=execution_mode,
                     task_type='regression',
-                    enable_incremental_hpo=True
+                    enable_incremental_hpo=True,
+                    model_configs=base_models_config
                 )
                 
                 # Train all models incrementally
@@ -3820,7 +3827,9 @@ class UnifiedModelsTrainingStep(BaseStep):
                     y=analyst_targets,
                     data_start=data_start,
                     data_end=data_end,
-                    verbose=True
+                    sample_weight=None,
+                    verbose=True,
+                    specialist_feature_names=self._specialist_feature_names
                 )
                 
                 # Combine OOF predictions from all models

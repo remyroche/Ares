@@ -293,13 +293,16 @@ class BaseIncrementalTrainer(ABC):
     def __init__(
         self,
         model_id: str,
-        config: Optional[IncrementalTrainingConfig] = None
+        config: Optional[IncrementalTrainingConfig] = None,
+        model_config: Optional[Dict[str, Any]] = None
     ):
         self.model_id = model_id
         self.config = config or IncrementalTrainingConfig(model_id=model_id)
+        self.model_config = model_config or {}
         self._current_model = None
         self._best_params: Dict[str, Any] = {}
         self._training_data_accumulated: Optional[pd.DataFrame] = None
+        self._specialist_feature_names: Optional[List[str]] = None
         
         logger.info(f"Initialized {self.__class__.__name__} for {model_id}")
     
@@ -330,7 +333,8 @@ class BaseIncrementalTrainer(ABC):
         data_start: datetime,
         data_end: datetime,
         sample_weight: Optional[np.ndarray] = None,
-        verbose: bool = True
+        verbose: bool = True,
+        specialist_feature_names: Optional[List[str]] = None
     ) -> IncrementalTrainingResults:
         """
         Train model incrementally with rolling OOF predictions.
@@ -341,6 +345,7 @@ class BaseIncrementalTrainer(ABC):
         4. Repeat until end of data
         """
         start_time = time.time()
+        self._specialist_feature_names = specialist_feature_names
         
         if verbose:
             logger.info("=" * 80)
@@ -352,6 +357,10 @@ class BaseIncrementalTrainer(ABC):
             logger.info(f"OOF batch size: {self.config.oof_batch_days} days")
             logger.info(f"Data range: {data_start} → {data_end}")
             logger.info(f"Samples: {len(X)}, Features: {len(X.columns)}")
+
+            if self.model_config.get('use_specialist_outputs_only', False):
+                spec_count = len(specialist_feature_names) if specialist_feature_names else 0
+                logger.info(f"⚠️ Using ONLY specialist outputs ({spec_count} features)")
         
         # Load initial best params
         self._best_params = self._load_best_params()
@@ -565,7 +574,22 @@ class BaseIncrementalTrainer(ABC):
     
     def _get_feature_cols(self, data: pd.DataFrame) -> List[str]:
         """Get feature column names (exclude __ prefixed columns)."""
-        return [c for c in data.columns if not c.startswith('__')]
+        all_features = [c for c in data.columns if not c.startswith('__')]
+
+        # Filter for specialist features if configured
+        if self.model_config.get('use_specialist_outputs_only', False):
+            if self._specialist_feature_names:
+                specialist_set = set(self._specialist_feature_names)
+                filtered_features = [f for f in all_features if f in specialist_set]
+                if not filtered_features:
+                    logger.warning("Feature filtering enabled but no specialist features found in data! Using all features.")
+                    return all_features
+                return filtered_features
+            else:
+                logger.warning("Feature filtering enabled but no specialist feature names provided! Using all features.")
+                return all_features
+
+        return all_features
 
 
 # ============================================================================
@@ -580,16 +604,17 @@ class IncrementalLGBMTrainer(BaseIncrementalTrainer):
     def __init__(
         self,
         model_id: str,
-        config: Optional[IncrementalTrainingConfig] = None
+        config: Optional[IncrementalTrainingConfig] = None,
+        model_config: Optional[Dict[str, Any]] = None
     ):
         if not LIGHTGBM_AVAILABLE:
             raise ImportError("LightGBM is required for IncrementalLGBMTrainer")
-        super().__init__(model_id, config)
+        super().__init__(model_id, config, model_config)
         self._feature_cols: List[str] = []
     
     def _get_default_params(self) -> Dict[str, Any]:
         """Get default LGBM parameters."""
-        return {
+        params = {
             'objective': 'regression' if self.config.task_type == 'regression' else 'binary',
             'metric': 'rmse' if self.config.task_type == 'regression' else 'binary_logloss',
             'boosting_type': 'gbdt',
@@ -604,6 +629,10 @@ class IncrementalLGBMTrainer(BaseIncrementalTrainer):
             'bagging_freq': 5,
             'feature_fraction': 0.8,
         }
+        # Override with config params if available
+        if self.model_config and 'params' in self.model_config:
+            params.update(self.model_config['params'])
+        return params
     
     def _train_initial(
         self,
@@ -829,23 +858,28 @@ class IncrementalNGBoostTrainer(BaseIncrementalTrainer):
     def __init__(
         self,
         model_id: str,
-        config: Optional[IncrementalTrainingConfig] = None
+        config: Optional[IncrementalTrainingConfig] = None,
+        model_config: Optional[Dict[str, Any]] = None
     ):
         if not NGBOOST_AVAILABLE:
             raise ImportError("NGBoost is required for IncrementalNGBoostTrainer")
-        super().__init__(model_id, config)
+        super().__init__(model_id, config, model_config)
         self._feature_cols: List[str] = []
         self._accumulated_X: Optional[np.ndarray] = None
         self._accumulated_y: Optional[np.ndarray] = None
     
     def _get_default_params(self) -> Dict[str, Any]:
         """Get default NGBoost parameters."""
-        return {
+        params = {
             'n_estimators': 500,
             'learning_rate': 0.01,
             'minibatch_frac': 0.5,
             'verbose': False,
         }
+        # Override with config params if available
+        if self.model_config and 'params' in self.model_config:
+            params.update(self.model_config['params'])
+        return params
     
     def _train_initial(
         self,
@@ -1105,11 +1139,12 @@ class IncrementalKNNTrainer(BaseIncrementalTrainer):
     def __init__(
         self,
         model_id: str,
-        config: Optional[IncrementalTrainingConfig] = None
+        config: Optional[IncrementalTrainingConfig] = None,
+        model_config: Optional[Dict[str, Any]] = None
     ):
         if not SKLEARN_AVAILABLE:
             raise ImportError("scikit-learn is required for IncrementalKNNTrainer")
-        super().__init__(model_id, config)
+        super().__init__(model_id, config, model_config)
         self._feature_cols: List[str] = []
         self._accumulated_X: List[np.ndarray] = []
         self._accumulated_y: List[np.ndarray] = []
@@ -1117,7 +1152,7 @@ class IncrementalKNNTrainer(BaseIncrementalTrainer):
     
     def _get_default_params(self) -> Dict[str, Any]:
         """Get default KNN parameters."""
-        return {
+        params = {
             'n_neighbors': 15,
             'weights': 'distance',
             'algorithm': 'ball_tree',
@@ -1126,6 +1161,10 @@ class IncrementalKNNTrainer(BaseIncrementalTrainer):
             'p': 2,
             'n_jobs': -1
         }
+        # Override with config params if available
+        if self.model_config and 'params' in self.model_config:
+            params.update(self.model_config['params'])
+        return params
     
     def _train_initial(
         self,
@@ -1313,11 +1352,12 @@ class IncrementalBayesianRidgeTrainer(BaseIncrementalTrainer):
     def __init__(
         self,
         model_id: str,
-        config: Optional[IncrementalTrainingConfig] = None
+        config: Optional[IncrementalTrainingConfig] = None,
+        model_config: Optional[Dict[str, Any]] = None
     ):
         if not SKLEARN_AVAILABLE:
             raise ImportError("scikit-learn is required for IncrementalBayesianRidgeTrainer")
-        super().__init__(model_id, config)
+        super().__init__(model_id, config, model_config)
         self._feature_cols: List[str] = []
         self._scaler: Optional[StandardScaler] = None
         self._prev_coef: Optional[np.ndarray] = None
@@ -1326,7 +1366,7 @@ class IncrementalBayesianRidgeTrainer(BaseIncrementalTrainer):
     
     def _get_default_params(self) -> Dict[str, Any]:
         """Get default BayesianRidge parameters."""
-        return {
+        params = {
             'max_iter': 300,  # n_iter renamed to max_iter in newer sklearn
             'tol': 1e-3,
             'alpha_1': 1e-6,
@@ -1336,6 +1376,10 @@ class IncrementalBayesianRidgeTrainer(BaseIncrementalTrainer):
             'compute_score': True,
             'fit_intercept': True
         }
+        # Override with config params if available
+        if self.model_config and 'params' in self.model_config:
+            params.update(self.model_config['params'])
+        return params
     
     def _train_initial(
         self,
@@ -1506,11 +1550,13 @@ class IncrementalAnalystTrainer:
         model_id: str,
         execution_mode: str = "blank",
         task_type: str = "regression",
-        enable_incremental_hpo: bool = True
+        enable_incremental_hpo: bool = True,
+        model_configs: Optional[Dict[str, Any]] = None
     ):
         self.model_id = model_id
         self.execution_mode = execution_mode
         self.task_type = task_type
+        self.model_configs = model_configs or {}
         
         # Create config
         self.config = IncrementalTrainingConfig(
@@ -1524,18 +1570,18 @@ class IncrementalAnalystTrainer:
         self.trainers: Dict[str, BaseIncrementalTrainer] = {}
         
         if LIGHTGBM_AVAILABLE:
-            self.trainers['lgbm'] = IncrementalLGBMTrainer(model_id, self.config)
+            self.trainers['lgbm'] = IncrementalLGBMTrainer(model_id, self.config, self.model_configs.get('lgbm'))
         else:
             logger.warning("LightGBM not available, skipping LGBM trainer")
         
         if NGBOOST_AVAILABLE:
-            self.trainers['ngboost'] = IncrementalNGBoostTrainer(model_id, self.config)
+            self.trainers['ngboost'] = IncrementalNGBoostTrainer(model_id, self.config, self.model_configs.get('ngboost'))
         else:
             logger.warning("NGBoost not available, skipping NGBoost trainer")
         
         if SKLEARN_AVAILABLE:
-            self.trainers['knn'] = IncrementalKNNTrainer(model_id, self.config)
-            self.trainers['bayesianridge'] = IncrementalBayesianRidgeTrainer(model_id, self.config)
+            self.trainers['knn'] = IncrementalKNNTrainer(model_id, self.config, self.model_configs.get('knn'))
+            self.trainers['bayesianridge'] = IncrementalBayesianRidgeTrainer(model_id, self.config, self.model_configs.get('bayesianridge'))
         else:
             logger.warning("scikit-learn not available, skipping KNN and BayesianRidge trainers")
         
@@ -1548,7 +1594,8 @@ class IncrementalAnalystTrainer:
         data_start: datetime,
         data_end: datetime,
         sample_weight: Optional[np.ndarray] = None,
-        verbose: bool = True
+        verbose: bool = True,
+        specialist_feature_names: Optional[List[str]] = None
     ) -> Dict[str, IncrementalTrainingResults]:
         """
         Train all enabled models incrementally.
@@ -1571,7 +1618,8 @@ class IncrementalAnalystTrainer:
                     data_start=data_start,
                     data_end=data_end,
                     sample_weight=sample_weight,
-                    verbose=verbose
+                    verbose=verbose,
+                    specialist_feature_names=specialist_feature_names
                 )
                 results[model_name] = result
                 

@@ -60,6 +60,9 @@ except Exception:  # pragma: no cover - defensive import guard
 from .ml_liquidity_regime_step import MLLiquidityRegimeStep
 from .ml_map_regime_step import MLMapRegimeStep
 
+# Import ML Volume Force Step (Volume Force/Impulse prediction)
+from .ml_volume_force_step import MLVolumeForceStep
+
 # Import Feature Generation Meta-Labeling Step (now in labeling module)
 from src.training.steps.labeling import FeatureGenerationMetaLabelingStep
 
@@ -95,6 +98,7 @@ if MLBreakoutBounceRegimeStep is not None:
     step_registry.register("ml_breakout_bounce_regime_step", MLBreakoutBounceRegimeStep)
 step_registry.register("ml_map_regime_step", MLMapRegimeStep)
 step_registry.register("ml_liquidity_regime_step", MLLiquidityRegimeStep)
+step_registry.register("ml_volume_force_step", MLVolumeForceStep)
 step_registry.register("feature_generation_meta_labeling_step", FeatureGenerationMetaLabelingStep)
 if MetaLabelingHPOExperimentStep is not None:
     step_registry.register("meta_labeling_hpo_experiment", MetaLabelingHPOExperimentStep)

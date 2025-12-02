@@ -12,6 +12,7 @@ Key Features:
 - Incremental HPO at each round (neighborhood search around best params)
 - Rolling incremental training ensures OOF predictions come from models that haven't seen that batch
 - Burn-in period = full_period - 4 months
+- CALIBRATION: All models are wrapped with Isotonic Regression calibration
 
 Usage:
     ```python
@@ -74,6 +75,9 @@ try:
     from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
     from sklearn.linear_model import BayesianRidge
     from sklearn.preprocessing import StandardScaler
+    from sklearn.isotonic import IsotonicRegression
+    from sklearn.base import BaseEstimator, RegressorMixin, ClassifierMixin, clone
+    from sklearn.model_selection import train_test_split, cross_val_score
     SKLEARN_AVAILABLE = True
 except ImportError:
     SKLEARN_AVAILABLE = False
@@ -81,6 +85,13 @@ except ImportError:
     KNeighborsRegressor = None
     BayesianRidge = None
     StandardScaler = None
+    IsotonicRegression = None
+    BaseEstimator = None
+    RegressorMixin = None
+    ClassifierMixin = None
+    clone = None
+    train_test_split = None
+    cross_val_score = None
 
 try:
     import optuna
@@ -202,15 +213,77 @@ class IncrementalTrainingResults:
 
 
 # ============================================================================
+# Calibration Wrapper
+# ============================================================================
+
+class CalibratedModel(BaseEstimator, RegressorMixin):
+    """
+    Wrapper that applies Isotonic Regression calibration to any base model.
+    Handles both regression and classification (via probability).
+    """
+
+    def __init__(self, base_model, task_type='regression'):
+        self.base_model = base_model
+        self.task_type = task_type
+        self.calibrator = IsotonicRegression(out_of_bounds='clip', increasing='auto')
+        self.is_calibrated = False
+        self._fitted_scaler = None  # For models that need scaling inside
+
+    def fit_calibration(self, X_val, y_val):
+        """Fit the calibrator using validation data."""
+        if len(X_val) < 10:
+            return  # Not enough data to calibrate
+
+        # Get base predictions
+        try:
+            if self.task_type == 'classification' and hasattr(self.base_model, 'predict_proba'):
+                raw_preds = self.base_model.predict_proba(X_val)[:, 1]
+            else:
+                raw_preds = self.base_model.predict(X_val)
+        except Exception as e:
+            logger.warning(f"Failed to get base predictions for calibration: {e}")
+            return
+
+        # Fit calibrator (maps raw_preds -> y_val)
+        try:
+            self.calibrator.fit(raw_preds, y_val)
+            self.is_calibrated = True
+        except Exception as e:
+            logger.warning(f"Calibration failed: {e}")
+            self.is_calibrated = False
+
+    def predict(self, X):
+        """Predict with calibration."""
+        if self.task_type == 'classification' and hasattr(self.base_model, 'predict_proba'):
+            raw_preds = self.base_model.predict_proba(X)[:, 1]
+        else:
+            raw_preds = self.base_model.predict(X)
+
+        if self.is_calibrated:
+            return self.calibrator.predict(raw_preds)
+        return raw_preds
+
+    def predict_proba(self, X):
+        """For classification, return calibrated probabilities."""
+        if self.task_type != 'classification':
+            raise ValueError("predict_proba only available for classification")
+
+        calibrated_preds = self.predict(X)
+        # Return as (n_samples, 2) array [p0, p1]
+        return np.vstack([1 - calibrated_preds, calibrated_preds]).T
+
+    def __getattr__(self, name):
+        """Delegate other attributes to base model."""
+        return getattr(self.base_model, name)
+
+
+# ============================================================================
 # Incremental Training Windows Generator
 # ============================================================================
 
 class IncrementalWindowGenerator:
     """
     Generates training windows for incremental OOF prediction generation.
-    
-    Burn-in period = full_period - 4 months
-    After burn-in, generate OOF predictions for 14-day batches
     """
     
     def __init__(
@@ -240,7 +313,7 @@ class IncrementalWindowGenerator:
             total_days = (self.data_end - self.data_start).days
             burn_in_end = self.data_start + timedelta(days=int(total_days * 0.5))
         
-        # First window: burn-in training (no OOF for this period)
+        # First window: burn-in training
         current_training_end = burn_in_end
         window_id = 0
         
@@ -263,7 +336,7 @@ class IncrementalWindowGenerator:
             )
             windows.append(window)
             
-            # Move to next window - extend training to include the prediction batch
+            # Move to next window
             current_training_end = prediction_end
             window_id += 1
         
@@ -283,11 +356,6 @@ class IncrementalWindowGenerator:
 class BaseIncrementalTrainer(ABC):
     """
     Abstract base class for incremental model trainers.
-    
-    Implements:
-    - Rolling OOF prediction generation
-    - Incremental training (model resumption)
-    - Incremental HPO (neighborhood search)
     """
     
     def __init__(
@@ -299,9 +367,8 @@ class BaseIncrementalTrainer(ABC):
         self.model_id = model_id
         self.config = config or IncrementalTrainingConfig(model_id=model_id)
         self.model_config = model_config or {}
-        self._current_model = None
+        self._current_model = None  # Will hold a CalibratedModel instance
         self._best_params: Dict[str, Any] = {}
-        self._training_data_accumulated: Optional[pd.DataFrame] = None
         self._specialist_feature_names: Optional[List[str]] = None
         
         logger.info(f"Initialized {self.__class__.__name__} for {model_id}")
@@ -336,14 +403,7 @@ class BaseIncrementalTrainer(ABC):
         verbose: bool = True,
         specialist_feature_names: Optional[List[str]] = None
     ) -> IncrementalTrainingResults:
-        """
-        Train model incrementally with rolling OOF predictions.
-        
-        1. Train on burn-in period
-        2. Generate OOF predictions for next 14 days
-        3. Resume training with additional data
-        4. Repeat until end of data
-        """
+        """Train model incrementally with rolling OOF predictions."""
         start_time = time.time()
         self._specialist_feature_names = specialist_feature_names
         
@@ -351,29 +411,15 @@ class BaseIncrementalTrainer(ABC):
             logger.info("=" * 80)
             logger.info(f"🚀 Starting Incremental {self.__class__.__name__} Training")
             logger.info("=" * 80)
-            logger.info(f"Model ID: {self.model_id}")
-            logger.info(f"Execution mode: {self.config.execution_mode}")
             logger.info(f"Burn-in period: {self.config.burn_in_days} days")
-            logger.info(f"OOF batch size: {self.config.oof_batch_days} days")
-            logger.info(f"Data range: {data_start} → {data_end}")
-            logger.info(f"Samples: {len(X)}, Features: {len(X.columns)}")
-
-            if self.model_config.get('use_specialist_outputs_only', False):
-                spec_count = len(specialist_feature_names) if specialist_feature_names else 0
-                logger.info(f"⚠️ Using ONLY specialist outputs ({spec_count} features)")
         
-        # Load initial best params
         self._best_params = self._load_best_params()
         
-        # Create training windows
         window_generator = IncrementalWindowGenerator(
             config=self.config,
             data_start=data_start,
             data_end=data_end
         )
-        
-        if verbose:
-            logger.info(f"📊 Created {len(window_generator.windows)} training windows")
         
         # Prepare aligned data
         aligned_data = pd.DataFrame(index=X.index)
@@ -383,149 +429,90 @@ class BaseIncrementalTrainer(ABC):
         if sample_weight is not None:
             aligned_data['__weight__'] = sample_weight
         
-        # Process windows
         all_predictions = []
         all_metadata = []
         hpo_history = {}
-        previous_training_end = None  # Track previous window's training boundary
+        previous_training_end = None
         
         for window in window_generator.windows:
             if verbose:
                 logger.info(f"\n🔄 Window {window.window_id + 1}/{len(window_generator.windows)}")
-                logger.info(f"   Training: {window.training_start} → {window.training_end}")
-                logger.info(f"   Predict:  {window.prediction_start} → {window.prediction_end}")
             
             window_start_time = time.time()
             
-            # Get training data (all data from start up to training_end)
-            # CRITICAL: training_end MUST be < prediction_start to ensure no leakage
+            # Data selection
             train_mask = (aligned_data.index >= window.training_start) & (aligned_data.index < window.training_end)
             train_data = aligned_data.loc[train_mask].copy()
             
-            # Get prediction data (data that model has NOT seen yet)
             pred_mask = (aligned_data.index >= window.prediction_start) & (aligned_data.index < window.prediction_end)
             pred_data = aligned_data.loc[pred_mask].copy()
             
-            # VALIDATION: Ensure no overlap between training and prediction data
-            # Note: training uses `< training_end` (exclusive), prediction uses `>= prediction_start` (inclusive)
-            # So if training_end == prediction_start, there's no overlap
+            # Validation check
             if len(train_data) > 0 and len(pred_data) > 0:
-                train_max_ts = train_data.index.max()  # Actual last training sample
-                pred_min_ts = pred_data.index.min()    # Actual first prediction sample
-                
-                # Check for actual data overlap (training sample timestamp >= prediction sample timestamp)
+                train_max_ts = train_data.index.max()
+                pred_min_ts = pred_data.index.min()
                 if train_max_ts >= pred_min_ts:
-                    logger.error(
-                        f"⚠️ DATA LEAKAGE DETECTED! Last training sample ({train_max_ts}) >= "
-                        f"First prediction sample ({pred_min_ts}). Skipping window."
-                    )
+                    logger.error(f"⚠️ LEAKAGE: Train max {train_max_ts} >= Pred min {pred_min_ts}. Skipping.")
                     previous_training_end = window.training_end
                     continue
-                else:
-                    if verbose:
-                        gap_seconds = (pred_min_ts - train_max_ts).total_seconds()
-                        logger.info(f"   ✓ OOF integrity verified: {gap_seconds/60:.1f} min gap between train/predict")
             
             if len(train_data) < 100:
-                logger.warning(f"Window {window.window_id}: Insufficient training samples ({len(train_data)}). Skipping.")
+                logger.warning(f"Window {window.window_id}: Insufficient samples. Skipping.")
                 previous_training_end = window.training_end
                 continue
             
-            # Train or resume training
+            # Initial HPO if burn-in and enabled
+            if window.is_burn_in and self.config.enable_incremental_hpo:
+                if verbose: logger.info("   Running initial HPO on burn-in data...")
+                hpo_result = self._run_incremental_hpo(train_data, window, verbose)
+                if hpo_result:
+                    hpo_history[f"window_{window.window_id}_pre"] = hpo_result
+
+            # Train/Update model
             if window.is_burn_in or self._current_model is None:
-                # Full initial training on burn-in data
-                self._current_model = self._train_initial(
-                    train_data=train_data,
-                    window=window,
-                    verbose=verbose
-                )
+                self._current_model = self._train_initial(train_data, window, verbose)
             else:
-                # Incremental training (resume from previous model)
-                # Get only the NEW data that wasn't in the previous training set
-                # This is the data from PREVIOUS training_end to CURRENT training_end
-                # (i.e., the previous OOF batch that we can now add to training)
                 if previous_training_end is not None:
-                    new_data_mask = (
-                        (aligned_data.index >= previous_training_end) & 
-                        (aligned_data.index < window.training_end)
-                    )
+                    new_data_mask = (aligned_data.index >= previous_training_end) & (aligned_data.index < window.training_end)
                     new_data = aligned_data.loc[new_data_mask].copy()
                     
-                    if verbose:
-                        logger.info(f"   New data for incremental training: {len(new_data)} samples")
-                    
                     if len(new_data) > 0:
-                        self._current_model = self._train_incremental(
-                            new_data=new_data,
-                            full_train_data=train_data,
-                            window=window,
-                            verbose=verbose
-                        )
+                        self._current_model = self._train_incremental(new_data, train_data, window, verbose)
                     else:
-                        # No new data, just continue with current model
-                        logger.info(f"   No new data for incremental training, using current model")
+                        logger.info(f"   No new data, using current model")
                 else:
-                    # Fallback: full training if we don't have previous boundary
-                    self._current_model = self._train_initial(
-                        train_data=train_data,
-                        window=window,
-                        verbose=verbose
-                    )
+                    self._current_model = self._train_initial(train_data, window, verbose)
             
-            # Update previous training boundary for next iteration
             previous_training_end = window.training_end
             
-            if len(pred_data) == 0:
-                logger.warning(f"Window {window.window_id}: No prediction data. Skipping predictions.")
-                continue
+            # Predict
+            if len(pred_data) > 0:
+                predictions = self._predict(pred_data)
+                all_predictions.append(predictions)
             
-            # Generate OOF predictions
-            predictions = self._predict(pred_data)
-            all_predictions.append(predictions)
-            
-            # Run incremental HPO if enabled
+            # HPO for next rounds
             if self.config.enable_incremental_hpo and not window.is_burn_in:
-                hpo_result = self._run_incremental_hpo(
-                    train_data=train_data,
-                    window=window,
-                    verbose=verbose
-                )
+                hpo_result = self._run_incremental_hpo(train_data, window, verbose)
                 if hpo_result:
                     hpo_history[f"window_{window.window_id}"] = hpo_result
             
-            window_time = time.time() - window_start_time
-            
-            # Store metadata
+            # Metadata
             metadata = {
                 'window_id': window.window_id,
                 'training_samples': len(train_data),
                 'prediction_samples': len(pred_data),
-                'training_time': window_time,
+                'training_time': time.time() - window_start_time,
                 'is_burn_in': window.is_burn_in,
                 **window.to_dict()
             }
+            if hasattr(self._current_model, 'is_calibrated'):
+                 metadata['calibration_status'] = self._current_model.is_calibrated
+
             all_metadata.append(metadata)
-            
-            if verbose:
-                logger.info(f"   ✅ Window complete in {window_time:.2f}s")
         
-        # Combine predictions
-        if all_predictions:
-            oof_predictions = pd.concat(all_predictions, axis=0).sort_index()
-        else:
-            oof_predictions = pd.DataFrame()
-        
-        total_time = time.time() - start_time
-        
-        # Save final best params
+        # Combine
+        oof_predictions = pd.concat(all_predictions, axis=0).sort_index() if all_predictions else pd.DataFrame()
         self._save_best_params(self._best_params)
-        
-        if verbose:
-            logger.info("=" * 80)
-            logger.info(f"✅ Incremental Training Complete in {total_time:.2f}s")
-            logger.info(f"   Total windows: {len(all_metadata)}")
-            logger.info(f"   Total OOF predictions: {len(oof_predictions)}")
-            logger.info("=" * 80)
         
         return IncrementalTrainingResults(
             oof_predictions=oof_predictions,
@@ -533,233 +520,131 @@ class BaseIncrementalTrainer(ABC):
             window_metadata=all_metadata,
             hpo_history=hpo_history,
             best_params=self._best_params,
-            training_time=total_time
+            training_time=time.time() - start_time
         )
     
     @abstractmethod
-    def _train_initial(
-        self,
-        train_data: pd.DataFrame,
-        window: IncrementalTrainingWindow,
-        verbose: bool
-    ) -> Any:
-        """Train initial model on burn-in data."""
+    def _train_initial(self, train_data: pd.DataFrame, window: IncrementalTrainingWindow, verbose: bool) -> Any:
         pass
     
     @abstractmethod
-    def _train_incremental(
-        self,
-        new_data: pd.DataFrame,
-        full_train_data: pd.DataFrame,
-        window: IncrementalTrainingWindow,
-        verbose: bool
-    ) -> Any:
-        """Incrementally train model with new data."""
+    def _train_incremental(self, new_data: pd.DataFrame, full_train_data: pd.DataFrame, window: IncrementalTrainingWindow, verbose: bool) -> Any:
         pass
     
     @abstractmethod
     def _predict(self, pred_data: pd.DataFrame) -> pd.DataFrame:
-        """Generate predictions."""
         pass
     
     @abstractmethod
-    def _run_incremental_hpo(
-        self,
-        train_data: pd.DataFrame,
-        window: IncrementalTrainingWindow,
-        verbose: bool
-    ) -> Optional[Dict[str, Any]]:
-        """Run incremental HPO with neighborhood search."""
+    def _run_incremental_hpo(self, train_data: pd.DataFrame, window: IncrementalTrainingWindow, verbose: bool) -> Optional[Dict[str, Any]]:
         pass
     
     def _get_feature_cols(self, data: pd.DataFrame) -> List[str]:
-        """Get feature column names (exclude __ prefixed columns)."""
         all_features = [c for c in data.columns if not c.startswith('__')]
-
-        # Filter for specialist features if configured
-        if self.model_config.get('use_specialist_outputs_only', False):
-            if self._specialist_feature_names:
-                specialist_set = set(self._specialist_feature_names)
-                filtered_features = [f for f in all_features if f in specialist_set]
-                if not filtered_features:
-                    logger.warning("Feature filtering enabled but no specialist features found in data! Using all features.")
-                    return all_features
-                return filtered_features
-            else:
-                logger.warning("Feature filtering enabled but no specialist feature names provided! Using all features.")
-                return all_features
-
+        if self.model_config.get('use_specialist_outputs_only', False) and self._specialist_feature_names:
+            specialist_set = set(self._specialist_feature_names)
+            return [f for f in all_features if f in specialist_set]
         return all_features
 
 
 # ============================================================================
-# Incremental LightGBM Trainer
+# Incremental LGBM Trainer
 # ============================================================================
 
 class IncrementalLGBMTrainer(BaseIncrementalTrainer):
-    """
-    Incremental LightGBM trainer using init_model for warm starting.
-    """
+    """Incremental LightGBM trainer with calibration."""
     
-    def __init__(
-        self,
-        model_id: str,
-        config: Optional[IncrementalTrainingConfig] = None,
-        model_config: Optional[Dict[str, Any]] = None
-    ):
-        if not LIGHTGBM_AVAILABLE:
-            raise ImportError("LightGBM is required for IncrementalLGBMTrainer")
+    def __init__(self, model_id: str, config=None, model_config=None):
         super().__init__(model_id, config, model_config)
         self._feature_cols: List[str] = []
     
     def _get_default_params(self) -> Dict[str, Any]:
-        """Get default LGBM parameters."""
         params = {
             'objective': 'regression' if self.config.task_type == 'regression' else 'binary',
             'metric': 'rmse' if self.config.task_type == 'regression' else 'binary_logloss',
-            'boosting_type': 'gbdt',
-            'verbosity': -1,
-            'n_jobs': -1,
-            'learning_rate': 0.05,
-            'num_leaves': 31,
-            'max_depth': 6,
-            'reg_alpha': 0.1,
-            'reg_lambda': 0.1,
-            'bagging_fraction': 0.8,
-            'bagging_freq': 5,
-            'feature_fraction': 0.8,
+            'boosting_type': 'gbdt', 'verbosity': -1, 'n_jobs': -1,
+            'learning_rate': 0.05, 'num_leaves': 31, 'max_depth': 6,
+            'reg_alpha': 0.1, 'reg_lambda': 0.1
         }
-        # Override with config params if available
         if self.model_config and 'params' in self.model_config:
             params.update(self.model_config['params'])
         return params
     
-    def _train_initial(
-        self,
-        train_data: pd.DataFrame,
-        window: IncrementalTrainingWindow,
-        verbose: bool
-    ) -> lgb.Booster:
-        """Train initial LGBM model."""
+    def _train_initial(self, train_data: pd.DataFrame, window: IncrementalTrainingWindow, verbose: bool) -> CalibratedModel:
         self._feature_cols = self._get_feature_cols(train_data)
         X = train_data[self._feature_cols].values.astype(np.float32)
         y = train_data['__target__'].values
+        X = np.nan_to_num(X, nan=0.0)
         
-        # Handle NaN
-        X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
+        X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
         
-        # Split for validation
-        from sklearn.model_selection import train_test_split
-        X_train, X_val, y_train, y_val = train_test_split(
-            X, y, test_size=0.2, random_state=42
-        )
+        train_ds = lgb.Dataset(X_train, label=y_train)
+        val_ds = lgb.Dataset(X_val, label=y_val, reference=train_ds)
         
-        # Create datasets
-        train_dataset = lgb.Dataset(X_train, label=y_train, free_raw_data=False)
-        val_dataset = lgb.Dataset(X_val, label=y_val, reference=train_dataset)
-        
-        # Merge default params with cached best params
         params = self._get_default_params()
         params.update(self._best_params)
+        n_est = params.pop('n_estimators', 500)
         
-        n_estimators = params.pop('n_estimators', 500)
-        
-        # Train model
         model = lgb.train(
-            params,
-            train_dataset,
-            num_boost_round=n_estimators,
-            valid_sets=[train_dataset, val_dataset],
-            valid_names=['train', 'valid'],
-            callbacks=[
-                lgb.early_stopping(stopping_rounds=self.config.early_stopping_rounds),
-                lgb.log_evaluation(period=100) if verbose else lgb.log_evaluation(period=0)
-            ]
+            params, train_ds, num_boost_round=n_est,
+            valid_sets=[train_ds, val_ds],
+            callbacks=[lgb.early_stopping(35), lgb.log_evaluation(0)]
         )
         
+        # Wrap and calibrate
+        calibrated_model = CalibratedModel(model, self.config.task_type)
+        calibrated_model.fit_calibration(X_val, y_val)
+
         if verbose:
-            logger.info(f"   Initial LGBM trained: {model.num_trees()} trees")
+            logger.info(f"   Initial LGBM: {model.num_trees()} trees, calibrated={calibrated_model.is_calibrated}")
         
-        return model
+        return calibrated_model
     
-    def _train_incremental(
-        self,
-        new_data: pd.DataFrame,
-        full_train_data: pd.DataFrame,
-        window: IncrementalTrainingWindow,
-        verbose: bool
-    ) -> lgb.Booster:
-        """Incrementally train LGBM using init_model."""
+    def _train_incremental(self, new_data: pd.DataFrame, full_train_data: pd.DataFrame, window: IncrementalTrainingWindow, verbose: bool) -> CalibratedModel:
         X = full_train_data[self._feature_cols].values.astype(np.float32)
         y = full_train_data['__target__'].values
+        X = np.nan_to_num(X, nan=0.0)
         
-        X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
+        X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
         
-        # Split for validation
-        from sklearn.model_selection import train_test_split
-        X_train, X_val, y_train, y_val = train_test_split(
-            X, y, test_size=0.2, random_state=42
-        )
-        
-        train_dataset = lgb.Dataset(X_train, label=y_train, free_raw_data=False)
-        val_dataset = lgb.Dataset(X_val, label=y_val, reference=train_dataset)
+        train_ds = lgb.Dataset(X_train, label=y_train)
+        val_ds = lgb.Dataset(X_val, label=y_val, reference=train_ds)
         
         params = self._get_default_params()
         params.update(self._best_params)
         
-        # Continue training from previous model using init_model
-        additional_rounds = max(50, min(100, len(new_data) // 10))
+        # Access base model from wrapper
+        prev_lgbm = self._current_model.base_model
         
         model = lgb.train(
-            params,
-            train_dataset,
-            num_boost_round=additional_rounds,
-            valid_sets=[train_dataset, val_dataset],
-            valid_names=['train', 'valid'],
-            init_model=self._current_model,  # Resume from previous model
-            callbacks=[
-                lgb.early_stopping(stopping_rounds=self.config.early_stopping_rounds // 2),
-                lgb.log_evaluation(period=0)
-            ]
+            params, train_ds, num_boost_round=100,
+            valid_sets=[train_ds, val_ds],
+            init_model=prev_lgbm,
+            callbacks=[lgb.early_stopping(20), lgb.log_evaluation(0)]
         )
         
-        if verbose:
-            logger.info(f"   Incremental LGBM: +{additional_rounds} rounds → {model.num_trees()} total trees")
+        calibrated_model = CalibratedModel(model, self.config.task_type)
+        calibrated_model.fit_calibration(X_val, y_val)
         
-        return model
+        return calibrated_model
     
     def _predict(self, pred_data: pd.DataFrame) -> pd.DataFrame:
-        """Generate LGBM predictions."""
         X = pred_data[self._feature_cols].values.astype(np.float32)
-        X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
+        X = np.nan_to_num(X, nan=0.0)
         
-        predictions = self._current_model.predict(X)
+        # Predict using calibrated wrapper
+        preds = self._current_model.predict(X)
         
         if self.config.task_type == 'classification':
-            return pd.DataFrame({
-                'prediction': (predictions > 0.5).astype(int),
-                'probability': predictions
-            }, index=pred_data.index)
+            return pd.DataFrame({'prediction': (preds > 0.5).astype(int), 'probability': preds}, index=pred_data.index)
         else:
-            return pd.DataFrame({
-                'prediction': predictions
-            }, index=pred_data.index)
-    
-    def _run_incremental_hpo(
-        self,
-        train_data: pd.DataFrame,
-        window: IncrementalTrainingWindow,
-        verbose: bool
-    ) -> Optional[Dict[str, Any]]:
-        """Run incremental HPO with neighborhood search around current best."""
-        if not OPTUNA_AVAILABLE:
-            return None
-        
+            return pd.DataFrame({'prediction': preds}, index=pred_data.index)
+
+    def _run_incremental_hpo(self, train_data, window, verbose):
+        if not OPTUNA_AVAILABLE: return None
         X = train_data[self._feature_cols].values.astype(np.float32)
         y = train_data['__target__'].values
-        X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
-        
-        from sklearn.model_selection import train_test_split
+        X = np.nan_to_num(X, nan=0.0)
         X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
         
         current_best = self._best_params.copy()
@@ -767,83 +652,39 @@ class IncrementalLGBMTrainer(BaseIncrementalTrainer):
         
         def objective(trial):
             params = self._get_default_params()
-            
-            # Neighborhood search around current best
             for param_name in self.config.sensitive_params_lgbm:
                 current_val = current_best.get(param_name)
-                
                 if param_name == 'learning_rate':
                     base = current_val or 0.05
-                    params['learning_rate'] = trial.suggest_float(
-                        'learning_rate',
-                        max(0.001, base * (1 - radius)),
-                        min(0.3, base * (1 + radius)),
-                        log=True
-                    )
+                    params['learning_rate'] = trial.suggest_float('learning_rate', max(0.001, base*(1-radius)), min(0.3, base*(1+radius)), log=True)
                 elif param_name == 'num_leaves':
                     base = current_val or 31
-                    params['num_leaves'] = trial.suggest_int(
-                        'num_leaves',
-                        max(8, int(base * (1 - radius))),
-                        min(128, int(base * (1 + radius)))
-                    )
+                    params['num_leaves'] = trial.suggest_int('num_leaves', max(8, int(base*(1-radius))), min(128, int(base*(1+radius))))
                 elif param_name == 'max_depth':
                     base = current_val or 6
-                    params['max_depth'] = trial.suggest_int(
-                        'max_depth',
-                        max(3, int(base * (1 - radius))),
-                        min(12, int(base * (1 + radius)))
-                    )
+                    params['max_depth'] = trial.suggest_int('max_depth', max(3, int(base*(1-radius))), min(12, int(base*(1+radius))))
                 elif param_name in ['reg_alpha', 'reg_lambda']:
                     base = current_val or 0.1
-                    params[param_name] = trial.suggest_float(
-                        param_name,
-                        max(0.0, base * (1 - radius)),
-                        min(5.0, base * (1 + radius))
-                    )
+                    params[param_name] = trial.suggest_float(param_name, max(0.0, base*(1-radius)), min(5.0, base*(1+radius)))
             
-            train_dataset = lgb.Dataset(X_train, label=y_train, free_raw_data=False)
-            val_dataset = lgb.Dataset(X_val, label=y_val, reference=train_dataset)
-            
+            dtrain = lgb.Dataset(X_train, label=y_train)
+            dval = lgb.Dataset(X_val, label=y_val, reference=dtrain)
             try:
-                model = lgb.train(
-                    params,
-                    train_dataset,
-                    num_boost_round=200,
-                    valid_sets=[val_dataset],
-                    callbacks=[lgb.early_stopping(stopping_rounds=20)]
-                )
-                
+                model = lgb.train(params, dtrain, num_boost_round=200, valid_sets=[dval], callbacks=[lgb.early_stopping(20)])
                 preds = model.predict(X_val)
-                
                 if self.config.task_type == 'regression':
-                    from sklearn.metrics import mean_squared_error
-                    return -mean_squared_error(y_val, preds)
+                    return -((y_val - preds)**2).mean()
                 else:
                     from sklearn.metrics import log_loss
                     return -log_loss(y_val, preds)
-            except Exception:
+            except:
                 return float('-inf')
-        
+
         study = optuna.create_study(direction='maximize')
-        study.optimize(
-            objective,
-            n_trials=self.config.hpo_n_trials_per_round,
-            timeout=self.config.hpo_timeout_per_round,
-            show_progress_bar=verbose
-        )
-        
-        # Update best params if improved
-        if study.best_trial is not None:
+        study.optimize(objective, n_trials=self.config.hpo_n_trials_per_round, timeout=self.config.hpo_timeout_per_round)
+        if study.best_trial:
             self._best_params.update(study.best_params)
-            if verbose:
-                logger.info(f"   HPO: Updated params - {study.best_params}")
-        
-        return {
-            'best_params': study.best_params,
-            'best_value': study.best_value,
-            'n_trials': len(study.trials)
-        }
+        return {'best_params': study.best_params, 'best_value': study.best_value}
 
 
 # ============================================================================
@@ -851,244 +692,83 @@ class IncrementalLGBMTrainer(BaseIncrementalTrainer):
 # ============================================================================
 
 class IncrementalNGBoostTrainer(BaseIncrementalTrainer):
-    """
-    Incremental NGBoost trainer using warm_start.
-    """
+    """Incremental NGBoost trainer with calibration."""
     
-    def __init__(
-        self,
-        model_id: str,
-        config: Optional[IncrementalTrainingConfig] = None,
-        model_config: Optional[Dict[str, Any]] = None
-    ):
-        if not NGBOOST_AVAILABLE:
-            raise ImportError("NGBoost is required for IncrementalNGBoostTrainer")
+    def __init__(self, model_id: str, config=None, model_config=None):
         super().__init__(model_id, config, model_config)
         self._feature_cols: List[str] = []
-        self._accumulated_X: Optional[np.ndarray] = None
-        self._accumulated_y: Optional[np.ndarray] = None
     
-    def _get_default_params(self) -> Dict[str, Any]:
-        """Get default NGBoost parameters."""
-        params = {
-            'n_estimators': 500,
-            'learning_rate': 0.01,
-            'minibatch_frac': 0.5,
-            'verbose': False,
-        }
-        # Override with config params if available
+    def _get_default_params(self):
+        params = {'n_estimators': 500, 'learning_rate': 0.01, 'minibatch_frac': 0.5, 'verbose': False}
         if self.model_config and 'params' in self.model_config:
             params.update(self.model_config['params'])
         return params
     
-    def _create_base_learner(self, params: Dict[str, Any]) -> Any:
-        """Create base learner with correct depth."""
+    def _create_base_learner(self, params):
         from ngboost.learners import default_tree_learner
-
-        # Get target parameters
-        max_depth = int(params.get('base_learner_max_depth', 3))
-
-        # Copy default params from default_tree_learner (DecisionTreeRegressor)
-        try:
-            default_params = default_tree_learner.get_params(deep=True)
-        except Exception:
-            default_params = {}
-
-        tree_params = dict(default_params)
-
-        # Override with our specific constraints
-        tree_params['max_depth'] = max_depth
-
-        # Ensure we don't lose min_samples_leaf if provided in base params or config
+        tree_params = dict(default_tree_learner.get_params(deep=True))
+        tree_params['max_depth'] = int(params.get('base_learner_max_depth', 3))
         if 'base_learner_min_samples_leaf' in params:
             tree_params['min_samples_leaf'] = int(params['base_learner_min_samples_leaf'])
-        elif 'min_samples_leaf' in params:
-             tree_params['min_samples_leaf'] = int(params['min_samples_leaf'])
-
-        # Instantiate fresh tree with preserved settings
         return default_tree_learner.__class__(**tree_params)
 
-    def _train_initial(
-        self,
-        train_data: pd.DataFrame,
-        window: IncrementalTrainingWindow,
-        verbose: bool
-    ) -> Any:
-        """Train initial NGBoost model."""
+    def _train_initial(self, train_data: pd.DataFrame, window: IncrementalTrainingWindow, verbose: bool) -> CalibratedModel:
         self._feature_cols = self._get_feature_cols(train_data)
         X = train_data[self._feature_cols].values.astype(np.float64)
         y = train_data['__target__'].values
+        X = np.nan_to_num(X, nan=0.0)
         
-        X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
-        
-        # Store accumulated data
-        self._accumulated_X = X.copy()
-        self._accumulated_y = y.copy()
-        
-        # Split for validation
-        from sklearn.model_selection import train_test_split
-        X_train, X_val, y_train, y_val = train_test_split(
-            X, y, test_size=0.2, random_state=42
-        )
+        X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
         
         params = self._get_default_params()
         params.update(self._best_params)
-        
-        # Extract base learner params from main params if mixed
-        # (NGBoost init uses **params, but Base needs separate instantiation)
         base_learner = self._create_base_learner(params)
-
-        # Remove base_learner_max_depth from params passed to NGBoost init
-        # to avoid "unexpected keyword argument"
-        ngboost_params = {k: v for k, v in params.items() if k != 'base_learner_max_depth'}
-
-        if self.config.task_type == 'classification':
-            model = NGBClassifier(Dist=Normal, Base=base_learner, **ngboost_params)
-        else:
-            model = NGBRegressor(Dist=Normal, Base=base_learner, **ngboost_params)
-        
-        model.fit(
-            X_train, y_train,
-            X_val=X_val, Y_val=y_val,
-            early_stopping_rounds=self.config.early_stopping_rounds
-        )
-        
-        if verbose:
-            n_est = getattr(model, 'n_estimators', 'N/A')
-            depth = params.get('base_learner_max_depth', 3)
-            logger.info(f"   Initial NGBoost trained: {n_est} estimators, depth={depth}")
-        
-        return model
-    
-    def _train_incremental(
-        self,
-        new_data: pd.DataFrame,
-        full_train_data: pd.DataFrame,
-        window: IncrementalTrainingWindow,
-        verbose: bool
-    ) -> Any:
-        """
-        Incrementally train NGBoost.
-        
-        NGBoost doesn't have native incremental training with warm_start.
-        To prevent drift in probabilistic predictions, we:
-        1. Retrain on ALL accumulated data with CONSISTENT hyperparameters
-        2. Use the same n_estimators as initial training
-        3. Track distribution parameters across windows for drift monitoring
-        """
-        X = full_train_data[self._feature_cols].values.astype(np.float64)
-        y = full_train_data['__target__'].values
-        X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
-        
-        # Update accumulated data
-        self._accumulated_X = X.copy()
-        self._accumulated_y = y.copy()
-        
-        from sklearn.model_selection import train_test_split
-        X_train, X_val, y_train, y_val = train_test_split(
-            X, y, test_size=0.2, random_state=42
-        )
-        
-        # CRITICAL: Use SAME parameters as initial training to prevent drift
-        # Only update learning-related params, not structural ones
-        params = self._get_default_params()
-        params.update(self._best_params)
-        
-        # Create base learner
-        base_learner = self._create_base_learner(params)
-        ngboost_params = {k: v for k, v in params.items() if k != 'base_learner_max_depth'}
-
-        # Keep n_estimators consistent - don't reduce it
-        # This ensures probabilistic calibration remains stable
-        # Early stopping will naturally limit actual iterations
+        ng_params = {k: v for k, v in params.items() if k != 'base_learner_max_depth' and k != 'base_learner_min_samples_leaf'}
         
         if self.config.task_type == 'classification':
-            model = NGBClassifier(Dist=Normal, Base=base_learner, **ngboost_params)
+            model = NGBClassifier(Dist=Normal, Base=base_learner, **ng_params)
         else:
-            model = NGBRegressor(Dist=Normal, Base=base_learner, **ngboost_params)
+            model = NGBRegressor(Dist=Normal, Base=base_learner, **ng_params)
+
+        model.fit(X_train, y_train, X_val=X_val, Y_val=y_val, early_stopping_rounds=35)
         
-        # Store previous model's distribution stats for drift detection
-        prev_dist_stats = None
-        if self._current_model is not None:
-            try:
-                # Sample some predictions from previous model for comparison
-                sample_X = X_val[:min(100, len(X_val))]
-                prev_dist = self._current_model.pred_dist(sample_X)
-                if hasattr(prev_dist, 'params'):
-                    prev_dist_stats = {
-                        'mean_loc': float(np.mean(prev_dist.params.get('loc', [0]))),
-                        'mean_scale': float(np.mean(prev_dist.params.get('scale', [1])))
-                    }
-            except Exception:
-                pass
+        calibrated_model = CalibratedModel(model, self.config.task_type)
+        calibrated_model.fit_calibration(X_val, y_val)
         
-        model.fit(
-            X_train, y_train,
-            X_val=X_val, Y_val=y_val,
-            early_stopping_rounds=self.config.early_stopping_rounds
-        )
-        
-        # Check for drift in probabilistic predictions
-        if prev_dist_stats is not None:
-            try:
-                sample_X = X_val[:min(100, len(X_val))]
-                new_dist = model.pred_dist(sample_X)
-                if hasattr(new_dist, 'params'):
-                    new_mean_scale = float(np.mean(new_dist.params.get('scale', [1])))
-                    scale_drift = abs(new_mean_scale - prev_dist_stats['mean_scale']) / max(prev_dist_stats['mean_scale'], 1e-6)
-                    if scale_drift > 0.5:  # 50% drift threshold
-                        logger.warning(
-                            f"   ⚠️ NGBoost scale drift detected: {scale_drift:.2%}. "
-                            f"Previous mean_scale: {prev_dist_stats['mean_scale']:.4f}, "
-                            f"New mean_scale: {new_mean_scale:.4f}"
-                        )
-            except Exception as e:
-                logger.debug(f"Could not check NGBoost drift: {e}")
-        
-        n_est = getattr(model, 'n_estimators', 'N/A')
         if verbose:
-            logger.info(f"   Incremental NGBoost retrained on {len(X_train)} samples: {n_est} estimators")
+            logger.info(f"   Initial NGBoost trained, calibrated={calibrated_model.is_calibrated}")
         
-        return model
-    
-    def _predict(self, pred_data: pd.DataFrame) -> pd.DataFrame:
-        """Generate NGBoost predictions."""
+        return calibrated_model
+
+    def _train_incremental(self, new_data, full_train_data, window, verbose) -> CalibratedModel:
+        # Re-train on full accumulated data (NGBoost doesn't support true partial_fit)
+        # Using consistent params to minimize drift
+        return self._train_initial(full_train_data, window, verbose)
+
+    def _predict(self, pred_data) -> pd.DataFrame:
         X = pred_data[self._feature_cols].values.astype(np.float64)
-        X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
+        X = np.nan_to_num(X, nan=0.0)
         
-        predictions = self._current_model.predict(X)
+        preds = self._current_model.predict(X)
         
         if self.config.task_type == 'classification':
-            probs = self._current_model.predict_proba(X)
-            return pd.DataFrame({
-                'prediction': predictions,
-                'probability': probs[:, 1] if probs.shape[1] > 1 else probs[:, 0]
-            }, index=pred_data.index)
+            # Calibrated probabilities
+            probs = self._current_model.predict_proba(X) # Returns [p0, p1] from calibrated wrapper
+            return pd.DataFrame({'prediction': (preds > 0.5).astype(int), 'probability': probs[:, 1]}, index=pred_data.index)
         else:
-            # Get distribution for uncertainty
-            dist = self._current_model.pred_dist(X)
-            std = dist.params.get('scale', np.zeros_like(predictions)) if hasattr(dist, 'params') else np.zeros_like(predictions)
-            
-            return pd.DataFrame({
-                'prediction': predictions,
-                'std': std
-            }, index=pred_data.index)
-    
-    def _run_incremental_hpo(
-        self,
-        train_data: pd.DataFrame,
-        window: IncrementalTrainingWindow,
-        verbose: bool
-    ) -> Optional[Dict[str, Any]]:
-        """Run incremental HPO for NGBoost."""
-        if not OPTUNA_AVAILABLE:
-            return None
-        
+            # Get uncertainty from base model
+            try:
+                dist = self._current_model.base_model.pred_dist(X)
+                std = dist.params.get('scale', np.zeros_like(preds))
+            except:
+                std = np.zeros_like(preds)
+            return pd.DataFrame({'prediction': preds, 'std': std}, index=pred_data.index)
+
+    def _run_incremental_hpo(self, train_data, window, verbose):
+        if not OPTUNA_AVAILABLE: return None
         X = train_data[self._feature_cols].values.astype(np.float64)
         y = train_data['__target__'].values
-        X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
-        
-        from sklearn.model_selection import train_test_split
+        X = np.nan_to_num(X, nan=0.0)
         X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
         
         current_best = self._best_params.copy()
@@ -1096,84 +776,43 @@ class IncrementalNGBoostTrainer(BaseIncrementalTrainer):
         
         def objective(trial):
             params = self._get_default_params()
-            
             for param_name in self.config.sensitive_params_ngboost:
                 current_val = current_best.get(param_name)
-                
                 if param_name == 'learning_rate':
                     base = current_val or 0.01
-                    params['learning_rate'] = trial.suggest_float(
-                        'learning_rate',
-                        max(0.01, base * (1 - radius)),
-                        min(0.05, base * (1 + radius)),
-                        log=True
-                    )
+                    params['learning_rate'] = trial.suggest_float('learning_rate', max(0.01, base*(1-radius)), min(0.05, base*(1+radius)), log=True)
                 elif param_name == 'n_estimators':
                     base = current_val or 500
-                    params['n_estimators'] = trial.suggest_int(
-                        'n_estimators',
-                        max(100, int(base * (1 - radius))),
-                        min(1000, int(base * (1 + radius)))
-                    )
+                    params['n_estimators'] = trial.suggest_int('n_estimators', max(100, int(base*(1-radius))), min(1000, int(base*(1+radius))))
                 elif param_name == 'minibatch_frac':
                     base = current_val or 0.5
-                    params['minibatch_frac'] = trial.suggest_float(
-                        'minibatch_frac',
-                        max(0.1, base * (1 - radius)),
-                        min(1.0, base * (1 + radius))
-                    )
+                    params['minibatch_frac'] = trial.suggest_float('minibatch_frac', max(0.1, base*(1-radius)), min(1.0, base*(1+radius)))
                 elif param_name == 'base_learner_max_depth':
-                    base = current_val or 3
-                    params['base_learner_max_depth'] = trial.suggest_int(
-                        'base_learner_max_depth',
-                        3, 5
-                    )
+                    params['base_learner_max_depth'] = trial.suggest_int('base_learner_max_depth', 3, 5)
             
             try:
-                # Create base learner using shared method (preserves min_samples_leaf)
                 base_learner = self._create_base_learner(params)
-
-                ngboost_params = {k: v for k, v in params.items() if k != 'base_learner_max_depth'}
-
+                ng_params = {k: v for k, v in params.items() if k != 'base_learner_max_depth' and k != 'base_learner_min_samples_leaf'}
                 if self.config.task_type == 'classification':
-                    model = NGBClassifier(Dist=Normal, Base=base_learner, **ngboost_params)
+                    model = NGBClassifier(Dist=Normal, Base=base_learner, **ng_params)
                 else:
-                    model = NGBRegressor(Dist=Normal, Base=base_learner, **ngboost_params)
-                
-                model.fit(
-                    X_train, y_train,
-                    X_val=X_val, Y_val=y_val,
-                    early_stopping_rounds=self.config.early_stopping_rounds
-                )
-                
+                    model = NGBRegressor(Dist=Normal, Base=base_learner, **ng_params)
+                model.fit(X_train, y_train, X_val=X_val, Y_val=y_val, early_stopping_rounds=35)
                 preds = model.predict(X_val)
-                
                 if self.config.task_type == 'regression':
-                    from sklearn.metrics import mean_squared_error
-                    return -mean_squared_error(y_val, preds)
+                    return -((y_val - preds)**2).mean()
                 else:
                     from sklearn.metrics import log_loss
                     probs = model.predict_proba(X_val)
                     return -log_loss(y_val, probs)
-            except Exception:
+            except:
                 return float('-inf')
-        
+
         study = optuna.create_study(direction='maximize')
-        study.optimize(
-            objective,
-            n_trials=self.config.hpo_n_trials_per_round,
-            timeout=self.config.hpo_timeout_per_round,
-            show_progress_bar=verbose
-        )
-        
-        if study.best_trial is not None:
+        study.optimize(objective, n_trials=self.config.hpo_n_trials_per_round, timeout=self.config.hpo_timeout_per_round)
+        if study.best_trial:
             self._best_params.update(study.best_params)
-        
-        return {
-            'best_params': study.best_params,
-            'best_value': study.best_value,
-            'n_trials': len(study.trials)
-        }
+        return {'best_params': study.best_params, 'best_value': study.best_value}
 
 
 # ============================================================================
@@ -1181,211 +820,114 @@ class IncrementalNGBoostTrainer(BaseIncrementalTrainer):
 # ============================================================================
 
 class IncrementalKNNTrainer(BaseIncrementalTrainer):
-    """
-    Incremental KNN trainer with point accumulation.
-    
-    KNN doesn't require retraining - we just accumulate points.
-    """
-    
-    def __init__(
-        self,
-        model_id: str,
-        config: Optional[IncrementalTrainingConfig] = None,
-        model_config: Optional[Dict[str, Any]] = None
-    ):
-        if not SKLEARN_AVAILABLE:
-            raise ImportError("scikit-learn is required for IncrementalKNNTrainer")
+    def __init__(self, model_id, config=None, model_config=None):
         super().__init__(model_id, config, model_config)
-        self._feature_cols: List[str] = []
-        self._accumulated_X: List[np.ndarray] = []
-        self._accumulated_y: List[np.ndarray] = []
-        self._scaler: Optional[StandardScaler] = None
-    
-    def _get_default_params(self) -> Dict[str, Any]:
-        """Get default KNN parameters."""
-        params = {
-            'n_neighbors': 15,
-            'weights': 'distance',
-            'algorithm': 'ball_tree',
-            'leaf_size': 30,
-            'metric': 'minkowski',
-            'p': 2,
-            'n_jobs': -1
-        }
-        # Override with config params if available
-        if self.model_config and 'params' in self.model_config:
-            params.update(self.model_config['params'])
+        self._scaler = None
+
+    def _get_default_params(self):
+        params = {'n_neighbors': 15, 'weights': 'distance', 'n_jobs': -1}
+        if self.model_config: params.update(self.model_config.get('params', {}))
         return params
-    
-    def _train_initial(
-        self,
-        train_data: pd.DataFrame,
-        window: IncrementalTrainingWindow,
-        verbose: bool
-    ) -> Any:
-        """Train initial KNN model."""
+
+    def _train_initial(self, train_data, window, verbose) -> CalibratedModel:
         self._feature_cols = self._get_feature_cols(train_data)
         X = train_data[self._feature_cols].values.astype(np.float32)
         y = train_data['__target__'].values
+        X = np.nan_to_num(X, nan=0.0)
         
-        X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
+        # Split raw data first
+        X_train_raw, X_val_raw, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
         
-        # Standardize features (important for KNN)
+        # Scale only training data for fit
         self._scaler = StandardScaler()
-        X_scaled = self._scaler.fit_transform(X)
-        
-        # Store accumulated data
-        self._accumulated_X = [X_scaled]
-        self._accumulated_y = [y]
+        X_train_scaled = self._scaler.fit_transform(X_train_raw)
         
         params = self._get_default_params()
-        params.update(self._best_params)
+        # Cap neighbors
+        n_samples = len(y_train)
+        max_k = max(5, int(np.sqrt(n_samples)))
+        if 'n_neighbors' in params: params['n_neighbors'] = min(params['n_neighbors'], max_k)
         
         if self.config.task_type == 'classification':
             model = KNeighborsClassifier(**params)
         else:
             model = KNeighborsRegressor(**params)
+
+        model.fit(X_train_scaled, y_train)
         
-        model.fit(X_scaled, y)
+        # Wrapper that handles scaling
+        class ScaledModel:
+            def __init__(self, model, scaler):
+                self.model = model
+                self.scaler = scaler
+            def predict(self, X):
+                return self.model.predict(self.scaler.transform(X))
+            def predict_proba(self, X):
+                return self.model.predict_proba(self.scaler.transform(X))
+
+        # Calibrate using raw validation data (wrapper handles scaling)
+        calibrated_model = CalibratedModel(ScaledModel(model, self._scaler), self.config.task_type)
+        calibrated_model.fit_calibration(X_val_raw, y_val)
         
-        if verbose:
-            logger.info(f"   Initial KNN trained: {len(y)} points, k={params['n_neighbors']}")
-        
-        return model
-    
-    def _train_incremental(
-        self,
-        new_data: pd.DataFrame,
-        full_train_data: pd.DataFrame,
-        window: IncrementalTrainingWindow,
-        verbose: bool
-    ) -> Any:
-        """
-        Incrementally add points to KNN.
-        
-        KNN is lazy - we just accumulate points and refit.
-        """
-        X = full_train_data[self._feature_cols].values.astype(np.float32)
-        y = full_train_data['__target__'].values
-        X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
-        
-        # Update scaler with all data
-        X_scaled = self._scaler.fit_transform(X)
-        
-        # Update accumulated data
-        self._accumulated_X = [X_scaled]
-        self._accumulated_y = [y]
-        
-        params = self._get_default_params()
-        params.update(self._best_params)
-        
-        # Adjust n_neighbors based on data size
-        n_samples = len(y)
-        max_neighbors = max(5, int(np.sqrt(n_samples)))
-        params['n_neighbors'] = min(params.get('n_neighbors', 15), max_neighbors)
-        
-        if self.config.task_type == 'classification':
-            model = KNeighborsClassifier(**params)
-        else:
-            model = KNeighborsRegressor(**params)
-        
-        model.fit(X_scaled, y)
-        
-        if verbose:
-            logger.info(f"   Incremental KNN: {len(y)} points, k={params['n_neighbors']}")
-        
-        return model
-    
-    def _predict(self, pred_data: pd.DataFrame) -> pd.DataFrame:
-        """Generate KNN predictions."""
+        return calibrated_model
+
+    def _train_incremental(self, new_data, full_train_data, window, verbose):
+        # KNN just refits on all data
+        return self._train_initial(full_train_data, window, verbose)
+
+    def _predict(self, pred_data) -> pd.DataFrame:
         X = pred_data[self._feature_cols].values.astype(np.float32)
-        X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
-        X_scaled = self._scaler.transform(X)
+        X = np.nan_to_num(X, nan=0.0)
         
-        predictions = self._current_model.predict(X_scaled)
+        preds = self._current_model.predict(X)
         
         if self.config.task_type == 'classification':
-            probs = self._current_model.predict_proba(X_scaled)
-            return pd.DataFrame({
-                'prediction': predictions,
-                'probability': probs.max(axis=1)
-            }, index=pred_data.index)
+            probs = self._current_model.predict_proba(X)
+            return pd.DataFrame({'prediction': preds, 'probability': probs[:, 1]}, index=pred_data.index)
         else:
-            return pd.DataFrame({
-                'prediction': predictions
-            }, index=pred_data.index)
-    
-    def _run_incremental_hpo(
-        self,
-        train_data: pd.DataFrame,
-        window: IncrementalTrainingWindow,
-        verbose: bool
-    ) -> Optional[Dict[str, Any]]:
-        """Run incremental HPO for KNN."""
-        if not OPTUNA_AVAILABLE:
-            return None
-        
+            return pd.DataFrame({'prediction': preds}, index=pred_data.index)
+
+    def _run_incremental_hpo(self, train_data, window, verbose):
+        if not OPTUNA_AVAILABLE: return None
         X = train_data[self._feature_cols].values.astype(np.float32)
         y = train_data['__target__'].values
-        X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
-        X_scaled = self._scaler.transform(X)
+        X = np.nan_to_num(X, nan=0.0)
+
+        # We need scaling for HPO
+        scaler = StandardScaler()
+        X_scaled = scaler.fit_transform(X)
         
         current_best = self._best_params.copy()
         radius = self.config.hpo_neighborhood_radius
-        
         max_k = max(5, int(np.sqrt(len(y))))
         
         def objective(trial):
             params = self._get_default_params()
-            
             for param_name in self.config.sensitive_params_knn:
                 current_val = current_best.get(param_name)
-                
                 if param_name == 'n_neighbors':
                     base = current_val or 15
-                    params['n_neighbors'] = trial.suggest_int(
-                        'n_neighbors',
-                        max(3, int(base * (1 - radius))),
-                        min(max_k, int(base * (1 + radius)))
-                    )
+                    params['n_neighbors'] = trial.suggest_int('n_neighbors', max(3, int(base*(1-radius))), min(max_k, int(base*(1+radius))))
                 elif param_name == 'leaf_size':
                     base = current_val or 30
-                    params['leaf_size'] = trial.suggest_int(
-                        'leaf_size',
-                        max(10, int(base * (1 - radius))),
-                        min(100, int(base * (1 + radius)))
-                    )
+                    params['leaf_size'] = trial.suggest_int('leaf_size', max(10, int(base*(1-radius))), min(100, int(base*(1+radius))))
             
             try:
-                from sklearn.model_selection import cross_val_score
-                
                 if self.config.task_type == 'classification':
                     model = KNeighborsClassifier(**params)
                     scores = cross_val_score(model, X_scaled, y, cv=3, scoring='accuracy')
                 else:
                     model = KNeighborsRegressor(**params)
                     scores = cross_val_score(model, X_scaled, y, cv=3, scoring='neg_mean_squared_error')
-                
                 return scores.mean()
-            except Exception:
+            except:
                 return float('-inf')
-        
+
         study = optuna.create_study(direction='maximize')
-        study.optimize(
-            objective,
-            n_trials=self.config.hpo_n_trials_per_round,
-            timeout=self.config.hpo_timeout_per_round,
-            show_progress_bar=verbose
-        )
-        
-        if study.best_trial is not None:
+        study.optimize(objective, n_trials=self.config.hpo_n_trials_per_round, timeout=self.config.hpo_timeout_per_round)
+        if study.best_trial:
             self._best_params.update(study.best_params)
-        
-        return {
-            'best_params': study.best_params,
-            'best_value': study.best_value,
-            'n_trials': len(study.trials)
-        }
+        return {'best_params': study.best_params, 'best_value': study.best_value}
 
 
 # ============================================================================
@@ -1393,308 +935,159 @@ class IncrementalKNNTrainer(BaseIncrementalTrainer):
 # ============================================================================
 
 class IncrementalBayesianRidgeTrainer(BaseIncrementalTrainer):
-    """
-    Incremental BayesianRidge trainer using partial_fit-like pattern.
-    
-    Note: sklearn's BayesianRidge doesn't have partial_fit, but we can
-    warm-start by using the previous coefficients as prior information.
-    """
-    
-    def __init__(
-        self,
-        model_id: str,
-        config: Optional[IncrementalTrainingConfig] = None,
-        model_config: Optional[Dict[str, Any]] = None
-    ):
-        if not SKLEARN_AVAILABLE:
-            raise ImportError("scikit-learn is required for IncrementalBayesianRidgeTrainer")
+    def __init__(self, model_id, config=None, model_config=None):
         super().__init__(model_id, config, model_config)
-        self._feature_cols: List[str] = []
-        self._scaler: Optional[StandardScaler] = None
-        self._prev_coef: Optional[np.ndarray] = None
-        self._prev_alpha: Optional[float] = None
-        self._prev_lambda: Optional[float] = None
-    
-    def _get_default_params(self) -> Dict[str, Any]:
-        """Get default BayesianRidge parameters."""
-        params = {
-            'max_iter': 300,  # n_iter renamed to max_iter in newer sklearn
-            'tol': 1e-3,
-            'alpha_1': 1e-6,
-            'alpha_2': 1e-6,
-            'lambda_1': 1e-6,
-            'lambda_2': 1e-6,
-            'compute_score': True,
-            'fit_intercept': True
-        }
-        # Override with config params if available
-        if self.model_config and 'params' in self.model_config:
-            params.update(self.model_config['params'])
+        self._scaler = None
+        self._prev_params = {}
+
+    def _get_default_params(self):
+        params = {'max_iter': 300, 'tol': 1e-3}
+        if self.model_config: params.update(self.model_config.get('params', {}))
         return params
-    
-    def _train_initial(
-        self,
-        train_data: pd.DataFrame,
-        window: IncrementalTrainingWindow,
-        verbose: bool
-    ) -> Any:
-        """Train initial BayesianRidge model."""
+
+    def _train_initial(self, train_data, window, verbose) -> CalibratedModel:
         self._feature_cols = self._get_feature_cols(train_data)
         X = train_data[self._feature_cols].values.astype(np.float64)
         y = train_data['__target__'].values
+        X = np.nan_to_num(X, nan=0.0)
         
-        X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
+        # Split raw
+        X_tr, X_va, y_tr, y_va = train_test_split(X, y, test_size=0.2, random_state=42)
         
-        # Standardize features
         self._scaler = StandardScaler()
-        X_scaled = self._scaler.fit_transform(X)
+        X_tr_scaled = self._scaler.fit_transform(X_tr)
         
         params = self._get_default_params()
         params.update(self._best_params)
-        
         model = BayesianRidge(**params)
-        model.fit(X_scaled, y)
+        model.fit(X_tr_scaled, y_tr)
         
-        # Store for warm starting
-        self._prev_coef = model.coef_.copy()
-        self._prev_alpha = model.alpha_
-        self._prev_lambda = model.lambda_
+        # Store for warm start
+        self._prev_params = {'alpha_init': model.alpha_, 'lambda_init': model.lambda_}
         
-        if verbose:
-            logger.info(f"   Initial BayesianRidge trained: alpha={model.alpha_:.4f}, lambda={model.lambda_:.4f}")
+        class ScaledModel:
+            def __init__(self, model, scaler):
+                self.model = model
+                self.scaler = scaler
+            def predict(self, X):
+                return self.model.predict(self.scaler.transform(X))
         
-        return model
-    
-    def _train_incremental(
-        self,
-        new_data: pd.DataFrame,
-        full_train_data: pd.DataFrame,
-        window: IncrementalTrainingWindow,
-        verbose: bool
-    ) -> Any:
-        """
-        Incrementally train BayesianRidge.
+        calibrated_model = CalibratedModel(ScaledModel(model, self._scaler), self.config.task_type)
+        calibrated_model.fit_calibration(X_va, y_va)
         
-        We use the previous model's learned parameters to initialize
-        the prior for the new model.
-        """
+        return calibrated_model
+
+    def _train_incremental(self, new_data, full_train_data, window, verbose):
+        # Similar logic but using warm start params
         X = full_train_data[self._feature_cols].values.astype(np.float64)
         y = full_train_data['__target__'].values
-        X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
+        X = np.nan_to_num(X, nan=0.0)
         
-        # Update scaler
-        X_scaled = self._scaler.fit_transform(X)
+        X_tr, X_va, y_tr, y_va = train_test_split(X, y, test_size=0.2, random_state=42)
+
+        # Update scaler with all data
+        self._scaler.fit(X_tr)
+        X_tr_scaled = self._scaler.transform(X_tr)
         
         params = self._get_default_params()
         params.update(self._best_params)
-        
-        # Use previous alpha/lambda as starting point for prior
-        if self._prev_alpha is not None:
-            params['alpha_init'] = self._prev_alpha
-        if self._prev_lambda is not None:
-            params['lambda_init'] = self._prev_lambda
+        params.update(self._prev_params) # Warm start
         
         model = BayesianRidge(**params)
-        model.fit(X_scaled, y)
+        model.fit(X_tr_scaled, y_tr)
+        self._prev_params = {'alpha_init': model.alpha_, 'lambda_init': model.lambda_}
         
-        # Update for next round
-        self._prev_coef = model.coef_.copy()
-        self._prev_alpha = model.alpha_
-        self._prev_lambda = model.lambda_
+        # Re-calibrate
+        class ScaledModel:
+            def __init__(self, model, scaler):
+                self.model = model
+                self.scaler = scaler
+            def predict(self, X):
+                return self.model.predict(self.scaler.transform(X))
+
+        calibrated_model = CalibratedModel(ScaledModel(model, self._scaler), self.config.task_type)
+        calibrated_model.fit_calibration(X_va, y_va)
         
-        if verbose:
-            logger.info(f"   Incremental BayesianRidge: alpha={model.alpha_:.4f}, lambda={model.lambda_:.4f}")
-        
-        return model
-    
-    def _predict(self, pred_data: pd.DataFrame) -> pd.DataFrame:
-        """Generate BayesianRidge predictions."""
+        return calibrated_model
+
+    def _predict(self, pred_data) -> pd.DataFrame:
         X = pred_data[self._feature_cols].values.astype(np.float64)
-        X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
-        X_scaled = self._scaler.transform(X)
+        X = np.nan_to_num(X, nan=0.0)
         
-        predictions, std = self._current_model.predict(X_scaled, return_std=True)
-        
-        return pd.DataFrame({
-            'prediction': predictions,
-            'std': std
-        }, index=pred_data.index)
-    
-    def _run_incremental_hpo(
-        self,
-        train_data: pd.DataFrame,
-        window: IncrementalTrainingWindow,
-        verbose: bool
-    ) -> Optional[Dict[str, Any]]:
-        """Run incremental HPO for BayesianRidge."""
-        if not OPTUNA_AVAILABLE:
-            return None
-        
+        preds = self._current_model.predict(X)
+        # Base model std?
+        try:
+            _, std = self._current_model.base_model.model.predict(self._current_model.base_model.scaler.transform(X), return_std=True)
+        except:
+            std = np.zeros_like(preds)
+
+        return pd.DataFrame({'prediction': preds, 'std': std}, index=pred_data.index)
+
+    def _run_incremental_hpo(self, train_data, window, verbose):
+        if not OPTUNA_AVAILABLE: return None
         X = train_data[self._feature_cols].values.astype(np.float64)
         y = train_data['__target__'].values
-        X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
-        X_scaled = self._scaler.transform(X)
+        X = np.nan_to_num(X, nan=0.0)
         
-        from sklearn.model_selection import train_test_split
-        X_train, X_val, y_train, y_val = train_test_split(X_scaled, y, test_size=0.2, random_state=42)
+        scaler = StandardScaler()
+        X_scaled = scaler.fit_transform(X)
         
         current_best = self._best_params.copy()
         radius = self.config.hpo_neighborhood_radius
         
         def objective(trial):
             params = self._get_default_params()
-            
             for param_name in self.config.sensitive_params_bayesian:
                 current_val = current_best.get(param_name)
-                
                 if param_name in ['alpha_1', 'alpha_2', 'lambda_1', 'lambda_2']:
                     base = current_val or 1e-6
-                    params[param_name] = trial.suggest_float(
-                        param_name,
-                        max(1e-10, base * (1 - radius)),
-                        min(1e-2, base * (1 + radius)),
-                        log=True
-                    )
+                    params[param_name] = trial.suggest_float(param_name, max(1e-10, base*(1-radius)), min(1e-2, base*(1+radius)), log=True)
             
             try:
                 model = BayesianRidge(**params)
-                model.fit(X_train, y_train)
-                
-                preds = model.predict(X_val)
-                
-                from sklearn.metrics import mean_squared_error
-                return -mean_squared_error(y_val, preds)
-            except Exception:
+                scores = cross_val_score(model, X_scaled, y, cv=3, scoring='neg_mean_squared_error')
+                return scores.mean()
+            except:
                 return float('-inf')
-        
-        study = optuna.create_study(direction='maximize')
-        study.optimize(
-            objective,
-            n_trials=self.config.hpo_n_trials_per_round,
-            timeout=self.config.hpo_timeout_per_round,
-            show_progress_bar=verbose
-        )
-        
-        if study.best_trial is not None:
-            self._best_params.update(study.best_params)
-        
-        return {
-            'best_params': study.best_params,
-            'best_value': study.best_value,
-            'n_trials': len(study.trials)
-        }
 
+        study = optuna.create_study(direction='maximize')
+        study.optimize(objective, n_trials=self.config.hpo_n_trials_per_round, timeout=self.config.hpo_timeout_per_round)
+        if study.best_trial:
+            self._best_params.update(study.best_params)
+        return {'best_params': study.best_params, 'best_value': study.best_value}
 
 # ============================================================================
 # Unified Incremental Analyst Trainer
 # ============================================================================
 
 class IncrementalAnalystTrainer:
-    """
-    Unified incremental trainer that trains all analyst base models.
+    """Unified incremental trainer that trains all analyst base models."""
     
-    Trains: LGBM, NGBoost, KNN, BayesianRidge
-    """
-    
-    def __init__(
-        self,
-        model_id: str,
-        execution_mode: str = "blank",
-        task_type: str = "regression",
-        enable_incremental_hpo: bool = True,
-        model_configs: Optional[Dict[str, Any]] = None
-    ):
+    def __init__(self, model_id: str, execution_mode="blank", task_type="regression", enable_incremental_hpo=True, model_configs=None):
         self.model_id = model_id
-        self.execution_mode = execution_mode
-        self.task_type = task_type
+        self.config = IncrementalTrainingConfig(model_id, execution_mode, oof_batch_days=14, task_type=task_type, enable_incremental_hpo=enable_incremental_hpo)
         self.model_configs = model_configs or {}
         
-        # Create config
-        self.config = IncrementalTrainingConfig(
-            model_id=model_id,
-            execution_mode=execution_mode,
-            task_type=task_type,
-            enable_incremental_hpo=enable_incremental_hpo
-        )
-        
-        # Initialize trainers
-        self.trainers: Dict[str, BaseIncrementalTrainer] = {}
-        
+        self.trainers = {}
         if LIGHTGBM_AVAILABLE:
             self.trainers['lgbm'] = IncrementalLGBMTrainer(model_id, self.config, self.model_configs.get('lgbm'))
-        else:
-            logger.warning("LightGBM not available, skipping LGBM trainer")
-        
         if NGBOOST_AVAILABLE:
             self.trainers['ngboost'] = IncrementalNGBoostTrainer(model_id, self.config, self.model_configs.get('ngboost'))
-        else:
-            logger.warning("NGBoost not available, skipping NGBoost trainer")
-        
         if SKLEARN_AVAILABLE:
             self.trainers['knn'] = IncrementalKNNTrainer(model_id, self.config, self.model_configs.get('knn'))
             self.trainers['bayesianridge'] = IncrementalBayesianRidgeTrainer(model_id, self.config, self.model_configs.get('bayesianridge'))
-        else:
-            logger.warning("scikit-learn not available, skipping KNN and BayesianRidge trainers")
-        
-        logger.info(f"IncrementalAnalystTrainer initialized with {len(self.trainers)} models: {list(self.trainers.keys())}")
-    
-    def train_all_models(
-        self,
-        X: pd.DataFrame,
-        y: pd.Series,
-        data_start: datetime,
-        data_end: datetime,
-        sample_weight: Optional[np.ndarray] = None,
-        verbose: bool = True,
-        specialist_feature_names: Optional[List[str]] = None
-    ) -> Dict[str, IncrementalTrainingResults]:
-        """
-        Train all enabled models incrementally.
-        
-        Returns:
-            Dictionary mapping model names to their training results
-        """
-        results = {}
-        
-        for model_name, trainer in self.trainers.items():
-            if verbose:
-                logger.info(f"\n{'='*80}")
-                logger.info(f"Training {model_name.upper()}")
-                logger.info(f"{'='*80}")
             
-            try:
-                result = trainer.train_and_predict(
-                    X=X,
-                    y=y,
-                    data_start=data_start,
-                    data_end=data_end,
-                    sample_weight=sample_weight,
-                    verbose=verbose,
-                    specialist_feature_names=specialist_feature_names
-                )
-                results[model_name] = result
-                
-                if verbose:
-                    logger.info(f"✅ {model_name}: {len(result.oof_predictions)} OOF predictions")
-            except Exception as e:
-                logger.error(f"❌ {model_name} training failed: {e}")
-                import traceback
-                traceback.print_exc()
-        
+    def train_all_models(self, X, y, data_start, data_end, sample_weight=None, verbose=True, specialist_feature_names=None):
+        results = {}
+        for name, trainer in self.trainers.items():
+            if verbose: logger.info(f"Training {name}")
+            results[name] = trainer.train_and_predict(X, y, data_start, data_end, sample_weight, verbose, specialist_feature_names)
         return results
-    
-    def get_combined_oof_predictions(
-        self,
-        results: Dict[str, IncrementalTrainingResults]
-    ) -> pd.DataFrame:
-        """Combine OOF predictions from all models into a single DataFrame."""
+
+    def get_combined_oof_predictions(self, results):
         combined = {}
-        
-        for model_name, result in results.items():
-            if result.oof_predictions is not None and not result.oof_predictions.empty:
-                for col in result.oof_predictions.columns:
-                    combined[f"{model_name}_{col}"] = result.oof_predictions[col]
-        
-        if combined:
-            return pd.DataFrame(combined)
-        return pd.DataFrame()
+        for name, res in results.items():
+            if not res.oof_predictions.empty:
+                for col in res.oof_predictions.columns:
+                    combined[f"{name}_{col}"] = res.oof_predictions[col]
+        return pd.DataFrame(combined)

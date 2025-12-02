@@ -62,11 +62,83 @@ from src.training.steps.pre_training.components.final_feature_selection import (
     FinalFeatureSelectionConfig,
     FinalFeatureSelectionComponent,
 )
+from src.training.steps.market_analysis import step_registry  # type: ignore
 
 
 logger = system_logger.getChild("specialist_feature_diagnostics")
 
 OUTCOMES_DIR = Path("outcomes")
+
+
+async def _run_specialist_training(
+    symbol: str,
+    exchange: str,
+    timeframe: str,
+    direction: str,
+    regime_timeframe: str,
+    lookback_days: Optional[float] = None,
+    selected_specialists: Optional[list[str]] = None,
+) -> None:
+    """Run training for all (or selected) specialist models sequentially."""
+    logger.info("🚀 Starting specialist model training sequence")
+
+    # Order matters: some steps might depend on artifacts from others,
+    # though ideally they should be independent or use shared feature generation.
+    default_specialist_steps = [
+        "ml_volume_force_step",
+        "ml_breakout_bounce_regime_step",
+        "ml_mean_reversion_step",
+        "xgb_meso_regime",
+        "hmm_macro_regime",
+        "ml_smc_regime_step",
+        "ml_liquidity_regime_step",
+        "ml_risk_regime_step",
+        "ml_path_regime_step",
+    ]
+
+    specialist_steps = selected_specialists if selected_specialists else default_specialist_steps
+
+    config_base = {
+        "symbol": symbol,
+        "exchange": exchange,
+        "timeframe": timeframe,
+        "direction": direction,
+        "regime_timeframe": regime_timeframe,
+        "execution_mode": "full", # default to full for training
+    }
+
+    if lookback_days:
+        config_base["lookback_days"] = lookback_days
+
+    for step_key in specialist_steps:
+        # Verify registry key and handle potential aliases (e.g. missing _step suffix)
+        try:
+             if not step_registry.is_registered(step_key):
+                 if step_registry.is_registered(step_key + "_step"):
+                     step_key = step_key + "_step"
+                 else:
+                     logger.warning(f"⚠️ Step '{step_key}' not found in registry. Skipping.")
+                     continue
+        except Exception:
+             logger.warning(f"⚠️ Error checking registry for '{step_key}'. Skipping.")
+             continue
+
+        logger.info(f"▶️ Running {step_key}...")
+        try:
+            StepClass = step_registry.get_step(step_key)
+            step_instance = StepClass(step_name=step_key)
+
+            # Run the step
+            result = await step_instance.run(config_base)
+
+            if result.get("success"):
+                logger.info(f"✅ {step_key} completed successfully.")
+            else:
+                logger.error(f"❌ {step_key} failed: {result.get('error')}")
+        except Exception as exc:
+            logger.error(f"❌ Exception running {step_key}: {exc}")
+
+    logger.info("🏁 Specialist model training sequence finished.")
 
 
 def _ensure_outcomes_dir() -> Path:
@@ -1320,6 +1392,11 @@ def run_diagnostics(
     model_coverage = _compute_model_coverage(X=X, y=y)
     model_relationships = _compute_model_pairwise_relationships(X=X, feature_metrics=feature_metrics)
 
+    # 3b) Compute target date range
+    y_start = y.index.min()
+    y_end = y.index.max()
+    y_duration = (y_end - y_start).days if len(y) > 0 else 0
+
     # 4) Probe models (LogReg / LGBM), leakage, stability, interactions
     probe_models = _compute_probe_models(X=X, y=y, n_splits=cv_folds)
 
@@ -1371,6 +1448,12 @@ def run_diagnostics(
         f"**Model**: {model}",
         f"**Regime timeframe**: {regime_timeframe}",
         f"**Target column**: {target_col}",
+        "",
+        "## Data Range Analysis",
+        f"- Target start date: {y_start}",
+        f"- Target end date: {y_end}",
+        f"- Target duration: {y_duration} days",
+        f"- Target samples: {len(y)}",
         "",
         "## Overview",
         f"- Number of specialist features: {summary['n_features']}",
@@ -1438,6 +1521,9 @@ def run_diagnostics(
     coverage_info = model_coverage if isinstance(model_coverage, dict) else {}
     if coverage_info:
         total_target = int(len(y))
+        if total_target > 0:
+            md_lines.append(f"*(Target samples: {total_target})*")
+
         for group_name in sorted(coverage_info.keys()):
             info = coverage_info.get(group_name, {})
             n_samples = int(info.get("n_samples", 0) or 0)
@@ -1445,20 +1531,22 @@ def run_diagnostics(
             start = info.get("start")
             end = info.get("end")
 
+            line = f"- **{group_name}**: n={n_samples} ({frac:.1%} coverage)"
             if start is not None and end is not None:
-                md_lines.append(
-                    "- "
-                    + f"{group_name}: n={n_samples} "
-                    + f"({frac:.1%} of target samples), "
-                    + f"range={start} → {end}"
-                )
+                line += f", range: {start} → {end}"
+
+                # Check for significant mismatch
+                if start > y_start + pd.Timedelta(days=7):
+                    line += " ⚠️ Starts late"
+                if end < y_end - pd.Timedelta(days=7):
+                    line += " ⚠️ Ends early"
             else:
-                md_lines.append(
-                    "- "
-                    + f"{group_name}: n={n_samples} "
-                    + f"({frac:.1%} of target samples), "
-                    + "coverage range unavailable"
-                )
+                line += ", range unavailable"
+
+            if frac < 0.5:
+                line += " ⚠️ Low coverage (<50%)"
+
+            md_lines.append(line)
     else:
         md_lines.append("- Per-specialist coverage unavailable")
 
@@ -1654,10 +1742,29 @@ def main() -> None:
             "the HMM risk specialist."
         ),
     )
+    ap.add_argument(
+        "--train-specialists",
+        nargs="*",
+        default=None,
+        help="Run training for specialist models before diagnostics. Specify list of models or leave empty for all.",
+    )
 
     args = ap.parse_args()
 
     logging.getLogger().setLevel(logging.INFO)
+
+    # Optional: Run training first if requested
+    if args.train_specialists is not None:
+        import asyncio
+        asyncio.run(_run_specialist_training(
+            symbol=args.symbol,
+            exchange=args.exchange,
+            timeframe=args.timeframe,
+            direction=args.direction,
+            regime_timeframe=args.regime_timeframe,
+            lookback_days=args.lookback_days,
+            selected_specialists=args.train_specialists,
+        ))
 
     md_path, csv_path = run_diagnostics(
         symbol=args.symbol,

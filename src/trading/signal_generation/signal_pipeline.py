@@ -57,6 +57,7 @@ class RegimeOutput:
     regime_strength: float
     transition_probability: float
     features_used: Dict[str, Any]
+    specialist_outputs: Dict[str, Any]
 
 @dataclass
 class SpecialistOutput:
@@ -240,6 +241,510 @@ class SignalGenerationPipeline:
         """Generate trading signal."""
         if not self.is_initialized:
             raise RuntimeError("Pipeline not initialized")
+        """
+        Generate trading signal with proper data flow.
+
+        Args:
+            symbol: Trading symbol
+            market_data: Market data DataFrame
+            additional_features: Additional features for analysis
+
+        Returns:
+            SignalGenerationResult: Complete signal generation result
+        """
+        try:
+            if not self.is_initialized:
+                raise RuntimeError("Signal Generation Pipeline not initialized")
+
+            # Input validation
+            is_valid, error_msg = validate_signal_parameters(symbol=symbol)
+            if not is_valid:
+                raise ValueError(f"Invalid symbol parameter: {error_msg}")
+
+            is_valid, error_msg = validate_market_data(market_data)
+            if not is_valid:
+                raise ValueError(f"Invalid market data: {error_msg}")
+
+            # Rate limiting check
+            if not self.rate_limiter.acquire():
+                wait_time = self.rate_limiter.wait_time()
+                raise RuntimeError(f"Rate limit exceeded. Wait {wait_time:.1f}s before retrying.")
+
+            timestamp = datetime.now()
+
+            # Check for signal deduplication (before generation to avoid wasted work)
+            # Generate signal
+            try:
+                result = await self._generate_signal_internal(
+                    symbol, market_data, additional_features, timestamp
+                )
+            except Exception as e:
+                # Circuit breaker will handle the failure
+                self.circuit_breaker._on_failure()
+                raise
+
+            # Check for duplicate signal
+            if self.signal_deduplicator.is_duplicate(symbol, result.final_signal, timestamp):
+                self.logger.warning(f"⚠️ Duplicate signal detected: {symbol} {result.final_signal}")
+                # Still return the signal but log it
+
+            # Record signal for deduplication
+            self.signal_deduplicator.record_signal(symbol, result.final_signal, timestamp)
+
+            # Success - update circuit breaker
+            self.circuit_breaker._on_success()
+
+            return result
+
+        except Exception as e:
+            self.logger.error(f"❌ Signal generation failed for {symbol}: {e}")
+            raise
+
+    async def _detect_regime(self, market_data: pd.DataFrame, timestamp: datetime) -> RegimeOutput:
+        """Step 1: Detect regime using regime detector (loads models from market_analysis training)."""
+        # Fast fail: regime detector must be provided by Strategist
+        if self.regime_detector is None:
+            error_msg = "Regime detector not initialized. Strategist must provide regime detector."
+            self.logger.error(f"❌ {error_msg}")
+            raise RuntimeError(error_msg)
+        
+        try:
+            # Use regime detector to predict regime
+            regime_prediction = await self.regime_detector.predict_regime(market_data, return_probabilities=True)
+            
+            if regime_prediction is None:
+                raise RuntimeError("Regime detector returned None prediction")
+            
+            # Convert to RegimeOutput format
+            primary_regime_raw = regime_prediction.get('primary_regime')
+            if primary_regime_raw is None:
+                # Default to first regime type if not provided
+                primary_regime = list(RegimeType)[0]
+            elif isinstance(primary_regime_raw, RegimeType):
+                primary_regime = primary_regime_raw
+            elif isinstance(primary_regime_raw, (int, str)):
+                # Try to convert to RegimeType
+                try:
+                    if isinstance(primary_regime_raw, int):
+                        # If it's an integer index, get the regime by index
+                        regime_list = list(RegimeType)
+                        if 0 <= primary_regime_raw < len(regime_list):
+                            primary_regime = regime_list[primary_regime_raw]
+                        else:
+                            primary_regime = RegimeType.SIDEWAYS  # Default fallback
+                    else:
+                        # If it's a string, try to match by value
+                        primary_regime = RegimeType(primary_regime_raw)
+                except (ValueError, IndexError):
+                    self.logger.warning(f"⚠️ Invalid primary_regime value: {primary_regime_raw}, defaulting to SIDEWAYS")
+                    primary_regime = RegimeType.SIDEWAYS
+            else:
+                self.logger.warning(f"⚠️ Unexpected primary_regime type: {type(primary_regime_raw)}, defaulting to SIDEWAYS")
+                primary_regime = RegimeType.SIDEWAYS
+            
+            # Convert regime_probabilities from {"regime_0": 0.5, ...} to {RegimeType: float}
+            raw_probabilities = regime_prediction.get('regime_probabilities', {})
+            regime_probabilities_dict: Dict[RegimeType, float] = {}
+            
+            if isinstance(raw_probabilities, dict):
+                regime_list = list(RegimeType)
+                for key, value in raw_probabilities.items():
+                    try:
+                        # Try to parse key as "regime_0", "regime_1", etc.
+                        if isinstance(key, str) and key.startswith('regime_'):
+                            regime_index = int(key.split('_')[1])
+                            if 0 <= regime_index < len(regime_list):
+                                regime_probabilities_dict[regime_list[regime_index]] = float(value)
+                        # Try to match key directly to RegimeType value
+                        elif isinstance(key, str):
+                            try:
+                                regime_type = RegimeType(key)
+                                regime_probabilities_dict[regime_type] = float(value)
+                            except ValueError:
+                                # Try to find by value match
+                                for rt in RegimeType:
+                                    if rt.value == key:
+                                        regime_probabilities_dict[rt] = float(value)
+                                        break
+                        # If key is already a RegimeType
+                        elif isinstance(key, RegimeType):
+                            regime_probabilities_dict[key] = float(value)
+                        # If key is an integer index
+                        elif isinstance(key, int):
+                            if 0 <= key < len(regime_list):
+                                regime_probabilities_dict[regime_list[key]] = float(value)
+                    except (ValueError, IndexError, KeyError) as e:
+                        self.logger.debug(f"Could not convert regime probability key {key}: {e}")
+                        continue
+            
+            # If no probabilities were converted, create default distribution
+            if not regime_probabilities_dict:
+                self.logger.warning("⚠️ No regime probabilities could be converted, using default distribution")
+                # Assign primary_regime a high probability, others low
+                for regime in RegimeType:
+                    if regime == primary_regime:
+                        regime_probabilities_dict[regime] = 0.7
+                    else:
+                        regime_probabilities_dict[regime] = 0.3 / (len(RegimeType) - 1)
+            else:
+                # Normalize probabilities to sum to 1.0
+                total_prob = sum(regime_probabilities_dict.values())
+                if total_prob > 0:
+                    regime_probabilities_dict = {
+                        k: v / total_prob for k, v in regime_probabilities_dict.items()
+                    }
+            
+            return RegimeOutput(
+                timestamp=timestamp,
+                regime_probabilities=regime_probabilities_dict,
+                primary_regime=primary_regime,
+                confidence=regime_prediction.get('confidence', 0.5),
+                regime_strength=regime_prediction.get('regime_strength', 0.5),
+                transition_probability=regime_prediction.get('transition_probability', 0.5),
+                features_used=regime_prediction.get('features_used', {}),
+                specialist_outputs=regime_prediction.get('specialist_outputs', {})
+            )
+
+        except Exception as e:
+            error_msg = f"Regime detection failed: {e}"
+            self.logger.error(f"❌ {error_msg}")
+            raise RuntimeError(error_msg) from e
+
+    async def _select_models_for_trading(
+        self,
+        market_data: pd.DataFrame,
+        symbol: str,
+        timestamp: datetime
+    ) -> ModelSelectionResult:
+        """Step 1.5: Select best models for trading based on current regime."""
+        try:
+            if not self.model_selector_service:
+                # Fallback if model selector not available
+                return ModelSelectionResult(
+                    selected_models={'analyst': 'default', 'tactician': 'default'},
+                    ensemble_weights={'analyst': {'default': 1.0}, 'tactician': {'default': 1.0}},
+                    regime_id=0,
+                    confidence_score=0.5,
+                    selection_metadata={
+                        'fallback': True,
+                        'fallback_reason': 'model_selector_unavailable',
+                        'combined_timestamp': timestamp.isoformat()
+                    },
+                    confirmation_status='unavailable',
+                    confirmation_details={'reason': 'model_selector_service_missing'}
+                )
+
+            # Select models for both timeframes
+            analyst_models = self.model_selector_service.select_models_for_trading(
+                market_data=market_data,
+                model_types=['random_forest', 'xgboost', 'lightgbm'],
+                symbol=symbol,
+                timeframe='15m'
+            )
+
+            tactician_models = self.model_selector_service.select_models_for_trading(
+                market_data=market_data,
+                model_types=['random_forest', 'xgboost', 'lightgbm'],
+                symbol=symbol,
+                timeframe='5m'
+            )
+
+            cross_config: Dict[str, Any] = {}
+            raw_cross_config = getattr(self.config, 'cross_timeframe_confirmation', None)
+            if isinstance(raw_cross_config, dict):
+                cross_config = raw_cross_config.copy()
+            elif hasattr(self.config, 'custom_params') and isinstance(self.config.custom_params, dict):
+                candidate = self.config.custom_params.get('cross_timeframe_confirmation', {})
+                if isinstance(candidate, dict):
+                    cross_config = candidate.copy()
+
+            analyst_selected_models = {
+                k: v for k, v in (analyst_models.selected_models or {}).items() if v
+            }
+            tactician_selected_models = {
+                k: v for k, v in (tactician_models.selected_models or {}).items() if v
+            }
+
+            analyst_values = set(analyst_selected_models.values())
+            tactician_values = set(tactician_selected_models.values())
+            shared_models = sorted(analyst_values.intersection(tactician_values))
+
+            analyst_regime = analyst_models.regime_id if analyst_models.regime_id is not None else 0
+            tactician_regime = tactician_models.regime_id if tactician_models.regime_id is not None else 0
+
+            regime_difference = abs(analyst_regime - tactician_regime)
+            confidence_delta = abs(analyst_models.confidence_score - tactician_models.confidence_score)
+
+            max_regime_difference = cross_config.get('max_regime_difference', 0)
+            max_confidence_delta = cross_config.get('max_confidence_delta', 0.2)
+
+            confirmation_details: Dict[str, Any] = {
+                'enabled': bool(cross_config.get('enabled', False)),
+                'analyst': {
+                    'regime_id': analyst_regime,
+                    'confidence_score': analyst_models.confidence_score,
+                    'selected_models': analyst_selected_models,
+                    'error': analyst_models.error_message,
+                },
+                'tactician': {
+                    'regime_id': tactician_regime,
+                    'confidence_score': tactician_models.confidence_score,
+                    'selected_models': tactician_selected_models,
+                    'error': tactician_models.error_message,
+                },
+                'shared_models': shared_models,
+                'regime_difference': regime_difference,
+                'regime_match': analyst_regime == tactician_regime,
+                'confidence_delta': confidence_delta,
+                'thresholds': {
+                    'max_regime_difference': max_regime_difference,
+                    'max_confidence_delta': max_confidence_delta,
+                },
+                'disagreement_reasons': [],
+                'confirmation_passed': True,
+            }
+
+            # Combine results
+            base_confidence = (analyst_models.confidence_score + tactician_models.confidence_score) / 2
+            combined_result = ModelSelectionResult(
+                selected_models={
+                    'analyst': analyst_models.selected_models.get('random_forest', 'default'),
+                    'tactician': tactician_models.selected_models.get('random_forest', 'default')
+                },
+                ensemble_weights={
+                    'analyst': analyst_models.ensemble_weights.get('random_forest', {'default': 1.0}),
+                    'tactician': tactician_models.ensemble_weights.get('random_forest', {'default': 1.0})
+                },
+                regime_id=analyst_models.regime_id,
+                confidence_score=base_confidence,
+                selection_metadata={
+                    'analyst_selection': analyst_models.selection_metadata,
+                    'tactician_selection': tactician_models.selection_metadata,
+                    'combined_timestamp': timestamp.isoformat()
+                },
+                confirmation_status='disabled' if not confirmation_details['enabled'] else 'confirmed',
+                confirmation_details={}
+            )
+
+            if confirmation_details['enabled']:
+                disagreement_reasons: List[str] = []
+                if regime_difference > max_regime_difference:
+                    disagreement_reasons.append('regime_mismatch')
+                if confidence_delta > max_confidence_delta:
+                    disagreement_reasons.append('confidence_delta_exceeded')
+
+                confirmation_details['disagreement_reasons'] = disagreement_reasons
+                confirmation_details['confirmation_passed'] = len(disagreement_reasons) == 0
+
+                if disagreement_reasons:
+                    confirmation_details['action'] = 'reject' if cross_config.get('reject_on_disagreement', False) else 'downgrade'
+                    if cross_config.get('reject_on_disagreement', False):
+                        rejection_confidence = cross_config.get('rejection_confidence', 0.0)
+                        confirmation_details['rejection_confidence'] = rejection_confidence
+                        confirmation_details['confirmation_passed'] = False
+                        combined_metadata = {
+                            'fallback': True,
+                            'fallback_reason': 'cross_timeframe_disagreement',
+                            'analyst_selection': analyst_models.selection_metadata,
+                            'tactician_selection': tactician_models.selection_metadata,
+                            'combined_timestamp': timestamp.isoformat(),
+                            'original_models': {
+                                'analyst': analyst_models.selected_models,
+                                'tactician': tactician_models.selected_models
+                            },
+                            'cross_timeframe_confirmation': confirmation_details
+                        }
+                        self.logger.warning(
+                            "⚠️ Cross-timeframe confirmation rejected due to %s",
+                            ', '.join(disagreement_reasons)
+                        )
+                        return ModelSelectionResult(
+                            selected_models={'analyst': 'default', 'tactician': 'default'},
+                            ensemble_weights={'analyst': {'default': 1.0}, 'tactician': {'default': 1.0}},
+                            regime_id=analyst_models.regime_id,
+                            confidence_score=rejection_confidence,
+                            selection_metadata=combined_metadata,
+                            confirmation_status='rejected',
+                            confirmation_details=confirmation_details
+                        )
+
+                    downgrade_factor = max(0.0, float(cross_config.get('downgrade_confidence_factor', 0.5)))
+                    original_confidence = combined_result.confidence_score
+                    downgraded_confidence = max(0.0, original_confidence * downgrade_factor)
+                    confirmation_details['applied_downgrade_factor'] = downgrade_factor
+                    confirmation_details['original_confidence'] = original_confidence
+                    combined_result.selection_metadata['original_confidence'] = original_confidence
+                    combined_result.confidence_score = downgraded_confidence
+                    combined_result.confirmation_status = 'downgraded'
+                    confirmation_details['confirmation_passed'] = False
+                    self.logger.warning(
+                        "⚠️ Cross-timeframe disagreement (%s). Confidence downgraded by factor %.2f",
+                        ', '.join(disagreement_reasons),
+                        downgrade_factor
+                    )
+                else:
+                    confirmation_details['action'] = 'confirmed'
+                    combined_result.confirmation_status = 'confirmed'
+            else:
+                confirmation_details['action'] = 'disabled'
+                confirmation_details['confirmation_passed'] = True
+
+            combined_result.confirmation_details = confirmation_details
+            combined_result.selection_metadata['cross_timeframe_confirmation'] = confirmation_details
+
+            self.logger.info(
+                "✅ Model selection completed (%s): %s",
+                combined_result.confirmation_status,
+                combined_result.selected_models
+            )
+            return combined_result
+
+        except Exception as e:
+            self.logger.error(f"❌ Model selection failed: {e}")
+            # Return fallback result
+            return ModelSelectionResult(
+                selected_models={'analyst': 'default', 'tactician': 'default'},
+                ensemble_weights={'analyst': {'default': 1.0}, 'tactician': {'default': 1.0}},
+                regime_id=0,
+                confidence_score=0.5,
+                selection_metadata={
+                    'error': str(e),
+                    'fallback': True,
+                    'fallback_reason': 'model_selection_exception'
+                },
+                confirmation_status='failed',
+                confirmation_details={'exception': str(e)}
+            )
+
+    async def _run_analyst_base_models(
+        self,
+        market_data: pd.DataFrame,
+        regime_output: RegimeOutput,
+        additional_features: Optional[Dict[str, Any]],
+        timestamp: datetime,
+        model_selection_result: Optional[ModelSelectionResult] = None
+    ) -> List[AnalystBaseOutput]:
+        """Step 2: Run analyst base models sequentially with regime probabilities."""
+        try:
+            base_outputs = []
+
+            # Prepare regime probabilities as features for base models
+            # Convert RegimeType keys to a format models can use
+            regime_probs_array = np.array([
+                regime_output.regime_probabilities.get(rt, 0.0) 
+                for rt in RegimeType
+            ])
+
+            # Run the trained analyst base models from training steps
+            # These are the models trained in analyst_models_training_refactored.py
+            # Use model selection result if available
+            selected_analyst_model = None
+            if model_selection_result and 'analyst' in model_selection_result.selected_models:
+                selected_analyst_model = model_selection_result.selected_models['analyst']
+                self.logger.info(f"🎯 Using selected analyst model: {selected_analyst_model}")
+
+            for i, model in enumerate(self.analyst_base_models):
+                try:
+                    # Prepare input: features + regime probabilities
+                    # Combine market_data features with regime probabilities
+                    regime_probs_values = np.array([
+                        regime_output.regime_probabilities.get(rt, 0.0) 
+                        for rt in RegimeType
+                    ])
+                    
+                    # Create enhanced features by combining market_data with regime probabilities
+                    # Use shared feature engineering for consistency with training
+                    if hasattr(model, 'predict'):
+                        # Prepare market_data DataFrame (use last row for single prediction)
+                        if isinstance(market_data, pd.DataFrame):
+                            # Use last row for prediction
+                            market_data_row = market_data.iloc[[-1]].copy()
+
+                            # Apply shared feature engineering (same as training).
+                            # Build explicit regime index -> probability mapping so that
+                            # AnalystFeatureEngineer can add regime_confidence_0-3 features.
+                            regime_probs_for_engineer: Dict[int, float] = {}
+                            try:
+                                regime_list = list(RegimeType)
+                                for idx, rt in enumerate(regime_list[:4]):
+                                    regime_probs_for_engineer[idx] = float(
+                                        regime_output.regime_probabilities.get(rt, 0.0)
+                                    )
+                            except Exception:
+                                regime_probs_for_engineer = {}
+
+                            engineered_data = self.analyst_feature_engineer.engineer_features(
+                                market_data_row,
+                                regime_probabilities=regime_probs_for_engineer or None,
+                            )
+                            
+                            # Extract all numeric features (including engineered ones)
+                            numeric_data = engineered_data.select_dtypes(include=[np.number])
+                            if len(numeric_data) > 0:
+                                market_features = numeric_data.iloc[-1].values
+                            else:
+                                market_features = np.array([])
+                        else:
+                            market_features = np.array([])
+                        
+                        # Combine market features (now includes engineered features) with regime probabilities
+                        combined_features = np.concatenate([market_features, regime_probs_values]) if len(market_features) > 0 else regime_probs_values
+                        
+                        # Reshape to (1, n_features) for single prediction
+                        if combined_features.ndim == 1:
+                            combined_features = combined_features.reshape(1, -1)
+                        
+                        # Predict with combined features (market_data + regime probabilities)
+                        # Some models might accept the original market_data + regime_probs separately
+                        # Try combined first, fallback to market_data if needed
+                        try:
+                            prediction = model.predict(combined_features)
+                            self.logger.debug(
+                                f"Analyst base model {i}: used combined features "
+                                f"({len(market_features)} market + {len(regime_probs_values)} regime = {combined_features.shape[1]} total)"
+                            )
+                        except Exception:
+                            # Fallback: try with market_data only (model might handle regime internally)
+                            prediction = model.predict(market_data)
+                            self.logger.debug(
+                                f"Analyst base model {i}: fallback to market_data only "
+                                f"(model may handle regime probabilities internally)"
+                            )
+                        
+                        confidence = getattr(prediction, 'confidence', 0.5) if hasattr(prediction, 'confidence') else 0.5
+                        if isinstance(prediction, np.ndarray) and prediction.size == 1:
+                            confidence = float(prediction[0])
+                        elif isinstance(prediction, (int, float)):
+                            confidence = float(prediction)
+                        
+                        features = getattr(prediction, 'features', {}) if hasattr(prediction, 'features') else {}
+                        
+                        # Store regime information in features dict
+                        features['regime_probabilities'] = dict(regime_output.regime_probabilities)
+                        features['primary_regime'] = regime_output.primary_regime.value
+                        features['regime_confidence'] = regime_output.confidence
+                    else:
+                        # Fallback for models without standard predict interface
+                        self.logger.warning(f"⚠️ Analyst base model {i} missing 'predict' method, using fallback confidence")
+                        confidence = 0.5
+                        features = {
+                            'regime_probabilities': regime_output.regime_probabilities,
+                            'primary_regime': regime_output.primary_regime.value,
+                            'regime_confidence': regime_output.confidence
+                        }
+
+                    # Create base output with regime information
+                    base_output = AnalystBaseOutput(
+                        timestamp=timestamp,
+                        market_health={},  # Ignored as requested
+                        volatility_analysis={},
+                        liquidity_analysis={},
+                        stress_analysis={},  # Ignored as requested
+                        base_confidence=confidence,
+                        features=features
+                    )
+
+                    base_outputs.append(base_output)
 
         # Validation & Rate Limiting
         validate_market_data(market_data)
@@ -270,6 +775,119 @@ class SignalGenerationPipeline:
             
             # 5. Analyst Inference (LGBM + NGBoost)
             analyst_output = self._run_analyst_models(analyst_input, timestamp)
+
+            # Prepare specialist scalar features (SMC, Volume Force, Path Score, etc.)
+            # These must match the order and presence of features used during training.
+            # While the ensemble model likely expects a specific order, we can pass
+            # a dictionary or dataframe if the model supports it, or construct the vector
+            # if we know the order.
+            # Assuming StandardizedXGBTrainer or similar was used which might rely on
+            # feature names if input is DataFrame, or strict order if numpy.
+            #
+            # If the trained model expects specific specialist features that were present
+            # in get_specialist_models_outputs, we should append them here.
+            # Since we don't have the exact training column order here without the model metadata,
+            # we rely on the fact that for many ML frameworks (like XGBoost/LightGBM with sklearn API),
+            # passing a numpy array requires strict order, but we can try to extract
+            # feature names from the model if available.
+
+            # Extract scalar specialist features from RegimeOutput
+            specialist_vals = []
+            specialist_keys = []
+            if regime_output.specialist_outputs:
+                # We prioritize specific known scalar keys that match get_specialist_models_outputs
+                # Priority list based on get_specialist_models_outputs.py:
+                # 1. Risk Score (already partially covered by regime probs but often used as scalar)
+                # 2. Liquidity (probs covered)
+                # 3. Breakout/Bounce (resistance_scalar, support_scalar, breakout_success_prob)
+                # 4. Path (path_risk_score)
+                # 5. Meso (meso_trend_score_continuous)
+                # 6. Macro (macro_trend_score_continuous)
+                # 7. SMC (smc_predicted)
+                # 8. Mean Reversion (mr_probability_dense or mr_probability)
+                # 9. Volume Force (vol_force_scalar)
+
+                # NOTE: The exact order MUST match training. If we append everything found,
+                # it might be risky. Ideally, we should check model.feature_names_in_ if available.
+
+                # For now, we will append them to a list but only if we can verify order or
+                # if we are constructing a DataFrame.
+                pass
+
+            # Combine all inputs: market_features + regime_probs + base_outputs + meta_features
+            ensemble_input_parts = []
+            if len(market_features) > 0:
+                ensemble_input_parts.append(market_features)
+            ensemble_input_parts.append(regime_probs_values)
+            if len(base_predictions_array.flatten()) > 0:
+                ensemble_input_parts.append(base_predictions_array.flatten())
+            if len(live_meta_features) > 0:
+                ensemble_input_parts.append(live_meta_features)
+            
+            # Append specialist scalars if available and relevant (experimental)
+            # This is a placeholder for where full wiring would happen if the ensemble
+            # was retrained to expect them. Currently, to avoid breaking existing models
+            # that expect a fixed input size, we do NOT blindly append them unless
+            # we are sure the model handles named features (DataFrame input).
+
+            ensemble_input = np.concatenate(ensemble_input_parts) if ensemble_input_parts else np.array([])
+
+            # If the model supports named features (DataFrame), we should construct one.
+            # This is much safer than guessing numpy array order.
+            if hasattr(self.analyst_ensemble_model, "feature_names_in_"):
+                try:
+                    # Construct a dictionary of all available features
+                    feature_dict = {}
+
+                    # 1. Market features (we need names from feature engineer)
+                    eng_names = self.analyst_feature_engineer.get_engineered_feature_names()
+                    if len(market_features) == len(eng_names):
+                        for i, name in enumerate(eng_names):
+                            feature_dict[name] = market_features[i]
+
+                    # 2. Regime probs
+                    for i, rt in enumerate(RegimeType):
+                        feature_dict[f"regime_prob_{rt.value}"] = regime_probs_values[i]
+                        # Also add legacy/alternative names if needed by model
+                        feature_dict[f"regime_{i}_prob"] = regime_probs_values[i]
+
+                    # 3. Base predictions
+                    for i, val in enumerate(base_confidences):
+                        feature_dict[f"base_model_{i}"] = val
+
+                    # 4. Meta features
+                    # (Meta feature names need to be known. live_meta_features has 9 elements)
+                    meta_names = [
+                        "meta_disagreement_variance", "meta_disagreement_range", "meta_disagreement_std",
+                        "meta_disagreement_entropy", "meta_disagreement_pairwise", "meta_disagreement_max",
+                        "meta_disagreement_rate", "meta_bars_since_last_event", "meta_event_mean_return"
+                    ]
+                    for i, name in enumerate(meta_names):
+                        if i < len(live_meta_features):
+                            feature_dict[name] = live_meta_features[i]
+
+                    # 5. Specialist Outputs
+                    if regime_output.specialist_outputs:
+                        feature_dict.update(regime_output.specialist_outputs)
+
+                    # Create DataFrame with columns matching model's expected features
+                    expected_features = self.analyst_ensemble_model.feature_names_in_
+                    df_input = pd.DataFrame([feature_dict])
+
+                    # Ensure all expected columns exist (fill 0 if missing)
+                    for col in expected_features:
+                        if col not in df_input.columns:
+                            df_input[col] = 0.0
+
+                    # Reorder to match model expectation
+                    ensemble_input = df_input[expected_features]
+                    self.logger.debug(f"constructed dataframe input with {len(expected_features)} features")
+
+                except Exception as e:
+                    self.logger.warning(f"Failed to construct named feature input: {e}; falling back to numpy array")
+                    ensemble_input = ensemble_input.reshape(1, -1) if ensemble_input.ndim == 1 else ensemble_input
+            else:
+                ensemble_input = ensemble_input.reshape(1, -1) if ensemble_input.ndim == 1 else ensemble_input
             
             # 6. Exit Logic (if position open)
             should_exit, exit_reason = self._check_exit_conditions(

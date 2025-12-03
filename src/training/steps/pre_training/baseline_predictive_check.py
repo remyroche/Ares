@@ -104,10 +104,20 @@ class BaselinePredictiveCheck:
         target: pd.Series,
         feature_names: Optional[List[str]] = None,
     ) -> Tuple[Optional[pd.DataFrame], Optional[pd.Series], List[str]]:
+        # IMPROVED DIAGNOSTIC: Log input sizes to help debug sample size issues
+        logger.info(f"📊 Baseline check input: features shape={features.shape}, target length={len(target)}")
+        
         common_idx = features.index.intersection(target.index)
         if common_idx.empty:
             logger.warning("No overlapping indices between features and target")
+            logger.warning(f"   Features index range: {features.index.min()} to {features.index.max()}")
+            logger.warning(f"   Target index range: {target.index.min()} to {target.index.max()}")
             return None, None, []
+
+        # DIAGNOSTIC: Log common index size
+        logger.info(f"📊 Common index size: {len(common_idx)} (features: {len(features)}, target: {len(target)})")
+        if len(common_idx) < len(features) * 0.5:
+            logger.warning(f"⚠️ Only {len(common_idx)}/{len(features)} rows aligned - check data pipeline!")
 
         feature_df = features.loc[common_idx].copy()
         target_series = target.loc[common_idx].copy()
@@ -115,6 +125,20 @@ class BaselinePredictiveCheck:
         valid_mask = target_series.notna()
         feature_df = feature_df.loc[valid_mask]
         target_series = target_series.loc[valid_mask]
+        
+        # DIAGNOSTIC: Log after filtering NaN targets
+        nan_targets = (~valid_mask).sum()
+        if nan_targets > 0:
+            logger.info(f"📊 Removed {nan_targets} rows with NaN targets, {len(feature_df)} rows remain")
+        
+        # IMPROVED: Warn if sample size is too small for reliable evaluation
+        MIN_RECOMMENDED_SAMPLES = 500
+        if len(feature_df) < MIN_RECOMMENDED_SAMPLES:
+            logger.warning(
+                f"⚠️ SAMPLE SIZE WARNING: Only {len(feature_df)} samples available for baseline learnability. "
+                f"Recommended minimum is {MIN_RECOMMENDED_SAMPLES}. Results may be unreliable. "
+                f"Check data pipeline for: 1) target NaN filtering 2) index alignment 3) temporal windowing"
+            )
 
         numeric_cols = feature_df.select_dtypes(include=[np.number]).columns.tolist()
         feature_df = feature_df[numeric_cols]

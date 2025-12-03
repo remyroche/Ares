@@ -1795,10 +1795,14 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 or name_lower.endswith("_vwap")
                 or name_lower.endswith("_trend_adj")
             )
+            # FIXED: More precise cross-timeframe detection to avoid misclassifying
+            # features like "momentum_10" as cross-timeframe. Only match explicit
+            # timeframe patterns like "_3x_ratio", "_15m_", or "ctf_" prefixes.
             is_cross_timeframe = (
                 "ctf_" in name_lower
                 or "cross_timeframe" in name_lower
-                or re.search(r"\d+[mhd]", name_lower) is not None
+                or "_ratio" in name_lower  # Cross-timeframe ratio features like "_3x_ratio"
+                or re.search(r"_\d+x_", name_lower) is not None  # Explicit multiplier patterns like _3x_, _6x_
             )
 
             if is_interaction and interaction_count >= max_interaction_features:
@@ -2415,18 +2419,36 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         # Apply caps to control the mix of interaction, cross-timeframe, and
         # variant features in the final sets. We want:
         #   - base features and their VWAP/vol-normal variants to be well
-        #     represented,
+        #     represented (increased caps for variants/base),
         #   - interaction and cross-timeframe features to be allowed but
         #     bounded so they don't dominate the pool.
+        # 
+        # IMPROVED BALANCE: Default caps favor more base/variant features:
+        # - max_interaction_features: 15 (was 10) - allow some interactions
+        # - max_cross_timeframe_total: 20 (unchanged) - reasonable CT limit
+        # - max_variant_features: 50 (was 40) - allow more normalized variants
+        # - min_variant_features: 10 (was 4) - ensure variants are well-represented
 
-        max_interaction_features = int(config.get('max_interaction_features', 10))
+        max_interaction_features = int(config.get('max_interaction_features', 15))
         max_cross_timeframe_per_base = int(config.get('max_cross_timeframe_per_base', 10))
         # Global cap on cross-timeframe features across all bases (user
         # requirement: up to ~20 cross-timeframe features in total).
         max_cross_timeframe_total = int(config.get('max_cross_timeframe_total', 20))
-        # Variants (VWAP/vol-normal/trend-adjusted) should be represented but
-        # not explode combinatorially; cap them at a moderate number.
-        max_variant_features = int(config.get('max_variant_features', 40))
+        # Variants (VWAP/vol-normal/trend-adjusted) should be well represented
+        # to capture different market dynamics.
+        max_variant_features = int(config.get('max_variant_features', 50))
+
+        # Log feature type distribution BEFORE capping
+        pre_cap_interaction = sum(1 for f in all_selected_features if 'interaction' in f.lower() or '_x_' in f.lower())
+        pre_cap_variant = sum(1 for f in all_selected_features if f.lower().endswith(('_volnorm', '_vwap', '_trend_adj', '_base')))
+        pre_cap_ct = sum(1 for f in all_selected_features if 'ctf_' in f.lower() or 'cross_timeframe' in f.lower() or '_ratio' in f.lower())
+        pre_cap_base = len(all_selected_features) - pre_cap_interaction - pre_cap_variant - pre_cap_ct
+        
+        tprint_info(f"📊 Feature type distribution BEFORE caps:")
+        tprint_info(f"   - Base features: {pre_cap_base}")
+        tprint_info(f"   - Variant features (volnorm/vwap/trend_adj/base): {pre_cap_variant}")
+        tprint_info(f"   - Cross-timeframe features: {pre_cap_ct}")
+        tprint_info(f"   - Interaction features: {pre_cap_interaction}")
 
         capped_features = self._apply_feature_caps(
             all_selected_features,
@@ -2434,12 +2456,23 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             max_cross_timeframe_per_base=max_cross_timeframe_per_base,
             max_variant_features=max_variant_features,
             max_cross_timeframe_total=max_cross_timeframe_total,
-            # Soft minimums can be overridden via config but default to
-            # encouraging variants while not forcing interactions/CTF.
-            min_interaction_features=int(config.get('min_interaction_features', 0)),
-            min_cross_timeframe_features=int(config.get('min_cross_timeframe_features', 0)),
-            min_variant_features=int(config.get('min_variant_features', 4)),
+            # Soft minimums to ensure balanced representation
+            min_interaction_features=int(config.get('min_interaction_features', 5)),
+            min_cross_timeframe_features=int(config.get('min_cross_timeframe_features', 5)),
+            min_variant_features=int(config.get('min_variant_features', 10)),
         )
+        
+        # Log feature type distribution AFTER capping
+        post_cap_interaction = sum(1 for f in capped_features if 'interaction' in f.lower() or '_x_' in f.lower())
+        post_cap_variant = sum(1 for f in capped_features if f.lower().endswith(('_volnorm', '_vwap', '_trend_adj', '_base')))
+        post_cap_ct = sum(1 for f in capped_features if 'ctf_' in f.lower() or 'cross_timeframe' in f.lower() or '_ratio' in f.lower())
+        post_cap_base = len(capped_features) - post_cap_interaction - post_cap_variant - post_cap_ct
+        
+        tprint_info(f"📊 Feature type distribution AFTER caps:")
+        tprint_info(f"   - Base features: {post_cap_base}")
+        tprint_info(f"   - Variant features: {post_cap_variant}")
+        tprint_info(f"   - Cross-timeframe features: {post_cap_ct}")
+        tprint_info(f"   - Interaction features: {post_cap_interaction}")
 
         # Guardrail: if caps are too aggressive and leave us with fewer
         # features than the largest requested set size, but the underlying
@@ -3873,15 +3906,21 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         def _classify_feature_for_csv(name: str):
             nl = str(name).lower()
             is_interaction = ("interaction" in nl) or ("_x_" in nl)
+            # Variant features end with specific suffixes
             is_variant = (
                 nl.endswith("_volnorm")
                 or nl.endswith("_vwap")
                 or nl.endswith("_trend_adj")
+                or nl.endswith("_base")  # Include _base variants too
             )
+            # FIXED: More precise cross-timeframe detection to avoid misclassifying
+            # features like "momentum_10" as cross-timeframe. Only match explicit
+            # timeframe patterns like "_3x_ratio", "_15m_", or "ctf_" prefixes.
             is_cross_timeframe = (
                 "ctf_" in nl
                 or "cross_timeframe" in nl
-                or re.search(r"\d+[mhd]", nl) is not None
+                or "_ratio" in nl  # Cross-timeframe ratio features
+                or re.search(r"_\d+x_", nl) is not None  # Explicit multiplier patterns like _3x_, _6x_
             )
             return is_interaction, is_variant, is_cross_timeframe
 

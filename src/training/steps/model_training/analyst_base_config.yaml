@@ -86,6 +86,7 @@ analyst_config:
           total_time_seconds: 0.45926570892333984
           n_rounds: 2
     knn:
+      enabled: false
       model_type: KNeighborsRegressor
       use_float32: true
       use_isotonic_calibration: true

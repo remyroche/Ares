@@ -1,0 +1,6 @@
+{
+  "model_id": "path_regime_barrier_classifier_hpo",
+  "last_training_time": "2025-12-03T08:10:27.917078",
+  "model_type": "xgb",
+  "retrain_interval_days": 5
+}

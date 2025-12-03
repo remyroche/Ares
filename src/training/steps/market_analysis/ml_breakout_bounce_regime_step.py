@@ -4990,6 +4990,12 @@ class MLBreakoutBounceRegimeStep(BaseStep):
                     "test_sharpe_gated_75pct": metrics.get("test_sharpe_gated_75pct", float("-inf")),
                     "val_log_loss": metrics.get("val_log_loss", float("inf")),
                     "val_accuracy": metrics.get("val_accuracy", 0.0),
+                    "val_roc_auc": metrics.get("val_roc_auc", float("nan")),
+                    # Stage-2 regression vs forward-returns correlation
+                    "stage2_val_spearman_corr": metrics.get("stage2_val_spearman_corr", float("nan")),
+                    "stage2_val_spearman_pval": metrics.get("stage2_val_spearman_pval", float("nan")),
+                    "stage2_test_spearman_corr": metrics.get("stage2_test_spearman_corr", float("nan")),
+                    "stage2_test_spearman_pval": metrics.get("stage2_test_spearman_pval", float("nan")),
                     # Diagnostics
                     "binary_break_ratio": metrics.get("binary_break_ratio", 0.0),
                     "error": result.get("error", ""),
@@ -5040,10 +5046,23 @@ class MLBreakoutBounceRegimeStep(BaseStep):
             tprint_warning("⚠️ No successful configurations to analyze")
             return df, {"best_config": None, "analysis": "no_successful_runs"}
 
-        # Use validation Sharpe as the primary ranking metric
-        # Handle -inf values
-        successful["val_sharpe_gated_75pct"] = successful["val_sharpe_gated_75pct"].replace([np.inf, -np.inf], -999.0)
-        successful = successful.sort_values("val_sharpe_gated_75pct", ascending=False)
+        # Clean Sharpe values for diagnostics
+        successful["val_sharpe_gated_75pct"] = successful["val_sharpe_gated_75pct"].replace([np.inf, -np.inf], np.nan)
+
+        # Prefer ROC AUC when available, otherwise accuracy, as primary ranking signal.
+        ranking_metric = None
+        if "val_roc_auc" in successful.columns and successful["val_roc_auc"].notna().any():
+            ranking_metric = "val_roc_auc"
+        elif "val_accuracy" in successful.columns and successful["val_accuracy"].notna().any():
+            ranking_metric = "val_accuracy"
+
+        if ranking_metric is not None:
+            successful = successful.sort_values(
+                [ranking_metric, "val_accuracy"], ascending=False
+            )
+        else:
+            # Fallback: keep legacy behaviour if no metrics are present
+            successful = successful.sort_values("val_sharpe_gated_75pct", ascending=False)
 
         # Get best configuration
         best_config = successful.iloc[0].to_dict()
@@ -5054,7 +5073,10 @@ class MLBreakoutBounceRegimeStep(BaseStep):
             "total_runs": len(results),
             "successful_runs": len(successful),
             "failed_runs": len(failed),
-            "best_val_sharpe": best_config["val_sharpe_gated_75pct"],
+            "best_val_sharpe": float(best_config.get("val_sharpe_gated_75pct", np.nan)),
+            "best_val_accuracy": float(best_config.get("val_accuracy", np.nan)),
+            "best_val_roc_auc": float(best_config.get("val_roc_auc", np.nan)),
+            "ranking_metric": ranking_metric,
             "top_5_configs": successful.head(5).to_dict("records"),
             "parameter_importance": self.analyze_parameter_importance(successful),
         }
@@ -5312,9 +5334,44 @@ class MLBreakoutBounceRegimeStep(BaseStep):
                 except Exception:
                     pass
 
+            history_min_bars = int(config.get("breakout_min_history_bars", 200))
+            if isinstance(market_data, pd.DataFrame):
+                history_min_bars = min(
+                    history_min_bars,
+                    max(len(market_data) // 2, 50),
+                )
+
+                # Further adapt to available history per lookback window so that shorter
+                # breakout_lookback_days on sparse data (e.g. 14 days on a 144-bar slice)
+                # can still generate levels instead of always failing the min_history_bars
+                # check inside RollingKDELevelGenerator.
+                try:
+                    dates_norm = market_data.index.normalize()
+                    unique_days = dates_norm.unique()
+                    n_days = len(unique_days)
+                except Exception:
+                    n_days = 0
+
+                if n_days > 0:
+                    try:
+                        bars_per_day = float(len(market_data)) / float(max(n_days, 1))
+                    except Exception:
+                        bars_per_day = float(len(market_data))
+
+                    try:
+                        lookback_days = int(config.get("breakout_lookback_days", 30))
+                    except Exception:
+                        lookback_days = 30
+
+                    effective_days = max(min(lookback_days, n_days), 1)
+                    approx_window_bars = bars_per_day * float(effective_days)
+                    adaptive_cap = max(int(approx_window_bars * 0.7), 30)
+                    history_min_bars = min(history_min_bars, adaptive_cap)
+
             level_generator = RollingKDELevelGenerator(
                 lookback_days=int(config.get("breakout_lookback_days", 30)),
                 peaks_per_side=int(config.get("breakout_peaks_per_side", 3)),
+                min_history_bars=history_min_bars,
                 sr_min_touch_count=int(config.get("sr_min_touch_count", 2)),
                 sr_min_volume_depth_ratio=float(config.get("sr_min_volume_depth_ratio", 0.8)),
                 sr_min_prominence=float(config.get("sr_min_prominence", 0.5)),
@@ -7928,8 +7985,8 @@ class MLBreakoutBounceRegimeStep(BaseStep):
         y_true: np.ndarray,
         y_pred_probs: np.ndarray,
         forward_returns: np.ndarray,
-        gate_percentile: float = 75.0,
-        min_samples: int = 50,
+        gate_percentile: float = 60.0,
+        min_samples: int = 20,
     ) -> float:
         """Economic objective: Sharpe ratio of gated signals.
 
@@ -8287,11 +8344,12 @@ class MLBreakoutBounceRegimeStep(BaseStep):
             y_val,
             val_final_probs.reshape(-1, 1),
             fwd_ret_val_clean.values,
-            gate_percentile=75.0,
+            gate_percentile=60.0,
+            min_samples=20,
         )
         metrics["val_sharpe_gated_75pct"] = float(val_sharpe)
 
-        tprint_success(f"✅ Combined Model: Val Sharpe (top 25%)={val_sharpe:.3f}")
+        tprint_success(f"✅ Combined Model: Val Sharpe (gated)={val_sharpe:.3f}")
 
         # Test set metrics
         if X_test is not None and stage1_test_probs is not None:
@@ -8305,10 +8363,11 @@ class MLBreakoutBounceRegimeStep(BaseStep):
                 y_test,
                 test_final_probs.reshape(-1, 1),
                 fwd_ret_test_clean.values,
-                gate_percentile=75.0,
+                gate_percentile=60.0,
+                min_samples=20,
             )
             metrics["test_sharpe_gated_75pct"] = float(test_sharpe)
-            tprint_success(f"✅ Test Sharpe (top 25%)={test_sharpe:.3f}")
+            tprint_success(f"✅ Test Sharpe (gated)={test_sharpe:.3f}")
 
         return stage1_model_calibrated, stage2_model, metrics, final_probs
 
@@ -8634,8 +8693,77 @@ class MLBreakoutBounceRegimeStep(BaseStep):
 
         # Make predictions on val/test using last trained model
         stage1_model = stage1_models[-1] if stage1_models else None
+
+        # Fallback: for small-sample blank-mode regimes, the standardized
+        # trainer may skip all OOF windows due to min_samples constraints.
+        # In that case, train a single XGBoost model directly on the full
+        # training set and synthesize OOF-style probabilities so downstream
+        # stages can still operate.
         if stage1_model is None:
-            raise ValueError("Stage 1 training failed - no models produced")
+            tprint_warning(
+                "⚠️ Stage 1 StandardizedXGBTrainer produced no models; "
+                "falling back to direct XGBoost training without OOF windows"
+            )
+
+            if len(X_train) < 10 or y_train.nunique() < 2:
+                raise ValueError(
+                    "Stage 1 training failed - insufficient labeled samples "
+                    "for direct XGBoost fallback"
+                )
+
+            import xgboost as _xgb  # local import to avoid top-level changes
+
+            n_fallback = int(len(X_train) * 0.8)
+            if n_fallback <= 0 or n_fallback >= len(X_train):
+                n_fallback = max(1, len(X_train) - 1)
+
+            X_tr_fb, X_val_fb = X_train.iloc[:n_fallback], X_train.iloc[n_fallback:]
+            y_tr_fb, y_val_fb = y_train.iloc[:n_fallback], y_train.iloc[n_fallback:]
+
+            dtrain_fb = _xgb.DMatrix(
+                X_tr_fb.values.astype(np.float32),
+                label=y_tr_fb.values.astype(int),
+                feature_names=X_tr_fb.columns.tolist(),
+            )
+            dval_fb = _xgb.DMatrix(
+                X_val_fb.values.astype(np.float32),
+                label=y_val_fb.values.astype(int),
+                feature_names=X_val_fb.columns.tolist(),
+            )
+
+            stage1_params = {
+                "objective": stage1_config.objective,
+                "eta": stage1_config.learning_rate,
+                "max_depth": stage1_config.max_depth,
+                "min_child_weight": stage1_config.min_child_weight,
+                "subsample": stage1_config.subsample,
+                "colsample_bytree": stage1_config.colsample_bytree,
+                "gamma": stage1_config.gamma,
+                "lambda": stage1_config.reg_lambda,
+                "tree_method": stage1_config.tree_method,
+                "eval_metric": "logloss",
+            }
+
+            evals = [(dtrain_fb, "train"), (dval_fb, "val")]
+            stage1_model = _xgb.train(
+                params=stage1_params,
+                dtrain=dtrain_fb,
+                num_boost_round=stage1_config.n_estimators,
+                evals=evals,
+                early_stopping_rounds=stage1_config.early_stopping_rounds,
+                verbose_eval=False,
+            )
+
+            # Synthesize pseudo-OOF probabilities on the full training set
+            # for use as confidence weights in Stage 2.
+            dall_fb = _xgb.DMatrix(
+                X_train.values.astype(np.float32),
+                label=y_train.values.astype(int),
+                feature_names=X_train.columns.tolist(),
+            )
+            p_train_fb = stage1_model.predict(dall_fb)
+            stage1_oof = pd.DataFrame({"probability": p_train_fb}, index=X_train.index)
+            stage1_models = [stage1_model]
 
         # Create DMatrix for predictions
         from scipy import sparse
@@ -8657,8 +8785,15 @@ class MLBreakoutBounceRegimeStep(BaseStep):
         val_preds = (stage1_val_probs >= 0.5).astype(int)
         val_accuracy = accuracy_score(y_val, val_preds)
         val_log_loss = self._safe_log_loss(y_val, stage1_val_probs)
+        try:
+            val_roc_auc = roc_auc_score(y_val, stage1_val_probs)
+        except Exception:
+            val_roc_auc = float("nan")
 
-        tprint_success(f"✅ Stage 1 Val: accuracy={val_accuracy:.4f}, log_loss={val_log_loss:.4f}")
+        tprint_success(
+            f"✅ Stage 1 Val: accuracy={val_accuracy:.4f}, "
+            f"log_loss={val_log_loss:.4f}, auc={val_roc_auc if np.isfinite(val_roc_auc) else float('nan'):.4f}"
+        )
 
         # ========================================================================
         # STAGE 2: Regression (quality/forward returns) using StandardizedXGBTrainer
@@ -8677,11 +8812,14 @@ class MLBreakoutBounceRegimeStep(BaseStep):
         fwd_returns_train = fwd_returns.loc[X_train.index].replace([np.inf, -np.inf], np.nan).fillna(0.0)
 
         # Configure StandardizedXGBTrainer for regression
+        # Use a lower min_samples_for_training so we can train on the
+        # smaller blank-mode breakout/bounce dataset.
         stage2_config = XGBTrainingConfig(
             model_id=f"{model_id}_stage2_regression",
             retrain_interval_days=10,
             hpo_interval_days=30,
             burnin_pct=1/12,
+            min_samples_for_training=100,
             n_estimators=500,
             learning_rate=0.03,
             max_depth=3,
@@ -8716,7 +8854,7 @@ class MLBreakoutBounceRegimeStep(BaseStep):
         confidence_weights = np.abs(prob_series.reindex(X_train.index).fillna(0.5) - 0.5) * 2
         confidence_weights = confidence_weights.values
 
-        # Train Stage 2 with OOF predictions
+        # Train Stage 2 with OOF predictions (StandardizedXGBTrainer)
         stage2_results = stage2_trainer.train_and_predict(
             X=X_train,
             y=pd.Series(fwd_returns_train.values, index=X_train.index),
@@ -8728,7 +8866,46 @@ class MLBreakoutBounceRegimeStep(BaseStep):
         )
 
         stage2_models = stage2_results.models
-        stage2_model = stage2_models[-1] if stage2_models else None
+
+        # Direct Stage 2 regression fallback using xgboost.train
+        stage2_model_direct = None
+        try:
+            dtrain_stage2 = xgb.DMatrix(
+                X_train.values.astype(np.float32),
+                label=fwd_returns_train.values.astype(np.float32),
+                weight=confidence_weights,
+                feature_names=X_train.columns.tolist(),
+            )
+            stage2_params = {
+                "objective": stage2_config.objective,
+                "eta": stage2_config.learning_rate,
+                "max_depth": stage2_config.max_depth,
+                "min_child_weight": stage2_config.min_child_weight,
+                "subsample": stage2_config.subsample,
+                "colsample_bytree": stage2_config.colsample_bytree,
+                "gamma": stage2_config.gamma,
+                "lambda": stage2_config.reg_lambda,
+                "tree_method": stage2_config.tree_method,
+                "eval_metric": "rmse",
+            }
+            evals_stage2 = [(dtrain_stage2, "train")]
+            stage2_model_direct = xgb.train(
+                params=stage2_params,
+                dtrain=dtrain_stage2,
+                num_boost_round=stage2_config.n_estimators,
+                evals=evals_stage2,
+                verbose_eval=False,
+            )
+        except Exception:
+            stage2_model_direct = None
+
+        stage2_model = stage2_model_direct if stage2_model_direct is not None else (stage2_models[-1] if stage2_models else None)
+
+        # Initialize Stage 2 correlation metrics (validation/test)
+        stage2_val_corr = float("nan")
+        stage2_val_pval = float("nan")
+        stage2_test_corr = float("nan")
+        stage2_test_pval = float("nan")
 
         if stage2_model is not None:
             stage2_val_preds = stage2_model.predict(dval)
@@ -8748,6 +8925,56 @@ class MLBreakoutBounceRegimeStep(BaseStep):
                 stage2_val_norm = np.full_like(stage2_val_preds, 0.5)
 
             stage2_val_norm = np.clip(stage2_val_norm, 0.0, 1.0)
+
+            # Stage 2 correlation with forward returns (validation/test)
+            try:
+                fwd_returns_val = (
+                    fwd_returns
+                    .reindex(X_val.index)
+                    .replace([np.inf, -np.inf], np.nan)
+                    .fillna(0.0)
+                )
+                if len(fwd_returns_val) == len(stage2_val_preds):
+                    vals = fwd_returns_val.values
+                    if (
+                        np.isfinite(stage2_val_preds).all()
+                        and np.isfinite(vals).all()
+                        and np.std(stage2_val_preds) > 0.0
+                        and np.std(vals) > 0.0
+                    ):
+                        stage2_val_corr, stage2_val_pval = spearmanr(
+                            stage2_val_preds,
+                            vals,
+                        )
+                    else:
+                        stage2_val_corr, stage2_val_pval = 0.0, 1.0
+            except Exception:
+                stage2_val_corr, stage2_val_pval = float("nan"), float("nan")
+
+            if X_test is not None and stage2_test_preds is not None:
+                try:
+                    fwd_returns_test = (
+                        fwd_returns
+                        .reindex(X_test.index)
+                        .replace([np.inf, -np.inf], np.nan)
+                        .fillna(0.0)
+                    )
+                    if len(fwd_returns_test) == len(stage2_test_preds):
+                        vals_t = fwd_returns_test.values
+                        if (
+                            np.isfinite(stage2_test_preds).all()
+                            and np.isfinite(vals_t).all()
+                            and np.std(stage2_test_preds) > 0.0
+                            and np.std(vals_t) > 0.0
+                        ):
+                            stage2_test_corr, stage2_test_pval = spearmanr(
+                                stage2_test_preds,
+                                vals_t,
+                            )
+                        else:
+                            stage2_test_corr, stage2_test_pval = 0.0, 1.0
+                except Exception:
+                    stage2_test_corr, stage2_test_pval = float("nan"), float("nan")
         else:
             stage2_val_norm = np.full(len(X_val), 0.5)
             stage2_test_preds = None
@@ -8805,15 +9032,20 @@ class MLBreakoutBounceRegimeStep(BaseStep):
         if stage2_model is not None:
             full_stage2_preds = stage2_model.predict(dfull)
 
-            # Overlay OOF predictions for stage 2
+            # Overlay OOF predictions for stage 2 (regression)
             if stage2_results is not None and stage2_results.oof_predictions is not None:
-                # Stage 2 OOF is regression prediction
-                # stage2_results.oof_predictions has column "prediction" for regression
-                oof_pred_series = stage2_results.oof_predictions["prediction"].reindex(X.index)
-                valid_oof_s2 = oof_pred_series.notna()
-                if valid_oof_s2.any():
-                    full_stage2_preds[valid_oof_s2] = oof_pred_series[valid_oof_s2].values
-                    tprint_info(f"Overlaying {valid_oof_s2.sum()} OOF predictions for Stage 2")
+                try:
+                    oof_df = stage2_results.oof_predictions
+                    if isinstance(oof_df, pd.DataFrame) and "prediction" in oof_df.columns:
+                        oof_pred_series = oof_df["prediction"].reindex(X.index)
+                        valid_oof_s2 = oof_pred_series.notna()
+                        if valid_oof_s2.any():
+                            full_stage2_preds[valid_oof_s2] = oof_pred_series[valid_oof_s2].values
+                            tprint_info(f"Overlaying {valid_oof_s2.sum()} OOF predictions for Stage 2")
+                except Exception:
+                    # If anything goes wrong with OOF overlay, fall back to
+                    # using the direct stage2 predictions without overlay.
+                    pass
 
             if stage2_range > 0:
                 full_stage2_norm = (full_stage2_preds - stage2_min) / stage2_range
@@ -8864,6 +9096,11 @@ class MLBreakoutBounceRegimeStep(BaseStep):
         metrics = {
             "val_accuracy": float(val_accuracy),
             "val_log_loss": float(val_log_loss),
+            "val_roc_auc": float(val_roc_auc) if np.isfinite(val_roc_auc) else float("nan"),
+            "stage2_val_spearman_corr": float(stage2_val_corr) if np.isfinite(stage2_val_corr) else float("nan"),
+            "stage2_val_spearman_pval": float(stage2_val_pval) if np.isfinite(stage2_val_pval) else float("nan"),
+            "stage2_test_spearman_corr": float(stage2_test_corr) if np.isfinite(stage2_test_corr) else float("nan"),
+            "stage2_test_spearman_pval": float(stage2_test_pval) if np.isfinite(stage2_test_pval) else float("nan"),
             "n_train_samples": int(train_mask.sum()),
             "n_val_samples": int(val_mask.sum()),
             "n_test_samples": int(test_mask.sum()) if test_mask is not None else 0,
@@ -8900,6 +9137,7 @@ class MLBreakoutBounceRegimeStep(BaseStep):
             f"✅ 2-Stage Breakout Classifier Complete:\n"
             f"   Val Accuracy: {val_accuracy:.4f}\n"
             f"   Val Log Loss: {val_log_loss:.4f}\n"
+            f"   Val ROC AUC: {val_roc_auc if np.isfinite(val_roc_auc) else float('nan'):.4f}\n"
             f"   OOF Samples: {len(stage1_oof)}"
         )
 
@@ -8920,6 +9158,19 @@ class MLBreakoutBounceRegimeStep(BaseStep):
         arr = np.asarray(probs, dtype=float)
         if arr.size == 0:
             return float("nan")
+
+        # Standardise shape: handle 1D binary probabilities by expanding
+        # to a 2-column matrix [P(class=0), P(class=1)]. This ensures that
+        # downstream row-wise normalisation and sklearn.log_loss expectations
+        # are met for both binary and multi-class cases.
+        if arr.ndim == 1:
+            p1 = np.clip(arr, 0.0, 1.0)
+            p0 = 1.0 - p1
+            arr = np.column_stack([p0, p1])
+        elif arr.ndim == 2 and arr.shape[1] == 1:
+            p1 = np.clip(arr[:, 0], 0.0, 1.0)
+            p0 = 1.0 - p1
+            arr = np.column_stack([p0, p1])
 
         y_arr = np.asarray(y_true)
         if y_arr.size == 0:

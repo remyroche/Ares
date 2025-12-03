@@ -36,6 +36,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from src.launcher.ares_launcher import get_mode_lookback_days
 from src.training.steps.market_analysis.ml_reversion_regime_step import MLMeanReversionRegimeStep
 
 
@@ -49,7 +50,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--exchange", type=str, default="binance", help="Exchange name")
     parser.add_argument("--timeframe", type=str, default="15m", help="Regime timeframe (e.g. 15m)")
     parser.add_argument("--direction", type=str, default="long", help="Trading direction")
-    parser.add_argument("--execution-mode", type=str, default="light", help="Execution mode for the step")
+    parser.add_argument("--execution-mode", type=str, default="blank", help="Execution mode for the step")
     parser.add_argument("--outcomes-dir", type=str, default="outcomes", help="Directory to save sweep results")
     parser.add_argument("--skip-hpo", action="store_true", help="Skip the student HPO variations to save time.")
 
@@ -65,6 +66,9 @@ def build_base_config(args: argparse.Namespace) -> Dict[str, Any]:
         "regime_timeframe": args.timeframe,
         "direction": args.direction,
         "execution_mode": args.execution_mode,
+        # Ensure BaseStep honours the centralized blank/light lookback
+        # window even when this script is run outside the launcher.
+        "lookback_days": get_mode_lookback_days(args.execution_mode),
         # Default Teacher Thresholds (Baseline)
         "mr_hurst_threshold": 0.5,
         "mr_half_life_threshold": 12.0,

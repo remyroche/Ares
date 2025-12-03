@@ -1,54 +1,6 @@
 {
-  "versions": {
-    "ml_risk_hmm_training_data_1h_20251126_002817_375": {
-      "created_at": "2025-11-26T00:28:17.375738",
-      "num_rows": 25468,
-      "num_columns": 32,
-      "columns": [
-        "timestamp",
-        "open",
-        "high",
-        "low",
-        "close",
-        "volume",
-        "symbol",
-        "interval",
-        "exchange",
-        "day",
-        "quote_volume",
-        "trades",
-        "open_time",
-        "close_time",
-        "close_return",
-        "close_log_return",
-        "volume_return",
-        "volume_log_return",
-        "price_range",
-        "price_range_pct",
-        "body_size",
-        "body_size_pct",
-        "hour",
-        "day_of_week",
-        "is_weekend",
-        "parkinson_volatility",
-        "hurst_exponent",
-        "rolling_kurtosis",
-        "rolling_skewness",
-        "volatility_of_volatility",
-        "risk_regime",
-        "risk_score"
-      ],
-      "artifact_name": "ml_risk_hmm_training_data_1h",
-      "symbol": "ETHUSDT",
-      "exchange": "binance",
-      "timeframe": "1h",
-      "direction": "long",
-      "model": "regime_risk_hmm",
-      "step_name": "ml_risk_regime_step",
-      "safe_state_id": 0
-    }
-  },
-  "current_version": "ml_risk_hmm_training_data_1h_20251126_002817_375",
+  "versions": {},
+  "current_version": null,
   "created_at": "2025-11-26T00:28:17.374480",
-  "updated_at": "2025-12-01T00:29:06.312373"
+  "updated_at": "2025-12-03T00:30:08.099903"
 }

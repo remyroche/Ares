@@ -68,13 +68,14 @@ def build_base_config(args: argparse.Namespace) -> Dict[str, Any]:
         "execution_mode": "blank",  # Explicitly use blank mode as requested
         # Default parameters
         "breakout_horizon_bars": 96,
-        "breakout_lookback_days": 30,
+        "breakout_lookback_days": 2,
         "breakout_cross_buffer_pct": 0.0040,
         "breakout_hold_buffer_pct": 0.0030,
         "breakout_bounce_move_pct": 0.0015,
         "breakout_trap_revert_pct": 0.0030,
         # Ensure outputs are enabled
         "breakout_meta_enable": True,
+        "breakout_meta_min_ret": 0.015,
         "enable_sr_strength_features": True,
         "enable_trap_quality_features": True,
     }
@@ -145,17 +146,53 @@ def build_threshold_sweep_configs(base_config: Dict[str, Any]) -> List[Dict[str,
         {"breakout_trap_revert_pct": 0.0050}
     )
 
-    # 5) S/R Lookback Sweep
+    # 5) S/R Lookback Sweep (strictly intraday: <= 2 days)
     # Shorter history -> More reactive levels
     add_variant(
-        "sr_lookback_short_14d",
-        {"breakout_lookback_days": 14}
+        "sr_lookback_short_1d",
+        {"breakout_lookback_days": 1}
     )
-    # Longer history -> stronger, major levels
+    # Slightly longer, still tight
     add_variant(
-        "sr_lookback_long_60d",
-        {"breakout_lookback_days": 60}
+        "sr_lookback_long_2d",
+        {"breakout_lookback_days": 2}
     )
+
+    for lb_days in [1, 2]:
+        for cross in [0.0030, 0.0040, 0.0050]:
+            for hold in [0.0020, 0.0030, 0.0040]:
+                add_variant(
+                    f"local_h48_lb{lb_days}d_cross{cross:.4f}_hold{hold:.4f}",
+                    {
+                        "breakout_horizon_bars": 48,
+                        "breakout_lookback_days": lb_days,
+                        "breakout_cross_buffer_pct": cross,
+                        "breakout_hold_buffer_pct": hold,
+                    },
+                )
+
+    for lb_days in [1, 2]:
+        for cross in [0.0030, 0.0040, 0.0050]:
+            for hold in [0.0020, 0.0030, 0.0040]:
+                add_variant(
+                    f"local_h96_lb{lb_days}d_cross{cross:.4f}_hold{hold:.4f}",
+                    {
+                        "breakout_horizon_bars": 96,
+                        "breakout_lookback_days": lb_days,
+                        "breakout_cross_buffer_pct": cross,
+                        "breakout_hold_buffer_pct": hold,
+                    },
+                )
+
+    for bounce in [0.0010, 0.0015, 0.0020]:
+        for trap in [0.0020, 0.0030, 0.0040]:
+            add_variant(
+                f"local_bounce{bounce:.4f}_trap{trap:.4f}",
+                {
+                    "breakout_bounce_move_pct": bounce,
+                    "breakout_trap_revert_pct": trap,
+                },
+            )
 
     return configs
 
@@ -226,13 +263,23 @@ async def main_async() -> None:
         print("\n⚠️ No successful configurations in sweep.")
         return
 
-    # Sort by Val Sharpe
-    successful = successful.sort_values("val_sharpe_gated_75pct", ascending=False)
+    # Sort primarily by ROC AUC when available, otherwise accuracy
+    ranking_metric = None
+    if "val_roc_auc" in successful.columns and successful["val_roc_auc"].notna().any():
+        ranking_metric = "val_roc_auc"
+    elif "val_accuracy" in successful.columns and successful["val_accuracy"].notna().any():
+        ranking_metric = "val_accuracy"
+
+    if ranking_metric is not None:
+        successful = successful.sort_values([ranking_metric, "val_accuracy"], ascending=False)
+    else:
+        successful = successful.sort_values("val_sharpe_gated_75pct", ascending=False)
 
     cols = [
         "config_id",
         "breakout_sweep_tag",
         "val_sharpe_gated_75pct",
+        "val_roc_auc",
         "val_log_loss",
         "val_accuracy",
         "execution_time",

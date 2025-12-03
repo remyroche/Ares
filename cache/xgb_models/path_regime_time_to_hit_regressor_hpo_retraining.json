@@ -1,0 +1,6 @@
+{
+  "model_id": "path_regime_time_to_hit_regressor_hpo",
+  "last_training_time": "2025-12-03T08:10:32.333501",
+  "model_type": "xgb",
+  "retrain_interval_days": 5
+}

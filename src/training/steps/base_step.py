@@ -561,6 +561,10 @@ class BaseStep(ABC):
 
         # Propagate launcher-provided lookback_days into context-specific mode keys
         # so that historical loading honours centralized execution-mode windows.
+        # Also ensure execution_mode itself is visible in _current_context so that
+        # _load_market_data_from_historical_storage can apply mode-specific
+        # data_loading_days (e.g. blank=1 year) even when steps invoke
+        # load_market_data_or_fail directly.
         try:
             exec_mode_cfg = str(config.get("execution_mode", "")).lower()
             if exec_mode_cfg in {"light", "blank", "full"}:
@@ -570,6 +574,9 @@ class BaseStep(ABC):
                     # Respect any explicit context override if already present
                     if mode_key not in self._current_context:
                         self._current_context[mode_key] = int(lookback_days_val)
+
+                if "execution_mode" not in self._current_context:
+                    self._current_context["execution_mode"] = exec_mode_cfg
         except Exception:
             # Non-fatal: fall back to centralized execution_mode configuration
             pass

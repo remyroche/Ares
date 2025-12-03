@@ -76,9 +76,11 @@ def build_sweep_configs(base_config: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Generate configs for the sweep."""
 
     # Define sweep ranges
-    atr_thresholds = [0.5, 0.8, 1.0, 1.2, 1.5]
+    # Focused ATR band around lower thresholds with reasonable class balance
+    atr_thresholds = [0.8, 1.0, 1.2]
     lookaheads = [8, 12, 16, 20]  # 2h, 3h, 4h, 5h
-    norm_windows = [100, 250, 500]
+    # Include a shorter normalization window and moderate defaults
+    norm_windows = [50, 100, 200]
 
     configs: List[Dict[str, Any]] = []
 

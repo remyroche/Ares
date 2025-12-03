@@ -687,8 +687,18 @@ class ScalingNormalizer:
         Returns:
             Selected scaling strategy name
         """
-        outlier_ratio = feature_stats['outlier_count'] / feature_stats.get('total_count', 1)
-        skewness = abs(feature_stats['skewness'])
+        if not feature_stats:
+            return self.default_strategy
+
+        total_count = feature_stats.get('total_count', 0)
+        outlier_count = feature_stats.get('outlier_count', 0)
+        if not total_count or total_count <= 0:
+            outlier_ratio = 0.0
+        else:
+            outlier_ratio = outlier_count / total_count
+
+        skewness = abs(feature_stats.get('skewness', 0.0))
+        feature_min = feature_stats.get('min', 0.0)
 
         # Strategy selection logic
         if outlier_ratio > 0.1:  # More than 10% outliers
@@ -697,7 +707,7 @@ class ScalingNormalizer:
             return 'quantile'
         elif skewness > 1.0:  # Moderately skewed
             return 'power'
-        elif feature_stats['min'] < 0:  # Has negative values
+        elif feature_min < 0:  # Has negative values
             return 'standard'
         else:  # Normal distribution, positive values
             return 'minmax'

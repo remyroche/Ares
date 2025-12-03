@@ -132,7 +132,7 @@ class XGBTrainingConfig:
     model_id: str  # Unique ID for the model (e.g., "ETHUSDT_binance_15m_mean_reversion")
 
     # Historical data retraining schedule (for OOF windows)
-    retrain_interval_days: int = 10  # Create OOF window every 10 days of historical data
+    retrain_interval_days: int = 21  # Create OOF window every 21 days of historical data
     hpo_interval_days: int = 30  # Run HPO every 30 days of historical data
     burnin_pct: float = 1/12  # 3 months burn-in (1/12 of year)
     min_samples_for_training: int = 1000

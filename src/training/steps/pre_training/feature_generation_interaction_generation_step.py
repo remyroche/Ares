@@ -2617,11 +2617,16 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         features = aligned_features
         targets = aligned_target.to_frame(name=first_target_name)
 
-        # Apply per-feature coverage filter so that interaction discovery only
-        # uses features with high non-NaN coverage.
-        coverage_threshold = float(config.get("interaction_min_coverage", 0.90))
+        # Optional per-feature coverage filter. Historically this enforced a
+        # very strict ≥90% non-NaN coverage threshold, which could zero out
+        # the interaction search space. When delegating interaction selection
+        # to the Phase 3.4 FeatureSelectionPipeline / FeatureSelector, this
+        # filter is disabled by default so that coverage is handled by the
+        # downstream selector instead of pre-emptively dropping candidates.
+        use_coverage_filter = bool(config.get("interaction_coverage_filter_enabled", False))
         n_rows = len(features)
-        if n_rows > 0 and len(features.columns) > 0:
+        if use_coverage_filter and n_rows > 0 and len(features.columns) > 0:
+            coverage_threshold = float(config.get("interaction_min_coverage", 0.90))
             non_nan_counts = features.notna().sum(axis=0)
             coverage = non_nan_counts / float(n_rows)
             kept_cols = coverage[coverage >= coverage_threshold].index.tolist()
@@ -2645,12 +2650,20 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                     name: feature_categories.get(name, "unknown") for name in kept_cols
                 }
 
-        # Configure label-guided interaction discovery
-        # NOTE: thresholds are intentionally made looser in this step so we
-        # can explore a richer interaction space for analyst interactions.
+        # Configure label-guided interaction discovery.
+        #
+        # In this refactored setup, LGID is primarily a *candidate generator*:
+        # it proposes a rich grid of raw interaction features, while the
+        # downstream Phase 3.4 selection step (FeatureSelectionPipeline /
+        # FeatureSelector) performs the actual scoring, redundancy clustering,
+        # and final selection. To support this, we:
+        #   - Disable MI/SHAP scoring inside LGID (selection is delegated).
+        #   - Attach a "delegate_selection_to_fs" flag so that LGID returns
+        #     all generated candidates without LASSO or category caps.
         lgid_config = LabelGuidedInteractionConfig(
-            # MI/SHAP scoring
-            use_mi_scoring=True,
+            # MI/SHAP scoring is disabled here; the downstream selector will
+            # handle predictive power and stability metrics.
+            use_mi_scoring=False,
             use_shap_scoring=False,
             mi_weight=0.4,
             shap_weight=0.6,
@@ -2663,8 +2676,9 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             require_r2_lift=False,  # Don't require R² lift in this step
             require_mi_lift=False,  # Don't hard-filter by MI lift; let LASSO/category limits decide
 
-            # Regularization - use LASSO for sparse selection
-            use_lasso=True,
+            # Regularization - disabled here; selection is delegated to
+            # FeatureSelectionPipeline / FeatureSelector in Phase 3.4.
+            use_lasso=False,
             lasso_alpha=None,  # Use CV to find optimal alpha
             lasso_cv_folds=3,  # Reduced for speed
             lasso_max_iter=500,
@@ -2692,6 +2706,11 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             n_jobs=-1,
             random_state=42
         )
+
+        # Hint to LGID that selection is handled externally. When this flag is
+        # set, discover_interactions will expose all lift-filtered candidates
+        # as "selected" interactions and skip LASSO + category limits.
+        setattr(lgid_config, "delegate_selection_to_fs", True)
 
         # Create discovery instance
         discoverer = LabelGuidedInteractionDiscovery(lgid_config)
@@ -3030,47 +3049,102 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         # Step 5: Feature Selector (replaces LightGBM gain + permutation-based feature selection)
         lgbm_fs_stats: Dict[str, Any] = {}
         try:
-            if FEATURE_SELECTOR_AVAILABLE and (len(normalized_features.columns) + len(interactions.columns)) > 0:
-                tprint_info("  🌟 Phase 3.4: FeatureSelector (Pre-filters -> Clustering -> LGBM RFE)")
-
+            total_features_for_fs = len(normalized_features.columns) + len(interactions.columns)
+            if total_features_for_fs > 0:
                 primary_target = targets.iloc[:, 0]
                 combined_for_fs = pd.concat([normalized_features, interactions], axis=1)
 
-                # Determine target number of features (e.g. 150)
-                target_n_features = int(config.get('target_n_features_selector', 150))
+                # Align features and target using common helper
+                aligned_features, aligned_target = _align_for_label_guided_discovery_helper(
+                    combined_for_fs,
+                    primary_target,
+                )
 
-                selector = FeatureSelector(target_n_features=target_n_features)
+                if aligned_features.empty or aligned_target.empty:
+                    tprint_warning("  ⚠️ No valid samples after alignment; skipping Phase 3.4 selection")
+                elif FEATURE_SELECTION_PIPELINE_AVAILABLE and create_feature_selection_pipeline is not None:
+                    target_n_features = int(config.get('target_n_features_selector', 200))
+                    tprint_info("  🌟 Phase 3.4: FeatureSelectionPipeline (4-stage feature selection)")
+                    tprint_info(
+                        f"  🔍 Input features for FS: {aligned_features.shape[1]}, "
+                        f"target_n={target_n_features}"
+                    )
 
-                # Select features using the pipeline
-                tprint_info(f"  🔍 Running FeatureSelector.select_features (target_n={target_n_features})...")
-                selected_features_list = selector.select_features(combined_for_fs, primary_target)
+                    pipeline = create_feature_selection_pipeline(
+                        subsample_ratio=float(config.get('phase3_fs_subsample_ratio', 0.20)),
+                        top_k=target_n_features,
+                        use_parallel=False,
+                        n_workers=1,
+                        ic_tstat_threshold=float(config.get('phase3_fs_ic_tstat_threshold', 1.0)),
+                        ic_autocorr_threshold=float(config.get('phase3_fs_ic_autocorr_threshold', 0.0)),
+                        mi_proxy_threshold=float(config.get('phase3_fs_mi_proxy_threshold', 0.02)),
+                    )
 
-                tprint_success(f"  ✅ FeatureSelector selected {len(selected_features_list)} features")
+                    candidates = pipeline.evaluate_features(
+                        features=aligned_features,
+                        target=aligned_target,
+                        target_column_name='close' if 'close' in aligned_features.columns else getattr(primary_target, 'name', 'target'),
+                        return_all_scores=False,
+                    )
 
-                # Separate back into normalized base and interactions
-                selected_set = set(selected_features_list)
+                    selected_features_list = [c.feature_name for c in candidates] if candidates else []
 
-                base_cols = [c for c in normalized_features.columns if c in selected_set]
-                interaction_cols = [c for c in interactions.columns if c in selected_set]
+                    tprint_success(
+                        f"  ✅ FeatureSelectionPipeline selected {len(selected_features_list)} features "
+                        f"(target={target_n_features})"
+                    )
 
-                normalized_features = normalized_features[base_cols]
-                interactions = interactions[interaction_cols]
+                    if selected_features_list:
+                        tprint_info("  📋 Final selected features (FeatureSelectionPipeline):")
+                        for name in selected_features_list:
+                            tprint_info(f"    {name}")
 
-                lgbm_fs_stats = {
-                    "method": "FeatureSelector_pipeline",
-                    "target_n_features": target_n_features,
-                    "selected_count": len(selected_features_list),
-                    "selected_features": selected_features_list,
-                    "ic_stats": selector.ic_stats if hasattr(selector, 'ic_stats') else None
-                }
-            else:
-                if not FEATURE_SELECTOR_AVAILABLE:
-                    tprint_warning("  ⚠️ FeatureSelector not available, skipping Phase 3.4 selection")
+                    selected_set = set(selected_features_list)
+                    base_cols = [c for c in normalized_features.columns if c in selected_set]
+                    interaction_cols = [c for c in interactions.columns if c in selected_set]
+
+                    normalized_features = normalized_features[base_cols]
+                    interactions = interactions[interaction_cols]
+
+                    perf_summary = pipeline.get_performance_summary()
+                    lgbm_fs_stats = {
+                        "method": "FeatureSelectionPipeline",
+                        "target_n_features": target_n_features,
+                        "selected_count": len(selected_features_list),
+                        "selected_features": selected_features_list,
+                        "pipeline_performance": perf_summary,
+                    }
+                elif FEATURE_SELECTOR_AVAILABLE and FeatureSelector is not None:
+                    tprint_info("  🌟 Phase 3.4: FeatureSelector (Pre-filters -> Clustering -> LGBM RFE)")
+                    target_n_features = int(config.get('target_n_features_selector', 200))
+                    tprint_info(
+                        f"  🔍 Running FeatureSelector.select_features (target_n={target_n_features})..."
+                    )
+                    selector = FeatureSelector(target_n_features=target_n_features)
+                    selected_features_list = selector.select_features(combined_for_fs, primary_target)
+                    tprint_success(f"  ✅ FeatureSelector selected {len(selected_features_list)} features")
+
+                    selected_set = set(selected_features_list)
+                    base_cols = [c for c in normalized_features.columns if c in selected_set]
+                    interaction_cols = [c for c in interactions.columns if c in selected_set]
+
+                    normalized_features = normalized_features[base_cols]
+                    interactions = interactions[interaction_cols]
+
+                    lgbm_fs_stats = {
+                        "method": "FeatureSelector_pipeline",
+                        "target_n_features": target_n_features,
+                        "selected_count": len(selected_features_list),
+                        "selected_features": selected_features_list,
+                        "ic_stats": selector.ic_stats if hasattr(selector, 'ic_stats') else None,
+                    }
                 else:
-                    tprint_warning("  ⚠️ No features to select from")
+                    tprint_warning("  ⚠️ No selection backend available for Phase 3.4")
+            else:
+                tprint_warning("  ⚠️ No features to select from")
         except Exception as exc:
             tprint_warning(
-                f"  ⚠️ FeatureSelector selection failed: {exc}"
+                f"  ⚠️ Feature selection in Phase 3.4 failed: {exc}"
             )
             lgbm_fs_stats = {"error": str(exc)}
 
@@ -4639,7 +4713,7 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         
         # Fallback to local implementation
         return self._fallback_infer_feature_category(feature_name)
-    
+
     def _extract_base_feature_name(self, variant_col: str) -> str:
         """Extract base feature name from variant column name."""
         # Remove variant suffixes

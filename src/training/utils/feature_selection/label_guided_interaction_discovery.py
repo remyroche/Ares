@@ -243,6 +243,34 @@ class LabelGuidedInteractionDiscovery:
         # Filter candidates by lift requirements
         self._filter_by_lift()
 
+        # Optional mode: delegate selection to an external feature selector
+        # (e.g., FeatureSelectionPipeline / FeatureSelector in the calling step).
+        #
+        # When config.delegate_selection_to_fs is True, we expose all
+        # lift-filtered candidates as "selected" interactions and skip the
+        # internal LASSO + category-limit selection. This turns LGID into a
+        # candidate generator, letting downstream pipelines handle scoring,
+        # redundancy clustering, and final selection.
+        delegate_to_fs = getattr(self.config, "delegate_selection_to_fs", False)
+        if delegate_to_fs:
+            for cand in self.candidates:
+                cand.selected = True
+
+            # In delegate mode, treat all candidates as selected interactions
+            # so that _build_interaction_dataframe and _build_metadata work
+            # without changes.
+            self.selected_interactions = list(self.candidates)
+
+            interaction_df = self._build_interaction_dataframe(features)
+            metadata = self._build_metadata()
+
+            self.logger.info(
+                "  📊 [LGID] Delegate selection to external selector - "
+                f"exposing {len(self.selected_interactions)} raw interaction candidates"
+            )
+
+            return interaction_df, metadata
+
         # Apply regularized selection (LASSO)
         if self.config.use_lasso:
             self._apply_lasso_selection(features_reduced, target_sub)

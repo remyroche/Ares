@@ -2091,21 +2091,6 @@ class FeatureSelectionPipeline:
         if len(valid_features) < 2:
             return candidates
 
-        max_features = getattr(self.config, "max_redundancy_features", None)
-        if max_features is not None and len(valid_features) > max_features:
-            candidate_by_name = {c.feature_name: c for c in candidates}
-            scored = []
-            for f in valid_features:
-                c = candidate_by_name.get(f)
-                if c is not None:
-                    score = c.ic_tstat * 0.5 + c.cv_score * 0.5
-                    scored.append((f, score))
-            scored.sort(key=lambda x: x[1], reverse=True)
-            top_names = {f for f, _ in scored[:max_features]}
-            valid_features = [f for f in valid_features if f in top_names]
-            if len(valid_features) < 2:
-                return candidates
-
         # Compute correlation matrix (cheap proxy for mutual information)
         feature_data = data[valid_features].copy()
 
@@ -2240,7 +2225,74 @@ class FeatureSelectionPipeline:
             f"{n_representatives} unique representatives"
         )
 
-        return candidates
+        max_pool = getattr(self.config, "max_redundancy_features", None)
+        if max_pool is None or max_pool <= 0:
+            filtered_candidates: List[FeatureCandidate] = []
+            for candidate in candidates:
+                fname = candidate.feature_name
+                if fname not in feature_clusters:
+                    filtered_candidates.append(candidate)
+                elif candidate.cluster_representative:
+                    filtered_candidates.append(candidate)
+            return filtered_candidates
+
+        reps_in_order: List[FeatureCandidate] = []
+        for c in sorted_candidates:
+            if c.cluster_representative or getattr(c, "cluster_id", -1) < 0:
+                reps_in_order.append(c)
+
+        if not reps_in_order:
+            filtered_candidates: List[FeatureCandidate] = []
+            for candidate in candidates:
+                fname = candidate.feature_name
+                if fname not in feature_clusters:
+                    filtered_candidates.append(candidate)
+                elif candidate.cluster_representative:
+                    filtered_candidates.append(candidate)
+            return filtered_candidates
+
+        selected: List[FeatureCandidate] = []
+        selected_names: List[str] = []
+        corr_threshold = float(getattr(self.config, "redundancy_corr_threshold", 0.7))
+
+        for candidate in reps_in_order:
+            if len(selected) >= max_pool:
+                break
+
+            fname = candidate.feature_name
+
+            if not selected_names:
+                selected.append(candidate)
+                selected_names.append(fname)
+                continue
+
+            if fname not in corr_matrix.index:
+                selected.append(candidate)
+                selected_names.append(fname)
+                continue
+
+            max_corr = 0.0
+            for sname in selected_names:
+                if sname in corr_matrix.columns:
+                    corr_val = abs(float(corr_matrix.loc[fname, sname]))
+                    if not np.isnan(corr_val) and corr_val > max_corr:
+                        max_corr = corr_val
+
+            if max_corr < corr_threshold:
+                selected.append(candidate)
+                selected_names.append(fname)
+
+        if not selected:
+            filtered_candidates: List[FeatureCandidate] = []
+            for candidate in candidates:
+                fname = candidate.feature_name
+                if fname not in feature_clusters:
+                    filtered_candidates.append(candidate)
+                elif candidate.cluster_representative:
+                    filtered_candidates.append(candidate)
+            return filtered_candidates
+
+        return selected
 
     def _simple_correlation_clustering(
         self,
@@ -2795,7 +2847,8 @@ def create_feature_selection_pipeline(
         n_workers=n_workers,
         ic_tstat_threshold=ic_tstat_threshold,
         ic_autocorr_threshold=ic_autocorr_threshold,
-        mi_proxy_threshold=mi_proxy_threshold
+        mi_proxy_threshold=mi_proxy_threshold,
+        max_redundancy_features=top_k * 3,
     )
     return FeatureSelectionPipeline(config)
 

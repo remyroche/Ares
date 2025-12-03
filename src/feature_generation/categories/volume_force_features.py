@@ -353,6 +353,13 @@ def generate_volume_force_features(
     features["vol_zscore"] = vol_zscore
     features["aggressive_flow_norm"] = aggressive_flow_norm
 
+    # Horizon-aligned aggregations using volume_force_lookahead as bar horizon
+    horizon = int(config.get("volume_force_lookahead", 12))
+    horizon = max(1, horizon)
+    features["volume_imbalance_roll_h"] = volume_imbalance.rolling(horizon, min_periods=1).sum()
+    features["volume_shock_roll_h"] = volume_shock.rolling(horizon, min_periods=1).sum()
+    features["aggressive_flow_roll_h"] = aggressive_flow_norm.rolling(horizon, min_periods=1).sum()
+
     # Normalization
     # Group 1: Oscillators (Center around 0 or 50)
     oscillators = [
@@ -368,10 +375,11 @@ def generate_volume_force_features(
         "kyles_lambda", "volume_shock",
         "rvol_htf_4h", "rvol_htf_daily",
         "vol_htf_breakout_4h", "vol_htf_breakout_daily",
-        "churn_index_norm", "effort_result_log", "uv_dv_ratio"
+        "churn_index_norm", "effort_result_log", "uv_dv_ratio",
+        "volume_imbalance_roll_h", "volume_shock_roll_h", "aggressive_flow_roll_h",
     ]
 
-    window_size = int(config.get("volume_force_normalization_window", 500))
+    window_size = int(config.get("volume_force_normalization_window", 100))
 
     # Apply winsorized z-score to oscillators
     # Note: volume_rsi is 0-100, z-score is fine or simple rescaling. Z-score standardizes it.

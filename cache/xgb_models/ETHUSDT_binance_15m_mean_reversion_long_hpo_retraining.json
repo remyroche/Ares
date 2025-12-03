@@ -1,0 +1,6 @@
+{
+  "model_id": "ETHUSDT_binance_15m_mean_reversion_long_hpo",
+  "last_training_time": "2025-12-02T23:15:09.781729",
+  "model_type": "xgb",
+  "retrain_interval_days": 5
+}

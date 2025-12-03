@@ -1,0 +1,6 @@
+{
+  "model_id": "ETHUSDT_binance_15m_volume_force_hpo",
+  "last_training_time": "2025-12-02T22:51:55.211789",
+  "model_type": "xgb",
+  "retrain_interval_days": 5
+}

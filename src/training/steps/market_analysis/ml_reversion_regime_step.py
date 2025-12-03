@@ -433,12 +433,6 @@ class MLMeanReversionRegimeStep(BaseStep):
             # Determine minimum number of aligned samples required for training.
             # Use a configurable threshold with a sane lower bound so that we can
             # still train in smaller windows while avoiding degenerate runs.
-            try:
-                min_aligned_samples = int(config.get("mr_min_aligned_samples", 300))
-            except Exception:
-                min_aligned_samples = 300
-            if min_aligned_samples < 200:
-                min_aligned_samples = 200
 
             # Align indices and drop any samples without a valid direction label
             valid_target_idx = y_direction_all.dropna().index
@@ -448,10 +442,33 @@ class MLMeanReversionRegimeStep(BaseStep):
                 .intersection(valid_target_idx)
                 .sort_values()
             )
-            if len(common_idx) < min_aligned_samples:
-                raise ValueError(
-                    f"Not enough aligned samples for training ({len(common_idx)} < {min_aligned_samples})"
+            n_aligned = len(common_idx)
+
+            try:
+                min_aligned_samples = int(config.get("mr_min_aligned_samples", 300))
+            except Exception:
+                min_aligned_samples = 300
+            if min_aligned_samples < 200:
+                min_aligned_samples = 200
+
+            if n_aligned < min_aligned_samples:
+                total_bars = len(market_data)
+                # For genuinely small datasets (e.g. blank mode on limited
+                # local history), avoid hard failure and fall back to using
+                # all available aligned samples. For normal-sized runs
+                # (thousands of bars), still treat extremely low alignment as
+                # a configuration problem.
+                if n_aligned < 50 and total_bars >= 2000:
+                    raise ValueError(
+                        f"Not enough aligned samples for training ({n_aligned} < {min_aligned_samples}, hard floor=50)"
+                    )
+
+                tprint_warning(
+                    "  ⚠️ Limited aligned samples for training; proceeding with "
+                    f"n_aligned={n_aligned} (requested_min={min_aligned_samples}, "
+                    f"len_market_data={total_bars})"
                 )
+                min_aligned_samples = n_aligned
 
             X_all = student_df.loc[common_idx]
             y_target_all = y_direction_all.loc[common_idx].astype(int)
@@ -816,10 +833,38 @@ class MLMeanReversionRegimeStep(BaseStep):
         log_price = np.log(close.replace(0.0, np.nan)).ffill()
         returns = log_price.diff().fillna(0.0)
 
-        hurst_window = int(config.get("mr_hurst_window", 200))
-        ou_window = int(config.get("mr_ou_window", 200))
-        vr_window = int(config.get("mr_variance_ratio_window", 200))
+        n_bars = len(df)
+        hurst_window_raw = int(config.get("mr_hurst_window", 200))
+        ou_window_raw = int(config.get("mr_ou_window", 200))
+        vr_window_raw = int(config.get("mr_variance_ratio_window", 200))
         vr_h = int(config.get("mr_variance_ratio_horizon", 5))
+
+        min_teacher = int(config.get("mr_min_teacher_samples", 100))
+        n_comp = int(config.get("mr_teacher_n_components", 3))
+        abs_min = int(config.get("mr_min_teacher_abs_min", 50))
+        per_comp_min = 10 * max(1, n_comp)
+        effective_min = min(min_teacher, max(abs_min, per_comp_min))
+
+        max_window = max(20, n_bars - effective_min)
+        if max_window < 20:
+            max_window = max(10, n_bars // 2)
+
+        hurst_window = min(hurst_window_raw, max_window)
+        ou_window = min(ou_window_raw, max_window)
+        vr_window = min(vr_window_raw, max_window)
+
+        if (
+            hurst_window != hurst_window_raw
+            or ou_window != ou_window_raw
+            or vr_window != vr_window_raw
+        ):
+            tprint_warning(
+                "  ⚠️ Adjusted teacher windows for short series: "
+                f"hurst_window={hurst_window} (was {hurst_window_raw}), "
+                f"ou_window={ou_window} (was {ou_window_raw}), "
+                f"vr_window={vr_window} (was {vr_window_raw}), "
+                f"n_bars={n_bars}, effective_min={effective_min}"
+            )
 
         tprint_info(f"  📊 Computing Hurst exponent (window={hurst_window})...")
         hurst_start = time.time()
@@ -1832,14 +1877,28 @@ class MLMeanReversionRegimeStep(BaseStep):
         # Allow step-level override of the minimum number of samples required
         # for each OOF training window so that shorter histories can still
         # produce usable predictions. Default to a moderately conservative
-        # value (400) and clamp extreme values to avoid very small windows.
+        # value (400) but adapt this to the effective dataset size so blank-
+        # mode runs with a few hundred aligned samples still get multiple OOF
+        # windows instead of a single tiny block.
         min_samples_cfg = config.get("mr_oof_min_samples_for_training", 400)
         try:
             min_samples_int = int(min_samples_cfg)
         except Exception:
             min_samples_int = 400
-        if min_samples_int < 200:
-            min_samples_int = 200
+
+        n_total_samples = len(X)
+        if n_total_samples < 1000:
+            # For short histories, cap the minimum at at most ~one third of the
+            # available samples, with a lower bound to avoid extremely tiny
+            # training sets. This yields more OOF windows and a longer
+            # effective evaluation period while keeping each window reasonably
+            # sized.
+            min_cap = max(80, n_total_samples // 3)
+            min_samples_int = max(50, min(min_samples_int, min_cap))
+        else:
+            # For normal/large runs, keep a more conservative floor.
+            if min_samples_int < 200:
+                min_samples_int = 200
 
         tprint_info(
             "📊 OOF configuration: "
@@ -1922,7 +1981,15 @@ class MLMeanReversionRegimeStep(BaseStep):
 
         probs = df[prob_col].values
         mask = np.isfinite(fwd) & np.isfinite(probs)
-        if mask.sum() < 50:
+        n_eff = int(mask.sum())
+        if n_eff <= 0:
+            return {}
+
+        # Use a dynamic minimum sample threshold: require at least 50 samples
+        # for large datasets, but allow down to ~10 when working with
+        # short OOF spans so that forward diagnostics are still available for
+        # sweeps and quick blank-mode runs.
+        if n_eff < 10:
             return {}
 
         # Correlation: higher prob (bearish) should correlate with negative returns
@@ -2082,19 +2149,118 @@ class MLMeanReversionRegimeStep(BaseStep):
                     else:
                         p_raw_all = p_cal_all
 
+                    # ------------------------------------------------------------------
+                    # Determine decision threshold for classification metrics.
+                    #
+                    # 1) If mr_eval_decision_threshold is provided and in (0, 1), use it.
+                    # 2) Otherwise, when mr_eval_auto_threshold is True (default), scan
+                    #    candidate thresholds on the OOF calibrated probabilities and
+                    #    choose the one that maximizes a precision-weighted F-beta
+                    #    score (beta < 1, default 0.5 to emphasize precision).
+                    # 3) Fall back to the standard 0.5 threshold on any failure.
+                    #
+                    # The chosen threshold is stored in student_metrics so that it is
+                    # surfaced in flat CSV metrics and can be inspected by sweeps.
+                    # ------------------------------------------------------------------
+                    default_thr = 0.5
+                    eval_threshold = default_thr
+                    eval_threshold_source = "default_0.5"
+
+                    thr_cfg = config.get("mr_eval_decision_threshold")
+                    try:
+                        if thr_cfg is not None:
+                            thr_val = float(thr_cfg)
+                            if 0.0 < thr_val < 1.0:
+                                eval_threshold = thr_val
+                                eval_threshold_source = "fixed_config"
+                    except Exception:
+                        # Ignore malformed overrides and keep default.
+                        pass
+
+                    auto_flag = bool(config.get("mr_eval_auto_threshold", True))
+                    beta_cfg = config.get("mr_eval_beta", 0.5)
+                    try:
+                        beta = float(beta_cfg)
+                        if beta <= 0.0:
+                            beta = 0.5
+                    except Exception:
+                        beta = 0.5
+
+                    # Only attempt auto-tuning when using the default threshold and
+                    # when we have a reasonably sized OOF set with both classes.
+                    if auto_flag and eval_threshold_source == "default_0.5":
+                        try:
+                            if len(idx_all) >= 50 and y_all.nunique() >= 2:
+                                cand_thresholds = np.linspace(0.1, 0.9, 17)
+                                best_thr = None
+                                best_score = float("-inf")
+
+                                for thr in cand_thresholds:
+                                    y_pred = (p_cal_all >= thr).astype(int)
+                                    # Skip degenerate thresholds that predict a
+                                    # single class only.
+                                    if y_pred.nunique() < 2:
+                                        continue
+
+                                    prec = precision_score(y_all, y_pred, zero_division=0.0)
+                                    rec = recall_score(y_all, y_pred, zero_division=0.0)
+
+                                    if prec <= 0.0 and rec <= 0.0:
+                                        continue
+
+                                    num = (1.0 + beta * beta) * prec * rec
+                                    den = (beta * beta) * prec + rec
+                                    if den <= 0.0:
+                                        continue
+
+                                    fbeta = num / den
+                                    if fbeta > best_score:
+                                        best_score = fbeta
+                                        best_thr = float(thr)
+
+                                if best_thr is not None:
+                                    eval_threshold = best_thr
+                                    eval_threshold_source = "auto_oof_fbeta"
+                                    student_metrics["eval_fbeta"] = float(best_score)
+                                    student_metrics["eval_fbeta_beta"] = float(beta)
+                        except Exception:
+                            # On any error during auto-tuning, silently fall back to
+                            # the default threshold.
+                            pass
+
+                    student_metrics["eval_threshold"] = float(eval_threshold)
+                    student_metrics["eval_threshold_source"] = str(eval_threshold_source)
+
                     def _split_indices(start_ts: datetime, end_ts: datetime) -> pd.DatetimeIndex:
                         if split_config is None:
                             return idx_all
                         return idx_all[(idx_all >= start_ts) & (idx_all <= end_ts)]
 
                     def _compute_split_metrics(idx_subset: pd.DatetimeIndex, p_all: pd.Series) -> Dict[str, float]:
-                        if idx_subset is None or len(idx_subset) < 50:
+                        # Require a reasonable number of samples per split for
+                        # stable metrics, but relax this requirement when the
+                        # overall OOF dataset is small (e.g. short blank-mode
+                        # runs) so that we still get informative diagnostics
+                        # instead of empty metrics.
+                        if idx_subset is None:
+                            return {}
+
+                        n_total = len(idx_all)
+                        if n_total >= 200:
+                            min_split_samples = 50
+                        elif n_total >= 80:
+                            min_split_samples = 20
+                        else:
+                            min_split_samples = 10
+
+                        if len(idx_subset) < min_split_samples:
                             return {}
                         y_true = y_all.loc[idx_subset]
                         p = p_all.loc[idx_subset]
                         if y_true.nunique() < 2:
                             return {}
-                        y_pred = (p >= 0.5).astype(int)
+                        thr = float(student_metrics.get("eval_threshold", 0.5))
+                        y_pred = (p >= thr).astype(int)
                         m: Dict[str, float] = {
                             "acc": float(accuracy_score(y_true, y_pred)),
                             "f1": float(f1_score(y_true, y_pred, zero_division=0.0)),
@@ -2143,6 +2309,18 @@ class MLMeanReversionRegimeStep(BaseStep):
                         student_metrics["val_calibrated"] = val_cal
                     if test_cal:
                         student_metrics["test_calibrated"] = test_cal
+
+                    # Global OOF metrics across the full set of OOF
+                    # predictions (irrespective of temporal split). These are
+                    # especially useful when train/val/test windows are small
+                    # but we still want an aggregate OOF view over a longer
+                    # period.
+                    oof_global_raw = _compute_split_metrics(idx_all, p_raw_all)
+                    if oof_global_raw:
+                        student_metrics["oof_global_raw"] = oof_global_raw
+                    oof_global_cal = _compute_split_metrics(idx_all, p_cal_all)
+                    if oof_global_cal:
+                        student_metrics["oof_global_calibrated"] = oof_global_cal
 
                     # Class balance and split sizes
                     cb = student_metrics.get("class_balance", {})
@@ -2213,6 +2391,8 @@ class MLMeanReversionRegimeStep(BaseStep):
                 "train_calibrated",
                 "val_calibrated",
                 "test_calibrated",
+                "oof_global_raw",
+                "oof_global_calibrated",
             ]:
                 split_metrics = student_metrics.get(split_key, {})
                 if isinstance(split_metrics, dict):
@@ -2790,8 +2970,12 @@ class MLMeanReversionRegimeStep(BaseStep):
                 teacher_metrics = metrics.get("teacher", {})
                 forward_metrics = metrics.get("forward", {})
 
-                # We prioritize OOF (test) metrics if available, else standard test split
-                test_cal = student_metrics.get("test_calibrated", {})
+                # Prefer global OOF-calibrated metrics when available so that
+                # ranking reflects a longer effective OOF period. Fall back to
+                # the test-calibrated split for backwards compatibility.
+                base_cal = student_metrics.get("oof_global_calibrated")
+                if not isinstance(base_cal, dict) or not base_cal:
+                    base_cal = student_metrics.get("test_calibrated", {})
 
                 trial_result = {
                     "config_signature": config_sig,
@@ -2800,9 +2984,9 @@ class MLMeanReversionRegimeStep(BaseStep):
                     "success": True,
 
                     # Primary ranking metrics (OOF/Test performance)
-                    "student_test_auc": float(test_cal.get("auc", 0.0) or 0.0),
-                    "student_test_acc": float(test_cal.get("acc", 0.0) or 0.0),
-                    "student_test_logloss": float(test_cal.get("logloss", 0.0) or 0.0),
+                    "student_test_auc": float(base_cal.get("auc", 0.0) or 0.0),
+                    "student_test_acc": float(base_cal.get("acc", 0.0) or 0.0),
+                    "student_test_logloss": float(base_cal.get("logloss", 0.0) or 0.0),
 
                     # Teacher stats
                     "teacher_positive_rate": float(teacher_metrics.get("teacher_positive_rate", 0.0) or 0.0),

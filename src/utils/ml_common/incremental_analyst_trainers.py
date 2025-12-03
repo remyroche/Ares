@@ -701,7 +701,18 @@ class IncrementalNGBoostTrainer(BaseIncrementalTrainer):
     def _get_default_params(self):
         params = {'n_estimators': 500, 'learning_rate': 0.01, 'minibatch_frac': 0.5, 'verbose': False}
         if self.model_config and 'params' in self.model_config:
-            params.update(self.model_config['params'])
+            # Copy to avoid mutating the original config dict
+            cfg_params = dict(self.model_config['params'])
+            # Handle legacy nested base_learner_params from YAML configs by
+            # mapping them into explicit keys expected by _create_base_learner
+            # and never forwarding the nested dict to NGBoost itself.
+            base_cfg = cfg_params.pop('base_learner_params', None) or {}
+            if isinstance(base_cfg, dict):
+                if 'max_depth' in base_cfg and 'base_learner_max_depth' not in cfg_params:
+                    cfg_params['base_learner_max_depth'] = base_cfg['max_depth']
+                if 'min_samples_leaf' in base_cfg and 'base_learner_min_samples_leaf' not in cfg_params:
+                    cfg_params['base_learner_min_samples_leaf'] = base_cfg['min_samples_leaf']
+            params.update(cfg_params)
         return params
     
     def _create_base_learner(self, params):
@@ -723,7 +734,12 @@ class IncrementalNGBoostTrainer(BaseIncrementalTrainer):
         params = self._get_default_params()
         params.update(self._best_params)
         base_learner = self._create_base_learner(params)
-        ng_params = {k: v for k, v in params.items() if k != 'base_learner_max_depth' and k != 'base_learner_min_samples_leaf'}
+        # Strip base-learner-only keys so they are not forwarded to NGBoost
+        ng_params = {
+            k: v
+            for k, v in params.items()
+            if k not in ('base_learner_max_depth', 'base_learner_min_samples_leaf', 'base_learner_params')
+        }
         
         if self.config.task_type == 'classification':
             model = NGBClassifier(Dist=Normal, Base=base_learner, **ng_params)
@@ -746,7 +762,10 @@ class IncrementalNGBoostTrainer(BaseIncrementalTrainer):
         return self._train_initial(full_train_data, window, verbose)
 
     def _predict(self, pred_data) -> pd.DataFrame:
-        X = pred_data[self._feature_cols].values.astype(np.float64)
+        if self._feature_cols:
+            X = pred_data[self._feature_cols].values.astype(np.float64)
+        else:
+            X = np.zeros((len(pred_data), 1), dtype=np.float64)
         X = np.nan_to_num(X, nan=0.0)
         
         preds = self._current_model.predict(X)
@@ -765,7 +784,14 @@ class IncrementalNGBoostTrainer(BaseIncrementalTrainer):
             return pd.DataFrame({'prediction': preds, 'std': std}, index=pred_data.index)
 
     def _run_incremental_hpo(self, train_data, window, verbose):
-        if not OPTUNA_AVAILABLE: return None
+        if not OPTUNA_AVAILABLE:
+            return None
+
+        # Ensure feature columns are initialized using the same logic as
+        # training (specialist-only features when configured).
+        if not self._feature_cols:
+            self._feature_cols = self._get_feature_cols(train_data)
+
         X = train_data[self._feature_cols].values.astype(np.float64)
         y = train_data['__target__'].values
         X = np.nan_to_num(X, nan=0.0)
@@ -792,7 +818,12 @@ class IncrementalNGBoostTrainer(BaseIncrementalTrainer):
             
             try:
                 base_learner = self._create_base_learner(params)
-                ng_params = {k: v for k, v in params.items() if k != 'base_learner_max_depth' and k != 'base_learner_min_samples_leaf'}
+                # Strip base-learner-only keys so they are not forwarded to NGBoost
+                ng_params = {
+                    k: v
+                    for k, v in params.items()
+                    if k not in ('base_learner_max_depth', 'base_learner_min_samples_leaf', 'base_learner_params')
+                }
                 if self.config.task_type == 'classification':
                     model = NGBClassifier(Dist=Normal, Base=base_learner, **ng_params)
                 else:
@@ -823,6 +854,9 @@ class IncrementalKNNTrainer(BaseIncrementalTrainer):
     def __init__(self, model_id, config=None, model_config=None):
         super().__init__(model_id, config, model_config)
         self._scaler = None
+        # Initialize feature columns to avoid attribute errors during
+        # incremental HPO before the first _train_initial call.
+        self._feature_cols: List[str] = []
 
     def _get_default_params(self):
         params = {'n_neighbors': 15, 'weights': 'distance', 'n_jobs': -1}
@@ -939,15 +973,35 @@ class IncrementalBayesianRidgeTrainer(BaseIncrementalTrainer):
         super().__init__(model_id, config, model_config)
         self._scaler = None
         self._prev_params = {}
+        # Track feature columns explicitly so incremental HPO can safely
+        # reference them before the first _train_initial call. These will
+        # be derived from specialist outputs only when configured.
+        self._feature_cols: List[str] = []
 
     def _get_default_params(self):
         params = {'max_iter': 300, 'tol': 1e-3}
-        if self.model_config: params.update(self.model_config.get('params', {}))
+        if self.model_config:
+            params.update(self.model_config.get('params', {}))
+
+        # Handle legacy configs that specify `n_iter` (older sklearn API) by
+        # mapping them to `max_iter` and never forwarding `n_iter` itself to
+        # sklearn.BayesianRidge.
+        if 'n_iter' in params and 'max_iter' not in params:
+            params['max_iter'] = params['n_iter']
+        params.pop('n_iter', None)
+
         return params
 
     def _train_initial(self, train_data, window, verbose) -> CalibratedModel:
         self._feature_cols = self._get_feature_cols(train_data)
-        X = train_data[self._feature_cols].values.astype(np.float64)
+        if self._feature_cols:
+            X = train_data[self._feature_cols].values.astype(np.float64)
+        else:
+            logger.warning(
+                "IncrementalBayesianRidgeTrainer: no specialist features found; "
+                "using constant feature for intercept-only model."
+            )
+            X = np.zeros((len(train_data), 1), dtype=np.float64)
         y = train_data['__target__'].values
         X = np.nan_to_num(X, nan=0.0)
         
@@ -979,7 +1033,14 @@ class IncrementalBayesianRidgeTrainer(BaseIncrementalTrainer):
 
     def _train_incremental(self, new_data, full_train_data, window, verbose):
         # Similar logic but using warm start params
-        X = full_train_data[self._feature_cols].values.astype(np.float64)
+        if self._feature_cols:
+            X = full_train_data[self._feature_cols].values.astype(np.float64)
+        else:
+            logger.warning(
+                "IncrementalBayesianRidgeTrainer: no specialist features during "
+                "incremental update; using constant feature."
+            )
+            X = np.zeros((len(full_train_data), 1), dtype=np.float64)
         y = full_train_data['__target__'].values
         X = np.nan_to_num(X, nan=0.0)
         
@@ -1024,7 +1085,18 @@ class IncrementalBayesianRidgeTrainer(BaseIncrementalTrainer):
         return pd.DataFrame({'prediction': preds, 'std': std}, index=pred_data.index)
 
     def _run_incremental_hpo(self, train_data, window, verbose):
-        if not OPTUNA_AVAILABLE: return None
+        if not OPTUNA_AVAILABLE:
+            return None
+
+        if not self._feature_cols:
+            self._feature_cols = self._get_feature_cols(train_data)
+        if not self._feature_cols:
+            logger.warning(
+                "IncrementalBayesianRidgeTrainer: no specialist features available; "
+                "skipping incremental HPO."
+            )
+            return None
+
         X = train_data[self._feature_cols].values.astype(np.float64)
         y = train_data['__target__'].values
         X = np.nan_to_num(X, nan=0.0)
@@ -1065,7 +1137,13 @@ class IncrementalAnalystTrainer:
     
     def __init__(self, model_id: str, execution_mode="blank", task_type="regression", enable_incremental_hpo=True, model_configs=None):
         self.model_id = model_id
-        self.config = IncrementalTrainingConfig(model_id, execution_mode, oof_batch_days=14, task_type=task_type, enable_incremental_hpo=enable_incremental_hpo)
+        self.config = IncrementalTrainingConfig(
+            model_id,
+            execution_mode,
+            oof_batch_days=14,
+            task_type=task_type,
+            enable_incremental_hpo=enable_incremental_hpo,
+        )
         self.model_configs = model_configs or {}
         
         self.trainers = {}
@@ -1074,8 +1152,12 @@ class IncrementalAnalystTrainer:
         if NGBOOST_AVAILABLE:
             self.trainers['ngboost'] = IncrementalNGBoostTrainer(model_id, self.config, self.model_configs.get('ngboost'))
         if SKLEARN_AVAILABLE:
-            self.trainers['knn'] = IncrementalKNNTrainer(model_id, self.config, self.model_configs.get('knn'))
-            self.trainers['bayesianridge'] = IncrementalBayesianRidgeTrainer(model_id, self.config, self.model_configs.get('bayesianridge'))
+            knn_cfg = self.model_configs.get('knn') or {}
+            if knn_cfg.get('enabled', True):
+                self.trainers['knn'] = IncrementalKNNTrainer(model_id, self.config, knn_cfg)
+            bayes_cfg = self.model_configs.get('bayesianridge') or {}
+            if bayes_cfg.get('enabled', True):
+                self.trainers['bayesianridge'] = IncrementalBayesianRidgeTrainer(model_id, self.config, bayes_cfg)
             
     def train_all_models(self, X, y, data_start, data_end, sample_weight=None, verbose=True, specialist_feature_names=None):
         results = {}

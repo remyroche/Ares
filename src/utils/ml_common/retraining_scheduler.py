@@ -443,7 +443,9 @@ def create_sample_weights(
     max_time = timestamps.max()
 
     # Calculate months ago for each sample
-    days_ago = (max_time - timestamps).days
+    # Ensure we operate on NumPy arrays (not Index objects) for numeric ops
+    deltas = max_time - timestamps
+    days_ago = np.asarray(deltas.days, dtype=float)
     months_ago = days_ago / 30.44  # Average days per month
 
     # Calculate decay rate
@@ -453,6 +455,8 @@ def create_sample_weights(
     weights = np.exp(-decay_rate * months_ago)
 
     # Normalize to sum to 1
-    weights = weights / weights.sum()
+    total = float(weights.sum())
+    if total > 0:
+        weights = weights / total
 
     return weights

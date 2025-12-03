@@ -48,6 +48,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--direction", type=str, default="long", help="Trading direction")
     parser.add_argument("--max-configs", type=int, default=30, help="Max number of configs to test")
     parser.add_argument("--outcomes-dir", type=str, default="outcomes", help="Directory to save sweep results")
+    parser.add_argument("--execution-mode", type=str, default="light", choices=["full", "light", "blank"], help="Execution mode (full/light/blank)")
     return parser.parse_args()
 
 
@@ -57,7 +58,7 @@ def build_base_config(args: argparse.Namespace) -> Dict[str, Any]:
         "exchange": args.exchange,
         "regime_timeframe": args.timeframe,
         "direction": args.direction,
-        "execution_mode": "light",  # Faster training for sweep
+        "execution_mode": args.execution_mode,
         "meso_sweep_max_configs": args.max_configs,
     }
 

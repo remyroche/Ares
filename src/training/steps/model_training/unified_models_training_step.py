@@ -17,6 +17,7 @@ from datetime import datetime
 import lightgbm as lgb
 from sklearn.feature_selection import VarianceThreshold, SelectFromModel
 from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 import psutil
 import gc
 
@@ -4193,6 +4194,54 @@ class UnifiedModelsTrainingStep(BaseStep):
                                     tprint_success(f"✅ Saved calibrated analyst_base_predictions_oof: {oof_df.shape}")
                                 else:
                                     tprint_success(f"✅ Saved analyst_base_predictions_oof: {oof_df.shape}")
+
+                                try:
+                                    y_true_series = getattr(self, '_full_analyst_targets', None)
+                                    if y_true_series is not None and not oof_df.empty:
+                                        y_true_aligned = y_true_series.reindex(oof_df.index)
+                                        valid_mask = y_true_aligned.notna()
+                                        if valid_mask.sum() >= 50:
+                                            metrics_rows = []
+                                            for col_name in oof_df.columns:
+                                                y_pred = oof_df[col_name].values[valid_mask]
+                                                y_true = y_true_aligned.values[valid_mask]
+                                                if len(y_pred) == 0:
+                                                    continue
+                                                mse = mean_squared_error(y_true, y_pred)
+                                                rmse = float(np.sqrt(mse))
+                                                mae = mean_absolute_error(y_true, y_pred)
+                                                try:
+                                                    r2 = r2_score(y_true, y_pred)
+                                                except Exception:
+                                                    r2 = float('nan')
+                                                try:
+                                                    if np.std(y_true) > 0 and np.std(y_pred) > 0:
+                                                        corr = float(np.corrcoef(y_true, y_pred)[0, 1])
+                                                    else:
+                                                        corr = float('nan')
+                                                except Exception:
+                                                    corr = float('nan')
+                                                metrics_rows.append({
+                                                    'model': col_name,
+                                                    'n_samples': int(len(y_true)),
+                                                    'mse': float(mse),
+                                                    'rmse': rmse,
+                                                    'mae': float(mae),
+                                                    'r2': float(r2),
+                                                    'corr': corr,
+                                                })
+                                            if metrics_rows:
+                                                metrics_df = pd.DataFrame(metrics_rows).set_index('model')
+                                                oof_metrics_path = self._save_artifact(
+                                                    data=metrics_df,
+                                                    artifact_name='analyst_base_oof_metrics',
+                                                    artifact_type='data',
+                                                    data_category='predictions'
+                                                )
+                                                artifacts['analyst_base_oof_metrics'] = oof_metrics_path
+                                                tprint_success(f"✅ Saved analyst_base_oof_metrics: {metrics_df.shape}")
+                                except Exception as metrics_exc:
+                                    tprint_warning(f"⚠️ Failed to compute/save OOF metrics: {metrics_exc}")
                         except Exception as e:
                             tprint_warning(f"⚠️ Failed to save OOF predictions: {e}")
                             import traceback

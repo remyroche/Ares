@@ -1,0 +1,6 @@
+{
+  "model_id": "ETHUSDT_meso_trend_hpo",
+  "last_training_time": "2025-12-02T22:47:48.909488",
+  "model_type": "xgb",
+  "retrain_interval_days": 5
+}

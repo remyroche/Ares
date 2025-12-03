@@ -86,6 +86,25 @@ class XGBMesoTrendStep(BaseStep):
             for k, v in meso_defaults.items():
                 config.setdefault(k, v)
 
+            # Cap meso_trend_target_vol_window to ~2 days of data (in bars)
+            tf_str = str(regime_timeframe)
+            try:
+                if "m" in tf_str:
+                    minutes = int(tf_str.replace("m", ""))
+                    bars_per_day = max(int(24 * 60 / max(minutes, 1)), 1)
+                elif "h" in tf_str:
+                    hours = int(tf_str.replace("h", ""))
+                    bars_per_day = max(int(24 / max(hours, 1)), 1)
+                else:
+                    bars_per_day = 96
+            except Exception:
+                bars_per_day = 96
+
+            max_vol_bars = 2 * bars_per_day
+            raw_vol_window = int(config.get("meso_trend_target_vol_window", 320))
+            effective_vol_window = max(1, min(raw_vol_window, max_vol_bars))
+            config["meso_trend_target_vol_window"] = effective_vol_window
+
             if not symbol or not exchange:
                 raise ValueError("Config must include 'symbol' and 'exchange'")
 
@@ -382,12 +401,26 @@ class XGBMesoTrendStep(BaseStep):
 
                 # Extract RMSE
                 rmse = metrics.get("train_rmse", None) # StandardizedXGBTrainer puts val/oof metric here typically
+                target_std = metrics.get("target_std", None)
+                zero_baseline_rmse = metrics.get("zero_baseline_rmse", None)
+                if rmse is not None and target_std not in (None, 0):
+                    rmse_over_target = rmse / target_std
+                else:
+                    rmse_over_target = None
+                if rmse is not None and zero_baseline_rmse is not None:
+                    rmse_improvement_vs_zero = zero_baseline_rmse - rmse
+                else:
+                    rmse_improvement_vs_zero = None
 
                 res_entry = {
                     "config_id": i + 1,
                     "config_signature": config.get("config_signature", "unknown"),
                     "success": success,
                     "rmse": rmse,
+                    "target_std": target_std,
+                    "zero_baseline_rmse": zero_baseline_rmse,
+                    "rmse_over_target_std": rmse_over_target,
+                    "rmse_improvement_vs_zero": rmse_improvement_vs_zero,
                     "n_samples": result.get("n_samples", 0),
                     "error": result.get("error", ""),
                 }
@@ -624,37 +657,78 @@ class XGBMesoTrendStep(BaseStep):
         results = trainer.train_and_predict(
             X=X_full_df,
             y=y,
+            data_start=X_full_df.index.min(),
+            data_end=X_full_df.index.max(),
             eval_metric="rmse",
             verbose=False
         )
 
         best_model = results.models[-1] if results.models else None
-        scores = results.oof_predictions['prediction'] if results.oof_predictions is not None else pd.Series(dtype=float)
+
+        oof_df = results.oof_predictions if results.oof_predictions is not None else pd.DataFrame()
+        if not oof_df.empty:
+            pred_col = 'prediction' if 'prediction' in oof_df.columns else (
+                'probability' if 'probability' in oof_df.columns else None
+            )
+            if pred_col is not None:
+                scores = oof_df[pred_col]
+                # Aggregate any duplicate timestamps by mean to ensure a unique index
+                if not scores.index.is_unique:
+                    scores = scores.groupby(level=0).mean()
+            else:
+                scores = pd.Series(dtype=float)
+        else:
+            scores = pd.Series(dtype=float)
 
         # Fill missing scores with model prediction (retrodiction)
         if scores.empty and best_model:
-             import xgboost as xgb
-             dtest = xgb.DMatrix(X_full_scaled, feature_names=feature_cols)
-             preds = best_model.predict(dtest)
-             scores = pd.Series(preds, index=X.index)
+            import xgboost as xgb
+            dtest = xgb.DMatrix(X_full_scaled, feature_names=feature_cols)
+            preds = best_model.predict(dtest)
+            scores = pd.Series(preds, index=X.index)
         elif best_model:
-             # Align indices
-             scores = scores.reindex(X.index)
-             mask_nan = scores.isna()
-             if mask_nan.any():
-                 import xgboost as xgb
-                 dtest = xgb.DMatrix(X_full_scaled[mask_nan], feature_names=feature_cols)
-                 preds = best_model.predict(dtest)
-                 scores[mask_nan] = preds
+            # Align indices
+            scores = scores.reindex(X.index)
+            mask_nan = scores.isna()
+            if mask_nan.any():
+                import xgboost as xgb
+                dtest = xgb.DMatrix(X_full_scaled[mask_nan], feature_names=feature_cols)
+                preds = best_model.predict(dtest)
+                scores[mask_nan] = preds
+
+        # Derive a simple RMSE metric from deduplicated OOF scores when available
+        try:
+            if not scores.empty:
+                common_idx = scores.index.intersection(y.index)
+                if not common_idx.empty:
+                    y_oof = y.loc[common_idx].astype(float)
+                    y_pred = scores.loc[common_idx].astype(float)
+                    rmse = float(np.sqrt(np.mean((y_oof - y_pred) ** 2)))
+                else:
+                    rmse = float('nan')
+            else:
+                rmse = float('nan')
+        except Exception:
+            rmse = float('nan')
+
+        # Baseline diagnostics: target std and zero-prediction RMSE
+        if len(y) > 0:
+            target_std = float(y.astype(float).std())
+            zero_baseline_rmse = float(np.sqrt(np.mean((y.astype(float)) ** 2)))
+        else:
+            target_std = float('nan')
+            zero_baseline_rmse = float('nan')
 
         metrics = {
-            "train_rmse": results.metrics.get("rmse_mean"),
+            "train_rmse": rmse,
+            "target_std": target_std,
+            "zero_baseline_rmse": zero_baseline_rmse,
             "n_models": len(results.models),
         }
 
         feature_pipeline = {
             "feature_names": feature_cols,
-            "scaler": scaler
+            "scaler": scaler,
         }
 
         return best_model, scores, "meso_trend_score_continuous", metrics, feature_pipeline

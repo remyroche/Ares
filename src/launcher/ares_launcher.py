@@ -709,6 +709,10 @@ async def main():
         'regime_timeframe': args.regime_timeframe or '15m',
     }
 
+    # Hard-cap feature selection at ~200 features for full and blank modes
+    if args.execution_mode in ("full", "blank"):
+        config.setdefault('target_n_features_selector', 200)
+
     # Optional interaction-generation configuration
     if getattr(args, 'min_interaction_mi_lift', None) is not None:
         config['min_interaction_mi_lift'] = float(args.min_interaction_mi_lift)

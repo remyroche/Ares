@@ -89,6 +89,7 @@ if StickyFiniteHMMRegimeDiscoveryStep is not None:
     step_registry.register("sticky_finite_hmm_regime_discovery", StickyFiniteHMMRegimeDiscoveryStep)
 if RollingHMMRegimeDiscoveryStep is not None:
     step_registry.register("rolling_hmm_regime_discovery", RollingHMMRegimeDiscoveryStep)
+step_registry.register("xgb_meso_regime", XGBMesoTrendStep)
 step_registry.register("hmm_ml_alpha_step", HMMMLMesoTrendStep)
 step_registry.register("hmm_macro_regime", HMMMacroRegimeStep)
 step_registry.register("ml_risk_regime_step", MLRiskRegimeStepHMM)

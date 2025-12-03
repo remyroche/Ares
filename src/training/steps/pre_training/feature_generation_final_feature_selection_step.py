@@ -1860,6 +1860,114 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         config: Dict[str, Any],
     ) -> Dict[str, Any]:
         """Perform feature selection for multiple feature set sizes with CMI-aware Tactician mode support."""
+        min_samples = int(config.get("lgbm_fs_min_target_samples", 200))
+
+        def _is_usable_target(series: pd.Series, label: str) -> bool:
+            try:
+                non_null = int(series.notna().sum())
+                total = int(series.shape[0]) if hasattr(series, "shape") else non_null
+                effective_min = min(min_samples, max(10, max(1, total // 20)))
+                if non_null < effective_min:
+                    tprint_warning(
+                        f"📊 Skipping primary target candidate {label} due to insufficient non-null samples: "
+                        f"n_non_null={non_null}, min_required={effective_min} (total={total})"
+                    )
+                    return False
+                unique = int(series.nunique(dropna=True))
+                if unique < 2:
+                    tprint_warning(
+                        f"📊 Skipping primary target candidate {label} due to insufficient variation: "
+                        f"n_unique={unique}"
+                    )
+                    return False
+                return True
+            except Exception as stats_exc:
+                tprint_warning(
+                    f"📊 Skipping primary target candidate {label} due to stats error: {stats_exc}"
+                )
+                return False
+
+        def _select_primary_target_column(df: pd.DataFrame) -> Optional[str]:
+            direction_local = str(config.get("direction", "long")).lower()
+            directional_candidates_local: List[str] = []
+            if direction_local == "long":
+                directional_candidates_local = ["target_long", "target_long_fused"]
+            elif direction_local == "short":
+                directional_candidates_local = ["target_short", "target_short_fused"]
+            else:
+                directional_candidates_local = [
+                    "target_long",
+                    "target_short",
+                    "target_long_fused",
+                    "target_short_fused",
+                ]
+
+            for col in directional_candidates_local:
+                if col in df.columns:
+                    series = df[col]
+                    if _is_usable_target(series, col):
+                        tprint_info(f"📊 Using directional target for final selection: {col}")
+                        return col
+
+            for col in PRIMARY_TARGET_COLUMN_NAMES:
+                if col in df.columns:
+                    series = df[col]
+                    if _is_usable_target(series, col):
+                        tprint_info(f"📊 Using fallback primary target for final selection: {col}")
+                        return col
+
+            diagnostic_candidates_local = ["binary_label", "realized_return"]
+            for col in diagnostic_candidates_local:
+                if col in df.columns:
+                    series = df[col]
+                    if _is_usable_target(series, col):
+                        tprint_info(
+                            f"📊 Using diagnostic primary target for final feature selection: {col}"
+                        )
+                        return col
+
+            return None
+        def _apply_correlation_pruning(feature_names: List[str]) -> List[str]:
+            try:
+                if not feature_names:
+                    return feature_names
+
+                max_pool = int(config.get("final_fs_max_redundancy_pool", len(feature_names)))
+                if max_pool <= 0:
+                    return feature_names
+
+                pool = feature_names[:max_pool]
+                data = features_df[pool].copy()
+                for col in data.columns:
+                    data[col] = data[col].fillna(data[col].median())
+
+                corr_matrix = data.corr(method="pearson").abs().fillna(0.0)
+                threshold = float(config.get("final_fs_redundancy_corr_threshold", 0.7))
+
+                selected_local: List[str] = []
+                for fname in pool:
+                    if not selected_local:
+                        selected_local.append(fname)
+                        continue
+
+                    if fname not in corr_matrix.index:
+                        selected_local.append(fname)
+                        continue
+
+                    max_corr = 0.0
+                    for kept in selected_local:
+                        if kept in corr_matrix.columns:
+                            val = float(corr_matrix.loc[fname, kept])
+                            if not np.isnan(val) and val > max_corr:
+                                max_corr = val
+
+                    if max_corr < threshold:
+                        selected_local.append(fname)
+
+                return selected_local
+            except Exception as e:
+                tprint_warning(f"⚠️ Correlation pruning in final selection failed, using original ranking: {e}")
+                return feature_names
         # Define feature set sizes
         feature_set_sizes = config.get('feature_set_sizes', [60, 50, 40, 30])
 
@@ -1981,57 +2089,9 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         # if meta-label outputs are missing or empty, this step should fail
         target_cols: List[str] = []
 
-        direction = str(config.get('direction', 'long')).lower()
-        directional_candidates: List[str] = []
-        if direction == 'long':
-            directional_candidates = ['target_long', 'target_long_fused']
-        elif direction == 'short':
-            directional_candidates = ['target_short', 'target_short_fused']
-        else:
-            directional_candidates = [
-                'target_long',
-                'target_short',
-                'target_long_fused',
-                'target_short_fused',
-            ]
-
-        for col in directional_candidates:
-            if col in features_df.columns:
-                non_null = features_df[col].notna().sum()
-                tprint_info(f"📊 Directional target column '{col}' non-NaN count: {non_null}")
-                if non_null > 0:
-                    target_cols = [col]
-                    tprint_info(f"📊 Using directional target: {col} (non-NaN={non_null})")
-                    break
-
-        if not target_cols:
-            # As a secondary fallback, allow non-directional meta-label targets
-            # (smoothed_label/realized_return). We avoid using binary_label as
-            # the primary training target for final feature selection so that
-            # downstream analyst models stay aligned with directional targets.
-            meta_preferred_targets = ['smoothed_label', 'realized_return']
-            for col in meta_preferred_targets:
-                if col in features_df.columns:
-                    non_null = features_df[col].notna().sum()
-                    tprint_info(f"📊 Meta-label column '{col}' non-NaN count: {non_null}")
-                    if non_null > 0:
-                        target_cols = [col]
-                        tprint_info(f"📊 Using meta-label target: {col} (non-NaN={non_null})")
-                        break
-
-        # Ultimate safety fallback: if we still have no target, allow
-        # binary_label only to avoid hard failures in legacy pipelines that lack
-        # directional or economic targets. This path should not be hit for
-        # analyst_base runs.
-        if not target_cols and 'binary_label' in features_df.columns:
-            non_null = features_df['binary_label'].notna().sum()
-            tprint_warning(
-                "⚠️ Falling back to 'binary_label' as target for final feature selection; "
-                "no directional or economic targets were found."
-            )
-            if non_null > 0:
-                target_cols = ['binary_label']
-                tprint_info(f"📊 Using fallback meta-label target: binary_label (non-NaN={non_null})")
+        primary_col = _select_primary_target_column(features_df)
+        if primary_col is not None:
+            target_cols = [primary_col]
 
         if not target_cols:
             msg = (
@@ -2493,6 +2553,7 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             
             # Slice the top N features from the full ranked list
             selected_features = full_ranked_features[:target_size]
+            selected_features = _apply_correlation_pruning(selected_features)
             
             tprint_error(f"🔍 DEBUG for size {size}:")
             tprint_error(f"   Selected features count: {len(selected_features)}")

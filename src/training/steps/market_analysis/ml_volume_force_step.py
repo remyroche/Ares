@@ -19,7 +19,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 import xgboost as xgb
-from sklearn.metrics import log_loss
+from sklearn.metrics import log_loss, roc_auc_score, average_precision_score, brier_score_loss
 
 from src.training.steps.base_step import BaseStep
 from src.utils.tprint import (
@@ -37,6 +37,7 @@ from src.utils.ml_common.standardized_xgb_trainer import (
     StandardizedXGBTrainer,
     XGBTrainingConfig,
 )
+from src.utils.ml_common.retraining_scheduler import create_sample_weights
 from src.feature_generation.categories.volume_force_features import (
     generate_volume_force_features,
 )
@@ -104,6 +105,9 @@ class MLVolumeForceStep(BaseStep):
                     # Data Stats
                     "n_samples": metrics.get("n_samples", 0),
                     "class_balance": metrics.get("class_distribution", {}),
+                    "n_oof_samples": metrics.get("n_oof_samples", 0),
+                    "oof_start": metrics.get("oof_start"),
+                    "oof_end": metrics.get("oof_end"),
                 }
 
                 # Add config params
@@ -149,8 +153,69 @@ class MLVolumeForceStep(BaseStep):
         if successful.empty:
             return df, {"best_config": None, "analysis": "no_successful_runs"}
 
-        # Sort by Log Loss (Lower is better)
-        successful = successful.sort_values("oof_log_loss", ascending=True)
+        # ------------------------------------------------------------------
+        # Quality filters for noisy, low-SNR classifier
+        # ------------------------------------------------------------------
+        N_MIN = 300
+        N_OOF_MIN = 300
+        ENTROPY_MIN = 0.8
+
+        # Compute class entropy from class_balance dicts
+        def _class_entropy(cb: Any) -> float:
+            try:
+                if not cb:
+                    return float("nan")
+                import numpy as _np
+                counts = _np.array(list(cb.values()), dtype=float)
+                total = counts.sum()
+                if total <= 0:
+                    return float("nan")
+                p = counts / total
+                p = p[p > 0]
+                return float(-(p * _np.log(p)).sum())
+            except Exception:
+                return float("nan")
+
+        if "class_balance" in successful.columns:
+            successful["class_entropy"] = successful["class_balance"].apply(_class_entropy)
+
+        # Ensure auxiliary columns exist
+        if "n_oof_samples" not in successful.columns:
+            successful["n_oof_samples"] = 0
+
+        # Apply filters
+        successful = successful[successful["n_samples"] >= N_MIN]
+        if "class_entropy" in successful.columns:
+            successful = successful[successful["class_entropy"] >= ENTROPY_MIN]
+        successful = successful[successful["n_oof_samples"] >= N_OOF_MIN]
+
+        if successful.empty:
+            return df, {"best_config": None, "analysis": "no_successful_runs_after_filters"}
+
+        # Compute OOF duration (in days) where available
+        import pandas as _pd
+
+        def _oof_duration_days(row: Any) -> float:
+            try:
+                start = row.get("oof_start")
+                end = row.get("oof_end")
+                if start is None or end is None:
+                    return 0.0
+                start_ts = _pd.to_datetime(start)
+                end_ts = _pd.to_datetime(end)
+                if _pd.isna(start_ts) or _pd.isna(end_ts):
+                    return 0.0
+                delta = end_ts - start_ts
+                return float(delta.days) + float(delta.seconds) / 86400.0
+            except Exception:
+                return 0.0
+
+        successful["oof_duration_days"] = successful.apply(_oof_duration_days, axis=1)
+
+        # Sort by Log Loss (lower is better), then by longer OOF duration
+        successful = successful.sort_values(
+            ["oof_log_loss", "oof_duration_days"], ascending=[True, False]
+        )
 
         # Get best config
         best_run = successful.iloc[0].to_dict()
@@ -235,7 +300,7 @@ class MLVolumeForceStep(BaseStep):
 
             # Check cache if in batch mode
             # Cache key includes normalization window as it affects feature values
-            norm_window = config.get("volume_force_normalization_window", 500)
+            norm_window = config.get("volume_force_normalization_window", 100)
             cache_key = (symbol, exchange, timeframe, norm_window)
 
             if config.get("is_batch_run", False) and cache_key in self._feature_cache:
@@ -271,45 +336,55 @@ class MLVolumeForceStep(BaseStep):
 
             # 4. Prepare Training Data
             lookahead = int(config.get("volume_force_lookahead", 12))  # 12 * 15m = 3h
+            thresh = float(config.get("volume_force_target_threshold_atr", 1.5))
 
-            # Target: Forward Return
-            # We want to predict direction: Down (-1), Neutral (0), Up (1)
-            # Thresholding based on volatility (ATR) or fixed percentage?
-            # Using fixed percentage for simplicity and stability, or ATR-based.
-            # Let's use ATR-normalized return to be robust across regimes.
+            # Load meta-label labeled_data artifact and use binary_label as target
+            labeled_data = None
+            try:
+                artifact_name = f"labeled_data_{symbol}_{timeframe}"
+                labeled_data = self._get_artifact(artifact_name, "data")
+            except Exception:
+                try:
+                    labeled_data = self._get_artifact("labeled_data", "data")
+                except Exception:
+                    labeled_data = None
 
-            if "atr" not in market_data.columns:
-                 # Quick ATR calculation if missing
-                 high = market_data["high"]
-                 low = market_data["low"]
-                 close = market_data["close"]
-                 tr1 = high - low
-                 tr2 = (high - close.shift(1)).abs()
-                 tr3 = (low - close.shift(1)).abs()
-                 tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-                 atr = tr.ewm(span=14).mean()
-            else:
-                atr = market_data["atr"]
+            if labeled_data is None:
+                raise RuntimeError("Meta-label labeled_data artifact not available for volume force step")
 
-            future_close = market_data["close"].shift(-lookahead)
-            current_close = market_data["close"]
+            if not isinstance(labeled_data, pd.DataFrame):
+                labeled_data = pd.DataFrame(labeled_data)
 
-            forward_return_atr = (future_close - current_close) / atr.replace(0, np.nan)
+            if labeled_data.index.duplicated().any():
+                labeled_data = labeled_data[~labeled_data.index.duplicated(keep="first")]
 
-            # Define Classes
-            # 0: Down (Return < -0.5 ATR)
-            # 1: Neutral
-            # 2: Up (Return > 0.5 ATR)
-            thresh = float(config.get("volume_force_target_threshold_atr", 0.5))
+            labeled_data = labeled_data.reindex(feature_df.index)
 
-            y = pd.Series(1, index=market_data.index)  # Default Neutral
-            y[forward_return_atr > thresh] = 2  # Up
-            y[forward_return_atr < -thresh] = 0 # Down
+            if "binary_label" not in labeled_data.columns:
+                raise RuntimeError("binary_label column not found in labeled_data for volume force step")
 
-            # Drop NaN targets
-            valid_mask = forward_return_atr.notna() & feature_df.notna().all(axis=1)
+            y_all = labeled_data["binary_label"].astype(float)
+
+            # Require a minimum number of non-null samples and variation
+            min_target_samples = int(config.get("volume_force_min_target_samples", 200))
+            non_null = int(y_all.notna().sum())
+            unique_vals = int(y_all.nunique(dropna=True))
+            if non_null < min_target_samples or unique_vals <= 1:
+                raise RuntimeError(
+                    f"Insufficient variation in binary_label for volume force step: "
+                    f"n_non_null={non_null}, n_unique={unique_vals}"
+                )
+
+            # Align target to feature index and drop NaNs / NaN features
+            y = y_all.reindex(feature_df.index)
+            valid_mask = y.notna() & feature_df.notna().all(axis=1)
             X = feature_df.loc[valid_mask]
-            y = y.loc[valid_mask]
+            y = y.loc[valid_mask].astype(int)
+
+            numeric_cols = X.select_dtypes(include=[np.number]).columns
+            if len(numeric_cols) == 0:
+                raise ValueError("No numeric features available for volume force model")
+            X = X[numeric_cols]
 
             class_counts = y.value_counts().to_dict()
             metrics["class_distribution"] = {str(k): int(v) for k, v in class_counts.items()}
@@ -318,19 +393,36 @@ class MLVolumeForceStep(BaseStep):
             # 5. Train Model
             model_id = f"{symbol}_{exchange}_{timeframe}_volume_force"
 
+            n_samples = len(X)
+            min_samples_for_training = 50
+            if n_samples > 0:
+                min_samples_for_training = max(50, min(500, n_samples // 3))
+
             training_config = XGBTrainingConfig(
                 model_id=model_id,
-                retrain_interval_days=10,
+                retrain_interval_days=21,
                 hpo_interval_days=30,
                 burnin_pct=1/12,
-                n_estimators=500,
+                min_samples_for_training=min_samples_for_training,
+                n_estimators=800,
                 early_stopping_rounds=20,
                 tree_method="hist",
-                objective="multi:softprob",
-                num_class=3,
+                # Binary classification on meta-label binary_label
+                objective="binary:logistic",
+                # Stronger regularization and smoother probabilities for noisy labels
+                learning_rate=0.03,
+                min_child_weight=15.0,
+                gamma=1.5,
+                reg_lambda=3.0,
+                reg_alpha=0.5,
+                subsample=0.8,
+                colsample_bytree=0.8,
             )
 
             trainer = StandardizedXGBTrainer(model_id=model_id, config=training_config)
+
+            # Time-decay sample weights to emphasize recent regimes
+            sample_weights = create_sample_weights(X.index)
 
             tprint_info("🧠 Training XGBoost (Volume Force)...")
             results = trainer.train_and_predict(
@@ -338,27 +430,23 @@ class MLVolumeForceStep(BaseStep):
                 y=y,
                 data_start=X.index.min(),
                 data_end=X.index.max(),
+                sample_weight=sample_weights,
                 eval_metric="mlogloss",
-                verbose=True
+                verbose=True,
             )
 
             # 6. Process Predictions (OOF)
-            # Map probabilities to scalar: 0 (Down) -> 0.0, 1 (Neutral) -> 0.5, 2 (Up) -> 1.0
+            # For binary meta-label: scalar in [0,1] is P(binary_label=1 | features)
             oof_preds = results.oof_predictions
 
-            prob_cols = [c for c in oof_preds.columns if c.startswith('prob_class_')]
-            if len(prob_cols) == 3:
-                # Weighted sum: P(Down)*0 + P(Neutral)*0.5 + P(Up)*1.0
-                scalar_pred = (
-                    oof_preds[prob_cols[0]] * 0.0 +
-                    oof_preds[prob_cols[1]] * 0.5 +
-                    oof_preds[prob_cols[2]] * 1.0
-                )
-                oof_preds["scalar_pred"] = scalar_pred
+            if "probability" in oof_preds.columns and not oof_preds.empty:
+                prob = oof_preds["probability"].astype(float).clip(0.0, 1.0)
+                oof_preds["scalar_pred"] = prob
 
-                # Save predictions artifact
-                # Ensure the primary output is the scalar prediction aligned to timestamp
-                preds_to_save = oof_preds[["scalar_pred"]].reset_index().rename(columns={oof_preds.index.name or "index": "timestamp", "scalar_pred": "predicted"})
+                # Save predictions artifact (scalar prediction aligned to timestamp)
+                preds_to_save = oof_preds[["scalar_pred"]].reset_index().rename(
+                    columns={oof_preds.index.name or "index": "timestamp", "scalar_pred": "predicted"}
+                )
                 preds_path = self._save_artifact(
                     data=preds_to_save,
                     artifact_name="ml_volume_force_predictions",
@@ -368,34 +456,55 @@ class MLVolumeForceStep(BaseStep):
                 )
                 artifacts.append(preds_path)
 
-                # Also save a dedicated scalar artifact if preferred by downstream conventions,
-                # but "ml_volume_force_predictions" with "predicted" column is standard.
-
-                # Metrics
-                acc = (oof_preds["pred_class"] == y.loc[oof_preds.index]).mean()
+                # Binary metrics
+                y_true = y.loc[oof_preds.index].astype(int)
+                pred_class = (prob >= 0.5).astype(int)
+                acc = (pred_class == y_true).mean()
                 metrics["accuracy"] = float(acc)
-                metrics["scalar_pred_mean"] = float(scalar_pred.mean())
-                metrics["scalar_pred_std"] = float(scalar_pred.std())
-
-                # Calculate Log Loss
-                # Extract prob columns in order
-                prob_cols_sorted = sorted([c for c in oof_preds.columns if c.startswith('prob_class_')])
-                y_true = y.loc[oof_preds.index]
-                y_probs = oof_preds[prob_cols_sorted].values
+                metrics["scalar_pred_mean"] = float(prob.mean())
+                metrics["scalar_pred_std"] = float(prob.std())
 
                 try:
-                    ll = log_loss(y_true, y_probs, labels=[0, 1, 2])
+                    ll = log_loss(y_true, prob, labels=[0, 1])
                     metrics["oof_log_loss"] = float(ll)
                 except Exception as e:
                     tprint_warning(f"Log loss calculation failed: {e}")
                     metrics["oof_log_loss"] = float("inf")
 
-                tprint_success(f"✅ Training complete. OOF Accuracy: {acc:.4f}, LogLoss: {metrics.get('oof_log_loss', 'N/A'):.4f}")
-                tprint_info(f"   Scalar prediction stats: Mean={scalar_pred.mean():.3f}, Std={scalar_pred.std():.3f}")
-            else:
-                tprint_warning("Could not map predictions to scalar (unexpected columns).")
+                # AUC / PR-AUC / Brier
+                try:
+                    metrics["auc_roc"] = float(roc_auc_score(y_true, prob))
+                except Exception as e:
+                    tprint_warning(f"ROC AUC calculation failed: {e}")
 
-            # Save Model
+                try:
+                    metrics["pr_auc"] = float(average_precision_score(y_true, prob))
+                except Exception as e:
+                    tprint_warning(f"PR AUC calculation failed: {e}")
+
+                try:
+                    metrics["brier_score"] = float(brier_score_loss(y_true, prob))
+                except Exception as e:
+                    tprint_warning(f"Brier score calculation failed: {e}")
+
+                # Record OOF coverage for downstream analysis and sweep ranking
+                metrics["n_oof_samples"] = int(len(oof_preds))
+                oof_start = oof_preds.index.min()
+                oof_end = oof_preds.index.max()
+                metrics["oof_start"] = oof_start
+                metrics["oof_end"] = oof_end
+
+                tprint_success(
+                    f"✅ Training complete. OOF Accuracy: {acc:.4f}, LogLoss: {metrics.get('oof_log_loss', 'N/A'):.4f}"
+                )
+                tprint_info(
+                    f"   Scalar prediction stats: Mean={prob.mean():.3f}, Std={prob.std():.3f}"
+                )
+            else:
+                tprint_warning("Could not map predictions to scalar (missing 'probability' column).")
+
+            # Save Model (if any)
+            model_path = None
             if results.models:
                 model_path = self._save_artifact(
                     data=results.models[-1],
@@ -405,6 +514,33 @@ class MLVolumeForceStep(BaseStep):
                     metadata={"n_features": len(X.columns)}
                 )
                 artifacts.append(model_path)
+
+            # Save metrics artifact (only for non-batch runs)
+            if not config.get("is_batch_run", False) and metrics.get("oof_log_loss") is not None:
+                if not oof_preds.empty:
+                    oof_start = metrics.get("oof_start")
+                    oof_end = metrics.get("oof_end")
+                    metrics_artifact = {
+                        "oof_log_loss": float(metrics.get("oof_log_loss", float("inf"))),
+                        "accuracy": float(metrics.get("accuracy", 0.0)),
+                        "auc_roc": float(metrics.get("auc_roc", float("nan"))),
+                        "pr_auc": float(metrics.get("pr_auc", float("nan"))),
+                        "brier_score": float(metrics.get("brier_score", float("nan"))),
+                        "class_distribution": metrics.get("class_distribution", {}),
+                        "n_samples_total": int(metrics.get("n_samples", len(X))),
+                        "n_oof_samples": int(metrics.get("n_oof_samples", len(oof_preds))),
+                        "oof_start": oof_start.isoformat() if hasattr(oof_start, "isoformat") else str(oof_start),
+                        "oof_end": oof_end.isoformat() if hasattr(oof_end, "isoformat") else str(oof_end),
+                        "lookahead": int(lookahead),
+                        "threshold_atr": float(thresh),
+                    }
+                    metrics_path = self._save_artifact(
+                        data=metrics_artifact,
+                        artifact_name="ml_volume_force_metrics",
+                        artifact_type="metadata",
+                        data_category="metrics",
+                    )
+                    artifacts.append(metrics_path)
 
             metrics["n_samples"] = len(X)
             metrics["execution_time"] = time.time() - start_time

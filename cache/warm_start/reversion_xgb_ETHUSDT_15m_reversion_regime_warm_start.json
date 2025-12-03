@@ -1,0 +1,19 @@
+{
+  "params": {
+    "max_depth": 6,
+    "min_child_weight": 6.580544420782436,
+    "reg_strength": 0.25264336924602965,
+    "gamma": 0.18025947118445806,
+    "sampling_rate": 0.9789599339574766,
+    "learning_rate": 0.04737540219377468,
+    "reg_alpha": 0.25264336924602965,
+    "reg_lambda": 0.25264336924602965,
+    "subsample": 0.9789599339574766,
+    "colsample_bytree": 0.9789599339574766
+  },
+  "metrics": {
+    "best_score": 0.5980651635360156
+  },
+  "timestamp": "2025-12-03T00:28:58.788310",
+  "model_hash": ""
+}

@@ -26,6 +26,7 @@ from src.utils.tprint import (
 )
 from src.features_common.transforms.scaling_normalization import (
     winsorized_zscore_normalize,
+    rolling_adaptive_normalize,
 )
 from src.utils.feature_common.volume_transforms import log1p_zscore_normalize
 from src.feature_generation.categories.smc_regime_features import (
@@ -53,6 +54,207 @@ class MLSMCRegimeStep(BaseStep):
         self._cached_market_source_15m = None
         self._cached_market_cache_key_15m = None
         tprint(f"✅ Initialized {step_name} step", "SUCCESS")
+
+    def get_config_signature(self, config: Dict[str, Any]) -> str:
+        """Generate a compact signature for configuration identification."""
+        key_params = [
+            "smc_lookahead",
+            "smc_breakout_threshold",
+            "smc_breakdown_threshold",
+            "smc_vp_lookback",
+            "smc_xgb_max_features",
+            "smc_normalization_window"
+        ]
+
+        parts = []
+        for param in key_params:
+            value = config.get(param, "default")
+            # Format floats compactly
+            if isinstance(value, float):
+                val_str = f"{value:.5f}".rstrip("0").rstrip(".")
+            else:
+                val_str = str(value)
+            parts.append(f"{param.replace('smc_', '')}={val_str}")
+
+        return "|".join(parts)
+
+    async def run_config_batch(self, configs: List[Dict[str, Any]], symbol: str, exchange: str) -> List[Dict[str, Any]]:
+        """Run a batch of configurations and collect results."""
+
+        results = []
+        total_configs = len(configs)
+
+        for i, base_config in enumerate(configs):
+            # Ensure critical keys are set
+            config = dict(base_config)
+            config["symbol"] = symbol
+            config["exchange"] = exchange
+
+            tprint_info(f"🚀 Running config {i+1}/{total_configs}: {self.get_config_signature(config)}")
+
+            try:
+                # Run the step with this configuration
+                start_time = time.time()
+                result = await self.execute(config)
+                execution_time = time.time() - start_time
+
+                # Extract key metrics
+                metrics = result.get("metrics", {})
+                quality_metrics = {
+                    "config_signature": self.get_config_signature(config),
+                    "config_id": i + 1,
+                    "execution_time": execution_time,
+                    "success": result.get("success", False),
+                    # Primary Objectives
+                    "smc_xgb_oof_ic": metrics.get("smc_xgb_oof_ic", float("nan")),
+                    "smc_xgb_oof_sharpe_gated_25pct": metrics.get("smc_xgb_oof_sharpe_gated_25pct", float("-inf")),
+                    "smc_xgb_oof_logloss": metrics.get("smc_xgb_oof_logloss", float("inf")),
+                    "smc_xgb_oof_accuracy": metrics.get("smc_xgb_oof_accuracy", 0.0),
+                    "error": result.get("error", ""),
+                }
+
+                # Add configuration details
+                quality_metrics.update({
+                    f"config_{k}": v for k, v in config.items()
+                    if k.startswith("smc_") and not callable(v)
+                })
+
+                results.append(quality_metrics)
+
+                if result.get("success", False):
+                    ic = quality_metrics['smc_xgb_oof_ic']
+                    tprint_info(f"✅ Config {i+1} completed: OOF IC={ic:.4f}")
+                else:
+                    tprint_warning(f"⚠️ Config {i+1} failed: {quality_metrics['error']}")
+
+            except Exception as e:
+                tprint_error(f"❌ Config {i+1} crashed: {e}")
+                results.append({
+                    "config_signature": self.get_config_signature(config),
+                    "config_id": i + 1,
+                    "execution_time": 0,
+                    "success": False,
+                    "error": str(e),
+                    "smc_xgb_oof_ic": float("nan"),
+                })
+
+        return results
+
+    def analyze_and_rank_results(self, results: List[Dict[str, Any]]) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+        """Analyze results and rank configurations by quality (OOF IC)."""
+
+        if not results:
+            return pd.DataFrame(), {}
+
+        df = pd.DataFrame(results)
+
+        # Filter successful runs
+        successful = df[df["success"] == True].copy()
+        failed = df[df["success"] == False].copy()
+
+        tprint_info(f"📊 Analysis: {len(successful)} successful, {len(failed)} failed runs")
+
+        if len(successful) == 0:
+            tprint_warning("⚠️ No successful configurations to analyze")
+            return df, {"best_config": None, "analysis": "no_successful_runs"}
+
+        # Rank by IC (Information Coefficient)
+        successful = successful.sort_values("smc_xgb_oof_ic", ascending=False)
+
+        # Get best configuration
+        best_config = successful.iloc[0].to_dict()
+
+        # Analysis summary
+        analysis = {
+            "best_config": best_config,
+            "total_runs": len(results),
+            "successful_runs": len(successful),
+            "failed_runs": len(failed),
+            "best_ic": float(best_config.get("smc_xgb_oof_ic", np.nan)),
+            "best_sharpe_gated": float(best_config.get("smc_xgb_oof_sharpe_gated_25pct", np.nan)),
+            "best_accuracy": float(best_config.get("smc_xgb_oof_accuracy", np.nan)),
+            "ranking_metric": "smc_xgb_oof_ic",
+            "top_5_configs": successful.head(5).to_dict("records"),
+            "parameter_importance": self.analyze_parameter_importance(successful),
+        }
+
+        # Display results
+        self.display_results_summary(successful, failed, analysis)
+
+        return pd.concat([successful, failed], ignore_index=True), analysis
+
+    def analyze_parameter_importance(self, successful: pd.DataFrame) -> Dict[str, Any]:
+        """Analyze which parameters correlate with better results."""
+
+        importance = {}
+
+        # Analyze key parameters
+        key_params = [
+            "config_smc_lookahead",
+            "config_smc_breakout_threshold",
+            "config_smc_breakdown_threshold",
+            "config_smc_vp_lookback",
+            "config_smc_xgb_max_features",
+            "config_smc_normalization_window"
+        ]
+
+        for param in key_params:
+            if param in successful.columns:
+                # Group by parameter value and compute mean scores
+                param_analysis = successful.groupby(param)["smc_xgb_oof_ic"].agg([
+                    "count", "mean", "std", "min", "max"
+                ]).round(4)
+                importance[param] = param_analysis.to_dict()
+
+        return importance
+
+    def display_results_summary(self, successful: pd.DataFrame, failed: pd.DataFrame, analysis: Dict[str, Any]) -> None:
+        """Display comprehensive results summary."""
+
+        print("\n" + "="*80)
+        print("🏆 SMC REGIME CONFIGURATION OPTIMIZATION RESULTS")
+        print("="*80)
+
+        print(f"\n📊 SUMMARY:")
+        print(f"   Total configurations tested: {analysis['total_runs']}")
+        print(f"   Successful runs: {analysis['successful_runs']}")
+        print(f"   Failed runs: {analysis['failed_runs']}")
+        print(f"   Success rate: {analysis['successful_runs']/analysis['total_runs']*100:.1f}%")
+
+        if analysis['best_config']:
+            print(f"\n🥇 BEST CONFIGURATION:")
+            print(f"   Signature: {analysis['best_config']['config_signature']}")
+            print(f"   OOF IC: {analysis['best_ic']:.4f}")
+            print(f"   OOF Sharpe (Gated): {analysis['best_sharpe_gated']:.4f}")
+            print(f"   Execution Time: {analysis['best_config']['execution_time']:.1f}s")
+
+        print(f"\n🏅 TOP 5 CONFIGURATIONS:")
+        cols = [
+            "config_id", "config_signature", "smc_xgb_oof_ic",
+            "smc_xgb_oof_sharpe_gated_25pct", "execution_time"
+        ]
+        # Ensure cols exist
+        avail_cols = [c for c in cols if c in successful.columns]
+        print(successful[avail_cols].head(5).to_string(index=False))
+
+        # Parameter importance analysis
+        if analysis["parameter_importance"]:
+            print(f"\n🔍 PARAMETER IMPORTANCE (by OOF IC):")
+            for param, stats in analysis["parameter_importance"].items():
+                param_name = param.replace("config_", "")
+                print(f"\n   {param_name}:")
+                for value, metrics in stats.items():
+                    if isinstance(metrics, dict) and "count" in metrics:
+                        print(f"      {value}: ic={metrics['mean']:.3f} (count={metrics['count']})")
+
+        if len(failed) > 0:
+            print(f"\n❌ COMMON FAILURE MODES:")
+            if "error" in failed.columns:
+                error_counts = failed["error"].value_counts().head(5)
+                for error, count in error_counts.items():
+                    print(f"   {count}x: {str(error)[:100]}...")
+
+        print("\n" + "="*80)
 
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         start_time = time.time()
@@ -246,442 +448,6 @@ class MLSMCRegimeStep(BaseStep):
         tprint_success(f"✅ Generated {len(result.columns)} SMC features")
 
         return result
-
-    def _add_liquidity_features(self, df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
-        """Add liquidity and reference point features."""
-        c = df["close"].astype(float)
-        h = df["high"].astype(float)
-        l = df["low"].astype(float)
-        atr = df["atr"].astype(float)
-
-        # Previous day high/low (PDH/PDL)
-        day_index = df.index.normalize()
-        daily = df.groupby(day_index).agg(high=("high", "max"), low=("low", "min"), open=("open", "first"))
-        prev_day_high = daily["high"].shift(1)
-        prev_day_low = daily["low"].shift(1)
-        day_open = daily["open"]
-
-        pdh = prev_day_high.reindex(day_index).to_numpy()
-        pdl = prev_day_low.reindex(day_index).to_numpy()
-        day_open_vals = day_open.reindex(day_index).to_numpy()
-
-        df["smc_pdh"] = pdh
-        df["smc_pdl"] = pdl
-        df["smc_dist_to_pdh_atr"] = (c.values - pdh) / (atr.values + 1e-9)
-        df["smc_dist_to_pdl_atr"] = (c.values - pdl) / (atr.values + 1e-9)
-
-        # Day open
-        df["smc_day_open"] = day_open_vals
-        df["smc_dist_to_day_open"] = (c.values - day_open_vals) / (atr.values + 1e-9)
-
-        # Week open
-        week_index = df.index.to_period('W').to_timestamp()
-        weekly = df.groupby(week_index).agg(open=("open", "first"), close=("close", "last"))
-        week_open = weekly["open"]
-        prev_week_close = weekly["close"].shift(1)
-
-        week_open_vals = week_open.reindex(week_index).to_numpy()
-        prev_week_close_vals = prev_week_close.reindex(week_index).to_numpy()
-
-        df["smc_week_open"] = week_open_vals
-        df["smc_dist_to_week_open"] = (c.values - week_open_vals) / (atr.values + 1e-9)
-
-        # New Week Opening Gap (NWOG)
-        nwog_gap = week_open_vals - prev_week_close_vals
-        df["smc_nwog_gap_size"] = nwog_gap / (atr.values + 1e-9)
-
-        return df
-
-    def _add_fvg_features(self, df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
-        """Add Fair Value Gap (FVG) and inefficiency features."""
-        h = df["high"].astype(float)
-        l = df["low"].astype(float)
-        c = df["close"].astype(float)
-        o = df["open"].astype(float)
-        atr = df["atr"].astype(float)
-
-        # FVG detection
-        high_2 = h.shift(2)
-        low_2 = l.shift(2)
-
-        bullish_fvg = l > high_2
-        bearish_fvg = h < low_2
-
-        # FVG size
-        bullish_fvg_size = (l - high_2).clip(lower=0.0)
-        bearish_fvg_size = (low_2 - h).clip(lower=0.0)
-
-        fvg_size = bullish_fvg_size.where(bullish_fvg, bearish_fvg_size.where(bearish_fvg, 0.0))
-        df["smc_current_fvg_size"] = fvg_size / (atr + 1e-9)
-
-        # FVG midpoint
-        bullish_fvg_mid = (l + high_2) / 2.0
-        bearish_fvg_mid = (h + low_2) / 2.0
-
-        fvg_mid = bullish_fvg_mid.where(bullish_fvg, bearish_fvg_mid.where(bearish_fvg, np.nan))
-        fvg_mid_filled = fvg_mid.ffill()
-        df["smc_nearest_fvg_dist"] = (c - fvg_mid_filled) / (atr + 1e-9)
-
-        # Consequent encroachment
-        fvg_high = l.where(bullish_fvg, low_2.where(bearish_fvg, np.nan))
-        fvg_low = high_2.where(bullish_fvg, h.where(bearish_fvg, np.nan))
-
-        fvg_range = fvg_high - fvg_low
-        ce_position = (c - fvg_low) / (fvg_range + 1e-9)
-        df["smc_consequent_encroachment"] = ce_position.fillna(0.5)
-
-        # Volume imbalance
-        volume_imb = (o - c.shift(1)).abs()
-        df["smc_volume_imbalance_size"] = volume_imb / (atr + 1e-9)
-
-        # Gap fill ratio
-        fvg_fill = ((h - fvg_low) / (fvg_range + 1e-9)).clip(0.0, 1.0)
-        df["smc_gap_fill_ratio"] = fvg_fill.fillna(0.0)
-
-        return df
-
-    def _add_premium_discount_features(self, df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
-        """Add premium/discount and structure features."""
-        h = df["high"].astype(float)
-        l = df["low"].astype(float)
-        c = df["close"].astype(float)
-        atr = df["atr"].astype(float)
-
-        # Swing highs and lows
-        sh = (
-            (h.shift(2) < h.shift(1))
-            & (h.shift(1) < h)
-            & (h > h.shift(-1))
-            & (h.shift(-1) > h.shift(-2))
-        )
-        sl = (
-            (l.shift(2) > l.shift(1))
-            & (l.shift(1) > l)
-            & (l < l.shift(-1))
-            & (l.shift(-1) < l.shift(-2))
-        )
-
-        swing_high = h.where(sh).ffill()
-        swing_low = l.where(sl).ffill()
-
-        # Range position
-        range_height = swing_high - swing_low
-        range_pos = (c - swing_low) / (range_height + 1e-9)
-        df["smc_range_position"] = range_pos.clip(0.0, 1.0)
-
-        # Distance to swing high/low
-        df["smc_dist_to_swing_high"] = (swing_high - c) / (atr + 1e-9)
-        df["smc_dist_to_swing_low"] = (c - swing_low) / (atr + 1e-9)
-
-        # Fibonacci retracement level
-        fib_level = (swing_high - c) / (range_height + 1e-9)
-        df["smc_fib_retracement_level"] = fib_level.clip(0.0, 1.0)
-
-        # Break of structure magnitude
-        prev_swing_high = swing_high.shift(1)
-        bos_magnitude = (c - prev_swing_high) / (atr + 1e-9)
-        df["smc_break_of_structure_mag"] = bos_magnitude.clip(lower=0.0)
-
-        return df
-
-    def _add_momentum_features(self, df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
-        """Add momentum and displacement features."""
-        o = df["open"].astype(float)
-        h = df["high"].astype(float)
-        l = df["low"].astype(float)
-        c = df["close"].astype(float)
-
-        # Body size
-        body = (c - o).abs()
-        avg_body = body.rolling(window=20).mean()
-
-        # Displacement strength
-        df["smc_displacement_strength"] = body / (avg_body + 1e-9)
-
-        # Wick to body ratio
-        upper_wick = h - np.maximum(c, o)
-        lower_wick = np.minimum(c, o) - l
-        total_wick = upper_wick + lower_wick
-        df["smc_wick_body_ratio"] = total_wick / (body + 1e-9)
-
-        # Close position in candle
-        candle_range = h - l
-        close_pos = (c - l) / (candle_range + 1e-9)
-        df["smc_close_position_in_candle"] = close_pos.clip(0.0, 1.0)
-
-        # Velocity / Rate of Change
-        roc = (c - c.shift(3)) / 3.0
-        df["smc_velocity_roc"] = roc / (c.shift(3) + 1e-9)
-
-        # Consecutive candles
-        candle_direction = np.sign(c - o)
-        streaks = np.zeros(len(candle_direction))
-        current_streak = 0
-        for i in range(len(candle_direction)):
-            if i == 0:
-                current_streak = candle_direction.iloc[i]
-            elif candle_direction.iloc[i] == candle_direction.iloc[i-1] and candle_direction.iloc[i] != 0:
-                current_streak += candle_direction.iloc[i]
-            else:
-                current_streak = candle_direction.iloc[i]
-            streaks[i] = current_streak
-
-        df["smc_consecutive_candles"] = streaks
-
-        return df
-
-    def _add_volatility_time_features(self, df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
-        """Add volatility and time-based features."""
-        h = df["high"].astype(float)
-        l = df["low"].astype(float)
-        v = df["volume"].astype(float)
-        atr = df["atr"].astype(float)
-
-        # Average Daily Range
-        day_index = df.index.normalize()
-        daily_range = df.groupby(day_index).apply(lambda x: x["high"].max() - x["low"].min())
-        adr = daily_range.rolling(window=20).mean()
-
-        # Today's range filled percentage
-        today_high = df.groupby(day_index)["high"].transform("max")
-        today_low = df.groupby(day_index)["low"].transform("min")
-        today_range = today_high - today_low
-        adr_reindexed = adr.reindex(day_index).to_numpy()
-        df["smc_adr_filled_pct"] = today_range / (adr_reindexed + 1e-9)
-
-        # Relative volume (use log1p for volume normalization later)
-        avg_vol = v.rolling(window=20).mean()
-        df["smc_rel_volume"] = v / (avg_vol + 1e-9)
-
-        # Time elapsed in session
-        df["smc_time_elapsed_session"] = df.index.hour * 60 + df.index.minute
-
-        # ATR compression
-        atr_20 = atr.rolling(window=20).mean()
-        df["smc_atr_compression"] = atr / (atr_20 + 1e-9)
-
-        return df
-
-    def _add_mtf_features(self, df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
-        """Add multi-timeframe features."""
-        c = df["close"].astype(float)
-        atr = df["atr"].astype(float)
-
-        # Resample to 1H for HTF features
-        try:
-            df_1h = df.resample('1H').agg({
-                'open': 'first',
-                'high': 'max',
-                'low': 'min',
-                'close': 'last',
-                'volume': 'sum'
-            }).dropna()
-
-            if len(df_1h) > 50:
-                # HTF trend
-                ema_20 = df_1h["close"].ewm(span=20).mean()
-                ema_50 = df_1h["close"].ewm(span=50).mean()
-
-                # HTF ATR
-                h_1h = df_1h["high"]
-                l_1h = df_1h["low"]
-                c_1h = df_1h["close"]
-                tr1_1h = h_1h - l_1h
-                tr2_1h = (h_1h - c_1h.shift(1)).abs()
-                tr3_1h = (l_1h - c_1h.shift(1)).abs()
-                tr_1h = pd.concat([tr1_1h, tr2_1h, tr3_1h], axis=1).max(axis=1)
-                atr_1h = tr_1h.rolling(window=14).mean()
-
-                htf_trend_slope = (ema_20 - ema_50) / (atr_1h + 1e-9)
-
-                # Reindex to 15m
-                htf_trend_slope_15m = htf_trend_slope.reindex(df.index, method='ffill')
-                df["smc_htf_trend_slope"] = htf_trend_slope_15m.fillna(0.0)
-            else:
-                df["smc_htf_trend_slope"] = 0.0
-
-        except Exception as e:
-            tprint_warning(f"MTF feature calculation failed: {e}")
-            df["smc_htf_trend_slope"] = 0.0
-
-        # Daily wick rejection
-        day_index = df.index.normalize()
-        daily_stats = df.groupby(day_index).agg(
-            high=("high", "max"),
-            low=("low", "min"),
-            close=("close", "last")
-        )
-        prev_day_high = daily_stats["high"].shift(1)
-        prev_day_low = daily_stats["low"].shift(1)
-        prev_day_close = daily_stats["close"].shift(1)
-        prev_day_range = prev_day_high - prev_day_low
-
-        daily_wick_rej = (prev_day_high - prev_day_close) / (prev_day_range + 1e-9)
-        df["smc_daily_wick_rejection"] = daily_wick_rej.reindex(day_index).fillna(0.0).to_numpy()
-
-        return df
-
-    def _add_cross_timeframe_features(self, df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
-        """Optionally augment with cross-timeframe features from the shared generator."""
-        try:
-            generator = CrossTimeframeFeatureGenerator()
-        except Exception as e:
-            tprint_warning(f"SMC cross-timeframe feature generator init failed: {e}")
-            return df
-
-        base_cols = [c for c in ["open", "high", "low", "close", "volume"] if c in df.columns]
-        if not base_cols:
-            return df
-
-        try:
-            data = df[base_cols].copy()
-            features = generator.generate_enhanced_cross_timeframe_features(data)
-            if not features:
-                return df
-
-            for name, series in features.items():
-                col_name = f"smc_ctf_{name}"
-                ser = pd.Series(series)
-                ser.index = data.index
-                df[col_name] = ser.reindex(df.index).astype(float)
-
-        except Exception as e:
-            tprint_warning(f"SMC cross-timeframe feature generation failed: {e}")
-
-        return df
-
-    def _add_volume_profile_features(self, df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
-        """Add volume profile features."""
-        c = df["close"].astype(float)
-        v = df["volume"].astype(float)
-        atr = df["atr"].astype(float)
-
-        lookback = int(config.get("smc_vp_lookback", 100))
-        bins = int(config.get("smc_vp_bins", 50))
-
-        # Calculate rolling volume profile
-        hvn_gravity_list = []
-        poc_dist_list = []
-        is_in_value_area_list = []
-        profile_skew_list = []
-
-        for i in range(len(df)):
-            if i < lookback:
-                hvn_gravity_list.append(0.5)
-                poc_dist_list.append(0.0)
-                is_in_value_area_list.append(1)
-                profile_skew_list.append(0.0)
-                continue
-
-            window_close = c.iloc[i-lookback:i]
-            window_volume = v.iloc[i-lookback:i]
-            current_price = c.iloc[i]
-
-            try:
-                hist, bin_edges = np.histogram(
-                    window_close,
-                    bins=bins,
-                    weights=window_volume,
-                )
-
-                bin_index = np.digitize(current_price, bin_edges) - 1
-                bin_index = max(0, min(bins-1, bin_index))
-
-                vol_at_price = hist[bin_index]
-                max_vol = np.max(hist)
-
-                # HVN gravity
-                hvn_gravity = vol_at_price / (max_vol + 1e-9)
-                hvn_gravity_list.append(float(hvn_gravity))
-
-                # POC distance
-                poc_price = bin_edges[np.argmax(hist)]
-                poc_dist = (current_price - poc_price) / (atr.iloc[i] + 1e-9)
-                poc_dist_list.append(float(poc_dist))
-
-                # Value area
-                sorted_indices = np.argsort(hist)[::-1]
-                cumsum = 0
-                value_area_bins = []
-                for idx in sorted_indices:
-                    cumsum += hist[idx]
-                    value_area_bins.append(idx)
-                    if cumsum >= 0.7 * hist.sum():
-                        break
-
-                is_in_va = 1 if bin_index in value_area_bins else 0
-                is_in_value_area_list.append(is_in_va)
-
-                # Profile skew
-                volume_above = hist[bin_index:].sum()
-                volume_below = hist[:bin_index].sum()
-                skew = (volume_above - volume_below) / (hist.sum() + 1e-9)
-                profile_skew_list.append(float(skew))
-
-            except Exception:
-                hvn_gravity_list.append(0.5)
-                poc_dist_list.append(0.0)
-                is_in_value_area_list.append(1)
-                profile_skew_list.append(0.0)
-
-        df["smc_hvn_gravity"] = hvn_gravity_list
-        df["smc_poc_dist_atr"] = poc_dist_list
-        df["smc_is_in_value_area"] = is_in_value_area_list
-        df["smc_profile_skew"] = profile_skew_list
-
-        return df
-
-    def _add_time_categories(self, df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
-        """Add time category features."""
-
-        # Session (Kill Zone)
-        hour = df.index.hour
-
-        session_kz = pd.Series("Dead", index=df.index)
-        session_kz[(hour >= 0) & (hour < 8)] = "Asia"
-        session_kz[(hour >= 8) & (hour < 13)] = "London"
-        session_kz[(hour >= 13) & (hour < 17)] = "NY_AM"
-        session_kz[(hour >= 17) & (hour < 21)] = "NY_PM"
-
-        # One-hot encode sessions
-        for session in ["Asia", "London", "NY_AM", "NY_PM", "Dead"]:
-            df[f"smc_session_{session}"] = (session_kz == session).astype(int)
-
-        # Day of week
-        dow = df.index.dayofweek
-        for day_num, day_name in enumerate(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]):
-            df[f"smc_dow_{day_name}"] = (dow == day_num).astype(int)
-
-        # Market structure (simplified)
-        h = df["high"].astype(float)
-        l = df["low"].astype(float)
-
-        hh = (h > h.shift(1)) & (h.shift(1) > h.shift(2))
-        ll = (l < l.shift(1)) & (l.shift(1) < l.shift(2))
-        lh = (h < h.shift(1)) & (h.shift(1) < h.shift(2))
-        hl = (l > l.shift(1)) & (l.shift(1) > l.shift(2))
-
-        market_structure = pd.Series("Range", index=df.index)
-        market_structure[hh & hl] = "Uptrend"
-        market_structure[lh & ll] = "Downtrend"
-
-        df["smc_market_structure_Uptrend"] = (market_structure == "Uptrend").astype(int)
-        df["smc_market_structure_Downtrend"] = (market_structure == "Downtrend").astype(int)
-        df["smc_market_structure_Range"] = (market_structure == "Range").astype(int)
-
-        # Inside FVG
-        df["smc_is_inside_fvg"] = (df["smc_current_fvg_size"] > 0).astype(int)
-
-        # Sweep confirmed
-        c = df["close"].astype(float)
-        pdh = df["smc_pdh"]
-        pdl = df["smc_pdl"]
-
-        sweep_high = (h > pdh) & (c < pdh)
-        sweep_low = (l < pdl) & (c > pdl)
-        df["smc_sweep_confirmed"] = (sweep_high | sweep_low).astype(int)
-
-        return df
 
     def _normalize_smc_features(self, df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
         """Apply winsorized z-score normalization to continuous features, log1p to volume features."""
@@ -940,6 +706,7 @@ class MLSMCRegimeStep(BaseStep):
         aligned_df = pd.DataFrame(index=df_with_target.index)
         aligned_df["y_true_class"] = y_class
         aligned_df["y_true_atr_return"] = df_with_target["target_atr_return"]
+        aligned_df["forward_return"] = df_with_target["forward_return"]
         aligned_df = aligned_df.join(oof_predictions, how='left')
 
         # Only calculate metrics on OOF samples (where we have predictions)
@@ -951,6 +718,7 @@ class MLSMCRegimeStep(BaseStep):
             y_true_atr_oof = aligned_df.loc[oof_mask, "y_true_atr_return"]
             y_pred_scalar_oof = aligned_df.loc[oof_mask, "scalar"]
             proba_oof = aligned_df.loc[oof_mask, prob_cols].values
+            fwd_ret_oof = aligned_df.loc[oof_mask, "forward_return"]
 
             from sklearn.metrics import (
                 accuracy_score,
@@ -982,6 +750,34 @@ class MLSMCRegimeStep(BaseStep):
             except Exception:
                 oof_ic = float("nan")
 
+            # Gated Sharpe (Top 25% confidence) - Informational purpose
+            try:
+                # Confidence = abs(scalar - 0.5) * 2 (0.0 to 1.0)
+                confidence = np.abs(y_pred_scalar_oof - 0.5) * 2.0
+
+                # Use robust quantile to find threshold for top 25%
+                threshold = np.nanquantile(confidence, 0.75)
+                gated_mask = confidence >= threshold
+
+                if gated_mask.sum() >= 20:
+                    # Directional signal: if scalar > 0.5, Long; if < 0.5, Short
+                    direction = np.sign(y_pred_scalar_oof - 0.5)
+                    # For perfectly neutral (0.5), direction is 0
+
+                    gated_returns = fwd_ret_oof[gated_mask] * direction[gated_mask]
+                    mean_ret = np.mean(gated_returns)
+                    std_ret = np.std(gated_returns, ddof=1)
+
+                    if std_ret > 0:
+                        oof_sharpe_gated = mean_ret / std_ret
+                    else:
+                        oof_sharpe_gated = float("-inf")
+                else:
+                    oof_sharpe_gated = float("-inf")
+            except Exception as e:
+                tprint_warning(f"Failed to calculate gated Sharpe: {e}")
+                oof_sharpe_gated = float("-inf")
+
             metrics.update({
                 "smc_xgb_oof_accuracy": float(oof_accuracy),
                 "smc_xgb_oof_f1": float(oof_f1),
@@ -989,6 +785,7 @@ class MLSMCRegimeStep(BaseStep):
                 "smc_xgb_oof_rmse": float(oof_rmse),
                 "smc_xgb_oof_r2": float(oof_r2) if np.isfinite(oof_r2) else float("nan"),
                 "smc_xgb_oof_ic": float(oof_ic) if np.isfinite(oof_ic) else float("nan"),
+                "smc_xgb_oof_sharpe_gated_25pct": float(oof_sharpe_gated),
                 "smc_xgb_oof_samples": int(n_oof),
                 "smc_xgb_oof_windows": len(oof_metadata),
                 "smc_xgb_hpo_runs": sum(1 for m in oof_metadata if m.get('used_hpo', False)),

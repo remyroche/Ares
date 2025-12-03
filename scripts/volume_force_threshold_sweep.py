@@ -2,13 +2,17 @@
 """Volume Force Threshold Sweep
 
 This script performs a focused sweep over the ML Volume Force model configuration.
-It optimizes the target definition (lookahead, ATR threshold) and feature normalization
-windows to minimize OOF Log Loss and ensure robust classification.
+It optimizes the target definition (lookahead, ATR threshold, volatility percentile, trend beta)
+and XGBoost hyperparameters to minimize OOF Log Loss across the 3 models (Breakout, Volatility, Trend).
 
 It varies:
-- `volume_force_target_threshold_atr`: Threshold to distinguish Neutral from Up/Down.
+- `volume_force_target_threshold_atr`: Threshold for Breakout logic.
 - `volume_force_lookahead`: Forecast horizon in bars (15m).
 - `volume_force_normalization_window`: Rolling window size for feature z-scoring.
+- `volume_force_volatility_percentile`: Percentile for high volatility regime.
+- `volume_force_trend_beta`: Threshold for trend start.
+- `volume_force_xgb_max_depth`: XGBoost Max Depth.
+- `volume_force_xgb_learning_rate`: XGBoost Learning Rate.
 
 Usage (from project root):
 
@@ -76,23 +80,50 @@ def build_sweep_configs(base_config: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Generate configs for the sweep."""
 
     # Define sweep ranges
-    # Focused ATR band around lower thresholds with reasonable class balance
+    # Focused ATR band around lower thresholds
     atr_thresholds = [0.8, 1.0, 1.2]
-    lookaheads = [8, 12, 16, 20]  # 2h, 3h, 4h, 5h
-    # Include a shorter normalization window and moderate defaults
-    norm_windows = [50, 100, 200]
+    lookaheads = [8, 12, 16]  # 2h, 3h, 4h
+    # Feature norm window
+    norm_windows = [96, 192] # approx 1 day, 2 days
+
+    # Target Definitions
+    vol_percentiles = [70, 75, 80]
+    trend_betas = [0.5, 0.75]
+
+    # XGB Params
+    max_depths = [4, 6]
+    learning_rates = [0.03] # Keeping simple for now, can add 0.01
 
     configs: List[Dict[str, Any]] = []
 
     # Generate Cartesian product
-    for atr, lookahead, norm in itertools.product(atr_thresholds, lookaheads, norm_windows):
+    # Note: This can generate a lot of configs. Be mindful of execution time.
+    # Current count: 3 * 3 * 2 * 3 * 2 * 2 * 1 = 216 configs.
+    # That might be too many for a quick run.
+    # Let's reduce lookaheads and norm windows for the full grid, or create a 'focused' grid.
+
+    # Reduced Grid
+    combinations = itertools.product(
+        atr_thresholds,
+        lookaheads,
+        norm_windows,
+        vol_percentiles,
+        trend_betas,
+        max_depths
+    )
+
+    for atr, lookahead, norm, vol_pct, trend_beta, depth in combinations:
         cfg = dict(base_config)
         cfg["volume_force_target_threshold_atr"] = atr
         cfg["volume_force_lookahead"] = lookahead
         cfg["volume_force_normalization_window"] = norm
+        cfg["volume_force_volatility_percentile"] = vol_pct
+        cfg["volume_force_trend_beta"] = trend_beta
+        cfg["volume_force_xgb_max_depth"] = depth
+        cfg["volume_force_xgb_learning_rate"] = 0.03 # Fixed for now
 
         # Tag for easy identification
-        cfg["sweep_tag"] = f"atr{atr}_lah{lookahead}_norm{norm}"
+        cfg["sweep_tag"] = f"atr{atr}_lah{lookahead}_vol{vol_pct}_tr{trend_beta}_d{depth}"
 
         configs.append(cfg)
 
@@ -128,7 +159,7 @@ def save_sweep_results(
 async def main_async() -> None:
     args = parse_args()
 
-    print("🚀 Volume Force Threshold Sweep")
+    print("🚀 Volume Force Multi-Task Threshold Sweep (Independent Optimization)")
     print("=" * 60)
     print(f"Symbol: {args.symbol}")
     print(f"Exchange: {args.exchange}")
@@ -140,6 +171,11 @@ async def main_async() -> None:
     base_config = build_base_config(args)
     sweep_configs = build_sweep_configs(base_config)
 
+    # Limit for safety during initial testing if list is huge
+    if len(sweep_configs) > 500:
+        print(f"⚠️ Warning: {len(sweep_configs)} configs generated. Truncating to 500.")
+        sweep_configs = sweep_configs[:500]
+
     print(f"\n🔧 Generated {len(sweep_configs)} sweep configurations")
 
     # Initialize step
@@ -149,37 +185,62 @@ async def main_async() -> None:
     results = await step.run_config_batch(sweep_configs, args.symbol, args.exchange)
 
     # Analyze results
-    results_df, analysis = step.analyze_and_rank_results(results)
+    results_df, base_analysis = step.analyze_and_rank_results(results)
 
     if results_df.empty:
         print("\n❌ No results to save; all configurations appear to have failed.")
         return
 
+    # Add Independent Analysis
+    successful = results_df[results_df.get("success", False) == True].copy()
+
+    analysis = base_analysis.copy()
+
+    if not successful.empty:
+        # Best Breakout
+        best_breakout = successful.sort_values("breakout_log_loss", ascending=True).iloc[0].to_dict()
+        analysis["best_config_breakout"] = {k: v for k, v in best_breakout.items() if k.startswith("config_")}
+        analysis["best_loss_breakout"] = best_breakout.get("breakout_log_loss")
+
+        # Best Volatility
+        best_volatility = successful.sort_values("volatility_log_loss", ascending=True).iloc[0].to_dict()
+        analysis["best_config_volatility"] = {k: v for k, v in best_volatility.items() if k.startswith("config_")}
+        analysis["best_loss_volatility"] = best_volatility.get("volatility_log_loss")
+
+        # Best Trend
+        best_trend = successful.sort_values("trend_log_loss", ascending=True).iloc[0].to_dict()
+        analysis["best_config_trend"] = {k: v for k, v in best_trend.items() if k.startswith("config_")}
+        analysis["best_loss_trend"] = best_trend.get("trend_log_loss")
+
     # Persist outputs
     save_sweep_results(results_df, analysis, args.symbol, args.outcomes_dir)
 
-    # Print summary
-    successful = results_df[results_df.get("success", False) == True].copy()
     if successful.empty:
         print("\n⚠️ No successful configurations in sweep.")
         return
 
-    successful = successful.sort_values("oof_log_loss", ascending=True)
-
+    # Print differentiated summaries
     cols = [
         "config_id",
-        "oof_log_loss",
-        "oof_accuracy",
+        "breakout_log_loss",
+        "volatility_log_loss",
+        "trend_log_loss",
         "config_volume_force_target_threshold_atr",
         "config_volume_force_lookahead",
-        "config_volume_force_normalization_window",
-        "class_balance"
+        "config_volume_force_volatility_percentile",
+        "config_volume_force_trend_beta",
+        "config_volume_force_xgb_max_depth"
     ]
-
     available_cols = [c for c in cols if c in successful.columns]
 
-    print("\n🏆 Top sweep configurations (by lowest LogLoss):")
-    print(successful[available_cols].head(10).to_string(index=False))
+    print("\n🏆 Top 3 Configs for BREAKOUT (min LogLoss):")
+    print(successful.sort_values("breakout_log_loss").head(3)[available_cols].to_string(index=False))
+
+    print("\n🏆 Top 3 Configs for VOLATILITY (min LogLoss):")
+    print(successful.sort_values("volatility_log_loss").head(3)[available_cols].to_string(index=False))
+
+    print("\n🏆 Top 3 Configs for TREND (min LogLoss):")
+    print(successful.sort_values("trend_log_loss").head(3)[available_cols].to_string(index=False))
 
 
 def main() -> None:

@@ -55,7 +55,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--timeframe", type=str, default="15m", help="Regime timeframe (e.g. 15m)")
     parser.add_argument("--direction", type=str, default="long", help="Trading direction")
     parser.add_argument("--outcomes-dir", type=str, default="outcomes", help="Directory to save sweep results")
-    parser.add_argument("--execution_mode", type=str, default="blank", help="Execution mode (blank, light, full)")
+    parser.add_argument("--execution-mode", type=str, default="blank", help="Execution mode (blank, light, full)")
 
     return parser.parse_args()
 

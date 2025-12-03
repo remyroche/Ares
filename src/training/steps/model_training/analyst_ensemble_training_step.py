@@ -697,21 +697,50 @@ class AnalystEnsembleTrainingStep(BaseStep):
 
             # 2. Prepare 'realized_return' and 'binary_label' for EventMeanReturn
             if target_data is not None:
-                # Try to find a return target
+                # First, try to use pre-computed directional binary labels
+                # These are preferred as they were computed with proper labeling logic
+                direction = config.get('direction', 'long')
+                binary_label_col = None
+                
+                # Check for directional binary labels first
+                if direction == 'long' and 'binary_label_long' in target_data.columns:
+                    binary_label_col = 'binary_label_long'
+                elif direction == 'short' and 'binary_label_short' in target_data.columns:
+                    binary_label_col = 'binary_label_short'
+                elif 'binary_label' in target_data.columns:
+                    binary_label_col = 'binary_label'
+                
+                if binary_label_col:
+                    meta_input['binary_label'] = target_data[binary_label_col]
+                
+                # Try to find a return target for realized_return
                 target_col = None
-                for col in ['target_long', 'target_short', 'target_dummy']:
-                    if col in target_data.columns:
-                        target_col = col
-                        break
+                if direction == 'long':
+                    for col in ['target_long', 'target_long_fused', 'target_dummy']:
+                        if col in target_data.columns:
+                            target_col = col
+                            break
+                elif direction == 'short':
+                    for col in ['target_short', 'target_short_fused', 'target_dummy']:
+                        if col in target_data.columns:
+                            target_col = col
+                            break
+                else:
+                    for col in ['target_long', 'target_short', 'target_dummy']:
+                        if col in target_data.columns:
+                            target_col = col
+                            break
 
                 if target_col:
                     # realized_return is the target value (future return)
                     meta_input['realized_return'] = target_data[target_col]
-                    # binary_label is 1 if target > 0 (profit)
-                    meta_input['binary_label'] = (target_data[target_col] > 0).astype(int)
-                    # If target is dummy/binary, just use it
-                    if target_data[target_col].nunique() <= 2:
-                         meta_input['binary_label'] = target_data[target_col]
+                    # If binary_label wasn't set from directional labels, derive from target
+                    if 'binary_label' not in meta_input.columns:
+                        # binary_label is 1 if target > 0 (profit)
+                        meta_input['binary_label'] = (target_data[target_col] > 0).astype(int)
+                        # If target is dummy/binary, just use it
+                        if target_data[target_col].nunique() <= 2:
+                            meta_input['binary_label'] = target_data[target_col]
 
             # 3. Generate features
             new_features = []

@@ -15,10 +15,20 @@ Optionally restricts analysis to the last N calendar days via --lookback-days.
 
 Usage example (from project root):
 
+  # Uses direction-aware default target (binary_label_long for longs)
   python scripts/specialist_feature_diagnostics.py \
       --symbol ETHUSDT --exchange binance --timeframe 15m \
-      --direction long --target-col binary_label --regime-timeframe 1h \
-      --lookback-days 365
+      --direction long --regime-timeframe 1h --lookback-days 365
+
+  # Explicit target column (regression target for regressors)
+  python scripts/specialist_feature_diagnostics.py \
+      --symbol ETHUSDT --exchange binance --timeframe 15m \
+      --direction long --target-col target_long --regime-timeframe 1h
+
+  # Compare multiple targets (classifiers vs regressors)
+  python scripts/specialist_feature_diagnostics.py \
+      --symbol ETHUSDT --exchange binance --timeframe 15m \
+      --direction long --compare-targets --regime-timeframe 1h
 """
 
 import argparse
@@ -1729,7 +1739,11 @@ def main() -> None:
     ap.add_argument("--direction", type=str, default="long", choices=["long", "short", "both"])
     ap.add_argument("--model", type=str, default="analyst")
     ap.add_argument("--regime-timeframe", type=str, default="1h")
-    ap.add_argument("--target-col", type=str, default="binary_label")
+    # Default target column is now direction-aware: binary_label_long for longs, binary_label_short for shorts
+    # Falls back to unified binary_label if directional labels not available
+    ap.add_argument("--target-col", type=str, default=None,
+                    help="Target column for diagnostics. If not specified, uses direction-aware default: "
+                         "binary_label_long (for long), binary_label_short (for short), or binary_label (for both)")
     ap.add_argument("--cv-folds", type=int, default=5)
     ap.add_argument(
         "--lookback-days",
@@ -1793,17 +1807,39 @@ def main() -> None:
             selected_specialists=args.train_specialists,
         ))
 
+    # Determine default target column based on direction if not explicitly provided
+    if args.target_col is None:
+        if args.direction == "long":
+            args.target_col = "binary_label_long"
+        elif args.direction == "short":
+            args.target_col = "binary_label_short"
+        else:
+            args.target_col = "binary_label"  # Fallback for 'both' direction
+        print(f"Using direction-aware default target: {args.target_col}")
+
     targets_to_run = [args.target_col]
     if args.compare_targets:
-        if args.direction == "long" and "target_long" not in targets_to_run:
-            targets_to_run.append("target_long")
-        elif args.direction == "short" and "target_short" not in targets_to_run:
-            targets_to_run.append("target_short")
+        # Add regression targets for comparison
+        if args.direction == "long":
+            if "target_long" not in targets_to_run:
+                targets_to_run.append("target_long")
+            # Also compare with unified binary_label for reference
+            if "binary_label" not in targets_to_run:
+                targets_to_run.append("binary_label")
+        elif args.direction == "short":
+            if "target_short" not in targets_to_run:
+                targets_to_run.append("target_short")
+            if "binary_label" not in targets_to_run:
+                targets_to_run.append("binary_label")
         elif args.direction == "both":
             if "target_long" not in targets_to_run:
                 targets_to_run.append("target_long")
             if "target_short" not in targets_to_run:
                 targets_to_run.append("target_short")
+            if "binary_label_long" not in targets_to_run:
+                targets_to_run.append("binary_label_long")
+            if "binary_label_short" not in targets_to_run:
+                targets_to_run.append("binary_label_short")
 
     for tgt in targets_to_run:
         print(f"\n--- Running diagnostics for target: {tgt} ---")

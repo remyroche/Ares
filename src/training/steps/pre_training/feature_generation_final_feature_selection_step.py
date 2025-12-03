@@ -388,10 +388,10 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                                 combined_df = large_features_df[time_mask].copy()
                                 tprint_info(f"   Filtered features to labeled period: {len(combined_df)} rows")
                                 
-                                # Now align targets
+                                # Align targets using EXACT index matching only (no nearest-neighbor)
                                 target_cols = [col for col in labeled_df.columns if 'target' in col.lower() or col == 'price_target_vol_normalized']
                                 for col in target_cols:
-                                    aligned_targets = labeled_df[col].reindex(combined_df.index, method='nearest', tolerance=pd.Timedelta('15min'))
+                                    aligned_targets = labeled_df[col].reindex(combined_df.index)
                                     combined_df[col] = aligned_targets
                                     non_null = combined_df[col].notna().sum()
                                     tprint_info(f"   ✅ {col}: {non_null}/{len(combined_df)} non-null ({non_null/len(combined_df)*100:.1f}%)")
@@ -452,28 +452,7 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                                     except Exception as tz_err:
                                         tprint_warning(f"   Timezone alignment failed: {tz_err}")
                                     
-                                    # Strategy 3: Use nearest timestamp matching for datetime indices
-                                    try:
-                                        if isinstance(labeled_df.index, pd.DatetimeIndex) and isinstance(large_features_df.index, pd.DatetimeIndex):
-                                            tprint_info("   Trying nearest-timestamp alignment...")
-                                            # For each feature timestamp, find nearest labeled timestamp
-                                            aligned_values = []
-                                            for feat_ts in large_features_df.index:
-                                                # Find nearest labeled timestamp within 15 minutes
-                                                time_diffs = abs(labeled_df.index - feat_ts)
-                                                min_diff_idx = time_diffs.argmin()
-                                                if time_diffs[min_diff_idx] <= pd.Timedelta(minutes=15):
-                                                    aligned_values.append(labeled_df[col].iloc[min_diff_idx])
-                                                else:
-                                                    aligned_values.append(np.nan)
-                                            combined_df[col] = aligned_values
-                                            non_null_count = pd.Series(aligned_values).notna().sum()
-                                            tprint_info(f"   ✅ {col} (nearest-ts): {non_null_count}/{len(aligned_values)} non-null ({non_null_count/len(aligned_values)*100:.1f}%)")
-                                            continue
-                                    except Exception as nearest_err:
-                                        tprint_warning(f"   Nearest-timestamp alignment failed: {nearest_err}")
-                                    
-                                    # Strategy 4: Fallback - use direct reindex anyway (may have many NaNs)
+                                    # Strategy 3: Fallback - use direct reindex with exact matching (may have many NaNs)
                                     aligned_targets = labeled_df[col].reindex(large_features_df.index)
                                     combined_df[col] = aligned_targets
                                     non_null_count = aligned_targets.notna().sum()
@@ -645,43 +624,33 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             combined_features_df = self._combine_features(features_data, labeled_df)
             tprint_info(f"✅ Combined {combined_features_df.shape} in {time.time()-t0:.2f}s")
 
-            # Data capping logic - different for blank vs other modes
+            # Cap data to most recent 6 months (approx 180 days) for ALL modes
+            MAX_BARS_6_MONTHS = 17280  # 180 days * 96 15-min bars
+            if len(combined_features_df) > MAX_BARS_6_MONTHS:
+                tprint_info(f"📅 Capping combined features to most recent 6 months ({MAX_BARS_6_MONTHS} rows)")
+                combined_features_df = combined_features_df.iloc[-MAX_BARS_6_MONTHS:]
+
+            # In blank mode, restrict to a contiguous recent window (default 180 days to match 6-month cap)
             execution_mode_local = str(config.get('execution_mode', 'blank')).lower()
             model_name_local = str(config.get('model', '') or config.get('model_name', '')).lower()
             is_blank_mode = execution_mode_local == 'blank' or model_name_local == 'blank'
-            
             if is_blank_mode:
-                # BLANK MODE: Use more data for comprehensive diagnostics
-                # Default to 365 days (35,040 samples at 15m), configurable via blank_window_days
                 try:
                     if isinstance(combined_features_df.index, pd.DatetimeIndex) and not combined_features_df.empty:
-                        target_days = int(config.get('blank_window_days', 365))
-                        MAX_BARS_BLANK = target_days * 96  # 96 15-min bars per day
-                        
-                        if len(combined_features_df) > MAX_BARS_BLANK:
-                            end_ts = combined_features_df.index.max()
-                            start_ts = end_ts - pd.Timedelta(days=target_days)
-                            pre_rows = len(combined_features_df)
-                            combined_features_df = combined_features_df.loc[combined_features_df.index >= start_ts].copy()
-                            tprint_info(
-                                f"📅 [BLANK] Using last {target_days} days for diagnostics: "
-                                f"{pre_rows} → {len(combined_features_df)} rows (expected ~{MAX_BARS_BLANK})"
-                            )
-                        else:
-                            tprint_info(
-                                f"📅 [BLANK] Dataset has {len(combined_features_df)} rows "
-                                f"(< {MAX_BARS_BLANK} for {target_days} days), using all available data"
-                            )
+                        target_days = int(config.get('blank_window_days', 180))
+                        end_ts = combined_features_df.index.max()
+                        start_ts = end_ts - pd.Timedelta(days=target_days)
+                        pre_rows = len(combined_features_df)
+                        combined_features_df = combined_features_df.loc[combined_features_df.index >= start_ts].copy()
+                        tprint_info(
+                            f"📅 [BLANK] Truncated feature window to last {target_days} days: "
+                            f"{pre_rows} → {len(combined_features_df)} rows "
+                        )
                 except Exception as e:
                     tprint_warning(
-                        f"⚠️ [BLANK] Failed to apply temporal window: {e}; using all available data"
+                        f"⚠️ [BLANK] Failed to truncate feature window based on blank_window_days: {e}; "
+                        "continuing without temporal truncation"
                     )
-            else:
-                # NON-BLANK MODES (analyst, tactician): Cap to 6 months for training efficiency
-                MAX_BARS_6_MONTHS = 17280  # 180 days * 96 15-min bars
-                if len(combined_features_df) > MAX_BARS_6_MONTHS:
-                    tprint_info(f"📅 Capping combined features to most recent 6 months ({MAX_BARS_6_MONTHS} rows)")
-                    combined_features_df = combined_features_df.iloc[-MAX_BARS_6_MONTHS:]
 
             combined_features_df = self._apply_blank_mode_shaping(combined_features_df, config)
 

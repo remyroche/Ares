@@ -240,7 +240,9 @@ def get_specialist_models_outputs(
     exchange = config.get("exchange", "binance")
     direction = config.get("direction", "long")
     base_timeframe = str(config.get("timeframe", "15m"))
-    regime_timeframe = str(config.get("regime_timeframe") or base_timeframe)
+    # Force regime_timeframe to match base_timeframe (15m) to ensure we load
+    # the correct artifacts, ignoring any 1h overrides in config.
+    regime_timeframe = base_timeframe
 
     # Ensure training_index is a DatetimeIndex (naive) for reindexing.
     #
@@ -302,6 +304,7 @@ def get_specialist_models_outputs(
             "step_name": "ml_risk_regime_step",
         }
         risk_probs_name = f"ml_risk_regime_probabilities_{base_timeframe}"
+        log_info(f"Attempting to load ML Risk probabilities: {risk_probs_name}")
         risk_probs = artifact_router.load(
             artifact_name=risk_probs_name,
             artifact_type="data",
@@ -491,8 +494,10 @@ def get_specialist_models_outputs(
             "step_name": "ml_liquidity_regime_step",
         }
 
+        liquidity_artifact_name = f"ml_liquidity_regime_probs_{base_timeframe}"
+        log_info(f"Attempting to load Liquidity probabilities: {liquidity_artifact_name}")
         liquidity_probs = artifact_router.load(
-            artifact_name="ml_liquidity_regime_probs_15m",
+            artifact_name=liquidity_artifact_name,
             artifact_type="data",
             data_category="features",
             context=liquidity_context,
@@ -560,18 +565,16 @@ def get_specialist_models_outputs(
         breakout_context = {
             "symbol": symbol,
             "exchange": exchange,
-            # Breakout training data artifact is stored at the base timeframe
-            # (e.g., 15m), not the higher regime_timeframe. Use base_timeframe
-            # here so we can locate the correct artifact even when
-            # regime_timeframe = "1h" for other specialists.
             "timeframe": base_timeframe,
             "direction": direction,
             "model": "breakout_bounce",
             "step_name": "ml_breakout_bounce_regime_step",
         }
 
+        breakout_artifact_name = f"ml_breakout_bounce_training_data_{base_timeframe}"
+        log_info(f"Attempting to load Breakout/Bounce training data: {breakout_artifact_name}")
         breakout_training = artifact_router.load(
-            artifact_name=f"ml_breakout_bounce_training_data_{base_timeframe}",
+            artifact_name=breakout_artifact_name,
             artifact_type="data",
             data_category="features",
             context=breakout_context,
@@ -700,8 +703,10 @@ def get_specialist_models_outputs(
         }
 
         # Reuse the standardized training artifact produced by MLPathRegimeStep.
+        path_artifact_name = f"ml_path_training_data_{base_timeframe}"
+        log_info(f"Attempting to load Path training data: {path_artifact_name}")
         path_training = artifact_router.load(
-            artifact_name="ml_path_training_data_15m",
+            artifact_name=path_artifact_name,
             artifact_type="data",
             data_category="features",
             context=path_context,
@@ -776,8 +781,10 @@ def get_specialist_models_outputs(
             "step_name": "xgb_meso_regime",
         }
 
+        meso_artifact_name = f"xgb_meso_trend_training_data_{base_timeframe}"
+        log_info(f"Attempting to load XGB Meso Trend data: {meso_artifact_name}")
         alpha_training = artifact_router.load(
-            artifact_name="xgb_meso_trend_training_data_15m",
+            artifact_name=meso_artifact_name,
             artifact_type="data",
             data_category="features",
             context=meso_context,
@@ -911,8 +918,10 @@ def get_specialist_models_outputs(
             "step_name": "hmm_macro_regime",
         }
 
+        macro_artifact_name = f"hmm_macro_trend_training_data_{base_timeframe}"
+        log_info(f"Attempting to load Macro Trend data: {macro_artifact_name}")
         macro_training = artifact_router.load(
-            artifact_name="hmm_macro_trend_training_data_15m",
+            artifact_name=macro_artifact_name,
             artifact_type="data",
             data_category="features",
             context=macro_context,
@@ -1249,6 +1258,7 @@ def get_specialist_models_outputs(
             "step_name": "ml_mean_reversion_step",
         }
 
+        log_info(f"Attempting to load Mean Reversion data: {mr_artifact_name}")
         mr = artifact_router.load(
             artifact_name=mr_artifact_name,
             artifact_type="data",

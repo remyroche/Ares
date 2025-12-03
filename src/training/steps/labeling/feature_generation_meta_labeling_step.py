@@ -2568,16 +2568,19 @@ def translate_to_targets_with_isotonic(
         tprint(f" WARNING: Isotonic predictions contain {n_nan} NaN and {n_inf} Inf values", "WARNING")
         expected_returns = np.nan_to_num(expected_returns, nan=0.0, posinf=0.1, neginf=-0.1)
 
-    # Convert to net-of-cost expected returns and suppress negative expectations
+    # Convert to net-of-cost expected returns
+    # NOTE: We preserve negative expected returns to help downstream models learn
+    # what to avoid. This allows regressors to predict negative outcomes.
     net_expected = expected_returns - cost_threshold
-    net_positive = np.maximum(net_expected, 0.0)
 
-    # Only apply minimal clipping to avoid extreme outliers
-    final_targets = np.clip(net_positive, 0.0, 0.15)  # Cap at 15% to avoid outliers
+    # Apply symmetric clipping to avoid extreme outliers while preserving negative values
+    final_targets = np.clip(net_expected, -0.15, 0.15)  # Symmetric range [-15%, +15%]
 
     # DEBUG LOGGING: Target statistics (compact summary)
-    n_nonzero = (final_targets > 1e-6).sum()
-    pct_nonzero = n_nonzero / len(final_targets) * 100 if len(final_targets) > 0 else 0
+    n_positive = (final_targets > 1e-6).sum()
+    n_negative = (final_targets < -1e-6).sum()
+    pct_positive = n_positive / len(final_targets) * 100 if len(final_targets) > 0 else 0
+    pct_negative = n_negative / len(final_targets) * 100 if len(final_targets) > 0 else 0
     n_above_cost = (final_targets > cost_threshold).sum()
     pct_above_cost = n_above_cost / len(final_targets) * 100 if len(final_targets) > 0 else 0
 
@@ -2593,15 +2596,18 @@ def translate_to_targets_with_isotonic(
         target_short_tail.iloc[short_mask] = final_targets[short_mask]
 
     # DEBUG LOGGING: Verify assignment coverage (compact)
-    n_long_assigned = (target_long_tail > 0).sum()
-    n_short_assigned = (target_short_tail > 0).sum()
+    # Count non-zero assignments (both positive and negative targets are meaningful)
+    n_long_assigned = (target_long_tail != 0).sum()
+    n_short_assigned = (target_short_tail != 0).sum()
 
     try:
         tprint(
-            " [META_TARGETS] nonzero="
-            f"{n_nonzero}/{len(final_targets)} ({pct_nonzero:.1f}%), "
+            " [META_TARGETS] positive="
+            f"{n_positive}/{len(final_targets)} ({pct_positive:.1f}%), "
+            f"negative={n_negative}/{len(final_targets)} ({pct_negative:.1f}%), "
             f"above_cost={n_above_cost}/{len(final_targets)} ({pct_above_cost:.1f}%), "
-            f"mean={final_targets.mean():.6f}, std={final_targets.std():.6f}, max={final_targets.max():.6f}, "
+            f"mean={final_targets.mean():.6f}, std={final_targets.std():.6f}, "
+            f"min={final_targets.min():.6f}, max={final_targets.max():.6f}, "
             f"assigned_long={n_long_assigned}, assigned_short={n_short_assigned}",
             "INFO",
         )
@@ -6019,20 +6025,27 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                 )
 
                 # Optional symmetric quantile clipping of target magnitudes
+                # Now handles both positive and negative targets
                 if target_clip_high_q_param is not None:
                     try:
                         q_high = float(target_clip_high_q_param)
                         q_high = max(0.90, min(0.99, q_high))
-                        q_low = max(0.0, min(0.5, 1.0 - q_high))
+                        q_low = 1.0 - q_high  # Symmetric quantile for negative side
 
                         for series in (target_long, target_short):
-                            nz = series[series > 0]
-                            if len(nz) >= 100:
-                                low_val = nz.quantile(q_low)
-                                high_val = nz.quantile(q_high)
-                                if low_val < high_val:
-                                    series_mask = series > 0
-                                    series.loc[series_mask] = series.loc[series_mask].clip(low_val, high_val)
+                            # Handle positive values
+                            pos_mask = series > 0
+                            pos_vals = series[pos_mask]
+                            if len(pos_vals) >= 100:
+                                high_val = pos_vals.quantile(q_high)
+                                series.loc[pos_mask] = series.loc[pos_mask].clip(upper=high_val)
+                            
+                            # Handle negative values (clip extreme negatives symmetrically)
+                            neg_mask = series < 0
+                            neg_vals = series[neg_mask]
+                            if len(neg_vals) >= 100:
+                                low_val = neg_vals.quantile(q_low)  # q_low quantile of negatives
+                                series.loc[neg_mask] = series.loc[neg_mask].clip(lower=low_val)
                     except Exception as clip_exc:
                         tprint(f"⚠️ Failed to apply target quantile clipping: {clip_exc}", "WARNING")
             else:

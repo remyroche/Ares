@@ -5,11 +5,13 @@ from typing import Iterable, Sequence
 import pandas as pd
 
 
-LABELED_DATA_SCHEMA_VERSION = "1.0"
+LABELED_DATA_SCHEMA_VERSION = "1.1"
 
 _BASE_REQUIRED_COLUMNS: tuple[str, ...] = (
     "realized_return",
     "binary_label",
+    "binary_label_long",
+    "binary_label_short",
 )
 
 

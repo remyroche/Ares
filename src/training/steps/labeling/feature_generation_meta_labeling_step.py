@@ -6017,6 +6017,17 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             # Add labeling results
             labeled_data['realized_return'] = realized_returns
             labeled_data['binary_label'] = binary_labels
+
+            # Split binary labels by direction based on primary signal
+            # Align primary signals to labeled_data index
+            consensus_aligned = primary_signals['consensus'].reindex(labeled_data.index).fillna(0)
+
+            # For Longs: keep binary_label where signal > 0, else NaN
+            labeled_data['binary_label_long'] = labeled_data['binary_label'].where(consensus_aligned > 0)
+
+            # For Shorts: keep binary_label where signal < 0, else NaN
+            labeled_data['binary_label_short'] = labeled_data['binary_label'].where(consensus_aligned < 0)
+
             labeled_data['smoothed_label'] = smoothed_labels
             labeled_data['label_uncertainty'] = label_uncertainty
             labeled_data['meta_probability'] = probabilities

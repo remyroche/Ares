@@ -3,10 +3,10 @@
 
 This script performs a focused sweep over the ML Volume Force model configuration.
 It optimizes the target definition (lookahead, ATR threshold) and feature normalization
-windows to minimize OOF Log Loss and ensure robust classification.
+windows to minimize OOF Log Loss across the 3 models (Breakout, Volatility, Trend).
 
 It varies:
-- `volume_force_target_threshold_atr`: Threshold to distinguish Neutral from Up/Down.
+- `volume_force_target_threshold_atr`: Threshold for Breakout logic.
 - `volume_force_lookahead`: Forecast horizon in bars (15m).
 - `volume_force_normalization_window`: Rolling window size for feature z-scoring.
 
@@ -76,11 +76,11 @@ def build_sweep_configs(base_config: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Generate configs for the sweep."""
 
     # Define sweep ranges
-    # Focused ATR band around lower thresholds with reasonable class balance
+    # Focused ATR band around lower thresholds
     atr_thresholds = [0.8, 1.0, 1.2]
-    lookaheads = [8, 12, 16, 20]  # 2h, 3h, 4h, 5h
-    # Include a shorter normalization window and moderate defaults
-    norm_windows = [50, 100, 200]
+    lookaheads = [8, 12, 16]  # 2h, 3h, 4h
+    # Feature norm window
+    norm_windows = [96, 192] # approx 1 day, 2 days
 
     configs: List[Dict[str, Any]] = []
 
@@ -128,7 +128,7 @@ def save_sweep_results(
 async def main_async() -> None:
     args = parse_args()
 
-    print("🚀 Volume Force Threshold Sweep")
+    print("🚀 Volume Force Multi-Task Threshold Sweep")
     print("=" * 60)
     print(f"Symbol: {args.symbol}")
     print(f"Exchange: {args.exchange}")
@@ -164,21 +164,23 @@ async def main_async() -> None:
         print("\n⚠️ No successful configurations in sweep.")
         return
 
+    # Sort by Average Log Loss (which MLVolumeForceStep reports as 'oof_log_loss')
     successful = successful.sort_values("oof_log_loss", ascending=True)
 
     cols = [
         "config_id",
-        "oof_log_loss",
-        "oof_accuracy",
+        "oof_log_loss",  # This is the Average Log Loss across 3 models
+        "breakout_log_loss",
+        "volatility_log_loss",
+        "trend_log_loss",
         "config_volume_force_target_threshold_atr",
         "config_volume_force_lookahead",
         "config_volume_force_normalization_window",
-        "class_balance"
     ]
 
     available_cols = [c for c in cols if c in successful.columns]
 
-    print("\n🏆 Top sweep configurations (by lowest LogLoss):")
+    print("\n🏆 Top sweep configurations (by lowest Avg LogLoss):")
     print(successful[available_cols].head(10).to_string(index=False))
 
 

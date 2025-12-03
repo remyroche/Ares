@@ -1026,12 +1026,20 @@ def get_specialist_models_outputs(
             # Expose 'predicted' (scalar 0-1) and rename to vol_force_scalar
             vol_cols: List[str] = []
             rename_map = {}
+
+            # Legacy scalar support
             if "predicted" in vol_force_preds.columns:
                 vol_cols.append("predicted")
                 rename_map["predicted"] = "vol_force_scalar"
             elif "scalar_pred" in vol_force_preds.columns:
                 vol_cols.append("scalar_pred")
                 rename_map["scalar_pred"] = "vol_force_scalar"
+
+            # New Multi-Target Support
+            for target in ["breakout", "volatility", "trend"]:
+                col = f"vol_force_{target}"
+                if col in vol_force_preds.columns:
+                    vol_cols.append(col)
 
             if vol_cols:
                 before_block = vol_force_preds[vol_cols].copy()

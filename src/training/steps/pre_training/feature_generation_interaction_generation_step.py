@@ -938,19 +938,58 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                 return False
 
         # Prefer meta-label primary training targets (from FeatureGenerationMetaLabelingStep)
+        # Target selection depends on model_type:
+        # - regressor (default): prefer target_long/target_short (continuous)
+        # - classifier: prefer binary_label_long/binary_label_short (binary)
         direction = str(config.get("direction", "long")).lower()
+        model_type = str(config.get("model_type", "regressor")).lower()
+        
         directional_candidates: List[str] = []
-        if direction == "long":
-            directional_candidates = ["target_long", "target_long_fused"]
-        elif direction == "short":
-            directional_candidates = ["target_short", "target_short_fused"]
+        
+        if model_type == "classifier":
+            # For classifiers: prefer binary labels, fallback to regressor targets
+            tprint_info(f"🔧 Model type: classifier (preferring binary targets for {direction} direction)")
+            if direction == "long":
+                directional_candidates = [
+                    "binary_label_long",   # Primary: directional classifier target
+                    "target_long",         # Fallback: regressor target
+                    "target_long_fused",
+                ]
+            elif direction == "short":
+                directional_candidates = [
+                    "binary_label_short",  # Primary: directional classifier target
+                    "target_short",        # Fallback: regressor target
+                    "target_short_fused",
+                ]
+            else:
+                directional_candidates = [
+                    "binary_label_long",   # Use both directional labels
+                    "binary_label_short",
+                    "target_long",
+                    "target_short",
+                    "target_long_fused",
+                    "target_short_fused",
+                ]
         else:
-            directional_candidates = [
-                "target_long",
-                "target_short",
-                "target_long_fused",
-                "target_short_fused",
-            ]
+            # For regressors (default): prefer continuous targets
+            tprint_info(f"🔧 Model type: regressor (preferring continuous targets for {direction} direction)")
+            if direction == "long":
+                directional_candidates = [
+                    "target_long",         # Primary: regressor target
+                    "target_long_fused",
+                ]
+            elif direction == "short":
+                directional_candidates = [
+                    "target_short",        # Primary: regressor target
+                    "target_short_fused",
+                ]
+            else:
+                directional_candidates = [
+                    "target_long",
+                    "target_short",
+                    "target_long_fused",
+                    "target_short_fused",
+                ]
 
         for col in directional_candidates:
             if col in labeled_data.columns:
@@ -968,7 +1007,12 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                     return labeled_data[[col]]
 
         # Final fallback: diagnostic targets used for reporting only
-        diagnostic_candidates = ["binary_label", "realized_return"]
+        # NOTE: legacy 'binary_label' removed - use directional labels only
+        diagnostic_candidates = [
+            "binary_label_long",   # Direction-specific
+            "binary_label_short",  # Direction-specific
+            "realized_return",
+        ]
         for col in diagnostic_candidates:
             if col in labeled_data.columns:
                 series = labeled_data[col]
@@ -5228,10 +5272,13 @@ def _fgigs_compute_topk_meta_label_diagnostics(
     if labeled_df.index.duplicated().any():
         labeled_df = labeled_df[~labeled_df.index.duplicated(keep="first")]
 
-    has_binary = "binary_label" in labeled_df.columns
+    # Check for binary labels (prefer directional, fallback to unified)
+    has_binary_long = "binary_label_long" in labeled_df.columns
+    has_binary_short = "binary_label_short" in labeled_df.columns
+    has_binary = "binary_label" in labeled_df.columns or has_binary_long or has_binary_short
     has_rr = "realized_return" in labeled_df.columns
     if not (has_binary or has_rr):
-        return {"error": "binary_label and realized_return not found in labeled_data"}
+        return {"error": "binary_label/binary_label_long/binary_label_short and realized_return not found in labeled_data"}
 
     common_idx = combined_features.index.intersection(labeled_df.index)
     if len(common_idx) < 100:
@@ -5256,7 +5303,14 @@ def _fgigs_compute_topk_meta_label_diagnostics(
         return {"error": "no top features found in combined_features"}
 
     X = combined_features.loc[common_idx, top_features_unique].copy()
-    bin_series = labeled_df.loc[common_idx, "binary_label"] if has_binary else None
+    # Use directional binary labels only (no fallback to unified binary_label)
+    bin_series = None
+    if has_binary:
+        if "binary_label_long" in labeled_df.columns:
+            bin_series = labeled_df.loc[common_idx, "binary_label_long"]
+        elif "binary_label_short" in labeled_df.columns:
+            bin_series = labeled_df.loc[common_idx, "binary_label_short"]
+        # NOTE: Removed fallback to unified 'binary_label' - use directional labels only
     rr_series = labeled_df.loc[common_idx, "realized_return"] if has_rr else None
 
     def _safe_corr(x: pd.Series, y: Optional[pd.Series]) -> Optional[float]:

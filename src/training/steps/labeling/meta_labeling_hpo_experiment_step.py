@@ -1109,7 +1109,16 @@ class MetaLabelingHPOExperimentStep(BaseStep):
         calibrated_horizon: Optional[int] = None
         if stage1_enable_subsample:
             def _evaluate_horizon_candidate(h: int) -> Dict[str, float]:
-                realized_returns_h, binary_labels_h, exit_reasons_h, event_durations_h, mfe_h, mae_h = compute_realized_returns(
+                (
+                    realized_returns_h, 
+                    binary_labels_h, 
+                    exit_reasons_h, 
+                    event_durations_h, 
+                    mfe_h, 
+                    mae_h,
+                    _binary_labels_long_h,  # Not used in HPO scoring
+                    _binary_labels_short_h,  # Not used in HPO scoring
+                ) = compute_realized_returns(
                     stage1_market_data,
                     stage1_primary_signals,
                     profit_threshold=float(warm_start_best_params.get("profit_thr_base", 0.012)),
@@ -1333,6 +1342,8 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     event_durations,
                     mfe_series,
                     mae_series,
+                    _binary_labels_long,  # Not used in HPO objective function
+                    _binary_labels_short,  # Not used in HPO objective function
                 ) = compute_realized_returns(
                     market_data,
                     primary_signals,
@@ -2639,6 +2650,8 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     event_durations,
                     mfe_series_diag,
                     mae_series_diag,
+                    _binary_labels_long_diag,  # Not used in diagnostics
+                    _binary_labels_short_diag,  # Not used in diagnostics
                 ) = compute_realized_returns(
                     market_data,
                     primary_signals,

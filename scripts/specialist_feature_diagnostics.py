@@ -15,10 +15,20 @@ Optionally restricts analysis to the last N calendar days via --lookback-days.
 
 Usage example (from project root):
 
+  # Uses direction-aware default target (binary_label_long for longs)
   python scripts/specialist_feature_diagnostics.py \
       --symbol ETHUSDT --exchange binance --timeframe 15m \
-      --direction long --target-col binary_label --regime-timeframe 1h \
-      --lookback-days 365
+      --direction long --regime-timeframe 1h --lookback-days 365
+
+  # Explicit target column (regression target for regressors)
+  python scripts/specialist_feature_diagnostics.py \
+      --symbol ETHUSDT --exchange binance --timeframe 15m \
+      --direction long --target-col target_long --regime-timeframe 1h
+
+  # Compare multiple targets (classifiers vs regressors)
+  python scripts/specialist_feature_diagnostics.py \
+      --symbol ETHUSDT --exchange binance --timeframe 15m \
+      --direction long --compare-targets --regime-timeframe 1h
 """
 
 import argparse
@@ -249,11 +259,14 @@ def _prepare_labels(
     model: str,
     target_col: str,
     lookback_days: Optional[float] = None,
-) -> Tuple[pd.Series, pd.DatetimeIndex]:
-    """Load labeled_data and return (y, datetime index).
+) -> Tuple[pd.Series, pd.DatetimeIndex, pd.Series]:
+    """Load labeled_data and return (y, datetime index, realized_return).
 
     Uses the same loader as snr_diagnostics to ensure compatibility with
     FeatureGenerationMetaLabelingStep artifacts.
+    
+    Returns:
+        Tuple of (target_series, training_index, realized_return_series)
     """
     labeled_df = _load_labeled_data(
         symbol=symbol,
@@ -387,7 +400,16 @@ def _prepare_labels(
             len(y.index),
         )
 
-    return y, y.index
+    # Extract realized_return for PnL simulation (if available)
+    if "realized_return" in labeled_df.columns:
+        realized_return = labeled_df["realized_return"].astype(float)
+        realized_return = realized_return.loc[y.index]
+    else:
+        # Fallback: use the target column as a proxy if it's a continuous value
+        realized_return = pd.Series(index=y.index, dtype=float)
+        logger.warning("realized_return column not found in labeled_data; PnL simulation will be limited")
+
+    return y, y.index, realized_return
 
 
 def _load_specialist_features(
@@ -1337,6 +1359,244 @@ def _compute_tree_shap_interactions(
     }
 
 
+def _compute_trading_simulation_pnl(
+    confidence_scores: pd.Series,
+    realized_returns: pd.Series,
+    thresholds: list[float] = [0.6, 0.7, 0.8, 0.9],
+    tp_pct: float = 0.02,  # 2% take profit
+    sl_pct: float = 0.007,  # 0.7% stop loss
+    fee_per_trade: float = 0.0015,  # 0.15% per trade (0.3% round trip)
+) -> Dict[str, Any]:
+    """Compute trading simulation PnL for specialist/probe models at various confidence thresholds.
+    
+    Uses a simplified triple-barrier approach:
+    - TP: Take profit at +2%
+    - SL: Stop loss at -0.7%
+    - Fees: 0.15% per trade (0.3% round-trip)
+    
+    For each threshold, computes:
+    - Number of trades
+    - Average trades per day
+    - Win rate
+    - Average PnL % per-day and per-month
+    
+    Args:
+        confidence_scores: Model confidence/probability scores (0-1)
+        realized_returns: Actual realized returns for each event
+        thresholds: Confidence thresholds to evaluate
+        tp_pct: Take profit percentage (default: 2%)
+        sl_pct: Stop loss percentage (default: 0.7%)
+        fee_per_trade: Fee per trade as fraction (default: 0.15%)
+        
+    Returns:
+        Dictionary with results per threshold
+    """
+    results = {
+        "thresholds": thresholds,
+        "tp_pct": tp_pct,
+        "sl_pct": sl_pct,
+        "fee_round_trip_pct": fee_per_trade * 2,
+        "per_threshold": {},
+    }
+    
+    # Align confidence and returns
+    common_idx = confidence_scores.index.intersection(realized_returns.index)
+    if len(common_idx) < 10:
+        return {"error": f"Insufficient overlapping data: {len(common_idx)} samples"}
+    
+    conf = confidence_scores.loc[common_idx].astype(float)
+    rets = realized_returns.loc[common_idx].astype(float)
+    
+    # Drop NaN values
+    valid_mask = conf.notna() & rets.notna()
+    conf = conf[valid_mask]
+    rets = rets[valid_mask]
+    
+    if len(conf) < 10:
+        return {"error": f"Insufficient valid data after NaN removal: {len(conf)} samples"}
+    
+    # Calculate date range for per-day/per-month metrics
+    if isinstance(conf.index, pd.DatetimeIndex):
+        date_range_days = (conf.index.max() - conf.index.min()).days
+        if date_range_days <= 0:
+            date_range_days = 1
+    else:
+        date_range_days = len(conf) / 96  # Assume 15m bars, ~96 per day
+    
+    date_range_months = date_range_days / 30.44  # Average days per month
+    
+    for threshold in thresholds:
+        # Filter trades above threshold
+        trade_mask = conf >= threshold
+        n_trades = int(trade_mask.sum())
+        
+        if n_trades == 0:
+            results["per_threshold"][f"{threshold:.0%}"] = {
+                "threshold": threshold,
+                "n_trades": 0,
+                "trades_per_day": 0.0,
+                "win_rate": 0.0,
+                "total_pnl_pct": 0.0,
+                "avg_pnl_per_trade_pct": 0.0,
+                "avg_pnl_per_day_pct": 0.0,
+                "avg_pnl_per_month_pct": 0.0,
+                "sharpe_estimate": 0.0,
+            }
+            continue
+        
+        # Get returns for trades above threshold
+        trade_returns = rets[trade_mask]
+        
+        # Apply triple-barrier logic (simplified):
+        # If return >= tp_pct: profit = tp_pct - fees
+        # If return <= -sl_pct: loss = -sl_pct - fees  
+        # Otherwise: use actual return - fees
+        def apply_barrier(ret: float) -> float:
+            if ret >= tp_pct:
+                return tp_pct - fee_per_trade * 2  # Hit TP
+            elif ret <= -sl_pct:
+                return -sl_pct - fee_per_trade * 2  # Hit SL
+            else:
+                return ret - fee_per_trade * 2  # Actual return minus fees
+        
+        barrier_returns = trade_returns.apply(apply_barrier)
+        
+        # Calculate metrics
+        n_wins = int((barrier_returns > 0).sum())
+        win_rate = n_wins / n_trades if n_trades > 0 else 0.0
+        
+        total_pnl_pct = float(barrier_returns.sum()) * 100  # As percentage
+        avg_pnl_per_trade_pct = float(barrier_returns.mean()) * 100
+        
+        trades_per_day = n_trades / date_range_days if date_range_days > 0 else 0.0
+        avg_pnl_per_day_pct = total_pnl_pct / date_range_days if date_range_days > 0 else 0.0
+        avg_pnl_per_month_pct = total_pnl_pct / date_range_months if date_range_months > 0 else 0.0
+        
+        # Estimate Sharpe-like metric (annualized)
+        if len(barrier_returns) > 1 and barrier_returns.std() > 0:
+            daily_sharpe = (barrier_returns.mean() / barrier_returns.std()) * np.sqrt(trades_per_day)
+            annualized_sharpe = daily_sharpe * np.sqrt(252)
+        else:
+            annualized_sharpe = 0.0
+        
+        results["per_threshold"][f"{threshold:.0%}"] = {
+            "threshold": threshold,
+            "n_trades": n_trades,
+            "trades_per_day": round(trades_per_day, 2),
+            "win_rate": round(win_rate, 4),
+            "total_pnl_pct": round(total_pnl_pct, 2),
+            "avg_pnl_per_trade_pct": round(avg_pnl_per_trade_pct, 4),
+            "avg_pnl_per_day_pct": round(avg_pnl_per_day_pct, 4),
+            "avg_pnl_per_month_pct": round(avg_pnl_per_month_pct, 2),
+            "sharpe_estimate": round(annualized_sharpe, 2),
+        }
+    
+    results["date_range_days"] = round(date_range_days, 1)
+    results["total_samples"] = len(conf)
+    
+    return results
+
+
+def _compute_probe_model_pnl(
+    X: pd.DataFrame,
+    y: pd.Series,
+    realized_returns: pd.Series,
+    n_splits: int = 5,
+    thresholds: list[float] = [0.6, 0.7, 0.8, 0.9],
+) -> Dict[str, Any]:
+    """Compute trading PnL metrics for probe models (LogReg/LGBM) using cross-validation predictions.
+    
+    This function trains probe models with TimeSeriesSplit cross-validation,
+    collects out-of-sample probability predictions, and computes trading PnL
+    at various confidence thresholds.
+    """
+    results = {}
+    
+    # Check for valid data
+    common_idx = X.index.intersection(y.index).intersection(realized_returns.index)
+    if len(common_idx) < 100:
+        return {"error": f"Insufficient overlapping data: {len(common_idx)} samples"}
+    
+    X_aligned = X.loc[common_idx].copy()
+    y_aligned = y.loc[common_idx].copy()
+    rets_aligned = realized_returns.loc[common_idx].copy()
+    
+    # Drop NaN values
+    valid_mask = y_aligned.notna() & rets_aligned.notna()
+    X_aligned = X_aligned.loc[valid_mask]
+    y_aligned = y_aligned[valid_mask]
+    rets_aligned = rets_aligned[valid_mask]
+    
+    # Fill NaN in features
+    X_aligned = X_aligned.fillna(0.0)
+    
+    if len(X_aligned) < 100:
+        return {"error": f"Insufficient valid data: {len(X_aligned)} samples"}
+    
+    # Convert target to binary (for classification)
+    y_binary = (y_aligned > 0).astype(int)
+    
+    tscv = TimeSeriesSplit(n_splits=n_splits)
+    
+    # Collect out-of-sample predictions
+    oos_probs_logreg = pd.Series(index=X_aligned.index, dtype=float)
+    oos_probs_lgbm = pd.Series(index=X_aligned.index, dtype=float)
+    
+    for train_idx, val_idx in tscv.split(X_aligned):
+        X_train = X_aligned.iloc[train_idx]
+        X_val = X_aligned.iloc[val_idx]
+        y_train = y_binary.iloc[train_idx]
+        
+        # Logistic Regression
+        try:
+            logreg = Pipeline([
+                ("scaler", StandardScaler()),
+                ("clf", LogisticRegression(max_iter=500, solver="lbfgs", random_state=42)),
+            ])
+            logreg.fit(X_train, y_train)
+            probs = logreg.predict_proba(X_val)[:, 1]
+            oos_probs_logreg.iloc[val_idx] = probs
+        except Exception:
+            pass
+        
+        # LightGBM
+        try:
+            import lightgbm as lgb
+            lgbm_clf = lgb.LGBMClassifier(
+                n_estimators=100,
+                max_depth=5,
+                learning_rate=0.05,
+                random_state=42,
+                verbose=-1,
+            )
+            lgbm_clf.fit(X_train, y_train)
+            probs = lgbm_clf.predict_proba(X_val)[:, 1]
+            oos_probs_lgbm.iloc[val_idx] = probs
+        except Exception:
+            pass
+    
+    # Compute trading PnL for each model
+    if oos_probs_logreg.notna().sum() >= 10:
+        results["logreg"] = _compute_trading_simulation_pnl(
+            confidence_scores=oos_probs_logreg,
+            realized_returns=rets_aligned,
+            thresholds=thresholds,
+        )
+    else:
+        results["logreg"] = {"error": "Insufficient LogReg predictions"}
+    
+    if oos_probs_lgbm.notna().sum() >= 10:
+        results["lgbm"] = _compute_trading_simulation_pnl(
+            confidence_scores=oos_probs_lgbm,
+            realized_returns=rets_aligned,
+            thresholds=thresholds,
+        )
+    else:
+        results["lgbm"] = {"error": "Insufficient LGBM predictions"}
+    
+    return results
+
+
 def run_diagnostics(
     symbol: str,
     exchange: str,
@@ -1351,8 +1611,8 @@ def run_diagnostics(
     projection_mode: str = "canonical_scalars",
 ) -> Tuple[Path, Path]:
     """Run full specialist feature diagnostics and export reports."""
-    # 1) Load labels
-    y, training_index = _prepare_labels(
+    # 1) Load labels and realized_return for PnL simulation
+    y, training_index, realized_return = _prepare_labels(
         symbol=symbol,
         exchange=exchange,
         timeframe=timeframe,
@@ -1399,6 +1659,15 @@ def run_diagnostics(
 
     # 4) Probe models (LogReg / LGBM), leakage, stability, interactions
     probe_models = _compute_probe_models(X=X, y=y, n_splits=cv_folds)
+    
+    # 4b) Compute probe model trading PnL simulation
+    probe_pnl = _compute_probe_model_pnl(
+        X=X,
+        y=y,
+        realized_returns=realized_return,
+        n_splits=cv_folds,
+        thresholds=[0.6, 0.7, 0.8, 0.9],
+    )
 
     # Reuse a FinalFeatureSelectionComponent instance for leakage detection
     fs_config = FinalFeatureSelectionConfig()
@@ -1488,6 +1757,53 @@ def run_diagnostics(
             _fmt_probe("LightGBM", lgbm_summary),
         ]
     )
+
+    # Add Trading PnL Simulation section
+    md_lines.extend(
+        [
+            "",
+            "### Trading PnL Simulation (TP=2%, SL=0.7%, Fees=0.3% round-trip)",
+            "",
+        ]
+    )
+
+    if "error" in probe_pnl:
+        md_lines.append(f"- Trading simulation unavailable: {probe_pnl['error']}")
+    else:
+        # Display results for each model
+        for model_name, model_key in [("Logistic Regression", "logreg"), ("LightGBM", "lgbm")]:
+            model_pnl = probe_pnl.get(model_key, {})
+            if "error" in model_pnl:
+                md_lines.append(f"**{model_name}**: {model_pnl['error']}")
+                md_lines.append("")
+                continue
+            
+            per_threshold = model_pnl.get("per_threshold", {})
+            if not per_threshold:
+                md_lines.append(f"**{model_name}**: No threshold data available")
+                md_lines.append("")
+                continue
+            
+            md_lines.append(f"**{model_name}** (data range: {model_pnl.get('date_range_days', 0):.0f} days, {model_pnl.get('total_samples', 0)} samples)")
+            md_lines.append("")
+            md_lines.append("| Threshold | Trades | Trades/Day | Win Rate | PnL/Trade | PnL/Day | PnL/Month | Sharpe |")
+            md_lines.append("|----------:|-------:|-----------:|---------:|----------:|--------:|----------:|-------:|")
+            
+            for threshold_key in ["60%", "70%", "80%", "90%"]:
+                if threshold_key not in per_threshold:
+                    continue
+                t = per_threshold[threshold_key]
+                md_lines.append(
+                    f"| {threshold_key} | "
+                    f"{t['n_trades']:,} | "
+                    f"{t['trades_per_day']:.2f} | "
+                    f"{t['win_rate']:.1%} | "
+                    f"{t['avg_pnl_per_trade_pct']:.4f}% | "
+                    f"{t['avg_pnl_per_day_pct']:.4f}% | "
+                    f"{t['avg_pnl_per_month_pct']:.2f}% | "
+                    f"{t['sharpe_estimate']:.2f} |"
+                )
+            md_lines.append("")
 
     md_lines.extend(
         [
@@ -1699,6 +2015,7 @@ def run_diagnostics(
         "feature_metrics": feature_metrics,
         "cv_folds": int(cv_folds),
         "probe_models": probe_models,
+        "probe_pnl_simulation": probe_pnl,
         "leakage_diagnostics": leakage_diagnostics,
         "stability_metrics": global_stability,
         "interactions": interactions,
@@ -1729,7 +2046,11 @@ def main() -> None:
     ap.add_argument("--direction", type=str, default="long", choices=["long", "short", "both"])
     ap.add_argument("--model", type=str, default="analyst")
     ap.add_argument("--regime-timeframe", type=str, default="1h")
-    ap.add_argument("--target-col", type=str, default="binary_label")
+    # Default target column is now direction-aware: binary_label_long for longs, binary_label_short for shorts
+    # Falls back to unified binary_label if directional labels not available
+    ap.add_argument("--target-col", type=str, default=None,
+                    help="Target column for diagnostics. If not specified, uses direction-aware default: "
+                         "binary_label_long (for long), binary_label_short (for short), or binary_label (for both)")
     ap.add_argument("--cv-folds", type=int, default=5)
     ap.add_argument(
         "--lookback-days",
@@ -1793,17 +2114,39 @@ def main() -> None:
             selected_specialists=args.train_specialists,
         ))
 
+    # Determine default target column based on direction if not explicitly provided
+    if args.target_col is None:
+        if args.direction == "long":
+            args.target_col = "binary_label_long"
+        elif args.direction == "short":
+            args.target_col = "binary_label_short"
+        else:
+            args.target_col = "binary_label"  # Fallback for 'both' direction
+        print(f"Using direction-aware default target: {args.target_col}")
+
     targets_to_run = [args.target_col]
     if args.compare_targets:
-        if args.direction == "long" and "target_long" not in targets_to_run:
-            targets_to_run.append("target_long")
-        elif args.direction == "short" and "target_short" not in targets_to_run:
-            targets_to_run.append("target_short")
+        # Add regression targets for comparison
+        if args.direction == "long":
+            if "target_long" not in targets_to_run:
+                targets_to_run.append("target_long")
+            # Also compare with unified binary_label for reference
+            if "binary_label" not in targets_to_run:
+                targets_to_run.append("binary_label")
+        elif args.direction == "short":
+            if "target_short" not in targets_to_run:
+                targets_to_run.append("target_short")
+            if "binary_label" not in targets_to_run:
+                targets_to_run.append("binary_label")
         elif args.direction == "both":
             if "target_long" not in targets_to_run:
                 targets_to_run.append("target_long")
             if "target_short" not in targets_to_run:
                 targets_to_run.append("target_short")
+            if "binary_label_long" not in targets_to_run:
+                targets_to_run.append("binary_label_long")
+            if "binary_label_short" not in targets_to_run:
+                targets_to_run.append("binary_label_short")
 
     for tgt in targets_to_run:
         print(f"\n--- Running diagnostics for target: {tgt} ---")

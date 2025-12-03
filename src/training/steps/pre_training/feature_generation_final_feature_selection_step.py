@@ -1555,27 +1555,45 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         else:
             tprint_error(f"❌ NO INTERACTION FEATURES in final result!")
         
-        # Debug: Check if target column is present with priority for binary_label, then new simplified target structure
-        if 'binary_label' in result_df.columns:
-            available_targets = ['binary_label']
-            tprint_info("📊 Using primary binary target: binary_label")
-            tprint_info(f"📊 Target column 'binary_label' non-NaN count: {result_df['binary_label'].notna().sum()}")
-        # Next check for new simplified target structure (highest priority among price-based targets)
-        elif 'target_long_fused' in result_df.columns and 'target_short_fused' in result_df.columns:
+        # Debug: Check if target column is present
+        # Priority: regression targets (target_long/short) > classifier targets (binary_label_long/short)
+        direction = str(config.get('direction', 'long')).lower()
+        model_type = str(config.get('model_type', 'regressor')).lower()
+        
+        # Log available targets for debugging
+        available_targets = []
+        if 'target_long' in result_df.columns or 'target_short' in result_df.columns:
+            if direction == 'long' and 'target_long' in result_df.columns:
+                available_targets = ['target_long']
+                tprint_info(f"📊 Primary regression target: target_long ({result_df['target_long'].notna().sum()} non-NaN)")
+            elif direction == 'short' and 'target_short' in result_df.columns:
+                available_targets = ['target_short']
+                tprint_info(f"📊 Primary regression target: target_short ({result_df['target_short'].notna().sum()} non-NaN)")
+            else:
+                available_targets = ['target_long', 'target_short']
+                tprint_info(f"📊 Regression targets found: target_long ({result_df.get('target_long', pd.Series()).notna().sum()} non-NaN), target_short ({result_df.get('target_short', pd.Series()).notna().sum()} non-NaN)")
+        elif 'target_long_fused' in result_df.columns or 'target_short_fused' in result_df.columns:
             available_targets = ['target_long_fused', 'target_short_fused']
             tprint_info("📊 Using fused target structure: target_long_fused, target_short_fused")
-            tprint_info(f"📊 Target columns found: target_long_fused ({result_df['target_long_fused'].notna().sum()} non-NaN), target_short_fused ({result_df['target_short_fused'].notna().sum()} non-NaN)")
-        elif 'target_long' in result_df.columns and 'target_short' in result_df.columns:
-            available_targets = ['target_long', 'target_short']
-            tprint_info("📊 Using new simplified target structure: target_long, target_short")
-            tprint_info(f"📊 Target columns found: target_long ({result_df['target_long'].notna().sum()} non-NaN), target_short ({result_df['target_short'].notna().sum()} non-NaN)")
+        elif 'binary_label_long' in result_df.columns or 'binary_label_short' in result_df.columns:
+            if direction == 'long' and 'binary_label_long' in result_df.columns:
+                available_targets = ['binary_label_long']
+                tprint_info(f"📊 Classifier target: binary_label_long ({result_df['binary_label_long'].notna().sum()} non-NaN)")
+            elif direction == 'short' and 'binary_label_short' in result_df.columns:
+                available_targets = ['binary_label_short']
+                tprint_info(f"📊 Classifier target: binary_label_short ({result_df['binary_label_short'].notna().sum()} non-NaN)")
+            else:
+                available_targets = ['binary_label_long', 'binary_label_short']
+        # NOTE: legacy 'binary_label' fallback removed - use directional labels only
         else:
             # Fall back to legacy target detection
             available_targets = [col for col in PRIMARY_TARGET_COLUMN_NAMES if col in result_df.columns]
             tprint_info(f"📊 Using legacy target detection: {available_targets}")
-            # Check if we have the old price_target_vol_normalized column
-            if 'price_target_vol_normalized' in result_df.columns:
-                tprint_warning("⚠️ Legacy target 'price_target_vol_normalized' found - consider migrating to new simplified target structure")
+        
+        tprint_info(f"📊 Model type: {model_type}, Direction: {direction}")
+        # Check if we have the old price_target_vol_normalized column
+        if 'price_target_vol_normalized' in result_df.columns:
+            tprint_warning("⚠️ Legacy target 'price_target_vol_normalized' found - consider migrating to new simplified target structure")
         
         tprint_info(f"📊 Combined feature matrix: {len(numeric_cols)} features, {len(result_df)} samples")
         tprint_info(f"📊 Available target columns: {available_targets}")
@@ -1943,18 +1961,53 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
 
         def _select_primary_target_column(df: pd.DataFrame) -> Optional[str]:
             direction_local = str(config.get("direction", "long")).lower()
+            # NEW: Support model_type config to choose between classifier and regressor
+            # - classifier: Uses binary_label_long/short (directional classification)
+            # - regressor: Uses target_long/short (expected returns, current default)
+            model_type = str(config.get("model_type", "regressor")).lower()
+            
+            # Build direction-specific candidate lists based on model type
             directional_candidates_local: List[str] = []
-            if direction_local == "long":
-                directional_candidates_local = ["target_long", "target_long_fused"]
-            elif direction_local == "short":
-                directional_candidates_local = ["target_short", "target_short_fused"]
+            
+            if model_type == "classifier":
+                # For classifiers, prefer directional binary labels
+                if direction_local == "long":
+                    directional_candidates_local = [
+                        "binary_label_long",  # NEW: Direction-specific binary label
+                        "target_long",        # Fallback to regressor target
+                        "target_long_fused",
+                    ]
+                elif direction_local == "short":
+                    directional_candidates_local = [
+                        "binary_label_short",  # NEW: Direction-specific binary label
+                        "target_short",        # Fallback to regressor target
+                        "target_short_fused",
+                    ]
+                else:
+                    # For 'both' direction with classifier, use both directional labels
+                    directional_candidates_local = [
+                        "binary_label_long",
+                        "binary_label_short",
+                        "target_long",
+                        "target_short",
+                        "target_long_fused",
+                        "target_short_fused",
+                    ]
+                tprint_info(f"🔧 Model type: classifier (using binary classification targets for {direction_local} direction)")
             else:
-                directional_candidates_local = [
-                    "target_long",
-                    "target_short",
-                    "target_long_fused",
-                    "target_short_fused",
-                ]
+                # For regressors, prefer continuous target values (current behavior)
+                if direction_local == "long":
+                    directional_candidates_local = ["target_long", "target_long_fused"]
+                elif direction_local == "short":
+                    directional_candidates_local = ["target_short", "target_short_fused"]
+                else:
+                    directional_candidates_local = [
+                        "target_long",
+                        "target_short",
+                        "target_long_fused",
+                        "target_short_fused",
+                    ]
+                tprint_info(f"🔧 Model type: regressor (using continuous regression targets for {direction_local} direction)")
 
             for col in directional_candidates_local:
                 if col in df.columns:
@@ -1970,7 +2023,13 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                         tprint_info(f"📊 Using fallback primary target for final selection: {col}")
                         return col
 
-            diagnostic_candidates_local = ["binary_label", "realized_return"]
+            # Directional binary labels as fallback diagnostic candidates
+            # NOTE: legacy 'binary_label' removed - use directional labels only
+            diagnostic_candidates_local = [
+                "binary_label_long",   # Direction-specific
+                "binary_label_short",  # Direction-specific
+                "realized_return",
+            ]
             for col in diagnostic_candidates_local:
                 if col in df.columns:
                     series = df[col]

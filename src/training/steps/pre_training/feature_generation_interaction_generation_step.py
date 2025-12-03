@@ -938,19 +938,59 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                 return False
 
         # Prefer meta-label primary training targets (from FeatureGenerationMetaLabelingStep)
+        # Target selection depends on model_type:
+        # - regressor (default): prefer target_long/target_short (continuous)
+        # - classifier: prefer binary_label_long/binary_label_short (binary)
         direction = str(config.get("direction", "long")).lower()
+        model_type = str(config.get("model_type", "regressor")).lower()
+        
         directional_candidates: List[str] = []
-        if direction == "long":
-            directional_candidates = ["target_long", "target_long_fused"]
-        elif direction == "short":
-            directional_candidates = ["target_short", "target_short_fused"]
+        
+        if model_type == "classifier":
+            # For classifiers: prefer binary labels, fallback to regressor targets
+            tprint_info(f"🔧 Model type: classifier (preferring binary targets for {direction} direction)")
+            if direction == "long":
+                directional_candidates = [
+                    "binary_label_long",   # Primary: directional classifier target
+                    "target_long",         # Fallback: regressor target
+                    "target_long_fused",
+                ]
+            elif direction == "short":
+                directional_candidates = [
+                    "binary_label_short",  # Primary: directional classifier target
+                    "target_short",        # Fallback: regressor target
+                    "target_short_fused",
+                ]
+            else:
+                directional_candidates = [
+                    "binary_label",        # Unified for both directions
+                    "target_long",
+                    "target_short",
+                    "target_long_fused",
+                    "target_short_fused",
+                ]
         else:
-            directional_candidates = [
-                "target_long",
-                "target_short",
-                "target_long_fused",
-                "target_short_fused",
-            ]
+            # For regressors (default): prefer continuous targets
+            tprint_info(f"🔧 Model type: regressor (preferring continuous targets for {direction} direction)")
+            if direction == "long":
+                directional_candidates = [
+                    "target_long",         # Primary: regressor target
+                    "target_long_fused",
+                    "binary_label_long",   # Fallback: classifier target
+                ]
+            elif direction == "short":
+                directional_candidates = [
+                    "target_short",        # Primary: regressor target
+                    "target_short_fused",
+                    "binary_label_short",  # Fallback: classifier target
+                ]
+            else:
+                directional_candidates = [
+                    "target_long",
+                    "target_short",
+                    "target_long_fused",
+                    "target_short_fused",
+                ]
 
         for col in directional_candidates:
             if col in labeled_data.columns:
@@ -968,10 +1008,9 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                     return labeled_data[[col]]
 
         # Final fallback: diagnostic targets used for reporting only
-        # NEW: Include directional binary labels for classifier-based feature selection
         diagnostic_candidates = [
-            "binary_label_long",   # NEW: Direction-specific
-            "binary_label_short",  # NEW: Direction-specific
+            "binary_label_long",   # Direction-specific
+            "binary_label_short",  # Direction-specific
             "binary_label",        # Legacy unified
             "realized_return",
         ]

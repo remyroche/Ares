@@ -1555,27 +1555,47 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         else:
             tprint_error(f"❌ NO INTERACTION FEATURES in final result!")
         
-        # Debug: Check if target column is present with priority for binary_label, then new simplified target structure
-        if 'binary_label' in result_df.columns:
-            available_targets = ['binary_label']
-            tprint_info("📊 Using primary binary target: binary_label")
-            tprint_info(f"📊 Target column 'binary_label' non-NaN count: {result_df['binary_label'].notna().sum()}")
-        # Next check for new simplified target structure (highest priority among price-based targets)
-        elif 'target_long_fused' in result_df.columns and 'target_short_fused' in result_df.columns:
+        # Debug: Check if target column is present
+        # Priority: regression targets (target_long/short) > classifier targets (binary_label_long/short)
+        direction = str(config.get('direction', 'long')).lower()
+        model_type = str(config.get('model_type', 'regressor')).lower()
+        
+        # Log available targets for debugging
+        available_targets = []
+        if 'target_long' in result_df.columns or 'target_short' in result_df.columns:
+            if direction == 'long' and 'target_long' in result_df.columns:
+                available_targets = ['target_long']
+                tprint_info(f"📊 Primary regression target: target_long ({result_df['target_long'].notna().sum()} non-NaN)")
+            elif direction == 'short' and 'target_short' in result_df.columns:
+                available_targets = ['target_short']
+                tprint_info(f"📊 Primary regression target: target_short ({result_df['target_short'].notna().sum()} non-NaN)")
+            else:
+                available_targets = ['target_long', 'target_short']
+                tprint_info(f"📊 Regression targets found: target_long ({result_df.get('target_long', pd.Series()).notna().sum()} non-NaN), target_short ({result_df.get('target_short', pd.Series()).notna().sum()} non-NaN)")
+        elif 'target_long_fused' in result_df.columns or 'target_short_fused' in result_df.columns:
             available_targets = ['target_long_fused', 'target_short_fused']
             tprint_info("📊 Using fused target structure: target_long_fused, target_short_fused")
-            tprint_info(f"📊 Target columns found: target_long_fused ({result_df['target_long_fused'].notna().sum()} non-NaN), target_short_fused ({result_df['target_short_fused'].notna().sum()} non-NaN)")
-        elif 'target_long' in result_df.columns and 'target_short' in result_df.columns:
-            available_targets = ['target_long', 'target_short']
-            tprint_info("📊 Using new simplified target structure: target_long, target_short")
-            tprint_info(f"📊 Target columns found: target_long ({result_df['target_long'].notna().sum()} non-NaN), target_short ({result_df['target_short'].notna().sum()} non-NaN)")
+        elif 'binary_label_long' in result_df.columns or 'binary_label_short' in result_df.columns:
+            if direction == 'long' and 'binary_label_long' in result_df.columns:
+                available_targets = ['binary_label_long']
+                tprint_info(f"📊 Classifier target: binary_label_long ({result_df['binary_label_long'].notna().sum()} non-NaN)")
+            elif direction == 'short' and 'binary_label_short' in result_df.columns:
+                available_targets = ['binary_label_short']
+                tprint_info(f"📊 Classifier target: binary_label_short ({result_df['binary_label_short'].notna().sum()} non-NaN)")
+            else:
+                available_targets = ['binary_label_long', 'binary_label_short']
+        elif 'binary_label' in result_df.columns:
+            available_targets = ['binary_label']
+            tprint_info(f"📊 Legacy unified target: binary_label ({result_df['binary_label'].notna().sum()} non-NaN)")
         else:
             # Fall back to legacy target detection
             available_targets = [col for col in PRIMARY_TARGET_COLUMN_NAMES if col in result_df.columns]
             tprint_info(f"📊 Using legacy target detection: {available_targets}")
-            # Check if we have the old price_target_vol_normalized column
-            if 'price_target_vol_normalized' in result_df.columns:
-                tprint_warning("⚠️ Legacy target 'price_target_vol_normalized' found - consider migrating to new simplified target structure")
+        
+        tprint_info(f"📊 Model type: {model_type}, Direction: {direction}")
+        # Check if we have the old price_target_vol_normalized column
+        if 'price_target_vol_normalized' in result_df.columns:
+            tprint_warning("⚠️ Legacy target 'price_target_vol_normalized' found - consider migrating to new simplified target structure")
         
         tprint_info(f"📊 Combined feature matrix: {len(numeric_cols)} features, {len(result_df)} samples")
         tprint_info(f"📊 Available target columns: {available_targets}")

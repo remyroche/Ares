@@ -2528,12 +2528,12 @@ def translate_to_targets_with_isotonic(
         tprint(f" WARNING: Isotonic predictions contain {n_nan} NaN and {n_inf} Inf values", "WARNING")
         expected_returns = np.nan_to_num(expected_returns, nan=0.0, posinf=0.1, neginf=-0.1)
 
-    # Convert to net-of-cost expected returns and suppress negative expectations
+    # Convert to net-of-cost expected returns
+    # REMOVED: np.maximum(..., 0.0) to allow negative expected returns (regression-friendly)
     net_expected = expected_returns - cost_threshold
-    net_positive = np.maximum(net_expected, 0.0)
 
-    # Only apply minimal clipping to avoid extreme outliers
-    final_targets = np.clip(net_positive, 0.0, 0.15)  # Cap at 15% to avoid outliers
+    # Only apply minimal clipping to avoid extreme outliers (symmetric)
+    final_targets = np.clip(net_expected, -0.15, 0.15)  # Cap at +/- 15% to avoid outliers
 
     # DEBUG LOGGING: Target statistics (compact summary)
     n_nonzero = (final_targets > 1e-6).sum()

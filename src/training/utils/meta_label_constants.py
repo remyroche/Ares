@@ -8,6 +8,8 @@ These constants are used across pre-training steps to:
 
 META_LABEL_TARGET_COLUMNS = [
     'binary_label',
+    'binary_label_long',
+    'binary_label_short',
     'smoothed_label',
     'realized_return',
     'label_uncertainty',
@@ -26,6 +28,8 @@ META_LABEL_TARGET_COLUMNS = [
 
 META_LABEL_PRIMARY_TRAINING_TARGETS = [
     'binary_label',
+    'binary_label_long',
+    'binary_label_short',
     'target_long_fused',
     'target_short_fused',
     'target_long',

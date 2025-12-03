@@ -14,6 +14,9 @@ import h5py
 import json
 import logging
 import re
+import fcntl
+import time
+import os
 
 from .view import ArtifactView, CombinedView
 from .view_mask import ViewMask
@@ -31,12 +34,14 @@ class VersionedArtifactStore:
     - Row and column level versioning
     - Comprehensive change tracking
     - Space-efficient delta storage
+    - Process-safe concurrent writes via file locking
 
     Storage Structure:
     - store.h5: Main HDF5 file with all data
     - changelog/: Change tracking files
     - versions/: Row version tracking
     - metadata.json: Store-level metadata
+    - metadata.json.lock: Lock file for concurrency
     """
 
     def __init__(
@@ -76,6 +81,7 @@ class VersionedArtifactStore:
         # Core files
         self.h5_file = self.store_path / "store.h5"
         self.metadata_file = self.store_path / "metadata.json"
+        self.lock_file = self.store_path / "store.lock"
 
         # Components
         self.changelog = ChangeLog(self.store_path / "changelog")
@@ -87,24 +93,47 @@ class VersionedArtifactStore:
         # Logger
         self.logger = logging.getLogger(f"VersionedArtifactStore.{self.store_path.name}")
 
-        # Metadata
-        from src.utils.tprint import tprint
-        tprint(f"🐛 DEBUG: Loading metadata from {self.metadata_file}", "INFO")
-        self._metadata = self._load_metadata()
-        tprint(f"🐛 DEBUG: Loaded metadata with {len(self._metadata.get('versions', {}))} versions", "INFO")
-        tprint(f"🐛 DEBUG: Current version: {self._metadata.get('current_version')}", "INFO")
+        # Metadata (lazy loaded or initial load)
+        self._metadata = None
 
-        # Initialize HDF5 file if needed
-        from src.utils.tprint import tprint
-        tprint(f"🐛 DEBUG: Checking HDF5 file existence: {self.h5_file.exists()}", "INFO")
-        if not self.h5_file.exists():
-            tprint("🐛 DEBUG: HDF5 file does not exist, initializing new file", "INFO")
-            self._init_h5_file()
-        else:
-            tprint(f"🐛 DEBUG: HDF5 file exists, size: {self.h5_file.stat().st_size} bytes", "INFO")
+        # Initialize HDF5 file if needed (with lock to prevent race conditions during init)
+        with self._lock():
+            if not self.h5_file.exists():
+                self._init_h5_file()
+
+            # Load metadata initially
+            self._metadata = self._load_metadata()
+
+    def _lock(self):
+        """Context manager for file locking."""
+        class FileLock:
+            def __init__(self, lock_file):
+                self.lock_file = lock_file
+                self.fp = None
+
+            def __enter__(self):
+                self.fp = open(self.lock_file, 'w')
+                try:
+                    fcntl.flock(self.fp.fileno(), fcntl.LOCK_EX)
+                except IOError:
+                    self.fp.close()
+                    raise
+                return self
+
+            def __exit__(self, exc_type, exc_value, traceback):
+                try:
+                    fcntl.flock(self.fp.fileno(), fcntl.LOCK_UN)
+                finally:
+                    self.fp.close()
+
+        return FileLock(self.lock_file)
 
     def _init_h5_file(self) -> None:
         """Initialize new HDF5 file."""
+        # Check again under lock
+        if self.h5_file.exists():
+            return
+
         with h5py.File(self.h5_file, 'w') as f:
             # Create root groups
             f.create_group('versions')
@@ -118,18 +147,11 @@ class VersionedArtifactStore:
 
     def _load_metadata(self) -> Dict[str, Any]:
         """Load store metadata."""
-        from src.utils.tprint import tprint
-        
-        tprint(f"🐛 DEBUG: _load_metadata() checking {self.metadata_file}", "INFO")
         if self.metadata_file.exists():
-            tprint(f"🐛 DEBUG: Metadata file exists, size: {self.metadata_file.stat().st_size} bytes", "INFO")
             try:
                 with open(self.metadata_file, 'r') as f:
-                    metadata = json.load(f)
-                    tprint(f"🐛 DEBUG: Successfully loaded metadata with {len(metadata.get('versions', {}))} versions", "INFO")
-                    return metadata
+                    return json.load(f)
             except Exception as e:
-                tprint(f"🐛 DEBUG: Error loading metadata: {e}", "ERROR")
                 # Return default metadata on error
                 return {
                     'versions': {},
@@ -138,7 +160,6 @@ class VersionedArtifactStore:
                     'load_error': str(e)
                 }
         else:
-            tprint("🐛 DEBUG: Metadata file does not exist, returning default metadata", "INFO")
             return {
                 'versions': {},
                 'current_version': None,
@@ -147,21 +168,12 @@ class VersionedArtifactStore:
 
     def _save_metadata(self) -> None:
         """Save store metadata."""
-        from src.utils.tprint import tprint
-        
-        tprint(f"🐛 DEBUG: _save_metadata() called, saving to {self.metadata_file}", "INFO")
-        tprint(f"🐛 DEBUG: Metadata has {len(self._metadata.get('versions', {}))} versions", "INFO")
-        tprint(f"🐛 DEBUG: Current version in metadata: {self._metadata.get('current_version')}", "INFO")
-        
         self._metadata['updated_at'] = datetime.now().isoformat()
 
         try:
             with open(self.metadata_file, 'w') as f:
                 json.dump(self._metadata, f, indent=2)
-            tprint(f"🐛 DEBUG: Successfully saved metadata to {self.metadata_file}", "INFO")
-            tprint(f"🐛 DEBUG: New metadata file size: {self.metadata_file.stat().st_size} bytes", "INFO")
         except Exception as e:
-            tprint(f"🐛 DEBUG: Error saving metadata: {e}", "ERROR")
             raise
 
     def _get_context_string(self, metadata: Optional[Dict[str, Any]] = None,
@@ -177,7 +189,7 @@ class VersionedArtifactStore:
             Formatted context string (e.g., "BTCUSDT/binance [15m] long/analyst")
         """
         # Get metadata from version if not provided
-        if metadata is None and version_name:
+        if metadata is None and version_name and self._metadata:
             metadata = self._metadata.get('versions', {}).get(version_name, {})
 
         meta = metadata or {}
@@ -252,156 +264,129 @@ class VersionedArtifactStore:
         context_str = self._get_context_string(metadata=metadata)
         tprint(f"💾 Adding data to store '{version_name}': {len(data)} rows × {len(data.columns)} cols | {context_str}")
 
-        # Data description
-        tprint(f"📊 Data Description:")
-        tprint(f"   • Rows: {len(data)}")
-        tprint(f"   • Columns: {len(data.columns)}")
-        tprint(f"   • First 10 columns: {list(data.columns[:10])}")
-        if len(data.columns) > 10:
-            tprint(f"   • ... and {len(data.columns) - 10} more columns")
-        tprint(f"   • First 5 rows:")
-        for idx, row_idx in enumerate(data.index[:5]):
-            row_preview = {col: data.loc[row_idx, col] for col in data.columns[:3]}
-            tprint(f"     [{idx}] {row_idx}: {row_preview}...")
-        if len(data) > 5:
-            tprint(f"   • ... and {len(data) - 5} more rows")
+        # Acquire lock for the entire write operation to ensure atomicity
+        with self._lock():
+            # Refresh metadata under lock
+            self._metadata = self._load_metadata()
 
-        tprint(f"🐛 DEBUG: VersionedArtifactStore.add_data() called", "INFO")
-        tprint(f"🐛 DEBUG: Store path: {self.h5_file}", "INFO")
-        tprint(f"🐛 DEBUG: Version name: {version_name}", "INFO")
-        tprint(f"🐛 DEBUG: Data shape: {data.shape}, columns: {list(data.columns)[:10]}...", "INFO")
+            with h5py.File(self.h5_file, 'a') as f:
+                versions_group = f['versions']
 
-        with h5py.File(self.h5_file, 'a') as f:
-            versions_group = f['versions']
-            tprint(f"🐛 DEBUG: Opened HDF5 file, versions_group exists: {'versions' in f}", "INFO")
+                # Check if version already exists
+                if version_name in versions_group:
+                    raise ValueError(f"Version '{version_name}' already exists")
 
-            # Check if version already exists
-            if version_name in versions_group:
-                raise ValueError(f"Version '{version_name}' already exists")
+                # Create version group
+                version_group = versions_group.create_group(version_name)
 
-            # Create version group
-            tprint(f"🐛 DEBUG: Creating version group '{version_name}'", "INFO")
-            version_group = versions_group.create_group(version_name)
+                # Calculate optimal chunk shape
+                chunk_rows, chunk_cols = self._calculate_chunk_shape(len(data), len(data.columns))
 
-            # Calculate optimal chunk shape
-            chunk_rows, chunk_cols = self._calculate_chunk_shape(len(data), len(data.columns))
-            tprint(f"🐛 DEBUG: Calculated chunk shape: ({chunk_rows}, {chunk_cols})", "INFO")
+                # Normalize chunk dimensions for 1D column datasets
+                chunk_rows = max(1, chunk_rows)
+                chunk_cols = max(1, chunk_cols)
 
-            # Normalize chunk dimensions for 1D column datasets
-            chunk_rows = max(1, chunk_rows)
-            chunk_cols = max(1, chunk_cols)
+                # Store data with chunking
+                for i, column in enumerate(data.columns):
+                    series = data[column]
+                    column_data = series.to_numpy()
 
-            # Store data with chunking
-            for i, column in enumerate(data.columns):
-                series = data[column]
-                column_data = series.to_numpy()
+                    if pd.api.types.is_datetime64_any_dtype(series):
+                        column_data = series.view(np.int64)
+                    elif pd.api.types.is_bool_dtype(series):
+                        column_data = series.astype(np.int8).to_numpy()
+                    elif pd.api.types.is_categorical_dtype(series):
+                        # Convert categorical to string, handling NaN properly, and store as Unicode
+                        column_data = series.astype(str).replace('nan', '').astype('U256').to_numpy()
+                    elif pd.api.types.is_string_dtype(series) or pd.api.types.is_object_dtype(series) or pd.api.types.is_object_dtype(column_data):
+                        # Use a Unicode dtype to avoid ASCII encoding issues with non-ASCII characters
+                        column_data = series.fillna('').astype(str).astype('U256').to_numpy()
+                    elif pd.api.types.is_float_dtype(series):
+                        column_data = series.astype(np.float64).to_numpy()
+                    elif pd.api.types.is_integer_dtype(series):
+                        column_data = series.astype(np.int64).to_numpy()
+                    elif pd.api.types.is_object_dtype(column_data):
+                        # Final fallback: encode arbitrary Python objects as categorical integer codes
+                        column_data = series.astype('category').cat.codes.astype(np.int32).to_numpy()
 
-                if pd.api.types.is_datetime64_any_dtype(series):
-                    column_data = series.view(np.int64)
-                elif pd.api.types.is_bool_dtype(series):
-                    column_data = series.astype(np.int8).to_numpy()
-                elif pd.api.types.is_categorical_dtype(series):
-                    # Convert categorical to string, handling NaN properly, and store as Unicode
-                    column_data = series.astype(str).replace('nan', '').astype('U256').to_numpy()
-                elif pd.api.types.is_string_dtype(series) or pd.api.types.is_object_dtype(series) or pd.api.types.is_object_dtype(column_data):
-                    # Use a Unicode dtype to avoid ASCII encoding issues with non-ASCII characters
-                    column_data = series.fillna('').astype(str).astype('U256').to_numpy()
-                elif pd.api.types.is_float_dtype(series):
-                    column_data = series.astype(np.float64).to_numpy()
-                elif pd.api.types.is_integer_dtype(series):
-                    column_data = series.astype(np.int64).to_numpy()
-                elif pd.api.types.is_object_dtype(column_data):
-                    # Final fallback: encode arbitrary Python objects as categorical integer codes
-                    column_data = series.astype('category').cat.codes.astype(np.int32).to_numpy()
+                    if column_data.ndim == 1:
+                        chunk_shape = (max(1, min(chunk_rows, column_data.shape[0] or chunk_rows)),)
+                    else:
+                        chunk_shape = (chunk_rows, chunk_cols)
 
-                if column_data.ndim == 1:
-                    chunk_shape = (max(1, min(chunk_rows, column_data.shape[0] or chunk_rows)),)
-                else:
-                    chunk_shape = (chunk_rows, chunk_cols)
+                    try:
+                        version_group.create_dataset(
+                            column,
+                            data=column_data,
+                            compression=self.compression,
+                            compression_opts=self.compression_level,
+                            chunks=chunk_shape
+                        )
+                    except TypeError as err:
+                        raise TypeError(
+                            f"Failed to store column '{column}' with dtype {column_data.dtype}: {err}"
+                        ) from err
 
-                try:
-                    tprint(f"🐛 DEBUG: Storing column {i+1}/{len(data.columns)}: '{column}' (dtype: {column_data.dtype}, shape: {column_data.shape})", "INFO")
+                # Store index with consistent chunking
+                index_chunk_shape = (max(1, min(chunk_rows, len(data))),)
+
+                if isinstance(data.index, pd.DatetimeIndex):
+                    index_data = data.index.astype(np.int64).values
                     version_group.create_dataset(
-                        column,
-                        data=column_data,
+                        '_index',
+                        data=index_data,
                         compression=self.compression,
                         compression_opts=self.compression_level,
-                        chunks=chunk_shape
+                        chunks=index_chunk_shape
                     )
-                except TypeError as err:
-                    tprint(f"🐛 DEBUG: Failed to store column '{column}': {err}", "ERROR")
-                    raise TypeError(
-                        f"Failed to store column '{column}' with dtype {column_data.dtype}: {err}"
-                    ) from err
-
-            # Store index with consistent chunking
-            tprint(f"🐛 DEBUG: Storing index (type: {type(data.index)})", "INFO")
-            index_chunk_shape = (max(1, min(chunk_rows, len(data))),)
-
-            if isinstance(data.index, pd.DatetimeIndex):
-                index_data = data.index.astype(np.int64).values
-                version_group.create_dataset(
-                    '_index',
-                    data=index_data,
-                    compression=self.compression,
-                    compression_opts=self.compression_level,
-                    chunks=index_chunk_shape
-                )
-                version_group.attrs['index_type'] = 'datetime'
-            else:
-                # Ensure index is HDF5-safe: convert object-like indexes to Unicode strings
-                raw_index = data.index.values
-                if pd.api.types.is_object_dtype(raw_index):
-                    index_data = data.index.astype(str).astype('U256').values
+                    version_group.attrs['index_type'] = 'datetime'
                 else:
-                    index_data = raw_index
+                    # Ensure index is HDF5-safe: convert object-like indexes to Unicode strings
+                    raw_index = data.index.values
+                    if pd.api.types.is_object_dtype(raw_index):
+                        index_data = data.index.astype(str).astype('U256').values
+                    else:
+                        index_data = raw_index
 
-                version_group.create_dataset(
-                    '_index',
-                    data=index_data,
-                    compression=self.compression,
-                    compression_opts=self.compression_level,
-                    chunks=index_chunk_shape
-                )
-                version_group.attrs['index_type'] = 'default'
+                    version_group.create_dataset(
+                        '_index',
+                        data=index_data,
+                        compression=self.compression,
+                        compression_opts=self.compression_level,
+                        chunks=index_chunk_shape
+                    )
+                    version_group.attrs['index_type'] = 'default'
 
-            # Store metadata
-            version_group.attrs['created_at'] = datetime.now().isoformat()
-            version_group.attrs['num_rows'] = len(data)
-            version_group.attrs['num_columns'] = len(data.columns)
-            tprint(f"🐛 DEBUG: Stored version metadata", "INFO")
+                # Store metadata
+                version_group.attrs['created_at'] = datetime.now().isoformat()
+                version_group.attrs['num_rows'] = len(data)
+                version_group.attrs['num_columns'] = len(data.columns)
 
-        # Update store metadata
-        tprint(f"🐛 DEBUG: Updating store metadata", "INFO")
-        self._metadata['versions'][version_name] = {
-            'created_at': datetime.now().isoformat(),
-            'num_rows': len(data),
-            'num_columns': len(data.columns),
-            'columns': list(data.columns),
-            **(metadata or {})
-        }
-        self._metadata['current_version'] = version_name
-        self._save_metadata()
-        tprint(f"🐛 DEBUG: Saved store metadata to {self.metadata_file}", "INFO")
+            # Update store metadata
+            self._metadata['versions'][version_name] = {
+                'created_at': datetime.now().isoformat(),
+                'num_rows': len(data),
+                'num_columns': len(data.columns),
+                'columns': list(data.columns),
+                **(metadata or {})
+            }
+            self._metadata['current_version'] = version_name
+            self._save_metadata()
 
-        # Record change
-        tprint(f"🐛 DEBUG: Recording change in changelog", "INFO")
-        self.changelog.record_change(
-            change_type=ChangeType.ADD_DATA,
-            version_name=version_name,
-            affected_rows=len(data),
-            affected_columns=list(data.columns),
-            metadata=metadata
-        )
+            # Record change
+            self.changelog.record_change(
+                change_type=ChangeType.ADD_DATA,
+                version_name=version_name,
+                affected_rows=len(data),
+                affected_columns=list(data.columns),
+                metadata=metadata
+            )
 
         self.logger.info(f"Added data version '{version_name}': {len(data)} rows, {len(data.columns)} columns")
         tprint(f"✅ Successfully added version '{version_name}' to store | {context_str}")
 
         # Create and return view
-        tprint(f"🐛 DEBUG: Creating view for version '{version_name}'", "INFO")
-        view = self.get_view(version_name)
-        tprint(f"🐛 DEBUG: Created view: {view}", "INFO")
-        return view
+        return self.get_view(version_name)
 
     def get_view(
         self,
@@ -418,13 +403,23 @@ class VersionedArtifactStore:
         Returns:
             ArtifactView instance
         """
+        # Metadata might be stale if updated by another process, so refresh it if needed
+        # We don't lock here for read performance, assuming metadata file read is atomic enough
+        if self._metadata is None:
+             self._metadata = self._load_metadata()
+
         if version_name is None:
+            # Refresh metadata to get latest current_version if checking current
+            self._metadata = self._load_metadata()
             version_name = self._metadata.get('current_version')
             if version_name is None:
                 raise ValueError("No versions available")
 
         if version_name not in self._metadata['versions']:
-            raise ValueError(f"Version '{version_name}' not found")
+            # Refresh metadata one more time in case it was just added
+            self._metadata = self._load_metadata()
+            if version_name not in self._metadata['versions']:
+                raise ValueError(f"Version '{version_name}' not found")
 
         return ArtifactView(
             store=self,
@@ -452,7 +447,20 @@ class VersionedArtifactStore:
         from src.utils.tprint import tprint
         context_str = self._get_context_string(version_name=version_name)
 
+        # HDF5 read is thread-safe and generally process-safe for readers with SWMR (single writer multiple reader)
+        # Since we don't strictly use SWMR but rely on lock for writes, reading while writing might fail or block
+        # We use a shared lock (LOCK_SH) for reading if we want strict consistency, but for performance
+        # we might rely on h5py's handling.
+        # However, to avoid "Unable to open object" race conditions where metadata exists but HDF5 isn't fully flushed/visible,
+        # we should use a shared lock.
+
+        with self._lock(): # Wait for any pending writes to complete
+             pass # Just acquiring and releasing lock ensures we are synchronized
+
         with h5py.File(self.h5_file, 'r') as f:
+            if 'versions' not in f or version_name not in f['versions']:
+                 raise KeyError(f"Version '{version_name}' not found in HDF5 store (though present in metadata)")
+
             version_group = f['versions'][version_name]
 
             # Load index
@@ -495,24 +503,6 @@ class VersionedArtifactStore:
                     # Silently ignore logging errors - data loading is more important
                     pass
 
-            # Data description after loading
-            try:
-                tprint(f"📊 Loaded Data Description:")
-                tprint(f"   • Rows: {len(df)}")
-                tprint(f"   • Columns: {len(df.columns)}")
-                tprint(f"   • First 10 columns: {list(df.columns[:10])}")
-                if len(df.columns) > 10:
-                    tprint(f"   • ... and {len(df.columns) - 10} more columns")
-                tprint(f"   • First 5 rows:")
-                for idx, row_idx in enumerate(df.index[:5]):
-                    row_preview = {col: df.loc[row_idx, col] for col in df.columns[:3]}
-                    tprint(f"     [{idx}] {row_idx}: {row_preview}...")
-                if len(df) > 5:
-                    tprint(f"   • ... and {len(df) - 5} more rows")
-            except (ValueError, OSError):
-                # Silently ignore logging errors - data loading is more important
-                pass
-
             return df
 
     def update_rows(
@@ -538,6 +528,10 @@ class VersionedArtifactStore:
         Returns:
             ArtifactView of updated data
         """
+        # Ensure metadata is fresh
+        if self._metadata is None:
+             self._metadata = self._load_metadata()
+
         if version_name is None:
             version_name = self._metadata.get('current_version')
 
@@ -545,7 +539,7 @@ class VersionedArtifactStore:
             if new_version_name is None:
                 new_version_name = f"{version_name}_updated_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
-            # Load full data
+            # Load full data (read lock implicitly handled by _load_data_with_mask)
             full_data = self._load_data_with_mask(version_name, ViewMask())
 
             # Apply updates
@@ -556,43 +550,47 @@ class VersionedArtifactStore:
                 for col in columns:
                     full_data.loc[full_data.index[row_indices], col] = new_values[col]
 
-            # Add as new version
+            # Add as new version (write lock handled by add_data)
             return self.add_data(full_data, new_version_name)
         else:
-            # Update in place
-            with h5py.File(self.h5_file, 'a') as f:
-                version_group = f['versions'][version_name]
+            with self._lock():
+                # Refresh metadata
+                self._metadata = self._load_metadata()
 
-                for col in columns:
-                    dataset = version_group[col]
-                    if isinstance(new_values, pd.DataFrame):
-                        dataset[row_indices] = new_values[col].values
-                    else:
-                        dataset[row_indices] = new_values[col]
+                # Update in place
+                with h5py.File(self.h5_file, 'a') as f:
+                    version_group = f['versions'][version_name]
 
-            # Track row versions if enabled
-            if self.enable_row_versioning:
-                for idx in row_indices:
-                    changes = {}
                     for col in columns:
+                        dataset = version_group[col]
                         if isinstance(new_values, pd.DataFrame):
-                            changes[col] = new_values[col].iloc[idx]
+                            dataset[row_indices] = new_values[col].values
                         else:
-                            changes[col] = new_values[col][idx]
+                            dataset[row_indices] = new_values[col]
 
-                    self.row_tracker.create_version(idx, changes)
+                # Track row versions if enabled
+                if self.enable_row_versioning:
+                    for idx in row_indices:
+                        changes = {}
+                        for col in columns:
+                            if isinstance(new_values, pd.DataFrame):
+                                changes[col] = new_values[col].iloc[idx]
+                            else:
+                                changes[col] = new_values[col][idx]
 
-            # Record change
-            self.changelog.record_change(
-                change_type=ChangeType.UPDATE_ROWS,
-                version_name=version_name,
-                affected_rows=list(row_indices) if len(row_indices) < 100 else len(row_indices),
-                affected_columns=columns
-            )
+                        self.row_tracker.create_version(idx, changes)
 
-            self.logger.info(f"Updated {len(row_indices)} rows in version '{version_name}'")
+                # Record change
+                self.changelog.record_change(
+                    change_type=ChangeType.UPDATE_ROWS,
+                    version_name=version_name,
+                    affected_rows=list(row_indices) if len(row_indices) < 100 else len(row_indices),
+                    affected_columns=columns
+                )
 
-            return self.get_view(version_name)
+                self.logger.info(f"Updated {len(row_indices)} rows in version '{version_name}'")
+
+                return self.get_view(version_name)
 
     def add_columns(
         self,
@@ -611,6 +609,10 @@ class VersionedArtifactStore:
         """
         from src.utils.tprint import tprint
 
+        # Ensure metadata is fresh
+        if self._metadata is None:
+             self._metadata = self._load_metadata()
+
         if version_name is None:
             version_name = self._metadata.get('current_version')
 
@@ -618,43 +620,47 @@ class VersionedArtifactStore:
         context_str = self._get_context_string(version_name=version_name)
         tprint(f"➕ Adding {len(columns)} columns to version '{version_name}' | {context_str}")
 
-        with h5py.File(self.h5_file, 'a') as f:
-            version_group = f['versions'][version_name]
+        with self._lock():
+            # Refresh metadata
+            self._metadata = self._load_metadata()
 
-            # Get chunk size from existing columns or calculate new
-            existing_cols = [k for k in version_group.keys() if not k.startswith('_')]
-            if existing_cols:
-                chunks = version_group[existing_cols[0]].chunks
-            else:
-                # Calculate chunk size for new columns
-                num_rows = len(next(iter(columns.values())))
-                chunk_rows, chunk_cols = self._calculate_chunk_shape(num_rows, 1)
-                chunks = (chunk_rows, chunk_cols)
+            with h5py.File(self.h5_file, 'a') as f:
+                version_group = f['versions'][version_name]
 
-            for col_name, col_data in columns.items():
-                if col_name in version_group:
-                    raise ValueError(f"Column '{col_name}' already exists")
+                # Get chunk size from existing columns or calculate new
+                existing_cols = [k for k in version_group.keys() if not k.startswith('_')]
+                if existing_cols:
+                    chunks = version_group[existing_cols[0]].chunks
+                else:
+                    # Calculate chunk size for new columns
+                    num_rows = len(next(iter(columns.values())))
+                    chunk_rows, chunk_cols = self._calculate_chunk_shape(num_rows, 1)
+                    chunks = (chunk_rows, chunk_cols)
 
-                version_group.create_dataset(
-                    col_name,
-                    data=col_data,
-                    compression=self.compression,
-                    compression_opts=self.compression_level,
-                    chunks=chunks
-                )
+                for col_name, col_data in columns.items():
+                    if col_name in version_group:
+                        raise ValueError(f"Column '{col_name}' already exists")
 
-        # Update metadata
-        version_meta = self._metadata['versions'][version_name]
-        version_meta['columns'].extend(columns.keys())
-        version_meta['num_columns'] = len(version_meta['columns'])
-        self._save_metadata()
+                    version_group.create_dataset(
+                        col_name,
+                        data=col_data,
+                        compression=self.compression,
+                        compression_opts=self.compression_level,
+                        chunks=chunks
+                    )
 
-        # Record change
-        self.changelog.record_change(
-            change_type=ChangeType.UPDATE_COLUMNS,
-            version_name=version_name,
-            affected_columns=list(columns.keys())
-        )
+            # Update metadata
+            version_meta = self._metadata['versions'][version_name]
+            version_meta['columns'].extend(columns.keys())
+            version_meta['num_columns'] = len(version_meta['columns'])
+            self._save_metadata()
+
+            # Record change
+            self.changelog.record_change(
+                change_type=ChangeType.UPDATE_COLUMNS,
+                version_name=version_name,
+                affected_columns=list(columns.keys())
+            )
 
         self.logger.info(f"Added {len(columns)} columns to version '{version_name}'")
         tprint(f"✅ Added {len(columns)} columns to version '{version_name}' | {context_str}")
@@ -687,38 +693,9 @@ class VersionedArtifactStore:
         Returns:
             List of version names
         """
-        from src.utils.tprint import tprint
-        
-        tprint(f"🐛 DEBUG: list_versions() called", "INFO")
-        tprint(f"🐛 DEBUG: Metadata file exists: {self.metadata_file.exists()}", "INFO")
-        tprint(f"🐛 DEBUG: HDF5 file exists: {self.h5_file.exists()}", "INFO")
-        
-        # Reload metadata to ensure we have the latest
-        tprint("🐛 DEBUG: Reloading metadata to get latest versions", "INFO")
+        # Refresh metadata to get latest versions
         self._metadata = self._load_metadata()
-        
-        versions = list(self._metadata['versions'].keys())
-        tprint(f"🐛 DEBUG: Found {len(versions)} versions in metadata: {versions}", "INFO")
-        
-        # Also check HDF5 file directly
-        if self.h5_file.exists():
-            try:
-                with h5py.File(self.h5_file, 'r') as f:
-                    if 'versions' in f:
-                        h5_versions = list(f['versions'].keys())
-                        tprint(f"🐛 DEBUG: Found {len(h5_versions)} versions in HDF5: {h5_versions}", "INFO")
-                        
-                        # Check for discrepancies
-                        if set(versions) != set(h5_versions):
-                            tprint(f"🐛 DEBUG: MISMATCH between metadata and HDF5!", "ERROR")
-                            tprint(f"🐛 DEBUG: Metadata only: {set(versions) - set(h5_versions)}", "ERROR")
-                            tprint(f"🐛 DEBUG: HDF5 only: {set(h5_versions) - set(versions)}", "ERROR")
-                    else:
-                        tprint("🐛 DEBUG: No 'versions' group found in HDF5 file!", "ERROR")
-            except Exception as e:
-                tprint(f"🐛 DEBUG: Error reading HDF5 file: {e}", "ERROR")
-        
-        return versions
+        return list(self._metadata['versions'].keys())
 
     def get_version_info(self, version_name: str) -> Dict[str, Any]:
         """
@@ -730,6 +707,8 @@ class VersionedArtifactStore:
         Returns:
             Version metadata
         """
+        # Refresh metadata
+        self._metadata = self._load_metadata()
         return self._metadata['versions'].get(version_name, {})
 
     def get_changelog(
@@ -784,11 +763,18 @@ class VersionedArtifactStore:
         """
         from src.utils.tprint import tprint
 
+        if self._metadata is None:
+             self._metadata = self._load_metadata()
+
         if version_name is None:
             version_name = self._metadata.get('current_version')
 
         context_str = self._get_context_string(version_name=version_name)
         tprint(f"🔍 Querying index range [{start_idx} to {end_idx}] from '{version_name}' | {context_str}")
+
+        # Synchronize for read
+        with self._lock():
+             pass
 
         with h5py.File(self.h5_file, 'r') as f:
             version_group = f['versions'][version_name]
@@ -861,6 +847,9 @@ class VersionedArtifactStore:
         """
         from src.utils.tprint import tprint
 
+        if self._metadata is None:
+             self._metadata = self._load_metadata()
+
         if version_name is None:
             version_name = self._metadata.get('current_version')
 
@@ -872,45 +861,49 @@ class VersionedArtifactStore:
         context_str = self._get_context_string(version_name=version_name)
         tprint(f"📦 Batch adding {len(all_columns)} columns in {len(column_groups)} groups | {context_str}")
 
-        # Add all columns in single HDF5 operation
-        with h5py.File(self.h5_file, 'a') as f:
-            version_group = f['versions'][version_name]
+        with self._lock():
+            # Refresh metadata
+            self._metadata = self._load_metadata()
 
-            # Get chunk size from first column in version
-            existing_cols = [k for k in version_group.keys() if not k.startswith('_')]
-            if existing_cols:
-                first_col_chunks = version_group[existing_cols[0]].chunks
-            else:
-                # Calculate chunk size if no existing columns
-                num_rows = len(next(iter(all_columns.values())))
-                chunk_rows, chunk_cols = self._calculate_chunk_shape(num_rows, 1)
-                first_col_chunks = (chunk_rows, chunk_cols)
+            # Add all columns in single HDF5 operation
+            with h5py.File(self.h5_file, 'a') as f:
+                version_group = f['versions'][version_name]
 
-            for col_name, col_data in all_columns.items():
-                if col_name in version_group:
-                    raise ValueError(f"Column '{col_name}' already exists")
+                # Get chunk size from first column in version
+                existing_cols = [k for k in version_group.keys() if not k.startswith('_')]
+                if existing_cols:
+                    first_col_chunks = version_group[existing_cols[0]].chunks
+                else:
+                    # Calculate chunk size if no existing columns
+                    num_rows = len(next(iter(all_columns.values())))
+                    chunk_rows, chunk_cols = self._calculate_chunk_shape(num_rows, 1)
+                    first_col_chunks = (chunk_rows, chunk_cols)
 
-                version_group.create_dataset(
-                    col_name,
-                    data=col_data,
-                    compression=self.compression,
-                    compression_opts=self.compression_level,
-                    chunks=first_col_chunks
-                )
+                for col_name, col_data in all_columns.items():
+                    if col_name in version_group:
+                        raise ValueError(f"Column '{col_name}' already exists")
 
-        # Update metadata
-        version_meta = self._metadata['versions'][version_name]
-        version_meta['columns'].extend(all_columns.keys())
-        version_meta['num_columns'] = len(version_meta['columns'])
-        self._save_metadata()
+                    version_group.create_dataset(
+                        col_name,
+                        data=col_data,
+                        compression=self.compression,
+                        compression_opts=self.compression_level,
+                        chunks=first_col_chunks
+                    )
 
-        # Record change
-        self.changelog.record_change(
-            change_type=ChangeType.UPDATE_COLUMNS,
-            version_name=version_name,
-            affected_columns=list(all_columns.keys()),
-            metadata={'batch_groups': len(column_groups)}
-        )
+            # Update metadata
+            version_meta = self._metadata['versions'][version_name]
+            version_meta['columns'].extend(all_columns.keys())
+            version_meta['num_columns'] = len(version_meta['columns'])
+            self._save_metadata()
+
+            # Record change
+            self.changelog.record_change(
+                change_type=ChangeType.UPDATE_COLUMNS,
+                version_name=version_name,
+                affected_columns=list(all_columns.keys()),
+                metadata={'batch_groups': len(column_groups)}
+            )
 
         self.logger.info(f"Batch added {len(all_columns)} columns to version '{version_name}'")
         tprint(f"✅ Batch added {len(all_columns)} columns | {context_str}")
@@ -936,44 +929,51 @@ class VersionedArtifactStore:
         """
         from src.utils.tprint import tprint
 
+        if self._metadata is None:
+             self._metadata = self._load_metadata()
+
         if version_name is None:
             version_name = self._metadata.get('current_version')
 
         context_str = self._get_context_string(version_name=version_name)
         tprint(f"🔄 Replacing column '{column_name}' in version '{version_name}' | {context_str}")
 
-        with h5py.File(self.h5_file, 'a') as f:
-            version_group = f['versions'][version_name]
+        with self._lock():
+            # Refresh metadata
+            self._metadata = self._load_metadata()
 
-            if column_name not in version_group:
-                raise ValueError(f"Column '{column_name}' does not exist")
+            with h5py.File(self.h5_file, 'a') as f:
+                version_group = f['versions'][version_name]
 
-            # Delete old column and create new one
-            del version_group[column_name]
+                if column_name not in version_group:
+                    raise ValueError(f"Column '{column_name}' does not exist")
 
-            # Get chunk size from another column
-            remaining_cols = [k for k in version_group.keys() if not k.startswith('_')]
-            if remaining_cols:
-                chunks = version_group[remaining_cols[0]].chunks
-            else:
-                chunk_rows, chunk_cols = self._calculate_chunk_shape(len(new_values), 1)
-                chunks = (chunk_rows, chunk_cols)
+                # Delete old column and create new one
+                del version_group[column_name]
 
-            version_group.create_dataset(
-                column_name,
-                data=new_values,
-                compression=self.compression,
-                compression_opts=self.compression_level,
-                chunks=chunks
+                # Get chunk size from another column
+                remaining_cols = [k for k in version_group.keys() if not k.startswith('_')]
+                if remaining_cols:
+                    chunks = version_group[remaining_cols[0]].chunks
+                else:
+                    chunk_rows, chunk_cols = self._calculate_chunk_shape(len(new_values), 1)
+                    chunks = (chunk_rows, chunk_cols)
+
+                version_group.create_dataset(
+                    column_name,
+                    data=new_values,
+                    compression=self.compression,
+                    compression_opts=self.compression_level,
+                    chunks=chunks
+                )
+
+            # Record change
+            self.changelog.record_change(
+                change_type=ChangeType.UPDATE_COLUMNS,
+                version_name=version_name,
+                affected_columns=[column_name],
+                metadata={'operation': 'replace'}
             )
-
-        # Record change
-        self.changelog.record_change(
-            change_type=ChangeType.UPDATE_COLUMNS,
-            version_name=version_name,
-            affected_columns=[column_name],
-            metadata={'operation': 'replace'}
-        )
 
         self.logger.info(f"Replaced column '{column_name}' in version '{version_name}'")
         tprint(f"✅ Replaced column '{column_name}' | {context_str}")
@@ -999,31 +999,38 @@ class VersionedArtifactStore:
         """
         from src.utils.tprint import tprint
 
+        if self._metadata is None:
+             self._metadata = self._load_metadata()
+
         if version_name is None:
             version_name = self._metadata.get('current_version')
 
         context_str = self._get_context_string(version_name=version_name)
         tprint(f"🔄 Replacing {len(row_indices)} rows in version '{version_name}' | {context_str}")
 
-        # Update all columns for specified rows
-        with h5py.File(self.h5_file, 'a') as f:
-            version_group = f['versions'][version_name]
+        with self._lock():
+            # Refresh metadata
+            self._metadata = self._load_metadata()
 
-            for col in new_data.columns:
-                if col not in version_group:
-                    raise ValueError(f"Column '{col}' not found in version")
+            # Update all columns for specified rows
+            with h5py.File(self.h5_file, 'a') as f:
+                version_group = f['versions'][version_name]
 
-                dataset = version_group[col]
-                dataset[row_indices] = new_data[col].values
+                for col in new_data.columns:
+                    if col not in version_group:
+                        raise ValueError(f"Column '{col}' not found in version")
 
-        # Record change
-        self.changelog.record_change(
-            change_type=ChangeType.UPDATE_ROWS,
-            version_name=version_name,
-            affected_rows=list(row_indices) if len(row_indices) < 100 else len(row_indices),
-            affected_columns=list(new_data.columns),
-            metadata={'operation': 'replace'}
-        )
+                    dataset = version_group[col]
+                    dataset[row_indices] = new_data[col].values
+
+            # Record change
+            self.changelog.record_change(
+                change_type=ChangeType.UPDATE_ROWS,
+                version_name=version_name,
+                affected_rows=list(row_indices) if len(row_indices) < 100 else len(row_indices),
+                affected_columns=list(new_data.columns),
+                metadata={'operation': 'replace'}
+            )
 
         self.logger.info(f"Replaced {len(row_indices)} rows in version '{version_name}'")
         tprint(f"✅ Replaced {len(row_indices)} rows | {context_str}")
@@ -1054,119 +1061,120 @@ class VersionedArtifactStore:
 
         tprint("🐛 DEBUG: prune_versions() called", "INFO")
 
-        # Reload metadata to ensure we are working with the latest state
-        self._metadata = self._load_metadata()
-        meta_versions = set(self._metadata.get("versions", {}).keys())
-
-        with h5py.File(self.h5_file, "a") as f:
-            if "versions" not in f:
-                tprint("🐛 DEBUG: No 'versions' group found in HDF5 file, nothing to prune", "INFO")
-                return summary
-
-            versions_group = f["versions"]
-            h5_versions = set(versions_group.keys())
-
-            # Reconcile mismatches between metadata and HDF5
-            h5_only = h5_versions - meta_versions
-            meta_only = meta_versions - h5_versions
-
-            if h5_only or meta_only:
-                tprint(
-                    f"🐛 DEBUG: prune_versions() mismatch - HDF5 only: {h5_only}, metadata only: {meta_only}",
-                    "INFO",
-                )
-
-            # Remove HDF5-only groups
-            for version_name in sorted(h5_only):
-                try:
-                    del versions_group[version_name]
-                    summary["h5_only_removed"] += 1
-                    self.logger.info(f"Removed orphan HDF5 version group: {version_name}")
-                except Exception as e:
-                    tprint(f"🐛 DEBUG: Failed to delete HDF5 version '{version_name}': {e}", "ERROR")
-
-            # Remove metadata-only entries
-            for version_name in sorted(meta_only):
-                if version_name in self._metadata.get("versions", {}):
-                    self._metadata["versions"].pop(version_name, None)
-                    summary["meta_only_removed"] += 1
-                    self.logger.info(f"Removed orphan metadata entry: {version_name}")
-
-            # Refresh sets after reconciliation
-            h5_versions = set(versions_group.keys())
+        with self._lock():
+            # Reload metadata to ensure we are working with the latest state
+            self._metadata = self._load_metadata()
             meta_versions = set(self._metadata.get("versions", {}).keys())
-            existing_versions = sorted(h5_versions & meta_versions)
 
-            if not existing_versions:
-                # No consistent versions left
-                self._metadata["current_version"] = None
-                self._save_metadata()
-                return summary
+            with h5py.File(self.h5_file, "a") as f:
+                if "versions" not in f:
+                    tprint("🐛 DEBUG: No 'versions' group found in HDF5 file, nothing to prune", "INFO")
+                    return summary
 
-            # Helper to extract base artifact name from version_name
-            def _extract_base_name(name: str) -> str:
-                # Pattern: <artifact>_YYYYMMDD_HHMMSS or <artifact>_YYYYMMDD_HHMMSS_mmm
-                match = re.match(r"^(?P<base>.+?)_\d{8}_\d{6}(?:_\d{3})?$", name)
-                return match.group("base") if match else name
+                versions_group = f["versions"]
+                h5_versions = set(versions_group.keys())
 
-            # Group versions by base name
-            base_groups: Dict[str, List[str]] = {}
-            for version_name in existing_versions:
-                base_name = _extract_base_name(version_name)
-                base_groups.setdefault(base_name, []).append(version_name)
+                # Reconcile mismatches between metadata and HDF5
+                h5_only = h5_versions - meta_versions
+                meta_only = meta_versions - h5_versions
 
-            # Helper for ordering versions by created_at, then name
-            def _version_sort_key(name: str) -> Tuple[str, str]:
-                meta = self._metadata.get("versions", {}).get(name, {})
-                created_at = meta.get("created_at") or ""
-                return (created_at, name)
+                if h5_only or meta_only:
+                    tprint(
+                        f"🐛 DEBUG: prune_versions() mismatch - HDF5 only: {h5_only}, metadata only: {meta_only}",
+                        "INFO",
+                    )
 
-            # For each base, prune older versions
-            for base_name, versions in base_groups.items():
-                if len(versions) <= keep_per_base:
-                    continue
+                # Remove HDF5-only groups
+                for version_name in sorted(h5_only):
+                    try:
+                        del versions_group[version_name]
+                        summary["h5_only_removed"] += 1
+                        self.logger.info(f"Removed orphan HDF5 version group: {version_name}")
+                    except Exception as e:
+                        tprint(f"🐛 DEBUG: Failed to delete HDF5 version '{version_name}': {e}", "ERROR")
 
-                versions_sorted = sorted(versions, key=_version_sort_key)
-                to_keep = set(versions_sorted[-keep_per_base:])
-                to_prune = [v for v in versions_sorted if v not in to_keep]
-
-                if not to_prune:
-                    continue
-
-                tprint(
-                    f"🧹 Pruning {len(to_prune)} versions for base '{base_name}', keeping {len(to_keep)}",
-                    "INFO",
-                )
-
-                for version_name in to_prune:
-                    # Remove from HDF5
-                    if version_name in versions_group:
-                        try:
-                            del versions_group[version_name]
-                            summary["versions_pruned"] += 1
-                        except Exception as e:
-                            tprint(
-                                f"🐛 DEBUG: Failed to delete version '{version_name}' during pruning: {e}",
-                                "ERROR",
-                            )
-                            continue
-
-                    # Remove from metadata
+                # Remove metadata-only entries
+                for version_name in sorted(meta_only):
                     if version_name in self._metadata.get("versions", {}):
                         self._metadata["versions"].pop(version_name, None)
+                        summary["meta_only_removed"] += 1
+                        self.logger.info(f"Removed orphan metadata entry: {version_name}")
 
-            # Ensure current_version is still valid
-            current = self._metadata.get("current_version")
-            if current not in self._metadata.get("versions", {}):
-                remaining = list(self._metadata.get("versions", {}).keys())
-                if remaining:
-                    remaining_sorted = sorted(remaining, key=_version_sort_key)
-                    self._metadata["current_version"] = remaining_sorted[-1]
-                else:
+                # Refresh sets after reconciliation
+                h5_versions = set(versions_group.keys())
+                meta_versions = set(self._metadata.get("versions", {}).keys())
+                existing_versions = sorted(h5_versions & meta_versions)
+
+                if not existing_versions:
+                    # No consistent versions left
                     self._metadata["current_version"] = None
+                    self._save_metadata()
+                    return summary
 
-            # Persist metadata changes
-            self._save_metadata()
+                # Helper to extract base artifact name from version_name
+                def _extract_base_name(name: str) -> str:
+                    # Pattern: <artifact>_YYYYMMDD_HHMMSS or <artifact>_YYYYMMDD_HHMMSS_mmm
+                    match = re.match(r"^(?P<base>.+?)_\d{8}_\d{6}(?:_\d{3})?$", name)
+                    return match.group("base") if match else name
+
+                # Group versions by base name
+                base_groups: Dict[str, List[str]] = {}
+                for version_name in existing_versions:
+                    base_name = _extract_base_name(version_name)
+                    base_groups.setdefault(base_name, []).append(version_name)
+
+                # Helper for ordering versions by created_at, then name
+                def _version_sort_key(name: str) -> Tuple[str, str]:
+                    meta = self._metadata.get("versions", {}).get(name, {})
+                    created_at = meta.get("created_at") or ""
+                    return (created_at, name)
+
+                # For each base, prune older versions
+                for base_name, versions in base_groups.items():
+                    if len(versions) <= keep_per_base:
+                        continue
+
+                    versions_sorted = sorted(versions, key=_version_sort_key)
+                    to_keep = set(versions_sorted[-keep_per_base:])
+                    to_prune = [v for v in versions_sorted if v not in to_keep]
+
+                    if not to_prune:
+                        continue
+
+                    tprint(
+                        f"🧹 Pruning {len(to_prune)} versions for base '{base_name}', keeping {len(to_keep)}",
+                        "INFO",
+                    )
+
+                    for version_name in to_prune:
+                        # Remove from HDF5
+                        if version_name in versions_group:
+                            try:
+                                del versions_group[version_name]
+                                summary["versions_pruned"] += 1
+                            except Exception as e:
+                                tprint(
+                                    f"🐛 DEBUG: Failed to delete version '{version_name}' during pruning: {e}",
+                                    "ERROR",
+                                )
+                                continue
+
+                        # Remove from metadata
+                        if version_name in self._metadata.get("versions", {}):
+                            self._metadata["versions"].pop(version_name, None)
+
+                # Ensure current_version is still valid
+                current = self._metadata.get("current_version")
+                if current not in self._metadata.get("versions", {}):
+                    remaining = list(self._metadata.get("versions", {}).keys())
+                    if remaining:
+                        remaining_sorted = sorted(remaining, key=_version_sort_key)
+                        self._metadata["current_version"] = remaining_sorted[-1]
+                    else:
+                        self._metadata["current_version"] = None
+
+                # Persist metadata changes
+                self._save_metadata()
 
         return summary
 

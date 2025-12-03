@@ -740,6 +740,33 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             if saved_artifacts:
                 artifacts['saved_feature_dataframes'] = saved_artifacts
 
+            # CRITICAL: Save feature metadata for live trading
+            # We save the top feature set (default 60) for live trading reconstruction
+            try:
+                top_size = max(feature_set_sizes)
+                selected_features_key = f'selected_features_{top_size}'
+
+                if selected_features_key in feature_sets:
+                    selected_features_list = feature_sets[selected_features_key]
+
+                    # Create metadata dict matching FeatureMetadataStore expectation
+                    # (though simple list is often enough for FeatureCalculator)
+                    feature_metadata = {
+                        'selected_features': selected_features_list,
+                        'timestamp': datetime.now().isoformat(),
+                        'feature_count': len(selected_features_list),
+                        'model_type': config.get('execution_mode', 'analyst')
+                    }
+
+                    # Save as JSON artifact
+                    # Note: We save it as 'feature_metadata' which is the standard key
+                    # expected by the live pipeline loader
+                    artifacts['feature_metadata'] = feature_metadata
+
+                    tprint_success(f"✅ Saved feature_metadata with {len(selected_features_list)} features for live trading")
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to save feature_metadata for live trading: {e}")
+
             metrics = self._calculate_metrics(feature_sets, shap_values, config)
             try:
                 optimization_metrics = self._get_optimization_metrics()

@@ -163,6 +163,34 @@ def build_sweep_configs(
     )
 
     # =========================================================================
+    # EVALUATION METRIC SWEEPS (F-beta weighting)
+    # =========================================================================
+
+    # F1 score (Balanced Precision/Recall)
+    add_variant(
+        "eval_f1",
+        {
+            "mr_eval_beta": 1.0,
+        }
+    )
+
+    # F1.5 score (More emphasis on Recall than Precision compared to F1)
+    add_variant(
+        "eval_f1.5",
+        {
+            "mr_eval_beta": 1.5,
+        }
+    )
+
+    # F2 score (Strong emphasis on Recall)
+    add_variant(
+        "eval_f2",
+        {
+            "mr_eval_beta": 2.0,
+        }
+    )
+
+    # =========================================================================
     # STUDENT MODEL HPO SWEEPS
     # =========================================================================
 

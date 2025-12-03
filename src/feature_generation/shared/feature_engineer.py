@@ -65,15 +65,18 @@ class AnalystFeatureEngineer(FeatureEngineer):
     Feature engineer for Analyst role.
     
     Base features come from feature_generation_final_feature_selection_step (300+ features selected down to 40/50/60).
-    This module ONLY adds regime confidence features for each regime (4 regimes total).
+    This module adds:
+    1. Regime confidence features for each regime (4 regimes total)
+    2. Selected interaction features generated live via FeatureCalculator
     
     Engineered features:
     - regime_confidence_0, regime_confidence_1, regime_confidence_2, regime_confidence_3
+    - interaction features (e.g. rsi_14_volnorm, ema_20_vwap_3x_ratio)
     
     Source: regime_ensemble_training ML model outputs (regime_prob_0, regime_prob_1, regime_prob_2, regime_prob_3)
     """
     
-    def __init__(self, logger: Optional[logging.Logger] = None):
+    def __init__(self, logger: Optional[logging.Logger] = None, feature_metadata_path: Optional[str] = None):
         super().__init__(logger)
         self.engineered_feature_names = [
             'regime_confidence_0',
@@ -81,7 +84,41 @@ class AnalystFeatureEngineer(FeatureEngineer):
             'regime_confidence_2',
             'regime_confidence_3'
         ]
-    
+        self.feature_calculator = None
+
+        if feature_metadata_path:
+            try:
+                from src.interaction_features_constructor.feature_calculator import FeatureCalculator
+                from src.interaction_features_constructor.feature_metadata_store import FeatureMetadataStore
+
+                # Check if it's a JSON file or just path to artifacts dir
+                if not feature_metadata_path.endswith('.json'):
+                    # Assume directory, try to find feature_metadata.json or similar
+                    import os
+                    metadata_file = os.path.join(feature_metadata_path, 'feature_metadata.json')
+                    if not os.path.exists(metadata_file):
+                        # Try artifact pattern
+                        # Assuming structure: artifacts/feature_metadata_*.json
+                        files = [f for f in os.listdir(feature_metadata_path) if f.startswith('feature_metadata') and f.endswith('.json')]
+                        if files:
+                            files.sort()  # Sort to get deterministic (latest?)
+                            metadata_file = os.path.join(feature_metadata_path, files[-1])
+                        else:
+                            self.logger.warning(f"Feature metadata not found in {feature_metadata_path}")
+                            metadata_file = None
+                else:
+                    metadata_file = feature_metadata_path
+
+                if metadata_file:
+                    self.feature_calculator = FeatureCalculator.from_metadata_file(metadata_file)
+                    self.logger.info(f"Initialized FeatureCalculator with metadata from {metadata_file}")
+
+                    # Add interaction features to engineered list
+                    if self.feature_calculator.selected_features:
+                        self.engineered_feature_names.extend(self.feature_calculator.selected_features)
+            except Exception as e:
+                self.logger.warning(f"Failed to initialize FeatureCalculator: {e}")
+
     def engineer_features(
         self,
         data: pd.DataFrame,
@@ -92,22 +129,50 @@ class AnalystFeatureEngineer(FeatureEngineer):
         """
         Engineer features specific to Analyst role.
         
-        ONLY adds regime confidence features - all other features come from feature_generation_final_feature_selection_step.
+        Adds regime confidence features and interaction features if FeatureCalculator is configured.
         
         Args:
-            data: Input DataFrame with base features from feature_generation_final_feature_selection_step
+            data: Input DataFrame (OHLCV + base features)
             regime_probabilities: Dict mapping regime index to probability values
                                  e.g., {0: 0.7, 1: 0.2, 2: 0.05, 3: 0.05}
             **kwargs: Additional arguments
             
         Returns:
-            DataFrame with regime confidence features added
+            DataFrame with engineered features added
         """
         try:
             result_data = data.copy()
             warnings = []
             
-            # Add regime confidence for each of the 4 regimes
+            # 1. Generate interaction features using FeatureCalculator if available
+            if self.feature_calculator:
+                try:
+                    # We pass the full dataframe as both OHLCV and base features source
+                    # FeatureCalculator expects base features to be present in the input
+                    interaction_features = self.feature_calculator.calculate(
+                        ohlcv_data=result_data,
+                        base_features=result_data
+                    )
+
+                    # Merge interaction features into result_data
+                    if isinstance(interaction_features, pd.DataFrame):
+                        # Ensure index alignment
+                        if not interaction_features.index.equals(result_data.index):
+                            interaction_features = interaction_features.reindex(result_data.index)
+
+                        # Add new columns only (avoid overwriting existing if already present and valid)
+                        new_cols = [c for c in interaction_features.columns if c not in result_data.columns]
+                        if new_cols:
+                            result_data = pd.concat([result_data, interaction_features[new_cols]], axis=1)
+                            self.logger.info(f"Added {len(new_cols)} interaction features via FeatureCalculator")
+                        else:
+                            # Update existing columns? Maybe better to keep original if present
+                            pass
+                except Exception as e:
+                    self.logger.error(f"Interaction feature generation failed: {e}")
+                    warnings.append(f"Interaction feature generation failed: {e}")
+
+            # 2. Add regime confidence for each of the 4 regimes
             if regime_probabilities is not None:
                 # Use provided regime probabilities dictionary
                 for regime_idx in range(4):

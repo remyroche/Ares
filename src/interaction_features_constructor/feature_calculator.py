@@ -191,7 +191,9 @@ class FeatureCalculator:
             elif step_type == 'apply_variant':
                 variant_type = step['variant_type']
                 input_feature = step['input']
-                input_data = intermediate_results.get(input_feature) or base_features.get(input_feature)
+                input_data = intermediate_results.get(input_feature)
+                if input_data is None:
+                    input_data = base_features.get(input_feature)
 
                 if input_data is None:
                     raise ValueError(f"Input feature '{input_feature}' not found")
@@ -207,7 +209,9 @@ class FeatureCalculator:
             elif step_type == 'apply_timeframe_ratio':
                 multiplier = step['multiplier']
                 input_feature = step['input']
-                input_data = intermediate_results.get(input_feature) or base_features.get(input_feature)
+                input_data = intermediate_results.get(input_feature)
+                if input_data is None:
+                    input_data = base_features.get(input_feature)
 
                 if input_data is None:
                     raise ValueError(f"Input feature '{input_feature}' not found")
@@ -224,11 +228,32 @@ class FeatureCalculator:
                 left_name = step['left']
                 right_name = step['right']
 
-                left_data = intermediate_results.get(left_name) or base_features.get(left_name)
-                right_data = intermediate_results.get(right_name) or base_features.get(right_name)
+                left_data = intermediate_results.get(left_name)
+                if left_data is None:
+                    left_data = base_features.get(left_name)
+                # Try resolving _base alias if not found
+                if left_data is None and left_name.endswith('_base'):
+                    base_left = left_name[:-5]
+                    left_data = intermediate_results.get(base_left)
+                    if left_data is None:
+                        left_data = base_features.get(base_left)
+
+                right_data = intermediate_results.get(right_name)
+                if right_data is None:
+                    right_data = base_features.get(right_name)
+                # Try resolving _base alias if not found
+                if right_data is None and right_name.endswith('_base'):
+                    base_right = right_name[:-5]
+                    right_data = intermediate_results.get(base_right)
+                    if right_data is None:
+                        right_data = base_features.get(base_right)
 
                 if left_data is None or right_data is None:
-                    raise ValueError(f"Operator inputs not found: {left_name}, {right_name}")
+                    # Detailed error message to help debugging
+                    missing = []
+                    if left_data is None: missing.append(left_name)
+                    if right_data is None: missing.append(right_name)
+                    raise ValueError(f"Operator inputs not found: {', '.join(missing)}")
 
                 result = self._apply_operator(left_data, right_data, operator)
                 intermediate_results[feature_name] = result

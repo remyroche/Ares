@@ -9,6 +9,7 @@ from typing import Any, Dict
 
 import numpy as np
 import pandas as pd
+from scipy.stats import entropy
 
 from src.features_common.transforms.scaling_normalization import (
     winsorized_zscore_normalize,
@@ -37,6 +38,8 @@ def generate_volume_force_features(
     - Volume Acceleration
     - Cross-Timeframe Volume Proxies (RVOL HTF, Trend Alignment, Breakout)
     - Advanced: Churn, Effort/Result, UV/DV Ratio, Volume RSI, OBV Divergence, Thrust, Elasticity
+    - Time of day/week
+    - Multi-timeframe acceleration and entropy
 
     Args:
         df: Input market data with `open`, `high`, `low`, `close`, `volume`.
@@ -50,6 +53,17 @@ def generate_volume_force_features(
         raise ValueError(f"Market data missing required columns: {required - set(df.columns)}")
 
     # Use float32 for memory efficiency
+    # Ensure index is datetime for time features
+    if not isinstance(df.index, pd.DatetimeIndex):
+         # Attempt conversion if not already
+         try:
+             df_index = pd.to_datetime(df.index)
+         except Exception:
+             # Fallback if conversion fails, though it should be handled upstream
+             df_index = df.index
+    else:
+        df_index = df.index
+
     open_p = df["open"].astype(np.float32)
     high = df["high"].astype(np.float32)
     low = df["low"].astype(np.float32)
@@ -319,8 +333,14 @@ def generate_volume_force_features(
     # Normalize
     aggressive_flow_norm = aggressive_flow / vol_mean_20.replace(0, eps)
 
+    # ==============================================================================
+    # 24. NEW MULTI-TASK & TIME FEATURES (Specific Request)
+    # ==============================================================================
+
     # Assemble DataFrame
     features = pd.DataFrame(index=df.index)
+
+    # Add Core Features
     features["volume_delta"] = volume_delta
     features["cvd_slope_3"] = cvd_slope_3
     features["cvd_slope_6"] = cvd_slope_6
@@ -339,7 +359,7 @@ def generate_volume_force_features(
     features["vol_htf_breakout_4h"] = vol_htf_breakout_4h
     features["vol_htf_breakout_daily"] = vol_htf_breakout_daily
 
-    # New Advanced Features
+    # Add Advanced Features
     features["churn_index_norm"] = churn_index_norm
     features["effort_result_log"] = effort_result_log
     features["uv_dv_ratio"] = uv_dv_ratio
@@ -353,6 +373,131 @@ def generate_volume_force_features(
     features["vol_zscore"] = vol_zscore
     features["aggressive_flow_norm"] = aggressive_flow_norm
 
+    # Time Features
+    if isinstance(df_index, pd.DatetimeIndex):
+        day_of_week = df_index.dayofweek
+        hour = df_index.hour
+        minute = df_index.minute
+
+        # Day of week (0-6)
+        features["day_of_week"] = day_of_week
+
+        # Time of day encoded cyclically
+        minutes_in_day = hour * 60 + minute
+        features["time_day_sin"] = np.sin(2 * np.pi * minutes_in_day / 1440)
+        features["time_day_cos"] = np.cos(2 * np.pi * minutes_in_day / 1440)
+
+        # Minutes since last funding (every 8h: 00:00, 08:00, 16:00)
+        # 8h = 480 minutes
+        features["minutes_since_funding"] = minutes_in_day % 480
+    else:
+        # Fallback if no datetime index
+        features["day_of_week"] = 0
+        features["time_day_sin"] = 0
+        features["time_day_cos"] = 0
+        features["minutes_since_funding"] = 0
+
+    # Ensure day_of_week is numeric
+    features["day_of_week"] = pd.to_numeric(features["day_of_week"], errors='coerce').fillna(0)
+
+    # Volume Z-Score over 1d (96 bars)
+    vol_mean_96 = volume.rolling(96).mean()
+    vol_std_96 = volume.rolling(96).std().replace(0, eps)
+    features["vol_15m_zscore_over_1d"] = (volume - vol_mean_96) / vol_std_96
+
+    # Rolling Rank of volume (last 96 bars)
+    features["rolling_rank_vol_96"] = volume.rolling(96).rank(pct=True)
+
+    # Delta Volume 15m (Ratio to previous)
+    features["delta_vol_15m"] = volume / volume.shift(1).replace(0, eps)
+
+    # 1h Volume Acceleration
+    # vol_1h = rolling(4).sum()
+    vol_1h_sum = volume.rolling(4).sum()
+    features["accel_1h"] = vol_1h_sum / vol_1h_sum.shift(4).replace(0, eps)
+
+    # Multi-TF Acceleration
+    # (vol_15m / vol_1h_ma) * (vol_1h / vol_4h_ma)
+    # vol_1h_ma defined above as vol_mean_4 (rolling 4 mean) = vol_1h_sum / 4?
+    # Usually "MA" means mean volume over that window.
+    # vol_1h_ma = rolling(4).mean()
+    # vol_4h_ma = rolling(16).mean()
+    # vol_1h (instantaneous) -> we can use rolling(4).sum() or rolling(4).mean() * 4
+    # Let's interpret strictly:
+    # Ratio 1: vol / vol_mean_4h (used rvol_htf_4h above, but request says 1h ma)
+    vol_mean_1h = volume.rolling(4).mean()
+    ratio_15m_1h = volume / vol_mean_1h.replace(0, eps)
+    features["vol_15m_div_vol_1h_ma"] = ratio_15m_1h
+
+    ratio_15m_4h = volume / vol_mean_4h.replace(0, eps)
+    features["vol_15m_div_vol_4h_ma"] = ratio_15m_4h
+
+    # Ratio 2: vol_1h / vol_4h_ma
+    # vol_1h here likely means "volume over last 1h" = rolling(4).sum() or mean
+    # Let's use mean to keep units consistent
+    ratio_1h_4h = vol_mean_1h / vol_mean_4h.replace(0, eps)
+
+    features["multi_tf_accel"] = ratio_15m_1h * ratio_1h_4h
+
+    # CVD Slope Ratios
+    # cvd_slope_1h (4 bars diff) vs cvd_slope_15m (1 bar diff)
+    # Request: cvd_15m_slope / cvd_1h_slope
+    # cvd is accumulated delta.
+    cvd_slope_15m = cvd.diff(1)
+    cvd_slope_1h = cvd.diff(4)
+    features["cvd_slope_ratio"] = cvd_slope_15m / cvd_slope_1h.replace(0, eps)
+
+    # CVD 1h / CVD 4h (Absolute levels or slopes? "cvd_1h / cvd_4h")
+    # Likely means slope or accumulated change over that window
+    cvd_slope_4h = cvd.diff(16)
+    features["cvd_1h_div_cvd_4h"] = cvd_slope_1h / cvd_slope_4h.replace(0, eps)
+
+    # 15m CVD Z-Score over 1d
+    cvd_change = cvd.diff(1)
+    cvd_change_mean_96 = cvd_change.rolling(96).mean()
+    cvd_change_std_96 = cvd_change.rolling(96).std().replace(0, eps)
+    features["cvd_15m_zscore_over_1d"] = (cvd_change - cvd_change_mean_96) / cvd_change_std_96
+
+    # Entropy of Volume across TF
+    # H([vol_15m, vol_1h, vol_4h])
+    # Convert to equivalent units (e.g. per-minute volume or just total)
+    # If we use sums: 15m sum, 1h sum, 4h sum.
+    # 1h sum includes 15m sum. 4h sum includes 1h sum.
+    # The request likely implies entropy of the *distribution* of volume at these scales
+    # or entropy of the vector [v15, v1h, v4h] normalized.
+    v15 = volume
+    v1h = vol_1h_sum
+    v4h = volume.rolling(16).sum()
+
+    # Normalize to probability distribution for entropy calculation
+    # p_i = v_i / sum(v)
+    sum_v = v15 + v1h + v4h + eps
+    p15 = v15 / sum_v
+    p1h = v1h / sum_v
+    p4h = v4h / sum_v
+
+    # Calculate entropy row-wise
+    # Entropy = -sum(p * log(p))
+    # Note: using numpy directly for speed
+    def row_entropy(row):
+         p = np.array([row[0], row[1], row[2]])
+         return entropy(p)
+
+    # Vectorized approximate entropy
+    # - (p15*log(p15) + p1h*log(p1h) + p4h*log(p4h))
+    # Clip p to avoid log(0)
+    p15 = p15.clip(1e-9, 1.0)
+    p1h = p1h.clip(1e-9, 1.0)
+    p4h = p4h.clip(1e-9, 1.0)
+
+    features["entropy_volume_tf"] = -(p15 * np.log(p15) + p1h * np.log(p1h) + p4h * np.log(p4h))
+
+    # Volume Fragmentation
+    # vol_1h / (vol_4h + vol_1d)
+    vol_1d_sum = volume.rolling(96).sum()
+    features["vol_fragmentation"] = v1h / (v4h + vol_1d_sum + eps)
+
+    # Assemble final set
     # Horizon-aligned aggregations using volume_force_lookahead as bar horizon
     horizon = int(config.get("volume_force_lookahead", 12))
     horizon = max(1, horizon)
@@ -367,7 +512,9 @@ def generate_volume_force_features(
         "force_index_norm", "vfi", "cmf", "vpt_norm", "emv", "volume_acceleration",
         "volume_trend_alignment", "uv_dv_oscillator", "volume_rsi", "obv_slope_norm",
         "obv_price_divergence", "volume_thrust", "vol_elasticity", "vwap_deviation",
-        "vol_zscore", "aggressive_flow_norm"
+        "vol_zscore", "aggressive_flow_norm",
+        "vol_15m_zscore_over_1d", "delta_vol_15m", "cvd_slope_ratio", "cvd_1h_div_cvd_4h",
+        "cvd_15m_zscore_over_1d", "time_day_sin", "time_day_cos"
     ]
 
     # Group 2: Magnitude/Ratios (Positive, heavy tail)
@@ -377,12 +524,14 @@ def generate_volume_force_features(
         "vol_htf_breakout_4h", "vol_htf_breakout_daily",
         "churn_index_norm", "effort_result_log", "uv_dv_ratio",
         "volume_imbalance_roll_h", "volume_shock_roll_h", "aggressive_flow_roll_h",
+        "rolling_rank_vol_96", "accel_1h", "multi_tf_accel",
+        "vol_15m_div_vol_1h_ma", "vol_15m_div_vol_4h_ma",
+        "entropy_volume_tf", "vol_fragmentation", "minutes_since_funding"
     ]
 
     window_size = int(config.get("volume_force_normalization_window", 100))
 
     # Apply winsorized z-score to oscillators
-    # Note: volume_rsi is 0-100, z-score is fine or simple rescaling. Z-score standardizes it.
     features[oscillators] = winsorized_zscore_normalize(
         features[oscillators],
         window=window_size
@@ -391,5 +540,9 @@ def generate_volume_force_features(
     # Apply log1p + z-score to magnitudes
     for col in magnitudes:
         features[col] = log1p_zscore_normalize(features[col], window=window_size)
+
+    # Day of week is categorical/cyclical, leaving as is or normalizing?
+    # Usually treated as categorical, but for simple XGB integration, 0-6 is fine.
+    # No normalization applied to day_of_week.
 
     return features

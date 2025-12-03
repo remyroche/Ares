@@ -352,126 +352,156 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                     tprint_success(f"✅ Loaded LARGE feature dataset: {large_features_df.shape}")
                     data_source = f"versioned_store:labeled={latest_labeled if labeled_df is not None else 'none'},features={latest_features}"
                 
-                # STEP 3: If we have both, use the large features as base and align with labeled targets
-                if labeled_df is not None and large_features_df is not None:
-                    tprint_info(f"🔗 Combining labeled targets with large feature set...")
+                # STEP 3: CRITICAL FIX - Align features and targets with proper time period handling
+                # Priority: Use the intersection of time periods to ensure valid targets for all rows
+                if large_features_df is not None and len(large_features_df) > 0:
+                    tprint_success(f"🎯 PRIORITY: Using generated_features_15m ({len(large_features_df)} rows) as base dataset")
                     
                     # DETAILED DEBUGGING: Show time periods and index details
                     tprint_info(f"📊 DETAILED INDEX ANALYSIS:")
-                    tprint_info(f"   Labeled data: {labeled_df.shape}")
-                    tprint_info(f"   - Index type: {type(labeled_df.index)}")
-                    tprint_info(f"   - Index range: {labeled_df.index.min()} to {labeled_df.index.max()}")
-                    tprint_info(f"   - Sample indices: {labeled_df.index[:5].tolist()} ... {labeled_df.index[-5:].tolist()}")
-                    
-                    tprint_info(f"   Generated features: {large_features_df.shape}")
+                    tprint_info(f"   Generated features (BASE): {large_features_df.shape}")
                     tprint_info(f"   - Index type: {type(large_features_df.index)}")
                     tprint_info(f"   - Index range: {large_features_df.index.min()} to {large_features_df.index.max()}")
-                    tprint_info(f"   - Sample indices: {large_features_df.index[:5].tolist()} ... {large_features_df.index[-5:].tolist()}")
                     
-                    # Check for time period overlap (best-effort; guard against
-                    # mixed index dtypes such as integer vs bytes/datetime).
-                    try:
-                        labeled_start, labeled_end = labeled_df.index.min(), labeled_df.index.max()
-                        features_start, features_end = large_features_df.index.min(), large_features_df.index.max()
-
-                        tprint_info(f"📅 TIME PERIOD ANALYSIS:")
-                        tprint_info(f"   Labeled data period: {labeled_start} to {labeled_end}")
-                        tprint_info(f"   Features period: {features_start} to {features_end}")
-
-                        # Only attempt overlap math when both endpoints look
-                        # datetime-like; otherwise skip to avoid type errors.
-                        from datetime import datetime as _dt_cls
-                        def _is_dt_like(v):
-                            return isinstance(v, (pd.Timestamp, _dt_cls))
-
-                        if _is_dt_like(labeled_start) and _is_dt_like(labeled_end) and _is_dt_like(features_start) and _is_dt_like(features_end):
-                            overlap_start = max(labeled_start, features_start)
-                            overlap_end = min(labeled_end, features_end)
-                            tprint_info(f"   Theoretical overlap: {overlap_start} to {overlap_end}")
-
-                            if overlap_start <= overlap_end:
-                                overlap_days = (overlap_end - overlap_start).days
-                                tprint_info(f"   Overlap duration: {overlap_days} days")
-                                expected_samples = overlap_days * 96  # 96 samples per day for 15m
-                                tprint_info(f"   Expected samples in overlap: ~{expected_samples}")
-                            else:
-                                tprint_error("   ❌ NO TIME OVERLAP! Labeled ends before features start or vice versa")
-                        else:
-                            tprint_info("   Skipping detailed overlap analysis (non-datetime indices)")
-                    except Exception as overlap_exc:
-                        tprint_warning(f"   Skipping time period overlap analysis due to error: {overlap_exc}")
-                    
-                    # Find common index between labeled_data and large_features
-                    common_index = labeled_df.index.intersection(large_features_df.index)
-                    tprint_error(f"📊 CRITICAL: ACTUAL COMMON INDEX: {len(common_index)} rows")
-                    tprint_error(f"📊 CRITICAL: Labeled data has {len(labeled_df)} rows")
-                    tprint_error(f"📊 CRITICAL: Features data has {len(large_features_df)} rows")
-                    
-                    if len(common_index) > 0:
-                        common_start, common_end = common_index.min(), common_index.max()
-                        tprint_error(f"   CRITICAL: Common index range: {common_start} to {common_end}")
-                        tprint_error(f"   CRITICAL: Common index sample: {common_index[:10].tolist()}")
-                    
-                    # Check for potential issues
-                    if len(common_index) < 1000:
-                        tprint_error(f"🔍 CRITICAL: DEBUGGING LOW INTERSECTION ({len(common_index)} rows):")
-                        tprint_error(f"   This is the ROOT CAUSE of the 300-row bottleneck!")
+                    if labeled_df is not None:
+                        tprint_info(f"   Labeled data (targets source): {labeled_df.shape}")
+                        tprint_info(f"   - Index type: {type(labeled_df.index)}")
+                        tprint_info(f"   - Index range: {labeled_df.index.min()} to {labeled_df.index.max()}")
                         
-                        # Check if indices are different types or formats
-                        labeled_sample = labeled_df.index[:100]
-                        features_sample = large_features_df.index[:100]
+                        # Check if labeled_data covers a meaningful time range of features
+                        common_index = labeled_df.index.intersection(large_features_df.index)
+                        overlap_pct = len(common_index) / len(large_features_df) * 100 if len(large_features_df) > 0 else 0
                         
-                        # Check for exact matches in samples
-                        exact_matches = labeled_sample.intersection(features_sample)
-                        tprint_info(f"   Exact matches in first 100: {len(exact_matches)}")
+                        tprint_info(f"📊 Index overlap: {len(common_index)} rows ({overlap_pct:.1f}%)")
                         
-                        # Check if there are timezone or format differences
-                        if len(labeled_sample) > 0 and len(features_sample) > 0:
-                            tprint_info(f"   Labeled sample[0]: {labeled_sample[0]} (type: {type(labeled_sample[0])})")
-                            tprint_info(f"   Features sample[0]: {features_sample[0]} (type: {type(features_sample[0])})")
+                        # STRATEGY SELECTION based on overlap quality
+                        if overlap_pct < 10:
+                            # Very poor overlap - filter features to labeled_data's time range
+                            tprint_warning(f"⚠️ Poor overlap ({overlap_pct:.1f}%) - using labeled_data's time range")
                             
-                            # Check if they're close in time but not exact matches
-                            if hasattr(labeled_sample[0], 'tz') and hasattr(features_sample[0], 'tz'):
-                                tprint_info(f"   Labeled timezone: {labeled_sample[0].tz}")
-                                tprint_info(f"   Features timezone: {features_sample[0].tz}")
-                    
-                    if len(common_index) > 1000:  # Reasonable threshold
-                        # CRITICAL FIX: Use FULL large features dataset, not just common_index!
-                        tprint_error(f"🔧 FIXING TEMPORAL FILTERING BOTTLENECK:")
-                        tprint_error(f"   OLD APPROACH: Filter to common_index ({len(common_index)} rows)")
-                        tprint_error(f"   NEW APPROACH: Use FULL large_features_df ({len(large_features_df)} rows)")
+                            if isinstance(labeled_df.index, pd.DatetimeIndex) and isinstance(large_features_df.index, pd.DatetimeIndex):
+                                labeled_start = labeled_df.index.min()
+                                labeled_end = labeled_df.index.max()
+                                
+                                # Filter features to the labeled_data's time range
+                                time_mask = (large_features_df.index >= labeled_start) & (large_features_df.index <= labeled_end)
+                                combined_df = large_features_df[time_mask].copy()
+                                tprint_info(f"   Filtered features to labeled period: {len(combined_df)} rows")
+                                
+                                # Now align targets
+                                target_cols = [col for col in labeled_df.columns if 'target' in col.lower() or col == 'price_target_vol_normalized']
+                                for col in target_cols:
+                                    aligned_targets = labeled_df[col].reindex(combined_df.index, method='nearest', tolerance=pd.Timedelta('15min'))
+                                    combined_df[col] = aligned_targets
+                                    non_null = combined_df[col].notna().sum()
+                                    tprint_info(f"   ✅ {col}: {non_null}/{len(combined_df)} non-null ({non_null/len(combined_df)*100:.1f}%)")
+                            else:
+                                # Non-datetime index - use common_index if any
+                                if len(common_index) > 100:
+                                    combined_df = large_features_df.loc[common_index].copy()
+                                    for col in [c for c in labeled_df.columns if 'target' in c.lower()]:
+                                        combined_df[col] = labeled_df.loc[common_index, col]
+                                else:
+                                    combined_df = large_features_df.copy()
+                        else:
+                            # Good overlap - use full features with target alignment
+                            combined_df = large_features_df.copy()
                         
-                        # Use the FULL large features dataset as base
-                        combined_df = large_features_df.copy()
-                        
-                        # Add target columns from labeled_data where available (reindex to match)
-                        original_labeled_df = labeled_df  # Save reference to original labeled data
-                        target_cols = [col for col in original_labeled_df.columns if 'target' in col.lower() or col == 'price_target_vol_normalized']
+                        # Try multiple alignment strategies to get targets onto the features
+                        target_cols = [col for col in labeled_df.columns if 'target' in col.lower() or col == 'price_target_vol_normalized']
+                        tprint_info(f"🎯 Target columns to align: {target_cols}")
                         
                         if target_cols:
-                            tprint_info(f"🎯 Adding target columns to FULL dataset: {target_cols}")
+                            # Strategy 1: Direct index alignment (if indices match)
+                            common_index = labeled_df.index.intersection(large_features_df.index)
+                            tprint_info(f"   Direct index intersection: {len(common_index)} rows")
+                            
                             for col in target_cols:
-                                # Reindex targets to match the full features dataset
-                                aligned_targets = original_labeled_df[col].reindex(large_features_df.index)
-                                combined_df[col] = aligned_targets
-                                non_null_count = aligned_targets.notna().sum()
-                                tprint_info(f"   {col}: {non_null_count}/{len(aligned_targets)} non-null values ({non_null_count/len(aligned_targets)*100:.1f}%)")
+                                if len(common_index) > len(large_features_df) * 0.5:
+                                    # Good overlap - use direct reindex
+                                    aligned_targets = labeled_df[col].reindex(large_features_df.index)
+                                    combined_df[col] = aligned_targets
+                                    non_null_count = aligned_targets.notna().sum()
+                                    tprint_info(f"   ✅ {col}: {non_null_count}/{len(aligned_targets)} non-null ({non_null_count/len(aligned_targets)*100:.1f}%)")
+                                else:
+                                    # Strategy 2: Try positional alignment if lengths are similar
+                                    tprint_warning(f"   ⚠️ Low index overlap ({len(common_index)}/{len(large_features_df)}), trying alternative alignment...")
+                                    
+                                    # Check if indices are datetime but with timezone mismatch
+                                    try:
+                                        if hasattr(labeled_df.index, 'tz') and hasattr(large_features_df.index, 'tz'):
+                                            # Try to localize/convert timezones
+                                            labeled_tz = getattr(labeled_df.index, 'tz', None)
+                                            features_tz = getattr(large_features_df.index, 'tz', None)
+                                            
+                                            if labeled_tz != features_tz:
+                                                tprint_info(f"   Timezone mismatch: labeled={labeled_tz}, features={features_tz}")
+                                                # Try converting labeled to match features
+                                                if features_tz is None:
+                                                    converted_idx = labeled_df.index.tz_localize(None)
+                                                else:
+                                                    converted_idx = labeled_df.index.tz_convert(features_tz) if labeled_tz else labeled_df.index.tz_localize(features_tz)
+                                                
+                                                temp_labeled = labeled_df.copy()
+                                                temp_labeled.index = converted_idx
+                                                aligned_targets = temp_labeled[col].reindex(large_features_df.index)
+                                                combined_df[col] = aligned_targets
+                                                non_null_count = aligned_targets.notna().sum()
+                                                tprint_info(f"   ✅ {col} (tz-fixed): {non_null_count}/{len(aligned_targets)} non-null ({non_null_count/len(aligned_targets)*100:.1f}%)")
+                                                continue
+                                    except Exception as tz_err:
+                                        tprint_warning(f"   Timezone alignment failed: {tz_err}")
+                                    
+                                    # Strategy 3: Use nearest timestamp matching for datetime indices
+                                    try:
+                                        if isinstance(labeled_df.index, pd.DatetimeIndex) and isinstance(large_features_df.index, pd.DatetimeIndex):
+                                            tprint_info("   Trying nearest-timestamp alignment...")
+                                            # For each feature timestamp, find nearest labeled timestamp
+                                            aligned_values = []
+                                            for feat_ts in large_features_df.index:
+                                                # Find nearest labeled timestamp within 15 minutes
+                                                time_diffs = abs(labeled_df.index - feat_ts)
+                                                min_diff_idx = time_diffs.argmin()
+                                                if time_diffs[min_diff_idx] <= pd.Timedelta(minutes=15):
+                                                    aligned_values.append(labeled_df[col].iloc[min_diff_idx])
+                                                else:
+                                                    aligned_values.append(np.nan)
+                                            combined_df[col] = aligned_values
+                                            non_null_count = pd.Series(aligned_values).notna().sum()
+                                            tprint_info(f"   ✅ {col} (nearest-ts): {non_null_count}/{len(aligned_values)} non-null ({non_null_count/len(aligned_values)*100:.1f}%)")
+                                            continue
+                                    except Exception as nearest_err:
+                                        tprint_warning(f"   Nearest-timestamp alignment failed: {nearest_err}")
+                                    
+                                    # Strategy 4: Fallback - use direct reindex anyway (may have many NaNs)
+                                    aligned_targets = labeled_df[col].reindex(large_features_df.index)
+                                    combined_df[col] = aligned_targets
+                                    non_null_count = aligned_targets.notna().sum()
+                                    tprint_warning(f"   ⚠️ {col} (fallback): {non_null_count}/{len(aligned_targets)} non-null ({non_null_count/len(aligned_targets)*100:.1f}%)")
                         else:
-                            # Add target from labeled_data (assume last column is target)
-                            tprint_info("🎯 Adding target from last column of labeled_data to FULL dataset")
-                            aligned_targets = original_labeled_df.iloc[:, -1].reindex(large_features_df.index)
-                            combined_df['price_target_vol_normalized'] = aligned_targets
-                            non_null_count = aligned_targets.notna().sum()
-                            tprint_info(f"   price_target_vol_normalized: {non_null_count}/{len(aligned_targets)} non-null values ({non_null_count/len(aligned_targets)*100:.1f}%)")
-                        
-                        labeled_df = combined_df  # Replace with FULL combined dataset
-                        tprint_success(f"✅ FIXED: Now using FULL dataset: {labeled_df.shape} (was {len(common_index)} rows)")
-                        tprint_success(f"✅ Temporal filtering bottleneck RESOLVED!")
+                            tprint_warning("⚠️ No target columns found in labeled_data, looking for alternatives...")
+                            # Try to find any column that could be a target
+                            potential_targets = [c for c in labeled_df.columns if any(t in c.lower() for t in ['label', 'return', 'signal'])]
+                            if potential_targets:
+                                tprint_info(f"   Found potential target columns: {potential_targets}")
+                                for col in potential_targets[:1]:  # Take first one
+                                    aligned_targets = labeled_df[col].reindex(large_features_df.index)
+                                    combined_df[col] = aligned_targets
                     else:
-                        tprint_error(f"❌ Too few common indices ({len(common_index)}) between targets and features")
-                        tprint_error(f"   This suggests a fundamental mismatch in time periods or index formats")
-                        # Fall back to labeled_df only
-                        tprint_warning("⚠️ Falling back to labeled_df only due to index mismatch")
+                        tprint_warning("⚠️ No labeled_data available for target alignment - features only mode")
+                    
+                    # Use the combined dataset as labeled_df
+                    labeled_df = combined_df
+                    data_source = f"versioned_store:generated_features_15m_base,targets_from_labeled_data"
+                    tprint_success(f"✅ FINAL: Using FULL dataset: {labeled_df.shape}")
+                    tprint_success(f"✅ This is the FIX for the data size bottleneck!")
+                    
+                elif labeled_df is not None and large_features_df is None:
+                    # Fallback: Only labeled_data available, no generated_features
+                    tprint_warning(f"⚠️ No generated_features_15m found, using labeled_data as base ({len(labeled_df)} rows)")
+                    tprint_warning(f"⚠️ This may result in a smaller dataset!")
+                else:
+                    tprint_error("❌ Neither generated_features_15m nor labeled_data available!")
                         
             except Exception as e:
                 tprint_error(f"❌ Failed to load from versioned store: {e}")
@@ -565,6 +595,20 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             features_data = self._collect_features_from_previous_steps()
             tprint_info(f"✅ Collected in {time.time()-t0:.2f}s")
             
+            # CRITICAL FIX: If we loaded a larger generated_features_15m from the versioned store
+            # in step 1, use that instead of the potentially smaller artifact from _collect_features
+            if large_features_df is not None and hasattr(large_features_df, 'shape'):
+                artifact_gf = features_data.get('generated_features')
+                artifact_gf_rows = len(artifact_gf) if artifact_gf is not None and hasattr(artifact_gf, '__len__') else 0
+                
+                if len(large_features_df) > artifact_gf_rows:
+                    tprint_success(f"🔧 CRITICAL FIX: Replacing artifact generated_features ({artifact_gf_rows} rows) "
+                                 f"with versioned store generated_features_15m ({len(large_features_df)} rows)")
+                    features_data['generated_features'] = large_features_df
+                else:
+                    tprint_info(f"📊 Artifact generated_features ({artifact_gf_rows} rows) >= "
+                              f"versioned store ({len(large_features_df)} rows), keeping artifact version")
+            
             # CRITICAL DEBUG: Log what we collected with explicit row counts
             tprint_error("=" * 80)
             tprint_error("🔍 CRITICAL: FEATURES COLLECTED FROM PREVIOUS STEPS")
@@ -601,33 +645,43 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             combined_features_df = self._combine_features(features_data, labeled_df)
             tprint_info(f"✅ Combined {combined_features_df.shape} in {time.time()-t0:.2f}s")
 
-            # Cap data to most recent 6 months (approx 180 days) for ALL modes
-            MAX_BARS_6_MONTHS = 17280  # 180 days * 96 15-min bars
-            if len(combined_features_df) > MAX_BARS_6_MONTHS:
-                tprint_info(f"📅 Capping combined features to most recent 6 months ({MAX_BARS_6_MONTHS} rows)")
-                combined_features_df = combined_features_df.iloc[-MAX_BARS_6_MONTHS:]
-
-            # In blank mode, restrict to a contiguous recent window (default 365 days)
+            # Data capping logic - different for blank vs other modes
             execution_mode_local = str(config.get('execution_mode', 'blank')).lower()
             model_name_local = str(config.get('model', '') or config.get('model_name', '')).lower()
             is_blank_mode = execution_mode_local == 'blank' or model_name_local == 'blank'
+            
             if is_blank_mode:
+                # BLANK MODE: Use more data for comprehensive diagnostics
+                # Default to 365 days (35,040 samples at 15m), configurable via blank_window_days
                 try:
                     if isinstance(combined_features_df.index, pd.DatetimeIndex) and not combined_features_df.empty:
                         target_days = int(config.get('blank_window_days', 365))
-                        end_ts = combined_features_df.index.max()
-                        start_ts = end_ts - pd.Timedelta(days=target_days)
-                        pre_rows = len(combined_features_df)
-                        combined_features_df = combined_features_df.loc[combined_features_df.index >= start_ts].copy()
-                        tprint_info(
-                            f"📅 [BLANK] Truncated feature window to last {target_days} days: "
-                            f"{pre_rows} → {len(combined_features_df)} rows "
-                        )
+                        MAX_BARS_BLANK = target_days * 96  # 96 15-min bars per day
+                        
+                        if len(combined_features_df) > MAX_BARS_BLANK:
+                            end_ts = combined_features_df.index.max()
+                            start_ts = end_ts - pd.Timedelta(days=target_days)
+                            pre_rows = len(combined_features_df)
+                            combined_features_df = combined_features_df.loc[combined_features_df.index >= start_ts].copy()
+                            tprint_info(
+                                f"📅 [BLANK] Using last {target_days} days for diagnostics: "
+                                f"{pre_rows} → {len(combined_features_df)} rows (expected ~{MAX_BARS_BLANK})"
+                            )
+                        else:
+                            tprint_info(
+                                f"📅 [BLANK] Dataset has {len(combined_features_df)} rows "
+                                f"(< {MAX_BARS_BLANK} for {target_days} days), using all available data"
+                            )
                 except Exception as e:
                     tprint_warning(
-                        f"⚠️ [BLANK] Failed to truncate feature window based on blank_window_days: {e}; "
-                        "continuing without temporal truncation"
+                        f"⚠️ [BLANK] Failed to apply temporal window: {e}; using all available data"
                     )
+            else:
+                # NON-BLANK MODES (analyst, tactician): Cap to 6 months for training efficiency
+                MAX_BARS_6_MONTHS = 17280  # 180 days * 96 15-min bars
+                if len(combined_features_df) > MAX_BARS_6_MONTHS:
+                    tprint_info(f"📅 Capping combined features to most recent 6 months ({MAX_BARS_6_MONTHS} rows)")
+                    combined_features_df = combined_features_df.iloc[-MAX_BARS_6_MONTHS:]
 
             combined_features_df = self._apply_blank_mode_shaping(combined_features_df, config)
 
@@ -2138,17 +2192,33 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         nan_count_before = y.isna().sum()
         total_samples = len(y)
         
+        # Store the full features_df for later use in creating output dataframes
+        # This ensures we can apply selected features to ALL rows, not just valid-target rows
+        full_features_df = features_df.copy()
+        
         if nan_count_before > 0:
-            tprint_warning(f"⚠️ Found {nan_count_before} NaN values in target variable ({100*nan_count_before/total_samples:.2f}%)")
+            pct_nan = 100 * nan_count_before / total_samples
+            tprint_warning(f"⚠️ Found {nan_count_before} NaN values in target variable ({pct_nan:.2f}%)")
+            
+            # CRITICAL CHECK: If too many targets are NaN, we have an alignment problem
+            if pct_nan > 90:
+                tprint_error("=" * 80)
+                tprint_error("🚨 CRITICAL: >90% of target values are NaN!")
+                tprint_error("   This indicates a severe index alignment issue between features and targets.")
+                tprint_error(f"   Features index range: {features_df.index.min()} to {features_df.index.max()}")
+                tprint_error(f"   Non-NaN targets count: {(~y.isna()).sum()} out of {len(y)}")
+                tprint_error("   The labeling integration step may have produced targets for a different time period.")
+                tprint_error("=" * 80)
             
             # Get valid indices (where target is not NaN)
             valid_indices = y.notna()
             
-            # Filter both X and y to remove NaN rows
+            # Filter both X and y to remove NaN rows FOR SELECTION ONLY
             X = X[valid_indices]
             y = y[valid_indices]
             
-            tprint_success(f"✅ Removed {nan_count_before} rows with NaN targets. Remaining samples: {len(y)}")
+            tprint_success(f"✅ For feature selection: {len(y)} rows with valid targets")
+            tprint_info(f"   (Full dataset has {len(full_features_df)} rows - will be used for output)")
             
             # Verify no NaN values remain
             if y.isna().sum() > 0:

@@ -103,13 +103,13 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-class HMMMLMacroTrendStep(BaseStep):
+class XGBMacroTrendStep(BaseStep):
     """Pipeline step to construct macro-trend alpha labels from 1h Rolling HMM regimes."""
 
-    def __init__(self, step_name: str = "hmm_macro_regime"):
-        """Initialize the HMM macro trend step with versioned artifacts enabled."""
+    def __init__(self, step_name: str = "xgb_macro_regime"):
+        """Initialize the XGB macro trend step with versioned artifacts enabled."""
         super().__init__(step_name, use_versioned_artifacts=True)
-        self.logger = logger.getChild("HMMMLMacroTrendStep") if hasattr(logger, "getChild") else logger
+        self.logger = logger.getChild("XGBMacroTrendStep") if hasattr(logger, "getChild") else logger
         tprint(f"ÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂÄÂĂÂÄÂĂÂĂÂĂÂÄÂĂÂ Initialized {step_name} step", "SUCCESS")
 
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:

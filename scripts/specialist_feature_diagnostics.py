@@ -99,7 +99,7 @@ async def _run_specialist_training(
         "ml_breakout_bounce_regime_step",
         "ml_mean_reversion_step",
         "xgb_meso_regime",
-        "hmm_macro_regime",
+        "xgb_macro_regime",
         "ml_smc_regime_step",
         "ml_liquidity_regime_step",
         "ml_risk_regime_step",

@@ -572,6 +572,18 @@ class IncrementalLGBMTrainer(BaseIncrementalTrainer):
     
     def _train_initial(self, train_data: pd.DataFrame, window: IncrementalTrainingWindow, verbose: bool) -> CalibratedModel:
         self._feature_cols = self._get_feature_cols(train_data)
+
+        if not self._feature_cols:
+            logger.warning(
+                "IncrementalLGBMTrainer: no specialist features found; "
+                "using dummy feature to prevent crash."
+            )
+            # Add dummy column to avoid empty dataset crash
+            # We must modify the dataframe passed (it is a copy in BaseIncrementalTrainer loop)
+            train_data = train_data.copy()
+            train_data['__dummy_const__'] = 0.0
+            self._feature_cols = ['__dummy_const__']
+
         X = train_data[self._feature_cols].values.astype(np.float32)
         y = train_data['__target__'].values
         X = np.nan_to_num(X, nan=0.0)
@@ -601,6 +613,14 @@ class IncrementalLGBMTrainer(BaseIncrementalTrainer):
         return calibrated_model
     
     def _train_incremental(self, new_data: pd.DataFrame, full_train_data: pd.DataFrame, window: IncrementalTrainingWindow, verbose: bool) -> CalibratedModel:
+        if not self._feature_cols:
+             # Should have been set by initial train, but if not:
+             self._feature_cols = self._get_feature_cols(full_train_data)
+             if not self._feature_cols:
+                 full_train_data = full_train_data.copy()
+                 full_train_data['__dummy_const__'] = 0.0
+                 self._feature_cols = ['__dummy_const__']
+
         X = full_train_data[self._feature_cols].values.astype(np.float32)
         y = full_train_data['__target__'].values
         X = np.nan_to_num(X, nan=0.0)
@@ -629,6 +649,15 @@ class IncrementalLGBMTrainer(BaseIncrementalTrainer):
         return calibrated_model
     
     def _predict(self, pred_data: pd.DataFrame) -> pd.DataFrame:
+        if not self._feature_cols:
+             # Just in case
+             return pd.DataFrame({'prediction': 0}, index=pred_data.index)
+
+        # Handle dummy feature if needed
+        if '__dummy_const__' in self._feature_cols and '__dummy_const__' not in pred_data:
+            pred_data = pred_data.copy()
+            pred_data['__dummy_const__'] = 0.0
+
         X = pred_data[self._feature_cols].values.astype(np.float32)
         X = np.nan_to_num(X, nan=0.0)
         
@@ -642,6 +671,19 @@ class IncrementalLGBMTrainer(BaseIncrementalTrainer):
 
     def _run_incremental_hpo(self, train_data, window, verbose):
         if not OPTUNA_AVAILABLE: return None
+
+        if not self._feature_cols:
+             self._feature_cols = self._get_feature_cols(train_data)
+             if not self._feature_cols:
+                 train_data = train_data.copy()
+                 train_data['__dummy_const__'] = 0.0
+                 self._feature_cols = ['__dummy_const__']
+
+        # Ensure dummy column exists in train_data if needed
+        if '__dummy_const__' in self._feature_cols and '__dummy_const__' not in train_data:
+            train_data = train_data.copy()
+            train_data['__dummy_const__'] = 0.0
+
         X = train_data[self._feature_cols].values.astype(np.float32)
         y = train_data['__target__'].values
         X = np.nan_to_num(X, nan=0.0)
@@ -948,11 +990,11 @@ class IncrementalKNNTrainer(BaseIncrementalTrainer):
             
             try:
                 if self.config.task_type == 'classification':
-                    model = KNeighborsClassifier(**params)
-                    scores = cross_val_score(model, X_scaled, y, cv=3, scoring='accuracy')
+                    model = KNeighborsClassifier(n_jobs=1, **params)
+                    scores = cross_val_score(model, X_scaled, y, cv=3, scoring='accuracy', n_jobs=1)
                 else:
-                    model = KNeighborsRegressor(**params)
-                    scores = cross_val_score(model, X_scaled, y, cv=3, scoring='neg_mean_squared_error')
+                    model = KNeighborsRegressor(n_jobs=1, **params)
+                    scores = cross_val_score(model, X_scaled, y, cv=3, scoring='neg_mean_squared_error', n_jobs=1)
                 return scores.mean()
             except:
                 return float('-inf')
@@ -994,14 +1036,17 @@ class IncrementalBayesianRidgeTrainer(BaseIncrementalTrainer):
 
     def _train_initial(self, train_data, window, verbose) -> CalibratedModel:
         self._feature_cols = self._get_feature_cols(train_data)
-        if self._feature_cols:
-            X = train_data[self._feature_cols].values.astype(np.float64)
-        else:
+        if not self._feature_cols:
             logger.warning(
                 "IncrementalBayesianRidgeTrainer: no specialist features found; "
                 "using constant feature for intercept-only model."
             )
-            X = np.zeros((len(train_data), 1), dtype=np.float64)
+            # Add dummy column to avoid empty dataset crash
+            train_data = train_data.copy()
+            train_data['__dummy_const__'] = 0.0
+            self._feature_cols = ['__dummy_const__']
+
+        X = train_data[self._feature_cols].values.astype(np.float64)
         y = train_data['__target__'].values
         X = np.nan_to_num(X, nan=0.0)
         
@@ -1033,14 +1078,14 @@ class IncrementalBayesianRidgeTrainer(BaseIncrementalTrainer):
 
     def _train_incremental(self, new_data, full_train_data, window, verbose):
         # Similar logic but using warm start params
-        if self._feature_cols:
-            X = full_train_data[self._feature_cols].values.astype(np.float64)
-        else:
-            logger.warning(
-                "IncrementalBayesianRidgeTrainer: no specialist features during "
-                "incremental update; using constant feature."
-            )
-            X = np.zeros((len(full_train_data), 1), dtype=np.float64)
+        if not self._feature_cols:
+             self._feature_cols = self._get_feature_cols(full_train_data)
+             if not self._feature_cols:
+                 full_train_data = full_train_data.copy()
+                 full_train_data['__dummy_const__'] = 0.0
+                 self._feature_cols = ['__dummy_const__']
+
+        X = full_train_data[self._feature_cols].values.astype(np.float64)
         y = full_train_data['__target__'].values
         X = np.nan_to_num(X, nan=0.0)
         
@@ -1072,6 +1117,15 @@ class IncrementalBayesianRidgeTrainer(BaseIncrementalTrainer):
         return calibrated_model
 
     def _predict(self, pred_data) -> pd.DataFrame:
+        if not self._feature_cols:
+             # Just in case
+             return pd.DataFrame({'prediction': 0, 'std': 0}, index=pred_data.index)
+
+        # Handle dummy feature if needed
+        if '__dummy_const__' in self._feature_cols and '__dummy_const__' not in pred_data:
+            pred_data = pred_data.copy()
+            pred_data['__dummy_const__'] = 0.0
+
         X = pred_data[self._feature_cols].values.astype(np.float64)
         X = np.nan_to_num(X, nan=0.0)
         
@@ -1090,12 +1144,15 @@ class IncrementalBayesianRidgeTrainer(BaseIncrementalTrainer):
 
         if not self._feature_cols:
             self._feature_cols = self._get_feature_cols(train_data)
-        if not self._feature_cols:
-            logger.warning(
-                "IncrementalBayesianRidgeTrainer: no specialist features available; "
-                "skipping incremental HPO."
-            )
-            return None
+            if not self._feature_cols:
+                 train_data = train_data.copy()
+                 train_data['__dummy_const__'] = 0.0
+                 self._feature_cols = ['__dummy_const__']
+
+        # Ensure dummy column exists in train_data if needed
+        if '__dummy_const__' in self._feature_cols and '__dummy_const__' not in train_data:
+            train_data = train_data.copy()
+            train_data['__dummy_const__'] = 0.0
 
         X = train_data[self._feature_cols].values.astype(np.float64)
         y = train_data['__target__'].values
@@ -1117,7 +1174,7 @@ class IncrementalBayesianRidgeTrainer(BaseIncrementalTrainer):
             
             try:
                 model = BayesianRidge(**params)
-                scores = cross_val_score(model, X_scaled, y, cv=3, scoring='neg_mean_squared_error')
+                scores = cross_val_score(model, X_scaled, y, cv=3, scoring='neg_mean_squared_error', n_jobs=1)
                 return scores.mean()
             except:
                 return float('-inf')

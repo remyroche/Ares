@@ -902,7 +902,7 @@ def get_specialist_models_outputs(
         log_warning(f"⚠️ Failed to load meso-horizon trend specialist outputs: {e}")
 
     # ------------------------------------------------------------------
-    # 6b) Macro Trend specialist – macro regime alpha signal from hmm_macro_regime
+    # 6b) Macro Trend specialist – macro regime alpha signal from xgb_macro_regime
     # ------------------------------------------------------------------
     try:
         log_info("=" * 80)
@@ -915,7 +915,7 @@ def get_specialist_models_outputs(
             "timeframe": regime_timeframe,
             "direction": direction,
             "model": "regime_meso_trend",
-            "step_name": "hmm_macro_regime",
+            "step_name": "xgb_macro_regime",
         }
 
         macro_artifact_name = f"hmm_macro_trend_training_data_{base_timeframe}"

@@ -1922,6 +1922,8 @@ class UnifiedModelsTrainingStep(BaseStep):
                 # Treat meta-label outputs and base directional signals as pseudo-targets.
                 meta_pseudo_targets = {
                     'binary_label',
+                    'binary_label_long',   # NEW: Direction-specific binary label
+                    'binary_label_short',  # NEW: Direction-specific binary label
                     'smoothed_label',
                     'realized_return',
                     'label_uncertainty',
@@ -2109,25 +2111,48 @@ class UnifiedModelsTrainingStep(BaseStep):
                                 f"✅ Loaded labeled_data from VersionedArtifactStore: {labeled_data.shape} "
                                 f"(index range: {labeled_data.index.min()} → {labeled_data.index.max()})"
                             )
-                            # Choose direction-specific analyst_base targets: prefer non-fused
-                            # `target_long` / `target_short` and fall back to fused targets only
-                            # when necessary. Fused targets remain available for diagnostics.
+                            # Choose direction-specific analyst_base targets based on model_type:
+                            # - classifier: Uses binary_label_long/short (directional classification)
+                            # - regressor: Uses target_long/short (expected returns, default)
                             direction_lower = str(direction).lower()
+                            model_type = str(config.get("model_type", "regressor")).lower()
                             target_col = None
-                            if direction_lower in ("long", "both"):
-                                if 'target_long' in labeled_data.columns:
-                                    target_col = 'target_long'
-                                    tprint_success(f"✅ {mode_label} analyst_base: using primary non-fused target_long for long direction")
-                                elif 'target_long_fused' in labeled_data.columns:
-                                    target_col = 'target_long_fused'
-                                    tprint_success(f"✅ {mode_label} analyst_base: using fallback fused target_long_fused for long direction")
-                            elif direction_lower == "short":
-                                if 'target_short' in labeled_data.columns:
-                                    target_col = 'target_short'
-                                    tprint_success(f"✅ {mode_label} analyst_base: using primary non-fused target_short for short direction")
-                                elif 'target_short_fused' in labeled_data.columns:
-                                    target_col = 'target_short_fused'
-                                    tprint_success(f"✅ {mode_label} analyst_base: using fallback fused target_short_fused for short direction")
+                            
+                            if model_type == "classifier":
+                                # For classifiers, use directional binary labels
+                                tprint_info(f"🔧 Model type: classifier (using binary classification targets)")
+                                if direction_lower in ("long", "both"):
+                                    if 'binary_label_long' in labeled_data.columns:
+                                        target_col = 'binary_label_long'
+                                        tprint_success(f"✅ {mode_label} analyst_base: using binary_label_long for long classifier")
+                                    elif 'binary_label' in labeled_data.columns:
+                                        target_col = 'binary_label'
+                                        tprint_warning(f"⚠️ {mode_label} analyst_base: falling back to unified binary_label (not direction-specific)")
+                                elif direction_lower == "short":
+                                    if 'binary_label_short' in labeled_data.columns:
+                                        target_col = 'binary_label_short'
+                                        tprint_success(f"✅ {mode_label} analyst_base: using binary_label_short for short classifier")
+                                    elif 'binary_label' in labeled_data.columns:
+                                        target_col = 'binary_label'
+                                        tprint_warning(f"⚠️ {mode_label} analyst_base: falling back to unified binary_label (not direction-specific)")
+                            else:
+                                # For regressors, use continuous target values (current behavior)
+                                tprint_info(f"🔧 Model type: regressor (using continuous regression targets)")
+                                if direction_lower in ("long", "both"):
+                                    if 'target_long' in labeled_data.columns:
+                                        target_col = 'target_long'
+                                        tprint_success(f"✅ {mode_label} analyst_base: using primary non-fused target_long for long direction")
+                                    elif 'target_long_fused' in labeled_data.columns:
+                                        target_col = 'target_long_fused'
+                                        tprint_success(f"✅ {mode_label} analyst_base: using fallback fused target_long_fused for long direction")
+                                elif direction_lower == "short":
+                                    if 'target_short' in labeled_data.columns:
+                                        target_col = 'target_short'
+                                        tprint_success(f"✅ {mode_label} analyst_base: using primary non-fused target_short for short direction")
+                                    elif 'target_short_fused' in labeled_data.columns:
+                                        target_col = 'target_short_fused'
+                                        tprint_success(f"✅ {mode_label} analyst_base: using fallback fused target_short_fused for short direction")
+                            
                             # As a final fallback, use generic 'target' if present
                             if target_col is None and 'target' in labeled_data.columns:
                                 target_col = 'target'
@@ -2135,7 +2160,8 @@ class UnifiedModelsTrainingStep(BaseStep):
                             if target_col is None:
                                 raise ValueError(
                                     "❌ CRITICAL: No suitable analyst_base training target found in labeled_data. "
-                                    "Expected one of: target_long/target_short/target_long_fused/target_short_fused/target."
+                                    "Expected one of: binary_label_long/binary_label_short (classifier) or "
+                                    "target_long/target_short/target_long_fused/target_short_fused/target (regressor)."
                                 )
                             # Log fused target statistics when available (for diagnostics only)
                             if 'target_long_fused' in labeled_data.columns and 'target_short_fused' in labeled_data.columns:

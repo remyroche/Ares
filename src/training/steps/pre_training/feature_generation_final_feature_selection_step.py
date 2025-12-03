@@ -1943,18 +1943,52 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
 
         def _select_primary_target_column(df: pd.DataFrame) -> Optional[str]:
             direction_local = str(config.get("direction", "long")).lower()
+            # NEW: Support model_type config to choose between classifier and regressor
+            # - classifier: Uses binary_label_long/short (directional classification)
+            # - regressor: Uses target_long/short (expected returns, current default)
+            model_type = str(config.get("model_type", "regressor")).lower()
+            
+            # Build direction-specific candidate lists based on model type
             directional_candidates_local: List[str] = []
-            if direction_local == "long":
-                directional_candidates_local = ["target_long", "target_long_fused"]
-            elif direction_local == "short":
-                directional_candidates_local = ["target_short", "target_short_fused"]
+            
+            if model_type == "classifier":
+                # For classifiers, prefer directional binary labels
+                if direction_local == "long":
+                    directional_candidates_local = [
+                        "binary_label_long",  # NEW: Direction-specific binary label
+                        "target_long",        # Fallback to regressor target
+                        "target_long_fused",
+                    ]
+                elif direction_local == "short":
+                    directional_candidates_local = [
+                        "binary_label_short",  # NEW: Direction-specific binary label
+                        "target_short",        # Fallback to regressor target
+                        "target_short_fused",
+                    ]
+                else:
+                    # For 'both' direction with classifier, prefer the unified label
+                    directional_candidates_local = [
+                        "binary_label",  # Unified (legacy behavior)
+                        "target_long",
+                        "target_short",
+                        "target_long_fused",
+                        "target_short_fused",
+                    ]
+                tprint_info(f"🔧 Model type: classifier (using binary classification targets for {direction_local} direction)")
             else:
-                directional_candidates_local = [
-                    "target_long",
-                    "target_short",
-                    "target_long_fused",
-                    "target_short_fused",
-                ]
+                # For regressors, prefer continuous target values (current behavior)
+                if direction_local == "long":
+                    directional_candidates_local = ["target_long", "target_long_fused"]
+                elif direction_local == "short":
+                    directional_candidates_local = ["target_short", "target_short_fused"]
+                else:
+                    directional_candidates_local = [
+                        "target_long",
+                        "target_short",
+                        "target_long_fused",
+                        "target_short_fused",
+                    ]
+                tprint_info(f"🔧 Model type: regressor (using continuous regression targets for {direction_local} direction)")
 
             for col in directional_candidates_local:
                 if col in df.columns:
@@ -1970,7 +2004,13 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                         tprint_info(f"📊 Using fallback primary target for final selection: {col}")
                         return col
 
-            diagnostic_candidates_local = ["binary_label", "realized_return"]
+            # NEW: Include directional binary labels in fallback diagnostic candidates
+            diagnostic_candidates_local = [
+                "binary_label_long",   # NEW: Direction-specific
+                "binary_label_short",  # NEW: Direction-specific
+                "binary_label",        # Legacy unified
+                "realized_return",
+            ]
             for col in diagnostic_candidates_local:
                 if col in df.columns:
                     series = df[col]

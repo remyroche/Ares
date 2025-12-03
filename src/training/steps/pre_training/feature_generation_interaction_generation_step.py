@@ -968,7 +968,13 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                     return labeled_data[[col]]
 
         # Final fallback: diagnostic targets used for reporting only
-        diagnostic_candidates = ["binary_label", "realized_return"]
+        # NEW: Include directional binary labels for classifier-based feature selection
+        diagnostic_candidates = [
+            "binary_label_long",   # NEW: Direction-specific
+            "binary_label_short",  # NEW: Direction-specific
+            "binary_label",        # Legacy unified
+            "realized_return",
+        ]
         for col in diagnostic_candidates:
             if col in labeled_data.columns:
                 series = labeled_data[col]
@@ -5228,10 +5234,13 @@ def _fgigs_compute_topk_meta_label_diagnostics(
     if labeled_df.index.duplicated().any():
         labeled_df = labeled_df[~labeled_df.index.duplicated(keep="first")]
 
-    has_binary = "binary_label" in labeled_df.columns
+    # Check for binary labels (prefer directional, fallback to unified)
+    has_binary_long = "binary_label_long" in labeled_df.columns
+    has_binary_short = "binary_label_short" in labeled_df.columns
+    has_binary = "binary_label" in labeled_df.columns or has_binary_long or has_binary_short
     has_rr = "realized_return" in labeled_df.columns
     if not (has_binary or has_rr):
-        return {"error": "binary_label and realized_return not found in labeled_data"}
+        return {"error": "binary_label/binary_label_long/binary_label_short and realized_return not found in labeled_data"}
 
     common_idx = combined_features.index.intersection(labeled_df.index)
     if len(common_idx) < 100:
@@ -5256,7 +5265,15 @@ def _fgigs_compute_topk_meta_label_diagnostics(
         return {"error": "no top features found in combined_features"}
 
     X = combined_features.loc[common_idx, top_features_unique].copy()
-    bin_series = labeled_df.loc[common_idx, "binary_label"] if has_binary else None
+    # Prefer directional binary labels, fallback to unified
+    bin_series = None
+    if has_binary:
+        if "binary_label_long" in labeled_df.columns:
+            bin_series = labeled_df.loc[common_idx, "binary_label_long"]
+        elif "binary_label_short" in labeled_df.columns:
+            bin_series = labeled_df.loc[common_idx, "binary_label_short"]
+        elif "binary_label" in labeled_df.columns:
+            bin_series = labeled_df.loc[common_idx, "binary_label"]
     rr_series = labeled_df.loc[common_idx, "realized_return"] if has_rr else None
 
     def _safe_corr(x: pd.Series, y: Optional[pd.Series]) -> Optional[float]:

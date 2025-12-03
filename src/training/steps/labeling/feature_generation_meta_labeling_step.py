@@ -772,7 +772,7 @@ def compute_realized_returns(
     min_event_spacing: int = 4,
     volatility_series: Optional[pd.Series] = None,
     use_multiclass_labels: bool = False  # NEW: 3-class labels (0=timeout, 1=profit, 2=stop)
-) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series, pd.Series, pd.Series]:
+) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series, pd.Series, pd.Series, pd.Series, pd.Series]:
     """
     Compute realized returns for each signal event.
 
@@ -783,6 +783,8 @@ def compute_realized_returns(
     - Tracks MFE/MAE for diagnostics
     - Supports adaptive thresholds based on volatility
     - NEW: Multi-class labels (0=timeout, 1=profit, 2=stop) for more nuanced learning
+    - NEW: Directional binary labels (binary_labels_long, binary_labels_short) for training
+           direction-specific classifiers
 
     Args:
         df: DataFrame with OHLCV data
@@ -797,19 +799,30 @@ def compute_realized_returns(
                                If False, returns binary labels (0=loss/timeout, 1=profit)
 
     Returns:
-        Tuple of (realized_returns, labels, exit_reasons, event_durations, mfe_series, mae_series)
+        Tuple of (realized_returns, binary_labels, exit_reasons, event_durations, 
+                  mfe_series, mae_series, binary_labels_long, binary_labels_short)
         - realized_returns: Actual returns achieved (NaN where no signal)
-        - labels: Binary (0/1) or Multi-class (0/1/2) depending on use_multiclass_labels
+        - binary_labels: Binary (0/1) or Multi-class (0/1/2) depending on use_multiclass_labels
         - exit_reasons: How each event exited ('profit', 'stop', 'timeout')
         - event_durations: Bars held for each event
         - mfe_series: Maximum Favorable Excursion for each event
         - mae_series: Maximum Adverse Excursion for each event
+        - binary_labels_long: Binary success/failure for LONG trades only (NaN for shorts)
+        - binary_labels_short: Binary success/failure for SHORT trades only (NaN for longs)
     """
     realized_returns = pd.Series(index=df.index, dtype=float)
     realized_returns[:] = np.nan
 
     binary_labels = pd.Series(index=df.index, dtype=float)
     binary_labels[:] = np.nan
+
+    # NEW: Directional binary labels for training separate long/short classifiers
+    # These allow training models specifically for longs or shorts without mixing signals
+    binary_labels_long = pd.Series(index=df.index, dtype=float)
+    binary_labels_long[:] = np.nan
+    
+    binary_labels_short = pd.Series(index=df.index, dtype=float)
+    binary_labels_short[:] = np.nan
 
     exit_reasons = pd.Series(index=df.index, dtype=object)
     exit_reasons[:] = pd.NA
@@ -991,17 +1004,20 @@ def compute_realized_returns(
         # Label assignment: Binary or Multi-class
         econ_min_return = ECON_MIN_RETURN_MULTIPLE * transaction_cost
 
+        # Compute the unified binary label first (used for backward compatibility)
+        unified_label = np.nan
+        
         if use_multiclass_labels:
             # MULTI-CLASS LABELS: 0=timeout, 1=profit, 2=stop
             # This allows model to learn different patterns for each exit type
             if exit_reason == 'timeout':
-                binary_labels.iloc[i] = 0.0  # Timeout/noise
+                unified_label = 0.0  # Timeout/noise
             elif exit_reason == 'profit':
-                binary_labels.iloc[i] = 1.0  # Hit profit target
+                unified_label = 1.0  # Hit profit target
             elif exit_reason == 'stop':
-                binary_labels.iloc[i] = 2.0  # Hit stop loss (bad entry)
+                unified_label = 2.0  # Hit stop loss (bad entry)
             else:
-                binary_labels.iloc[i] = np.nan  # Should not happen
+                unified_label = np.nan  # Should not happen
         else:
             # BINARY LABELS: Velocity/efficiency-adjusted (legacy) with SOFT-LABELING
             # NEW: Instead of dropping small returns as NaN, soft-label them as class 0 (neutral)
@@ -1012,7 +1028,7 @@ def compute_realized_returns(
                 # instead of dropping them. The model will see these as "grey" data but won't
                 # be heavily penalized for misclassifying them. Sample weights should be set to 0.01
                 # downstream in model training (src/training/steps/models_training/core/model_trainer.py)
-                binary_labels.iloc[i] = 0.0
+                unified_label = 0.0
             else:
                 # Efficiency ratio: 1.0 / log(1 + duration)
                 # Fast trades (1-2 bars) get full credit, slow trades (16+ bars) get penalized
@@ -1029,17 +1045,41 @@ def compute_realized_returns(
                     r_multiple = velocity_adjusted_return / risk_unit
 
                 if r_multiple >= R_MULTIPLE_POS_THRESHOLD:
-                    binary_labels.iloc[i] = 1.0
+                    unified_label = 1.0
                 elif net_return < 0:  # Losses are losses regardless of speed
-                    binary_labels.iloc[i] = 0.0
+                    unified_label = 0.0
                 else:
                     # Profitable but too slow = noise/drift, soft-label as class 0
-                    binary_labels.iloc[i] = 0.0
+                    unified_label = 0.0
+
+        # Assign the unified label (backward compatible)
+        binary_labels.iloc[i] = unified_label
+        
+        # DIRECTIONAL LABELS: Assign to direction-specific series
+        # This allows training separate models for longs vs shorts
+        # - binary_labels_long: Only populated for long signals (signal > 0)
+        # - binary_labels_short: Only populated for short signals (signal < 0)
+        # The other direction remains NaN, so models can be trained on subsets
+        if signal > 0:
+            # Long signal - populate binary_labels_long, leave binary_labels_short as NaN
+            binary_labels_long.iloc[i] = unified_label
+        elif signal < 0:
+            # Short signal - populate binary_labels_short, leave binary_labels_long as NaN  
+            binary_labels_short.iloc[i] = unified_label
 
         last_event_idx = i  # Update last event position
         i += 1
 
-    return realized_returns, binary_labels, exit_reasons, event_durations, mfe_series, mae_series
+    return (
+        realized_returns, 
+        binary_labels, 
+        exit_reasons, 
+        event_durations, 
+        mfe_series, 
+        mae_series,
+        binary_labels_long,
+        binary_labels_short
+    )
 
 
 def compute_vol_scaled_returns_for_events(
@@ -5691,7 +5731,16 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
 
             # STEP 3: Compute realized returns (continuous) and binary labels with adaptive thresholds
             tprint("💰 [3/13] Computing realized returns with adaptive thresholds and transaction costs...", "INFO")
-            realized_returns, binary_labels, exit_reasons, event_durations, mfe_series, mae_series = compute_realized_returns(
+            (
+                realized_returns, 
+                binary_labels, 
+                exit_reasons, 
+                event_durations, 
+                mfe_series, 
+                mae_series,
+                binary_labels_long,
+                binary_labels_short
+            ) = compute_realized_returns(
                 market_data,
                 primary_signals,
                 profit_threshold=adaptive_profit_threshold,
@@ -6017,6 +6066,12 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             # Add labeling results
             labeled_data['realized_return'] = realized_returns
             labeled_data['binary_label'] = binary_labels
+            # NEW: Directional binary labels for training long-only or short-only classifiers
+            # - binary_label_long: Success/failure for long trades only (NaN for shorts)
+            # - binary_label_short: Success/failure for short trades only (NaN for longs)
+            # These allow training models that specialize in one direction without mixing signals
+            labeled_data['binary_label_long'] = binary_labels_long
+            labeled_data['binary_label_short'] = binary_labels_short
             labeled_data['smoothed_label'] = smoothed_labels
             labeled_data['label_uncertainty'] = label_uncertainty
             labeled_data['meta_probability'] = probabilities

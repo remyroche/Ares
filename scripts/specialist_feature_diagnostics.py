@@ -1629,6 +1629,28 @@ def run_diagnostics(
             f"{met['mi_cv']:.3f} | {met['pearson_corr']:.3f} | {met['r2']:.4f} |"
         )
 
+    # Append constant/near-constant feature check
+    md_lines.extend(
+        [
+            "",
+            "## Constant / Near-Constant Feature Check",
+        ]
+    )
+    constant_feats = []
+    for col in X.columns:
+        if np.std(X[col]) < 1e-9:
+            val = float(X[col].mean()) if len(X) > 0 else 0.0
+            constant_feats.append(f"{col} (val={val:.4f})")
+
+    if constant_feats:
+        md_lines.append(f"⚠️ Found {len(constant_feats)} constant features:")
+        for f in constant_feats[:10]:
+            md_lines.append(f"- {f}")
+        if len(constant_feats) > 10:
+            md_lines.append(f"- ... and {len(constant_feats) - 10} more")
+    else:
+        md_lines.append("- No constant features found (std < 1e-9).")
+
     # Append leakage and interaction summaries
     md_lines.extend(
         [
@@ -1748,6 +1770,11 @@ def main() -> None:
         default=None,
         help="Run training for specialist models before diagnostics. Specify list of models or leave empty for all.",
     )
+    ap.add_argument(
+        "--compare-targets",
+        action="store_true",
+        help="If set, also runs diagnostics on dense target_long/target_short for comparison."
+    )
 
     args = ap.parse_args()
 
@@ -1766,24 +1793,40 @@ def main() -> None:
             selected_specialists=args.train_specialists,
         ))
 
-    md_path, csv_path = run_diagnostics(
-        symbol=args.symbol,
-        exchange=args.exchange,
-        timeframe=args.timeframe,
-        direction=args.direction,
-        model=args.model,
-        regime_timeframe=args.regime_timeframe,
-        target_col=args.target_col,
-        cv_folds=args.cv_folds,
-        lookback_days=args.lookback_days,
-        enable_risk_hmm_specialist=args.enable_hmm_risk_specialist,
-        projection_mode=args.projection_mode,
-    )
+    targets_to_run = [args.target_col]
+    if args.compare_targets:
+        if args.direction == "long" and "target_long" not in targets_to_run:
+            targets_to_run.append("target_long")
+        elif args.direction == "short" and "target_short" not in targets_to_run:
+            targets_to_run.append("target_short")
+        elif args.direction == "both":
+            if "target_long" not in targets_to_run:
+                targets_to_run.append("target_long")
+            if "target_short" not in targets_to_run:
+                targets_to_run.append("target_short")
 
-    print(
-        f"\nSpecialist feature diagnostics saved to: {md_path} "
-        f"and {csv_path}"
-    )
+    for tgt in targets_to_run:
+        print(f"\n--- Running diagnostics for target: {tgt} ---")
+        try:
+            md_path, csv_path = run_diagnostics(
+                symbol=args.symbol,
+                exchange=args.exchange,
+                timeframe=args.timeframe,
+                direction=args.direction,
+                model=args.model,
+                regime_timeframe=args.regime_timeframe,
+                target_col=tgt,
+                cv_folds=args.cv_folds,
+                lookback_days=args.lookback_days,
+                enable_risk_hmm_specialist=args.enable_hmm_risk_specialist,
+                projection_mode=args.projection_mode,
+            )
+            print(
+                f"Specialist feature diagnostics for {tgt} saved to: {md_path} "
+                f"and {csv_path}"
+            )
+        except Exception as e:
+            print(f"Failed diagnostics for {tgt}: {e}")
 
 
 if __name__ == "__main__":

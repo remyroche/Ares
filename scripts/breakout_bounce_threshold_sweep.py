@@ -52,6 +52,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--exchange", type=str, default="binance", help="Exchange name")
     parser.add_argument("--timeframe", type=str, default="15m", help="Regime timeframe (e.g. 15m)")
     parser.add_argument("--direction", type=str, default="long", help="Trading direction")
+    parser.add_argument("--execution-mode", type=str, default="blank", help="Execution mode for the step")
     parser.add_argument("--outcomes-dir", type=str, default="outcomes", help="Directory to save sweep results")
 
     return parser.parse_args()
@@ -65,7 +66,7 @@ def build_base_config(args: argparse.Namespace) -> Dict[str, Any]:
         "exchange": args.exchange,
         "regime_timeframe": args.timeframe,
         "direction": args.direction,
-        "execution_mode": "blank",  # Explicitly use blank mode as requested
+        "execution_mode": args.execution_mode,
         # Default parameters
         "breakout_horizon_bars": 96,
         "breakout_lookback_days": 2,

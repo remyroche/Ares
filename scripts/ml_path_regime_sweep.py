@@ -43,7 +43,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--exchange", type=str, default="binance", help="Exchange name")
     parser.add_argument("--timeframe", type=str, default="15m", help="Base timeframe")
     parser.add_argument("--direction", type=str, default="long", help="Trading direction")
-    parser.add_argument("--execution-mode", type=str, default="light", help="Execution mode")
+    parser.add_argument("--execution-mode", type=str, default="blank", help="Execution mode")
     parser.add_argument("--outcomes-dir", type=str, default="outcomes", help="Output directory")
     parser.add_argument("--variations", type=int, default=0, help="Limit number of variations (0=all)")
     return parser.parse_args()

@@ -46,6 +46,7 @@ import logging
 import time
 import json
 import re
+import asyncio
 from typing import Any, Dict, Optional, Tuple, List, Union
 from dataclasses import asdict, is_dataclass
 from datetime import datetime
@@ -8764,3 +8765,114 @@ class MLPathRegimeStep(BaseStep):
             quality_path = None
 
         return metrics, quality_path
+
+    def run_config_batch(
+        self,
+        base_config: Dict[str, Any],
+        variations: List[Dict[str, Any]],
+        output_dir: str = "outcomes/ml_path_regime_sweep",
+    ) -> pd.DataFrame:
+        """Run a batch of configurations and return aggregated results."""
+        import os
+        from copy import deepcopy
+
+        os.makedirs(output_dir, exist_ok=True)
+        results = []
+
+        for i, var_params in enumerate(variations):
+            tprint(f"🔄 Running variation {i+1}/{len(variations)}...", "INFO")
+
+            # Merge base config with variation parameters
+            run_config = deepcopy(base_config)
+            run_config.update(var_params)
+
+            # Ensure execution mode is blank to avoid saving heavy artifacts
+            run_config['execution_mode'] = 'blank'
+
+            try:
+                # Execute step
+                step_result = asyncio.run(self.execute(run_config))
+
+                if step_result.get("success", False):
+                    metrics = step_result.get("metrics", {})
+
+                    # Extract key metrics
+                    result_row = {
+                        "variation_id": i,
+                        **var_params,
+                        "risk_cv_ratio": metrics.get("risk_cv_ratio"),
+                        "quality_score": metrics.get("quality_score"),
+                        "wasserstein_distance": metrics.get("wasserstein_distance"),
+                        "avg_duration_bars": metrics.get("temporal_metrics", {}).get("avg_duration_bars"),
+                        "stability_score": metrics.get("temporal_metrics", {}).get("stability_score"),
+                    }
+
+                    # Add XGBoost quality metrics if available
+                    xgb_metrics = metrics.get("xgb_quality_metrics", {})
+                    if xgb_metrics:
+                        result_row.update({
+                            "xgb_clf_accuracy": xgb_metrics.get("classifier", {}).get("oof_accuracy"),
+                            "xgb_clf_logloss": xgb_metrics.get("classifier", {}).get("oof_logloss"),
+                            "xgb_reg_r2": xgb_metrics.get("regressor", {}).get("oof_r2"),
+                            "xgb_reg_rmse": xgb_metrics.get("regressor", {}).get("oof_rmse"),
+                            "target_upper_hit_pct": xgb_metrics.get("target_stats", {}).get("upper_hit_pct"),
+                            "target_noise_pct": xgb_metrics.get("target_stats", {}).get("noise_pct"),
+                        })
+
+                    results.append(result_row)
+                    tprint(f"✅ Variation {i+1} success: Quality={result_row.get('quality_score', 0):.3f}", "SUCCESS")
+                else:
+                    tprint(f"❌ Variation {i+1} failed: {step_result.get('error')}", "ERROR")
+
+            except Exception as e:
+                tprint(f"❌ Variation {i+1} exception: {str(e)}", "ERROR")
+                import traceback
+                traceback.print_exc()
+
+        return pd.DataFrame(results)
+
+    def analyze_and_rank_results(
+        self,
+        results_df: pd.DataFrame,
+        output_path: str,
+        top_n: int = 10
+    ) -> pd.DataFrame:
+        """Analyze sweep results and save ranking."""
+        if results_df.empty:
+            tprint("⚠️ No results to analyze", "WARNING")
+            return pd.DataFrame()
+
+        # Define ranking criteria (prioritize quality score and XGB logloss)
+        # Higher Quality Score is better
+        # Lower LogLoss is better
+
+        # Create composite score:
+        # Rank by Quality Score (descending)
+        results_df['rank_quality'] = results_df['quality_score'].rank(ascending=False)
+
+        # Rank by XGB LogLoss (ascending) - handle NaNs
+        if 'xgb_clf_logloss' in results_df.columns:
+            results_df['rank_logloss'] = results_df['xgb_clf_logloss'].rank(ascending=True)
+        else:
+            results_df['rank_logloss'] = len(results_df) / 2
+
+        # Composite: 70% Quality, 30% LogLoss
+        results_df['composite_rank'] = 0.7 * results_df['rank_quality'] + 0.3 * results_df['rank_logloss']
+
+        # Sort by composite rank
+        ranked_df = results_df.sort_values('composite_rank')
+
+        # Save results
+        ranked_df.to_csv(output_path, index=False)
+        tprint(f"💾 Saved ranked results to {output_path}", "SUCCESS")
+
+        # Print top results
+        tprint(f"\n🏆 Top {top_n} Configurations:", "INFO")
+        cols_to_show = [c for c in ranked_df.columns if c in [
+            'risk_cv_ratio', 'quality_score', 'xgb_clf_logloss',
+            'path_ker_window_bars', 'path_trend_r2_window_bars',
+            'risk_kde_bandwidth', 'xgb_quality_base_target_multiplier'
+        ]]
+        print(ranked_df[cols_to_show].head(top_n))
+
+        return ranked_df

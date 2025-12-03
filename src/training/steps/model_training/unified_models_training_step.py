@@ -2119,22 +2119,18 @@ class UnifiedModelsTrainingStep(BaseStep):
                             target_col = None
                             
                             if model_type == "classifier":
-                                # For classifiers, use directional binary labels
+                                # For classifiers, use directional binary labels (no fallback to unified binary_label)
                                 tprint_info(f"🔧 Model type: classifier (using binary classification targets)")
                                 if direction_lower in ("long", "both"):
                                     if 'binary_label_long' in labeled_data.columns:
                                         target_col = 'binary_label_long'
                                         tprint_success(f"✅ {mode_label} analyst_base: using binary_label_long for long classifier")
-                                    elif 'binary_label' in labeled_data.columns:
-                                        target_col = 'binary_label'
-                                        tprint_warning(f"⚠️ {mode_label} analyst_base: falling back to unified binary_label (not direction-specific)")
+                                    # NOTE: Removed fallback to unified 'binary_label' - use directional labels only
                                 elif direction_lower == "short":
                                     if 'binary_label_short' in labeled_data.columns:
                                         target_col = 'binary_label_short'
                                         tprint_success(f"✅ {mode_label} analyst_base: using binary_label_short for short classifier")
-                                    elif 'binary_label' in labeled_data.columns:
-                                        target_col = 'binary_label'
-                                        tprint_warning(f"⚠️ {mode_label} analyst_base: falling back to unified binary_label (not direction-specific)")
+                                    # NOTE: Removed fallback to unified 'binary_label' - use directional labels only
                             else:
                                 # For regressors, use continuous target values (current behavior)
                                 tprint_info(f"🔧 Model type: regressor (using continuous regression targets)")

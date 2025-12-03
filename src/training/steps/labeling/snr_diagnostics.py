@@ -224,16 +224,28 @@ def _load_labeled_data(
     )
 
 
-def _build_feature_matrix_from_labeled(labeled_df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Series]:
+def _build_feature_matrix_from_labeled(labeled_df: pd.DataFrame, direction: str = "long") -> Tuple[pd.DataFrame, pd.Series]:
     """Construct (X, y) for learnability / robustness diagnostics from labeled_data.
 
-    - y: uses `binary_label` column.
+    - y: uses directional binary_label (binary_label_long/short) if available, otherwise falls back to binary_label.
     - X: all numeric columns except obvious target/label/return-related ones.
     """
-    if "binary_label" not in labeled_df.columns:
-        raise ValueError("labeled_data is missing required 'binary_label' column")
-
-    y = labeled_df["binary_label"].copy()
+    # Prefer directional binary labels
+    if direction == "long" and "binary_label_long" in labeled_df.columns:
+        y = labeled_df["binary_label_long"].copy()
+    elif direction == "short" and "binary_label_short" in labeled_df.columns:
+        y = labeled_df["binary_label_short"].copy()
+    elif "binary_label_long" in labeled_df.columns:
+        y = labeled_df["binary_label_long"].copy()
+    elif "binary_label_short" in labeled_df.columns:
+        y = labeled_df["binary_label_short"].copy()
+    elif "binary_label" in labeled_df.columns:
+        y = labeled_df["binary_label"].copy()
+    else:
+        raise ValueError(
+            "labeled_data is missing required binary label column. "
+            "Expected: binary_label_long, binary_label_short, or binary_label"
+        )
 
     # Numeric feature candidates
     numeric = labeled_df.select_dtypes(include=[np.number]).copy()
@@ -380,7 +392,7 @@ def _compute_feature_importance_stability(
     Returns:
         Dict with feature_importance_std, mean_importance, and concentration metrics.
     """
-    X, y = _build_feature_matrix_from_labeled(labeled_df)
+    X, y = _build_feature_matrix_from_labeled(labeled_df, direction="long")  # Default direction for this internal function
     X_array = X.values.astype(float)
     y_array = y.values.astype(float)
 
@@ -810,10 +822,25 @@ def run_label_quality(
     """Compute label-quality and economic SNR diagnostics from labeled_data."""
     df = _load_labeled_data(symbol, exchange, timeframe, direction=direction, model=model)
 
-    if "binary_label" not in df.columns or "realized_return" not in df.columns:
-        raise ValueError("labeled_data must contain 'binary_label' and 'realized_return' columns")
-
-    binary_labels = df["binary_label"]
+    # Prefer directional binary labels
+    if direction == "long" and "binary_label_long" in df.columns:
+        binary_labels = df["binary_label_long"]
+    elif direction == "short" and "binary_label_short" in df.columns:
+        binary_labels = df["binary_label_short"]
+    elif "binary_label_long" in df.columns:
+        binary_labels = df["binary_label_long"]
+    elif "binary_label_short" in df.columns:
+        binary_labels = df["binary_label_short"]
+    elif "binary_label" in df.columns:
+        binary_labels = df["binary_label"]
+    else:
+        raise ValueError(
+            "labeled_data must contain a binary label column "
+            "(binary_label_long, binary_label_short, or binary_label)"
+        )
+    
+    if "realized_return" not in df.columns:
+        raise ValueError("labeled_data must contain 'realized_return' column")
     realized_returns = df["realized_return"]
 
     n_samples = len(df)
@@ -1347,7 +1374,7 @@ def run_label_learnability(
 ) -> None:
     """Compute learnability & entropy-based label-quality scores."""
     df = _load_labeled_data(symbol, exchange, timeframe, direction=direction, model=model)
-    X, y = _build_feature_matrix_from_labeled(df)
+    X, y = _build_feature_matrix_from_labeled(df, direction=direction)
 
     learnability, mean_auc = compute_learnability_score(X, y, cv_splits=cv_splits)
     balance = compute_label_entropy_score(y)
@@ -1512,7 +1539,7 @@ def run_model_robustness(
     Reports per-fold AUC, Brier score, PR-AUC, and summary statistics.
     """
     df = _load_labeled_data(symbol, exchange, timeframe, direction=direction, model=model)
-    X, y = _build_feature_matrix_from_labeled(df)
+    X, y = _build_feature_matrix_from_labeled(df, direction=direction)
 
     y_array = y.values.astype(float)
     X_array = X.values.astype(float)
@@ -2323,7 +2350,7 @@ def run_trading_simulation(
         prob_thresholds = [0.55, 0.60, 0.65]
 
     df = _load_labeled_data(symbol, exchange, timeframe, direction=direction, model=model)
-    X, y = _build_feature_matrix_from_labeled(df)
+    X, y = _build_feature_matrix_from_labeled(df, direction=direction)
 
     if "meta_probability" not in df.columns:
         raise ValueError("labeled_data must contain 'meta_probability' column for trading simulation")
@@ -2342,7 +2369,20 @@ def run_trading_simulation(
 
     meta_prob = df["meta_probability"].astype(float)
     realized_returns = df["realized_return"].astype(float)
-    binary_labels = df["binary_label"] if "binary_label" in df.columns else None
+    
+    # Prefer directional binary labels
+    if direction == "long" and "binary_label_long" in df.columns:
+        binary_labels = df["binary_label_long"]
+    elif direction == "short" and "binary_label_short" in df.columns:
+        binary_labels = df["binary_label_short"]
+    elif "binary_label_long" in df.columns:
+        binary_labels = df["binary_label_long"]
+    elif "binary_label_short" in df.columns:
+        binary_labels = df["binary_label_short"]
+    elif "binary_label" in df.columns:
+        binary_labels = df["binary_label"]
+    else:
+        binary_labels = None
 
     # Valid mask: events with both meta_probability and realized_return
     valid_mask = meta_prob.notna() & realized_returns.notna()

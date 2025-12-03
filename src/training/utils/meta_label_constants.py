@@ -63,10 +63,11 @@ META_LABEL_PRIMARY_TRAINING_TARGETS = [
 ]
 
 # Mapping from training direction to appropriate classification target
+# NOTE: 'both' direction uses binary_label_long as primary (no legacy binary_label)
 DIRECTIONAL_CLASSIFICATION_TARGETS = {
     'long': 'binary_label_long',
     'short': 'binary_label_short',
-    'both': 'binary_label',  # Fallback for legacy behavior
+    'both': 'binary_label_long',  # For 'both', prefer long as primary signal
 }
 
 # Mapping from training direction to appropriate regression target

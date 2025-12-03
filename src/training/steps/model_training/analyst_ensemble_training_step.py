@@ -702,13 +702,18 @@ class AnalystEnsembleTrainingStep(BaseStep):
                 direction = config.get('direction', 'long')
                 binary_label_col = None
                 
-                # Check for directional binary labels first
+                # Check for directional binary labels only (no fallback to unified binary_label)
                 if direction == 'long' and 'binary_label_long' in target_data.columns:
                     binary_label_col = 'binary_label_long'
                 elif direction == 'short' and 'binary_label_short' in target_data.columns:
                     binary_label_col = 'binary_label_short'
-                elif 'binary_label' in target_data.columns:
-                    binary_label_col = 'binary_label'
+                elif direction == 'both':
+                    # For 'both' direction, prefer binary_label_long as the primary signal
+                    if 'binary_label_long' in target_data.columns:
+                        binary_label_col = 'binary_label_long'
+                    elif 'binary_label_short' in target_data.columns:
+                        binary_label_col = 'binary_label_short'
+                # NOTE: Removed fallback to unified 'binary_label' - use directional labels only
                 
                 if binary_label_col:
                     meta_input['binary_label'] = target_data[binary_label_col]

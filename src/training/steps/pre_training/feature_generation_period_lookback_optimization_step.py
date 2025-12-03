@@ -1543,7 +1543,6 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                     'target_short_fused',
                     'binary_label_long',    # Directional classifier target
                     'binary_label_short',   # Directional classifier target
-                    'binary_label',         # Legacy unified classifier target
                     'price_target_vol_normalized',
                     'target_sample_weight',
                     'meta_probability',
@@ -4306,18 +4305,17 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                         'binary_label_long',   # Primary: directional classifier target
                         'target_long',         # Fallback: regressor target
                         'target_long_fused',
-                        'binary_label',        # Legacy unified
                     ]
                 elif direction == 'short':
                     candidates = [
                         'binary_label_short',  # Primary: directional classifier target
                         'target_short',        # Fallback: regressor target
                         'target_short_fused',
-                        'binary_label',        # Legacy unified
                     ]
                 else:  # 'both'
                     candidates = [
-                        'binary_label',        # Unified for both directions
+                        'binary_label_long',   # Use both directional labels
+                        'binary_label_short',
                         'target_long',
                         'target_short',
                         'target_long_fused',
@@ -4331,14 +4329,12 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                         'target_long',         # Primary: regressor target
                         'target_long_fused',
                         'binary_label_long',   # Fallback: classifier target
-                        'binary_label',        # Legacy unified
                     ]
                 elif direction == 'short':
                     candidates = [
                         'target_short',        # Primary: regressor target
                         'target_short_fused',
                         'binary_label_short',  # Fallback: classifier target
-                        'binary_label',        # Legacy unified
                     ]
                 else:  # 'both'
                     candidates = [
@@ -4346,7 +4342,6 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                         'target_short',
                         'target_long_fused',
                         'target_short_fused',
-                        'binary_label',
                     ]
             
             # Check primary candidates
@@ -4423,10 +4418,10 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 'target_long_fused': 0.95,
                 'target_short_fused': 0.95,
                 
-                # High priority: classification targets
+                # High priority: classification targets (directional only)
                 'binary_label_long': 0.9,  # Directional classifier target
                 'binary_label_short': 0.9,  # Directional classifier target
-                'binary_label': 0.85,  # Legacy unified classifier target
+                # NOTE: legacy 'binary_label' removed - use directional labels only
                 
                 # Analyst-specific targets
                 'analyst_target': 0.8,

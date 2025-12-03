@@ -1584,9 +1584,7 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 tprint_info(f"📊 Classifier target: binary_label_short ({result_df['binary_label_short'].notna().sum()} non-NaN)")
             else:
                 available_targets = ['binary_label_long', 'binary_label_short']
-        elif 'binary_label' in result_df.columns:
-            available_targets = ['binary_label']
-            tprint_info(f"📊 Legacy unified target: binary_label ({result_df['binary_label'].notna().sum()} non-NaN)")
+        # NOTE: legacy 'binary_label' fallback removed - use directional labels only
         else:
             # Fall back to legacy target detection
             available_targets = [col for col in PRIMARY_TARGET_COLUMN_NAMES if col in result_df.columns]
@@ -1986,9 +1984,10 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                         "target_short_fused",
                     ]
                 else:
-                    # For 'both' direction with classifier, prefer the unified label
+                    # For 'both' direction with classifier, use both directional labels
                     directional_candidates_local = [
-                        "binary_label",  # Unified (legacy behavior)
+                        "binary_label_long",
+                        "binary_label_short",
                         "target_long",
                         "target_short",
                         "target_long_fused",
@@ -2024,11 +2023,11 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                         tprint_info(f"📊 Using fallback primary target for final selection: {col}")
                         return col
 
-            # NEW: Include directional binary labels in fallback diagnostic candidates
+            # Directional binary labels as fallback diagnostic candidates
+            # NOTE: legacy 'binary_label' removed - use directional labels only
             diagnostic_candidates_local = [
-                "binary_label_long",   # NEW: Direction-specific
-                "binary_label_short",  # NEW: Direction-specific
-                "binary_label",        # Legacy unified
+                "binary_label_long",   # Direction-specific
+                "binary_label_short",  # Direction-specific
                 "realized_return",
             ]
             for col in diagnostic_candidates_local:

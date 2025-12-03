@@ -963,7 +963,8 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                 ]
             else:
                 directional_candidates = [
-                    "binary_label",        # Unified for both directions
+                    "binary_label_long",   # Use both directional labels
+                    "binary_label_short",
                     "target_long",
                     "target_short",
                     "target_long_fused",
@@ -976,13 +977,11 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                 directional_candidates = [
                     "target_long",         # Primary: regressor target
                     "target_long_fused",
-                    "binary_label_long",   # Fallback: classifier target
                 ]
             elif direction == "short":
                 directional_candidates = [
                     "target_short",        # Primary: regressor target
                     "target_short_fused",
-                    "binary_label_short",  # Fallback: classifier target
                 ]
             else:
                 directional_candidates = [
@@ -1008,10 +1007,10 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                     return labeled_data[[col]]
 
         # Final fallback: diagnostic targets used for reporting only
+        # NOTE: legacy 'binary_label' removed - use directional labels only
         diagnostic_candidates = [
             "binary_label_long",   # Direction-specific
             "binary_label_short",  # Direction-specific
-            "binary_label",        # Legacy unified
             "realized_return",
         ]
         for col in diagnostic_candidates:
@@ -5304,15 +5303,14 @@ def _fgigs_compute_topk_meta_label_diagnostics(
         return {"error": "no top features found in combined_features"}
 
     X = combined_features.loc[common_idx, top_features_unique].copy()
-    # Prefer directional binary labels, fallback to unified
+    # Use directional binary labels only (no fallback to unified binary_label)
     bin_series = None
     if has_binary:
         if "binary_label_long" in labeled_df.columns:
             bin_series = labeled_df.loc[common_idx, "binary_label_long"]
         elif "binary_label_short" in labeled_df.columns:
             bin_series = labeled_df.loc[common_idx, "binary_label_short"]
-        elif "binary_label" in labeled_df.columns:
-            bin_series = labeled_df.loc[common_idx, "binary_label"]
+        # NOTE: Removed fallback to unified 'binary_label' - use directional labels only
     rr_series = labeled_df.loc[common_idx, "realized_return"] if has_rr else None
 
     def _safe_corr(x: pd.Series, y: Optional[pd.Series]) -> Optional[float]:

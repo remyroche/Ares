@@ -99,20 +99,13 @@ ensemble_probs = meta_learner.predict_proba(stack_features_all)[:, 1]
 
 ### 6. ✅ New Features Added
 
-#### Time-of-Day Patterns (14 new features)
+#### Time-of-Day Patterns (5 new features - selective)
 | Feature | Description |
 |---------|-------------|
-| `hour_sin`, `hour_cos` | Cyclical encoding of hour (24-hour cycle) |
-| `dow_sin`, `dow_cos` | Cyclical encoding of day of week |
-| `session_asian` | Asian session indicator (00:00-08:00 UTC) |
-| `session_european` | European session indicator (07:00-16:00 UTC) |
-| `session_us` | US session indicator (13:00-22:00 UTC) |
-| `session_overlap_eu_us` | EU/US overlap (13:00-16:00 UTC) |
+| `hour_sin`, `hour_cos` | Cyclical encoding of hour (24-hour cycle in 2 features) |
 | `is_good_hour` | Hours 3, 5, 10 (>56% win rate) |
 | `is_bad_hour` | Hours 0, 13, 19 (<45% win rate) |
-| `is_weekend` | Weekend indicator |
-| `is_sunday` | Sunday indicator (worst day) |
-| `time_in_session` | Normalized time within session |
+| `is_sunday` | Sunday indicator (worst day at 39.5%)
 
 #### Order Flow Imbalance (OFI) Proxy (5 new features)
 | Feature | Description |
@@ -148,7 +141,7 @@ expected_return_threshold: 0.003  # Was transaction_cost * 2.0
 | Trades/day | 0.20-0.45 | 0.8-1.5 |
 | Low-vol win rate | 37.9% | 45-50% |
 | Signal sources | 6 | 13 |
-| Features | ~80 | ~100+ |
+| Features | ~80 | ~90 (+10 selective) |
 | Ensemble models | 4 (LGBM, XGB, RF, LogReg) | 5 (+CatBoost) |
 
 ---

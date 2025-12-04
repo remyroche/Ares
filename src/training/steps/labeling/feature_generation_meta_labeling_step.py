@@ -1755,58 +1755,32 @@ def create_meta_features(
         features['hour'] = df.index.hour.to_numpy()
         features['day_of_week'] = df.index.dayofweek.to_numpy()
 
-        # ===== ENHANCED TIME-OF-DAY PATTERNS (NEW 2025-12-04) =====
+        # ===== SELECTIVE TIME-OF-DAY PATTERNS (NEW 2025-12-04) =====
+        # Only 5 features: cyclical hour encoding + known good/bad patterns
         hour_arr = df.index.hour.to_numpy()
         dow_arr = df.index.dayofweek.to_numpy()
 
-        # Cyclical encoding for hour (captures 24-hour cycle)
+        # Cyclical encoding for hour (captures 24-hour cycle in 2 features)
         features['hour_sin'] = np.sin(2 * np.pi * hour_arr / 24.0)
         features['hour_cos'] = np.cos(2 * np.pi * hour_arr / 24.0)
 
-        # Cyclical encoding for day of week (captures 7-day cycle)
-        features['dow_sin'] = np.sin(2 * np.pi * dow_arr / 7.0)
-        features['dow_cos'] = np.cos(2 * np.pi * dow_arr / 7.0)
-
-        # Trading session indicators (based on major market hours)
-        # Asian session: 00:00-08:00 UTC
-        # European session: 07:00-16:00 UTC
-        # US session: 13:00-22:00 UTC
-        features['session_asian'] = ((hour_arr >= 0) & (hour_arr < 8)).astype(float)
-        features['session_european'] = ((hour_arr >= 7) & (hour_arr < 16)).astype(float)
-        features['session_us'] = ((hour_arr >= 13) & (hour_arr < 22)).astype(float)
-        features['session_overlap_eu_us'] = ((hour_arr >= 13) & (hour_arr < 16)).astype(float)
-
-        # Known good/bad hours (from diagnostics)
+        # Known good/bad hours (from diagnostics - high impact)
         # Best hours: 3, 5, 10 (win rate > 56%)
         # Worst hours: 0, 13, 19 (win rate < 45%)
         features['is_good_hour'] = np.isin(hour_arr, [3, 5, 10]).astype(float)
         features['is_bad_hour'] = np.isin(hour_arr, [0, 13, 19]).astype(float)
 
-        # Weekend indicator (Sunday = 6, Saturday = 5)
-        features['is_weekend'] = (dow_arr >= 5).astype(float)
-        features['is_sunday'] = (dow_arr == 6).astype(float)  # Worst day
-
-        # Time since session open (normalized 0-1 within session)
-        # Asian session starts at 00:00 UTC
-        time_in_session = (hour_arr % 8) / 8.0  # Simplified 8-hour sessions
-        features['time_in_session'] = time_in_session
+        # Sunday indicator (worst day at 39.5% win rate)
+        features['is_sunday'] = (dow_arr == 6).astype(float)
 
     else:
         features['hour'] = 0
         features['day_of_week'] = 0
         features['hour_sin'] = 0.0
         features['hour_cos'] = 1.0
-        features['dow_sin'] = 0.0
-        features['dow_cos'] = 1.0
-        features['session_asian'] = 0.0
-        features['session_european'] = 0.0
-        features['session_us'] = 0.0
-        features['session_overlap_eu_us'] = 0.0
         features['is_good_hour'] = 0.0
         features['is_bad_hour'] = 0.0
-        features['is_weekend'] = 0.0
         features['is_sunday'] = 0.0
-        features['time_in_session'] = 0.0
 
     # ===== ORDER FLOW IMBALANCE (OFI) PROXY (NEW 2025-12-04) =====
     # Without direct order book data, we approximate OFI using price/volume patterns

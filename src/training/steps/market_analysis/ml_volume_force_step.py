@@ -23,7 +23,15 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 import xgboost as xgb
-from sklearn.metrics import log_loss, roc_auc_score, average_precision_score, brier_score_loss
+from sklearn.metrics import (
+    log_loss,
+    roc_auc_score,
+    average_precision_score,
+    brier_score_loss,
+    mean_squared_error,
+    mean_absolute_error,
+    r2_score,
+)
 
 from src.training.steps.base_step import BaseStep
 from src.utils.tprint import (
@@ -96,13 +104,14 @@ class MLVolumeForceStep(BaseStep):
                     "error": result.get("error", ""),
 
                     # Aggregated Metrics (Mean of 3 models)
-                    "oof_log_loss": metrics.get("avg_log_loss", float("inf")),
+                    "oof_log_loss": metrics.get("avg_log_loss", float("inf")),  # Still valid for breakout?
                     "oof_accuracy": metrics.get("avg_accuracy", 0.0),
 
                     # Individual Model Metrics
                     "breakout_log_loss": metrics.get("breakout_log_loss", float("inf")),
-                    "volatility_log_loss": metrics.get("volatility_log_loss", float("inf")),
-                    "trend_log_loss": metrics.get("trend_log_loss", float("inf")),
+                    "volatility_rmse": metrics.get("volatility_rmse", float("inf")),
+                    "trend_rmse": metrics.get("trend_rmse", float("inf")),
+                    "trend_ic": metrics.get("trend_ic", 0.0),
 
                     "n_samples": metrics.get("n_samples", 0),
                     "n_oof_samples": metrics.get("n_oof_samples", 0),
@@ -127,8 +136,12 @@ class MLVolumeForceStep(BaseStep):
                 results.append(run_metrics)
 
                 if result.get("success", False):
+                    # Log diverse metrics for clarity
                     tprint_success(
-                        f"✅ Config {i+1} done. Avg Loss: {run_metrics['oof_log_loss']:.4f}"
+                        f"✅ Config {i+1} done. "
+                        f"Breakout Loss: {run_metrics.get('breakout_log_loss', 99.9):.4f}, "
+                        f"Trend IC: {run_metrics.get('trend_ic', 0.0):.4f}, "
+                        f"Vol RMSE: {run_metrics.get('volatility_rmse', 99.9):.4f}"
                     )
                 else:
                     tprint_warning(f"⚠️ Config {i+1} failed: {run_metrics['error']}")
@@ -285,31 +298,35 @@ class MLVolumeForceStep(BaseStep):
                 tprint_info(f"🧠 Training {target_name.capitalize()} Model...")
 
                 model_id = f"{symbol}_{exchange}_{timeframe}_volume_force_{target_name}"
-                y_target = y[f"target_{target_name}"].astype(int)
+                y_target = y[f"target_{target_name}"]
 
-                # For volatility and trend, invert label semantics so that 1 corresponds
-                # to the complement regime (turning anti-signals into direct signals).
-                if target_name in ("volatility", "trend"):
-                    y_target = 1 - y_target
+                # Determine objective and metric based on target type
+                if target_name == "breakout":
+                    objective = "binary:logistic"
+                    eval_metric = "logloss"
+                    # Breakout is binary, ensure int
+                    y_target = y_target.astype(int)
+                    # Use balancing weights for classification
+                    pos_ratio = y_target.mean()
+                    tprint_info(f"   Target Balance ({target_name}): {pos_ratio:.1%}")
 
-                # Check target balance
-                pos_ratio = y_target.mean()
-                tprint_info(f"   Target Balance ({target_name}): {pos_ratio:.1%}")
+                    target_weights = base_sample_weights.copy()
+                    eps = 1e-6
+                    if 0.0 < float(pos_ratio) < 1.0:
+                        neg_ratio = 1.0 - float(pos_ratio)
+                        pos_w = 0.5 / max(float(pos_ratio), eps)
+                        neg_w = 0.5 / max(float(neg_ratio), eps)
+                        class_weights = np.where(y_target.values == 1, pos_w, neg_w)
+                        target_weights = target_weights * class_weights
 
-                if pos_ratio < 0.01 or pos_ratio > 0.99:
-                    tprint_warning(f"⚠️ Extreme class imbalance for {target_name}, skipping or using dummy")
-                    # Handle extreme imbalance if necessary, but XGB usually handles it well enough or we subsample
-                    # For now proceeding, but logging warning.
-
-                # Per-target sample weights: recency weighting × class balancing
-                target_weights = base_sample_weights.copy()
-                eps = 1e-6
-                if 0.0 < float(pos_ratio) < 1.0:
-                    neg_ratio = 1.0 - float(pos_ratio)
-                    pos_w = 0.5 / max(float(pos_ratio), eps)
-                    neg_w = 0.5 / max(float(neg_ratio), eps)
-                    class_weights = np.where(y_target.values == 1, pos_w, neg_w)
-                    target_weights = target_weights * class_weights
+                else:
+                    # Volatility and Trend are Regression
+                    objective = "reg:squarederror"
+                    eval_metric = "rmse"
+                    y_target = y_target.astype(float)
+                    # For regression, use sample weights (recency) but no class balancing
+                    target_weights = base_sample_weights.copy()
+                    tprint_info(f"   Target Mean ({target_name}): {y_target.mean():.4f}, Std: {y_target.std():.4f}")
 
                 # Hyperparameters from config (sweeping support)
                 xgb_lr = float(config.get("volume_force_xgb_learning_rate", 0.03))
@@ -325,7 +342,7 @@ class MLVolumeForceStep(BaseStep):
                     n_estimators=xgb_n_estimators,
                     early_stopping_rounds=20,
                     tree_method="hist",
-                    objective="binary:logistic",
+                    objective=objective,
                     learning_rate=xgb_lr,
                     max_depth=xgb_depth,
                     min_child_weight=10.0,
@@ -343,20 +360,20 @@ class MLVolumeForceStep(BaseStep):
                     data_start=X.index.min(),
                     data_end=X.index.max(),
                     sample_weight=target_weights,
-                    eval_metric="logloss",
+                    eval_metric=eval_metric,
                     verbose=False,
                 )
 
                 model_results[target_name] = train_result
                 trained_models[target_name] = train_result.models[-1] if train_result.models else None
 
-                # Extract OOF probas
+                # Extract OOF preds
                 oof_preds = train_result.oof_predictions
-                if "probability" in oof_preds.columns:
-                    # Align OOF preds to common index (X.index)
-                    # Note: train_result.oof_predictions should already be indexed by X.index subset
-                    # We merge into our main predictions dataframe
-                    prob_series = oof_preds["probability"]
+                # Column name depends on objective: 'probability' for binary, 'prediction' for reg
+                pred_col = "probability" if "probability" in oof_preds.columns else "prediction"
+
+                if pred_col in oof_preds.columns:
+                    prob_series = oof_preds[pred_col]
                     if not prob_series.index.is_unique:
                         prob_series = prob_series[~prob_series.index.duplicated(keep="last")]
                     aligned = prob_series.reindex(predictions.index)
@@ -367,56 +384,61 @@ class MLVolumeForceStep(BaseStep):
                 # Metrics
                 if not oof_preds.empty:
                     y_true = y_target.loc[oof_preds.index]
-                    y_prob = oof_preds["probability"]
+                    y_pred = oof_preds[pred_col]
+
                     try:
-                        ll = log_loss(y_true, y_prob)
-                        acc = (y_true == (y_prob >= 0.5)).mean()
-                        metrics[f"{target_name}_log_loss"] = float(ll)
-                        metrics[f"{target_name}_accuracy"] = float(acc)
+                        if target_name == "breakout":
+                            # Classification Metrics
+                            ll = log_loss(y_true, y_pred)
+                            acc = (y_true == (y_pred >= 0.5)).mean()
+                            metrics[f"{target_name}_log_loss"] = float(ll)
+                            metrics[f"{target_name}_accuracy"] = float(acc)
 
-                        # Additional financial-style metrics
-                        try:
-                            roc = roc_auc_score(y_true, y_prob)
-                            pr = average_precision_score(y_true, y_prob)
-                            brier = brier_score_loss(y_true, y_prob)
-                            metrics[f"{target_name}_roc_auc"] = float(roc)
-                            metrics[f"{target_name}_pr_auc"] = float(pr)
-                            metrics[f"{target_name}_brier_score"] = float(brier)
-                        except Exception:
-                            pass
+                            try:
+                                roc = roc_auc_score(y_true, y_pred)
+                                pr = average_precision_score(y_true, y_pred)
+                                brier = brier_score_loss(y_true, y_pred)
+                                metrics[f"{target_name}_roc_auc"] = float(roc)
+                                metrics[f"{target_name}_pr_auc"] = float(pr)
+                                metrics[f"{target_name}_brier_score"] = float(brier)
+                            except Exception:
+                                pass
 
-                        # Threshold-based detection stats (coverage/precision/lift)
-                        base_rate = float(y_true.mean()) if len(y_true) > 0 else 0.0
-                        for thresh in (0.2, 0.3, 0.4, 0.5, 0.7, 0.9):
-                            mask = y_prob >= thresh
-                            key_prefix = f"{target_name}_th_{int(thresh*100)}"
-                            coverage = float(mask.mean()) if len(mask) > 0 else 0.0
-                            if mask.any():
-                                precision = float(y_true[mask].mean())
-                            else:
-                                precision = 0.0
-                            lift = float(precision / base_rate) if base_rate > 0 else 0.0
-                            metrics[f"{key_prefix}_coverage"] = coverage
-                            metrics[f"{key_prefix}_precision"] = precision
-                            metrics[f"{key_prefix}_lift"] = lift
+                            # Lift stats for Breakout
+                            base_rate = float(y_true.mean()) if len(y_true) > 0 else 0.0
+                            if len(y_pred) > 0:
+                                for q, label in ((0.95, "top5"), (0.90, "top10")):
+                                    q_thresh = float(y_pred.quantile(q))
+                                    mask = y_pred >= q_thresh
+                                    key_prefix = f"{target_name}_{label}"
+                                    if mask.any():
+                                        precision = float(y_true[mask].mean())
+                                        lift = float(precision / base_rate) if base_rate > 0 else 0.0
+                                        metrics[f"{key_prefix}_lift"] = lift
+                                    else:
+                                        metrics[f"{key_prefix}_lift"] = 0.0
 
-                        # Quantile-based thresholds: top 5%, 10%, 20%
-                        if len(y_prob) > 0:
-                            for q, label in ((0.95, "top5"), (0.90, "top10"), (0.80, "top20")):
-                                q_thresh = float(y_prob.quantile(q))
-                                mask = y_prob >= q_thresh
-                                key_prefix = f"{target_name}_{label}"
-                                coverage = float(mask.mean()) if len(mask) > 0 else 0.0
-                                if mask.any():
-                                    precision = float(y_true[mask].mean())
-                                else:
-                                    precision = 0.0
-                                lift = float(precision / base_rate) if base_rate > 0 else 0.0
-                                metrics[f"{key_prefix}_coverage"] = coverage
-                                metrics[f"{key_prefix}_precision"] = precision
-                                metrics[f"{key_prefix}_lift"] = lift
-                    except Exception:
-                        metrics[f"{target_name}_log_loss"] = float("inf")
+                        else:
+                            # Regression Metrics
+                            mse = mean_squared_error(y_true, y_pred)
+                            rmse = np.sqrt(mse)
+                            mae = mean_absolute_error(y_true, y_pred)
+                            r2 = r2_score(y_true, y_pred)
+
+                            metrics[f"{target_name}_rmse"] = float(rmse)
+                            metrics[f"{target_name}_mae"] = float(mae)
+                            metrics[f"{target_name}_r2"] = float(r2)
+
+                            # Information Coefficient (IC) - Correlation between pred and target
+                            ic = np.corrcoef(y_pred, y_true)[0, 1]
+                            metrics[f"{target_name}_ic"] = float(ic)
+
+                    except Exception as e:
+                        tprint_warning(f"Error calculating metrics for {target_name}: {e}")
+                        if target_name == "breakout":
+                            metrics[f"{target_name}_log_loss"] = float("inf")
+                        else:
+                            metrics[f"{target_name}_rmse"] = float("inf")
 
             # 5. Aggregate Results
             # Filter rows where we have predictions for all (intersection of valid OOFs)
@@ -426,16 +448,13 @@ class MLVolumeForceStep(BaseStep):
                 tprint_warning("⚠️ No common OOF predictions generated.")
                 metrics["avg_log_loss"] = float("inf")
             else:
-                avg_ll = np.mean([
-                    metrics.get(f"{t}_log_loss", float("inf"))
-                    for t in target_names
-                ])
-                avg_acc = np.mean([
-                    metrics.get(f"{t}_accuracy", 0.0)
-                    for t in target_names
-                ])
-                metrics["avg_log_loss"] = float(avg_ll)
-                metrics["avg_accuracy"] = float(avg_acc)
+                # Calculate average 'error' metric (Loss for classification, RMSE for regression)
+                # Normalizing them is hard, so we just average the available "primary" metrics for sorting
+                # But typically log_loss and RMSE are different scales.
+                # For backward compatibility, we set avg_log_loss to breakout_log_loss
+                # or a mix.
+                metrics["avg_log_loss"] = metrics.get("breakout_log_loss", float("inf"))
+                metrics["avg_accuracy"] = metrics.get("breakout_accuracy", 0.0)
                 metrics["n_oof_samples"] = len(predictions)
                 metrics["oof_start"] = predictions.index.min()
                 metrics["oof_end"] = predictions.index.max()
@@ -509,79 +528,48 @@ class MLVolumeForceStep(BaseStep):
 
         targets = pd.DataFrame(index=df.index)
 
-        # --- Target A: Breakout ---
+        # --- Target A: Breakout (Refactored: Close-based validation) ---
         # High/Low over past L
         past_high = df["high"].rolling(L).max()
         past_low = df["low"].rolling(L).min()
 
-        # Future High/Low over next H
-        # rolling(H) at t includes t. We want future: t+1 to t+H.
-        # Shift back by H?
-        # rolling(H) at t is [t-H+1, t].
-        # We want max([t+1, ..., t+H]).
-        # Shift df['high'] by -H, then rolling(H) -> window ends at t+H, contains [t+1, t+H].
-        future_high = df["high"].shift(-H).rolling(window=H).max()
-        future_low = df["low"].shift(-H).rolling(window=H).min()
-
         # ATR for threshold
-        # Simple ATR approximation: High-Low rolling mean
-        # Or True Range.
         tr = np.maximum(df["high"] - df["low"],
                         np.abs(df["high"] - df["close"].shift(1)))
         atr = tr.rolling(14).mean()
         threshold_val = atr * atr_thresh_mult
 
-        # Breakout Condition
-        breakout_up = future_high > (past_high + threshold_val)
-        breakout_down = future_low < (past_low - threshold_val)
+        # Future Close High/Low (not Wick)
+        # Check if the MAXIMUM CLOSE in the next H bars exceeds the level.
+        # This confirms the price *stayed* or *closed* above the level, reducing wick fakeouts.
+        future_close_max = df["close"].shift(-H).rolling(window=H).max()
+        future_close_min = df["close"].shift(-H).rolling(window=H).min()
+
+        # Breakout Condition:
+        # Upside: Max future close > (Past High + Threshold)
+        # Downside: Min future close < (Past Low - Threshold)
+        breakout_up = future_close_max > (past_high + threshold_val)
+        breakout_down = future_close_min < (past_low - threshold_val)
         targets["target_breakout"] = (breakout_up | breakout_down).astype(int)
 
-        # --- Target B: Volatility (High Regime) ---
-        # Future Realized Volatility (RV) over H
-        # RV = StdDev of returns * sqrt(H) ? Or just StdDev over H bars.
+        # --- Target B: Volatility (Regression) ---
+        # Target: Future Realized Volatility over horizon H
         returns = df["close"].pct_change()
         # rv_future at t = std(returns[t+1...t+H])
-        rv_series = returns.rolling(H).std() # at t, is std(t-H+1...t)
-        rv_future = rv_series.shift(-H) # at t, is std(t+1...t+H)
+        rv_series = returns.rolling(H).std()
+        rv_future = rv_series.shift(-H)
 
-        # Past RV Distribution (Window W)
-        # We compare rv_future[t] to distribution of rv_series[t-W ... t]
-        # rolling(W) on rv_series gives us the window of past H-bar volatilities.
-        rv_threshold = rv_series.rolling(W).quantile(vol_percentile / 100.0)
+        # Log-transform volatility to make it more Gaussian-like for regression
+        # Avoid log(0) with eps
+        targets["target_volatility"] = np.log1p(rv_future * 100) # Scaling up before log
 
-        targets["target_volatility"] = (rv_future > rv_threshold).astype(int)
-
-        # --- Target C: Trend Persistence ---
-        # r_past = (close[t] - close[t-H]) / close[t-H]
-        # Note: standard pct_change(H) is (c[t] - c[t-H])/c[t-H]
-        r_past = df["close"].pct_change(H)
-
-        # r_future = (close[t+H] - close[t]) / close[t]
+        # --- Target C: Trend (Regression) ---
+        # Target: Future Return over horizon H (Directional Strength)
         r_future = df["close"].pct_change(H).shift(-H)
 
-        # Sigma Ref: Rolling std of 1-bar returns over K bars, scaled to H-bar horizon
-        # sigma_1bar = returns.rolling(K).std()
-        # sigma_ref = sigma_1bar * np.sqrt(H)
-        sigma_1bar = returns.rolling(K).std()
-        sigma_ref = sigma_1bar * np.sqrt(H)
-
-        min_return = beta * sigma_ref
-        min_return_future = gamma * sigma_ref
-
-        # Identify Current Trend
-        # trend_sign = sign(r_past) if abs(r_past) >= min_return else 0
-        trend_sign = np.sign(r_past)
-        is_trend = r_past.abs() >= min_return
-        trend_sign = np.where(is_trend, trend_sign, 0)
-
-        # Persistence Condition
-        # 1 if trend exists AND future direction matches AND future magnitude sufficient
-        persistence = (
-            (trend_sign != 0) &
-            (np.sign(r_future) == trend_sign) &
-            (r_future.abs() >= min_return_future)
-        )
-        targets["target_trend"] = persistence.astype(int)
+        # Clip extreme returns to stabilize regression (e.g., +/- 20%)
+        # Though XGBoost is robust, clipping helps avoid outliers driving loss
+        targets["target_trend"] = r_future.clip(-0.2, 0.2)
 
         # Simple H-bar forward return for backtesting/analysis
         targets["future_return_H"] = r_future

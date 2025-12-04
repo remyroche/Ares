@@ -625,16 +625,23 @@ class TimeBasedVolumeProfileGenerator(VectorBTTimeFeatureGenerator):
             return pd.Series(result, index=data.index)
 
 def create_default_time_generators() -> List[FeatureGenerator]:
-    """Create streamlined time feature generators with full VectorBT optimization."""
+    """Create basic/cyclical time feature generators."""
     return [
         # Basic hour features
         HourGenerator(),
 
-        # Cyclical encodings (ML compatible)
+        # Cyclical encodings (ML compatible) - This is what the user specifically requested
         HourSinGenerator(),
         HourCosGenerator(),
         DayOfWeekSinGenerator(),
         DayOfWeekCosGenerator(),
+    ]
+
+def create_advanced_time_generators() -> List[FeatureGenerator]:
+    """Create advanced time feature generators including intraday patterns and momentum."""
+    return [
+        # All basic generators
+        *create_default_time_generators(),
 
         # Intraday pattern features
         MarketOpenGenerator(),
@@ -647,15 +654,6 @@ def create_default_time_generators() -> List[FeatureGenerator]:
         HourlyVolatilityGenerator(),
         TimeBasedMomentumGenerator(),
         TimeBasedVolumeProfileGenerator(),
-    ]
-
-def create_advanced_time_generators() -> List[FeatureGenerator]:
-    """Create advanced time feature generators with full VectorBT optimization."""
-    return [
-        # All basic generators
-        *create_default_time_generators(),
-
-        # Additional advanced features can be added here
     ]
 
 def create_time_feature_batch(data: pd.DataFrame, generators: List[FeatureGenerator] = None) -> pd.DataFrame:

@@ -624,6 +624,390 @@ class TimeBasedVolumeProfileGenerator(VectorBTTimeFeatureGenerator):
 
             return pd.Series(result, index=data.index)
 
+class TimeSinceLastVolSpikeGenerator(VectorBTTimeFeatureGenerator):
+    def __init__(self):
+        config = FeatureConfig(
+            name="time_since_last_vol_spike",
+            category=FeatureCategory.TIME,
+            description="Time since last volatility spike (z-score > threshold)",
+            required_columns=['close'],
+            default_lookback=20,
+            parameters={'threshold': 2.0, 'baseline_window': 100},
+            use_vectorbt=True
+        )
+        super().__init__(config)
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        data = self._optimize_dataframe_processing(data)
+        window = kwargs.get('window', self.config.default_lookback)
+        threshold = kwargs.get('threshold', self.config.parameters['threshold'])
+        baseline_window = kwargs.get('baseline_window', self.config.parameters['baseline_window'])
+
+        # Calculate returns
+        close = data['close']
+        returns = close.pct_change()
+
+        # Calculate Volatility (rolling std of returns)
+        vol = self._vectorbt_rolling_operation(returns, 'std', window)
+
+        # Calculate Z-Score of Volatility (relative to baseline)
+        vol_mean = self._vectorbt_rolling_operation(vol, 'mean', baseline_window)
+        vol_std = self._vectorbt_rolling_operation(vol, 'std', baseline_window)
+
+        # Avoid division by zero
+        vol_zscore = (vol - vol_mean) / vol_std.replace(0, np.nan)
+
+        # Identify spikes
+        is_spike = vol_zscore > threshold
+
+        # Calculate time since spike using vectorized approach
+        positions = pd.Series(np.arange(len(data)), index=data.index)
+        spike_positions = positions.where(is_spike)
+        last_spike_position = spike_positions.ffill()
+
+        time_since = positions - last_spike_position
+
+        # Fill initial NaNs with 0
+        time_since = time_since.fillna(0)
+
+        return time_since
+
+# --- Helper Functions for Indicators (Vectorized/Pandas) ---
+
+def _calc_rsi(close, window=14):
+    delta = close.diff()
+    # Use pandas rolling for calculation
+    gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
+
+    rs = gain / loss.replace(0, np.nan)
+    return 100 - (100 / (1 + rs))
+
+def _calc_bb(close, window=20, std_dev=2):
+    ma = close.rolling(window=window).mean()
+    std = close.rolling(window=window).std()
+    upper = ma + std * std_dev
+    lower = ma - std * std_dev
+    return upper, lower
+
+def _calc_macd(close, fast=12, slow=26, signal=9):
+    ema_fast = close.ewm(span=fast, adjust=False).mean()
+    ema_slow = close.ewm(span=slow, adjust=False).mean()
+    macd = ema_fast - ema_slow
+    sig = macd.ewm(span=signal, adjust=False).mean()
+    return macd, sig
+
+def _calc_atr(high, low, close, window=14):
+    tr1 = high - low
+    tr2 = (high - close.shift()).abs()
+    tr3 = (low - close.shift()).abs()
+    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+    return tr.rolling(window=window).mean()
+
+def _calc_adx(high, low, close, window=14):
+    # Simplified ADX implementation
+    tr = _calc_atr(high, low, close, window=1) # True Range (1 period)
+    up_move = high - high.shift()
+    down_move = low.shift() - low
+
+    plus_dm = np.where((up_move > down_move) & (up_move > 0), up_move, 0)
+    minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0)
+
+    # Smooth (using simple rolling sum for efficiency in basic features)
+    tr_s = pd.Series(tr, index=close.index).rolling(window=window).sum()
+    plus_dm_s = pd.Series(plus_dm, index=close.index).rolling(window=window).sum()
+    minus_dm_s = pd.Series(minus_dm, index=close.index).rolling(window=window).sum()
+
+    plus_di = 100 * (plus_dm_s / tr_s.replace(0, np.nan))
+    minus_di = 100 * (minus_dm_s / tr_s.replace(0, np.nan))
+
+    dx = 100 * abs(plus_di - minus_di) / (plus_di + minus_di).replace(0, np.nan)
+    adx = dx.rolling(window=window).mean()
+    return adx
+
+def _calc_vwap(high, low, close, volume):
+    typical_price = (high + low + close) / 3
+    cum_pv = (typical_price * volume).cumsum()
+    cum_vol = volume.cumsum()
+    return cum_pv / cum_vol.replace(0, np.nan)
+
+def _calc_time_since(condition, index):
+    """Vectorized calculation of time since condition was true."""
+    positions = pd.Series(np.arange(len(index)), index=index)
+    condition_positions = positions.where(condition)
+    last_condition_position = condition_positions.ffill()
+    time_since = positions - last_condition_position
+    return time_since.fillna(0) # Default to 0 if never happened (or beginning of data)
+
+# --- New Time-Based Feature Generators ---
+
+class TimeSinceTrendImpulseGenerator(VectorBTTimeFeatureGenerator):
+    def __init__(self):
+        config = FeatureConfig(
+            name="time_since_trend_impulse",
+            category=FeatureCategory.TIME,
+            description="Time since last trend impulse (ADX > 25 and rising)",
+            required_columns=['high', 'low', 'close'],
+            default_lookback=14,
+            use_vectorbt=True
+        )
+        super().__init__(config)
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        data = self._optimize_dataframe_processing(data)
+        window = kwargs.get('window', self.config.default_lookback)
+
+        adx = _calc_adx(data['high'], data['low'], data['close'], window)
+
+        # Impulse condition: ADX > 25 and Rising
+        is_impulse = (adx > 25) & (adx > adx.shift(1))
+
+        return _calc_time_since(is_impulse, data.index)
+
+class TimeSinceLocalHighGenerator(VectorBTTimeFeatureGenerator):
+    def __init__(self):
+        config = FeatureConfig(
+            name="time_since_local_high",
+            category=FeatureCategory.TIME,
+            description="Time since last confirmed local high (fractal)",
+            required_columns=['high'],
+            default_lookback=5, # Window for fractal check
+            use_vectorbt=True
+        )
+        super().__init__(config)
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        data = self._optimize_dataframe_processing(data)
+        # Fractal High: High[t-2] is max of window 5 centered at t-2
+        # Implemented as lagged check: at time t, check if t-2 was a high
+        h = data['high']
+        # Check if t-2 is greater than t-3, t-4, t-1, t
+        is_high = (h.shift(2) > h.shift(3)) & \
+                  (h.shift(2) > h.shift(4)) & \
+                  (h.shift(2) > h.shift(1)) & \
+                  (h.shift(2) > h)
+
+        return _calc_time_since(is_high, data.index)
+
+class TimeSinceLocalLowGenerator(VectorBTTimeFeatureGenerator):
+    def __init__(self):
+        config = FeatureConfig(
+            name="time_since_local_low",
+            category=FeatureCategory.TIME,
+            description="Time since last confirmed local low (fractal)",
+            required_columns=['low'],
+            default_lookback=5,
+            use_vectorbt=True
+        )
+        super().__init__(config)
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        data = self._optimize_dataframe_processing(data)
+        l = data['low']
+        is_low = (l.shift(2) < l.shift(3)) & \
+                 (l.shift(2) < l.shift(4)) & \
+                 (l.shift(2) < l.shift(1)) & \
+                 (l.shift(2) < l)
+
+        return _calc_time_since(is_low, data.index)
+
+class TimeSinceBreakoutGenerator(VectorBTTimeFeatureGenerator):
+    def __init__(self):
+        config = FeatureConfig(
+            name="time_since_breakout",
+            category=FeatureCategory.TIME,
+            description="Time since last BB breakout (Close outside bands)",
+            required_columns=['close'],
+            default_lookback=20,
+            use_vectorbt=True
+        )
+        super().__init__(config)
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        data = self._optimize_dataframe_processing(data)
+        window = kwargs.get('window', self.config.default_lookback)
+
+        upper, lower = _calc_bb(data['close'], window=window)
+
+        is_breakout = (data['close'] > upper) | (data['close'] < lower)
+
+        return _calc_time_since(is_breakout, data.index)
+
+class TimeSinceLargeCandleGenerator(VectorBTTimeFeatureGenerator):
+    def __init__(self):
+        config = FeatureConfig(
+            name="time_since_large_candle",
+            category=FeatureCategory.TIME,
+            description="Time since last large candle (Body > 2 * ATR)",
+            required_columns=['open', 'high', 'low', 'close'],
+            default_lookback=14,
+            use_vectorbt=True
+        )
+        super().__init__(config)
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        data = self._optimize_dataframe_processing(data)
+        window = kwargs.get('window', self.config.default_lookback)
+
+        atr = _calc_atr(data['high'], data['low'], data['close'], window)
+        body_size = (data['close'] - data['open']).abs()
+
+        is_large = body_size > (2 * atr)
+
+        return _calc_time_since(is_large, data.index)
+
+class TimeSinceLiquiditySweepGenerator(VectorBTTimeFeatureGenerator):
+    def __init__(self):
+        config = FeatureConfig(
+            name="time_since_liquidity_sweep",
+            category=FeatureCategory.TIME,
+            description="Time since last liquidity sweep (large wicks)",
+            required_columns=['open', 'high', 'low', 'close'],
+            parameters={'threshold': 0.5},
+            use_vectorbt=True
+        )
+        super().__init__(config)
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        data = self._optimize_dataframe_processing(data)
+        threshold = kwargs.get('threshold', self.config.parameters['threshold'])
+
+        o, h, l, c = data['open'], data['high'], data['low'], data['close']
+
+        upper_wick = h - pd.concat([o, c], axis=1).max(axis=1)
+        lower_wick = pd.concat([o, c], axis=1).min(axis=1) - l
+
+        max_wick = pd.concat([upper_wick, lower_wick], axis=1).max(axis=1)
+        total_range = h - l
+
+        # Avoid division by zero
+        wick_ratio = max_wick / total_range.replace(0, np.nan)
+
+        is_sweep = wick_ratio > threshold
+
+        return _calc_time_since(is_sweep, data.index)
+
+class TimeSinceSidewaysRegimeGenerator(VectorBTTimeFeatureGenerator):
+    def __init__(self):
+        config = FeatureConfig(
+            name="time_since_sideways",
+            category=FeatureCategory.TIME,
+            description="Time since last sideways regime (ADX < 20)",
+            required_columns=['high', 'low', 'close'],
+            default_lookback=14,
+            use_vectorbt=True
+        )
+        super().__init__(config)
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        data = self._optimize_dataframe_processing(data)
+        window = kwargs.get('window', self.config.default_lookback)
+
+        adx = _calc_adx(data['high'], data['low'], data['close'], window)
+
+        is_sideways = adx < 20
+
+        return _calc_time_since(is_sideways, data.index)
+
+class TimeSinceRSICrossGenerator(VectorBTTimeFeatureGenerator):
+    def __init__(self):
+        config = FeatureConfig(
+            name="time_since_rsi_cross",
+            category=FeatureCategory.TIME,
+            description="Time since RSI crossed 50",
+            required_columns=['close'],
+            default_lookback=14,
+            use_vectorbt=True
+        )
+        super().__init__(config)
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        data = self._optimize_dataframe_processing(data)
+        window = kwargs.get('window', self.config.default_lookback)
+
+        rsi = _calc_rsi(data['close'], window)
+
+        # Cross 50 (up or down)
+        # (RSI[t] > 50 and RSI[t-1] <= 50) OR (RSI[t] < 50 and RSI[t-1] >= 50)
+        # Simplified: sign of (RSI - 50) changed
+        rsi_centered = rsi - 50
+        is_cross = (np.sign(rsi_centered) != np.sign(rsi_centered.shift(1))) & (rsi_centered.notna()) & (rsi_centered.shift(1).notna())
+
+        return _calc_time_since(is_cross, data.index)
+
+class TimeSinceMACDCrossGenerator(VectorBTTimeFeatureGenerator):
+    def __init__(self):
+        config = FeatureConfig(
+            name="time_since_macd_cross",
+            category=FeatureCategory.TIME,
+            description="Time since MACD crossed 0",
+            required_columns=['close'],
+            use_vectorbt=True
+        )
+        super().__init__(config)
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        data = self._optimize_dataframe_processing(data)
+
+        macd, _ = _calc_macd(data['close'])
+
+        # Cross 0
+        is_cross = (np.sign(macd) != np.sign(macd.shift(1))) & (macd.notna()) & (macd.shift(1).notna())
+
+        return _calc_time_since(is_cross, data.index)
+
+class TimeSinceVWAPCrossGenerator(VectorBTTimeFeatureGenerator):
+    def __init__(self):
+        config = FeatureConfig(
+            name="time_since_vwap_cross",
+            category=FeatureCategory.TIME,
+            description="Time since Price crossed VWAP or Touched VWAP",
+            required_columns=['high', 'low', 'close', 'volume'],
+            use_vectorbt=True
+        )
+        super().__init__(config)
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        data = self._optimize_dataframe_processing(data)
+
+        vwap = _calc_vwap(data['high'], data['low'], data['close'], data['volume'])
+        c = data['close']
+
+        # Price Cross VWAP (Close crosses VWAP)
+        diff = c - vwap
+        is_cross = (np.sign(diff) != np.sign(diff.shift(1))) & (diff.notna()) & (diff.shift(1).notna())
+
+        # Price Touch VWAP (High >= VWAP >= Low)
+        is_touch = (data['high'] >= vwap) & (data['low'] <= vwap)
+
+        # Combine: either cross or touch
+        is_event = is_cross | is_touch
+
+        return _calc_time_since(is_event, data.index)
+
+class TimeSinceMeanReversionSignalGenerator(VectorBTTimeFeatureGenerator):
+    def __init__(self):
+        config = FeatureConfig(
+            name="time_since_mean_reversion_signal",
+            category=FeatureCategory.TIME,
+            description="Time since Bollinger Band touch",
+            required_columns=['high', 'low', 'close'],
+            default_lookback=20,
+            use_vectorbt=True
+        )
+        super().__init__(config)
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        data = self._optimize_dataframe_processing(data)
+        window = kwargs.get('window', self.config.default_lookback)
+
+        upper, lower = _calc_bb(data['close'], window=window)
+
+        # Touch: High >= Upper OR Low <= Lower
+        is_touch = (data['high'] >= upper) | (data['low'] <= lower)
+
+        return _calc_time_since(is_touch, data.index)
+
 def create_default_time_generators() -> List[FeatureGenerator]:
     """Create basic/cyclical time feature generators."""
     return [
@@ -635,6 +1019,29 @@ def create_default_time_generators() -> List[FeatureGenerator]:
         HourCosGenerator(),
         DayOfWeekSinGenerator(),
         DayOfWeekCosGenerator(),
+    ]
+
+def create_advanced_time_generators() -> List[FeatureGenerator]:
+    """Create advanced time feature generators including intraday patterns and momentum."""
+    return [
+        # All basic generators
+        *create_default_time_generators(),
+
+        # Time Since Last Vol Spike
+        TimeSinceLastVolSpikeGenerator(),
+
+        # Additional Time-Since Features
+        TimeSinceTrendImpulseGenerator(),
+        TimeSinceLocalHighGenerator(),
+        TimeSinceLocalLowGenerator(),
+        TimeSinceBreakoutGenerator(),
+        TimeSinceLargeCandleGenerator(),
+        TimeSinceLiquiditySweepGenerator(),
+        TimeSinceSidewaysRegimeGenerator(),
+        TimeSinceRSICrossGenerator(),
+        TimeSinceMACDCrossGenerator(),
+        TimeSinceVWAPCrossGenerator(),
+        TimeSinceMeanReversionSignalGenerator(),
     ]
 
 def create_advanced_time_generators() -> List[FeatureGenerator]:

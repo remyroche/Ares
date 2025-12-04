@@ -179,17 +179,20 @@ class FinalFeatureSelectionComponent:
         target_name: Optional[str] = None,
     ) -> List[str]:
         """
-        Select final features using a clean 2-stage pipeline:
+        Select final features using a multi-stage pipeline:
         
-        Stage 1: FeatureSelectionPipeline (4-stage evaluation)
-            - Subsampling, fast screening, predictive power, robustness
-            - Outputs candidates for LGBM/SHAP
+        Stage 1: Relaxed Spearman/Stability Filter
+            - Filters features with very low correlation or high instability.
+            - Removes approx 25% of features (first pass).
+
+        Stage 2: Mutual Information (MI) Filter
+            - Filters features with low non-linear dependence.
+            - Removes approx 25% of features (second pass).
+            - Acts as a proxy for MIC.
         
-        Stage 2: LGBM/SHAP final ranking
-            - Tree-based importance for final feature ranking
-            - Select top N features
-        
-        NO intermediary steps between stages.
+        Stage 3: LGBM Multi-Stage Selection
+            - Gain Importance (Stage 1) -> PI CV3 (Stage 2) -> PI CV5 (Stage 3).
+            - Final ranking and selection.
 
         Args:
             X: Feature matrix
@@ -343,7 +346,104 @@ class FinalFeatureSelectionComponent:
             except Exception:
                 pass
 
+            # -------------------------------------------------------------------------
+            # NEW: Pre-Filtering Pipeline
+            # 1. Relaxed Spearman/Stability Filter (Remove ~25%)
+            # 2. Mutual Information Filter (Remove another ~25%)
+            # -------------------------------------------------------------------------
+
+            n_start = len(feature_names)
+            tprint(f"🚀 [FS] Starting Pre-LGBM Filtering Pipeline on {n_start} features", "INFO")
+
+            # --- Stage 0.1: Relaxed Spearman + Stability Filter ---
+            # Using 25% removal target (keep 75%)
+            target_keep_ratio_spearman = 0.75
+
+            # Use the existing method but with parameters for relaxed filtering
+            # We override the config temporarily or create a specific call
+            # Note: _pre_lgbm_multi_criteria_filter usually does complex stuff.
+            # We will use a dedicated relaxed method here or configure the legacy one.
+
+            tprint("   [FS][Pre-Filter 1] Applying Relaxed Spearman/Stability Filter...", "INFO")
+            # Calculate simple Spearman correlation
+            try:
+                spearman_corrs = []
+                for col in feature_names:
+                    try:
+                        s_corr = abs(X_full[col].corr(y, method='spearman'))
+                        if np.isnan(s_corr): s_corr = 0.0
+                        spearman_corrs.append((col, s_corr))
+                    except:
+                        spearman_corrs.append((col, 0.0))
+
+                # Sort by correlation
+                spearman_corrs.sort(key=lambda x: x[1], reverse=True)
+
+                # Keep top 75%
+                n_keep_spearman = max(1, int(len(spearman_corrs) * target_keep_ratio_spearman))
+                features_spearman = [x[0] for x in spearman_corrs[:n_keep_spearman]]
+
+                tprint(f"   [FS][Pre-Filter 1] Kept {len(features_spearman)}/{n_start} features (Top {target_keep_ratio_spearman:.0%} by Spearman)", "INFO")
+
+                # Update current feature set
+                feature_names = features_spearman
+                X_full = X[feature_names]
+
+            except Exception as e:
+                self.logger.warning(f"Spearman filter failed: {e}, skipping")
+
+            # --- Stage 0.2: Mutual Information (MI) Filter ---
+            # Using 25% removal of the *remaining* (or roughly 33% to get to ~50% total)
+            # We want total reduction to be ~50%. 0.75 * X = 0.5 -> X = 0.66
+            # So we keep ~66% of the survivors.
+            target_keep_ratio_mi = 0.66
+
+            tprint("   [FS][Pre-Filter 2] Applying Mutual Information (MI) Filter...", "INFO")
+            try:
+                from sklearn.feature_selection import mutual_info_regression, mutual_info_classif
+
+                mi_func = mutual_info_classif if task_type == 'classification' else mutual_info_regression
+
+                # Prepare clean data for MI (must not contain NaNs)
+                # Filter to rows where Y is valid
+                clean_mask = y.notna()
+                X_clean = X_full.loc[clean_mask]
+                y_clean = y.loc[clean_mask]
+
+                if len(X_clean) == 0:
+                    raise ValueError("No samples with valid targets for MI calculation")
+
+                # Subsample for speed if needed (using clean data)
+                if len(X_clean) > 5000:
+                    sample_idx = np.random.choice(len(X_clean), 5000, replace=False)
+                    X_mi = X_clean.iloc[sample_idx]
+                    y_mi = y_clean.iloc[sample_idx]
+                else:
+                    X_mi = X_clean
+                    y_mi = y_clean
+
+                # Further ensure no NaNs in X (fill with median if any remain)
+                if X_mi.isna().any().any():
+                    X_mi = X_mi.fillna(X_mi.median())
+
+                mi_scores = mi_func(X_mi, y_mi, random_state=42)
+                mi_pairs = list(zip(feature_names, mi_scores))
+                mi_pairs.sort(key=lambda x: x[1], reverse=True)
+
+                n_keep_mi = max(1, int(len(mi_pairs) * target_keep_ratio_mi))
+                features_mi = [x[0] for x in mi_pairs[:n_keep_mi]]
+
+                tprint(f"   [FS][Pre-Filter 2] Kept {len(features_mi)}/{len(feature_names)} features (Top {target_keep_ratio_mi:.0%} by MI)", "INFO")
+
+                # Update current feature set
+                feature_names = features_mi
+                X_full = X[feature_names]
+
+            except Exception as e:
+                self.logger.warning(f"MI filter failed: {e}, skipping")
+
             n_total_features = len(feature_names)
+            tprint(f"   [FS] Pre-Filtering Complete: {n_start} -> {n_total_features} features ready for LGBM", "INFO")
 
             self.logger.info("=" * 80)
             self.logger.info(

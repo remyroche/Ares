@@ -48,8 +48,14 @@ class XGBMrTrendStep(BaseStep):
             mr_trend_horizon = int(config.get("mr_trend_horizon", 12))  # Default 3h for 15m
             mr_trend_threshold = float(config.get("mr_trend_threshold", 0.015)) # 1.5%
 
+            # Extended Config
+            mr_trend_sma_window = int(config.get("mr_trend_sma_window", 20))
+            mr_trend_z_score_threshold = float(config.get("mr_trend_z_score_threshold", 2.0))
+            mr_trend_vwap_window = int(config.get("mr_trend_vwap_window", 96)) # ~1 day on 15m
+
             tprint_info(f"Starting {self.step_name} for {symbol} {timeframe}")
             tprint_info(f"  Horizon: {mr_trend_horizon} bars, Threshold: {mr_trend_threshold:.2%}")
+            tprint_info(f"  SMA Window: {mr_trend_sma_window}, Z-Score Thresh: {mr_trend_z_score_threshold}")
 
             self.set_context(
                 symbol=symbol,
@@ -73,7 +79,8 @@ class XGBMrTrendStep(BaseStep):
 
             # 3. Feature Engineering (Local)
             tprint_info("Generating specific MR/Trend features...")
-            features_df = self._generate_features(market_data)
+            # Pass full config or specific params
+            features_df = self._generate_features(market_data, config)
 
             # 4. Labeling
             tprint_info("Generating Regime Targets...")
@@ -81,15 +88,18 @@ class XGBMrTrendStep(BaseStep):
                 market_data,
                 features_df,
                 horizon=mr_trend_horizon,
-                threshold=mr_trend_threshold
+                threshold=mr_trend_threshold,
+                z_score_threshold=mr_trend_z_score_threshold
             )
 
             if labeled_df.empty:
                 raise ValueError("Labeled dataset is empty")
 
             # Drop NaN rows created by lookbacks/forward looks
+            pre_len = len(labeled_df)
             labeled_df = labeled_df.dropna()
-            tprint_info(f"  Dataset size after cleaning: {len(labeled_df)}")
+            dropped_rows = pre_len - len(labeled_df)
+            tprint_info(f"  Dataset size after cleaning: {len(labeled_df)} (dropped {dropped_rows} rows)")
 
             # Analyze Class Balance
             class_counts = labeled_df["target"].value_counts().sort_index()
@@ -110,7 +120,8 @@ class XGBMrTrendStep(BaseStep):
                 metadata={
                     "horizon": mr_trend_horizon,
                     "threshold": mr_trend_threshold,
-                    "features": list(features_df.columns)
+                    "features": list(features_df.columns),
+                    "sma_window": mr_trend_sma_window
                 }
             )
 
@@ -125,7 +136,7 @@ class XGBMrTrendStep(BaseStep):
                 )
 
             # 7. Validation Report
-            self._generate_report(predictions, labeled_df["target"], metrics, config)
+            self._generate_report(predictions, labeled_df["target"], metrics, config, model)
 
             execution_time = time.time() - start_time
             tprint_success(f"✅ {self.step_name} completed in {execution_time:.2f}s")
@@ -146,11 +157,15 @@ class XGBMrTrendStep(BaseStep):
     # --------------------------------------------------------------------------
     # Feature Engineering
     # --------------------------------------------------------------------------
-    def _generate_features(self, df: pd.DataFrame) -> pd.DataFrame:
+    def _generate_features(self, df: pd.DataFrame, config: Dict[str, Any] = None) -> pd.DataFrame:
         """
         Generate local features specifically for MR vs Trend classification.
         Features: ATR, Volatility, LinReg Slope, SMA Slope, RSI, CMO, Stochastic, Dist from VWAP.
         """
+        config = config or {}
+        sma_window = int(config.get("mr_trend_sma_window", 20))
+        vwap_window = int(config.get("mr_trend_vwap_window", 96))
+
         # Ensure we work with copies
         c = df["close"].copy()
         h = df["high"].copy()
@@ -178,21 +193,55 @@ class XGBMrTrendStep(BaseStep):
 
         # --- B. Momentum & Slope ---
         # SMA Slopes (Normalized)
-        sma_20 = c.rolling(20).mean()
-        sma_50 = c.rolling(50).mean()
+        sma_short = c.rolling(sma_window).mean()
+        sma_long = c.rolling(50).mean()
 
-        # Slope as pct change of SMA
-        features["sma_20_slope"] = (sma_20 - sma_20.shift(5)) / sma_20.shift(5)
-        features["sma_50_slope"] = (sma_50 - sma_50.shift(5)) / sma_50.shift(5)
+        # Slope as pct change of SMA over 5 bars
+        features[f"sma_{sma_window}_slope"] = (sma_short - sma_short.shift(5)) / sma_short.shift(5)
+        features["sma_50_slope"] = (sma_long - sma_long.shift(5)) / sma_long.shift(5)
 
-        # Linear Regression Slope (Log Price) over 20 bars
+        # Linear Regression Slope (Log Price) over sma_window
         try:
             import talib
-            features["linreg_slope_20"] = talib.LINEARREG_SLOPE(np.log(c), timeperiod=20)
-            features["linreg_angle_20"] = talib.LINEARREG_ANGLE(np.log(c), timeperiod=20)
+            features[f"linreg_slope_{sma_window}"] = talib.LINEARREG_SLOPE(np.log(c), timeperiod=sma_window)
+            features[f"linreg_angle_{sma_window}"] = talib.LINEARREG_ANGLE(np.log(c), timeperiod=sma_window)
         except ImportError:
-            # Simple fallback: 3-point slope proxy (End - Start)
-            features["linreg_slope_20"] = (np.log(c) - np.log(c).shift(20)) / 20.0
+            tprint_warning("TALib not available. Using numpy-based linear regression slope.")
+            # Vectorized Rolling Linear Regression Slope
+            # Slope = (N * Sum(XY) - Sum(X)Sum(Y)) / (N * Sum(X^2) - (Sum(X))^2)
+            # Here X is 0..N-1.
+            N = sma_window
+            y = np.log(c)
+
+            # Constants
+            sum_x = (N * (N - 1)) / 2
+            sum_x2 = (N * (N - 1) * (2 * N - 1)) / 6
+            denominator = N * sum_x2 - sum_x**2
+
+            # Rolling Sums
+            # Sum(Y)
+            sum_y = y.rolling(N).sum()
+
+            # Sum(XY). This is basically a dot product over the window.
+            # We can use convolution. weights are [0, 1, ..., N-1]
+            weights = np.arange(N)
+            # Convolve requires flipping weights for standard correlation-style sliding
+            # Or use explicit rolling apply (slower) or strides.
+            # Faster approximation using double rolling sum is possible but complex.
+            # Let's use simple rolling_apply if N is small (<50), or just accept the rough proxy if very large.
+            # Actually, standard pandas rolling apply with numba engine is fast.
+            # But let's try strict numpy strides if possible, or fallback to simple approximation for safety.
+
+            # Using the "weighted sum" approach:
+            # We can create a rolling weighted sum by:
+            # sum_xy = y.rolling(N).apply(lambda x: np.dot(x, weights), raw=True)
+            # This is O(N*M) but N is small (20).
+            sum_xy = y.rolling(N).apply(lambda x: np.dot(x, weights), raw=True)
+
+            numerator = N * sum_xy - sum_x * sum_y
+            slope = numerator / (denominator + 1e-9)
+
+            features[f"linreg_slope_{sma_window}"] = slope
 
         # RSI 14
         delta = c.diff()
@@ -210,7 +259,6 @@ class XGBMrTrendStep(BaseStep):
 
         # --- C. Oscillators ---
         # CMO (Chande Momentum Oscillator) 14
-        # CMO = 100 * (Su - Sd) / (Su + Sd)
         su = (delta.where(delta > 0, 0)).rolling(14).sum()
         sd = (-delta.where(delta < 0, 0)).rolling(14).sum()
         features["cmo_14"] = 100 * (su - sd) / (su + sd + 1e-9)
@@ -224,7 +272,6 @@ class XGBMrTrendStep(BaseStep):
 
         # --- D. Time Since Events ---
         # Time since Vol Spike (Z-Score > 2.0)
-        # Using 100-bar window for baseline
         vol_baseline = ret.rolling(100).std()
         is_spike = (ret.rolling(20).std() > (2.0 * vol_baseline))
         features["vol_spikes_recent_20"] = is_spike.astype(int).rolling(20).sum()
@@ -233,26 +280,28 @@ class XGBMrTrendStep(BaseStep):
         # --- E. Support/Resistance & Mean Distance ---
         # Distance from SMA 50 (Z-Score equivalent)
         sma_50_std = c.rolling(50).std()
-        features["z_score_50"] = (c - sma_50) / (sma_50_std + 1e-9)
+        features["z_score_50"] = (c - sma_long) / (sma_50_std + 1e-9)
 
         # Distance from VWAP (Approximation: using OHLC/3 cumulative)
-        # For rolling VWAP (e.g., session or 1-day), on 15m 1 day is 96 bars
+        # Using configured window
         tp = (h + l + c) / 3
         tp_v = tp * v
-        vwap_96 = tp_v.rolling(96).sum() / (v.rolling(96).sum() + 1e-9)
-        features["dist_vwap_96"] = (c - vwap_96) / vwap_96
+        vwap = tp_v.rolling(vwap_window).sum() / (v.rolling(vwap_window).sum() + 1e-9)
+        features[f"dist_vwap_{vwap_window}"] = (c - vwap) / vwap
 
         return features
 
     # --------------------------------------------------------------------------
     # Labeling
     # --------------------------------------------------------------------------
-    def _generate_labels(self, market_df: pd.DataFrame, features_df: pd.DataFrame, horizon: int, threshold: float) -> pd.DataFrame:
+    def _generate_labels(self, market_df: pd.DataFrame, features_df: pd.DataFrame, horizon: int, threshold: float, z_score_threshold: float = 2.0) -> pd.DataFrame:
         """
         Generate Target Labels:
         0: Noise
         1: Trend (TF)
         2: Mean Reversion (MR)
+
+        Note: If both conditions met, MR overwrites TF (conservative approach for trend exhaustion).
         """
         df = features_df.copy()
         c = market_df["close"]
@@ -260,8 +309,13 @@ class XGBMrTrendStep(BaseStep):
         # Future Return
         future_ret = (c.shift(-horizon) - c) / c
 
-        # Current Slope Proxy (using SMA 20 Slope calculated in features)
-        slope = df["sma_20_slope"].fillna(0)
+        # Current Slope Proxy (using SMA slope calculated in features)
+        # Find column name dynamically if window changed, or default to known
+        slope_col = [c for c in df.columns if "sma_" in c and "_slope" in c and "50" not in c]
+        if slope_col:
+            slope = df[slope_col[0]].fillna(0)
+        else:
+            slope = pd.Series(0, index=df.index)
 
         # Z-Score (using z_score_50 from features)
         z_score = df["z_score_50"].fillna(0)
@@ -270,13 +324,13 @@ class XGBMrTrendStep(BaseStep):
         # TF: Sign match AND Return > Threshold
         is_trend = (np.sign(future_ret) == np.sign(slope)) & (future_ret.abs() > threshold)
 
-        # MR: Return < Threshold AND Price Far (Z > 2.0)
-        is_mr = (future_ret.abs() < threshold) & (z_score.abs() > 2.0)
+        # MR: Return < Threshold AND Price Far (Z > Threshold)
+        is_mr = (future_ret.abs() < threshold) & (z_score.abs() > z_score_threshold)
 
         # Assign Targets
         targets = np.zeros(len(df), dtype=int)
         targets[is_trend] = 1
-        targets[is_mr] = 2
+        targets[is_mr] = 2 # Overwrites if overlap
 
         df["target"] = targets
 
@@ -284,7 +338,6 @@ class XGBMrTrendStep(BaseStep):
         df["future_ret_raw"] = future_ret
         df["z_score_raw"] = z_score
 
-        # Drop columns with NaN (burn-in)
         return df
 
     # --------------------------------------------------------------------------
@@ -329,8 +382,6 @@ class XGBMrTrendStep(BaseStep):
         trainer = StandardizedXGBTrainer(model_id, trainer_config)
 
         # Train & Predict (OOF)
-        # Note: StandardizedXGBTrainer handles OOF splitting internally,
-        # but here we pass the FULL dataset with weights.
         results = trainer.train_and_predict(
             X=X,
             y=y,
@@ -346,8 +397,6 @@ class XGBMrTrendStep(BaseStep):
         # Calculate Metrics (on OOF)
         metrics = {}
         if not oof_preds.empty:
-            # Predictions are probs for 0, 1, 2
-            # Use idxmax to get class
             prob_cols = [c for c in oof_preds.columns if "prob_class" in c]
             if prob_cols:
                 pred_class = oof_preds[prob_cols].idxmax(axis=1).apply(lambda x: int(x.split('_')[-1]))
@@ -368,7 +417,7 @@ class XGBMrTrendStep(BaseStep):
     # --------------------------------------------------------------------------
     # Reporting
     # --------------------------------------------------------------------------
-    def _generate_report(self, predictions: pd.DataFrame, targets: pd.Series, metrics: Dict, config: Dict):
+    def _generate_report(self, predictions: pd.DataFrame, targets: pd.Series, metrics: Dict, config: Dict, model: Any = None):
         """Generate summary report."""
         if predictions.empty:
             return
@@ -378,7 +427,6 @@ class XGBMrTrendStep(BaseStep):
         y_true = targets.loc[common_idx]
 
         # Extract Probabilities
-        # Assuming columns prob_class_0, prob_class_1, prob_class_2
         prob_cols = [c for c in predictions.columns if "prob_class" in c]
         if not prob_cols:
              return
@@ -396,6 +444,7 @@ class XGBMrTrendStep(BaseStep):
         report.append(f"**Date:** {datetime.now().isoformat()}")
         report.append(f"**Horizon:** {config.get('mr_trend_horizon')} bars")
         report.append(f"**Threshold:** {config.get('mr_trend_threshold'):.2%}")
+        report.append(f"**Parameters:** SMA={config.get('mr_trend_sma_window', 20)}, Z={config.get('mr_trend_z_score_threshold', 2.0)}, VWAP={config.get('mr_trend_vwap_window', 96)}")
         report.append("\n## Metrics")
 
         # Class 1 (TF) Metrics
@@ -406,13 +455,26 @@ class XGBMrTrendStep(BaseStep):
         mr_m = metrics.get('2', {})
         report.append(f"**MR (Class 2):** Precision: {mr_m.get('precision',0):.2f}, Recall: {mr_m.get('recall',0):.2f}, F1: {mr_m.get('f1-score',0):.2f}")
 
+        # Weighted Avg
+        w_m = metrics.get('weighted avg', {})
+        report.append(f"**Weighted Avg:** Precision: {w_m.get('precision',0):.2f}, Recall: {w_m.get('recall',0):.2f}, F1: {w_m.get('f1-score',0):.2f}")
+
         report.append("\n## Confusion Matrix")
-        # Handle cases where some classes might not exist in small tests
-        labels = [0, 1, 2]
         if cm.shape == (3, 3):
              report.append(f"Noise (0): {cm[0]}")
              report.append(f"Trend (1): {cm[1]}")
              report.append(f"MR (2):    {cm[2]}")
+
+        # Feature Importance
+        if model:
+            try:
+                importance = model.get_score(importance_type='gain')
+                sorted_imp = sorted(importance.items(), key=lambda x: x[1], reverse=True)
+                report.append("\n## Top 10 Features (Gain)")
+                for feat, score in sorted_imp[:10]:
+                    report.append(f"- **{feat}:** {score:.2f}")
+            except Exception:
+                pass
 
         # Save
         filename = f"outcomes/mr_trend_report_{config.get('symbol')}_{int(time.time())}.md"

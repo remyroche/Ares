@@ -15,6 +15,9 @@ from .analyst_ensemble_training_step import AnalystEnsembleTrainingStep
 from .tactician_base_training_step import TacticianBaseTrainingStep
 from .tactician_ensemble_training_step import TacticianEnsembleTrainingStep
 
+# Import gate training step
+from .gate_training_step import GateTrainingStep
+
 # Register unified training step
 step_registry.register("unified_models_training", UnifiedModelsTrainingStep)
 
@@ -23,3 +26,6 @@ step_registry.register("analyst_base_training", AnalystBaseTrainingStep)
 step_registry.register("analyst_ensemble_training", AnalystEnsembleTrainingStep)
 step_registry.register("tactician_base_training", TacticianBaseTrainingStep)
 step_registry.register("tactician_ensemble_training", TacticianEnsembleTrainingStep)
+
+# Register gate training step
+step_registry.register("gate_training_step", GateTrainingStep)

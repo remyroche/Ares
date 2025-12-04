@@ -357,6 +357,7 @@ Examples:
     training_group.add_argument('--train-analyst-ensemble', action='store_true', help='Train analyst ensemble models')
     training_group.add_argument('--train-tactician-base', action='store_true', help='Train tactician base models')
     training_group.add_argument('--train-tactician-ensemble', action='store_true', help='Train tactician ensemble models')
+    training_group.add_argument('--train-gate', action='store_true', help='Train gate model')
     
     # Feature generation interaction generation options
     interaction_group = parser.add_mutually_exclusive_group()
@@ -812,11 +813,16 @@ async def main():
             result = await launcher.run_step(args.sub_pipeline, config)
             print(f"Sub-pipeline '{args.sub_pipeline}' completed: {'✅ Success' if result.get('success') else '❌ Failed'}")
             
-        elif any([args.train_analyst_base, args.train_analyst_ensemble, args.train_tactician_base, args.train_tactician_ensemble]):
+        elif any([args.train_analyst_base, args.train_analyst_ensemble, args.train_tactician_base, args.train_tactician_ensemble, args.train_gate]):
             # Model training execution using specific training steps
             run_backtest_after_training = False
 
-            if args.train_analyst_base:
+            if args.train_gate:
+                step_name = 'gate_training_step'
+                training_type = 'gate'
+                # Gate training has its own context
+                config['execution_context'] = 'gate'
+            elif args.train_analyst_base:
                 step_name = 'analyst_base_training'
                 training_type = 'analyst_base'
                 config['execution_context'] = 'analyst'

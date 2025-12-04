@@ -209,7 +209,7 @@ class FeatureSelectionFramework:
         _LOGGER.debug("🔧 Initializing method configurations...")
         self.method_configs = {
             'mrmr': {
-                'relevance_method': 'mutual_info',
+                'relevance_method': 'hsic',  # HSIC replaces MI for better non-linear dependency capture
                 'redundancy_method': 'correlation',
                 'n_neighbors': 3
             },
@@ -241,6 +241,14 @@ class FeatureSelectionFramework:
                 'stability_threshold': 0.6,
                 'alpha_range': (0.001, 1.0),
                 'cv_folds': 5
+            },
+            'elastic_net_voting': {
+                'n_runs': 100,
+                'sample_fraction': 0.5,
+                'l1_ratios': [0.1, 0.5, 0.7, 0.9, 0.95],
+                'alpha_grid': [0.001, 0.01, 0.05, 0.1, 0.5, 1.0],
+                'quantile_threshold': 0.6,
+                'random_state': 42
             },
             'tree_ensemble': {
                 'cv_folds': 5,
@@ -4658,7 +4666,7 @@ class FeatureSelectionFramework:
         """
         try:
             if methods is None:
-                methods = ['mutual_info', 'importance', 'stability']
+                methods = ['hsic', 'importance', 'elastic_net_stability']
 
             if weights is None:
                 weights = {method: 1.0 / len(methods) for method in methods}
@@ -4679,11 +4687,25 @@ class FeatureSelectionFramework:
             # Calculate scores for each method
             method_scores = {}
             for method in methods:
-                if method == 'mutual_info':
+                if method == 'hsic':
+                    # HSIC-based relevance scoring (recommended, replaces MI)
+                    scores = self._calculate_relevance_scores(X, y, feature_names, 'hsic')
+                elif method == 'mutual_info':
+                    # Legacy MI-based scoring (still available for backward compatibility)
                     scores = self._calculate_relevance_scores(X, y, feature_names, 'mutual_info')
                 elif method == 'importance':
                     scores = self._calculate_importance_scores(X, y, feature_names)
+                elif method == 'elastic_net_stability':
+                    # ElasticNet voting stability (replaces Spearman MI stability)
+                    enet_result = self.elastic_net_voting_stability(
+                        X, y, feature_names, 
+                        n_runs=100, 
+                        sample_fraction=0.5,
+                        quantile_threshold=0.0  # Get all scores, don't filter
+                    )
+                    scores = enet_result.get('stability_scores', {name: 0.0 for name in feature_names})
                 elif method == 'stability':
+                    # Legacy stability scoring
                     scores = self._calculate_stability_scores(X, feature_names)
                 elif method == 'variance':
                     scores = self._calculate_variance_scores(X, feature_names)
@@ -4998,6 +5020,521 @@ class FeatureSelectionFramework:
             execution_time = time.time() - start_time
             _LOGGER.error(f"❌ LASSO stability selection failed after {execution_time:.3f}s: {e}")
             return {'error': str(e), 'selected_features': []}
+
+    def compute_hsic(self, X: np.ndarray, y: np.ndarray, 
+                     kernel: str = 'rbf', 
+                     sigma_x: Optional[float] = None,
+                     sigma_y: Optional[float] = None) -> float:
+        """
+        Compute Hilbert-Schmidt Independence Criterion (HSIC) between X and y.
+        
+        HSIC is a kernel-based measure of statistical dependence that can capture
+        non-linear relationships, making it more powerful than mutual information
+        for detecting complex dependencies.
+        
+        Args:
+            X: Feature matrix or vector (n_samples,) or (n_samples, 1)
+            y: Target variable (n_samples,)
+            kernel: Kernel type ('rbf' for Gaussian RBF, 'linear' for linear kernel)
+            sigma_x: Bandwidth for X kernel (None for median heuristic)
+            sigma_y: Bandwidth for y kernel (None for median heuristic)
+            
+        Returns:
+            HSIC value (higher indicates stronger dependence)
+        """
+        try:
+            # Ensure proper shape
+            X = np.asarray(X).flatten() if X.ndim > 1 and X.shape[1] == 1 else np.asarray(X)
+            y = np.asarray(y).flatten()
+            
+            n = len(y)
+            if n < 10:
+                return 0.0
+                
+            # Handle multi-dimensional X
+            if X.ndim == 1:
+                X = X.reshape(-1, 1)
+            
+            # Compute kernel matrices
+            if kernel == 'rbf':
+                # Use median heuristic for bandwidth if not specified
+                if sigma_x is None:
+                    # Pairwise distances for X
+                    X_diff = X[:, np.newaxis, :] - X[np.newaxis, :, :]
+                    X_dist = np.sqrt(np.sum(X_diff ** 2, axis=2))
+                    sigma_x = np.median(X_dist[X_dist > 0]) if np.any(X_dist > 0) else 1.0
+                    sigma_x = max(sigma_x, 1e-8)
+                    
+                if sigma_y is None:
+                    y_diff = y[:, np.newaxis] - y[np.newaxis, :]
+                    y_dist = np.abs(y_diff)
+                    sigma_y = np.median(y_dist[y_dist > 0]) if np.any(y_dist > 0) else 1.0
+                    sigma_y = max(sigma_y, 1e-8)
+                
+                # Compute RBF kernels
+                X_diff = X[:, np.newaxis, :] - X[np.newaxis, :, :]
+                K_X = np.exp(-np.sum(X_diff ** 2, axis=2) / (2 * sigma_x ** 2))
+                
+                y_diff = y[:, np.newaxis] - y[np.newaxis, :]
+                K_y = np.exp(-y_diff ** 2 / (2 * sigma_y ** 2))
+                
+            elif kernel == 'linear':
+                # Linear kernel
+                K_X = X @ X.T
+                K_y = np.outer(y, y)
+            else:
+                raise ValueError(f"Unknown kernel: {kernel}")
+            
+            # Center the kernel matrices
+            H = np.eye(n) - np.ones((n, n)) / n
+            K_X_centered = H @ K_X @ H
+            K_y_centered = H @ K_y @ H
+            
+            # Compute HSIC
+            hsic = np.trace(K_X_centered @ K_y_centered) / ((n - 1) ** 2)
+            
+            return float(validate_finite(hsic, "hsic"))
+            
+        except Exception as e:
+            _LOGGER.warning(f"⚠️ HSIC computation failed: {e}")
+            return 0.0
+
+    def compute_hsic_features(self, X: np.ndarray, y: np.ndarray,
+                              feature_names: List[str],
+                              kernel: str = 'rbf') -> Dict[str, float]:
+        """
+        Compute HSIC scores for all features in X against target y.
+        
+        This replaces mutual information (MI) with HSIC for feature relevance scoring.
+        HSIC can capture more complex non-linear dependencies than MI.
+        
+        Args:
+            X: Feature matrix (n_samples, n_features)
+            y: Target variable (n_samples,)
+            feature_names: List of feature names
+            kernel: Kernel type ('rbf' or 'linear')
+            
+        Returns:
+            Dictionary mapping feature names to HSIC scores
+        """
+        start_time = time.time()
+        _LOGGER.info(f"🔍 Computing HSIC scores for {len(feature_names)} features...")
+        
+        hsic_scores = {}
+        
+        try:
+            # Standardize features for better kernel performance
+            scaler = StandardScaler()
+            X_scaled = scaler.fit_transform(X)
+            y_scaled = (y - np.mean(y)) / (np.std(y) + 1e-8)
+            
+            # Compute HSIC for each feature
+            for i, name in enumerate(feature_names):
+                hsic_scores[name] = self.compute_hsic(X_scaled[:, i], y_scaled, kernel=kernel)
+                
+            # Normalize scores to [0, 1] range
+            max_score = max(hsic_scores.values()) if hsic_scores else 1.0
+            if max_score > 0:
+                hsic_scores = {k: v / max_score for k, v in hsic_scores.items()}
+            
+            execution_time = time.time() - start_time
+            _LOGGER.info(f"✅ HSIC computation completed in {execution_time:.3f}s")
+            _LOGGER.info(f"📊 Top 5 HSIC scores: {sorted(hsic_scores.items(), key=lambda x: x[1], reverse=True)[:5]}")
+            
+            return hsic_scores
+            
+        except Exception as e:
+            _LOGGER.error(f"❌ HSIC feature scoring failed: {e}")
+            # Fallback to zeros
+            return {name: 0.0 for name in feature_names}
+
+    def hsic_feature_selection(self, X: np.ndarray, y: np.ndarray,
+                               feature_names: List[str],
+                               n_features: Optional[int] = None,
+                               quantile_threshold: float = 0.75,
+                               kernel: str = 'rbf') -> Dict[str, Any]:
+        """
+        HSIC-based feature selection (replaces MI-based selection).
+        
+        Uses Hilbert-Schmidt Independence Criterion for feature relevance scoring.
+        This provides a more robust measure of non-linear dependencies than MI.
+        
+        Args:
+            X: Feature matrix (n_samples, n_features)
+            y: Target variable (n_samples,)
+            feature_names: List of feature names
+            n_features: Target number of features (None for quantile-based selection)
+            quantile_threshold: If n_features is None, select features above this quantile
+            kernel: Kernel type for HSIC ('rbf' or 'linear')
+            
+        Returns:
+            Dictionary with selected features and HSIC analysis
+        """
+        start_time = time.time()
+        _LOGGER.info(f"🔍 Starting HSIC feature selection...")
+        _LOGGER.info(f"📊 Parameters - n_features: {n_features}, quantile: {quantile_threshold}, kernel: {kernel}")
+        
+        try:
+            # Compute HSIC scores
+            hsic_scores = self.compute_hsic_features(X, y, feature_names, kernel=kernel)
+            
+            # Determine selection threshold
+            scores_array = np.array(list(hsic_scores.values()))
+            
+            if n_features is not None:
+                # Select top n_features
+                threshold = np.sort(scores_array)[-min(n_features, len(scores_array))]
+            else:
+                # Use quantile-based threshold
+                threshold = np.quantile(scores_array, quantile_threshold)
+            
+            # Select features above threshold
+            selected_features = [
+                name for name, score in hsic_scores.items()
+                if score >= threshold
+            ]
+            
+            # Sort by score (descending)
+            selected_features = sorted(
+                selected_features,
+                key=lambda x: hsic_scores[x],
+                reverse=True
+            )
+            
+            execution_time = time.time() - start_time
+            
+            result = {
+                'selected_features': selected_features,
+                'hsic_scores': hsic_scores,
+                'threshold': threshold,
+                'selection_metadata': {
+                    'method': 'hsic_feature_selection',
+                    'kernel': kernel,
+                    'n_features_requested': n_features,
+                    'quantile_threshold': quantile_threshold,
+                    'n_features_selected': len(selected_features),
+                    'execution_time': execution_time
+                }
+            }
+            
+            _LOGGER.info(f"✅ HSIC feature selection completed in {execution_time:.3f}s")
+            _LOGGER.info(f"📊 Selected {len(selected_features)} features with threshold {threshold:.4f}")
+            
+            return result
+            
+        except Exception as e:
+            _LOGGER.error(f"❌ HSIC feature selection failed: {e}")
+            return {'error': str(e), 'selected_features': []}
+
+    def elastic_net_voting_stability(self, X: np.ndarray, y: np.ndarray,
+                                     feature_names: List[str],
+                                     n_runs: int = 100,
+                                     sample_fraction: float = 0.5,
+                                     l1_ratios: Optional[List[float]] = None,
+                                     alpha_grid: Optional[List[float]] = None,
+                                     quantile_threshold: float = 0.6,
+                                     random_state: int = 42) -> Dict[str, Any]:
+        """
+        Multi-model ElasticNet voting for stability-based feature selection.
+        
+        This replaces Spearman MI stability with a more robust approach:
+        - Runs ElasticNet 100 times on 50% of the training set
+        - Uses fixed L1/L2 ratio or multiple α values along a grid
+        - Keeps quantile-based approach for selecting number of features
+        
+        Args:
+            X: Feature matrix (n_samples, n_features)
+            y: Target variable (n_samples,)
+            feature_names: List of feature names
+            n_runs: Number of ElasticNet runs (default: 100)
+            sample_fraction: Fraction of training data per run (default: 0.5)
+            l1_ratios: List of L1 ratios to try (None for default [0.1, 0.5, 0.7, 0.9, 0.95])
+            alpha_grid: Grid of alpha values (None for auto-selection via CV)
+            quantile_threshold: Quantile threshold for feature selection (default: 0.6)
+            random_state: Random state for reproducibility
+            
+        Returns:
+            Dictionary with stable features and voting analysis
+        """
+        start_time = time.time()
+        _LOGGER.info(f"🔍 Starting ElasticNet voting stability selection...")
+        _LOGGER.info(f"📊 Parameters - n_runs: {n_runs}, sample_fraction: {sample_fraction}")
+        
+        try:
+            if not SKLEARN_AVAILABLE:
+                raise ImportError("Scikit-learn required for ElasticNet voting")
+            
+            # Default L1 ratios (mix of sparse and ridge-like)
+            if l1_ratios is None:
+                l1_ratios = [0.1, 0.5, 0.7, 0.9, 0.95]
+            
+            # Default alpha grid (log-spaced)
+            if alpha_grid is None:
+                alpha_grid = [0.001, 0.01, 0.05, 0.1, 0.5, 1.0]
+            
+            # Standardize features
+            scaler = StandardScaler()
+            X_scaled = scaler.fit_transform(X)
+            
+            # Initialize vote counts and coefficient accumulators
+            feature_votes = {name: 0 for name in feature_names}
+            feature_coef_sum = {name: 0.0 for name in feature_names}
+            feature_coef_abs_sum = {name: 0.0 for name in feature_names}
+            
+            n_samples = X_scaled.shape[0]
+            sample_size = int(n_samples * sample_fraction)
+            
+            np.random.seed(random_state)
+            
+            run_results = []
+            successful_runs = 0
+            
+            _LOGGER.info(f"🔄 Running {n_runs} ElasticNet iterations...")
+            
+            for run_idx in range(n_runs):
+                try:
+                    # Sample indices (50% of data)
+                    sample_indices = np.random.choice(n_samples, size=sample_size, replace=False)
+                    X_sample = X_scaled[sample_indices]
+                    y_sample = y[sample_indices]
+                    
+                    # Randomly select L1 ratio and alpha for this run
+                    l1_ratio = np.random.choice(l1_ratios)
+                    alpha = np.random.choice(alpha_grid)
+                    
+                    # Fit ElasticNet
+                    enet = ElasticNet(
+                        alpha=alpha,
+                        l1_ratio=l1_ratio,
+                        max_iter=2000,
+                        tol=1e-4,
+                        random_state=random_state + run_idx,
+                        selection='random'  # Faster convergence
+                    )
+                    enet.fit(X_sample, y_sample)
+                    
+                    # Get non-zero coefficients (selected features)
+                    coefs = enet.coef_
+                    selected_mask = np.abs(coefs) > 1e-8
+                    
+                    # Update votes and coefficient sums
+                    for i, name in enumerate(feature_names):
+                        if selected_mask[i]:
+                            feature_votes[name] += 1
+                            feature_coef_sum[name] += coefs[i]
+                            feature_coef_abs_sum[name] += np.abs(coefs[i])
+                    
+                    run_results.append({
+                        'run_idx': run_idx,
+                        'alpha': alpha,
+                        'l1_ratio': l1_ratio,
+                        'n_selected': int(np.sum(selected_mask)),
+                        'selected_features': [feature_names[i] for i in np.where(selected_mask)[0]]
+                    })
+                    
+                    successful_runs += 1
+                    
+                    if (run_idx + 1) % 20 == 0:
+                        _LOGGER.info(f"  Completed {run_idx + 1}/{n_runs} runs...")
+                        
+                except Exception as run_e:
+                    _LOGGER.warning(f"⚠️ Run {run_idx} failed: {run_e}")
+                    continue
+            
+            _LOGGER.info(f"✅ Completed {successful_runs}/{n_runs} successful runs")
+            
+            # Calculate stability scores (selection frequency)
+            stability_scores = {
+                name: votes / successful_runs if successful_runs > 0 else 0.0
+                for name, votes in feature_votes.items()
+            }
+            
+            # Calculate average coefficient magnitude
+            avg_coef_magnitude = {
+                name: feature_coef_abs_sum[name] / feature_votes[name] 
+                if feature_votes[name] > 0 else 0.0
+                for name in feature_names
+            }
+            
+            # Combined score: stability * avg_magnitude
+            combined_scores = {
+                name: stability_scores[name] * (1 + avg_coef_magnitude[name])
+                for name in feature_names
+            }
+            
+            # Select features using quantile threshold
+            scores_array = np.array(list(stability_scores.values()))
+            threshold = np.quantile(scores_array, quantile_threshold)
+            
+            # Select features above threshold
+            selected_features = [
+                name for name, score in stability_scores.items()
+                if score >= threshold
+            ]
+            
+            # Sort by stability score (descending)
+            selected_features = sorted(
+                selected_features,
+                key=lambda x: stability_scores[x],
+                reverse=True
+            )
+            
+            execution_time = time.time() - start_time
+            
+            result = {
+                'selected_features': selected_features,
+                'stability_scores': stability_scores,
+                'combined_scores': combined_scores,
+                'avg_coef_magnitude': avg_coef_magnitude,
+                'feature_votes': feature_votes,
+                'threshold': threshold,
+                'run_results': run_results,
+                'selection_metadata': {
+                    'method': 'elastic_net_voting_stability',
+                    'n_runs': n_runs,
+                    'successful_runs': successful_runs,
+                    'sample_fraction': sample_fraction,
+                    'l1_ratios': l1_ratios,
+                    'alpha_grid': alpha_grid,
+                    'quantile_threshold': quantile_threshold,
+                    'n_features_selected': len(selected_features),
+                    'execution_time': execution_time,
+                    'stability_stats': {
+                        'mean_stability': float(np.mean(scores_array)),
+                        'std_stability': float(np.std(scores_array)),
+                        'max_stability': float(np.max(scores_array)),
+                        'min_stability': float(np.min(scores_array)),
+                        'features_above_threshold': int(np.sum(scores_array >= threshold))
+                    }
+                }
+            }
+            
+            _LOGGER.info(f"✅ ElasticNet voting stability completed in {execution_time:.3f}s")
+            _LOGGER.info(f"📊 Selected {len(selected_features)} features with stability threshold {threshold:.4f}")
+            _LOGGER.info(f"📊 Mean stability: {result['selection_metadata']['stability_stats']['mean_stability']:.3f}")
+            
+            return result
+            
+        except Exception as e:
+            _LOGGER.error(f"❌ ElasticNet voting stability failed: {e}")
+            return {'error': str(e), 'selected_features': []}
+
+    def hsic_elastic_net_combined_selection(self, X: np.ndarray, y: np.ndarray,
+                                            feature_names: List[str],
+                                            hsic_weight: float = 0.4,
+                                            stability_weight: float = 0.6,
+                                            n_features: Optional[int] = None,
+                                            quantile_threshold: float = 0.6,
+                                            n_elastic_net_runs: int = 100,
+                                            sample_fraction: float = 0.5) -> Dict[str, Any]:
+        """
+        Combined HSIC + ElasticNet voting feature selection.
+        
+        This provides a unified approach that combines:
+        1. HSIC for relevance scoring (replaces MI)
+        2. ElasticNet voting for stability (replaces Spearman MI stability)
+        
+        Args:
+            X: Feature matrix (n_samples, n_features)
+            y: Target variable (n_samples,)
+            feature_names: List of feature names
+            hsic_weight: Weight for HSIC scores in combined ranking
+            stability_weight: Weight for stability scores in combined ranking
+            n_features: Target number of features (None for quantile-based)
+            quantile_threshold: Quantile threshold for selection
+            n_elastic_net_runs: Number of ElasticNet runs
+            sample_fraction: Fraction of data per ElasticNet run
+            
+        Returns:
+            Dictionary with selected features and combined analysis
+        """
+        start_time = time.time()
+        _LOGGER.info(f"🔍 Starting combined HSIC + ElasticNet voting selection...")
+        _LOGGER.info(f"📊 Weights - HSIC: {hsic_weight}, Stability: {stability_weight}")
+        
+        try:
+            # Step 1: Compute HSIC scores
+            _LOGGER.info("Step 1/2: Computing HSIC relevance scores...")
+            hsic_result = self.hsic_feature_selection(
+                X, y, feature_names, 
+                n_features=None,  # Get all scores
+                quantile_threshold=0.0,  # Don't filter yet
+                kernel='rbf'
+            )
+            hsic_scores = hsic_result.get('hsic_scores', {})
+            
+            # Step 2: Compute ElasticNet voting stability
+            _LOGGER.info("Step 2/2: Computing ElasticNet voting stability...")
+            enet_result = self.elastic_net_voting_stability(
+                X, y, feature_names,
+                n_runs=n_elastic_net_runs,
+                sample_fraction=sample_fraction,
+                quantile_threshold=0.0  # Don't filter yet
+            )
+            stability_scores = enet_result.get('stability_scores', {})
+            
+            # Step 3: Combine scores
+            combined_scores = {}
+            for name in feature_names:
+                hsic_score = hsic_scores.get(name, 0.0)
+                stability_score = stability_scores.get(name, 0.0)
+                combined_scores[name] = (
+                    hsic_weight * hsic_score + 
+                    stability_weight * stability_score
+                )
+            
+            # Step 4: Select features
+            scores_array = np.array(list(combined_scores.values()))
+            
+            if n_features is not None:
+                # Select top n_features
+                threshold = np.sort(scores_array)[-min(n_features, len(scores_array))]
+            else:
+                # Use quantile-based threshold
+                threshold = np.quantile(scores_array, quantile_threshold)
+            
+            selected_features = [
+                name for name, score in combined_scores.items()
+                if score >= threshold
+            ]
+            
+            # Sort by combined score (descending)
+            selected_features = sorted(
+                selected_features,
+                key=lambda x: combined_scores[x],
+                reverse=True
+            )
+            
+            execution_time = time.time() - start_time
+            
+            result = {
+                'selected_features': selected_features,
+                'combined_scores': combined_scores,
+                'hsic_scores': hsic_scores,
+                'stability_scores': stability_scores,
+                'threshold': threshold,
+                'selection_metadata': {
+                    'method': 'hsic_elastic_net_combined',
+                    'hsic_weight': hsic_weight,
+                    'stability_weight': stability_weight,
+                    'n_features_requested': n_features,
+                    'quantile_threshold': quantile_threshold,
+                    'n_features_selected': len(selected_features),
+                    'execution_time': execution_time,
+                    'hsic_metadata': hsic_result.get('selection_metadata', {}),
+                    'enet_metadata': enet_result.get('selection_metadata', {})
+                }
+            }
+            
+            _LOGGER.info(f"✅ Combined selection completed in {execution_time:.3f}s")
+            _LOGGER.info(f"📊 Selected {len(selected_features)} features")
+            
+            return result
+            
+        except Exception as e:
+            _LOGGER.error(f"❌ Combined HSIC + ElasticNet selection failed: {e}")
+            return {'error': str(e), 'selected_features': []}
+
     def lasso_feature_selection(self, X: np.ndarray, y: np.ndarray,
                                feature_names: List[str],
                                alpha: Optional[float] = None,
@@ -9159,11 +9696,34 @@ class FeatureSelectionFramework:
 
     def _calculate_relevance_scores(self, X: np.ndarray, y: np.ndarray,
                                   feature_names: List[str], method: str) -> Dict[str, float]:
-        """Calculate relevance scores for features."""
+        """Calculate relevance scores for features.
+        
+        Supports multiple methods:
+        - 'hsic': Hilbert-Schmidt Independence Criterion (recommended, captures non-linear dependencies)
+        - 'mutual_info': Mutual Information (legacy, still available)
+        - 'correlation': Pearson correlation
+        - 'importance': Tree-based importance
+        """
         try:
             scores = {}
 
-            if method == 'mutual_info':
+            if method == 'hsic':
+                # Use HSIC for relevance scoring (recommended - captures non-linear dependencies)
+                try:
+                    scores = self.compute_hsic_features(X, y, feature_names, kernel='rbf')
+                except Exception as hsic_e:
+                    _LOGGER.warning(f"⚠️ HSIC computation failed: {hsic_e}, falling back to correlation")
+                    for idx, feature_name in enumerate(feature_names):
+                        try:
+                            corr_matrix = np.corrcoef(X[:, idx], y)
+                            if corr_matrix.ndim == 2 and corr_matrix.shape == (2, 2):
+                                scores[feature_name] = abs(float(corr_matrix[0, 1]))
+                            else:
+                                scores[feature_name] = 0.0
+                        except:
+                            scores[feature_name] = 0.0
+
+            elif method == 'mutual_info':
                 if SKLEARN_AVAILABLE:
                     # Choose appropriate mutual information function based on target type
                     try:

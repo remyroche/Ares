@@ -1154,6 +1154,32 @@ class MLMeanReversionRegimeStep(BaseStep):
         std = close.rolling(bb_w, min_periods=bb_w // 2).std()
         bb_width = (2.0 * std) / (mid.replace(0.0, np.nan))
 
+        # NEW: Bollinger Band Fade (Percent B) for fast and slow windows
+        # Fast BB (window=20, std=2)
+        bb_fast_w = ma_fast
+        bb_fast_mid = close.rolling(bb_fast_w, min_periods=bb_fast_w // 2).mean()
+        bb_fast_std = close.rolling(bb_fast_w, min_periods=bb_fast_w // 2).std()
+        bb_fast_upper = bb_fast_mid + 2.0 * bb_fast_std
+        bb_fast_lower = bb_fast_mid - 2.0 * bb_fast_std
+        bb_pct_b_fast = (close - bb_fast_lower) / (bb_fast_upper - bb_fast_lower + 1e-8)
+
+        # Slow BB (window=50, std=2)
+        bb_slow_w = ma_slow
+        bb_slow_mid = close.rolling(bb_slow_w, min_periods=bb_slow_w // 2).mean()
+        bb_slow_std = close.rolling(bb_slow_w, min_periods=bb_slow_w // 2).std()
+        bb_slow_upper = bb_slow_mid + 2.0 * bb_slow_std
+        bb_slow_lower = bb_slow_mid - 2.0 * bb_slow_std
+        bb_pct_b_slow = (close - bb_slow_lower) / (bb_slow_upper - bb_slow_lower + 1e-8)
+
+        # NEW: Range Fade (Range Position)
+        range_w = ma_slow
+        range_high = high.rolling(range_w, min_periods=range_w // 2).max()
+        range_low = low.rolling(range_w, min_periods=range_w // 2).min()
+        range_pos_slow = (close - range_low) / (range_high - range_low + 1e-8)
+
+        # NEW: Smoothed RSI (3-period SMA of 14-period RSI)
+        rsi_smoothed = rsi.rolling(3).mean()
+
         # Simple volatility + volume state
         ret = close.pct_change().fillna(0.0)
         vol_std = ret.rolling(20, min_periods=10).std()
@@ -1257,6 +1283,11 @@ class MLMeanReversionRegimeStep(BaseStep):
                 "overbought_periods": overbought_periods,
                 "extreme_below_periods": extreme_below_periods,
                 "extreme_above_periods": extreme_above_periods,
+                # NEW: Requested features
+                "bb_pct_b_fast": bb_pct_b_fast,
+                "bb_pct_b_slow": bb_pct_b_slow,
+                "range_pos_slow": range_pos_slow,
+                "rsi_smoothed": rsi_smoothed,
             },
             index=df.index,
         )
@@ -1304,7 +1335,10 @@ class MLMeanReversionRegimeStep(BaseStep):
         # Normalise most features with adaptive normalization (ATR for spatial
         # distance/level features, log1p+zscore for pure volume where applicable,
         # winsorized z-score for the rest). Keep a few core level features raw.
-        exclude = {"z_price_ma_slow", "z_price_vwap", "rsi", "bb_width"}
+        exclude = {
+            "z_price_ma_slow", "z_price_vwap", "rsi", "bb_width",
+            "bb_pct_b_fast", "bb_pct_b_slow", "range_pos_slow", "rsi_smoothed",
+        }
         norm_cols = [c for c in feats.columns if c not in exclude]
         if norm_cols:
             window_size = int(config.get("mr_normalization_window", 500))

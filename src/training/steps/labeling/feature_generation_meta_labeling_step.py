@@ -64,6 +64,14 @@ import xgboost as xgb
 import hashlib
 import pickle
 
+# CatBoost for ensemble (with graceful fallback)
+try:
+    from catboost import CatBoostClassifier
+    CATBOOST_AVAILABLE = True
+except ImportError:
+    CATBOOST_AVAILABLE = False
+    warnings.warn("CatBoost not available - ensemble will use LightGBM/XGBoost/RF only")
+
 # Vectorized computation (if available)
 try:
     import vectorbt as vbt
@@ -255,13 +263,17 @@ def create_triple_barrier_from_hpo(
 # Production TPSL Parameters (overridable via config)
 DEFAULT_PROFIT_THRESHOLD = 0.01  # 1%
 DEFAULT_STOP_THRESHOLD = 0.005   # 0.5%
-DEFAULT_TRANSACTION_COST = 0.0015  # 0.15% per trade
+DEFAULT_TRANSACTION_COST = 0.003  # 0.30% per trade (increased from 0.15% for more realistic modeling)
 R_MULTIPLE_POS_THRESHOLD = 0.7
 R_MULTIPLE_NEG_THRESHOLD = -0.25
 ECON_MIN_RETURN_MULTIPLE = 2.0
 TARGET_POWER = 1.5
 # Hard floor for profit targets to ensure viability after transaction costs
 PROFIT_TARGET_FLOOR_BPS = 50  # 0.5% = 50 basis points (must exceed slippage + fees)
+# Default probability threshold for meta-gating (lowered from 0.65 for more trades)
+DEFAULT_PROBABILITY_THRESHOLD = 0.55
+# Default expected return threshold (lowered from 0.45% to 0.30%)
+DEFAULT_EXPECTED_RETURN_THRESHOLD = 0.003  # 0.30%
 
 
 def purge_training_idxs(
@@ -540,10 +552,18 @@ def generate_primary_signals(
     macd_signal_long: int = 36,  # 4x longer
     macd_threshold: float = 0.02,  # LOOSER difference threshold
     momentum_threshold: Optional[float] = None,  # If None, will be auto-tuned
-    target_trades_per_day: float = 2.0,  # Target signal density for dynamic tuning
+    target_trades_per_day: float = 4.0,  # Target signal density (increased from 2.0 for more signals)
     enable_dynamic_tuning: bool = True,  # Enable auto-tuning of momentum threshold
     use_cusum_filter: bool = True,  # Use CUSUM filter instead of momentum threshold
-    cusum_threshold: float = 0.015  # CUSUM threshold for event detection
+    cusum_threshold: float = 0.015,  # CUSUM threshold for event detection
+    # New parameters for enhanced signals
+    bb_window: int = 20,  # Bollinger Band window
+    bb_std: float = 2.0,  # Bollinger Band standard deviations
+    atr_period: int = 14,  # ATR period for breakout signals
+    atr_mult: float = 1.5,  # ATR multiplier for breakout threshold
+    volume_spike_threshold: float = 2.0,  # Volume spike threshold (multiples of mean)
+    range_window: int = 48,  # Range window for fade signals (12 hours at 15m)
+    mtf_lookback: int = 4,  # Multi-timeframe lookback (4 bars = 1 hour at 15m)
 ) -> pd.DataFrame:
     """
     Generate primary trading signals from technical indicators.
@@ -695,30 +715,144 @@ def generate_primary_signals(
     signals['vol_long'] = vol_long
     signals['vol_expansion'] = vol_expansion_ratio  # Continuous ratio, not boolean
 
-    # ===== CONSENSUS SIGNAL WITH VOLATILITY WEIGHTING =====
-    # Use all signals for consensus (including long-term for multi-timeframe)
-    signal_cols = ['rsi', 'rsi_long', 'macd', 'macd_long', 'ma', 'mom']
+    # ===== NEW SIGNALS: BOLLINGER BAND FADE =====
+    bb_mid = df_local['close'].rolling(bb_window).mean()
+    bb_std_series = df_local['close'].rolling(bb_window).std()
+    bb_upper = bb_mid + bb_std * bb_std_series
+    bb_lower = bb_mid - bb_std * bb_std_series
 
-    # Count raw signals before filtering
-    raw_consensus = signals[signal_cols].sum(axis=1).apply(np.sign)
+    signals['bb_fade'] = 0
+    # Long when price touches/crosses lower band (mean-reversion signal)
+    signals.loc[df_local['close'] <= bb_lower, 'bb_fade'] = 1
+    # Short when price touches/crosses upper band (mean-reversion signal)
+    signals.loc[df_local['close'] >= bb_upper, 'bb_fade'] = -1
+
+    # Store BB values for features
+    signals['bb_upper'] = bb_upper
+    signals['bb_lower'] = bb_lower
+    signals['bb_mid'] = bb_mid
+    signals['bb_width'] = (bb_upper - bb_lower) / (bb_mid + 1e-8)
+
+    # ===== NEW SIGNALS: ATR BREAKOUT =====
+    atr_raw = (df_local['high'] - df_local['low']).rolling(atr_period).mean()
+    close_change = df_local['close'].diff()
+    atr_breakout_threshold = atr_mult * atr_raw
+
+    signals['atr_breakout'] = 0
+    # Long on strong upward breakout
+    signals.loc[close_change > atr_breakout_threshold, 'atr_breakout'] = 1
+    # Short on strong downward breakout
+    signals.loc[close_change < -atr_breakout_threshold, 'atr_breakout'] = -1
+
+    # ===== NEW SIGNALS: VOLUME SPIKE =====
+    if 'volume' in df_local.columns:
+        vol_mean = df_local['volume'].rolling(96).mean()  # 1-day mean
+        vol_ratio = df_local['volume'] / (vol_mean + 1e-8)
+        price_direction = np.sign(df_local['close'].diff())
+
+        signals['volume_spike'] = 0
+        # Volume spike in direction of price move
+        spike_mask = vol_ratio > volume_spike_threshold
+        signals.loc[spike_mask & (price_direction > 0), 'volume_spike'] = 1
+        signals.loc[spike_mask & (price_direction < 0), 'volume_spike'] = -1
+        signals['volume_ratio_signal'] = vol_ratio
+    else:
+        signals['volume_spike'] = 0
+        signals['volume_ratio_signal'] = 1.0
+
+    # ===== NEW SIGNALS: RANGE FADE (Mean-Reversion at Range Extremes) =====
+    range_high = df_local['high'].rolling(range_window).max()
+    range_low = df_local['low'].rolling(range_window).min()
+    range_mid = (range_high + range_low) / 2
+    range_position = (df_local['close'] - range_low) / (range_high - range_low + 1e-8)
+
+    signals['range_fade'] = 0
+    # Long at bottom of range (mean-reversion)
+    signals.loc[range_position < 0.15, 'range_fade'] = 1
+    # Short at top of range (mean-reversion)
+    signals.loc[range_position > 0.85, 'range_fade'] = -1
+    signals['range_position'] = range_position
+
+    # ===== NEW SIGNALS: RSI MEAN-REVERSION (tighter thresholds for low-vol) =====
+    signals['rsi_mr'] = 0
+    # Less extreme thresholds than momentum RSI (35/65 vs 25/75)
+    signals.loc[df_local['rsi'] < 35, 'rsi_mr'] = 1
+    signals.loc[df_local['rsi'] > 65, 'rsi_mr'] = -1
+
+    # ===== NEW SIGNALS: MULTI-TIMEFRAME CONFLUENCE =====
+    # Use higher timeframe signals (aggregated from current data)
+    # 4-bar lookback = 1 hour at 15m timeframe
+    close_mtf = df_local['close'].rolling(mtf_lookback).mean()
+    momentum_mtf = close_mtf.pct_change(mtf_lookback * 2)  # 2-hour momentum
+
+    signals['mtf_trend'] = 0
+    signals.loc[momentum_mtf > 0.005, 'mtf_trend'] = 1  # Bullish MTF
+    signals.loc[momentum_mtf < -0.005, 'mtf_trend'] = -1  # Bearish MTF
+
+    # MTF confluence: current signal agrees with higher timeframe
+    current_momentum = df_local['close'].pct_change(momentum_period)
+    signals['mtf_confluence'] = 0
+    # Strong long: short-term momentum up AND MTF momentum up
+    signals.loc[(current_momentum > 0) & (momentum_mtf > 0), 'mtf_confluence'] = 1
+    # Strong short: short-term momentum down AND MTF momentum down
+    signals.loc[(current_momentum < 0) & (momentum_mtf < 0), 'mtf_confluence'] = -1
+
+    # ===== VOL-AWARE DUAL-MODE CONSENSUS =====
+    # Separate signal types into momentum and mean-reversion categories
+    momentum_cols = ['rsi', 'rsi_long', 'macd', 'macd_long', 'ma', 'mom', 'atr_breakout', 'volume_spike', 'mtf_trend', 'mtf_confluence']
+    mr_cols = ['bb_fade', 'range_fade', 'rsi_mr']
+
+    # Ensure all columns exist
+    for col in momentum_cols + mr_cols:
+        if col not in signals.columns:
+            signals[col] = 0
+
+    # Calculate scores for each signal type
+    momentum_score = signals[momentum_cols].sum(axis=1)
+    mr_score = signals[mr_cols].sum(axis=1)
+
+    # Vol ratio for regime detection (using linear formula, not thresholds)
+    vol_ratio = (vol_short / (vol_long + 1e-8)).fillna(1.0)
+
+    # Linear vol-aware weighting:
+    # vol_ratio < 0.7: favor mean-reversion (low vol, ranging market)
+    # vol_ratio > 1.3: favor momentum (high vol, trending market)
+    # Linear interpolation in between
+    # momentum_weight = clip((vol_ratio - 0.7) / 0.6, 0.2, 0.9)
+    # This gives: vol_ratio=0.7 → mom_weight=0.2, vol_ratio=1.3 → mom_weight=0.9
+    momentum_weight = np.clip((vol_ratio - 0.7) / 0.6, 0.2, 0.9)
+    mr_weight = 1.0 - momentum_weight
+
+    # Count raw signals for funnel
+    all_signal_cols = momentum_cols + mr_cols
+    raw_consensus = signals[all_signal_cols].sum(axis=1).apply(np.sign)
     raw_signal_count = (raw_consensus != 0).sum()
     funnel['raw_signals'] = raw_signal_count
+    funnel['momentum_signals'] = (momentum_score != 0).sum()
+    funnel['mr_signals'] = (mr_score != 0).sum()
 
-    # Apply volatility-weighted consensus
-    # Weight signals by current volatility regime
-    vol_weight = (vol_short / (vol_long + 1e-8)).clip(0.5, 2.0)  # Boost signals in expansion
-    weighted_sum = signals[signal_cols].sum(axis=1) * vol_weight
-    signals['consensus'] = weighted_sum.apply(np.sign)
+    # Weighted consensus: blend momentum and mean-reversion based on vol regime
+    weighted_score = momentum_weight * momentum_score + mr_weight * mr_score
+    signals['consensus'] = weighted_score.apply(np.sign)
 
-    # SIGNAL FUNNEL LOGGING (NO FILTER - wider net for ML to learn from)
+    # Store diagnostic info
+    signals['momentum_weight'] = momentum_weight
+    signals['mr_weight'] = mr_weight
+    signals['vol_ratio_for_consensus'] = vol_ratio
+    signals['momentum_score'] = momentum_score
+    signals['mr_score'] = mr_score
+
+    # SIGNAL FUNNEL LOGGING
     final_signal_count = (signals['consensus'] != 0).sum()
     funnel['final_signals'] = final_signal_count
 
-    tprint(f"📊 Signal Funnel:", "INFO")
+    tprint(f"📊 Signal Funnel (Vol-Aware Dual-Mode):", "INFO")
     tprint(f"  Total bars: {funnel['total_bars']}", "INFO")
     tprint(f"  Raw signals generated: {funnel['raw_signals']}", "INFO")
-    tprint(f"  Final signals (no vol filter): {funnel['final_signals']}", "INFO")
-    tprint(f"  ℹ️  Vol expansion now used as ML feature, not filter", "INFO")
+    tprint(f"  Momentum signals: {funnel['momentum_signals']}", "INFO")
+    tprint(f"  Mean-reversion signals: {funnel['mr_signals']}", "INFO")
+    tprint(f"  Final consensus signals: {funnel['final_signals']}", "INFO")
+    tprint(f"  ℹ️  Using linear vol-aware weighting: low-vol favors MR, high-vol favors momentum", "INFO")
 
     # Store raw indicator values for meta-features (signal disagreement, magnitude, etc.)
     signals['rsi_value'] = df_local['rsi']
@@ -1620,9 +1754,115 @@ def create_meta_features(
     if isinstance(df.index, pd.DatetimeIndex):
         features['hour'] = df.index.hour.to_numpy()
         features['day_of_week'] = df.index.dayofweek.to_numpy()
+
+        # ===== SELECTIVE TIME-OF-DAY PATTERNS (NEW 2025-12-04) =====
+        # Only 5 features: cyclical hour encoding + known good/bad patterns
+        hour_arr = df.index.hour.to_numpy()
+        dow_arr = df.index.dayofweek.to_numpy()
+
+        # Cyclical encoding for hour (captures 24-hour cycle in 2 features)
+        features['hour_sin'] = np.sin(2 * np.pi * hour_arr / 24.0)
+        features['hour_cos'] = np.cos(2 * np.pi * hour_arr / 24.0)
+
+        # Known good/bad hours (from diagnostics - high impact)
+        # Best hours: 3, 5, 10 (win rate > 56%)
+        # Worst hours: 0, 13, 19 (win rate < 45%)
+        features['is_good_hour'] = np.isin(hour_arr, [3, 5, 10]).astype(float)
+        features['is_bad_hour'] = np.isin(hour_arr, [0, 13, 19]).astype(float)
+
+        # Sunday indicator (worst day at 39.5% win rate)
+        features['is_sunday'] = (dow_arr == 6).astype(float)
+
     else:
         features['hour'] = 0
         features['day_of_week'] = 0
+        features['hour_sin'] = 0.0
+        features['hour_cos'] = 1.0
+        features['is_good_hour'] = 0.0
+        features['is_bad_hour'] = 0.0
+        features['is_sunday'] = 0.0
+
+    # ===== ORDER FLOW IMBALANCE (OFI) PROXY (NEW 2025-12-04) =====
+    # Without direct order book data, we approximate OFI using price/volume patterns
+
+    if 'volume' in df.columns:
+        volume = df['volume']
+        close = df['close']
+        high = df['high']
+        low = df['low']
+        open_price = df.get('open', close)
+
+        # 1. Cumulative Volume Delta (CVD) Proxy
+        # Positive when close > open (buying pressure), negative when close < open
+        price_direction = np.sign(close - open_price)
+        signed_volume = volume * price_direction
+        cvd_proxy = signed_volume.cumsum()
+        cvd_normalized = (cvd_proxy - cvd_proxy.rolling(96).mean()) / (cvd_proxy.rolling(96).std() + 1e-8)
+
+        if use_kalman:
+            features['cvd_proxy'] = _align_to_features(cvd_normalized, n_features)
+        else:
+            features['cvd_proxy'] = cvd_normalized.to_numpy()
+
+        # 2. Volume-Weighted Price Pressure
+        # High volume at highs = distribution, high volume at lows = accumulation
+        close_in_range = (close - low) / (high - low + 1e-8)  # 0 = at low, 1 = at high
+        volume_pressure = (close_in_range - 0.5) * volume  # Positive at highs, negative at lows
+        volume_pressure_ema = volume_pressure.ewm(span=20).mean()
+
+        if use_kalman:
+            features['volume_pressure'] = _align_to_features(volume_pressure_ema, n_features)
+        else:
+            features['volume_pressure'] = volume_pressure_ema.to_numpy()
+
+        # 3. OFI Proxy: Buying vs Selling Pressure Ratio
+        # Volume at bar high vs volume at bar low (approximated by body position)
+        upper_wick = high - pd.concat([open_price, close], axis=1).max(axis=1)
+        lower_wick = pd.concat([open_price, close], axis=1).min(axis=1) - low
+        body = (close - open_price).abs()
+        total_range = high - low + 1e-8
+
+        # Rejection from highs (supply) vs rejection from lows (demand)
+        supply_rejection = (upper_wick / total_range) * volume
+        demand_rejection = (lower_wick / total_range) * volume
+        ofi_proxy = (demand_rejection - supply_rejection).rolling(20).sum()
+        ofi_normalized = ofi_proxy / (ofi_proxy.rolling(96).std() + 1e-8)
+
+        if use_kalman:
+            features['ofi_proxy'] = _align_to_features(ofi_normalized, n_features)
+        else:
+            features['ofi_proxy'] = ofi_normalized.to_numpy()
+
+        # 4. Volume Imbalance: Buy Volume vs Sell Volume Estimation
+        # Using close position in high-low range as proxy
+        buy_volume = volume * close_in_range
+        sell_volume = volume * (1 - close_in_range)
+        volume_imbalance = (buy_volume - sell_volume) / (volume + 1e-8)
+        volume_imbalance_ema = volume_imbalance.ewm(span=20).mean()
+
+        if use_kalman:
+            features['volume_imbalance'] = _align_to_features(volume_imbalance_ema, n_features)
+        else:
+            features['volume_imbalance'] = volume_imbalance_ema.to_numpy()
+
+        # 5. Absorption Ratio: Volume at extremes vs mid-range
+        is_at_extreme = (close_in_range < 0.2) | (close_in_range > 0.8)
+        extreme_volume = volume.where(is_at_extreme, 0).rolling(20).sum()
+        total_volume = volume.rolling(20).sum()
+        absorption_ratio = extreme_volume / (total_volume + 1e-8)
+
+        if use_kalman:
+            features['absorption_ratio'] = _align_to_features(absorption_ratio, n_features)
+        else:
+            features['absorption_ratio'] = absorption_ratio.to_numpy()
+
+    else:
+        # No volume data - set defaults
+        features['cvd_proxy'] = 0.0
+        features['volume_pressure'] = 0.0
+        features['ofi_proxy'] = 0.0
+        features['volume_imbalance'] = 0.0
+        features['absorption_ratio'] = 0.0
 
     # Volatility / trend interaction features
     if 'kalman_trend' in features.columns and 'vol_ratio' in features.columns:
@@ -2620,6 +2860,175 @@ def translate_to_targets_with_isotonic(
     target_long = target_long_tail.reindex(realized_returns.index).fillna(0.0)
     target_short = target_short_tail.reindex(realized_returns.index).fillna(0.0)
 
+    return target_long, target_short
+
+
+def generate_strategy_aware_targets(
+    realized_returns: pd.Series,
+    probabilities: np.ndarray,
+    signals: pd.DataFrame,
+    iso_regressor: IsotonicRegression,
+    strategy_type: str = 'trend_following',
+    cost_threshold: float = DEFAULT_TRANSACTION_COST,
+) -> Tuple[pd.Series, pd.Series]:
+    """
+    Generate different targets/labels based on whether the strategy is trend following or mean reversion.
+    
+    Strategy-specific target generation:
+    
+    **Trend Following** (strategy_type='trend_following'):
+    - Uses momentum signals (MACD, MA crossover, ATR breakout, volume spike)
+    - Rewards following the established trend direction
+    - Higher targets when momentum and MTF signals agree
+    - Labels are based on continuation of price movement
+    
+    **Mean Reversion** (strategy_type='mean_reversion'):
+    - Uses mean-reversion signals (Bollinger band fade, RSI extremes, range fade)
+    - Rewards betting against extreme price movements
+    - Higher targets when price is at extreme levels with reversal signals
+    - Labels are based on price returning toward mean
+    
+    Args:
+        realized_returns: Actual returns from triple barrier labeling
+        probabilities: Predicted probabilities from meta-model
+        signals: Signal directions with individual signal columns
+        iso_regressor: Fitted isotonic regression model
+        strategy_type: 'trend_following' or 'mean_reversion'
+        cost_threshold: Transaction cost per trade
+        
+    Returns:
+        Tuple of (target_long, target_short) with strategy-specific targets
+    """
+    target_long = pd.Series(0.0, index=realized_returns.index)
+    target_short = pd.Series(0.0, index=realized_returns.index)
+    
+    n_rr = len(realized_returns)
+    if n_rr == 0:
+        return target_long.copy(), target_short.copy()
+    
+    # Align all arrays to common length
+    n_prob = len(probabilities)
+    n_sig = len(signals)
+    n_common = min(n_rr, n_prob, n_sig)
+    
+    rr_tail = realized_returns.iloc[-n_common:]
+    sig_tail = signals.iloc[-n_common:]
+    prob_tail = np.asarray(probabilities, dtype=float)[-n_common:]
+    
+    target_long_tail = pd.Series(0.0, index=rr_tail.index)
+    target_short_tail = pd.Series(0.0, index=rr_tail.index)
+    
+    # Base expected returns from isotonic regression
+    expected_returns = iso_regressor.predict(prob_tail)
+    expected_returns = np.nan_to_num(expected_returns, nan=0.0, posinf=0.1, neginf=-0.1)
+    
+    # Net-of-cost expected returns
+    net_expected = expected_returns - cost_threshold
+    
+    if strategy_type == 'trend_following':
+        # TREND FOLLOWING: Boost targets when momentum signals are strong
+        # Use momentum-based signal columns
+        momentum_cols = ['rsi', 'rsi_long', 'macd', 'macd_long', 'ma', 'mom', 
+                        'atr_breakout', 'volume_spike', 'mtf_trend', 'mtf_confluence']
+        
+        # Calculate momentum agreement score (how many momentum signals agree)
+        momentum_agreement = pd.Series(0.0, index=sig_tail.index)
+        n_momentum_signals = 0
+        
+        for col in momentum_cols:
+            if col in sig_tail.columns:
+                momentum_agreement += sig_tail[col].fillna(0).abs()
+                n_momentum_signals += 1
+        
+        # Normalize to [0, 1] range
+        if n_momentum_signals > 0:
+            momentum_agreement = momentum_agreement / n_momentum_signals
+            momentum_agreement = momentum_agreement.clip(0, 1)
+        
+        # Apply momentum boost factor (1.0 to 1.5x based on momentum agreement)
+        momentum_boost = 1.0 + 0.5 * momentum_agreement.values
+        
+        # For trend following, we reward strong momentum agreement
+        final_targets = net_expected * momentum_boost
+        
+        # Additional boost when MTF confluence is positive
+        if 'mtf_confluence' in sig_tail.columns:
+            mtf_conf = sig_tail['mtf_confluence'].fillna(0).values
+            mtf_boost = np.where(np.abs(mtf_conf) > 0.5, 1.2, 1.0)
+            final_targets = final_targets * mtf_boost
+        
+        tprint(f"  📈 Trend Following targets: momentum_boost mean={momentum_boost.mean():.3f}", "INFO")
+        
+    elif strategy_type == 'mean_reversion':
+        # MEAN REVERSION: Boost targets when mean-reversion signals are strong
+        # Use mean-reversion signal columns
+        mr_cols = ['bb_fade', 'range_fade', 'rsi_mr']
+        
+        # Calculate mean-reversion strength
+        mr_strength = pd.Series(0.0, index=sig_tail.index)
+        n_mr_signals = 0
+        
+        for col in mr_cols:
+            if col in sig_tail.columns:
+                mr_strength += sig_tail[col].fillna(0).abs()
+                n_mr_signals += 1
+        
+        # Normalize to [0, 1] range
+        if n_mr_signals > 0:
+            mr_strength = mr_strength / n_mr_signals
+            mr_strength = mr_strength.clip(0, 1)
+        
+        # Apply mean-reversion boost factor (1.0 to 1.5x based on MR strength)
+        mr_boost = 1.0 + 0.5 * mr_strength.values
+        
+        # For mean reversion, check if price is at extremes (from range_position)
+        if 'range_position' in sig_tail.columns:
+            range_pos = sig_tail['range_position'].fillna(0.5).values
+            # Boost when at extreme positions (< 0.2 or > 0.8)
+            extreme_mask = (range_pos < 0.2) | (range_pos > 0.8)
+            extreme_boost = np.where(extreme_mask, 1.3, 1.0)
+            mr_boost = mr_boost * extreme_boost
+        
+        # For mean reversion, also boost when volatility is low (ranging market)
+        if 'vol_ratio_for_consensus' in sig_tail.columns:
+            vol_ratio = sig_tail['vol_ratio_for_consensus'].fillna(1.0).values
+            # Low volatility ratio (< 0.8) favors mean reversion
+            low_vol_boost = np.where(vol_ratio < 0.8, 1.2, 1.0)
+            mr_boost = mr_boost * low_vol_boost
+        
+        final_targets = net_expected * mr_boost
+        
+        tprint(f"  📉 Mean Reversion targets: mr_boost mean={mr_boost.mean():.3f}", "INFO")
+        
+    else:
+        # Default: use standard approach without strategy-specific modifications
+        final_targets = net_expected
+        tprint(f"  ⚠️ Unknown strategy_type '{strategy_type}', using default targets", "WARNING")
+    
+    # Apply symmetric clipping
+    final_targets = np.clip(final_targets, -0.15, 0.15)
+    
+    # Assign targets based on signal direction
+    consensus = sig_tail['consensus'].to_numpy() if 'consensus' in sig_tail.columns else np.zeros(n_common)
+    rr_tail_notna = ~rr_tail.isna().to_numpy()
+    
+    long_mask = (consensus > 0) & rr_tail_notna
+    short_mask = (consensus < 0) & rr_tail_notna
+    
+    if len(final_targets) == len(long_mask):
+        target_long_tail.iloc[long_mask] = final_targets[long_mask]
+    if len(final_targets) == len(short_mask):
+        target_short_tail.iloc[short_mask] = final_targets[short_mask]
+    
+    # Reindex to full index
+    target_long = target_long_tail.reindex(realized_returns.index).fillna(0.0)
+    target_short = target_short_tail.reindex(realized_returns.index).fillna(0.0)
+    
+    # Log statistics
+    n_long = (target_long != 0).sum()
+    n_short = (target_short != 0).sum()
+    tprint(f"  📊 Strategy-aware targets ({strategy_type}): {n_long} long, {n_short} short", "INFO")
+    
     return target_long, target_short
 
 
@@ -4126,6 +4535,25 @@ def create_base_models(config: Dict[str, Any], use_focal_loss: bool = True) -> D
         n_jobs=-1,
         random_state=42
     )
+
+    # CatBoost: Handles categorical features and ordinal encoding well (NEW 2025-12-04)
+    if CATBOOST_AVAILABLE:
+        models['catboost'] = CatBoostClassifier(
+            iterations=800,
+            depth=6,
+            learning_rate=0.01,
+            l2_leaf_reg=3.0,
+            border_count=128,
+            bagging_temperature=0.5,
+            random_strength=1.0,
+            auto_class_weights='Balanced',
+            eval_metric='AUC',
+            random_seed=42,
+            verbose=False,
+            allow_writing_files=False,
+            thread_count=-1
+        )
+
     models['logreg'] = LogisticRegression(
         max_iter=1000,
         class_weight='balanced',
@@ -4669,11 +5097,43 @@ def calibrate_ensemble(
         calibrated_predictions = oof_predictions.copy()
         calibrated_predictions = calibrated_predictions.fillna(0.5)
 
-    # STAGE 2: Blend models with soft voting
-    tprint("  📊 Stage 2: Blending models with soft voting...", "INFO")
+    # STAGE 2: Blend models with STACKED GENERALIZATION
+    tprint("  📊 Stage 2: Blending models with stacked generalization...", "INFO")
 
-    # Simple average (can be weighted based on validation performance)
-    ensemble_probs = calibrated_predictions.mean(axis=1)
+    # Use a meta-learner (LogisticRegression) to learn optimal weights from OOF predictions
+    # This is stacked generalization: base model outputs become features for a meta-model
+    try:
+        # Prepare stacking features (calibrated OOF predictions from each base model)
+        stack_features_valid = calibrated_predictions.iloc[valid_mask].fillna(0.5)
+        stack_features_all = calibrated_predictions.fillna(0.5)
+
+        if len(stack_features_valid.columns) >= 2 and len(stack_features_valid) > 50:
+            # Fit meta-learner (simple logistic regression for interpretability)
+            meta_learner = LogisticRegression(
+                max_iter=1000,
+                solver='lbfgs',
+                random_state=42
+            )
+            meta_learner.fit(stack_features_valid, y_valid)
+
+            # Get meta-learner weights for diagnostics
+            meta_weights = dict(zip(stack_features_valid.columns, meta_learner.coef_[0]))
+            tprint(f"    ✓ Stacked generalization meta-weights: {meta_weights}", "INFO")
+
+            # Predict probabilities using meta-learner
+            ensemble_probs = pd.Series(
+                meta_learner.predict_proba(stack_features_all)[:, 1],
+                index=calibrated_predictions.index
+            )
+            tprint("    ✓ Stacked generalization applied", "SUCCESS")
+        else:
+            # Fallback to simple average if insufficient data
+            tprint("    ⚠️ Insufficient data for stacking, using simple average", "WARNING")
+            ensemble_probs = calibrated_predictions.mean(axis=1)
+
+    except Exception as e:
+        tprint(f"    ⚠️ Stacked generalization failed: {e}, using simple average", "WARNING")
+        ensemble_probs = calibrated_predictions.mean(axis=1)
 
     # STAGE 3: Isotonic regression on ensemble output
     tprint("  📈 Stage 3: Applying isotonic regression to ensemble...", "INFO")
@@ -6006,7 +6466,9 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             final_model = final_models.get('rf', list(final_models.values())[0])
 
             # STEP 11: Translate to targets using isotonic regression
-            tprint("🔄 [11/13] Translating probabilities to economic targets...", "INFO")
+            # Strategy-aware target generation: different labels for trend following vs mean reversion
+            strategy_type = config.get('strategy_type', 'auto')  # 'trend_following', 'mean_reversion', or 'auto'
+            tprint(f"🔄 [11/13] Translating probabilities to economic targets (strategy_type={strategy_type})...", "INFO")
 
             if iso_regressor is not None:
                 # Apply symmetric probability clipping if configured/HPO-provided
@@ -6017,12 +6479,54 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                 prob_array = np.asarray(probabilities, dtype=float)
                 prob_clipped = np.clip(prob_array, iso_min_prob, iso_max_prob)
 
-                target_long, target_short = translate_to_targets_with_isotonic(
-                    realized_returns,
-                    prob_clipped,
-                    primary_signals,
-                    iso_regressor
-                )
+                # Use strategy-aware target generation if strategy_type is specified
+                if strategy_type in ['trend_following', 'mean_reversion']:
+                    tprint(f"  📊 Using strategy-aware target generation: {strategy_type}", "INFO")
+                    target_long, target_short = generate_strategy_aware_targets(
+                        realized_returns,
+                        prob_clipped,
+                        primary_signals,
+                        iso_regressor,
+                        strategy_type=strategy_type,
+                        cost_threshold=transaction_cost
+                    )
+                elif strategy_type == 'auto':
+                    # Auto-detect strategy based on signal composition
+                    # Use volatility ratio to determine dominant regime
+                    if 'vol_ratio_for_consensus' in primary_signals.columns:
+                        mean_vol_ratio = primary_signals['vol_ratio_for_consensus'].mean()
+                        if mean_vol_ratio < 0.85:
+                            detected_strategy = 'mean_reversion'
+                            tprint(f"  🔍 Auto-detected strategy: mean_reversion (vol_ratio={mean_vol_ratio:.3f})", "INFO")
+                        else:
+                            detected_strategy = 'trend_following'
+                            tprint(f"  🔍 Auto-detected strategy: trend_following (vol_ratio={mean_vol_ratio:.3f})", "INFO")
+                        
+                        target_long, target_short = generate_strategy_aware_targets(
+                            realized_returns,
+                            prob_clipped,
+                            primary_signals,
+                            iso_regressor,
+                            strategy_type=detected_strategy,
+                            cost_threshold=transaction_cost
+                        )
+                    else:
+                        # Fallback to default isotonic translation
+                        tprint("  ⚠️ Cannot auto-detect strategy, using default translation", "WARNING")
+                        target_long, target_short = translate_to_targets_with_isotonic(
+                            realized_returns,
+                            prob_clipped,
+                            primary_signals,
+                            iso_regressor
+                        )
+                else:
+                    # Default: use standard isotonic translation
+                    target_long, target_short = translate_to_targets_with_isotonic(
+                        realized_returns,
+                        prob_clipped,
+                        primary_signals,
+                        iso_regressor
+                    )
 
                 # Optional symmetric quantile clipping of target magnitudes
                 # Now handles both positive and negative targets
@@ -6332,8 +6836,10 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                             r_train = r_all[train_pos]
                             E_train = E_hat_all[train_pos] if E_hat_all is not None else None
 
-                            prob_thresholds = [0.55, 0.60, 0.65, 0.70, 0.75]
-                            er_multipliers = [1.0, 2.0, 3.0]
+                            # Updated thresholds (2025-12-04): lower probability threshold for more trades
+                            # and lower expected return multipliers for 0.30% target
+                            prob_thresholds = [0.50, 0.55, 0.60, 0.65, 0.70]
+                            er_multipliers = [0.5, 1.0, 1.5, 2.0]  # Lower multipliers for 0.30% target with 0.30% tx_cost
                             tx_cost = float(transaction_cost)
 
                             def _evaluate_gate_local(p_arr, r_arr, E_arr, p_thr_val, E_thr_val):
@@ -6404,10 +6910,11 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                                 }
 
                         # Fallback if no valid configuration found
+                        # Updated defaults (2025-12-04): lower thresholds for more trades
                         if best_cfg is None:
                             best_cfg = {
-                                "prob_threshold": 0.60,
-                                "expected_return_threshold": float(transaction_cost * 2.0),
+                                "prob_threshold": DEFAULT_PROBABILITY_THRESHOLD,  # 0.55
+                                "expected_return_threshold": DEFAULT_EXPECTED_RETURN_THRESHOLD,  # 0.30%
                                 "mean_return": 0.0,
                                 "sharpe": 0.0,
                                 "n_trades": 0,

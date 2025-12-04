@@ -743,7 +743,7 @@ def _calc_time_since(condition, index):
 
     # Apply robust normalization (log1p + rolling z-score)
     # This handles the long-tail nature of "time since" features
-    return log1p_zscore_normalize(time_since)
+    return log1p_zscore_normalize(time_since.fillna(0))
 
 # --- New Time-Based Feature Generators ---
 
@@ -1025,6 +1025,36 @@ def create_default_time_generators() -> List[FeatureGenerator]:
         HourCosGenerator(),
         DayOfWeekSinGenerator(),
         DayOfWeekCosGenerator(),
+    ]
+
+def create_advanced_time_generators() -> List[FeatureGenerator]:
+    """Create advanced time feature generators including intraday patterns and momentum."""
+    return [
+        # All basic generators
+        *create_default_time_generators(),
+
+        # Time Since Last Vol Spike
+        TimeSinceLastVolSpikeGenerator(),
+
+        # Additional Time-Since Features
+        TimeSinceTrendImpulseGenerator(),
+        TimeSinceLocalHighGenerator(),
+        TimeSinceLocalLowGenerator(),
+        TimeSinceBreakoutGenerator(),
+        TimeSinceLargeCandleGenerator(),
+        TimeSinceLiquiditySweepGenerator(),
+        TimeSinceSidewaysRegimeGenerator(),
+        TimeSinceRSICrossGenerator(),
+        TimeSinceMACDCrossGenerator(),
+        TimeSinceVWAPCrossGenerator(),
+        TimeSinceMeanReversionSignalGenerator(),
+    ]
+
+def create_advanced_time_generators() -> List[FeatureGenerator]:
+    """Create advanced time feature generators including intraday patterns and momentum."""
+    return [
+        # All basic generators
+        *create_default_time_generators(),
 
         # Time Since Last Vol Spike
         TimeSinceLastVolSpikeGenerator(),

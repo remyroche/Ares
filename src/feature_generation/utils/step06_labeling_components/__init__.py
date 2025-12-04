@@ -21,6 +21,11 @@ from .trend_aware_meta_labeling import (
     BollingerBandsSignal,
     OBVDivergence,
     ZigZagResult,
+    # Multi-timeframe classes
+    MultiTimeframeConfig,
+    TrendConfluence,
+    MultiTimeframeTrendResult,
+    # Factory functions
     create_trend_aware_meta_labeler,
     apply_trend_aware_meta_labeling,
 )
@@ -55,6 +60,7 @@ __all__ = [
     'FractionalTripleBarrierLabeling',
     'RegimeAwareTripleBarrierLabeling',
     'ProfitBasedFeatureEngineering',
+    # Trend-aware meta-labeling
     'TrendAwareMetaLabeler',
     'TrendAwareTripleBarrierConfig',
     'TrendDirection',
@@ -62,8 +68,14 @@ __all__ = [
     'BollingerBandsSignal',
     'OBVDivergence',
     'ZigZagResult',
+    # Multi-timeframe
+    'MultiTimeframeConfig',
+    'TrendConfluence',
+    'MultiTimeframeTrendResult',
+    # Factory functions
     'create_trend_aware_meta_labeler',
     'apply_trend_aware_meta_labeling',
+    # Availability flags
     'OPTIMIZED_LABELING_AVAILABLE',
     'FRACTIONAL_LABELING_AVAILABLE',
     'REGIME_AWARE_LABELING_AVAILABLE',

@@ -61,6 +61,16 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+def _trend_to_str(trend_val: int) -> str:
+    """Convert trend value to string representation."""
+    if trend_val == 1:
+        return "up"
+    elif trend_val == -1:
+        return "down"
+    else:
+        return "side"
+
+
 class TrendDirection(Enum):
     """Trend direction enumeration."""
     UP = 1
@@ -112,6 +122,60 @@ class ZigZagResult:
     swing_slope: float = 0.0
     swing_count: int = 0
     pivots: List[Tuple[int, float, str]] = field(default_factory=list)  # (index, price, type)
+
+
+@dataclass
+class MultiTimeframeConfig:
+    """Configuration for multi-timeframe ZigZag analysis."""
+    # Base timeframe (inferred from data or specified)
+    base_timeframe: str = "15min"
+    
+    # Higher timeframes to analyze
+    # Each entry: (timeframe_name, resample_rule)
+    # Common mappings: 1H = "1H", 4H = "4H", 1D = "1D"
+    higher_timeframes: List[Tuple[str, str]] = field(default_factory=lambda: [
+        ("1H", "1H"),      # 1 hour
+        ("4H", "4H"),      # 4 hours  
+        ("1D", "1D"),      # 1 day
+    ])
+    
+    # ZigZag parameters per timeframe (can be customized)
+    # If not specified, uses default scaled by timeframe
+    zigzag_params_per_tf: Dict[str, Dict[str, float]] = field(default_factory=dict)
+    
+    # Whether to include confluence/conflict features
+    include_confluence_features: bool = True
+    
+    # Confluence scoring weights (higher timeframe = more weight)
+    timeframe_weights: Dict[str, float] = field(default_factory=lambda: {
+        "base": 1.0,
+        "1H": 1.5,
+        "4H": 2.0,
+        "1D": 2.5,
+    })
+
+
+class TrendConfluence(Enum):
+    """Multi-timeframe trend confluence classification."""
+    STRONG_BULLISH = 3      # All timeframes aligned bullish
+    BULLISH = 2             # Majority bullish
+    WEAK_BULLISH = 1        # Slight bullish bias
+    NEUTRAL = 0             # Mixed/sideways
+    WEAK_BEARISH = -1       # Slight bearish bias
+    BEARISH = -2            # Majority bearish
+    STRONG_BEARISH = -3     # All timeframes aligned bearish
+
+
+@dataclass
+class MultiTimeframeTrendResult:
+    """Result of multi-timeframe trend analysis."""
+    base_trend: int = 0                    # Base timeframe trend (-1, 0, 1)
+    higher_tf_trends: Dict[str, int] = field(default_factory=dict)  # {tf_name: trend}
+    confluence: TrendConfluence = TrendConfluence.NEUTRAL
+    confluence_score: float = 0.0          # -1 to 1 weighted score
+    alignment_ratio: float = 0.0           # % of timeframes aligned with base
+    conflict_detected: bool = False        # True if base conflicts with higher TF
+    dominant_trend: int = 0                # Trend with most weight
 
 
 @dataclass
@@ -705,6 +769,502 @@ class TrendAwareMetaLabeler:
         return result
     
     # =========================================================================
+    # MULTI-TIMEFRAME ZIGZAG ANALYSIS
+    # =========================================================================
+    
+    @log_all_calls
+    def resample_ohlc(
+        self,
+        data: pd.DataFrame,
+        target_timeframe: str
+    ) -> pd.DataFrame:
+        """Resample OHLC data to a higher timeframe.
+        
+        Args:
+            data: DataFrame with OHLC data and DatetimeIndex
+            target_timeframe: Target timeframe (e.g., '1H', '4H', '1D')
+            
+        Returns:
+            Resampled OHLC DataFrame
+        """
+        if not isinstance(data.index, pd.DatetimeIndex):
+            self.logger.warning("Data index is not DatetimeIndex, cannot resample")
+            return data
+        
+        # Define aggregation rules for OHLC
+        agg_rules = {
+            'open': 'first',
+            'high': 'max',
+            'low': 'min',
+            'close': 'last',
+        }
+        
+        # Add volume if present
+        if 'volume' in data.columns:
+            agg_rules['volume'] = 'sum'
+        
+        # Filter columns that exist
+        agg_rules = {k: v for k, v in agg_rules.items() if k in data.columns}
+        
+        # Resample
+        resampled = data.resample(target_timeframe).agg(agg_rules)
+        
+        # Remove rows with NaN (incomplete periods)
+        resampled = resampled.dropna()
+        
+        return resampled
+    
+    @log_all_calls
+    def detect_zigzag_multi_timeframe(
+        self,
+        data: pd.DataFrame,
+        mtf_config: Optional[MultiTimeframeConfig] = None
+    ) -> pd.DataFrame:
+        """Detect ZigZag trend across multiple timeframes.
+        
+        Labels each bar with both base-timeframe swing and higher-timeframe 
+        trend directions. This allows ML models to learn confluence/conflict 
+        situations.
+        
+        Example output columns:
+        - trend_base: Base timeframe trend (from data's native timeframe)
+        - trend_1H: 1-hour timeframe trend
+        - trend_4H: 4-hour timeframe trend
+        - trend_1D: Daily timeframe trend
+        - mtf_confluence: Overall trend confluence score
+        - mtf_alignment: Alignment ratio across timeframes
+        - mtf_conflict: Whether base conflicts with higher timeframes
+        
+        Args:
+            data: DataFrame with OHLC data and DatetimeIndex
+            mtf_config: Multi-timeframe configuration
+            
+        Returns:
+            DataFrame with multi-timeframe trend labels
+        """
+        mtf_config = mtf_config or MultiTimeframeConfig()
+        
+        self.logger.info("🔄 Starting multi-timeframe ZigZag analysis")
+        self.logger.info(f"   Base timeframe: {mtf_config.base_timeframe}")
+        self.logger.info(f"   Higher timeframes: {[tf[0] for tf in mtf_config.higher_timeframes]}")
+        
+        n = len(data)
+        result = pd.DataFrame(index=data.index)
+        
+        # 1. Analyze base timeframe
+        base_zigzag = self.detect_zigzag_trend(
+            data,
+            use_atr=self.config.use_atr_for_zigzag,
+            pct_threshold=self.config.zigzag_pct_threshold,
+            atr_multiplier=self.config.zigzag_atr_multiplier
+        )
+        
+        # Store base timeframe results with prefix
+        result['trend_base'] = base_zigzag['zigzag_trend_direction'].values
+        result['swing_base'] = base_zigzag['zigzag_current_swing'].values
+        result['trend_strength_base'] = base_zigzag['trend_strength'].values
+        result['pivot_type_base'] = base_zigzag['zigzag_pivot_type'].values
+        
+        # Copy all base zigzag features with prefix
+        for col in base_zigzag.columns:
+            if col not in result.columns:
+                result[f'base_{col}'] = base_zigzag[col].values
+        
+        # 2. Analyze each higher timeframe
+        higher_tf_trends = {}
+        
+        for tf_name, resample_rule in mtf_config.higher_timeframes:
+            self.logger.info(f"   Analyzing {tf_name} timeframe...")
+            
+            # Get ZigZag parameters for this timeframe
+            tf_params = mtf_config.zigzag_params_per_tf.get(tf_name, {})
+            pct_threshold = tf_params.get('pct_threshold', self.config.zigzag_pct_threshold * 1.5)
+            atr_multiplier = tf_params.get('atr_multiplier', self.config.zigzag_atr_multiplier * 1.2)
+            
+            try:
+                # Resample data to higher timeframe
+                resampled_data = self.resample_ohlc(data, resample_rule)
+                
+                if len(resampled_data) < 10:
+                    self.logger.warning(f"   Insufficient data for {tf_name} (only {len(resampled_data)} bars)")
+                    # Fill with zeros
+                    result[f'trend_{tf_name}'] = 0
+                    result[f'swing_{tf_name}'] = 0
+                    result[f'trend_strength_{tf_name}'] = 0.0
+                    higher_tf_trends[tf_name] = np.zeros(n, dtype=np.int8)
+                    continue
+                
+                # Run ZigZag on resampled data
+                htf_zigzag = self.detect_zigzag_trend(
+                    resampled_data,
+                    use_atr=self.config.use_atr_for_zigzag,
+                    pct_threshold=pct_threshold,
+                    atr_multiplier=atr_multiplier
+                )
+                
+                # Map higher timeframe results back to base timeframe
+                # Using forward-fill to propagate HTF trend to all base bars
+                htf_trend = htf_zigzag['zigzag_trend_direction']
+                htf_swing = htf_zigzag['zigzag_current_swing']
+                htf_strength = htf_zigzag['trend_strength']
+                
+                # Reindex to base timeframe with forward fill
+                result[f'trend_{tf_name}'] = htf_trend.reindex(
+                    data.index, method='ffill'
+                ).fillna(0).astype(np.int8).values
+                
+                result[f'swing_{tf_name}'] = htf_swing.reindex(
+                    data.index, method='ffill'
+                ).fillna(0).astype(np.int8).values
+                
+                result[f'trend_strength_{tf_name}'] = htf_strength.reindex(
+                    data.index, method='ffill'
+                ).fillna(0).values
+                
+                higher_tf_trends[tf_name] = result[f'trend_{tf_name}'].values
+                
+                self.logger.info(f"   {tf_name}: {len(resampled_data)} bars, "
+                               f"up={(htf_trend == 1).sum()}, "
+                               f"down={(htf_trend == -1).sum()}")
+                
+            except Exception as e:
+                self.logger.warning(f"   Error analyzing {tf_name}: {e}")
+                result[f'trend_{tf_name}'] = 0
+                result[f'swing_{tf_name}'] = 0
+                result[f'trend_strength_{tf_name}'] = 0.0
+                higher_tf_trends[tf_name] = np.zeros(n, dtype=np.int8)
+        
+        # 3. Calculate multi-timeframe confluence features
+        if mtf_config.include_confluence_features:
+            result = self._calculate_mtf_confluence_features(
+                result, 
+                higher_tf_trends, 
+                mtf_config
+            )
+        
+        # 4. Add categorical multi-timeframe labels
+        result = self._add_mtf_categorical_labels(result, higher_tf_trends, mtf_config)
+        
+        self.logger.info(f"✅ Multi-timeframe ZigZag analysis complete")
+        self.logger.info(f"   Generated {len(result.columns)} features")
+        
+        return result
+    
+    def _calculate_mtf_confluence_features(
+        self,
+        result: pd.DataFrame,
+        higher_tf_trends: Dict[str, np.ndarray],
+        mtf_config: MultiTimeframeConfig
+    ) -> pd.DataFrame:
+        """Calculate multi-timeframe confluence and conflict features.
+        
+        Args:
+            result: Result DataFrame with trend columns
+            higher_tf_trends: Dict of higher timeframe trends
+            mtf_config: Multi-timeframe configuration
+            
+        Returns:
+            DataFrame with confluence features added
+        """
+        n = len(result)
+        base_trend = result['trend_base'].values
+        
+        # Initialize arrays
+        confluence_score = np.zeros(n, dtype=np.float64)
+        alignment_ratio = np.zeros(n, dtype=np.float64)
+        conflict_detected = np.zeros(n, dtype=np.int8)
+        weighted_trend = np.zeros(n, dtype=np.float64)
+        bullish_count = np.zeros(n, dtype=np.int8)
+        bearish_count = np.zeros(n, dtype=np.int8)
+        
+        # Get weights
+        base_weight = mtf_config.timeframe_weights.get('base', 1.0)
+        
+        for i in range(n):
+            total_weight = base_weight
+            weighted_sum = base_trend[i] * base_weight
+            aligned_count = 0
+            total_tf_count = 1  # Start with base
+            
+            if base_trend[i] == 1:
+                bullish_count[i] += 1
+            elif base_trend[i] == -1:
+                bearish_count[i] += 1
+            
+            for tf_name, tf_trend in higher_tf_trends.items():
+                weight = mtf_config.timeframe_weights.get(tf_name, 1.0)
+                trend_val = tf_trend[i]
+                
+                total_weight += weight
+                weighted_sum += trend_val * weight
+                total_tf_count += 1
+                
+                if trend_val == 1:
+                    bullish_count[i] += 1
+                elif trend_val == -1:
+                    bearish_count[i] += 1
+                
+                # Check alignment with base
+                if base_trend[i] != 0 and trend_val == base_trend[i]:
+                    aligned_count += 1
+                elif base_trend[i] != 0 and trend_val != 0 and trend_val != base_trend[i]:
+                    conflict_detected[i] = 1
+            
+            # Calculate weighted confluence score (-1 to 1)
+            confluence_score[i] = weighted_sum / total_weight if total_weight > 0 else 0
+            
+            # Calculate alignment ratio
+            if base_trend[i] != 0:
+                alignment_ratio[i] = aligned_count / (total_tf_count - 1) if total_tf_count > 1 else 0
+            else:
+                alignment_ratio[i] = 0
+            
+            weighted_trend[i] = weighted_sum
+        
+        # Determine dominant trend
+        dominant_trend = np.where(
+            confluence_score > 0.3, 1,
+            np.where(confluence_score < -0.3, -1, 0)
+        )
+        
+        # Classify confluence strength
+        confluence_class = np.zeros(n, dtype=np.int8)
+        for i in range(n):
+            score = confluence_score[i]
+            bull = bullish_count[i]
+            bear = bearish_count[i]
+            total = bull + bear + (1 if base_trend[i] == 0 else 0)
+            
+            if bull == total and total > 1:
+                confluence_class[i] = 3  # STRONG_BULLISH
+            elif bear == total and total > 1:
+                confluence_class[i] = -3  # STRONG_BEARISH
+            elif score > 0.5:
+                confluence_class[i] = 2  # BULLISH
+            elif score < -0.5:
+                confluence_class[i] = -2  # BEARISH
+            elif score > 0.2:
+                confluence_class[i] = 1  # WEAK_BULLISH
+            elif score < -0.2:
+                confluence_class[i] = -1  # WEAK_BEARISH
+            else:
+                confluence_class[i] = 0  # NEUTRAL
+        
+        # Add to result
+        result['mtf_confluence_score'] = confluence_score
+        result['mtf_alignment_ratio'] = alignment_ratio
+        result['mtf_conflict'] = conflict_detected
+        result['mtf_weighted_trend'] = weighted_trend
+        result['mtf_dominant_trend'] = dominant_trend
+        result['mtf_confluence_class'] = confluence_class
+        result['mtf_bullish_count'] = bullish_count
+        result['mtf_bearish_count'] = bearish_count
+        
+        # Calculate trend agreement score (how many TFs agree)
+        total_tfs = 1 + len(higher_tf_trends)  # base + higher TFs
+        result['mtf_trend_agreement'] = (bullish_count - bearish_count) / total_tfs
+        
+        # Identify specific confluence/conflict patterns
+        result['mtf_all_aligned_up'] = (bullish_count == total_tfs).astype(int)
+        result['mtf_all_aligned_down'] = (bearish_count == total_tfs).astype(int)
+        result['mtf_mixed_signals'] = ((bullish_count > 0) & (bearish_count > 0)).astype(int)
+        
+        # Higher timeframe bias (ignoring base)
+        if len(higher_tf_trends) > 0:
+            htf_bullish = np.zeros(n, dtype=np.int8)
+            htf_bearish = np.zeros(n, dtype=np.int8)
+            for tf_trend in higher_tf_trends.values():
+                htf_bullish += (tf_trend == 1).astype(np.int8)
+                htf_bearish += (tf_trend == -1).astype(np.int8)
+            
+            result['mtf_htf_bullish_count'] = htf_bullish
+            result['mtf_htf_bearish_count'] = htf_bearish
+            result['mtf_htf_bias'] = (htf_bullish - htf_bearish) / len(higher_tf_trends)
+            
+            # Base vs Higher TF conflict
+            result['mtf_base_vs_htf_conflict'] = (
+                ((base_trend == 1) & (htf_bearish > htf_bullish)) |
+                ((base_trend == -1) & (htf_bullish > htf_bearish))
+            ).astype(int)
+        
+        return result
+    
+    def _add_mtf_categorical_labels(
+        self,
+        result: pd.DataFrame,
+        higher_tf_trends: Dict[str, np.ndarray],
+        mtf_config: MultiTimeframeConfig
+    ) -> pd.DataFrame:
+        """Add categorical labels for multi-timeframe trends.
+        
+        Creates human-readable categorical labels for ML interpretation.
+        
+        Args:
+            result: Result DataFrame
+            higher_tf_trends: Dict of higher timeframe trends
+            mtf_config: Multi-timeframe configuration
+            
+        Returns:
+            DataFrame with categorical labels added
+        """
+        # Base trend categorical
+        result['trend_base_cat'] = pd.Categorical(
+            np.where(result['trend_base'] == 1, 'up',
+                     np.where(result['trend_base'] == -1, 'down', 'sideways')),
+            categories=['up', 'down', 'sideways']
+        )
+        
+        # Higher timeframe categoricals
+        for tf_name in higher_tf_trends.keys():
+            col_name = f'trend_{tf_name}'
+            if col_name in result.columns:
+                result[f'{col_name}_cat'] = pd.Categorical(
+                    np.where(result[col_name] == 1, 'up',
+                             np.where(result[col_name] == -1, 'down', 'sideways')),
+                    categories=['up', 'down', 'sideways']
+                )
+        
+        # Confluence categorical
+        confluence_labels = {
+            3: 'strong_bullish',
+            2: 'bullish',
+            1: 'weak_bullish',
+            0: 'neutral',
+            -1: 'weak_bearish',
+            -2: 'bearish',
+            -3: 'strong_bearish'
+        }
+        
+        result['mtf_confluence_cat'] = pd.Categorical(
+            [confluence_labels.get(v, 'neutral') for v in result['mtf_confluence_class']],
+            categories=['strong_bearish', 'bearish', 'weak_bearish', 'neutral',
+                       'weak_bullish', 'bullish', 'strong_bullish'],
+            ordered=True
+        )
+        
+        # Combined multi-timeframe state (e.g., "base_up_1H_down_4H_up")
+        def create_mtf_state(row):
+            parts = [f"base_{_trend_to_str(row['trend_base'])}"]
+            for tf_name in higher_tf_trends.keys():
+                col = f'trend_{tf_name}'
+                if col in row:
+                    parts.append(f"{tf_name}_{_trend_to_str(row[col])}")
+            return "_".join(parts)
+        
+        # Create composite state column (useful for stratified sampling)
+        result['mtf_composite_state'] = result.apply(create_mtf_state, axis=1)
+        
+        return result
+    
+    @log_all_calls
+    def generate_mtf_trend_features(
+        self,
+        data: pd.DataFrame,
+        mtf_config: Optional[MultiTimeframeConfig] = None,
+        include_base_features: bool = True
+    ) -> pd.DataFrame:
+        """Generate comprehensive multi-timeframe trend features.
+        
+        This is the main entry point for multi-timeframe analysis.
+        Combines base ZigZag features with higher timeframe trends.
+        
+        Args:
+            data: DataFrame with OHLC data and DatetimeIndex
+            mtf_config: Optional multi-timeframe configuration
+            include_base_features: Whether to include all base zigzag features
+            
+        Returns:
+            DataFrame with complete multi-timeframe features
+        """
+        mtf_config = mtf_config or MultiTimeframeConfig()
+        
+        self.logger.info("🌐 Generating multi-timeframe trend features")
+        
+        # Get multi-timeframe ZigZag analysis
+        mtf_result = self.detect_zigzag_multi_timeframe(data, mtf_config)
+        
+        # Add interaction features between timeframes
+        mtf_result = self._add_mtf_interaction_features(mtf_result, mtf_config)
+        
+        self.logger.info(f"✅ Generated {len(mtf_result.columns)} multi-timeframe features")
+        
+        return mtf_result
+    
+    def _add_mtf_interaction_features(
+        self,
+        result: pd.DataFrame,
+        mtf_config: MultiTimeframeConfig
+    ) -> pd.DataFrame:
+        """Add interaction features between timeframes.
+        
+        Captures relationships like:
+        - Trend transitions (base changing while HTF stable)
+        - Momentum divergence across timeframes
+        - Confluence strength changes
+        
+        Args:
+            result: DataFrame with MTF features
+            mtf_config: Multi-timeframe configuration
+            
+        Returns:
+            DataFrame with interaction features added
+        """
+        # Trend transition detection
+        base_trend = result['trend_base'].values
+        
+        # Base trend changes
+        result['trend_base_change'] = np.diff(base_trend, prepend=base_trend[0])
+        result['trend_base_just_turned_up'] = (
+            (result['trend_base_change'] > 0) & (base_trend == 1)
+        ).astype(int)
+        result['trend_base_just_turned_down'] = (
+            (result['trend_base_change'] < 0) & (base_trend == -1)
+        ).astype(int)
+        
+        # Compare trend strength across timeframes
+        if 'trend_strength_base' in result.columns:
+            strength_cols = [c for c in result.columns if c.startswith('trend_strength_')]
+            if len(strength_cols) > 1:
+                # Average higher TF strength
+                htf_strength_cols = [c for c in strength_cols if c != 'trend_strength_base']
+                if htf_strength_cols:
+                    result['mtf_avg_htf_strength'] = result[htf_strength_cols].mean(axis=1)
+                    result['mtf_strength_ratio'] = (
+                        result['trend_strength_base'] / 
+                        (result['mtf_avg_htf_strength'] + 1e-8)
+                    )
+                    
+                    # Strength divergence (base strong but HTF weak or vice versa)
+                    result['mtf_strength_divergence'] = (
+                        result['trend_strength_base'] - result['mtf_avg_htf_strength']
+                    )
+        
+        # Confluence momentum (change in confluence score)
+        if 'mtf_confluence_score' in result.columns:
+            result['mtf_confluence_momentum'] = result['mtf_confluence_score'].diff().fillna(0)
+            result['mtf_confluence_accelerating'] = (
+                result['mtf_confluence_momentum'].diff().fillna(0) > 0
+            ).astype(int)
+        
+        # Trend persistence features
+        for tf_name in ['base'] + [tf[0] for tf in mtf_config.higher_timeframes]:
+            col = f'trend_{tf_name}'
+            if col in result.columns:
+                trend = result[col].values
+                
+                # Count consecutive bars in same trend
+                streak = np.zeros(len(trend), dtype=np.int32)
+                for i in range(1, len(trend)):
+                    if trend[i] == trend[i-1] and trend[i] != 0:
+                        streak[i] = streak[i-1] + 1
+                    else:
+                        streak[i] = 0
+                
+                result[f'{col}_streak'] = streak
+        
+        return result
+    
+    # =========================================================================
     # TREND-AWARE TRIPLE BARRIER LABELING
     # =========================================================================
     
@@ -984,7 +1544,9 @@ class TrendAwareMetaLabeler:
     def generate_trend_aware_features(
         self,
         data: pd.DataFrame,
-        include_labels: bool = True
+        include_labels: bool = True,
+        include_multi_timeframe: bool = False,
+        mtf_config: Optional[MultiTimeframeConfig] = None
     ) -> pd.DataFrame:
         """Generate comprehensive trend-aware features for meta-labeling.
         
@@ -992,11 +1554,14 @@ class TrendAwareMetaLabeler:
         - Bollinger Bands signals (squeeze, breakout)
         - OBV Divergence detection
         - ZigZag trend analysis
+        - Multi-timeframe trend labels (optional)
         - Trend-aware labels (if requested)
         
         Args:
             data: DataFrame with OHLCV data
             include_labels: Whether to include triple barrier labels
+            include_multi_timeframe: Whether to include multi-timeframe analysis
+            mtf_config: Optional multi-timeframe configuration
             
         Returns:
             DataFrame with all trend-aware features
@@ -1020,7 +1585,7 @@ class TrendAwareMetaLabeler:
         else:
             self.logger.warning("   Skipping OBV (no volume data)")
         
-        # 3. ZigZag Trend
+        # 3. ZigZag Trend (base timeframe)
         self.logger.info("   Computing ZigZag trend analysis...")
         zigzag_features = self.detect_zigzag_trend(
             data,
@@ -1032,11 +1597,21 @@ class TrendAwareMetaLabeler:
             if col not in result.columns:
                 result[col] = zigzag_features[col].values
         
-        # 4. Confluence features
+        # 4. Multi-timeframe ZigZag analysis (optional)
+        if include_multi_timeframe:
+            self.logger.info("   Computing multi-timeframe trend analysis...")
+            mtf_features = self.generate_mtf_trend_features(data, mtf_config)
+            
+            # Add MTF features (avoiding duplicates)
+            for col in mtf_features.columns:
+                if col not in result.columns and not col.startswith('base_'):
+                    result[col] = mtf_features[col].values
+        
+        # 5. Confluence features
         self.logger.info("   Computing confluence signals...")
         result = self._add_confluence_features(result, bb_features, zigzag_features)
         
-        # 5. Triple barrier labels with trend awareness
+        # 6. Triple barrier labels with trend awareness
         if include_labels:
             self.logger.info("   Computing trend-aware triple barrier labels...")
             labeled_result = self.apply_trend_aware_triple_barrier(data, zigzag_features)
@@ -1233,7 +1808,9 @@ def create_trend_aware_meta_labeler(
 def apply_trend_aware_meta_labeling(
     data: pd.DataFrame,
     config: Optional[TrendAwareTripleBarrierConfig] = None,
-    include_labels: bool = True
+    include_labels: bool = True,
+    include_multi_timeframe: bool = False,
+    mtf_config: Optional[MultiTimeframeConfig] = None
 ) -> pd.DataFrame:
     """Apply trend-aware meta-labeling to data.
     
@@ -1243,12 +1820,53 @@ def apply_trend_aware_meta_labeling(
         data: DataFrame with OHLCV data
         config: Optional configuration
         include_labels: Whether to include triple barrier labels
+        include_multi_timeframe: Whether to include multi-timeframe analysis
+        mtf_config: Optional multi-timeframe configuration
         
     Returns:
         DataFrame with trend-aware features and labels
     """
     labeler = create_trend_aware_meta_labeler(config)
-    return labeler.generate_trend_aware_features(data, include_labels=include_labels)
+    return labeler.generate_trend_aware_features(
+        data, 
+        include_labels=include_labels,
+        include_multi_timeframe=include_multi_timeframe,
+        mtf_config=mtf_config
+    )
+
+
+def apply_multi_timeframe_labeling(
+    data: pd.DataFrame,
+    config: Optional[TrendAwareTripleBarrierConfig] = None,
+    mtf_config: Optional[MultiTimeframeConfig] = None,
+    include_labels: bool = True
+) -> pd.DataFrame:
+    """Apply multi-timeframe trend labeling to data.
+    
+    Labels each bar with both base-timeframe swing and higher-timeframe 
+    trend directions. This is ideal for training models that need to learn
+    confluence/conflict situations between timeframes.
+    
+    Example output:
+        trend_base = UP, trend_1H = DOWN → model learns conflict
+        trend_base = UP, trend_1H = UP, trend_4H = UP → model learns confluence
+    
+    Args:
+        data: DataFrame with OHLCV data and DatetimeIndex
+        config: Optional trend-aware configuration
+        mtf_config: Optional multi-timeframe configuration
+        include_labels: Whether to include triple barrier labels
+        
+    Returns:
+        DataFrame with multi-timeframe trend features and optional labels
+    """
+    labeler = create_trend_aware_meta_labeler(config)
+    return labeler.generate_trend_aware_features(
+        data,
+        include_labels=include_labels,
+        include_multi_timeframe=True,
+        mtf_config=mtf_config
+    )
 
 
 # =============================================================================
@@ -1258,9 +1876,9 @@ def apply_trend_aware_meta_labeling(
 if __name__ == "__main__":
     from src.utils.tprint import tprint
     
-    # Create sample data
+    # Create sample data (15-minute bars for 2 weeks)
     np.random.seed(42)
-    n = 1000
+    n = 1344  # ~14 days of 15m bars
     dates = pd.date_range('2024-01-01', periods=n, freq='15min')
     
     # Generate price data with trends
@@ -1279,9 +1897,9 @@ if __name__ == "__main__":
     data['high'] = data[['open', 'high', 'close']].max(axis=1)
     data['low'] = data[['open', 'low', 'close']].min(axis=1)
     
-    tprint("=" * 60)
-    tprint("Testing TrendAwareMetaLabeler")
-    tprint("=" * 60)
+    tprint("=" * 70)
+    tprint("Testing TrendAwareMetaLabeler with Multi-Timeframe Analysis")
+    tprint("=" * 70)
     
     # Create labeler with custom config
     config = TrendAwareTripleBarrierConfig(
@@ -1291,33 +1909,116 @@ if __name__ == "__main__":
         use_atr_for_zigzag=True
     )
     
+    # Create multi-timeframe config
+    mtf_config = MultiTimeframeConfig(
+        base_timeframe="15min",
+        higher_timeframes=[
+            ("1H", "1H"),   # 1 hour
+            ("4H", "4H"),   # 4 hours
+        ],
+        include_confluence_features=True,
+        timeframe_weights={
+            "base": 1.0,
+            "1H": 1.5,
+            "4H": 2.0,
+        }
+    )
+    
     labeler = TrendAwareMetaLabeler(config)
     
-    # Generate features
-    result = labeler.generate_trend_aware_features(data, include_labels=True)
+    # =========================================================================
+    # Test 1: Single timeframe features
+    # =========================================================================
+    tprint("\n" + "=" * 50)
+    tprint("Test 1: Single Timeframe Features")
+    tprint("=" * 50)
     
-    tprint(f"\nGenerated features: {len(result.columns)}")
-    tprint(f"Sample count: {len(result)}")
+    result_single = labeler.generate_trend_aware_features(
+        data, 
+        include_labels=True,
+        include_multi_timeframe=False
+    )
+    
+    tprint(f"\nGenerated features: {len(result_single.columns)}")
+    tprint(f"Sample count: {len(result_single)}")
     
     # Show feature categories
-    bb_cols = [c for c in result.columns if c.startswith('bb_')]
-    obv_cols = [c for c in result.columns if c.startswith('obv')]
-    zigzag_cols = [c for c in result.columns if c.startswith('zigzag_')]
-    confluence_cols = [c for c in result.columns if c.startswith('confluence_')]
+    bb_cols = [c for c in result_single.columns if c.startswith('bb_')]
+    obv_cols = [c for c in result_single.columns if c.startswith('obv')]
+    zigzag_cols = [c for c in result_single.columns if c.startswith('zigzag_')]
+    confluence_cols = [c for c in result_single.columns if c.startswith('confluence_')]
     
     tprint(f"\nBollinger Bands features: {len(bb_cols)}")
     tprint(f"OBV features: {len(obv_cols)}")
     tprint(f"ZigZag features: {len(zigzag_cols)}")
     tprint(f"Confluence features: {len(confluence_cols)}")
     
-    if 'label' in result.columns:
-        tprint(f"\nLabel distribution:")
-        tprint(f"   LONG (1): {(result['label'] == 1).sum()}")
-        tprint(f"   SHORT (-1): {(result['label'] == -1).sum()}")
+    # =========================================================================
+    # Test 2: Multi-timeframe features
+    # =========================================================================
+    tprint("\n" + "=" * 50)
+    tprint("Test 2: Multi-Timeframe Features")
+    tprint("=" * 50)
+    
+    result_mtf = labeler.generate_trend_aware_features(
+        data,
+        include_labels=True,
+        include_multi_timeframe=True,
+        mtf_config=mtf_config
+    )
+    
+    tprint(f"\nGenerated features: {len(result_mtf.columns)}")
+    tprint(f"Sample count: {len(result_mtf)}")
+    
+    # Show multi-timeframe specific features
+    mtf_cols = [c for c in result_mtf.columns if c.startswith('mtf_') or c.startswith('trend_')]
+    tprint(f"\nMulti-timeframe features: {len(mtf_cols)}")
+    
+    # Show trend columns
+    trend_cols = [c for c in result_mtf.columns if c.startswith('trend_') and not c.endswith('_cat')]
+    tprint(f"\nTrend columns:")
+    for col in sorted(trend_cols):
+        if col in result_mtf.columns:
+            vals = result_mtf[col]
+            up = (vals == 1).sum()
+            down = (vals == -1).sum()
+            side = (vals == 0).sum()
+            tprint(f"   {col}: UP={up}, DOWN={down}, SIDE={side}")
+    
+    # Show confluence statistics
+    if 'mtf_confluence_score' in result_mtf.columns:
+        tprint(f"\nMulti-timeframe confluence statistics:")
+        tprint(f"   Mean score: {result_mtf['mtf_confluence_score'].mean():.3f}")
+        tprint(f"   Std score: {result_mtf['mtf_confluence_score'].std():.3f}")
         
-        if 'signal_weight' in result.columns:
-            tprint(f"\nSignal weight statistics:")
-            tprint(f"   Mean: {result['signal_weight'].mean():.3f}")
-            tprint(f"   Std: {result['signal_weight'].std():.3f}")
-            tprint(f"   Min: {result['signal_weight'].min():.3f}")
-            tprint(f"   Max: {result['signal_weight'].max():.3f}")
+    if 'mtf_alignment_ratio' in result_mtf.columns:
+        tprint(f"   Mean alignment: {result_mtf['mtf_alignment_ratio'].mean():.2%}")
+        
+    if 'mtf_conflict' in result_mtf.columns:
+        conflict_pct = result_mtf['mtf_conflict'].mean() * 100
+        tprint(f"   Conflict rate: {conflict_pct:.1f}%")
+    
+    if 'mtf_all_aligned_up' in result_mtf.columns:
+        all_up = result_mtf['mtf_all_aligned_up'].sum()
+        all_down = result_mtf['mtf_all_aligned_down'].sum()
+        mixed = result_mtf['mtf_mixed_signals'].sum()
+        tprint(f"\n   All TFs aligned UP: {all_up} bars")
+        tprint(f"   All TFs aligned DOWN: {all_down} bars")
+        tprint(f"   Mixed signals: {mixed} bars")
+    
+    # Show composite state distribution (top 5)
+    if 'mtf_composite_state' in result_mtf.columns:
+        tprint(f"\nTop composite states:")
+        state_counts = result_mtf['mtf_composite_state'].value_counts().head(5)
+        for state, count in state_counts.items():
+            tprint(f"   {state}: {count} ({count/len(result_mtf)*100:.1f}%)")
+    
+    # Show label distribution
+    if 'label' in result_mtf.columns:
+        tprint(f"\nLabel distribution:")
+        tprint(f"   LONG (1): {(result_mtf['label'] == 1).sum()}")
+        tprint(f"   SHORT (-1): {(result_mtf['label'] == -1).sum()}")
+    
+    tprint("\n" + "=" * 70)
+    tprint("✅ All tests completed successfully!")
+    tprint("=" * 70)

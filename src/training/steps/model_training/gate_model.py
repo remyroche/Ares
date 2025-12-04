@@ -112,6 +112,62 @@ class GateModel:
         # Signal-to-Noise Ratio (Momentum / Volatility)
         features['snr'] = features['momentum_short'].abs() / (features['rv_short'] + 1e-8)
 
+        # 4. New Features (Vol Spike, Large Candle, Time)
+        # Volatility Spike (Z-score > 2.0)
+        # Using simple rolling mean/std for Z-score of rv_short
+        rv_mean = features['rv_short'].rolling(window=100, min_periods=20).mean()
+        rv_std = features['rv_short'].rolling(window=100, min_periods=20).std()
+        rv_z = (features['rv_short'] - rv_mean) / (rv_std + 1e-8)
+
+        # Binary spike mask
+        is_vol_spike = (rv_z > 2.0).astype(int)
+
+        # Time since last vol spike
+        # Use cumulative sum to identify groups reset by spike
+        # Or simpler: get indices where spike=1, reindex and ffill
+        # Create a Series with values equal to index where spike occurs
+        spike_times = pd.Series(np.nan, index=df.index)
+        spike_indices = df.index[is_vol_spike == 1]
+
+        # Cast to object to hold timestamps safely
+        spike_times = spike_times.astype('object')
+
+        if len(spike_indices) > 0:
+            spike_times.loc[spike_indices] = spike_indices
+            spike_times = spike_times.ffill()
+
+            # Calculate bars since (not time) as requested "bars"
+            # Since index might not be uniform, we can use rank/position
+            # Efficient way for bars:
+            # Create an integer index series
+            int_index = pd.Series(np.arange(len(df)), index=df.index)
+            last_spike_int_idx = int_index.where(is_vol_spike == 1).ffill()
+            features['time_since_last_vol_spike'] = int_index - last_spike_int_idx
+            features['time_since_last_vol_spike'] = features['time_since_last_vol_spike'].fillna(1000)
+        else:
+            features['time_since_last_vol_spike'] = 1000.0
+
+        # Large Candle (Range > 2.5 * ATR)
+        candle_range = high - low
+        # Use existing atr_short (12 period)
+        is_large_candle = (candle_range > 2.5 * features['atr_short']).astype(int)
+
+        large_candle_int_idx = int_index.where(is_large_candle == 1).ffill()
+        features['time_since_last_large_candle'] = int_index - large_candle_int_idx
+        features['time_since_last_large_candle'] = features['time_since_last_large_candle'].fillna(1000)
+
+        # Time Features (Cyclical)
+        if isinstance(df.index, pd.DatetimeIndex):
+            hour = df.index.hour
+            features['hour_sin'] = np.sin(2 * np.pi * hour / 24)
+            features['hour_cos'] = np.cos(2 * np.pi * hour / 24)
+            features['is_weekend'] = (df.index.dayofweek >= 5).astype(int)
+        else:
+            # Fallback if index is not datetime (e.g. integer index)
+            features['hour_sin'] = 0.0
+            features['hour_cos'] = 0.0
+            features['is_weekend'] = 0
+
         return features
 
     def _compute_trade_history_features(self, ohlcv: pd.DataFrame, trade_log: pd.DataFrame) -> pd.DataFrame:

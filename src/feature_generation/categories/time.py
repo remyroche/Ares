@@ -624,17 +624,75 @@ class TimeBasedVolumeProfileGenerator(VectorBTTimeFeatureGenerator):
 
             return pd.Series(result, index=data.index)
 
+class TimeSinceLastVolSpikeGenerator(VectorBTTimeFeatureGenerator):
+    def __init__(self):
+        config = FeatureConfig(
+            name="time_since_last_vol_spike",
+            category=FeatureCategory.TIME,
+            description="Time since last volatility spike (z-score > threshold)",
+            required_columns=['close'],
+            default_lookback=20,
+            parameters={'threshold': 2.0, 'baseline_window': 100},
+            use_vectorbt=True
+        )
+        super().__init__(config)
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        data = self._optimize_dataframe_processing(data)
+        window = kwargs.get('window', self.config.default_lookback)
+        threshold = kwargs.get('threshold', self.config.parameters['threshold'])
+        baseline_window = kwargs.get('baseline_window', self.config.parameters['baseline_window'])
+
+        # Calculate returns
+        close = data['close']
+        returns = close.pct_change()
+
+        # Calculate Volatility (rolling std of returns)
+        vol = self._vectorbt_rolling_operation(returns, 'std', window)
+
+        # Calculate Z-Score of Volatility (relative to baseline)
+        vol_mean = self._vectorbt_rolling_operation(vol, 'mean', baseline_window)
+        vol_std = self._vectorbt_rolling_operation(vol, 'std', baseline_window)
+
+        # Avoid division by zero
+        vol_zscore = (vol - vol_mean) / vol_std.replace(0, np.nan)
+
+        # Identify spikes
+        is_spike = vol_zscore > threshold
+
+        # Calculate time since spike using vectorized approach
+        positions = pd.Series(np.arange(len(data)), index=data.index)
+        spike_positions = positions.where(is_spike)
+        last_spike_position = spike_positions.ffill()
+
+        time_since = positions - last_spike_position
+
+        # Fill initial NaNs with 0
+        time_since = time_since.fillna(0)
+
+        return time_since
+
 def create_default_time_generators() -> List[FeatureGenerator]:
-    """Create streamlined time feature generators with full VectorBT optimization."""
+    """Create basic/cyclical time feature generators."""
     return [
         # Basic hour features
         HourGenerator(),
 
-        # Cyclical encodings (ML compatible)
+        # Cyclical encodings (ML compatible) - This is what the user specifically requested
         HourSinGenerator(),
         HourCosGenerator(),
         DayOfWeekSinGenerator(),
         DayOfWeekCosGenerator(),
+
+        # Time Since Last Vol Spike
+        TimeSinceLastVolSpikeGenerator(),
+    ]
+
+def create_advanced_time_generators() -> List[FeatureGenerator]:
+    """Create advanced time feature generators including intraday patterns and momentum."""
+    return [
+        # All basic generators
+        *create_default_time_generators(),
 
         # Intraday pattern features
         MarketOpenGenerator(),
@@ -647,15 +705,6 @@ def create_default_time_generators() -> List[FeatureGenerator]:
         HourlyVolatilityGenerator(),
         TimeBasedMomentumGenerator(),
         TimeBasedVolumeProfileGenerator(),
-    ]
-
-def create_advanced_time_generators() -> List[FeatureGenerator]:
-    """Create advanced time feature generators with full VectorBT optimization."""
-    return [
-        # All basic generators
-        *create_default_time_generators(),
-
-        # Additional advanced features can be added here
     ]
 
 def create_time_feature_batch(data: pd.DataFrame, generators: List[FeatureGenerator] = None) -> pd.DataFrame:

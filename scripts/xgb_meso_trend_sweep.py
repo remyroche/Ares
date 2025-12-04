@@ -172,7 +172,12 @@ def evaluate_trading_effectiveness(args: argparse.Namespace) -> None:
         window_mask = (df_full[timestamp_col] >= test_start) & (
             df_full[timestamp_col] <= test_end
         )
+        # Attempt to load target vol if available, for fee estimation
+        has_vol = "meso_trend_target_vol" in df_full.columns
         cols = ["meso_trend_target", "meso_trend_score_continuous"]
+        if has_vol:
+            cols.append("meso_trend_target_vol")
+
         df_test = df_full.loc[window_mask, cols]
 
         if df_test is None or df_test.empty:
@@ -192,14 +197,18 @@ def evaluate_trading_effectiveness(args: argparse.Namespace) -> None:
 
         target = df_test["meso_trend_target"].astype(float)
         score = df_test["meso_trend_score_continuous"].astype(float)
+        vol = df_test["meso_trend_target_vol"].astype(float) if has_vol else None
+
+        # Calculate duration in days for trades/day metric
+        total_days = (test_end - test_start).total_seconds() / 86400.0
 
         print("\n🔎 Trading effectiveness on test window (vol-normalized target):")
         print(
             f"   Test window: {test_start} → {test_end} "
-            f"(n={len(df_test)})"
+            f"(n={len(df_test)}, days={total_days:.1f})"
         )
 
-        def compute_stats(returns: pd.Series, label: str) -> None:
+        def compute_stats(returns: pd.Series, label: str, vol_col: pd.Series = None) -> None:
             if returns is None or returns.empty:
                 print(f"\n⚠️ {label}: no returns to evaluate.")
                 return
@@ -208,22 +217,46 @@ def evaluate_trading_effectiveness(args: argparse.Namespace) -> None:
             std_ret = float(returns.std(ddof=0))
             sharpe = mean_ret / std_ret if std_ret > 0 else float("nan")
             hit_rate = float((returns > 0).mean())
+            trades_per_day = len(returns) / total_days
 
             print(f"\n📈 {label}:")
             print(f"   Samples (trades): {len(returns)}")
+            print(f"   Avg trades/day: {trades_per_day:.1f}")
             print(f"   Mean (per-sample): {mean_ret:.4f}")
             print(f"   Std  (per-sample): {std_ret:.4f}")
             print(f"   Sharpe (per-sample, unannualized): {sharpe:.3f}")
             print(f"   Hit rate (>0): {hit_rate:.3%}")
+
+            if vol_col is not None:
+                # 0.3% fee per round trade.
+                # Since target is vol-normalized (target_raw / vol),
+                # we must subtract (fee / vol) to get net vol-normalized return.
+                # Fee is always positive cost, so we subtract from the PnL vector.
+                # Align vol to returns index
+                vol_subset = vol_col.loc[returns.index]
+                cost_penalty = 0.003 / (vol_subset + 1e-8)
+                net_returns = returns - cost_penalty
+
+                mean_net = float(net_returns.mean())
+                std_net = float(net_returns.std(ddof=0))
+                sharpe_net = mean_net / std_net if std_net > 0 else float("nan")
+                hit_rate_net = float((net_returns > 0).mean())
+
+                print(f"   -- With 0.3% fees --")
+                print(f"   Mean (Net): {mean_net:.4f}")
+                print(f"   Sharpe (Net): {sharpe_net:.3f}")
+                print(f"   Hit rate (Net): {hit_rate_net:.3%}")
 
         # Strategy 1: Long/short by sign of meso score (uses all samples with non-zero score)
         pos_ls = pd.Series(np.sign(score.values), index=score.index)
         mask_ls = pos_ls != 0
         if mask_ls.any():
             ret_ls = pos_ls[mask_ls] * target[mask_ls]
+            vol_ls = vol[mask_ls] if vol is not None else None
             compute_stats(
                 ret_ls,
                 "Meso score long/short on vol-normalized target (non-zero scores)",
+                vol_ls
             )
         else:
             print("\n⚠️ Long/short strategy: all meso scores are zero; no trades.")
@@ -235,9 +268,11 @@ def evaluate_trading_effectiveness(args: argparse.Namespace) -> None:
             mask_lf = pos_lf > 0
             if mask_lf.any():
                 ret_lf = pos_lf[mask_lf] * target[mask_lf]
+                vol_lf = vol[mask_lf] if vol is not None else None
                 compute_stats(
                     ret_lf,
                     "Meso score long/flat (top 20%) on vol-normalized target",
+                    vol_lf
                 )
             else:
                 print(

@@ -588,7 +588,7 @@ class IncrementalLGBMTrainer(BaseIncrementalTrainer):
         y = train_data['__target__'].values
         X = np.nan_to_num(X, nan=0.0)
         
-        X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
+        X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, shuffle=False)
         
         train_ds = lgb.Dataset(X_train, label=y_train)
         val_ds = lgb.Dataset(X_val, label=y_val, reference=train_ds)
@@ -596,11 +596,12 @@ class IncrementalLGBMTrainer(BaseIncrementalTrainer):
         params = self._get_default_params()
         params.update(self._best_params)
         n_est = params.pop('n_estimators', 500)
+        early_stopping_rounds = params.pop('early_stopping_rounds', 50)
         
         model = lgb.train(
             params, train_ds, num_boost_round=n_est,
             valid_sets=[train_ds, val_ds],
-            callbacks=[lgb.early_stopping(35), lgb.log_evaluation(0)]
+            callbacks=[lgb.early_stopping(early_stopping_rounds), lgb.log_evaluation(0)]
         )
         
         # Wrap and calibrate
@@ -625,13 +626,14 @@ class IncrementalLGBMTrainer(BaseIncrementalTrainer):
         y = full_train_data['__target__'].values
         X = np.nan_to_num(X, nan=0.0)
         
-        X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
+        X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, shuffle=False)
         
         train_ds = lgb.Dataset(X_train, label=y_train)
         val_ds = lgb.Dataset(X_val, label=y_val, reference=train_ds)
         
         params = self._get_default_params()
         params.update(self._best_params)
+        early_stopping_rounds = params.pop('early_stopping_rounds', 20)
         
         # Access base model from wrapper
         prev_lgbm = self._current_model.base_model
@@ -640,7 +642,7 @@ class IncrementalLGBMTrainer(BaseIncrementalTrainer):
             params, train_ds, num_boost_round=100,
             valid_sets=[train_ds, val_ds],
             init_model=prev_lgbm,
-            callbacks=[lgb.early_stopping(20), lgb.log_evaluation(0)]
+            callbacks=[lgb.early_stopping(early_stopping_rounds), lgb.log_evaluation(0)]
         )
         
         calibrated_model = CalibratedModel(model, self.config.task_type)
@@ -687,7 +689,7 @@ class IncrementalLGBMTrainer(BaseIncrementalTrainer):
         X = train_data[self._feature_cols].values.astype(np.float32)
         y = train_data['__target__'].values
         X = np.nan_to_num(X, nan=0.0)
-        X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
+        X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, shuffle=False)
         
         current_best = self._best_params.copy()
         radius = self.config.hpo_neighborhood_radius
@@ -771,7 +773,7 @@ class IncrementalNGBoostTrainer(BaseIncrementalTrainer):
         y = train_data['__target__'].values
         X = np.nan_to_num(X, nan=0.0)
         
-        X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
+        X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, shuffle=False)
         
         params = self._get_default_params()
         params.update(self._best_params)
@@ -783,12 +785,14 @@ class IncrementalNGBoostTrainer(BaseIncrementalTrainer):
             if k not in ('base_learner_max_depth', 'base_learner_min_samples_leaf', 'base_learner_params')
         }
         
+        early_stopping_rounds = params.pop('early_stopping_rounds', 35)
+
         if self.config.task_type == 'classification':
             model = NGBClassifier(Dist=Normal, Base=base_learner, **ng_params)
         else:
             model = NGBRegressor(Dist=Normal, Base=base_learner, **ng_params)
 
-        model.fit(X_train, y_train, X_val=X_val, Y_val=y_val, early_stopping_rounds=35)
+        model.fit(X_train, y_train, X_val=X_val, Y_val=y_val, early_stopping_rounds=early_stopping_rounds)
         
         calibrated_model = CalibratedModel(model, self.config.task_type)
         calibrated_model.fit_calibration(X_val, y_val)
@@ -837,7 +841,7 @@ class IncrementalNGBoostTrainer(BaseIncrementalTrainer):
         X = train_data[self._feature_cols].values.astype(np.float64)
         y = train_data['__target__'].values
         X = np.nan_to_num(X, nan=0.0)
-        X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
+        X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, shuffle=False)
         
         current_best = self._best_params.copy()
         radius = self.config.hpo_neighborhood_radius
@@ -912,7 +916,7 @@ class IncrementalKNNTrainer(BaseIncrementalTrainer):
         X = np.nan_to_num(X, nan=0.0)
         
         # Split raw data first
-        X_train_raw, X_val_raw, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
+        X_train_raw, X_val_raw, y_train, y_val = train_test_split(X, y, test_size=0.2, shuffle=False)
         
         # Scale only training data for fit
         self._scaler = StandardScaler()
@@ -1051,7 +1055,7 @@ class IncrementalBayesianRidgeTrainer(BaseIncrementalTrainer):
         X = np.nan_to_num(X, nan=0.0)
         
         # Split raw
-        X_tr, X_va, y_tr, y_va = train_test_split(X, y, test_size=0.2, random_state=42)
+        X_tr, X_va, y_tr, y_va = train_test_split(X, y, test_size=0.2, shuffle=False)
         
         self._scaler = StandardScaler()
         X_tr_scaled = self._scaler.fit_transform(X_tr)
@@ -1089,7 +1093,7 @@ class IncrementalBayesianRidgeTrainer(BaseIncrementalTrainer):
         y = full_train_data['__target__'].values
         X = np.nan_to_num(X, nan=0.0)
         
-        X_tr, X_va, y_tr, y_va = train_test_split(X, y, test_size=0.2, random_state=42)
+        X_tr, X_va, y_tr, y_va = train_test_split(X, y, test_size=0.2, shuffle=False)
 
         # Update scaler with all data
         self._scaler.fit(X_tr)

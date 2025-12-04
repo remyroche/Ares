@@ -147,52 +147,42 @@ def build_threshold_sweep_configs(base_config: Dict[str, Any]) -> List[Dict[str,
         {"breakout_trap_revert_pct": 0.0050}
     )
 
-    # 5) S/R Lookback Sweep (strictly intraday: <= 2 days)
-    # Shorter history -> More reactive levels
+    # 5) S/R Method Sweep
+    # KDE (Baseline)
     add_variant(
-        "sr_lookback_short_1d",
-        {"breakout_lookback_days": 1}
+        "sr_method_kde",
+        {"breakout_sr_method": "kde"}
     )
-    # Slightly longer, still tight
+    # Fractal (Discrete Swings)
     add_variant(
-        "sr_lookback_long_2d",
-        {"breakout_lookback_days": 2}
+        "sr_method_fractal_p5",
+        {
+            "breakout_sr_method": "fractal",
+            "breakout_fractal_period": 5,
+            "breakout_fractal_lookback": 500
+        }
+    )
+    # HTF (Daily/Weekly)
+    add_variant(
+        "sr_method_htf_daily",
+        {
+            "breakout_sr_method": "htf",
+            "breakout_htf_use_weekly": False
+        }
     )
 
-    for lb_days in [1, 2]:
-        for cross in [0.0030, 0.0040, 0.0050]:
-            for hold in [0.0020, 0.0030, 0.0040]:
-                add_variant(
-                    f"local_h48_lb{lb_days}d_cross{cross:.4f}_hold{hold:.4f}",
-                    {
-                        "breakout_horizon_bars": 48,
-                        "breakout_lookback_days": lb_days,
-                        "breakout_cross_buffer_pct": cross,
-                        "breakout_hold_buffer_pct": hold,
-                    },
-                )
-
-    for lb_days in [1, 2]:
-        for cross in [0.0030, 0.0040, 0.0050]:
-            for hold in [0.0020, 0.0030, 0.0040]:
-                add_variant(
-                    f"local_h96_lb{lb_days}d_cross{cross:.4f}_hold{hold:.4f}",
-                    {
-                        "breakout_horizon_bars": 96,
-                        "breakout_lookback_days": lb_days,
-                        "breakout_cross_buffer_pct": cross,
-                        "breakout_hold_buffer_pct": hold,
-                    },
-                )
-
-    for bounce in [0.0010, 0.0015, 0.0020]:
-        for trap in [0.0020, 0.0030, 0.0040]:
+    # 6) Short Horizon Sweep (8-24 bars)
+    for horizon in [8, 12, 16, 24]:
+        for sr in ["kde", "fractal", "htf"]:
             add_variant(
-                f"local_bounce{bounce:.4f}_trap{trap:.4f}",
+                f"short_h{horizon}_{sr}",
                 {
-                    "breakout_bounce_move_pct": bounce,
-                    "breakout_trap_revert_pct": trap,
-                },
+                    "breakout_horizon_bars": horizon,
+                    "breakout_sr_method": sr,
+                    # Tighter buffers for shorter horizons
+                    "breakout_cross_buffer_pct": 0.0025,
+                    "breakout_hold_buffer_pct": 0.0015,
+                }
             )
 
     return configs

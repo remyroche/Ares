@@ -76,6 +76,11 @@ from src.utils.ml_common.optimization import (
 )
 from src.utils.ml_common.feature_engineering.feature_smoothing import apply_ewm_smoothing
 from src.feature_generation.categories.entropy import PermutationEntropyGenerator
+from src.training.steps.market_analysis.components.level_generators import (
+    RollingKDELevelGenerator,
+    FractalLevelGenerator,
+    HTFLevelGenerator
+)
 import itertools
 
 # Feature analysis and selection tools
@@ -4572,351 +4577,6 @@ class MLPathRegimeStep(BaseStep):
         return metrics, quality_path
 
 
-class RollingKDELevelGenerator:
-    def __init__(
-        self,
-        lookback_days: int = 30,
-        peaks_per_side: int = 3,
-        price_grid_size: int = 400,
-        min_history_bars: int = 200,
-        sr_min_touch_count: int = 2,
-        sr_min_volume_depth_ratio: float = 0.8,
-        sr_min_prominence: float = 0.5,
-    ) -> None:
-        self.lookback_days = int(max(1, lookback_days))
-        self.peaks_per_side = int(max(1, peaks_per_side))
-        self.price_grid_size = int(max(100, price_grid_size))
-        self.min_history_bars = int(max(50, min_history_bars))
-        # Support/resistance quality filter thresholds are configured via
-        # the parent step and passed into this helper to avoid relying on
-        # any global config within level computation.
-        self.sr_min_touch_count = int(max(1, sr_min_touch_count))
-        self.sr_min_volume_depth_ratio = float(sr_min_volume_depth_ratio)
-        self.sr_min_prominence = float(sr_min_prominence)
-
-    def _compute_pivots(
-        self,
-        highs: pd.Series,
-        lows: pd.Series,
-        period: int = 3,
-    ) -> Tuple[np.ndarray, np.ndarray]:
-        arr_high = np.asarray(highs, dtype=float)
-        arr_low = np.asarray(lows, dtype=float)
-        n = len(arr_high)
-        if n < 2 * period + 1:
-            return np.array([], dtype=int), np.array([], dtype=int)
-
-        pivot_high_idx: List[int] = []
-        pivot_low_idx: List[int] = []
-
-        for i in range(period, n - period):
-            h = arr_high[i]
-            l = arr_low[i]
-            window_high = arr_high[i - period : i + period + 1]
-            window_low = arr_low[i - period : i + period + 1]
-            if h >= window_high.max() and h > window_high[period - 1] and h >= window_high[period + 1]:
-                pivot_high_idx.append(i)
-            if l <= window_low.min() and l < window_low[period - 1] and l <= window_low[period + 1]:
-                pivot_low_idx.append(i)
-
-        return np.asarray(pivot_high_idx, dtype=int), np.asarray(pivot_low_idx, dtype=int)
-
-    def _build_kde_levels(
-        self,
-        prices: np.ndarray,
-        kind: str,
-    ) -> List[Dict[str, Any]]:
-        prices = np.asarray(prices, dtype=float)
-        prices = prices[np.isfinite(prices)]
-        if prices.size < 10:
-            return []
-
-        p_min = float(prices.min())
-        p_max = float(prices.max())
-        if not np.isfinite(p_min) or not np.isfinite(p_max) or p_max <= p_min:
-            return []
-
-        grid = np.linspace(p_min, p_max, self.price_grid_size)
-        try:
-            kde = gaussian_kde(prices)
-            density = kde(grid)
-        except Exception:
-            return []
-
-        try:
-            peak_idx, _ = find_peaks(density)
-        except Exception:
-            return []
-
-        if peak_idx.size == 0:
-            return []
-
-        try:
-            prominences, _, _ = peak_prominences(density, peak_idx)
-        except Exception:
-            prominences = np.ones_like(peak_idx, dtype=float)
-
-        levels: List[Dict[str, Any]] = []
-        for idx, prom in zip(peak_idx, prominences):
-            price = float(grid[int(idx)])
-            dens = float(density[int(idx)])
-            levels.append(
-                {
-                    "price": price,
-                    "density": dens,
-                    "prominence": float(prom),
-                    "source_type": kind,
-                }
-            )
-        return levels
-
-    def _compute_level_stats(
-        self,
-        level_price: float,
-        history: pd.DataFrame,
-    ) -> Tuple[int, Optional[pd.Timestamp], Optional[pd.Timestamp], float]:
-        if history.empty:
-            return 0, None, None, float("nan")
-
-        high = np.asarray(history["high"], dtype=float)
-        low = np.asarray(history["low"], dtype=float)
-        vol = np.asarray(history["volume"], dtype=float)
-        tol = level_price * 0.001
-        mask = (np.abs(high - level_price) <= tol) | (np.abs(low - level_price) <= tol)
-        touch_count = int(mask.sum())
-
-        if touch_count > 0:
-            idx = history.index[mask]
-            first_ts = idx[0]
-            last_ts = idx[-1]
-            vol_at_level = float(np.nanmean(vol[mask]))
-        else:
-            first_ts = None
-            last_ts = None
-            vol_at_level = float("nan")
-
-        median_vol = float(np.nanmedian(vol)) if vol.size > 0 else float("nan")
-        if np.isfinite(vol_at_level) and np.isfinite(median_vol) and median_vol > 0.0:
-            depth_ratio = vol_at_level / median_vol
-        else:
-            depth_ratio = float("nan")
-
-        return touch_count, first_ts, last_ts, depth_ratio
-
-    def compute_levels(self, ohlcv: pd.DataFrame) -> pd.DataFrame:
-        if not isinstance(ohlcv.index, pd.DatetimeIndex):
-            raise ValueError("RollingKDELevelGenerator requires DatetimeIndex input")
-
-        data = ohlcv.sort_index()
-        index = data.index
-        if data.empty:
-            return pd.DataFrame(index=index)
-
-        dates = index.normalize()
-        unique_days = dates.unique()
-        result = pd.DataFrame(
-            index=index,
-            data={
-                "primary_level_price": np.nan,
-                "primary_level_type": np.nan,
-                "primary_level_source": np.nan,
-                "primary_level_touch_count": np.nan,
-                "primary_level_first_touch_ts": pd.NaT,
-                "primary_level_last_touch_ts": pd.NaT,
-                "primary_level_prominence": np.nan,
-                "primary_level_volume_depth_ratio": np.nan,
-                "opposing_level_price": np.nan,
-                "opposing_level_type": np.nan,
-                "opposing_level_source": np.nan,
-                "opposing_level_touch_count": np.nan,
-                "opposing_level_first_touch_ts": pd.NaT,
-                "opposing_level_last_touch_ts": pd.NaT,
-                "opposing_level_prominence": np.nan,
-                "opposing_level_volume_depth_ratio": np.nan,
-            },
-        )
-
-        if len(unique_days) <= 1:
-            return result
-
-        for day_idx in range(1, len(unique_days)):
-            day_start = unique_days[day_idx]
-            window_start = day_start - pd.Timedelta(days=self.lookback_days)
-            history_mask = (index >= window_start) & (index < day_start)
-            history = data.loc[history_mask]
-            if history.shape[0] < self.min_history_bars:
-                continue
-
-            pivot_high_idx, pivot_low_idx = self._compute_pivots(
-                history["high"], history["low"], period=3
-            )
-
-            swing_high_prices: np.ndarray
-            swing_low_prices: np.ndarray
-            if pivot_high_idx.size:
-                swing_high_prices = history["high"].to_numpy()[pivot_high_idx]
-            else:
-                swing_high_prices = history["high"].to_numpy()
-
-            if pivot_low_idx.size:
-                swing_low_prices = history["low"].to_numpy()[pivot_low_idx]
-            else:
-                swing_low_prices = history["low"].to_numpy()
-
-            vol = history["volume"].to_numpy()
-            closes = history["close"].to_numpy()
-            if vol.size > 0:
-                vol_threshold = float(np.nanpercentile(vol, 80.0))
-                vol_mask = vol >= vol_threshold
-                volume_node_prices = closes[vol_mask]
-            else:
-                volume_node_prices = np.array([], dtype=float)
-
-            candidate_levels: List[Dict[str, Any]] = []
-            candidate_levels.extend(self._build_kde_levels(swing_high_prices, "swing_high"))
-            candidate_levels.extend(self._build_kde_levels(swing_low_prices, "swing_low"))
-            candidate_levels.extend(self._build_kde_levels(volume_node_prices, "volume_node"))
-
-            if not candidate_levels:
-                continue
-
-            for level in candidate_levels:
-                touch_count, first_ts, last_ts, depth_ratio = self._compute_level_stats(
-                    float(level["price"]), history
-                )
-                level["touch_count"] = touch_count
-                level["first_touch_ts"] = first_ts
-                level["last_touch_ts"] = last_ts
-                level["volume_depth_ratio"] = depth_ratio
-
-            # PHASE 1 IMPROVEMENT: Filter levels by quality/strength
-            # This reduces weak levels that break too easily (41.3% breakout rate)
-            filtered_levels: List[Dict[str, Any]] = []
-            for level in candidate_levels:
-                touch_count = level.get("touch_count", 0)
-                volume_depth = level.get("volume_depth_ratio", 0.0)
-                prominence = level.get("prominence", 0.0)
-
-                # Quality filters (using thresholds provided by the parent step)
-                min_touches = int(self.sr_min_touch_count)
-                min_volume_depth = float(self.sr_min_volume_depth_ratio)
-                min_prominence = float(self.sr_min_prominence)
-
-                # Apply filters to ensure only strong levels are used
-                if (
-                    touch_count >= min_touches
-                    and volume_depth >= min_volume_depth
-                    and prominence >= min_prominence
-                ):
-                    filtered_levels.append(level)
-
-            # Use filtered levels instead of all candidates
-            if not filtered_levels:
-                qualities: List[float] = []
-                for level in candidate_levels:
-                    touch_count = float(level.get("touch_count", 0.0))
-                    volume_depth = float(level.get("volume_depth_ratio", 0.0))
-                    prominence = float(level.get("prominence", 0.0))
-                    qualities.append(touch_count + volume_depth + prominence)
-
-                if qualities:
-                    threshold = float(np.nanpercentile(qualities, 50.0))
-                    for level, quality in zip(candidate_levels, qualities):
-                        if quality >= threshold:
-                            filtered_levels.append(level)
-
-            if not filtered_levels:
-                # No strong levels found for this day, skip
-                continue
-
-            day_mask = dates == day_start
-            day_index = index[day_mask]
-            if day_index.empty:
-                continue
-
-            for ts in day_index:
-                close_price = float(data.at[ts, "close"])
-                above: List[Tuple[Dict[str, Any], float]] = []
-                below: List[Tuple[Dict[str, Any], float]] = []
-                for level in filtered_levels:  # Changed from candidate_levels
-                    lp = float(level["price"])
-                    dist = abs(lp - close_price)
-                    if lp >= close_price:
-                        above.append((level, dist))
-                    else:
-                        below.append((level, dist))
-
-                above_sorted = sorted(above, key=lambda x: x[1])
-                below_sorted = sorted(below, key=lambda x: x[1])
-
-                primary_level: Optional[Dict[str, Any]] = None
-                opposing_level: Optional[Dict[str, Any]] = None
-
-                best_above = above_sorted[0][0] if above_sorted else None
-                best_below = below_sorted[0][0] if below_sorted else None
-
-                if best_above is not None and best_below is not None:
-                    if abs(float(best_above["price"]) - close_price) <= abs(
-                        float(best_below["price"]) - close_price
-                    ):
-                        primary_level = best_above
-                        opposing_level = best_below
-                    else:
-                        primary_level = best_below
-                        opposing_level = best_above
-                elif best_above is not None:
-                    primary_level = best_above
-                elif best_below is not None:
-                    primary_level = best_below
-
-                if primary_level is None:
-                    continue
-
-                primary_price = float(primary_level["price"])
-                primary_source = primary_level.get("source_type")
-                primary_touch = float(primary_level.get("touch_count", float("nan")))
-                primary_first = primary_level.get("first_touch_ts")
-                primary_last = primary_level.get("last_touch_ts")
-                primary_prominence = float(primary_level.get("prominence", float("nan")))
-                primary_depth = float(primary_level.get("volume_depth_ratio", float("nan")))
-
-                if primary_price >= close_price:
-                    primary_type = "resistance"
-                else:
-                    primary_type = "support"
-
-                result.at[ts, "primary_level_price"] = primary_price
-                result.at[ts, "primary_level_type"] = primary_type
-                result.at[ts, "primary_level_source"] = primary_source
-                result.at[ts, "primary_level_touch_count"] = primary_touch
-                result.at[ts, "primary_level_first_touch_ts"] = primary_first
-                result.at[ts, "primary_level_last_touch_ts"] = primary_last
-                result.at[ts, "primary_level_prominence"] = primary_prominence
-                result.at[ts, "primary_level_volume_depth_ratio"] = primary_depth
-
-                if opposing_level is not None:
-                    opp_price = float(opposing_level["price"])
-                    opp_source = opposing_level.get("source_type")
-                    opp_touch = float(opposing_level.get("touch_count", float("nan")))
-                    opp_first = opposing_level.get("first_touch_ts")
-                    opp_last = opposing_level.get("last_touch_ts")
-                    opp_prominence = float(opposing_level.get("prominence", float("nan")))
-                    opp_depth = float(opposing_level.get("volume_depth_ratio", float("nan")))
-
-                    opp_type = "resistance" if opp_price >= close_price else "support"
-
-                    result.at[ts, "opposing_level_price"] = opp_price
-                    result.at[ts, "opposing_level_type"] = opp_type
-                    result.at[ts, "opposing_level_source"] = opp_source
-                    result.at[ts, "opposing_level_touch_count"] = opp_touch
-                    result.at[ts, "opposing_level_first_touch_ts"] = opp_first
-                    result.at[ts, "opposing_level_last_touch_ts"] = opp_last
-                    result.at[ts, "opposing_level_prominence"] = opp_prominence
-                    result.at[ts, "opposing_level_volume_depth_ratio"] = opp_depth
-
-        return result
-
-
 class MLBreakoutBounceRegimeStep(BaseStep):
     def __init__(self, step_name: str = "ml_breakout_bounce_regime_step") -> None:
         super().__init__(step_name, use_versioned_artifacts=True)
@@ -5334,51 +4994,67 @@ class MLBreakoutBounceRegimeStep(BaseStep):
                 except Exception:
                     pass
 
-            history_min_bars = int(config.get("breakout_min_history_bars", 200))
-            if isinstance(market_data, pd.DataFrame):
-                history_min_bars = min(
-                    history_min_bars,
-                    max(len(market_data) // 2, 50),
+            # Select and configure the appropriate level generator
+            sr_method = str(config.get("breakout_sr_method", "kde")).lower()
+            tprint_info(f"🏗️ Generating S/R levels using method: {sr_method}")
+
+            level_generator = None
+
+            if sr_method == "fractal":
+                pivot_period = int(config.get("breakout_fractal_period", 5))
+                lookback_bars = int(config.get("breakout_fractal_lookback", 500))
+                level_generator = FractalLevelGenerator(
+                    pivot_period=pivot_period,
+                    lookback_bars=lookback_bars
+                )
+            elif sr_method == "htf":
+                use_weekly = bool(config.get("breakout_htf_use_weekly", False))
+                level_generator = HTFLevelGenerator(use_weekly=use_weekly)
+            else:
+                # Default to KDE
+                history_min_bars = int(config.get("breakout_min_history_bars", 200))
+                if isinstance(market_data, pd.DataFrame):
+                    history_min_bars = min(
+                        history_min_bars,
+                        max(len(market_data) // 2, 50),
+                    )
+
+                    # Further adapt to available history
+                    try:
+                        dates_norm = market_data.index.normalize()
+                        unique_days = dates_norm.unique()
+                        n_days = len(unique_days)
+                    except Exception:
+                        n_days = 0
+
+                    if n_days > 0:
+                        try:
+                            bars_per_day = float(len(market_data)) / float(max(n_days, 1))
+                        except Exception:
+                            bars_per_day = float(len(market_data))
+
+                        try:
+                            lookback_days = int(config.get("breakout_lookback_days", 30))
+                        except Exception:
+                            lookback_days = 30
+
+                        effective_days = max(min(lookback_days, n_days), 1)
+                        approx_window_bars = bars_per_day * float(effective_days)
+                        adaptive_cap = max(int(approx_window_bars * 0.7), 30)
+                        history_min_bars = min(history_min_bars, adaptive_cap)
+
+                level_generator = RollingKDELevelGenerator(
+                    lookback_days=int(config.get("breakout_lookback_days", 30)),
+                    peaks_per_side=int(config.get("breakout_peaks_per_side", 3)),
+                    min_history_bars=history_min_bars,
+                    sr_min_touch_count=int(config.get("sr_min_touch_count", 2)),
+                    sr_min_volume_depth_ratio=float(config.get("sr_min_volume_depth_ratio", 0.8)),
+                    sr_min_prominence=float(config.get("sr_min_prominence", 0.5)),
                 )
 
-                # Further adapt to available history per lookback window so that shorter
-                # breakout_lookback_days on sparse data (e.g. 14 days on a 144-bar slice)
-                # can still generate levels instead of always failing the min_history_bars
-                # check inside RollingKDELevelGenerator.
-                try:
-                    dates_norm = market_data.index.normalize()
-                    unique_days = dates_norm.unique()
-                    n_days = len(unique_days)
-                except Exception:
-                    n_days = 0
-
-                if n_days > 0:
-                    try:
-                        bars_per_day = float(len(market_data)) / float(max(n_days, 1))
-                    except Exception:
-                        bars_per_day = float(len(market_data))
-
-                    try:
-                        lookback_days = int(config.get("breakout_lookback_days", 30))
-                    except Exception:
-                        lookback_days = 30
-
-                    effective_days = max(min(lookback_days, n_days), 1)
-                    approx_window_bars = bars_per_day * float(effective_days)
-                    adaptive_cap = max(int(approx_window_bars * 0.7), 30)
-                    history_min_bars = min(history_min_bars, adaptive_cap)
-
-            level_generator = RollingKDELevelGenerator(
-                lookback_days=int(config.get("breakout_lookback_days", 30)),
-                peaks_per_side=int(config.get("breakout_peaks_per_side", 3)),
-                min_history_bars=history_min_bars,
-                sr_min_touch_count=int(config.get("sr_min_touch_count", 2)),
-                sr_min_volume_depth_ratio=float(config.get("sr_min_volume_depth_ratio", 0.8)),
-                sr_min_prominence=float(config.get("sr_min_prominence", 0.5)),
-            )
             levels_df = level_generator.compute_levels(market_data[["open", "high", "low", "close", "volume"]])
             if levels_df.empty or levels_df["primary_level_price"].isna().all():
-                raise ValueError("RollingKDELevelGenerator produced no usable levels")
+                raise ValueError(f"{type(level_generator).__name__} produced no usable levels")
 
             aligned_df = market_data.join(levels_df, how="left")
 
@@ -6132,10 +5808,22 @@ class MLBreakoutBounceRegimeStep(BaseStep):
         sup_trap = is_support & (down_move_cross >= cross_buf) & (up_move_hold >= trap_revert)
         sup_chop = is_support & (chop_range_high <= chop_band) & (chop_range_low <= chop_band)
 
-        labels[res_bounce | sup_bounce] = 0.0
-        labels[res_break | sup_break] = 1.0
-        labels[res_trap | sup_trap] = 2.0
-        labels[res_chop | sup_chop] = 3.0
+        # 3-Class Directional Labels
+        # 0: No Breakout (Bounce/Neutral/Chop/Trap)
+        # 1: Breakout Up (Resistance Break)
+        # 2: Breakout Down (Support Break)
+
+        # Initialize to 0 (No Breakout)
+        labels[:] = 0.0
+
+        # Breakout Up: Resistance Break
+        labels[res_break] = 1.0
+
+        # Breakout Down: Support Break
+        labels[sup_break] = 2.0
+
+        # Note: Traps (failed breakouts) remain in class 0 (No Breakout)
+        # This aligns with the goal of detecting sustained directional moves.
 
         labels = labels.dropna()
         labels = labels.astype(int)
@@ -8605,21 +8293,15 @@ class MLBreakoutBounceRegimeStep(BaseStep):
         if event_min_move <= 0.0:
             event_min_move = float(config.get("breakout_meta_min_ret", 0.015))
 
-        y_binary = (abs_move >= event_min_move).astype(np.int32)
-        break_ratio = float(y_binary.mean()) if len(y_binary) > 0 else 0.0
-        tprint_info(
-            f"📊 Binary event label distribution (|ret| >= {event_min_move:.4f}): "
-            f"event={break_ratio:.3f}, no_event={1.0 - break_ratio:.3f}"
-        )
-
+        # Directional target distribution (for logging)
         n_samples = len(X)
-        n_classes = int(y.max() + 1)
-        tprint_info(f"📊 Training data: {n_samples} samples, {X.shape[1]} features, {n_classes} classes")
+        class_dist = y.value_counts(normalize=True).to_dict()
+        tprint_info(f"📊 Directional target distribution: {class_dist}")
 
         symbol = config.get("symbol", "ETHUSDT")
         exchange = config.get("exchange", "binance")
         timeframe = config.get("regime_timeframe", config.get("timeframe", "15m"))
-        model_id = f"{symbol}_{exchange}_{timeframe}_breakout_bounce_2stage"
+        model_id = f"{symbol}_{exchange}_{timeframe}_breakout_bounce_directional"
 
         # ========================================================================
         # SPLIT HANDLING: Try temporal split_config, fallback to percentage-based
@@ -8654,7 +8336,6 @@ class MLBreakoutBounceRegimeStep(BaseStep):
                     data_index = data_index.tz_convert(None)
                     X.index = data_index
                     y.index = data_index
-                    y_binary.index = data_index
 
                 # Apply temporal masks
                 train_mask = (data_index >= train_start) & (data_index < train_end)
@@ -8697,20 +8378,20 @@ class MLBreakoutBounceRegimeStep(BaseStep):
 
         # Extract train/val/test sets
         X_train = X[train_mask]
-        y_train = y_binary[train_mask]
+        y_train = y[train_mask] # Use multi-class labels directly
         X_val = X[val_mask]
-        y_val = y_binary[val_mask]
+        y_val = y[val_mask]
         X_test = X[test_mask] if test_mask.sum() > 0 else None
-        y_test = y_binary[test_mask] if test_mask.sum() > 0 else None
+        y_test = y[test_mask] if test_mask.sum() > 0 else None
 
         # ========================================================================
-        # STAGE 1: Binary Classification (break vs bounce) using StandardizedXGBTrainer
+        # STAGE 1: Multi-Class Directional Classification (0=NoBreak, 1=Up, 2=Down)
         # ========================================================================
-        tprint_info("🔄 Stage 1/2: Training binary classifier (break vs bounce) with StandardizedXGBTrainer")
+        tprint_info("🔄 Stage 1/2: Training directional classifier (0=NoBreak, 1=Up, 2=Down) with StandardizedXGBTrainer")
 
-        # Configure StandardizedXGBTrainer for binary classification
+        # Configure StandardizedXGBTrainer for multi-class classification
         stage1_config = XGBTrainingConfig(
-            model_id=f"{model_id}_stage1_binary",
+            model_id=f"{model_id}_stage1_multi",
             retrain_interval_days=10,
             hpo_interval_days=30,
             burnin_pct=1/12,
@@ -8725,7 +8406,8 @@ class MLBreakoutBounceRegimeStep(BaseStep):
             early_stopping_rounds=20,
             tree_method="hist",
             task_type="classification",
-            objective="binary:logistic",
+            objective="multi:softprob",
+            num_class=3
         )
 
         stage1_trainer = StandardizedXGBTrainer(
@@ -9104,36 +8786,56 @@ class MLBreakoutBounceRegimeStep(BaseStep):
         else:
             full_stage2_norm = np.full(len(X), 0.5)
 
-        # Final combined probability (P(break))
-        full_final_probs = alpha * full_stage1_probs + beta * full_stage2_norm
-        full_final_probs = np.clip(full_final_probs, 0.0, 1.0)
+        # With 3-class target (0=NoBreak, 1=Up, 2=Down), full_stage1_probs is already Nx3.
+        # Stage 2 (Quality) boosts the confidence of the predicted direction if quality is high.
+        # If quality is low, we dampen the directional probabilities towards class 0 (No Break).
 
-        # Convert to 3-class probabilities (bounce, break, trap)
-        # P(bounce) = 1 - P(break) when quality is high
-        # P(trap) = inferred from uncertainty (when quality is low but direction uncertain)
-        uncertainty = 1 - np.abs(full_stage1_probs - 0.5) * 2  # High when near 0.5
-        trap_prob = uncertainty * (1 - full_stage2_norm)  # High uncertainty + low quality = trap
+        # full_stage1_probs shape: (N, 3) -> [P(NoBreak), P(Up), P(Down)]
 
-        p_break = full_final_probs * (1 - trap_prob * 0.5)  # Reduce break prob if trap-like
-        p_bounce = (1 - full_final_probs) * (1 - trap_prob * 0.5)  # Reduce bounce prob if trap-like
-        p_trap = np.clip(trap_prob, 0.0, 0.4)  # Cap trap probability
+        # Apply quality dampening
+        # If quality (stage2_norm) is high -> keep original probs
+        # If quality is low -> shift mass to class 0
 
-        # Normalize to sum to 1
-        total = p_bounce + p_break + p_trap
-        total = np.where(total > 0, total, 1.0)
-        p_bounce = p_bounce / total
-        p_break = p_break / total
-        p_trap = p_trap / total
+        quality_factor = full_stage2_norm.reshape(-1, 1) # (N, 1)
 
-        probs_full = np.column_stack([p_bounce, p_break, p_trap])
+        p_no_break = full_stage1_probs[:, 0].reshape(-1, 1)
+        p_up = full_stage1_probs[:, 1].reshape(-1, 1)
+        p_down = full_stage1_probs[:, 2].reshape(-1, 1)
+
+        # Boost directional signals by quality
+        # P_up_adj = P_up * (0.5 + 0.5 * quality) ?
+        # Or simpler: dampen low quality signals
+
+        # Dampening factor: 1.0 when quality=1, 0.5 when quality=0
+        dampener = 0.5 + 0.5 * quality_factor
+
+        p_up_adj = p_up * dampener
+        p_down_adj = p_down * dampener
+
+        # Remaining probability mass goes to NoBreak
+        total_adj = p_up_adj + p_down_adj
+        p_no_break_adj = 1.0 - total_adj
+
+        probs_full = np.hstack([p_no_break_adj, p_up_adj, p_down_adj])
+
+        # Ensure normalization
+        row_sums = probs_full.sum(axis=1, keepdims=True)
+        probs_full = probs_full / row_sums
 
         # Temperature scaling calibration on validation set (multi-class)
+        # Re-fit temperature on the *adjusted* validation probs
         y_val_multi = y[val_mask]
         calib_mask = y_val_multi.isin([0, 1, 2])
         if calib_mask.any():
             y_val_cal = y_val_multi[calib_mask]
-            val_probs_cal = val_probs[calib_mask.values, :]
-            best_temperature, _ = self._fit_temperature_scaling(val_probs_cal, y_val_cal)
+
+            # Reconstruct validation probs with quality adjustment
+            val_p_up = stage1_val_probs[:, 1].reshape(-1, 1) * (0.5 + 0.5 * stage2_val_norm.reshape(-1, 1))
+            val_p_down = stage1_val_probs[:, 2].reshape(-1, 1) * (0.5 + 0.5 * stage2_val_norm.reshape(-1, 1))
+            val_p_nb = 1.0 - (val_p_up + val_p_down)
+            val_probs_adj = np.hstack([val_p_nb, val_p_up, val_p_down])
+
+            best_temperature, _ = self._fit_temperature_scaling(val_probs_adj, y_val_cal)
             probs_full = self._apply_temperature(probs_full, best_temperature)
 
         # Class predictions
@@ -9190,7 +8892,9 @@ class MLBreakoutBounceRegimeStep(BaseStep):
             f"   OOF Samples: {len(stage1_oof)}"
         )
 
-        event_label_series = pd.Series(y_binary.values, index=X.index, name="breakout_event_label")
+        # Breakout Event Label: 1 if Class 1 or 2, 0 otherwise
+        event_label_arr = (classes_full > 0).astype(int)
+        event_label_series = pd.Series(event_label_arr, index=X.index, name="breakout_event_label")
         fwd_returns_series = pd.Series(fwd_returns.values, index=X.index, name=f"forward_return_h{horizon}")
 
         return stage1_model, metrics, probs_full, classes_full, event_label_series, fwd_returns_series

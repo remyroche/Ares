@@ -265,7 +265,8 @@ class MetaGatedBacktestStep(BaseStep):
                 df_events = df.loc[event_probs.index]
 
                 use_vol_filter = bool(filters_cfg.get("use_volatility_filter", True))
-                vol_quantile = float(filters_cfg.get("volatility_quantile", 0.40))
+                # RELAXED DEFAULT: 0.20 (was 0.40) to prevent starvation in low-vol regimes
+                vol_quantile = float(filters_cfg.get("volatility_quantile", 0.20))
                 use_trend_filter = bool(filters_cfg.get("use_trend_filter", True))
                 trend_window = int(filters_cfg.get("trend_window", 20))
                 trend_min_abs = float(filters_cfg.get("trend_min_abs", 0.0))

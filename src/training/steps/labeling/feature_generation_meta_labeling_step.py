@@ -2863,6 +2863,175 @@ def translate_to_targets_with_isotonic(
     return target_long, target_short
 
 
+def generate_strategy_aware_targets(
+    realized_returns: pd.Series,
+    probabilities: np.ndarray,
+    signals: pd.DataFrame,
+    iso_regressor: IsotonicRegression,
+    strategy_type: str = 'trend_following',
+    cost_threshold: float = DEFAULT_TRANSACTION_COST,
+) -> Tuple[pd.Series, pd.Series]:
+    """
+    Generate different targets/labels based on whether the strategy is trend following or mean reversion.
+    
+    Strategy-specific target generation:
+    
+    **Trend Following** (strategy_type='trend_following'):
+    - Uses momentum signals (MACD, MA crossover, ATR breakout, volume spike)
+    - Rewards following the established trend direction
+    - Higher targets when momentum and MTF signals agree
+    - Labels are based on continuation of price movement
+    
+    **Mean Reversion** (strategy_type='mean_reversion'):
+    - Uses mean-reversion signals (Bollinger band fade, RSI extremes, range fade)
+    - Rewards betting against extreme price movements
+    - Higher targets when price is at extreme levels with reversal signals
+    - Labels are based on price returning toward mean
+    
+    Args:
+        realized_returns: Actual returns from triple barrier labeling
+        probabilities: Predicted probabilities from meta-model
+        signals: Signal directions with individual signal columns
+        iso_regressor: Fitted isotonic regression model
+        strategy_type: 'trend_following' or 'mean_reversion'
+        cost_threshold: Transaction cost per trade
+        
+    Returns:
+        Tuple of (target_long, target_short) with strategy-specific targets
+    """
+    target_long = pd.Series(0.0, index=realized_returns.index)
+    target_short = pd.Series(0.0, index=realized_returns.index)
+    
+    n_rr = len(realized_returns)
+    if n_rr == 0:
+        return target_long.copy(), target_short.copy()
+    
+    # Align all arrays to common length
+    n_prob = len(probabilities)
+    n_sig = len(signals)
+    n_common = min(n_rr, n_prob, n_sig)
+    
+    rr_tail = realized_returns.iloc[-n_common:]
+    sig_tail = signals.iloc[-n_common:]
+    prob_tail = np.asarray(probabilities, dtype=float)[-n_common:]
+    
+    target_long_tail = pd.Series(0.0, index=rr_tail.index)
+    target_short_tail = pd.Series(0.0, index=rr_tail.index)
+    
+    # Base expected returns from isotonic regression
+    expected_returns = iso_regressor.predict(prob_tail)
+    expected_returns = np.nan_to_num(expected_returns, nan=0.0, posinf=0.1, neginf=-0.1)
+    
+    # Net-of-cost expected returns
+    net_expected = expected_returns - cost_threshold
+    
+    if strategy_type == 'trend_following':
+        # TREND FOLLOWING: Boost targets when momentum signals are strong
+        # Use momentum-based signal columns
+        momentum_cols = ['rsi', 'rsi_long', 'macd', 'macd_long', 'ma', 'mom', 
+                        'atr_breakout', 'volume_spike', 'mtf_trend', 'mtf_confluence']
+        
+        # Calculate momentum agreement score (how many momentum signals agree)
+        momentum_agreement = pd.Series(0.0, index=sig_tail.index)
+        n_momentum_signals = 0
+        
+        for col in momentum_cols:
+            if col in sig_tail.columns:
+                momentum_agreement += sig_tail[col].fillna(0).abs()
+                n_momentum_signals += 1
+        
+        # Normalize to [0, 1] range
+        if n_momentum_signals > 0:
+            momentum_agreement = momentum_agreement / n_momentum_signals
+            momentum_agreement = momentum_agreement.clip(0, 1)
+        
+        # Apply momentum boost factor (1.0 to 1.5x based on momentum agreement)
+        momentum_boost = 1.0 + 0.5 * momentum_agreement.values
+        
+        # For trend following, we reward strong momentum agreement
+        final_targets = net_expected * momentum_boost
+        
+        # Additional boost when MTF confluence is positive
+        if 'mtf_confluence' in sig_tail.columns:
+            mtf_conf = sig_tail['mtf_confluence'].fillna(0).values
+            mtf_boost = np.where(np.abs(mtf_conf) > 0.5, 1.2, 1.0)
+            final_targets = final_targets * mtf_boost
+        
+        tprint(f"  📈 Trend Following targets: momentum_boost mean={momentum_boost.mean():.3f}", "INFO")
+        
+    elif strategy_type == 'mean_reversion':
+        # MEAN REVERSION: Boost targets when mean-reversion signals are strong
+        # Use mean-reversion signal columns
+        mr_cols = ['bb_fade', 'range_fade', 'rsi_mr']
+        
+        # Calculate mean-reversion strength
+        mr_strength = pd.Series(0.0, index=sig_tail.index)
+        n_mr_signals = 0
+        
+        for col in mr_cols:
+            if col in sig_tail.columns:
+                mr_strength += sig_tail[col].fillna(0).abs()
+                n_mr_signals += 1
+        
+        # Normalize to [0, 1] range
+        if n_mr_signals > 0:
+            mr_strength = mr_strength / n_mr_signals
+            mr_strength = mr_strength.clip(0, 1)
+        
+        # Apply mean-reversion boost factor (1.0 to 1.5x based on MR strength)
+        mr_boost = 1.0 + 0.5 * mr_strength.values
+        
+        # For mean reversion, check if price is at extremes (from range_position)
+        if 'range_position' in sig_tail.columns:
+            range_pos = sig_tail['range_position'].fillna(0.5).values
+            # Boost when at extreme positions (< 0.2 or > 0.8)
+            extreme_mask = (range_pos < 0.2) | (range_pos > 0.8)
+            extreme_boost = np.where(extreme_mask, 1.3, 1.0)
+            mr_boost = mr_boost * extreme_boost
+        
+        # For mean reversion, also boost when volatility is low (ranging market)
+        if 'vol_ratio_for_consensus' in sig_tail.columns:
+            vol_ratio = sig_tail['vol_ratio_for_consensus'].fillna(1.0).values
+            # Low volatility ratio (< 0.8) favors mean reversion
+            low_vol_boost = np.where(vol_ratio < 0.8, 1.2, 1.0)
+            mr_boost = mr_boost * low_vol_boost
+        
+        final_targets = net_expected * mr_boost
+        
+        tprint(f"  📉 Mean Reversion targets: mr_boost mean={mr_boost.mean():.3f}", "INFO")
+        
+    else:
+        # Default: use standard approach without strategy-specific modifications
+        final_targets = net_expected
+        tprint(f"  ⚠️ Unknown strategy_type '{strategy_type}', using default targets", "WARNING")
+    
+    # Apply symmetric clipping
+    final_targets = np.clip(final_targets, -0.15, 0.15)
+    
+    # Assign targets based on signal direction
+    consensus = sig_tail['consensus'].to_numpy() if 'consensus' in sig_tail.columns else np.zeros(n_common)
+    rr_tail_notna = ~rr_tail.isna().to_numpy()
+    
+    long_mask = (consensus > 0) & rr_tail_notna
+    short_mask = (consensus < 0) & rr_tail_notna
+    
+    if len(final_targets) == len(long_mask):
+        target_long_tail.iloc[long_mask] = final_targets[long_mask]
+    if len(final_targets) == len(short_mask):
+        target_short_tail.iloc[short_mask] = final_targets[short_mask]
+    
+    # Reindex to full index
+    target_long = target_long_tail.reindex(realized_returns.index).fillna(0.0)
+    target_short = target_short_tail.reindex(realized_returns.index).fillna(0.0)
+    
+    # Log statistics
+    n_long = (target_long != 0).sum()
+    n_short = (target_short != 0).sum()
+    tprint(f"  📊 Strategy-aware targets ({strategy_type}): {n_long} long, {n_short} short", "INFO")
+    
+    return target_long, target_short
+
+
 def generate_diagnostics_report(
     labeled_data: pd.DataFrame,
     meta_features: pd.DataFrame,
@@ -6297,7 +6466,9 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             final_model = final_models.get('rf', list(final_models.values())[0])
 
             # STEP 11: Translate to targets using isotonic regression
-            tprint("🔄 [11/13] Translating probabilities to economic targets...", "INFO")
+            # Strategy-aware target generation: different labels for trend following vs mean reversion
+            strategy_type = config.get('strategy_type', 'auto')  # 'trend_following', 'mean_reversion', or 'auto'
+            tprint(f"🔄 [11/13] Translating probabilities to economic targets (strategy_type={strategy_type})...", "INFO")
 
             if iso_regressor is not None:
                 # Apply symmetric probability clipping if configured/HPO-provided
@@ -6308,12 +6479,54 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                 prob_array = np.asarray(probabilities, dtype=float)
                 prob_clipped = np.clip(prob_array, iso_min_prob, iso_max_prob)
 
-                target_long, target_short = translate_to_targets_with_isotonic(
-                    realized_returns,
-                    prob_clipped,
-                    primary_signals,
-                    iso_regressor
-                )
+                # Use strategy-aware target generation if strategy_type is specified
+                if strategy_type in ['trend_following', 'mean_reversion']:
+                    tprint(f"  📊 Using strategy-aware target generation: {strategy_type}", "INFO")
+                    target_long, target_short = generate_strategy_aware_targets(
+                        realized_returns,
+                        prob_clipped,
+                        primary_signals,
+                        iso_regressor,
+                        strategy_type=strategy_type,
+                        cost_threshold=transaction_cost
+                    )
+                elif strategy_type == 'auto':
+                    # Auto-detect strategy based on signal composition
+                    # Use volatility ratio to determine dominant regime
+                    if 'vol_ratio_for_consensus' in primary_signals.columns:
+                        mean_vol_ratio = primary_signals['vol_ratio_for_consensus'].mean()
+                        if mean_vol_ratio < 0.85:
+                            detected_strategy = 'mean_reversion'
+                            tprint(f"  🔍 Auto-detected strategy: mean_reversion (vol_ratio={mean_vol_ratio:.3f})", "INFO")
+                        else:
+                            detected_strategy = 'trend_following'
+                            tprint(f"  🔍 Auto-detected strategy: trend_following (vol_ratio={mean_vol_ratio:.3f})", "INFO")
+                        
+                        target_long, target_short = generate_strategy_aware_targets(
+                            realized_returns,
+                            prob_clipped,
+                            primary_signals,
+                            iso_regressor,
+                            strategy_type=detected_strategy,
+                            cost_threshold=transaction_cost
+                        )
+                    else:
+                        # Fallback to default isotonic translation
+                        tprint("  ⚠️ Cannot auto-detect strategy, using default translation", "WARNING")
+                        target_long, target_short = translate_to_targets_with_isotonic(
+                            realized_returns,
+                            prob_clipped,
+                            primary_signals,
+                            iso_regressor
+                        )
+                else:
+                    # Default: use standard isotonic translation
+                    target_long, target_short = translate_to_targets_with_isotonic(
+                        realized_returns,
+                        prob_clipped,
+                        primary_signals,
+                        iso_regressor
+                    )
 
                 # Optional symmetric quantile clipping of target magnitudes
                 # Now handles both positive and negative targets

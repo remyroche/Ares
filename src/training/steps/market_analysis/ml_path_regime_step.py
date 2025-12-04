@@ -8896,6 +8896,8 @@ class MLPathRegimeStep(BaseStep):
                         "wasserstein_distance": wasserstein_val,
                         "avg_duration_bars": avg_duration_val,
                         "stability_score": stability_score_val,
+                        # Metrics from label_quality
+                        "tail_risk_alignment_3h": _safe_metric(source_metrics.get("tail_risk_alignment_3h")),
                         # Track where per-regime XGB stats were written, if available
                         "xgb_stats_csv_path": metrics.get("xgb_stats_csv_path"),
                     }
@@ -8984,9 +8986,10 @@ class MLPathRegimeStep(BaseStep):
         # Print top results
         tprint(f"\n🏆 Top {top_n} Configurations:", "INFO")
         cols_to_show = [c for c in ranked_df.columns if c in [
-            'risk_cv_ratio', 'quality_score', 'xgb_clf_logloss',
+            'risk_cv_ratio', 'quality_score', 'xgb_clf_logloss', 'tail_risk_alignment_3h',
             'path_ker_window_bars', 'path_trend_r2_window_bars',
-            'risk_kde_bandwidth', 'xgb_quality_base_target_multiplier'
+            'risk_kde_bandwidth', 'xgb_quality_base_target_multiplier',
+            'path_bad_return_threshold', 'path_bad_efficiency_threshold',
         ]]
         print(ranked_df[cols_to_show].head(top_n))
 

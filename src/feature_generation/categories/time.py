@@ -55,6 +55,8 @@ except ImportError:
 
     cp = None
 
+from src.utils.feature_common.volume_transforms import log1p_zscore_normalize
+
 # Base class for VectorBT-optimized time features
 class VectorBTTimeFeatureGenerator(VectorizedFeatureGenerator):
     """
@@ -737,7 +739,11 @@ def _calc_time_since(condition, index):
     condition_positions = positions.where(condition)
     last_condition_position = condition_positions.ffill()
     time_since = positions - last_condition_position
-    return time_since.fillna(0) # Default to 0 if never happened (or beginning of data)
+    time_since = time_since.fillna(0) # Default to 0 if never happened (or beginning of data)
+
+    # Apply robust normalization (log1p + rolling z-score)
+    # This handles the long-tail nature of "time since" features
+    return log1p_zscore_normalize(time_since.fillna(0))
 
 # --- New Time-Based Feature Generators ---
 
@@ -1019,6 +1025,29 @@ def create_default_time_generators() -> List[FeatureGenerator]:
         HourCosGenerator(),
         DayOfWeekSinGenerator(),
         DayOfWeekCosGenerator(),
+    ]
+
+def create_advanced_time_generators() -> List[FeatureGenerator]:
+    """Create advanced time feature generators including intraday patterns and momentum."""
+    return [
+        # All basic generators
+        *create_default_time_generators(),
+
+        # Time Since Last Vol Spike
+        TimeSinceLastVolSpikeGenerator(),
+
+        # Additional Time-Since Features
+        TimeSinceTrendImpulseGenerator(),
+        TimeSinceLocalHighGenerator(),
+        TimeSinceLocalLowGenerator(),
+        TimeSinceBreakoutGenerator(),
+        TimeSinceLargeCandleGenerator(),
+        TimeSinceLiquiditySweepGenerator(),
+        TimeSinceSidewaysRegimeGenerator(),
+        TimeSinceRSICrossGenerator(),
+        TimeSinceMACDCrossGenerator(),
+        TimeSinceVWAPCrossGenerator(),
+        TimeSinceMeanReversionSignalGenerator(),
     ]
 
 def create_advanced_time_generators() -> List[FeatureGenerator]:

@@ -1,0 +1,65 @@
+# Volume Force Model Configuration
+# Best hyperparameters from threshold sweep for ETHUSDT_binance_15m (blank mode)
+
+volume_force:
+  description: "Canonical Volume Force configuration based on sweep results (ETHUSDT, binance, 15m)."
+  symbol: "ETHUSDT"
+  exchange: "binance"
+  timeframe: "15m"
+  direction: "long"
+
+  # Global best configuration by average OOF log loss across the three tasks
+  global_best:
+    config_id: 156
+    config_signature: "target_threshold_atr=1.2|lookahead=8|normalization_window=96|volatility_percentile=80|trend_beta=0.75|xgb_max_depth=6"
+    volume_force_target_threshold_atr: 1.2
+    volume_force_lookahead: 8
+    volume_force_normalization_window: 96
+    volume_force_volatility_percentile: 80
+    volume_force_trend_beta: 0.75
+    volume_force_xgb_max_depth: 6
+    volume_force_xgb_learning_rate: 0.03
+
+  # Task-specific best configs (by per-task log loss)
+  per_task:
+    breakout:
+      config_id: 163
+      config_signature: "target_threshold_atr=1.2|lookahead=8|normalization_window=192|volatility_percentile=75|trend_beta=0.75|xgb_max_depth=4"
+      volume_force_target_threshold_atr: 1.2
+      volume_force_lookahead: 8
+      volume_force_normalization_window: 192
+      volume_force_volatility_percentile: 75
+      volume_force_trend_beta: 0.75
+      volume_force_xgb_max_depth: 4
+      volume_force_xgb_learning_rate: 0.03
+
+    volatility:
+      config_id: 156
+      config_signature: "target_threshold_atr=1.2|lookahead=8|normalization_window=96|volatility_percentile=80|trend_beta=0.75|xgb_max_depth=6"
+      volume_force_target_threshold_atr: 1.2
+      volume_force_lookahead: 8
+      volume_force_normalization_window: 96
+      volume_force_volatility_percentile: 80
+      volume_force_trend_beta: 0.75
+      volume_force_xgb_max_depth: 6
+      volume_force_xgb_learning_rate: 0.03
+
+    trend:
+      config_id: 95
+      config_signature: "target_threshold_atr=1.0|lookahead=8|normalization_window=192|volatility_percentile=80|trend_beta=0.75|xgb_max_depth=4"
+      volume_force_target_threshold_atr: 1.0
+      volume_force_lookahead: 8
+      volume_force_normalization_window: 192
+      volume_force_volatility_percentile: 80
+      volume_force_trend_beta: 0.75
+      volume_force_xgb_max_depth: 4
+      volume_force_xgb_learning_rate: 0.03
+
+  # Summary of sweep metrics for reference (does not affect training)
+  sweep_summary:
+    best_log_loss: 0.4376637730619022
+    best_breakout_log_loss: 0.587227616168904
+    best_volatility_log_loss: 0.5014190692640914
+    best_trend_log_loss: 0.22434463375271096
+    total_runs: 216
+    successful_runs: 216

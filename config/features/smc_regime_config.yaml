@@ -1,0 +1,15 @@
+smc_regime:
+  symbol: ETHUSDT
+  exchange: binance
+  timeframe: 15m
+  direction: long
+  execution_mode: blank
+  lookback_days: 360
+  smc_lookahead: 18
+  smc_breakout_threshold: 0.5
+  smc_breakdown_threshold: -0.5
+  smc_vp_lookback: 100
+  smc_xgb_max_features: 48
+  smc_normalization_window: 400
+  smc_xgb_enable_training: true
+  smc_xgb_min_samples: 500

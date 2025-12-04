@@ -625,7 +625,9 @@ class MLPathRegimeStep(BaseStep):
 
                 # Calculate regime statistics using a Path-based score proxy
                 # Prefer KER and path straightness; fall back to a constant score.
-                if "path_ker_3h" in risk_df.columns:
+                if "path_risk_score" in risk_df.columns:
+                    path_scores = risk_df["path_risk_score"]
+                elif "path_ker_3h" in risk_df.columns:
                     path_scores = risk_df["path_ker_3h"]
                 elif "path_ker_6h" in risk_df.columns:
                     path_scores = risk_df["path_ker_6h"]
@@ -643,6 +645,54 @@ class MLPathRegimeStep(BaseStep):
                     regime_labels_series.loc[common_index],
                     path_scores.loc[common_index],
                 )
+
+                # Integrate tail-risk alignment into label quality metrics so that
+                # higher risk scores are encouraged to align with higher 3h bad-path
+                # fractions. This tightens the risk label toward realized tails
+                # without changing the underlying regimes.
+                try:
+                    label_quality = training_metrics.get("label_quality") or {}
+
+                    if (
+                        regime_stats_df is not None
+                        and not regime_stats_df.empty
+                        and isinstance(label_quality, dict)
+                        and "mean_risk_score" in regime_stats_df.columns
+                        and "tail_risk_score_3h" in regime_stats_df.columns
+                    ):
+                        align_df = regime_stats_df[[
+                            "mean_risk_score",
+                            "tail_risk_score_3h",
+                        ]].copy()
+                        align_df = align_df.apply(pd.to_numeric, errors="coerce")
+                        align_df = align_df.dropna()
+
+                        if len(align_df) >= 2:
+                            risk_vals = align_df["mean_risk_score"]
+                            tail_vals = align_df["tail_risk_score_3h"]
+
+                            if risk_vals.notna().any() and tail_vals.notna().any():
+                                corr = float(
+                                    risk_vals.corr(tail_vals, method="spearman")
+                                )
+
+                                if np.isfinite(corr):
+                                    # Map Spearman [-1, 1] -> [0, 1]; clamp negatives to 0
+                                    alignment_score = max(0.0, min(1.0, 0.5 * (corr + 1.0)))
+                                    base_quality = float(label_quality.get("quality_score", 0.0))
+
+                                    # Blend base risk CV score with tail alignment so that
+                                    # strong alignment boosts quality, while preserving
+                                    # comparability across configs.
+                                    adjusted_quality = base_quality * (0.5 + 0.5 * alignment_score)
+
+                                    label_quality["quality_score"] = adjusted_quality
+                                    label_quality["tail_risk_alignment_3h"] = alignment_score
+                                    training_metrics["label_quality"] = label_quality
+                except Exception as tail_exc:
+                    tprint_warning(
+                        f"Failed to integrate tail risk alignment into label quality (non-fatal): {tail_exc}"
+                    )
 
             except Exception as exc:
                 tprint_error(f"❌ HMM regime detection failed: {exc}")
@@ -1037,8 +1087,10 @@ class MLPathRegimeStep(BaseStep):
                         stats_csv_path = f"outcomes/{stats_csv_name}"
                         regime_stats_df.to_csv(stats_csv_path)
                         tprint_info(
-                            f"📊 Saved ML Path XGB regime statistics CSV: {stats_csv_path}"
+                            f" Saved ML Path XGB regime statistics CSV: {stats_csv_path}"
                         )
+                        # Expose stats CSV path in training metrics so sweeps can track it
+                        training_metrics["xgb_stats_csv_path"] = stats_csv_path
                     except Exception as stats_csv_exc:  # pragma: no cover - defensive
                         tprint_warning(
                             f"Failed to save ML Path XGB regime statistics CSV (non-fatal): {stats_csv_exc}"
@@ -8583,6 +8635,21 @@ class MLPathRegimeStep(BaseStep):
             stats_records.append(stats)
 
         regime_stats_df = pd.DataFrame(stats_records)
+
+        if "bad_path_fraction_3h" in regime_stats_df.columns:
+            try:
+                bad_frac = pd.to_numeric(regime_stats_df["bad_path_fraction_3h"], errors="coerce")
+                if bad_frac.notna().any():
+                    frac_min = float(bad_frac.min())
+                    frac_max = float(bad_frac.max())
+                    if frac_max > frac_min:
+                        tail_risk = (bad_frac - frac_min) / (frac_max - frac_min)
+                    else:
+                        tail_risk = bad_frac - frac_min
+                    regime_stats_df["tail_risk_score_3h"] = tail_risk
+            except Exception:
+                pass
+
         return regime_stats_df
 
     def _assess_risk_regime_quality(
@@ -8796,31 +8863,57 @@ class MLPathRegimeStep(BaseStep):
                 if step_result.get("success", False):
                     metrics = step_result.get("metrics", {})
 
-                    # Extract key metrics
+                    # Prefer label quality metrics (risk CV, Wasserstein, quality score, temporal)
+                    label_quality = metrics.get("label_quality") or {}
+                    if isinstance(label_quality, dict):
+                        source_metrics = label_quality
+                    else:
+                        source_metrics = metrics
+
+                    temporal_metrics = source_metrics.get("temporal_metrics", {}) or {}
+
+                    # Normalize metrics to safe floats for logging and ranking
+                    def _safe_metric(value: Any, default: float = float("nan")) -> float:
+                        try:
+                            if value is None:
+                                return default
+                            return float(value)
+                        except (TypeError, ValueError):
+                            return default
+
+                    risk_cv_ratio_val = _safe_metric(source_metrics.get("risk_cv_ratio"))
+                    quality_score_val = _safe_metric(source_metrics.get("quality_score"))
+                    wasserstein_val = _safe_metric(source_metrics.get("wasserstein_distance"))
+                    avg_duration_val = _safe_metric(temporal_metrics.get("avg_duration_bars"))
+                    stability_score_val = _safe_metric(temporal_metrics.get("stability_score"))
+
+                    # Extract key metrics for this variation
                     result_row = {
                         "variation_id": i,
                         **var_params,
-                        "risk_cv_ratio": metrics.get("risk_cv_ratio"),
-                        "quality_score": metrics.get("quality_score"),
-                        "wasserstein_distance": metrics.get("wasserstein_distance"),
-                        "avg_duration_bars": metrics.get("temporal_metrics", {}).get("avg_duration_bars"),
-                        "stability_score": metrics.get("temporal_metrics", {}).get("stability_score"),
+                        "risk_cv_ratio": risk_cv_ratio_val,
+                        "quality_score": quality_score_val,
+                        "wasserstein_distance": wasserstein_val,
+                        "avg_duration_bars": avg_duration_val,
+                        "stability_score": stability_score_val,
+                        # Track where per-regime XGB stats were written, if available
+                        "xgb_stats_csv_path": metrics.get("xgb_stats_csv_path"),
                     }
 
                     # Add XGBoost quality metrics if available
                     xgb_metrics = metrics.get("xgb_quality_metrics", {})
                     if xgb_metrics:
                         result_row.update({
-                            "xgb_clf_accuracy": xgb_metrics.get("classifier", {}).get("oof_accuracy"),
-                            "xgb_clf_logloss": xgb_metrics.get("classifier", {}).get("oof_logloss"),
-                            "xgb_reg_r2": xgb_metrics.get("regressor", {}).get("oof_r2"),
-                            "xgb_reg_rmse": xgb_metrics.get("regressor", {}).get("oof_rmse"),
-                            "target_upper_hit_pct": xgb_metrics.get("target_stats", {}).get("upper_hit_pct"),
-                            "target_noise_pct": xgb_metrics.get("target_stats", {}).get("noise_pct"),
+                            "xgb_clf_accuracy": _safe_metric(xgb_metrics.get("classifier", {}).get("oof_accuracy")),
+                            "xgb_clf_logloss": _safe_metric(xgb_metrics.get("classifier", {}).get("oof_logloss")),
+                            "xgb_reg_r2": _safe_metric(xgb_metrics.get("regressor", {}).get("oof_r2")),
+                            "xgb_reg_rmse": _safe_metric(xgb_metrics.get("regressor", {}).get("oof_rmse")),
+                            "target_upper_hit_pct": _safe_metric(xgb_metrics.get("target_stats", {}).get("upper_hit_pct")),
+                            "target_noise_pct": _safe_metric(xgb_metrics.get("target_stats", {}).get("noise_pct")),
                         })
 
                     results.append(result_row)
-                    tprint(f"✅ Variation {i+1} success: Quality={result_row.get('quality_score', 0):.3f}", "SUCCESS")
+                    tprint(f"✅ Variation {i+1} success: Quality={quality_score_val:.3f}", "SUCCESS")
                 else:
                     tprint(f"❌ Variation {i+1} failed: {step_result.get('error')}", "ERROR")
 
@@ -8848,16 +8941,38 @@ class MLPathRegimeStep(BaseStep):
 
         # Create composite score:
         # Rank by Quality Score (descending)
-        results_df['rank_quality'] = results_df['quality_score'].rank(ascending=False)
+        if 'quality_score' in results_df.columns:
+            quality_series = pd.to_numeric(results_df['quality_score'], errors='coerce')
+            if quality_series.notna().any():
+                # Treat NaNs as worst by filling with a value slightly below the minimum
+                min_quality = quality_series.min()
+                fill_value = (min_quality - 1e-6) if pd.notna(min_quality) else 0.0
+                quality_for_rank = quality_series.fillna(fill_value)
+                results_df['rank_quality'] = quality_for_rank.rank(ascending=False)
+            else:
+                # Fallback: give all configs the same quality rank
+                results_df['rank_quality'] = float(len(results_df))
+        else:
+            results_df['rank_quality'] = float(len(results_df))
 
         # Rank by XGB LogLoss (ascending) - handle NaNs
         if 'xgb_clf_logloss' in results_df.columns:
-            results_df['rank_logloss'] = results_df['xgb_clf_logloss'].rank(ascending=True)
+            logloss_series = pd.to_numeric(results_df['xgb_clf_logloss'], errors='coerce')
+            if logloss_series.notna().any():
+                # Treat NaNs as worst (largest logloss)
+                max_logloss = logloss_series.max()
+                fill_value = (max_logloss + 1e-6) if pd.notna(max_logloss) else 0.0
+                logloss_for_rank = logloss_series.fillna(fill_value)
+                results_df['rank_logloss'] = logloss_for_rank.rank(ascending=True)
+            else:
+                results_df['rank_logloss'] = float(len(results_df)) / 2.0
         else:
-            results_df['rank_logloss'] = len(results_df) / 2
+            results_df['rank_logloss'] = float(len(results_df)) / 2.0
 
         # Composite: 70% Quality, 30% LogLoss
-        results_df['composite_rank'] = 0.7 * results_df['rank_quality'] + 0.3 * results_df['rank_logloss']
+        results_df['composite_rank'] = (
+            0.7 * results_df['rank_quality'] + 0.3 * results_df['rank_logloss']
+        )
 
         # Sort by composite rank
         ranked_df = results_df.sort_values('composite_rank')

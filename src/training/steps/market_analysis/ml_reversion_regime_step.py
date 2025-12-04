@@ -1880,11 +1880,11 @@ class MLMeanReversionRegimeStep(BaseStep):
         # value (400) but adapt this to the effective dataset size so blank-
         # mode runs with a few hundred aligned samples still get multiple OOF
         # windows instead of a single tiny block.
-        min_samples_cfg = config.get("mr_oof_min_samples_for_training", 400)
+        min_samples_cfg = config.get("mr_oof_min_samples_for_training", 300)
         try:
             min_samples_int = int(min_samples_cfg)
         except Exception:
-            min_samples_int = 400
+            min_samples_int = 300
 
         n_total_samples = len(X)
         if n_total_samples < 1000:
@@ -2892,6 +2892,14 @@ class MLMeanReversionRegimeStep(BaseStep):
                                 ),
                                 "number_of_trades": int(best_row.get("number_of_trades", 0)),
                             }
+                            try:
+                                student_metrics["grid_sharpe_with_fees"] = best_summary["sharpe_ratio_with_fees"]
+                                student_metrics["grid_total_return_with_fees_pct"] = best_summary["strategy_total_return_with_fees_%"]
+                                student_metrics["grid_calmar_with_fees"] = best_summary["calmar_ratio_with_fees"]
+                                student_metrics["grid_number_of_trades"] = best_summary["number_of_trades"]
+                                student_metrics["grid_max_holding_bars"] = best_summary["max_holding_bars"]
+                            except Exception:
+                                pass
                             tprint_info(
                                 "✨ Best fee-aware grid config: "
                                 f"{best_summary['grid_config']} | "
@@ -2996,6 +3004,16 @@ class MLMeanReversionRegimeStep(BaseStep):
                     # Forward Analysis (using horizon 4 or 12 as available)
                     "fwd_dir_acc": 0.0,
                     "fwd_corr": 0.0,
+                    "fwd_mean_return": 0.0,
+                    "fwd_std_return": 0.0,
+                    "fwd_sharpe": 0.0,
+
+                    # Grid backtest economics (when available)
+                    "grid_sharpe_with_fees": float(student_metrics.get("grid_sharpe_with_fees", 0.0) or 0.0),
+                    "grid_total_return_with_fees_pct": float(student_metrics.get("grid_total_return_with_fees_pct", 0.0) or 0.0),
+                    "grid_calmar_with_fees": float(student_metrics.get("grid_calmar_with_fees", 0.0) or 0.0),
+                    "grid_number_of_trades": int(student_metrics.get("grid_number_of_trades", 0) or 0),
+                    "grid_max_holding_bars": int(student_metrics.get("grid_max_holding_bars", 0) or 0),
                 }
 
                 # Populate forward metrics (prefer horizon 12, then 8, then 4)
@@ -3004,6 +3022,13 @@ class MLMeanReversionRegimeStep(BaseStep):
                         fm = forward_metrics[h]
                         trial_result["fwd_dir_acc"] = float(fm.get("directional_accuracy", 0.0) or 0.0)
                         trial_result["fwd_corr"] = float(fm.get("corr_prob_fwd", 0.0) or 0.0)
+                        trial_result["fwd_mean_return"] = float(fm.get("mean_fwd_return", 0.0) or 0.0)
+                        trial_result["fwd_std_return"] = float(fm.get("std_fwd_return", 0.0) or 0.0)
+                        std_val = trial_result["fwd_std_return"]
+                        if std_val is not None and abs(std_val) > 1e-8:
+                            trial_result["fwd_sharpe"] = trial_result["fwd_mean_return"] / std_val
+                        else:
+                            trial_result["fwd_sharpe"] = 0.0
                         break
 
                 # Add configuration details
@@ -3076,27 +3101,51 @@ class MLMeanReversionRegimeStep(BaseStep):
             tprint_warning("⚠️ No successful configurations to analyze")
             return df, {"best_config": None, "analysis": "no_successful_runs"}
 
-        # Calculate Composite Score
-        # Priority:
-        # 1. AUC (discrimination capability) - 50%
-        # 2. Forward Directional Accuracy (real-world predictive power) - 30%
-        # 3. Test Accuracy (binary classification correctness) - 20%
-        # Penalty: Teacher Positive Rate < 0.01 (too rare) or > 0.5 (too common)
-
         def calculate_score(row):
-            auc = row.get("student_test_auc", 0.5)
-            fwd_acc = row.get("fwd_dir_acc", 0.5)
-            acc = row.get("student_test_acc", 0.5)
-            tp_rate = row.get("teacher_positive_rate", 0.0)
+            auc = float(row.get("student_test_auc", 0.5) or 0.5)
+            fwd_acc = float(row.get("fwd_dir_acc", 0.5) or 0.5)
+            acc = float(row.get("student_test_acc", 0.5) or 0.5)
+            tp_rate = float(row.get("teacher_positive_rate", 0.0) or 0.0)
 
-            base_score = (0.5 * auc) + (0.3 * fwd_acc) + (0.2 * acc)
+            fwd_sharpe = float(row.get("fwd_sharpe", 0.0) or 0.0)
+            grid_sharpe = float(row.get("grid_sharpe_with_fees", 0.0) or 0.0)
+            grid_ret = float(row.get("grid_total_return_with_fees_pct", 0.0) or 0.0)
 
-            # Penalize extreme teacher rates (regime is either non-existent or trivial)
+            has_econ = any(abs(v) > 1e-8 for v in (fwd_sharpe, grid_sharpe, grid_ret))
+
+            if has_econ:
+                econ_terms = []
+                if fwd_sharpe != 0.0:
+                    econ_terms.append(max(min(fwd_sharpe, 3.0), -3.0) / 3.0)
+                if grid_sharpe != 0.0:
+                    econ_terms.append(max(min(grid_sharpe, 3.0), -3.0) / 3.0)
+                if grid_ret != 0.0:
+                    econ_terms.append(max(min(grid_ret / 50.0, 1.0), -1.0))
+                if econ_terms:
+                    econ_score = sum(econ_terms) / float(len(econ_terms))
+                else:
+                    econ_score = 0.0
+                base_score = (
+                    (0.4 * auc)
+                    + (0.25 * fwd_acc)
+                    + (0.15 * acc)
+                    + (0.2 * (0.5 + 0.5 * econ_score))
+                )
+            else:
+                base_score = (0.5 * auc) + (0.3 * fwd_acc) + (0.2 * acc)
+
             penalty = 1.0
             if tp_rate < 0.01 or tp_rate > 0.6:
                 penalty = 0.8
             if tp_rate < 0.001:
                 penalty = 0.5
+
+            trades = float(row.get("grid_number_of_trades", 0.0) or 0.0)
+            if trades > 0.0:
+                if trades < 20.0:
+                    penalty *= 0.9
+                elif trades > 2000.0:
+                    penalty *= 0.9
 
             return base_score * penalty
 

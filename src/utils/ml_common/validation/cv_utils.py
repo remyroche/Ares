@@ -36,17 +36,27 @@ class TimeSeriesSplitValidator:
     when available and provides fallback behavior otherwise.
     """
 
-    def __init__(self, n_splits: int = 5, gap: int = 0, test_size: Optional[int] = None):
+    def __init__(
+        self,
+        n_splits: int = 5,
+        gap: int = 0,
+        test_size: Optional[int] = None,
+        embargo_pct: Optional[float] = None,
+    ):
         """Initialize time series split validator.
 
         Args:
             n_splits: Number of splits for cross-validation
             gap: Gap between train and test sets to prevent data leakage
             test_size: Size of test set (if supported by sklearn version)
+            embargo_pct: Optional fraction of samples to embargo after each
+                validation window. This is approximated via sklearn's ``gap``
+                parameter when available and in the fallback splitter.
         """
         self.n_splits = max(2, int(n_splits))
         self.gap = max(0, int(gap))
         self.test_size = test_size
+        self.embargo_pct = embargo_pct
 
     def split(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> Iterator[Tuple[np.ndarray, np.ndarray]]:
         """Generate time series aware train/test splits.
@@ -58,13 +68,30 @@ class TimeSeriesSplitValidator:
         Yields:
             Tuple of (train_indices, test_indices) respecting temporal order
         """
+        # Derive an effective gap from embargo_pct if provided
+        n = len(X)
+        effective_gap = self.gap
+        if self.embargo_pct is not None and self.embargo_pct > 0:
+            try:
+                embargo_gap = int(max(1, round(self.embargo_pct * n)))
+                effective_gap = max(effective_gap, embargo_gap)
+            except Exception:
+                pass
+
         if SkTimeSeriesSplit is not None:
             try:
                 import inspect
                 if self.test_size is not None and 'test_size' in inspect.signature(SkTimeSeriesSplit).parameters:
-                    cv = SkTimeSeriesSplit(n_splits=self.n_splits, gap=self.gap, test_size=self.test_size)
+                    cv = SkTimeSeriesSplit(
+                        n_splits=self.n_splits,
+                        gap=effective_gap,
+                        test_size=self.test_size,
+                    )
                 else:
-                    cv = SkTimeSeriesSplit(n_splits=self.n_splits, gap=self.gap)  # type: ignore[arg-type]
+                    cv = SkTimeSeriesSplit(  # type: ignore[arg-type]
+                        n_splits=self.n_splits,
+                        gap=effective_gap,
+                    )
                 for tr, te in cv.split(X, y):
                     yield tr, te
                 return
@@ -72,14 +99,13 @@ class TimeSeriesSplitValidator:
                 pass
 
         # Fallback: naive sequential splits respecting temporal order
-        n = len(X)
         fold_sizes = np.full(self.n_splits, n // self.n_splits, dtype=int)
         fold_sizes[: n % self.n_splits] += 1
         start = 0
         for fs in fold_sizes:
             stop = start + fs
             test_idx = np.arange(start, stop)
-            train_end = max(0, start - self.gap)
+            train_end = max(0, start - effective_gap)
             train_idx = np.arange(0, train_end)
             yield train_idx, test_idx
             start = stop

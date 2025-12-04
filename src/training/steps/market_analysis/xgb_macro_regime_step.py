@@ -883,6 +883,18 @@ class XGBMacroTrendStep(BaseStep):
                         f"Alpha fallback regime assignment failed; proceeding without regimes: {fallback_exc}"
                     )
 
+            try:
+                if (
+                    training_metrics.get("macro_trend_primary_regimes_success", 0) == 1
+                    and regime_col_name is not None
+                    and regime_col_name in macro_trend_df.columns
+                    and "macro_trend_score_continuous" in macro_trend_df.columns
+                ):
+                    training_metrics["macro_trend_model_training_failed"] = 0
+                    training_metrics["macro_trend_fallback_used"] = False
+            except Exception:
+                pass
+
             # ------------------------------------------------------------------
             # 5b) Diagnostics for macro_trend_score_continuous distribution & economics
             # ------------------------------------------------------------------
@@ -2550,46 +2562,72 @@ class XGBMacroTrendStep(BaseStep):
 
             model = results.models[-1] if results.models else None
             if model is None:
-                raise ValueError("StandardizedXGBTrainer returned no models for macro alpha")
+                if not oof_df.empty:
+                    pred_col = 'prediction' if 'prediction' in oof_df.columns else 'probability'
+                    if pred_col in oof_df.columns:
+                        tprint_warning(
+                            "StandardizedXGBTrainer returned no models for macro alpha; using OOF-only scores"
+                        )
+                        scores = oof_df[pred_col].reindex(df.index)
+                    else:
+                        raise ValueError(
+                            "StandardizedXGBTrainer returned no models and no usable OOF prediction column for macro alpha"
+                        )
+                else:
+                    raise ValueError(
+                        "StandardizedXGBTrainer returned no models and no OOF predictions for macro alpha"
+                    )
+            else:
+                # Construct full scores using OOF predictions to prevent lookahead bias
+                # OOF predictions cover the training/validation period without leakage.
+                # We only use the final model for segments not covered by OOF (e.g. burn-in or future).
+                try:
+                    import xgboost as _xgb  # local import to avoid global dependency issues
 
-            # Construct full scores using OOF predictions to prevent lookahead bias
-            # OOF predictions cover the training/validation period without leakage.
-            # We only use the final model for segments not covered by OOF (e.g. burn-in or future).
-            try:
-                import xgboost as _xgb  # local import to avoid global dependency issues
+                    # 1. Get model predictions for the full dataset (retrodiction, for filling gaps)
+                    d_full = _xgb.DMatrix(
+                        X_scaled_full.to_numpy(dtype=float, copy=False),
+                        feature_names=list(X_scaled_full.columns),
+                    )
+                    model_preds_full = model.predict(d_full)
+                    full_scores_series = pd.Series(
+                        model_preds_full, index=X_scaled_full.index, name="macro_trend_pred_return"
+                    )
 
-                # 1. Get model predictions for the full dataset (retrodiction, for filling gaps)
-                d_full = _xgb.DMatrix(
-                    X_scaled_full.to_numpy(dtype=float, copy=False),
-                    feature_names=list(X_scaled_full.columns),
-                )
-                model_preds_full = model.predict(d_full)
-                full_scores_series = pd.Series(
-                    model_preds_full, index=X_scaled_full.index, name="macro_trend_pred_return"
-                )
+                    # 2. Overlay OOF predictions where available (Training/Validation data)
+                    oof_preds = results.oof_predictions
+                    if oof_preds is not None and not oof_preds.empty:
+                        # Identify the prediction column ('prediction' or 'probability')
+                        pred_col = 'prediction' if 'prediction' in oof_preds.columns else 'probability'
 
-                # 2. Overlay OOF predictions where available (Training/Validation data)
-                oof_preds = results.oof_predictions
-                if oof_preds is not None and not oof_preds.empty:
-                    # Identify the prediction column ('prediction' or 'probability')
-                    pred_col = 'prediction' if 'prediction' in oof_preds.columns else 'probability'
+                        if pred_col in oof_preds.columns:
+                            # Align indices (OOF index should be a subset of full index)
+                            common_idx = oof_preds.index.intersection(full_scores_series.index)
+                            if not common_idx.empty:
+                                full_scores_series.loc[common_idx] = oof_preds.loc[common_idx, pred_col]
+                                tprint_info(
+                                    f"  Merged {len(common_idx)} OOF predictions into full score series"
+                                )
 
-                    if pred_col in oof_preds.columns:
-                        # Align indices (OOF index should be a subset of full index)
-                        common_idx = oof_preds.index.intersection(full_scores_series.index)
-                        if not common_idx.empty:
-                            full_scores_series.loc[common_idx] = oof_preds.loc[common_idx, pred_col]
-                            tprint_info(
-                                f"  Merged {len(common_idx)} OOF predictions into full score series"
+                    # Reindex to original dataframe to ensure alignment
+                    scores = full_scores_series.reindex(df.index)
+
+                except Exception as pred_exc:
+                    if not oof_df.empty:
+                        pred_col = 'prediction' if 'prediction' in oof_df.columns else 'probability'
+                        if pred_col in oof_df.columns:
+                            tprint_warning(
+                                f"Failed to generate macro alpha full predictions with standardized XGBoost; using OOF-only scores instead: {pred_exc}"
                             )
-
-                # Reindex to original dataframe to ensure alignment
-                scores = full_scores_series.reindex(df.index)
-
-            except Exception as pred_exc:
-                raise ValueError(
-                    f"Failed to generate macro alpha predictions with standardized XGBoost: {pred_exc}"
-                ) from pred_exc
+                            scores = oof_df[pred_col].reindex(df.index)
+                        else:
+                            raise ValueError(
+                                f"Failed to generate macro alpha predictions with standardized XGBoost and no usable OOF prediction column: {pred_exc}"
+                            ) from pred_exc
+                    else:
+                        raise ValueError(
+                            f"Failed to generate macro alpha predictions with standardized XGBoost and no OOF predictions: {pred_exc}"
+                        ) from pred_exc
 
             pred_col_name = "macro_trend_pred_return"
 

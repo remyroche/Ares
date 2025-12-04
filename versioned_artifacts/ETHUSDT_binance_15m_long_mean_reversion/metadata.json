@@ -1,7 +1,7 @@
 {
   "versions": {
-    "ml_mean_reversion_training_data_15m_20251202_235100_747": {
-      "created_at": "2025-12-02T23:51:00.747561",
+    "ml_mean_reversion_training_data_15m_20251203_234332_100": {
+      "created_at": "2025-12-03T23:43:32.100524",
       "num_rows": 2343,
       "num_columns": 8,
       "columns": [
@@ -37,8 +37,8 @@
       "burnin_start": "2021-10-30 22:00:00",
       "burnin_end": "2022-03-02 22:00:00"
     },
-    "ml_mean_reversion_training_data_15m_20251202_235105_631": {
-      "created_at": "2025-12-02T23:51:05.631964",
+    "ml_mean_reversion_training_data_15m_20251203_234407_479": {
+      "created_at": "2025-12-03T23:44:07.479361",
       "num_rows": 2343,
       "num_columns": 8,
       "columns": [
@@ -74,8 +74,8 @@
       "burnin_start": "2021-10-30 22:00:00",
       "burnin_end": "2022-03-02 22:00:00"
     },
-    "ml_mean_reversion_training_data_15m_20251202_235108_000": {
-      "created_at": "2025-12-02T23:51:08.000048",
+    "ml_mean_reversion_training_data_15m_20251203_234437_997": {
+      "created_at": "2025-12-03T23:44:37.997201",
       "num_rows": 2343,
       "num_columns": 8,
       "columns": [
@@ -111,9 +111,9 @@
       "burnin_start": "2021-10-30 22:00:00",
       "burnin_end": "2022-03-02 22:00:00"
     },
-    "ml_mean_reversion_training_data_15m_20251203_000529_942": {
-      "created_at": "2025-12-03T00:05:29.942415",
-      "num_rows": 4675,
+    "ml_mean_reversion_training_data_15m_20251203_234508_135": {
+      "created_at": "2025-12-03T23:45:08.135374",
+      "num_rows": 2343,
       "num_columns": 8,
       "columns": [
         "timestamp",
@@ -141,16 +141,16 @@
       "test_start": "2025-03-02 22:00:00",
       "test_end": "2025-11-29 22:00:00",
       "prediction_method": "oof",
-      "oof_windows": 21,
+      "oof_windows": 6,
       "hpo_runs": 0,
       "retrain_interval_days": 10,
       "hpo_interval_days": 30,
       "burnin_start": "2021-10-30 22:00:00",
       "burnin_end": "2022-03-02 22:00:00"
     },
-    "ml_mean_reversion_training_data_15m_20251203_002900_960": {
-      "created_at": "2025-12-03T00:29:00.960672",
-      "num_rows": 4675,
+    "ml_mean_reversion_training_data_15m_20251204_001526_850": {
+      "created_at": "2025-12-04T00:15:26.850308",
+      "num_rows": 2343,
       "num_columns": 8,
       "columns": [
         "timestamp",
@@ -178,44 +178,7 @@
       "test_start": "2025-03-02 22:00:00",
       "test_end": "2025-11-29 22:00:00",
       "prediction_method": "oof",
-      "oof_windows": 21,
-      "hpo_runs": 0,
-      "retrain_interval_days": 10,
-      "hpo_interval_days": 30,
-      "burnin_start": "2021-10-30 22:00:00",
-      "burnin_end": "2022-03-02 22:00:00"
-    },
-    "ml_mean_reversion_training_data_15m_20251203_080904_104": {
-      "created_at": "2025-12-03T08:09:04.104474",
-      "num_rows": 2440,
-      "num_columns": 8,
-      "columns": [
-        "timestamp",
-        "mr_teacher_cluster",
-        "mr_teacher_mean_reversion",
-        "mr_teacher_score",
-        "mr_raw_score",
-        "mr_probability",
-        "mr_probability_dense",
-        "mr_direction_target"
-      ],
-      "artifact_name": "ml_mean_reversion_training_data_15m",
-      "symbol": "ETHUSDT",
-      "exchange": "binance",
-      "timeframe": "15m",
-      "direction": "long",
-      "model": "mean_reversion",
-      "step_name": "ml_mean_reversion_step",
-      "source_market_data": "historical_data",
-      "version": "v2_classification_with_burnin",
-      "training_start": "2022-03-04 22:00:00",
-      "training_end": "2024-05-30 22:00:00",
-      "validation_start": "2024-06-01 22:00:00",
-      "validation_end": "2025-02-28 22:00:00",
-      "test_start": "2025-03-02 22:00:00",
-      "test_end": "2025-11-29 22:00:00",
-      "prediction_method": "oof",
-      "oof_windows": 7,
+      "oof_windows": 6,
       "hpo_runs": 0,
       "retrain_interval_days": 10,
       "hpo_interval_days": 30,
@@ -223,7 +186,7 @@
       "burnin_end": "2022-03-02 22:00:00"
     }
   },
-  "current_version": "ml_mean_reversion_training_data_15m_20251203_080904_104",
+  "current_version": "ml_mean_reversion_training_data_15m_20251204_001526_850",
   "created_at": "2025-12-02T22:43:39.638964",
-  "updated_at": "2025-12-03T08:09:04.111712"
+  "updated_at": "2025-12-04T01:04:46.110692"
 }

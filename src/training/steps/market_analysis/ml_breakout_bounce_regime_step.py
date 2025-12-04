@@ -5398,12 +5398,13 @@ class MLBreakoutBounceRegimeStep(BaseStep):
             else:
                 optimal_cpus = -1
 
-            model, breakout_metrics, probs_full, classes_full = self._train_breakout_classifier(
+            model, breakout_metrics, probs_full, classes_full, event_labels, fwd_returns = self._train_breakout_classifier(
                 feat_df,
                 labels,
                 config,
                 split_config=split_config,
                 optimal_cpus=optimal_cpus,
+                price_df=aligned_df,
             )
 
             probs_df = pd.DataFrame(
@@ -5421,6 +5422,15 @@ class MLBreakoutBounceRegimeStep(BaseStep):
             if meta_labels is not None:
                 meta_aligned = meta_labels.reindex(output_df.index)
                 output_df["meta_breakout_success"] = meta_aligned
+
+            if event_labels is not None:
+                event_aligned = event_labels.reindex(output_df.index)
+                output_df["breakout_event_label"] = event_aligned
+
+            if fwd_returns is not None:
+                horizon_local = int(config.get("breakout_horizon_bars", 96))
+                fwd_aligned = fwd_returns.reindex(output_df.index)
+                output_df[f"forward_return_h{horizon_local}"] = fwd_aligned
 
             try:
                 # Use a stricter threshold (top 20%) now that we use robust percentile ranking
@@ -8509,7 +8519,8 @@ class MLBreakoutBounceRegimeStep(BaseStep):
         config: Dict[str, Any],
         split_config: Optional[TemporalSplitConfig] = None,
         optimal_cpus: int = -1,
-    ) -> Tuple[Any, Dict[str, Any], np.ndarray, np.ndarray]:
+        price_df: Optional[pd.DataFrame] = None,
+    ) -> Tuple[Any, Dict[str, Any], np.ndarray, np.ndarray, pd.Series, pd.Series]:
         """Train 2-stage breakout classifier using StandardizedXGBTrainer with OOF.
 
         Stage 1: Binary classification (break=1 vs bounce=0)
@@ -8536,11 +8547,9 @@ class MLBreakoutBounceRegimeStep(BaseStep):
 
         tprint_info("🎯 Training 2-stage breakout classifier using StandardizedXGBTrainer with OOF")
 
-        # Prepare data
         X = feat_df.astype(np.float32)
         X = X.replace([np.inf, -np.inf], np.nan).fillna(0.0)
 
-        # Ensure labels align with features
         common_idx = X.index.intersection(labels.index)
         if len(common_idx) == 0:
             raise ValueError("No common indices between features and labels")
@@ -8548,21 +8557,69 @@ class MLBreakoutBounceRegimeStep(BaseStep):
         X = X.loc[common_idx]
         y = labels.loc[common_idx].astype(int)
 
+        horizon = int(config.get("breakout_horizon_bars", 96))
+        if price_df is not None and "close" in price_df.columns:
+            try:
+                close_series = pd.to_numeric(price_df["close"], errors="coerce")
+                close_series = close_series.reindex(X.index)
+                fwd_close = close_series.shift(-horizon)
+                fwd_returns = fwd_close / close_series - 1.0
+            except Exception:
+                if "close" in feat_df.columns:
+                    close = pd.to_numeric(feat_df["close"], errors="coerce")
+                    close = close.reindex(X.index)
+                    fwd_returns = close.shift(-horizon) / close - 1.0
+                else:
+                    fwd_returns = pd.Series(0.0, index=X.index)
+        elif "close" in feat_df.columns:
+            close = pd.to_numeric(feat_df["close"], errors="coerce")
+            close = close.reindex(X.index)
+            fwd_returns = close.shift(-horizon) / close - 1.0
+        else:
+            fwd_returns = pd.Series(0.0, index=X.index)
+
+        abs_move = (
+            fwd_returns
+            .replace([np.inf, -np.inf], np.nan)
+            .abs()
+        )
+        abs_move_clean = abs_move.dropna()
+        event_min_move_cfg = config.get("breakout_event_min_move_pct")
+        if event_min_move_cfg is not None:
+            try:
+                event_min_move = float(event_min_move_cfg)
+            except Exception:
+                event_min_move = float(config.get("breakout_meta_min_ret", 0.015))
+        else:
+            target_frac = float(config.get("breakout_event_target_fraction", 0.3))
+            if target_frac <= 0.0 or target_frac >= 1.0:
+                target_frac = 0.3
+            if abs_move_clean.empty:
+                event_min_move = float(config.get("breakout_meta_min_ret", 0.015))
+            else:
+                q = max(0.0, min(1.0, 1.0 - target_frac))
+                try:
+                    event_min_move = float(abs_move_clean.quantile(q))
+                except Exception:
+                    event_min_move = float(config.get("breakout_meta_min_ret", 0.015))
+        if event_min_move <= 0.0:
+            event_min_move = float(config.get("breakout_meta_min_ret", 0.015))
+
+        y_binary = (abs_move >= event_min_move).astype(np.int32)
+        break_ratio = float(y_binary.mean()) if len(y_binary) > 0 else 0.0
+        tprint_info(
+            f"📊 Binary event label distribution (|ret| >= {event_min_move:.4f}): "
+            f"event={break_ratio:.3f}, no_event={1.0 - break_ratio:.3f}"
+        )
+
         n_samples = len(X)
         n_classes = int(y.max() + 1)
         tprint_info(f"📊 Training data: {n_samples} samples, {X.shape[1]} features, {n_classes} classes")
 
-        # Create model ID for StandardizedXGBTrainer
         symbol = config.get("symbol", "ETHUSDT")
         exchange = config.get("exchange", "binance")
         timeframe = config.get("regime_timeframe", config.get("timeframe", "15m"))
         model_id = f"{symbol}_{exchange}_{timeframe}_breakout_bounce_2stage"
-
-        # Convert labels to binary: break (1) vs bounce/other (0)
-        # Label 1 = break, Labels 0,2,3 = not-break (bounce/trap/chop)
-        y_binary = (y == 1).astype(np.int32)
-        break_ratio = y_binary.mean()
-        tprint_info(f"📊 Binary label distribution: break={break_ratio:.3f}, bounce={1-break_ratio:.3f}")
 
         # ========================================================================
         # SPLIT HANDLING: Try temporal split_config, fallback to percentage-based
@@ -8620,7 +8677,6 @@ class MLBreakoutBounceRegimeStep(BaseStep):
                 tprint_warning(f"⚠️ Failed to apply temporal split_config: {split_exc}, falling back to percentage-based")
                 train_mask = val_mask = test_mask = None
 
-        # Fallback to percentage-based split
         if not use_temporal_splits:
             tprint_info("📊 Using percentage-based train/val/test split")
             train_frac = float(config.get("breakout_train_fraction", 0.7))
@@ -8795,21 +8851,14 @@ class MLBreakoutBounceRegimeStep(BaseStep):
             f"log_loss={val_log_loss:.4f}, auc={val_roc_auc if np.isfinite(val_roc_auc) else float('nan'):.4f}"
         )
 
-        # ========================================================================
-        # STAGE 2: Regression (quality/forward returns) using StandardizedXGBTrainer
-        # ========================================================================
         tprint_info("🔄 Stage 2/2: Training quality regression with StandardizedXGBTrainer")
 
-        # Compute forward returns for regression target
-        horizon = int(config.get("breakout_horizon_bars", 96))
-        if "close" in feat_df.columns:
-            close = feat_df["close"]
-            fwd_returns = close.shift(-horizon) / close - 1.0
-        else:
-            # Fallback: use label magnitude as proxy
-            fwd_returns = pd.Series(0.0, index=feat_df.index)
-
-        fwd_returns_train = fwd_returns.loc[X_train.index].replace([np.inf, -np.inf], np.nan).fillna(0.0)
+        fwd_returns_train = (
+            fwd_returns
+            .loc[X_train.index]
+            .replace([np.inf, -np.inf], np.nan)
+            .fillna(0.0)
+        )
 
         # Configure StandardizedXGBTrainer for regression
         # Use a lower min_samples_for_training so we can train on the
@@ -9141,7 +9190,10 @@ class MLBreakoutBounceRegimeStep(BaseStep):
             f"   OOF Samples: {len(stage1_oof)}"
         )
 
-        return stage1_model, metrics, probs_full, classes_full
+        event_label_series = pd.Series(y_binary.values, index=X.index, name="breakout_event_label")
+        fwd_returns_series = pd.Series(fwd_returns.values, index=X.index, name=f"forward_return_h{horizon}")
+
+        return stage1_model, metrics, probs_full, classes_full, event_label_series, fwd_returns_series
 
     def _safe_log_loss(
         self,

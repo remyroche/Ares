@@ -3147,8 +3147,53 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                     base_cols = [c for c in normalized_features.columns if c in selected_set]
                     interaction_cols = [c for c in interactions.columns if c in selected_set]
 
+                    # Always restrict base features to those selected by Phase 3.4
                     normalized_features = normalized_features[base_cols]
-                    interactions = interactions[interaction_cols]
+
+                    # Optional bias: keep mostly variant and cross-timeframe-style features
+                    # at the interaction-generation stage, while allowing a small
+                    # fallback core of other features for stability.
+                    keep_variant_bias = bool(config.get("phase3_keep_mostly_variant_ct", True))
+                    if keep_variant_bias and not normalized_features.empty:
+                        variant_ct_cols: List[str] = []
+                        core_cols: List[str] = []
+                        for col in normalized_features.columns:
+                            nl = str(col).lower()
+                            is_variant = nl.endswith(("_volnorm", "_vwap", "_trend_adj", "_base"))
+                            is_ct = (
+                                "cross_timeframe" in nl
+                                or "ctf_" in nl
+                                or "_3x_ratio" in nl
+                                or "_6x_ratio" in nl
+                                or "_9x_ratio" in nl
+                                or "_15x_ratio" in nl
+                            )
+                            if is_variant or is_ct:
+                                variant_ct_cols.append(col)
+                            else:
+                                core_cols.append(col)
+
+                        if variant_ct_cols:
+                            max_core = int(config.get("phase3_core_fallback_count", 10))
+                            keep_cols = variant_ct_cols + core_cols[:max_core]
+                            normalized_features = normalized_features[keep_cols]
+
+                    # If the selector chose no interaction columns but LGID produced
+                    # interactions, keep a capped fallback set so that downstream
+                    # steps always see some interaction features instead of an
+                    # empty interaction layer.
+                    if interaction_cols:
+                        interactions = interactions[interaction_cols]
+                    elif interactions is not None and len(interactions.columns) > 0:
+                        max_fallback_interactions = int(
+                            config.get("phase3_interaction_fallback_count", 50)
+                        )
+                        interactions = interactions.iloc[:, :max_fallback_interactions]
+                        tprint_warning(
+                            f"  ⚠️ Phase 3.4 selection kept 0 interaction features; "
+                            f"using {interactions.shape[1]} LGID interactions as fallback"
+                        )
+                    # else: interactions is already empty and remains so
 
                     perf_summary = pipeline.get_performance_summary()
                     lgbm_fs_stats = {

@@ -1,7 +1,7 @@
 {
-  "learning_rate": 0.09083352575671885,
-  "num_leaves": 12,
+  "learning_rate": 0.0760130626936414,
+  "num_leaves": 14,
   "max_depth": 3,
-  "reg_alpha": 0.00030972534445125686,
-  "reg_lambda": 0.0030746864558742065
+  "reg_alpha": 0.00026741394521872543,
+  "reg_lambda": 0.002339401178370425
 }

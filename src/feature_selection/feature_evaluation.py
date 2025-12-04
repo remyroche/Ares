@@ -1461,6 +1461,71 @@ class FeatureSelectionPipeline:
         ]
         self.candidates_per_stage['initial'] = len(candidates)
 
+        # Helper: count interaction and cross-timeframe style features
+        def _count_special_features(cands):
+            ct_count = 0
+            interaction_count = 0
+            for cand in cands:
+                name = str(getattr(cand, "feature_name", "")).lower()
+                # Cross-timeframe markers (ctf_ prefix, cross_timeframe, *_3x_ratio, etc.)
+                is_ct = (
+                    "cross_timeframe" in name
+                    or "ctf_" in name
+                    or "_3x_ratio" in name
+                    or "_6x_ratio" in name
+                    or "_9x_ratio" in name
+                    or "_15x_ratio" in name
+                )
+                # Interaction-style markers (pairwise ops / explicit interaction label)
+                is_interaction = (
+                    "_x_" in name
+                    or "_div_" in name
+                    or "_minus_" in name
+                    or "_plus_" in name
+                    or "_log_ratio" in name
+                    or "interaction" in name
+                )
+                if is_ct:
+                    ct_count += 1
+                if is_interaction:
+                    interaction_count += 1
+            return ct_count, interaction_count
+
+        # Helper: log metrics for a given stage and return updated counts
+        def _log_special_metrics(stage_label, cands, prev_ct, prev_inter):
+            ct_count, interaction_count = _count_special_features(cands)
+            pruned_ct = prev_ct - ct_count
+            pruned_inter = prev_inter - interaction_count
+            self.logger.info(
+                "FS metrics (%s): total=%d, ct=%d (pruned %d), interaction=%d (pruned %d)",
+                stage_label,
+                len(cands),
+                ct_count,
+                pruned_ct,
+                interaction_count,
+                pruned_inter,
+            )
+            tprint(
+                f"[FS] Metrics ({stage_label}): total={len(cands)}, "
+                f"ct={ct_count} (pruned {pruned_ct}), "
+                f"interaction={interaction_count} (pruned {pruned_inter})"
+            )
+            return ct_count, interaction_count
+
+        # Initial counts before any stages
+        ct_initial, interaction_initial = _count_special_features(candidates)
+        self.logger.info(
+            "FS metrics (initial): total=%d, ct=%d, interaction=%d",
+            len(candidates),
+            ct_initial,
+            interaction_initial,
+        )
+        tprint(
+            f"[FS] Metrics (initial): total={len(candidates)}, "
+            f"ct={ct_initial}, interaction={interaction_initial}"
+        )
+        ct_prev, interaction_prev = ct_initial, interaction_initial
+
         # Stage 1: Fast Screening (on subsample)
         tprint(
             f"[FS] Stage 1: Fast screening on {len(subsampled_data)} rows - "
@@ -1478,6 +1543,7 @@ class FeatureSelectionPipeline:
             f"{self.candidates_per_stage['initial']} features survived "
             f"in {self.stage_times['stage1']:.2f}s"
         )
+        ct_prev, interaction_prev = _log_special_metrics("after_stage1", candidates, ct_prev, interaction_prev)
 
         if not candidates:
             self.logger.info("No candidates survived Stage 1")
@@ -1500,6 +1566,7 @@ class FeatureSelectionPipeline:
             f"{self.candidates_per_stage['after_stage2']} features survived "
             f"in {self.stage_times['stage2']:.2f}s"
         )
+        ct_prev, interaction_prev = _log_special_metrics("after_stage2", candidates, ct_prev, interaction_prev)
 
         if not candidates:
             self.logger.info("No candidates survived Stage 2")
@@ -1522,6 +1589,7 @@ class FeatureSelectionPipeline:
             f"{self.candidates_per_stage['after_stage3']} features survived "
             f"in {self.stage_times['stage3']:.2f}s"
         )
+        ct_prev, interaction_prev = _log_special_metrics("after_stage3", candidates, ct_prev, interaction_prev)
 
         if not candidates:
             self.logger.info("No candidates survived Stage 3")
@@ -1545,6 +1613,7 @@ class FeatureSelectionPipeline:
                 f"{self.candidates_per_stage['after_stage3_5']} features survived "
                 f"in {self.stage_times['stage3_5']:.2f}s"
             )
+            ct_prev, interaction_prev = _log_special_metrics("after_stage3_5", candidates, ct_prev, interaction_prev)
 
         # Stage 4: Final Selection
         tprint(
@@ -1559,6 +1628,7 @@ class FeatureSelectionPipeline:
             f"{self.candidates_per_stage['final']} features returned "
             f"in {self.stage_times['stage4']:.2f}s"
         )
+        _log_special_metrics("final", candidates, ct_prev, interaction_prev)
 
         return candidates
 
@@ -2155,9 +2225,87 @@ class FeatureSelectionPipeline:
         for f, c in feature_clusters.items():
             cluster_sizes[c] = cluster_sizes.get(c, 0) + 1
 
-        # Sort candidates by a preliminary score (ic_tstat + cv_score) for ranking
+        # Cluster-level uniqueness and local delta-R^2 vs cluster base
+        target_col = "_target_"
+        feature_target_corr: Dict[str, float] = {}
+        if target_col in data.columns:
+            try:
+                tgt = data[target_col]
+                common_idx = feature_data.index.intersection(tgt.index)
+                if len(common_idx) > 0:
+                    tseries = tgt.loc[common_idx]
+                    corr_with_target = feature_data.loc[common_idx].corrwith(tseries)
+                    for fname, val in corr_with_target.items():
+                        feature_target_corr[str(fname)] = float(val) if not np.isnan(val) else 0.0
+            except Exception as e:  
+                self.logger.warning(
+                    "Stage 3.5: failed to compute feature-target correlations: %s", e
+                )
+
+        cluster_to_features: Dict[int, List[str]] = {}
+        for fname, cid in feature_clusters.items():
+            cluster_to_features.setdefault(cid, []).append(fname)
+
+        cluster_base: Dict[int, str] = {}
+        def _base_strength(c: FeatureCandidate) -> float:
+            return float(c.ic_tstat) * 0.5 + float(c.cv_score) * 0.5
+
+        for cid, fnames in cluster_to_features.items():
+            best_name: Optional[str] = None
+            best_score = -np.inf
+            for fname in fnames:
+                c = feature_to_candidate.get(fname)
+                if c is None:
+                    continue
+                s = _base_strength(c)
+                if s > best_score:
+                    best_score = s
+                    best_name = fname
+            if best_name is not None:
+                cluster_base[cid] = best_name
+
+        for fname, cid in feature_clusters.items():
+            cand = feature_to_candidate.get(fname)
+            if cand is None:
+                continue
+
+            names_in_cluster = cluster_to_features.get(cid, [])
+            max_corr_in_cluster = 0.0
+            if fname in corr_matrix.index:
+                for other in names_in_cluster:
+                    if other == fname:
+                        continue
+                    if other in corr_matrix.columns:
+                        val = abs(float(corr_matrix.loc[fname, other]))
+                        if not np.isnan(val) and val > max_corr_in_cluster:
+                            max_corr_in_cluster = val
+            cand.uniqueness_cluster = float(1.0 - max_corr_in_cluster)
+
+            base_name = cluster_base.get(cid)
+            delta_r2 = 0.0
+            if base_name is not None and base_name != fname:
+                r_b = feature_target_corr.get(str(base_name), 0.0)
+                r_f = feature_target_corr.get(str(fname), 0.0)
+                r_fb = 0.0
+                if fname in corr_matrix.index and base_name in corr_matrix.columns:
+                    r_fb = float(corr_matrix.loc[fname, base_name])
+                r2_b = float(r_b ** 2)
+                try:
+                    denom = np.sqrt(max(1.0 - r_fb ** 2, 1e-6) * max(1.0 - r_b ** 2, 1e-6))
+                    r_f_given_b = (r_f - r_fb * r_b) / denom
+                    r2_bf = r2_b + (1.0 - r2_b) * float(r_f_given_b ** 2)
+                    delta_r2 = max(0.0, float(r2_bf - r2_b))
+                except Exception:
+                    delta_r2 = 0.0
+            cand.delta_r2_cluster = float(delta_r2)
+
         def prelim_score(c: FeatureCandidate) -> float:
-            return c.ic_tstat * 0.5 + c.cv_score * 0.5
+            base_score = float(c.ic_tstat) * 0.5 + float(c.cv_score) * 0.5
+            uniq = float(getattr(c, "uniqueness_cluster", 0.0))
+            d_r2 = float(getattr(c, "delta_r2_cluster", 0.0))
+            uniq_w = float(getattr(self.config, "redundancy_uniqueness_weight", 0.1))
+            d_r2_w = float(getattr(self.config, "redundancy_delta_r2_weight", 0.2))
+            return base_score + uniq_w * uniq + d_r2_w * d_r2
 
         sorted_candidates = sorted(candidates, key=prelim_score, reverse=True)
 

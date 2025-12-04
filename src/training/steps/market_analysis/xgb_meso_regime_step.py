@@ -81,7 +81,13 @@ class XGBMesoTrendStep(BaseStep):
 
             # Defaults for Meso Trend (2-4h horizon)
             meso_defaults: Dict[str, Any] = {
-                "meso_trend_target_vol_window": 320,
+                "meso_trend_target_vol_window": 480,
+                "meso_ewma_short": 12,
+                "meso_ewma_long": 16,
+                "meso_htf_rsi_period": 14,
+                "meso_htf_atr_period": 21,
+                "meso_htf_macd_fast": 12,
+                "meso_htf_macd_slow": 21,
             }
             for k, v in meso_defaults.items():
                 config.setdefault(k, v)

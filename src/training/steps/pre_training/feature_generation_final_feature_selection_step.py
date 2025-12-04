@@ -743,6 +743,9 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             # CRITICAL: Save feature metadata for live trading
             # We save the top feature set (default 60) for live trading reconstruction
             try:
+                feature_set_sizes = config.get('feature_set_sizes', [60, 50, 40, 30])
+                if not feature_set_sizes:
+                    feature_set_sizes = [60, 50, 40, 30]
                 top_size = max(feature_set_sizes)
                 selected_features_key = f'selected_features_{top_size}'
 
@@ -2711,7 +2714,20 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             
             # Slice the top N features from the full ranked list
             selected_features = full_ranked_features[:target_size]
-            selected_features = _apply_correlation_pruning(selected_features)
+            pruned_features = _apply_correlation_pruning(selected_features)
+            
+            # If correlation pruning removed too many features, refill from remaining pool
+            if len(pruned_features) < target_size:
+                remaining_pool = [
+                    f for f in full_ranked_features
+                    if f not in pruned_features
+                ]
+                for f in remaining_pool:
+                    pruned_features.append(f)
+                    if len(pruned_features) >= target_size:
+                        break
+            
+            selected_features = pruned_features
             
             tprint_error(f"🔍 DEBUG for size {size}:")
             tprint_error(f"   Selected features count: {len(selected_features)}")

@@ -1,14 +1,14 @@
 {
   "data": {
-    "grid_config": "tp=1.900%,sl=0.637%,conf_top=50%,max_hold=24",
-    "take_profit_pct": 0.018999897722921436,
-    "stop_loss_pct": 0.006367618765471442,
+    "grid_config": "tp=2.200%,sl=0.300%,conf_top=50%,max_hold=24",
+    "take_profit_pct": 0.022,
+    "stop_loss_pct": 0.003,
     "confidence_quantile": 0.5,
     "max_holding_bars": 24,
-    "sharpe_ratio_with_fees": -4.454859367700851,
-    "calmar_ratio_with_fees": -10.26697578272313,
-    "strategy_total_return_with_fees_%": -3.1716032864368526,
-    "number_of_trades": 51
+    "sharpe_ratio_with_fees": 7.2656119554572856,
+    "calmar_ratio_with_fees": 57.90500053032749,
+    "strategy_total_return_with_fees_%": 10.976898334001683,
+    "number_of_trades": 47
   },
   "metadata": {
     "symbol": "ETHUSDT",
@@ -16,5 +16,5 @@
     "timeframe": "15m",
     "direction": "long"
   },
-  "saved_at": "2025-12-03T08:09:04.588939"
+  "saved_at": "2025-12-04T00:15:47.252690"
 }

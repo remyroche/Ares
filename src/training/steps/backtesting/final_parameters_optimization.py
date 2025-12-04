@@ -293,17 +293,17 @@ class FinalParametersOptimizer(BaseStep):
         # Enhanced search spaces with non-linear transformations
         self.enhanced_search_spaces = self._create_enhanced_search_spaces()
 
-        # Optimization settings
-        self.n_trials = config.get('n_trials', 50)
-        self.timeout = config.get('timeout', 300)
-        self.study_name = config.get('study_name', 'final_parameters_optimization')
-        self.use_nonlinear_optimization = config.get('use_nonlinear_optimization', True)
-        self.use_cv = config.get('use_cross_validation', True)
-        self.cv_folds = config.get('cv_folds', 5)
-        self.enable_parallel = config.get('enable_parallel_evaluation', True)
-        self.max_workers = config.get('max_workers', max(1, mp.cpu_count() - 1))
-        self.early_stopping_patience = config.get('early_stopping_patience', 10)
-        self.early_stopping_threshold = config.get('early_stopping_threshold', 0.001)
+        # Optimization settings (always read from self.config, which is a dict)
+        self.n_trials = self.config.get('n_trials', 50)
+        self.timeout = self.config.get('timeout', 300)
+        self.study_name = self.config.get('study_name', 'final_parameters_optimization')
+        self.use_nonlinear_optimization = self.config.get('use_nonlinear_optimization', True)
+        self.use_cv = self.config.get('use_cross_validation', True)
+        self.cv_folds = self.config.get('cv_folds', 5)
+        self.enable_parallel = self.config.get('enable_parallel_evaluation', True)
+        self.max_workers = self.config.get('max_workers', max(1, mp.cpu_count() - 1))
+        self.early_stopping_patience = self.config.get('early_stopping_patience', 10)
+        self.early_stopping_threshold = self.config.get('early_stopping_threshold', 0.001)
 
         tprint(f"📊 Optimization categories: {len(self.categories)}", "info")
         tprint(f"🔧 Number of trials: {self.n_trials}", "info")
@@ -325,7 +325,7 @@ class FinalParametersOptimizer(BaseStep):
             self.cv_validator = TimeSeriesSplitValidator(
                 n_splits=self.cv_folds,
                 test_size=1.0 / self.cv_folds,
-                embargo_pct=config.get('embargo_pct', 0.01)
+                embargo_pct=self.config.get('embargo_pct', 0.01)
             )
             self.oof_generator = OOFGenerator()
             self.leakage_detector = DataLeakageDetector()
@@ -336,7 +336,7 @@ class FinalParametersOptimizer(BaseStep):
         self._init_tpe_optimizers()
         
         # Initialize Hierarchical Optimization (NEW - recommended approach)
-        self.use_hierarchical_optimization = config.get('use_hierarchical_optimization', True)
+        self.use_hierarchical_optimization = self.config.get('use_hierarchical_optimization', True)
         self.hierarchical_optimizer = None
         if self.use_hierarchical_optimization:
             tprint("=" * 80, "header")
@@ -353,7 +353,7 @@ class FinalParametersOptimizer(BaseStep):
             tprint("=" * 80, "header")
 
         # Initialize hardware optimization if available
-        self.hardware_enabled = M1_HARDWARE_AVAILABLE and config.get('enable_hardware_optimization', True)
+        self.hardware_enabled = M1_HARDWARE_AVAILABLE and self.config.get('enable_hardware_optimization', True)
         if self.hardware_enabled:
             self._init_hardware_optimization()
         else:
@@ -365,7 +365,7 @@ class FinalParametersOptimizer(BaseStep):
             tprint("ℹ️  Hardware optimization disabled", "info")
 
         # Initialize VectorBT optimization if available
-        self.vectorbt_enabled = VECTORBT_AVAILABLE and config.get('enable_vectorbt_optimization', True)
+        self.vectorbt_enabled = VECTORBT_AVAILABLE and self.config.get('enable_vectorbt_optimization', True)
         if self.vectorbt_enabled:
             self._init_vectorbt_optimization()
         else:
@@ -375,18 +375,25 @@ class FinalParametersOptimizer(BaseStep):
             tprint("ℹ️  VectorBT optimization disabled", "info")
 
         # Parameter evaluation cache with LRU eviction to prevent memory bloat
-        cache_size = config.get('cache_size', 1000)
+        cache_size = self.config.get('cache_size', 1000)
         self.evaluation_cache = LRUCache(max_size=cache_size)
         tprint(f"💾 Evaluation cache initialized: max_size={cache_size}", "info")
 
-        # Load per-regime performance statistics for objective adjustments
+        # Load per-regime performance statistics for objective adjustments (optional)
         self.regime_performance_path: Optional[str] = None
-        self.regime_performance_stats = self._load_regime_performance_stats()
-        self.regime_performance_modifier = self._calculate_regime_performance_modifier()
-        if self.regime_performance_stats:
-            location = self.regime_performance_path or 'unknown location'
-            tprint(f"📊 Loaded per-regime performance stats from {location}", "info")
-            tprint(f"   • Regime performance modifier: {self.regime_performance_modifier:.4f}", "info")
+        self.regime_performance_stats = {}
+        self.regime_performance_modifier = 0.0
+        try:
+            if hasattr(self, '_load_regime_performance_stats'):
+                self.regime_performance_stats = self._load_regime_performance_stats()
+                self.regime_performance_modifier = self._calculate_regime_performance_modifier()
+                if self.regime_performance_stats:
+                    location = self.regime_performance_path or 'unknown location'
+                    tprint(f"📊 Loaded per-regime performance stats from {location}", "info")
+                    tprint(f"   • Regime performance modifier: {self.regime_performance_modifier:.4f}", "info")
+        except Exception as e:
+            # Regime stats are a secondary enhancement; log and continue if unavailable
+            self.logger.debug(f"Regime performance stats not loaded: {e}")
 
         # Initialize additional utilities (BaseStep already provides artifact_manager)
         self.pickup_utils = get_artifact_pickup_utils()
@@ -451,6 +458,291 @@ class FinalParametersOptimizer(BaseStep):
         except Exception as e:
             self.logger.error(f"Failed to initialize optimization components: {e}")
 
+    def _create_enhanced_search_spaces(self) -> Dict[str, Dict[str, Any]]:
+        """Create enhanced search spaces with non-linear transformation metadata."""
+        enhanced_spaces = {}
+
+        for category, space in self.default_search_spaces.items():
+            enhanced_spaces[category] = create_enhanced_search_space(space, self.nonlinear_config)
+
+        return enhanced_spaces
+
+    def _get_default_search_spaces(self) -> Dict[str, Dict[str, Any]]:
+        """Get default search spaces for parameter categories."""
+        return {
+            'confidence': {
+                'base_entry_threshold': {'type': 'float', 'min': 0.5, 'max': 0.9},
+                'analyst_confidence_threshold': {'type': 'float', 'min': 0.6, 'max': 0.8},
+                'tactician_confidence_threshold': {'type': 'float', 'min': 0.7, 'max': 0.9},
+                # Note: No confidence combination weights - Tactician uses Analyst output as input,
+                # so combining them would cause overfitting. We use only Tactician's Ensemble confidence.
+                # 0.3% Micro Movement Entry Thresholds (immediate only)
+                'micro_immediate_long_threshold': {'type': 'float', 'min': 0.65, 'max': 0.85},
+                'micro_immediate_short_threshold': {'type': 'float', 'min': 0.68, 'max': 0.88},
+                # Exit-specific confidence parameters for 0.3% micro movements
+                'exit_confidence_threshold': {'type': 'float', 'min': 0.3, 'max': 0.7},
+                # Note: No exit confidence combination weights - we use only Tactician's Ensemble confidence
+                # 0.3% Micro Movement Exit Thresholds (immediate only)
+                'exit_micro_immediate_long_threshold': {'type': 'float', 'min': 0.1, 'max': 0.5},
+                'exit_micro_immediate_short_threshold': {'type': 'float', 'min': 0.1, 'max': 0.5},
+                # Directional Reversal Detection (MAIN EXIT TRIGGER)
+                'directional_confidence_min': {'type': 'float', 'min': 0.05, 'max': 0.5}
+            },
+            'intensity': {
+                # Signal intensity and strength parameters
+                'signal_intensity_threshold': {'type': 'float', 'min': 0.4, 'max': 0.8},
+                'intensity_decay_factor': {'type': 'float', 'min': 0.85, 'max': 0.99},
+                'intensity_amplification_factor': {'type': 'float', 'min': 1.05, 'max': 1.25},
+                'min_intensity_duration': {'type': 'int', 'min': 3, 'max': 15},
+                'max_intensity_duration': {'type': 'int', 'min': 30, 'max': 120},
+                'intensity_combination_method': {'type': 'categorical', 'choices': ['weighted_average', 'maximum', 'harmonic_mean']}
+            },
+            'position_sizing': {
+                'base_position_size': {'type': 'float', 'min': 0.01, 'max': 0.15},
+                'max_position_size': {'type': 'float', 'min': 0.1, 'max': 0.3}
+            },
+            'leverage': {
+                'safe_leverage_multiplier': {'type': 'float', 'min': 0.5, 'max': 1.0}
+            },
+            'tpsl': {
+                'tp_long': {'type': 'float', 'min': 0.02, 'max': 0.1},
+                'sl_long': {'type': 'float', 'min': 0.01, 'max': 0.05},
+                
+                # ===== ENHANCED TP/SL PARAMETERS =====
+                # Take profit ATR-based parameters
+                'tp_base_atr_multiplier': {'type': 'float', 'min': 1.5, 'max': 4.0},
+                'tp_confidence_scaling': {'type': 'float', 'min': 0.5, 'max': 1.5},
+                'tp_uncertainty_scaling': {'type': 'float', 'min': 0.5, 'max': 1.5},
+                
+                # Stop loss ATR-based parameters
+                'sl_base_atr_multiplier': {'type': 'float', 'min': 0.5, 'max': 2.0},
+                'sl_volatility_scaling': {'type': 'float', 'min': 0.8, 'max': 1.5},
+                'sl_rolling_window': {'type': 'int', 'min': 10, 'max': 50},
+                
+                # Trailing take profit
+                'enable_trailing_tp': {'type': 'categorical', 'choices': [True, False]},
+                'trailing_tp_activation_atr': {'type': 'float', 'min': 1.0, 'max': 2.5},
+                
+                # Adaptive TP/SL
+                'enable_adaptive_tpsl': {'type': 'categorical', 'choices': [True, False]},
+                'adaptive_tp_volatility_multiplier': {'type': 'float', 'min': 0.8, 'max': 1.5},
+                'adaptive_sl_uncertainty_multiplier': {'type': 'float', 'min': 0.8, 'max': 1.5}
+            },
+            'exit_strategy': {
+                # Component confidence drop (backtested parameter)
+                'component_confidence_drop': {'type': 'float', 'min': 0.1, 'max': 0.5},
+
+                # Base profit target (tested range 0.6% - 1.2%)
+                'base_profit_target': {'type': 'float', 'min': 0.006, 'max': 0.012},
+                
+                # Profit trailing percent (tested range 0.0% - 0.3%)
+                'profit_trailing_percent': {'type': 'float', 'min': 0.0, 'max': 0.003},
+
+                # Exit confidence drop threshold
+                'exit_confidence_drop': {'type': 'float', 'min': 0.1, 'max': 0.5},
+
+                # Stop-loss parameters
+                'base_stop_loss': {'type': 'float', 'min': -0.08, 'max': -0.02},
+                'atr_multiplier': {'type': 'float', 'min': 1.0, 'max': 3.0},
+                'volatility_adjustment_factor': {'type': 'float', 'min': 0.5, 'max': 2.0},
+
+                # Time-based parameters (max hold time only - min hold time removed)
+                'max_hold_time': {'type': 'int', 'min': 3600, 'max': 14400},  # 1-4 hours
+                'confidence_time_scaling_factor': {'type': 'float', 'min': 0.5, 'max': 2.0},
+
+                # Trailing stop parameters
+                'trailing_atr_multiplier': {'type': 'float', 'min': 1.0, 'max': 3.0},
+                'trailing_min_distance': {'type': 'float', 'min': 0.005, 'max': 0.03},
+                'trailing_confidence_activation': {'type': 'float', 'min': 0.6, 'max': 0.9},
+
+                # Unified trailing framework parameters
+                'profit_buffer_atr_multiplier': {'type': 'float', 'min': 0.3, 'max': 0.9},
+                'profit_buffer_min_fraction': {'type': 'float', 'min': 0.0005, 'max': 0.002},
+                'trail_base_atr_multiplier': {'type': 'float', 'min': 0.6, 'max': 1.2},
+                'breakeven_activation_atr': {'type': 'float', 'min': 0.8, 'max': 1.5},
+                'trail_activation_atr': {'type': 'float', 'min': 0.8, 'max': 1.5},
+                'tp_trail_activation_atr': {'type': 'float', 'min': 1.8, 'max': 2.5},
+                'tp_trail_trigger_atr': {'type': 'float', 'min': 2.0, 'max': 3.5},
+                'partial_take_fraction': {'type': 'float', 'min': 0.3, 'max': 0.7},
+                'drawdown_tighten_atr': {'type': 'float', 'min': 0.6, 'max': 1.0},
+                'tighten_trail_atr': {'type': 'float', 'min': 0.3, 'max': 0.8},
+                'drawdown_exit_atr': {'type': 'float', 'min': 1.0, 'max': 1.6},
+                'volatility_tighten_threshold': {'type': 'float', 'min': 0.6, 'max': 0.9},
+                'volatility_tighten_adjustment': {'type': 'float', 'min': 0.1, 'max': 0.5},
+                'volatility_loosen_threshold': {'type': 'float', 'min': 1.1, 'max': 1.6},
+                'volatility_loosen_adjustment': {'type': 'float', 'min': 0.1, 'max': 0.4},
+                'time_decay_bars': {'type': 'int', 'min': 6, 'max': 12},
+                'time_decay_threshold_atr': {'type': 'float', 'min': 0.2, 'max': 0.6},
+                'ml_confidence_tighten_threshold': {'type': 'float', 'min': 0.2, 'max': 0.5},
+                'ml_confidence_tighten_atr': {'type': 'float', 'min': 0.2, 'max': 0.6},
+                'ml_regime_partial_fraction': {'type': 'float', 'min': 0.3, 'max': 0.7},
+                'low_vol_sl_atr': {'type': 'float', 'min': 1.0, 'max': 1.6},
+                'low_vol_tp_atr': {'type': 'float', 'min': 1.8, 'max': 2.6},
+                'low_vol_trail_atr': {'type': 'float', 'min': 0.6, 'max': 1.0},
+                'low_vol_tp_trail': {'type': 'float', 'min': 2.0, 'max': 2.6},
+                'normal_vol_sl_atr': {'type': 'float', 'min': 1.3, 'max': 1.9},
+                'normal_vol_tp_atr': {'type': 'float', 'min': 2.2, 'max': 3.0},
+                'normal_vol_trail_atr': {'type': 'float', 'min': 0.8, 'max': 1.2},
+                'normal_vol_tp_trail': {'type': 'float', 'min': 2.2, 'max': 3.0},
+                'high_vol_sl_atr': {'type': 'float', 'min': 1.5, 'max': 2.2},
+                'high_vol_tp_atr': {'type': 'float', 'min': 2.6, 'max': 3.6},
+                'high_vol_trail_atr': {'type': 'float', 'min': 1.0, 'max': 1.5},
+                'high_vol_tp_trail': {'type': 'float', 'min': 2.6, 'max': 3.6},
+                'trailing_tightening_threshold': {'type': 'float', 'min': 0.01, 'max': 0.05},
+                'trailing_time_decay': {'type': 'float', 'min': 0.9, 'max': 0.995},
+                'trailing_ml_adjustment_weight': {'type': 'float', 'min': 0.1, 'max': 0.6},
+                'ml_trigger_trailing_multiplier': {'type': 'float', 'min': 0.85, 'max': 1.2},
+
+                # Regime-aware parameters
+                'regime_transition_penalty': {'type': 'float', 'min': 0.05, 'max': 0.2},
+                'regime_specific_scaling': {'type': 'float', 'min': 0.8, 'max': 1.2},
+                'regime_trending_profit_band': {'type': 'float', 'min': 0.6, 'max': 0.9},
+                'regime_ranging_profit_band': {'type': 'float', 'min': 0.4, 'max': 0.7},
+                'regime_high_volatility_profit_band': {'type': 'float', 'min': 0.45, 'max': 0.8},
+                'regime_trailing_sensitivity': {'type': 'float', 'min': 0.8, 'max': 1.2},
+                
+                # ===== UNCERTAINTY-BASED PARAMETERS =====
+                'uncertainty_weight': {'type': 'float', 'min': 0.0, 'max': 1.0},
+                'uncertainty_sl_multiplier': {'type': 'float', 'min': 0.5, 'max': 2.0},
+                'uncertainty_tp_multiplier': {'type': 'float', 'min': 0.5, 'max': 2.0},
+                'model_disagreement_threshold': {'type': 'float', 'min': 0.0, 'max': 0.5},
+                'uncertainty_sensitivity': {'type': 'float', 'min': 0.5, 'max': 2.0},
+                
+                # ===== CONFIDENCE DEGRADATION PARAMETERS =====
+                'confidence_position_scaling_power': {'type': 'float', 'min': 1.0, 'max': 3.0},
+                'confidence_degradation_threshold': {'type': 'float', 'min': 0.1, 'max': 0.5},
+                'confidence_degradation_window': {'type': 'int', 'min': 4, 'max': 12},
+                'confidence_sl_tightening_factor': {'type': 'float', 'min': 0.5, 'max': 1.5},
+                'minimum_entry_confidence': {'type': 'float', 'min': 0.5, 'max': 0.9},
+                
+                # ===== VOLATILITY-BASED PARAMETERS =====
+                'atr_sl_multiplier_range': {'type': 'float', 'min': 1.0, 'max': 3.0},
+                'volatility_regime_low_threshold': {'type': 'float', 'min': 0.2, 'max': 0.4},
+                'volatility_regime_high_threshold': {'type': 'float', 'min': 0.6, 'max': 0.8},
+                'high_vol_position_scaling': {'type': 'float', 'min': 0.3, 'max': 0.7},
+                'low_vol_position_scaling': {'type': 'float', 'min': 1.0, 'max': 1.5},
+                'volatility_sensitivity': {'type': 'float', 'min': 0.5, 'max': 2.0},
+                
+                # ===== DYNAMIC TRAILING PARAMETERS (Multiplicative) =====
+                'trailing_base_pct': {'type': 'float', 'min': 0.005, 'max': 0.03},
+                'trailing_confidence_weight': {'type': 'float', 'min': 0.0, 'max': 2.0},
+                'trailing_uncertainty_weight': {'type': 'float', 'min': 0.0, 'max': 2.0},
+                'trailing_volatility_weight': {'type': 'float', 'min': 0.0, 'max': 2.0},
+                'trailing_regime_weight': {'type': 'float', 'min': 0.0, 'max': 2.0},
+                
+                # ===== DYNAMIC TRAILING PARAMETERS (Log Space) =====
+                'trailing_log_base': {'type': 'float', 'min': -5.0, 'max': -2.0},
+                'trailing_log_confidence_weight': {'type': 'float', 'min': 0.0, 'max': 2.0},
+                'trailing_log_uncertainty_weight': {'type': 'float', 'min': -2.0, 'max': 0.0},
+                'trailing_log_volatility_weight': {'type': 'float', 'min': -1.0, 'max': 1.0},
+                'trailing_log_regime_weight': {'type': 'float', 'min': -1.0, 'max': 1.0},
+                
+                # ===== DYNAMIC TRAILING METHOD SELECTION =====
+                'trailing_method': {'type': 'categorical', 'choices': ['multiplicative', 'log_space', 'ensemble']},
+                'trailing_ensemble_mult_weight': {'type': 'float', 'min': 0.0, 'max': 1.0},
+                'trailing_ensemble_log_weight': {'type': 'float', 'min': 0.0, 'max': 1.0}
+            },
+            'uncertainty': {
+                'uncertainty_threshold': {'type': 'float', 'min': 0.3, 'max': 0.8},
+                'uncertainty_penalty_factor': {'type': 'float', 'min': 0.1, 'max': 1.0},
+                'min_valid_samples': {'type': 'int', 'min': 100, 'max': 500}
+            },
+            'sr': {
+                'touch_count_weight': {'type': 'float', 'min': 0.1, 'max': 0.4},
+                'total_volume_weight': {'type': 'float', 'min': 0.1, 'max': 0.4},
+                'level_age_weight': {'type': 'float', 'min': 0.1, 'max': 0.3},
+                'bounce_rate_weight': {'type': 'float', 'min': 0.1, 'max': 0.3}
+            },
+            'two_tier': {
+                'tier1_weight': {'type': 'float', 'min': 0.4, 'max': 0.7},
+                'tier2_weight': {'type': 'float', 'min': 0.3, 'max': 0.6},
+                'direction_threshold': {'type': 'float', 'min': 0.6, 'max': 0.8},
+                'timing_threshold': {'type': 'float', 'min': 0.7, 'max': 0.9}
+            },
+            'technical_indicators': {
+                'rsi_period': {'type': 'int', 'min': 10, 'max': 20},
+                'macd_fast_period': {'type': 'int', 'min': 8, 'max': 16},
+                'macd_slow_period': {'type': 'int', 'min': 20, 'max': 30},
+                'adx_trend_threshold': {'type': 'float', 'min': 20.0, 'max': 35.0},
+                'adx_sideways_threshold': {'type': 'float', 'min': 15.0, 'max': 30.0},
+                'volatility_threshold': {'type': 'float', 'min': 0.015, 'max': 0.035}
+            },
+            'system_monitoring': {
+                'analysis_interval': {'type': 'int', 'min': 1800, 'max': 7200},
+                'max_history': {'type': 'int', 'min': 50, 'max': 200},
+                'memory_threshold': {'type': 'float', 'min': 0.7, 'max': 0.9},
+                'learning_rate': {'type': 'float', 'min': 0.005, 'max': 0.05}
+            },
+            'training_optimization': {
+                'min_label_balance': {'type': 'float', 'min': 0.03, 'max': 0.1},
+                'max_label_balance': {'type': 'float', 'min': 0.9, 'max': 0.98},
+                'stability_threshold': {'type': 'float', 'min': 0.6, 'max': 0.9},
+                'lgb_learning_rate': {'type': 'float', 'min': 0.01, 'max': 0.2},
+                'model_performance_threshold': {'type': 'float', 'min': 0.6, 'max': 0.85}
+            },
+            'regime_transitions': {
+                'transition_intensity_threshold': {'type': 'float', 'min': 0.2, 'max': 0.5},
+                'transition_confidence_threshold': {'type': 'float', 'min': 0.6, 'max': 0.9},
+                'step9_5_weight': {'type': 'float', 'min': 0.2, 'max': 0.4},
+                'step10_weight': {'type': 'float', 'min': 0.2, 'max': 0.4},
+                'regime_expert_weight': {'type': 'float', 'min': 0.2, 'max': 0.4},
+                'transition_lookback_periods': {'type': 'int', 'min': 3, 'max': 10},
+                'transition_risk_multiplier': {'type': 'float', 'min': 1.0, 'max': 1.5}
+            },
+            'signal_aggregation': {
+                'analyst_signal_weight': {'type': 'float', 'min': 0.6, 'max': 0.9},
+                'specialist_confirmation_weight': {'type': 'float', 'min': 0.1, 'max': 0.3},
+                'regime_weight': {'type': 'float', 'min': 0.1, 'max': 0.3},
+                'conflict_penalty_factor': {'type': 'float', 'min': 0.4, 'max': 0.6},
+                'min_signal_confidence': {'type': 'float', 'min': 0.2, 'max': 0.4},
+                'min_aggregated_confidence': {'type': 'float', 'min': 0.4, 'max': 0.6},
+                'regime_alignment_bonus': {'type': 'float', 'min': 0.1, 'max': 0.25},
+                'use_multiplicative': {'type': 'bool', 'value': True}
+            },
+            'turnover_cost_penalty': {
+                'turnover_penalty_weight': {'type': 'float', 'min': 0.1, 'max': 1.0},
+                'commission_rate': {'type': 'float', 'min': 0.0005, 'max': 0.002},
+                'slippage_rate': {'type': 'float', 'min': 0.0002, 'max': 0.001},
+                'max_turnover_rate': {'type': 'float', 'min': 0.1, 'max': 0.5},
+                'round_trip_multiplier': {'type': 'float', 'min': 1.5, 'max': 3.0}
+            },
+            'entry_timing_optimization': {
+                # Entry timing parameters - Tactician naturally optimizes for 0-0.4% range
+                'entry_timing_range': {'type': 'float', 'min': 0.002, 'max': 0.004},  # 0.2% to 0.4%
+                'early_entry_penalty_weight': {'type': 'float', 'min': 0.1, 'max': 0.5},
+                'late_entry_penalty_weight': {'type': 'float', 'min': 0.1, 'max': 0.5},
+                'optimal_entry_reward_weight': {'type': 'float', 'min': 0.3, 'max': 0.7},
+                'entry_timing_efficiency_weight': {'type': 'float', 'min': 0.2, 'max': 0.6},
+                'directional_accuracy_threshold': {'type': 'float', 'min': 0.55, 'max': 0.75},
+                'adverse_movement_threshold': {'type': 'float', 'min': 0.6, 'max': 0.8},
+                'entry_timing_lookback_periods': {'type': 'int', 'min': 5, 'max': 20}
+            },
+            'confidence_aware_signal': {
+                # Confidence-aware signal parameters for Analyst Base
+                'confidence_threshold_entry': {'type': 'float', 'min': 0.6, 'max': 0.85},
+                'confidence_threshold_exit': {'type': 'float', 'min': 0.5, 'max': 0.75},
+                'signal_strength_threshold': {'type': 'float', 'min': 0.1, 'max': 0.5},
+                'uncertainty_adjustment_mode': {'type': 'categorical', 'choices': ['penalty', 'threshold', 'hybrid']}
+            },
+            'model_specific_parameters': {
+                # Analyst model parameters
+                'lgbm_signal_weight': {'type': 'float', 'min': 0.6, 'max': 1.0},
+
+                # General model parameters
+                'model_complexity_penalty': {'type': 'float', 'min': 0.01, 'max': 0.1}
+            }
+        }
+
+    async def load_hdf5_data_from_pipeline(self, config: Dict[str, Any]) -> Dict[str, pd.DataFrame]:
+        """Fallback HDF5 loader for FinalParametersOptimizer.
+
+        The full HDF5 integration lives in extended optimizer variants; for the
+        base optimizer we return an empty mapping so the step can proceed
+        without hard dependency on upstream artifacts.
+        """
+        self.logger.info("ℹ️ HDF5 pipeline data loading is not configured for base FinalParametersOptimizer; proceeding with empty inputs")
+        return {}
+
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
         Execute final parameters optimization.
@@ -487,8 +779,10 @@ class FinalParametersOptimizer(BaseStep):
             
             # Set up artifact manager context
             self.artifact_manager.set_context(
+                step_name=self.step_name,
                 symbol=symbol,
                 exchange=exchange,
+                timeframe=timeframe,
                 direction=direction,
                 model='FinalParameters'
             )
@@ -497,7 +791,11 @@ class FinalParametersOptimizer(BaseStep):
             tprint("=" * 80, "header")
             tprint("📥 LOADING PIPELINE DATA FROM HDF5 ARTIFACTS", "header")
             tprint("=" * 80, "header")
-            loaded_hdf5_data = await self.load_hdf5_data_from_pipeline(config)
+            if hasattr(self, "load_hdf5_data_from_pipeline"):
+                loaded_hdf5_data = await self.load_hdf5_data_from_pipeline(config)  # type: ignore[func-returns-value]
+            else:
+                tprint("⚠️ load_hdf5_data_from_pipeline not available on this optimizer; skipping HDF5 loading", "warning")
+                loaded_hdf5_data = {}
 
             # Store loaded data for use in optimization
             self.labeled_data = loaded_hdf5_data.get('labeled_data')
@@ -525,8 +823,17 @@ class FinalParametersOptimizer(BaseStep):
                 self.ohlcv_data = None
 
             # Load supporting data (calibration + previous optimization)
-            self.calibration_results = await self._load_calibration_results(config)
-            self.previous_results = await self._load_previous_results(symbol, exchange, config)
+            if hasattr(self, "_load_calibration_results"):
+                self.calibration_results = await self._load_calibration_results(config)  # type: ignore[func-returns-value]
+            else:
+                tprint("⚠️ _load_calibration_results not available on this optimizer; proceeding without calibration artifacts", "warning")
+                self.calibration_results = {}
+
+            if hasattr(self, "_load_previous_results"):
+                self.previous_results = await self._load_previous_results(symbol, exchange, config)  # type: ignore[func-returns-value]
+            else:
+                tprint("⚠️ _load_previous_results not available on this optimizer; proceeding without warm-start artifacts", "warning")
+                self.previous_results = None
 
             # Fast fail if calibration data missing
             if not self._has_valid_calibration(self.calibration_results):
@@ -1154,7 +1461,8 @@ class FinalParametersOptimizer(BaseStep):
                 tpe_trials=max(20, self.n_trials // 2),
                 early_stopping_patience=self.early_stopping_patience,
                 early_stopping_threshold=self.early_stopping_threshold,
-                enable_hardware_optimization=self.hardware_enabled,
+                # Use getattr in case hardware is initialized after this call
+                enable_hardware_optimization=getattr(self, 'hardware_enabled', False),
                 enable_batch_processing=self.enable_parallel,
                 batch_size=self.max_workers
             )

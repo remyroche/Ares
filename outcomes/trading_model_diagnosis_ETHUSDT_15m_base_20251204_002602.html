@@ -1,0 +1,1252 @@
+
+        <html>
+        <head><title>Model Diagnosis: Booster</title>
+        <style>
+            body { font-family: sans-serif; background: #1e1e1e; color: #eee; padding: 20px; }
+            .container { max_width: 1200px; margin: 0 auto; }
+            .card { background: #2d2d2d; border-radius: 8px; padding: 15px; margin-bottom: 10px; border-left: 5px solid #555; }
+            .critical { border-left-color: #ff4444; }
+            .warning { border-left-color: #ffbb33; }
+            .info { border-left-color: #33b5e5; }
+            .success { border-left-color: #00C851; }
+            h2 { border-bottom: 1px solid #444; padding-bottom: 10px; }
+            .json-dump { background: #111; padding: 15px; font-family: monospace; border-radius: 5px; max-height: 300px; overflow-y: scroll; }
+        </style>
+        </head>
+        <body>
+            <div class="container">
+                <h1>Trading Model Diagnosis: Booster</h1>
+                <p>Generated: 2025-12-04 00:26</p>
+                
+                <h2>🤖 AI Guidance</h2>
+            <div class="card info">
+                <h3>💡 NOISE CEILING: Significant Untapped Potential</h3>
+                <p>Your model R² is -0.0001 but theoretical maximum is 0.9246. Gap of 0.9247 suggests major improvements possible. Investigation: (1) Feature importance analysis - missing key drivers? (2) Model architecture - try deeper/wider networks, (3) Hyperparameter tuning - learning rate, regularization.</p>
+            </div>
+            
+            <div class="card critical">
+                <h3>🔴 CMI ALERT: Severe Underfitting Detected</h3>
+                <p>Conditional Mutual Information = 0.286. Your model is leaving substantial signal on the table. Top unused features: macro_alpha_score_continuous, risk_score, liquidity_regime_2_prob. ACTIONS: (1) Increase model complexity (tree depth, hidden layers, ensemble size), (2) Check feature engineering - are these features actually predictive? (3) Use feature interaction terms, (4) Try non-parametric models (RandomForest, XGBoost).</p>
+            </div>
+            
+            <div class="card critical">
+                <h3>🔴 RESIDUAL AUTOCORR: Strong Temporal Leakage</h3>
+                <p>Lag-1 autocorrelation = 0.931 (critical threshold >0.20). Model missing trend/momentum structure. Errors are NOT white noise - they cluster in time. ACTIONS: (1) Add lagged target features (y[t-1], y[t-2]...), (2) Use RNN/LSTM for temporal dependencies, (3) Include regime-switching features, (4) Check for data leakage from future information.</p>
+            </div>
+            
+            <div class="card warning">
+                <h3>⚠️ RESIDUAL CLUSTERING: Regime-Dependent Performance</h3>
+                <p>Error variance changes over time (heteroskedasticity detected). Model performs differently across market regimes. ACTIONS: (1) Add volatility/regime indicators, (2) Use separate models for high/low volatility periods, (3) Quantile regression for tail-robust predictions, (4) Dynamic position sizing based on predicted volatility.</p>
+            </div>
+            
+            <div class="card warning">
+                <h3>Low Risk-Adjusted Returns</h3>
+                <p>Sharpe ratio = 0.25 (poor). Risk-adjusted returns are weak. Improve signal quality or reduce trading frequency.</p>
+            </div>
+            
+            <div class="card critical">
+                <h3>Extreme Drawdown Risk</h3>
+                <p>Maximum drawdown = -69.2%. Unacceptable risk. Review position sizing, stop-loss rules, and correlation risks.</p>
+            </div>
+            
+            <div class="card warning">
+                <h3>Feature Correlation with Residuals</h3>
+                <p>Features enhanced_volatility_100 correlate with prediction errors. Integrate these into the model as explicit features for better capture.</p>
+            </div>
+            
+            <div class="card critical">
+                <h3>🔴 NO STATISTICAL EDGE</h3>
+                <p>95% CI on R² includes zero. Performance indistinguishable from random chance. Model has no reliable edge. Requires major improvements before deployment.</p>
+            </div>
+            
+            <div class="card warning">
+                <h3>⚠️ LEARNING ANOMALIES DETECTED</h3>
+                <p>Issues found: Heavy tails in residuals - outlier predictions. Investigate residual distribution for model improvements.</p>
+            </div>
+            
+                
+                <h2>📊 Visual Diagnostics</h2>
+                <div>                        <script type="text/javascript">window.PlotlyConfig = {MathJaxConfig: 'local'};</script>
+        <script charset="utf-8" src="https://cdn.plot.ly/plotly-3.0.1.min.js" integrity="sha256-oy6Be7Eh6eiQFs5M7oXuPxxm9qbJXEtTpfSI93dW16Q=" crossorigin="anonymous"></script>                <div id="13faa112-a594-4ed3-8cae-5fc31fc156cf" class="plotly-graph-div" style="height:700px; width:100%;"></div>            <script type="text/javascript">                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("13faa112-a594-4ed3-8cae-5fc31fc156cf")) {                    Plotly.newPlot(                        "13faa112-a594-4ed3-8cae-5fc31fc156cf",                        [{"marker":{"color":["#EF553B","#00CC96"]},"name":"Predictability","x":["Current R\u00b2","Theoretical Max R\u00b2"],"y":[-0.00010752433247041004,0.9246218509021362],"type":"bar","xaxis":"x","yaxis":"y"},{"gauge":{"axis":{"range":[null,50]},"bar":{"color":"darkred"}},"mode":"number+gauge","title":{"text":"Dead Features"},"value":0,"type":"indicator","domain":{"x":[0.55,1.0],"y":[0.625,1.0]}},{"error_y":{"array":[-2.8343985513307195e-05],"arrayminus":[-0.0028989223193383318],"symmetric":false,"type":"data"},"marker":{"size":10},"mode":"markers","name":"95% CI","x":["R\u00b2 CI"],"y":[-0.0014636331524258196],"type":"scatter","xaxis":"x2","yaxis":"y2"},{"gauge":{"axis":{"range":[0,0.5]},"bar":{"color":"red"},"steps":[{"color":"lightgreen","range":[0,0.1]},{"color":"yellow","range":[0.1,0.2]},{"color":"salmon","range":[0.2,0.5]}]},"mode":"number+gauge","title":{"text":"Residual Autocorr"},"value":0.9305472721622315,"type":"indicator","domain":{"x":[0.55,1.0],"y":[0.0,0.375]}}],                        {"template":{"data":{"barpolar":[{"marker":{"line":{"color":"rgb(17,17,17)","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"barpolar"}],"bar":[{"error_x":{"color":"#f2f5fa"},"error_y":{"color":"#f2f5fa"},"marker":{"line":{"color":"rgb(17,17,17)","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"bar"}],"carpet":[{"aaxis":{"endlinecolor":"#A2B1C6","gridcolor":"#506784","linecolor":"#506784","minorgridcolor":"#506784","startlinecolor":"#A2B1C6"},"baxis":{"endlinecolor":"#A2B1C6","gridcolor":"#506784","linecolor":"#506784","minorgridcolor":"#506784","startlinecolor":"#A2B1C6"},"type":"carpet"}],"choropleth":[{"colorbar":{"outlinewidth":0,"ticks":""},"type":"choropleth"}],"contourcarpet":[{"colorbar":{"outlinewidth":0,"ticks":""},"type":"contourcarpet"}],"contour":[{"colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"type":"contour"}],"heatmap":[{"colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"type":"heatmap"}],"histogram2dcontour":[{"colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"type":"histogram2dcontour"}],"histogram2d":[{"colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"type":"histogram2d"}],"histogram":[{"marker":{"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"histogram"}],"mesh3d":[{"colorbar":{"outlinewidth":0,"ticks":""},"type":"mesh3d"}],"parcoords":[{"line":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"parcoords"}],"pie":[{"automargin":true,"type":"pie"}],"scatter3d":[{"line":{"colorbar":{"outlinewidth":0,"ticks":""}},"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scatter3d"}],"scattercarpet":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scattercarpet"}],"scattergeo":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scattergeo"}],"scattergl":[{"marker":{"line":{"color":"#283442"}},"type":"scattergl"}],"scattermapbox":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scattermapbox"}],"scattermap":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scattermap"}],"scatterpolargl":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scatterpolargl"}],"scatterpolar":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scatterpolar"}],"scatter":[{"marker":{"line":{"color":"#283442"}},"type":"scatter"}],"scatterternary":[{"marker":{"colorbar":{"outlinewidth":0,"ticks":""}},"type":"scatterternary"}],"surface":[{"colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"type":"surface"}],"table":[{"cells":{"fill":{"color":"#506784"},"line":{"color":"rgb(17,17,17)"}},"header":{"fill":{"color":"#2a3f5f"},"line":{"color":"rgb(17,17,17)"}},"type":"table"}]},"layout":{"annotationdefaults":{"arrowcolor":"#f2f5fa","arrowhead":0,"arrowwidth":1},"autotypenumbers":"strict","coloraxis":{"colorbar":{"outlinewidth":0,"ticks":""}},"colorscale":{"diverging":[[0,"#8e0152"],[0.1,"#c51b7d"],[0.2,"#de77ae"],[0.3,"#f1b6da"],[0.4,"#fde0ef"],[0.5,"#f7f7f7"],[0.6,"#e6f5d0"],[0.7,"#b8e186"],[0.8,"#7fbc41"],[0.9,"#4d9221"],[1,"#276419"]],"sequential":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"sequentialminus":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]},"colorway":["#636efa","#EF553B","#00cc96","#ab63fa","#FFA15A","#19d3f3","#FF6692","#B6E880","#FF97FF","#FECB52"],"font":{"color":"#f2f5fa"},"geo":{"bgcolor":"rgb(17,17,17)","lakecolor":"rgb(17,17,17)","landcolor":"rgb(17,17,17)","showlakes":true,"showland":true,"subunitcolor":"#506784"},"hoverlabel":{"align":"left"},"hovermode":"closest","mapbox":{"style":"dark"},"paper_bgcolor":"rgb(17,17,17)","plot_bgcolor":"rgb(17,17,17)","polar":{"angularaxis":{"gridcolor":"#506784","linecolor":"#506784","ticks":""},"bgcolor":"rgb(17,17,17)","radialaxis":{"gridcolor":"#506784","linecolor":"#506784","ticks":""}},"scene":{"xaxis":{"backgroundcolor":"rgb(17,17,17)","gridcolor":"#506784","gridwidth":2,"linecolor":"#506784","showbackground":true,"ticks":"","zerolinecolor":"#C8D4E3"},"yaxis":{"backgroundcolor":"rgb(17,17,17)","gridcolor":"#506784","gridwidth":2,"linecolor":"#506784","showbackground":true,"ticks":"","zerolinecolor":"#C8D4E3"},"zaxis":{"backgroundcolor":"rgb(17,17,17)","gridcolor":"#506784","gridwidth":2,"linecolor":"#506784","showbackground":true,"ticks":"","zerolinecolor":"#C8D4E3"}},"shapedefaults":{"line":{"color":"#f2f5fa"}},"sliderdefaults":{"bgcolor":"#C8D4E3","bordercolor":"rgb(17,17,17)","borderwidth":1,"tickwidth":0},"ternary":{"aaxis":{"gridcolor":"#506784","linecolor":"#506784","ticks":""},"baxis":{"gridcolor":"#506784","linecolor":"#506784","ticks":""},"bgcolor":"rgb(17,17,17)","caxis":{"gridcolor":"#506784","linecolor":"#506784","ticks":""}},"title":{"x":0.05},"updatemenudefaults":{"bgcolor":"#506784","borderwidth":0},"xaxis":{"automargin":true,"gridcolor":"#283442","linecolor":"#506784","ticks":"","title":{"standoff":15},"zerolinecolor":"#283442","zerolinewidth":2},"yaxis":{"automargin":true,"gridcolor":"#283442","linecolor":"#506784","ticks":"","title":{"standoff":15},"zerolinecolor":"#283442","zerolinewidth":2}}},"xaxis":{"anchor":"y","domain":[0.0,0.45]},"yaxis":{"anchor":"x","domain":[0.625,1.0]},"xaxis2":{"anchor":"y2","domain":[0.0,0.45]},"yaxis2":{"anchor":"x2","domain":[0.0,0.375]},"annotations":[{"font":{"size":16},"showarrow":false,"text":"Residual Distribution vs Normal","x":0.225,"xanchor":"center","xref":"paper","y":1.0,"yanchor":"bottom","yref":"paper"},{"font":{"size":16},"showarrow":false,"text":"Noise Ceiling Gap","x":0.775,"xanchor":"center","xref":"paper","y":1.0,"yanchor":"bottom","yref":"paper"},{"font":{"size":16},"showarrow":false,"text":"Bootstrap R\u00b2 CI","x":0.225,"xanchor":"center","xref":"paper","y":0.375,"yanchor":"bottom","yref":"paper"},{"font":{"size":16},"showarrow":false,"text":"Autocorrelation Check","x":0.775,"xanchor":"center","xref":"paper","y":0.375,"yanchor":"bottom","yref":"paper"}],"title":{"text":"Diagnostic Overview: Booster"},"height":700},                        {"responsive": true}                    )                };            </script>        </div>
+                
+                <h2>📝 Raw Metrics</h2>
+                <div class="json-dump">
+                    <pre>{
+  "oracle": {
+    "noise_ceiling": {
+      "estimated_ceiling_r2": 0.9246218509021362,
+      "current_model_r2": -0.00010752433247041004,
+      "gap": 0.9247293752346066,
+      "status": "Untapped Potential"
+    },
+    "volatility_decomposition": {
+      "total_variance": 0.00012041247657319116,
+      "predictable_variance_ratio": 5.616023438028217e-09,
+      "noise_variance_ratio": 1.0000287086559159,
+      "interpretation": "Low Alpha Environment"
+    },
+    "maximal_sharpe": 16.073477975514432,
+    "hurst_exponent": {
+      "H": 0.1660866805896389,
+      "regime": "Mean Reversion"
+    },
+    "info_ratio_decomp": "Est. Sharpe from Predictions: 6738.66. If Realized << Est., check execution costs."
+  },
+  "performance": {
+    "pnl_analysis": {
+      "total_pnl": 0.37081628281090023,
+      "avg_daily_pnl": 0.00025208448865458784,
+      "std_daily_pnl": 0.010973261893037602,
+      "pnl_skewness": -0.9353330241794539,
+      "cumulative_pnl_final": 0.37081628281090023
+    },
+    "sharpe_ratio": {
+      "sharpe_ratio": 0.2498651402081065,
+      "annualized_sharpe": 0.2498651402081065,
+      "interpretation": "Poor"
+    },
+    "max_drawdown": {
+      "max_drawdown": -0.691589082654473,
+      "max_drawdown_pct": -69.15890826544731,
+      "interpretation": "High Risk"
+    },
+    "trade_metrics": {
+      "total_trades": 0,
+      "trades_per_day": 0.0,
+      "avg_trade_size": 1.0,
+      "consecutive_wins": 72,
+      "consecutive_losses": 52
+    },
+    "calmar_ratio": {
+      "calmar_ratio": 0.0918540976632134,
+      "annual_return": 0.06352529114095613,
+      "interpretation": "Poor"
+    },
+    "win_rate": {
+      "win_rate_pct": 52.481305234534325,
+      "winning_trades": 772,
+      "total_trades": 1471,
+      "interpretation": "Marginal"
+    }
+  },
+  "architect": {
+    "cmi": {
+      "avg_unused_info": 0.28610968364986167,
+      "top_underutilized_features": [
+        "macro_alpha_score_continuous",
+        "risk_score",
+        "liquidity_regime_2_prob"
+      ],
+      "status": "Underfitting"
+    },
+    "rsa": {
+      "similarity_score": 0.6354202434569433,
+      "interpretation": "Complex/Non-linear Structure"
+    },
+    "ablation": {
+      "dead_features_count": 0,
+      "action": "Maintain"
+    },
+    "permutation_importance": {
+      "method": "SimplePermutationImportance",
+      "top_features": {
+        "enhanced_volatility_100": {
+          "importance": 0.004375448838125751,
+          "std": 0.000215184546782005,
+          "rank": 1
+        },
+        "path_risk_score": {
+          "importance": 0.002795426499524867,
+          "std": 0.001115156527546071,
+          "rank": 2
+        },
+        "liquidity_regime_2_prob": {
+          "importance": 0.0004628292598714889,
+          "std": 0.0001285969745245582,
+          "rank": 3
+        },
+        "risk_score": {
+          "importance": -0.00022624117521492516,
+          "std": 0.0007935643349915747,
+          "rank": 4
+        },
+        "liquidity_regime_1_prob": {
+          "importance": 0.0001553657217374882,
+          "std": 9.270311120774051e-05,
+          "rank": 5
+        }
+      },
+      "stability_scores": {},
+      "interpretability_score": 0.3702795154368687
+    },
+    "complexity_audit": {
+      "method": "ModelComplexityAnalyzer",
+      "complexity_score": 0.0,
+      "overfitting_risk_score": 0.0,
+      "parameter_count": 0,
+      "feature_concentration": 0.0,
+      "recommendations": []
+    },
+    "shap_interaction": {
+      "linearity_of_model": 0.4330143303221371,
+      "interpretation": "High Interactions"
+    },
+    "predictability_heatmap": "Heatmap data generated (see dashboard)"
+  },
+  "critic": {
+    "orthogonal_tests": {
+      "leaking_features": {
+        "enhanced_volatility_100": -0.20988117961045197
+      },
+      "status": "Leakage Detected"
+    },
+    "residual_clustering": {
+      "heteroskedasticity_detected": "True",
+      "interpretation": "Regime-dependent performance"
+    },
+    "residual_structure": {
+      "is_normal": "False",
+      "p_value": 0.0
+    },
+    "residual_autocorr": {
+      "lag1_autocorr": 0.9305472721622315,
+      "status": "Critical Failure (Trend Missed)"
+    }
+  },
+  "navigator": {
+    "regime_stability": {
+      "mse_high_vol": 0.00018180885459359575,
+      "mse_low_vol": 5.9125394495590383e-05,
+      "ratio": 3.0749186745549815,
+      "warning": true
+    },
+    "transferability": "Requires multi-period split (Manual Check)",
+    "distribution_shift": {
+      "error": "No training data provided for shift test"
+    }
+  },
+  "stress_tester": {
+    "stability": {
+      "perf_std_dev": 0.0017456296540284016,
+      "status": "Robust"
+    },
+    "adversarial": {
+      "sign_flip_rate_1pct_noise": 0.0849762066621346,
+      "interpretation": "Robust"
+    },
+    "calibration": {
+      "rank_correlation": -0.1541379235220604,
+      "expected_calibration_error": 0.001735515815295173,
+      "max_calibration_error": 0.0038739174987258308,
+      "avg_calibration_error": 0.0024733881682153687,
+      "n_bins": 10,
+      "bin_calibration_errors": [
+        0.0010728588377049066,
+        0.0038739174987258308
+      ],
+      "bin_accuracies": [
+        0.0014219041904569385,
+        -0.003522937135265067
+      ],
+      "bin_confidences": [
+        0.000349045352752032,
+        0.00035098036346076396
+      ],
+      "bin_counts": [
+        1123,
+        348
+      ],
+      "calibration_quality": "Excellent"
+    },
+    "bootstrap_ci": {
+      "ci_lower": -0.0028989223193383318,
+      "ci_upper": -2.8343985513307195e-05,
+      "reliable_edge": "False"
+    },
+    "confidence_degradation": {
+      "method": "UncertaintyCalculator",
+      "confidence_degradation": 0.0,
+      "scores_by_quarter": [
+        -0.012583248253359436,
+        -0.0002137404354063399,
+        -0.026829983299521132,
+        -0.0022384652519571446
+      ],
+      "confidence_stability": "Stable"
+    },
+    "ensemble_variance": {
+      "ensemble_variance": 6.109950489161073e-13,
+      "prediction_uncertainty": 7.473881701277773e-07,
+      "ensemble_size": 10,
+      "uncertainty_status": "Low"
+    }
+  },
+  "historian": {
+    "learning_dynamics": {
+      "error": "Learning dynamics analysis failed: name 'EvaluationUtils' is not defined"
+    },
+    "data_efficiency": {
+      "n_samples": 1471,
+      "n_features": 58,
+      "samples_per_feature": 25.362068965517242,
+      "recommended_min_samples": 580,
+      "recommended_optimal_samples": 1160,
+      "test_r2": -0.00010752433247041004,
+      "efficiency_status": "Good",
+      "recommendation": "Model is adequately trained"
+    },
+    "learning_anomalies": {
+      "residual_mean": -9.741863685518634e-05,
+      "residual_std": 0.010973419405707096,
+      "residual_skewness": -0.9353828590209826,
+      "residual_kurtosis": 3.0732939984928755,
+      "detected_anomalies": [
+        "Heavy tails in residuals - outlier predictions"
+      ],
+      "has_anomalies": true
+    }
+  },
+  "calibration": {
+    "calibration_curve": {
+      "expected_calibration_error": 0.001735515815295173,
+      "max_calibration_error": 0.0038739174987258308,
+      "avg_calibration_error": 0.0024733881682153687,
+      "rmsce": 0.0028423812967805465,
+      "n_bins": 10,
+      "bin_calibration_errors": [
+        0.0010728588377049066,
+        0.0038739174987258308
+      ],
+      "bin_accuracies": [
+        0.0014219041904569385,
+        -0.003522937135265067
+      ],
+      "bin_confidences": [
+        0.000349045352752032,
+        0.00035098036346076396
+      ],
+      "bin_counts": [
+        1123,
+        348
+      ],
+      "bin_stds": [
+        0.009602323375138062,
+        0.013884260504110306
+      ],
+      "calibration_quality": "Excellent",
+      "interpretation": "ECE = 0.0017. Model predictions are well-calibrated. MCE = 0.0039 indicates minimal maximum bin error. Consider isotonic or Platt scaling if miscalibrated."
+    },
+    "quantile_calibration": {
+      "quantile_results": {
+        "q10": {
+          "predicted_threshold": 0.00034904535275203193,
+          "actual_threshold": -0.01208043296912952,
+          "calibration_error": 0.012429478321881552,
+          "precision": 0.9014276002719238
+        },
+        "q25": {
+          "predicted_threshold": 0.00034904535275203193,
+          "actual_threshold": -0.004251660162000625,
+          "calibration_error": 0.004600705514752656,
+          "precision": 0.752549286199864
+        },
+        "q50": {
+          "predicted_threshold": 0.00034904535275203193,
+          "actual_threshold": 0.00037689063404937226,
+          "calibration_error": 2.7845281297340322e-05,
+          "precision": 0.5023793337865398
+        },
+        "q75": {
+          "predicted_threshold": 0.00034904535275203193,
+          "actual_threshold": 0.0060312351744210395,
+          "calibration_error": 0.005682189821669008,
+          "precision": 0.2501699524133243
+        },
+        "q90": {
+          "predicted_threshold": 0.000350980363460764,
+          "actual_threshold": 0.013440546540129395,
+          "calibration_error": 0.013089566176668632,
+          "precision": 0.09770114942528736
+        }
+      },
+      "avg_quantile_calibration_error": 0.007165957023253839,
+      "interpretation": "Average quantile calibration error = 0.0072. Excellent tail calibration. Critical for position sizing and risk management."
+    },
+    "sharpness_analysis": {
+      "prediction_variance": 6.762392906660651e-13,
+      "actual_variance": 0.00012041247657319116,
+      "sharpness_ratio": 5.616023438028217e-09,
+      "prediction_range": 1.935010708732079e-06,
+      "actual_range": 0.07489317471267601,
+      "range_ratio": 2.5836943301651358e-05,
+      "information_coefficient": -0.19150646648778463,
+      "sharpness_quality": "Under-confident",
+      "interpretation": "Sharpness ratio = 0.000. Model predictions are too conservative. IC = -0.192 shows strong predictive power."
+    },
+    "calibration_drift": {
+      "calibration_by_window": [
+        {
+          "window": 1,
+          "mae": 0.009369840865112774,
+          "correlation": -0.05924013325702813,
+          "n_samples": 367
+        },
+        {
+          "window": 2,
+          "mae": 0.005280207795452364,
+          "correlation": -0.22314324367440083,
+          "n_samples": 367
+        },
+        {
+          "window": 3,
+          "mae": 0.006852438495370547,
+          "correlation": -0.12470230916440649,
+          "n_samples": 367
+        },
+        {
+          "window": 4,
+          "mae": 0.009575049514910278,
+          "correlation": -0.3494796043643624,
+          "n_samples": 370
+        }
+      ],
+      "mae_drift": 0.00020520864979750413,
+      "correlation_drift": -0.2902394711073342,
+      "drift_severity": "Severe",
+      "interpretation": "MAE drift = 0.0002, Correlation drift = -0.2902. Severe calibration drift detected. Consider retraining or online learning."
+    },
+    "reliability_diagram": {
+      "n_bins": 15,
+      "observed_values": [
+        0.0014219041904569385,
+        -0.003522937135265067
+      ],
+      "predicted_values": [
+        0.000349045352752032,
+        0.00035098036346076396
+      ],
+      "bin_counts": [
+        1123,
+        348
+      ],
+      "perfect_calibration_line": {
+        "x": [
+          0.000349045352752032,
+          0.00035098036346076396
+        ],
+        "y": [
+          0.000349045352752032,
+          0.00035098036346076396
+        ]
+      },
+      "interpretation": "Reliability diagram shows predicted vs observed values. Points on the diagonal indicate perfect calibration. Deviations suggest miscalibration requiring correction."
+    },
+    "brier_score_decomposition": {
+      "brier_score": 0.021470081953154467,
+      "reliability": 0.0007896330394656744,
+      "resolution": 0.0007873247314348532,
+      "uncertainty": 0.02146777364512365,
+      "decomposed_brier": 0.021470081953154474,
+      "decomposition_error": 6.938893903907228e-18,
+      "normalized_range": {
+        "min": -0.04930946617195863,
+        "max": 0.02558370854071737,
+        "span": 0.07489317471267601
+      },
+      "interpretation": "Brier Score = 0.0215 (lower is better). Reliability = 0.0008 (calibration error, want low), Resolution = 0.0008 (discrimination power, want high), Uncertainty = 0.0215 (inherent noise). Model is well-calibrated. Model has weak discrimination.",
+      "quality_assessment": "Excellent"
+    },
+    "rolling_calibration_error": {
+      "results_by_window_size": {
+        "window_50": {
+          "window_size": 50,
+          "n_windows": 51,
+          "rolling_ece": [
+            0.00034356073990804794,
+            0.008648760152262357,
+            0.002162039661394759,
+            0.005462505176832156,
+            0.006843985027941193,
+            0.0025240740934939616,
+            0.0013974619070193713,
+            0.00721657268791504,
+            0.009797749207918567,
+            0.004773484466748056,
+            0.004116633238146627,
+            0.006201522663142577,
+            0.006122244873308417,
+            0.005698398766614949,
+            0.006884718626753243,
+            0.006814576321777951,
+            0.0009924191940979075,
+            0.001114759109413284,
+            0.0026523854128035207,
+            0.0002601953521541493,
+            0.0019801035253730896,
+            0.0006689043799643253,
+            0.00028216649206860964,
+            0.0007682709470830716,
+            0.001848846914694329,
+            0.00013289225557594714,
+            0.004290921266933468,
+            0.00506296036041847,
+            0.0022844397791048094,
+            0.0062336463882862025,
+            0.001934447939798387,
+            0.006632677624126702,
+            0.0013230688426162315,
+            0.0008062600780716102,
+            0.005531258190293559,
+            0.00012788626350951498,
+            0.00509922224088688,
+            0.007794890906129627,
+            0.0019719227254003414,
+            0.010260369467057677,
+            0.010735040535419849,
+            0.009358989384151799,
+            0.0193491790109927,
+            0.00847590010169538,
+            0.001506919932669329,
+            0.0037818329249231755,
+            0.0015112208081330585,
+            0.002582588315721809,
+            0.006869007647207823,
+            0.004897222612287397,
+            0.0008081957147020868
+          ],
+          "rolling_mae": [
+            0.009922959562311866,
+            0.01107874468283836,
+            0.012308622577511618,
+            0.009237556713368466,
+            0.0076587294997975406,
+            0.0080250540687814,
+            0.005698802859966723,
+            0.010051907429131377,
+            0.010862140676238148,
+            0.006759494913299964,
+            0.008520250773900917,
+            0.010839045963093551,
+            0.008293785783053856,
+            0.006616700776573785,
+            0.014939237613075562,
+            0.014519385383529664,
+            0.003899769135673276,
+            0.0017578122927792723,
+            0.0026575674669212417,
+            0.002902595673722806,
+            0.0025176929055525867,
+            0.0023249751778124587,
+            0.003813427350708154,
+            0.002833610962422439,
+            0.003287828805699519,
+            0.006877056015106401,
+            0.0051317128381925745,
+            0.006957274953603026,
+            0.00922628210582317,
+            0.006971951622082,
+            0.0031908743721959574,
+            0.007142767282227565,
+            0.011246804979029466,
+            0.009089977911938156,
+            0.00681971438038962,
+            0.0042521223491728,
+            0.007647320078886746,
+            0.009072693737739992,
+            0.005276052924740038,
+            0.010865449256772002,
+            0.010735040535419849,
+            0.014320348196100806,
+            0.022159743942236264,
+            0.013411788019901496,
+            0.0062729700432053795,
+            0.006962221909493764,
+            0.00778266538154723,
+            0.00610075396695666,
+            0.009775732630560318,
+            0.006399070049702984,
+            0.0022176148058369173
+          ],
+          "window_positions": [
+            25,
+            53,
+            81,
+            109,
+            137,
+            165,
+            193,
+            221,
+            249,
+            277,
+            305,
+            333,
+            361,
+            389,
+            417,
+            445,
+            473,
+            501,
+            529,
+            557,
+            585,
+            613,
+            641,
+            669,
+            697,
+            725,
+            753,
+            781,
+            809,
+            837,
+            865,
+            893,
+            921,
+            949,
+            977,
+            1005,
+            1033,
+            1061,
+            1089,
+            1117,
+            1145,
+            1173,
+            1201,
+            1229,
+            1257,
+            1285,
+            1313,
+            1341,
+            1369,
+            1397,
+            1425
+          ],
+          "mean_ece": 0.004410574514802811,
+          "std_ece": 0.003682367632133989,
+          "max_ece": 0.0193491790109927,
+          "min_ece": 0.00012788626350951498,
+          "ece_trend": 2.600133000520396e-05
+        },
+        "window_100": {
+          "window_size": 100,
+          "n_windows": 51,
+          "rolling_ece": [
+            0.002944167702968435,
+            0.001761866636458313,
+            0.0028001214201218245,
+            0.0022880807262291914,
+            0.001854658843525858,
+            0.0006654595617355814,
+            0.0060520537159086014,
+            0.004433704799985865,
+            0.001831006005068529,
+            0.002472068923624027,
+            0.0060910980882873285,
+            0.003958214459406208,
+            5.585741112467665e-05,
+            0.0047336206933127145,
+            0.004277890667702925,
+            0.003536442367936087,
+            0.004932986161163161,
+            0.001910665590912334,
+            0.0010235468800551743,
+            0.0001802091589581869,
+            7.860426383639389e-05,
+            0.0007081851952000155,
+            0.00015270853608215663,
+            0.0006980195668985928,
+            0.0006253670681437874,
+            0.0005496486165830672,
+            0.0027426405025873426,
+            0.002224947465989715,
+            0.000998181417451097,
+            0.0018929028365719464,
+            0.005066899247917491,
+            0.0020345712231532942,
+            0.002133786619450497,
+            0.00392703198253674,
+            0.0002814045078420448,
+            0.0031344047604465863,
+            0.004297498419705262,
+            0.002769764054404338,
+            0.006094125841938103,
+            0.007741642555868925,
+            0.006191651225208671,
+            0.00823994071351446,
+            0.008064105781586218,
+            0.010847583830473554,
+            0.009104856300067146,
+            0.0008701677864050537,
+            0.001369650068954337,
+            0.0006826599194818478,
+            0.003245998105561439,
+            0.0029628315495179806,
+            0.003899920505983309
+          ],
+          "rolling_mae": [
+            0.010614829984527214,
+            0.010561239524933033,
+            0.010150152365222136,
+            0.009541452333081834,
+            0.007144025141154059,
+            0.008179162907872677,
+            0.008952559702904617,
+            0.007820418631183632,
+            0.009580041097989536,
+            0.00985833507320209,
+            0.009106559456079456,
+            0.008178180930328731,
+            0.00894958442281874,
+            0.01075805775557598,
+            0.011097631021121667,
+            0.010153835944242113,
+            0.007525711271366885,
+            0.0025932889693289418,
+            0.0025747143140508848,
+            0.0025439649736920095,
+            0.0024397690515113547,
+            0.0031085774620115848,
+            0.002781684889758978,
+            0.0034459767429539396,
+            0.004958731400949826,
+            0.004749041153788286,
+            0.006685350263546597,
+            0.007362016965190188,
+            0.0070082990744618455,
+            0.006342101586521,
+            0.005708861537318009,
+            0.007024720706363123,
+            0.007336950443505811,
+            0.008888900050743356,
+            0.007187579199346195,
+            0.005622655890192268,
+            0.007002714689318361,
+            0.006651716318707911,
+            0.00817204846057118,
+            0.00939370765553877,
+            0.008173916425093866,
+            0.014803316093463638,
+            0.01511678211765418,
+            0.014319040109003256,
+            0.013131961168778634,
+            0.007331337405181397,
+            0.006268120706799782,
+            0.006782230985453573,
+            0.00811500092798027,
+            0.006891248687891498,
+            0.005996689929035528
+          ],
+          "window_positions": [
+            50,
+            77,
+            104,
+            131,
+            158,
+            185,
+            212,
+            239,
+            266,
+            293,
+            320,
+            347,
+            374,
+            401,
+            428,
+            455,
+            482,
+            509,
+            536,
+            563,
+            590,
+            617,
+            644,
+            671,
+            698,
+            725,
+            752,
+            779,
+            806,
+            833,
+            860,
+            887,
+            914,
+            941,
+            968,
+            995,
+            1022,
+            1049,
+            1076,
+            1103,
+            1130,
+            1157,
+            1184,
+            1211,
+            1238,
+            1265,
+            1292,
+            1319,
+            1346,
+            1373,
+            1400
+          ],
+          "mean_ece": 0.003165400397722479,
+          "std_ece": 0.002542362776132874,
+          "max_ece": 0.010847583830473554,
+          "min_ece": 5.585741112467665e-05,
+          "ece_trend": 4.7911206373888765e-05
+        },
+        "window_200": {
+          "window_size": 200,
+          "n_windows": 51,
+          "rolling_ece": [
+            0.00176322679901153,
+            0.0018762670107051497,
+            0.002628187811697493,
+            0.0021366413252549635,
+            0.0010547112014210739,
+            9.419634299437732e-05,
+            0.0006090796447486813,
+            0.00020240786738944831,
+            0.00021711471899953398,
+            0.0012015355354394108,
+            0.003101793596866984,
+            0.0031639441019777133,
+            0.002124291924459589,
+            0.00221376290399088,
+            0.0022234678214159633,
+            0.0023470432401779227,
+            0.0022991954373765854,
+            0.0023939150724831713,
+            0.0005141417929333433,
+            0.00045299512413523663,
+            0.000420655037651954,
+            0.00047176711245671505,
+            0.00023732050252173935,
+            0.00013233788923012273,
+            0.0008995994965189697,
+            0.00048520027900787657,
+            0.0006247831879638648,
+            0.0005122699581090778,
+            0.0007427259724231215,
+            0.0014224695753801422,
+            0.001027331830490313,
+            0.0022854181828740354,
+            0.0038818197288192427,
+            0.001784000537363487,
+            0.002561539625569258,
+            0.0036462184842097445,
+            0.003223024753458223,
+            0.003179365384523328,
+            0.005934203864484756,
+            0.005361055767098995,
+            0.006537557046387809,
+            0.004776329935464523,
+            0.00362814834983866,
+            0.0025803698851999068,
+            0.0033280696482668516,
+            0.002851812493925928,
+            0.004846767397229297,
+            0.004272636796541407,
+            0.0004939361729125293,
+            0.00163598730097477,
+            0.0021998963254610286
+          ],
+          "rolling_mae": [
+            0.00929994454878117,
+            0.009253590382550475,
+            0.00976383490758898,
+            0.009040680856701802,
+            0.008612653607633485,
+            0.008460506604302698,
+            0.009270767179143033,
+            0.008819187592666082,
+            0.008521327668961442,
+            0.009231825931748676,
+            0.010009772850189542,
+            0.010121584272314127,
+            0.009256932711297428,
+            0.00848369565245644,
+            0.0069259425155108675,
+            0.00673501721198823,
+            0.006591991251742058,
+            0.005271514484584055,
+            0.0028974340093167197,
+            0.0026926888626634575,
+            0.0027052618296259756,
+            0.0031946651413741574,
+            0.0037984778435934384,
+            0.003863560385701219,
+            0.004820032755638679,
+            0.0055452859345657135,
+            0.005819419797551242,
+            0.005713410430255257,
+            0.005770827963589484,
+            0.006631353155420616,
+            0.006850326915877369,
+            0.007438795681862195,
+            0.006870353041900603,
+            0.0065427893030549885,
+            0.0066007058326448,
+            0.007600408531043951,
+            0.007774116902269297,
+            0.007549675944460293,
+            0.00800436197919252,
+            0.007624402953745173,
+            0.010027142794006667,
+            0.01178482235781733,
+            0.012284640322410936,
+            0.01131742094338449,
+            0.012039903246573384,
+            0.011424947833627037,
+            0.010414544943628725,
+            0.011167271634244446,
+            0.009183910185323624,
+            0.007025829584822678,
+            0.006012558337533289
+          ],
+          "window_positions": [
+            100,
+            125,
+            150,
+            175,
+            200,
+            225,
+            250,
+            275,
+            300,
+            325,
+            350,
+            375,
+            400,
+            425,
+            450,
+            475,
+            500,
+            525,
+            550,
+            575,
+            600,
+            625,
+            650,
+            675,
+            700,
+            725,
+            750,
+            775,
+            800,
+            825,
+            850,
+            875,
+            900,
+            925,
+            950,
+            975,
+            1000,
+            1025,
+            1050,
+            1075,
+            1100,
+            1125,
+            1150,
+            1175,
+            1200,
+            1225,
+            1250,
+            1275,
+            1300,
+            1325,
+            1350
+          ],
+          "mean_ece": 0.0021294615254085635,
+          "std_ece": 0.0015874467817967633,
+          "max_ece": 0.006537557046387809,
+          "min_ece": 9.419634299437732e-05,
+          "ece_trend": 5.029633950695682e-05
+        }
+      },
+      "overall_mean_ece": 0.003165400397722479,
+      "overall_ece_trend": 4.7911206373888765e-05,
+      "degradation_status": "Stable",
+      "interpretation": "Rolling calibration analysis with windows [50, 100, 200]. Mean ECE = 0.0032, Trend = 0.000048. Stable calibration over time. Calibration is stable."
+    },
+    "threshold_weighted_ece": {
+      "standard_ece": 0.6090745668546654,
+      "threshold_weighted_ece": 395.901843135454,
+      "threshold": 0.8,
+      "max_weight_multiplier": 3.0,
+      "high_confidence_mae": 0.38864216649445915,
+      "high_confidence_pct": 23.657375934738273,
+      "high_confidence_samples": 348,
+      "bin_details": [
+        {
+          "bin": 8,
+          "mean_pred": 0.0,
+          "mean_true": 0.6773830934133047,
+          "cal_error": 0.6773830934133047,
+          "n_samples": 1123,
+          "standard_weight": 0.7634262406526172,
+          "threshold_weight": 0.7634262406526172,
+          "is_high_confidence": false,
+          "weight_multiplier": 1.0
+        },
+        {
+          "bin": 10,
+          "mean_pred": 1.0,
+          "mean_true": 0.6113578335055408,
+          "cal_error": 0.38864216649445915,
+          "n_samples": 348,
+          "standard_weight": 0.23657375934738273,
+          "threshold_weight": 0.7097212780421482,
+          "is_high_confidence": true,
+          "weight_multiplier": 3.0
+        }
+      ],
+      "ece_ratio": 650.0055406679331,
+      "normalization": {
+        "pred_min": 0.00034904535275203193,
+        "pred_max": 0.000350980363460764,
+        "test_min": -0.04930946617195863,
+        "test_max": 0.02558370854071737
+      },
+      "interpretation": "Standard ECE = 0.6091, Threshold-Weighted ECE = 395.9018. High-confidence predictions (>0.8): 23.7% of samples with MAE = 0.3886. High-confidence calibration needs improvement. This metric emphasizes calibration quality where it matters most for trading decisions.",
+      "quality_assessment": "Poor"
+    },
+    "conditional_calibration": {
+      "top_offender_features": [
+        "volatility",
+        "rvol",
+        "ensemble_std"
+      ],
+      "decile_analysis": {
+        "volatility": {
+          "decile_brier_scores": [
+            9.834791487574114e-06,
+            2.664824273560984e-05,
+            6.174191545536993e-05,
+            9.574445433159586e-05,
+            9.20584543813545e-05,
+            0.00011053629729744019,
+            0.00014223524377058162,
+            0.0001316040555120814,
+            0.0001759627059474195,
+            0.0003562836001348001
+          ],
+          "decile_counts": [
+            147,
+            147,
+            147,
+            147,
+            147,
+            147,
+            147,
+            147,
+            147,
+            148
+          ],
+          "decile_means": [
+            -1.0845981496657435,
+            -0.8274195336860372,
+            -0.5111743293427177,
+            -0.2639629239534219,
+            -0.07293797114174523,
+            0.06762207695303643,
+            0.254487966539838,
+            0.496127428580981,
+            0.8441728458207162,
+            1.7046313442191503
+          ],
+          "worst_deciles": [
+            {
+              "decile": 9,
+              "brier": 0.0003562836001348001
+            },
+            {
+              "decile": 8,
+              "brier": 0.0001759627059474195
+            },
+            {
+              "decile": 6,
+              "brier": 0.00014223524377058162
+            }
+          ],
+          "max_brier": 0.0003562836001348001,
+          "min_brier": 9.834791487574114e-06,
+          "brier_range": 0.00034644880864722596
+        },
+        "trend": {
+          "decile_brier_scores": [
+            0.00020224069352099239,
+            0.00013289929351749838,
+            0.00010017368187877331,
+            9.705029238366046e-05,
+            6.744125353380762e-05,
+            6.325710115538642e-05,
+            0.00012759857059667712,
+            0.00017825852157329057,
+            0.00016477752188459602,
+            7.089425512485878e-05
+          ],
+          "decile_counts": [
+            147,
+            147,
+            147,
+            147,
+            147,
+            147,
+            147,
+            147,
+            147,
+            148
+          ],
+          "decile_means": [
+            -1.4420249432094685,
+            -0.9551759231641793,
+            -0.5575957087086008,
+            -0.30556390258138477,
+            -0.1080077611956232,
+            0.06788135684091111,
+            0.20563349865603558,
+            0.45461869618278133,
+            0.8548322464850072,
+            1.2015739362747284
+          ],
+          "worst_deciles": [
+            {
+              "decile": 0,
+              "brier": 0.00020224069352099239
+            },
+            {
+              "decile": 7,
+              "brier": 0.00017825852157329057
+            },
+            {
+              "decile": 8,
+              "brier": 0.00016477752188459602
+            }
+          ],
+          "max_brier": 0.00020224069352099239,
+          "min_brier": 6.325710115538642e-05,
+          "brier_range": 0.00013898359236560597
+        },
+        "ensemble_std": {
+          "decile_brier_scores": [
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            8.593310192596277e-05,
+            0.0001418910873159283,
+            0.0002908236895428286,
+            0.00017556969217387907
+          ],
+          "decile_counts": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            1024,
+            152,
+            137,
+            158
+          ],
+          "decile_means": [
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            0.00716550841936792,
+            0.9026621212937131,
+            1.282425081690635,
+            1.4896705307829283
+          ],
+          "worst_deciles": [
+            {
+              "decile": 8,
+              "brier": 0.0002908236895428286
+            },
+            {
+              "decile": 9,
+              "brier": 0.00017556969217387907
+            },
+            {
+              "decile": 7,
+              "brier": 0.0001418910873159283
+            }
+          ],
+          "max_brier": 0.0002908236895428286,
+          "min_brier": 8.593310192596277e-05,
+          "brier_range": 0.00020489058761686584
+        },
+        "rvol": {
+          "decile_brier_scores": [
+            1.0067318603846033e-05,
+            2.323125112317826e-05,
+            4.532008674103014e-05,
+            9.648182738689195e-05,
+            0.00010557216812737273,
+            6.452800437252237e-05,
+            0.00014131327350138404,
+            0.00017099903093471876,
+            0.00017511845718660605,
+            0.0003548332235366505
+          ],
+          "decile_counts": [
+            142,
+            142,
+            155,
+            141,
+            135,
+            166,
+            148,
+            147,
+            133,
+            162
+          ],
+          "decile_means": [
+            -1.0881676034402437,
+            -0.8518328108932817,
+            -0.5480705320699273,
+            -0.29872509435070016,
+            -0.06233250254790618,
+            0.01585985927527726,
+            0.1747387960518051,
+            0.4158038901953779,
+            0.7567358080331456,
+            1.3193075717424543
+          ],
+          "worst_deciles": [
+            {
+              "decile": 9,
+              "brier": 0.0003548332235366505
+            },
+            {
+              "decile": 8,
+              "brier": 0.00017511845718660605
+            },
+            {
+              "decile": 7,
+              "brier": 0.00017099903093471876
+            }
+          ],
+          "max_brier": 0.0003548332235366505,
+          "min_brier": 1.0067318603846033e-05,
+          "brier_range": 0.00034476590493280444
+        }
+      },
+      "lasso_conditional_fix": {
+        "error": "Lasso fitting failed: The 'scoring' parameter of LogisticRegressionCV must be a str among {'neg_mean_absolute_percentage_error', 'd2_absolute_error_score', 'neg_mean_squared_error', 'precision_weighted', 'neg_mean_poisson_deviance', 'roc_auc_ovr_weighted', 'jaccard_micro', 'neg_brier_score', 'adjusted_mutual_info_score', 'roc_auc_ovo', 'precision_macro', 'roc_auc_ovo_weighted', 'precision_samples', 'neg_negative_likelihood_ratio', 'f1', 'neg_mean_absolute_error', 'neg_root_mean_squared_log_error', 'average_precision', 'recall', 'balanced_accuracy', 'rand_score', 'explained_variance', 'f1_samples', 'matthews_corrcoef', 'jaccard_weighted', 'r2', 'recall_micro', 'neg_root_mean_squared_error', 'positive_likelihood_ratio', 'homogeneity_score', 'precision', 'neg_max_error', 'jaccard_macro', 'accuracy', 'top_k_accuracy', 'jaccard', 'v_measure_score', 'roc_auc_ovr', 'neg_mean_gamma_deviance', 'fowlkes_mallows_score', 'f1_weighted', 'neg_log_loss', 'precision_micro', 'roc_auc', 'completeness_score', 'f1_macro', 'mutual_info_score', 'neg_median_absolute_error', 'adjusted_rand_score', 'jaccard_samples', 'neg_mean_squared_log_error', 'recall_samples', 'f1_micro', 'recall_macro', 'normalized_mutual_info_score', 'recall_weighted'}, a callable or None. Got 'neg_brier_score_loss' instead."
+      },
+      "interpretation": "Conditional calibration analysis identified 3 key features affecting calibration quality: volatility, rvol, ensemble_std. Lasso fitting encountered errors. No significant degradation detected."
+    }
+  }
+}</pre>
+                </div>
+            </div>
+        </body>
+        </html>
+        

@@ -1,0 +1,140 @@
+{
+  "metadata": {
+    "symbol": "ETHUSDT",
+    "exchange": "binance",
+    "timeframe": "15m",
+    "direction": "long",
+    "model": "analyst",
+    "prefix": "snr_trading_simulation",
+    "timestamp_utc": "20251203_213033"
+  },
+  "section": "trading_simulation",
+  "date_range_days": 1489,
+  "n_valid_samples": 4187,
+  "calibration": {
+    "brier_score": 0.19776129053482822,
+    "expected_calibration_error": 0.06647598429982075,
+    "max_calibration_error": 0.36792322270287653,
+    "n_samples": 3485
+  },
+  "calibration_curve": {
+    "fraction_of_positives": [
+      0.1590909090909091,
+      0.24525316455696203,
+      0.24003254678600489,
+      0.2908415841584158,
+      0.29971988795518206,
+      0.3374233128834356,
+      0.26666666666666666,
+      0.5
+    ],
+    "mean_predicted_value": [
+      0.07367707459661067,
+      0.15351376600141456,
+      0.2516633624020095,
+      0.3407336307788669,
+      0.4467707326364005,
+      0.5371394621700689,
+      0.6345898893695432,
+      0.7223132319389671
+    ]
+  },
+  "threshold_results": {
+    "threshold_0.55": {
+      "threshold": 0.55,
+      "n_trades": 925,
+      "trades_per_day": 0.6212222968435192,
+      "mean_return_per_trade": 0.0036326187238611687,
+      "std_return_per_trade": 0.007124524354592209,
+      "pnl_per_day_pct": 0.2256663747193809,
+      "win_rate": 0.6172972972972973,
+      "sharpe_ratio": 15.507250702371413,
+      "max_drawdown": -8.691974413125827,
+      "final_equity": 27.957935079836652,
+      "max_consecutive_losses": 10,
+      "avg_consecutive_losses": 2.198757763975155,
+      "win_rate_stability": 0.8618776709659957,
+      "insufficient_data": false
+    },
+    "threshold_0.60": {
+      "threshold": 0.6,
+      "n_trades": 797,
+      "trades_per_day": 0.5352585627938213,
+      "mean_return_per_trade": 0.004103303421379531,
+      "std_return_per_trade": 0.006940519603673011,
+      "pnl_per_day_pct": 0.21963282920345775,
+      "win_rate": 0.657465495608532,
+      "sharpe_ratio": 16.690556136569104,
+      "max_drawdown": -7.425213957478964,
+      "final_equity": 25.649581956962503,
+      "max_consecutive_losses": 10,
+      "avg_consecutive_losses": 2.0073529411764706,
+      "win_rate_stability": 0.8722154591161791,
+      "insufficient_data": false
+    },
+    "threshold_0.65": {
+      "threshold": 0.65,
+      "n_trades": 677,
+      "trades_per_day": 0.4546675621222297,
+      "mean_return_per_trade": 0.004836323244874413,
+      "std_return_per_trade": 0.006545142761412798,
+      "pnl_per_day_pct": 0.21989192993821208,
+      "win_rate": 0.7119645494830132,
+      "sharpe_ratio": 19.226070507505163,
+      "max_drawdown": -5.856325759311029,
+      "final_equity": 25.838522302981904,
+      "max_consecutive_losses": 13,
+      "avg_consecutive_losses": 1.7727272727272727,
+      "win_rate_stability": 0.8996809822344547,
+      "insufficient_data": false
+    },
+    "threshold_0.70": {
+      "threshold": 0.7,
+      "n_trades": 557,
+      "trades_per_day": 0.374076561450638,
+      "mean_return_per_trade": 0.005516699551009221,
+      "std_return_per_trade": 0.006119374314060039,
+      "pnl_per_day_pct": 0.20636679985978076,
+      "win_rate": 0.7576301615798923,
+      "sharpe_ratio": 21.27648641950903,
+      "max_drawdown": -4.208041485928354,
+      "final_equity": 21.199602474666584,
+      "max_consecutive_losses": 7,
+      "avg_consecutive_losses": 1.5,
+      "win_rate_stability": 0.9310197372867359,
+      "insufficient_data": false
+    },
+    "threshold_0.75": {
+      "threshold": 0.75,
+      "n_trades": 453,
+      "trades_per_day": 0.30423102753525855,
+      "mean_return_per_trade": 0.006242437236556037,
+      "std_return_per_trade": 0.005563433968440762,
+      "pnl_per_day_pct": 0.1899143094801803,
+      "win_rate": 0.8057395143487859,
+      "sharpe_ratio": 23.881431058695494,
+      "max_drawdown": -2.719441788572263,
+      "final_equity": 16.64423887617495,
+      "max_consecutive_losses": 4,
+      "avg_consecutive_losses": 1.2941176470588236,
+      "win_rate_stability": 0.9443192491002389,
+      "insufficient_data": false
+    },
+    "threshold_0.80": {
+      "threshold": 0.8,
+      "n_trades": 359,
+      "trades_per_day": 0.24110141034251176,
+      "mean_return_per_trade": 0.007121522956236704,
+      "std_return_per_trade": 0.0045480298437050705,
+      "pnl_per_day_pct": 0.1717009228535243,
+      "win_rate": 0.8635097493036211,
+      "sharpe_ratio": 29.668582491250508,
+      "max_drawdown": -2.0052742026301584,
+      "final_equity": 12.728929456839,
+      "max_consecutive_losses": 3,
+      "avg_consecutive_losses": 1.1666666666666667,
+      "win_rate_stability": 0.9556239843019817,
+      "insufficient_data": false
+    }
+  }
+}

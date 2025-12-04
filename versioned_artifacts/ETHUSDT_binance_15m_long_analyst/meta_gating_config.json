@@ -5,30 +5,34 @@
   "direction": "long",
   "model_family": "analyst_meta",
   "meta_gating": {
-    "version": "2025-11-30T23:07:12",
+    "version": "2025-12-03T23:45:00",
     "transaction_cost": 0.0015,
     "entry": {
-      "prob_threshold": 0.75,
-      "use_expected_return": true,
-      "expected_return_threshold": 0.0015,
+      "prob_threshold": 0.65,
+      "use_expected_return": false,
+      "expected_return_threshold": 0.0,
       "expected_return_unit": "fraction",
-      "min_trades": 701
+      "min_trades": 353
     },
     "calibration": {
       "iso_regressor_artifact": "artifacts/iso_regressor_analyst_meta.pkl",
       "fitted_on": "train_oof"
     },
     "triple_barrier": {
-      "profit_threshold": 0.02034341848400196,
-      "stop_threshold": 0.006817885821369119,
-      "horizon_bars": 32,
-      "min_event_spacing": 3
+      "profit_threshold": 0.01,
+      "stop_threshold": 0.005,
+      "horizon_bars": 8,
+      "min_event_spacing": 4
     },
     "backtest_metrics": {
-      "auc_oof": 0.7863974845949963,
-      "mean_return_gated": 0.012032183274225337,
-      "sharpe_gated": 0.9912385221598472,
-      "trades_gated": 701
+      "auc_oof": 0.6889024438654533,
+      "mean_return_gated": 0.006576271540180956,
+      "sharpe_gated": 1.3159331980411106,
+      "trades_gated": 353
+    },
+    "filters": {
+      "use_volatility_filter": true,
+      "volatility_quantile": 0.30
     },
     "regime_specific": {}
   }

@@ -115,6 +115,15 @@ class MLVolumeForceStep(BaseStep):
                     if k.startswith("volume_force_")
                 })
 
+                # Include detailed per-target metrics to make sweep CSV richer
+                for key, value in metrics.items():
+                    if key not in run_metrics and (
+                        key.startswith("breakout_")
+                        or key.startswith("volatility_")
+                        or key.startswith("trend_")
+                    ):
+                        run_metrics[key] = value
+
                 results.append(run_metrics)
 
                 if result.get("success", False):
@@ -270,13 +279,18 @@ class MLVolumeForceStep(BaseStep):
 
             target_names = ["breakout", "volatility", "trend"]
 
-            sample_weights = create_sample_weights(X.index)
+            base_sample_weights = create_sample_weights(X.index).astype(float)
 
             for target_name in target_names:
                 tprint_info(f"🧠 Training {target_name.capitalize()} Model...")
 
                 model_id = f"{symbol}_{exchange}_{timeframe}_volume_force_{target_name}"
                 y_target = y[f"target_{target_name}"].astype(int)
+
+                # For volatility and trend, invert label semantics so that 1 corresponds
+                # to the complement regime (turning anti-signals into direct signals).
+                if target_name in ("volatility", "trend"):
+                    y_target = 1 - y_target
 
                 # Check target balance
                 pos_ratio = y_target.mean()
@@ -286,6 +300,16 @@ class MLVolumeForceStep(BaseStep):
                     tprint_warning(f"⚠️ Extreme class imbalance for {target_name}, skipping or using dummy")
                     # Handle extreme imbalance if necessary, but XGB usually handles it well enough or we subsample
                     # For now proceeding, but logging warning.
+
+                # Per-target sample weights: recency weighting × class balancing
+                target_weights = base_sample_weights.copy()
+                eps = 1e-6
+                if 0.0 < float(pos_ratio) < 1.0:
+                    neg_ratio = 1.0 - float(pos_ratio)
+                    pos_w = 0.5 / max(float(pos_ratio), eps)
+                    neg_w = 0.5 / max(float(neg_ratio), eps)
+                    class_weights = np.where(y_target.values == 1, pos_w, neg_w)
+                    target_weights = target_weights * class_weights
 
                 # Hyperparameters from config (sweeping support)
                 xgb_lr = float(config.get("volume_force_xgb_learning_rate", 0.03))
@@ -318,7 +342,7 @@ class MLVolumeForceStep(BaseStep):
                     y=y_target,
                     data_start=X.index.min(),
                     data_end=X.index.max(),
-                    sample_weight=sample_weights,
+                    sample_weight=target_weights,
                     eval_metric="logloss",
                     verbose=False,
                 )
@@ -332,7 +356,11 @@ class MLVolumeForceStep(BaseStep):
                     # Align OOF preds to common index (X.index)
                     # Note: train_result.oof_predictions should already be indexed by X.index subset
                     # We merge into our main predictions dataframe
-                    predictions[f"vol_force_{target_name}"] = oof_preds["probability"]
+                    prob_series = oof_preds["probability"]
+                    if not prob_series.index.is_unique:
+                        prob_series = prob_series[~prob_series.index.duplicated(keep="last")]
+                    aligned = prob_series.reindex(predictions.index)
+                    predictions[f"vol_force_{target_name}"] = aligned
                 else:
                     predictions[f"vol_force_{target_name}"] = np.nan
 
@@ -345,6 +373,48 @@ class MLVolumeForceStep(BaseStep):
                         acc = (y_true == (y_prob >= 0.5)).mean()
                         metrics[f"{target_name}_log_loss"] = float(ll)
                         metrics[f"{target_name}_accuracy"] = float(acc)
+
+                        # Additional financial-style metrics
+                        try:
+                            roc = roc_auc_score(y_true, y_prob)
+                            pr = average_precision_score(y_true, y_prob)
+                            brier = brier_score_loss(y_true, y_prob)
+                            metrics[f"{target_name}_roc_auc"] = float(roc)
+                            metrics[f"{target_name}_pr_auc"] = float(pr)
+                            metrics[f"{target_name}_brier_score"] = float(brier)
+                        except Exception:
+                            pass
+
+                        # Threshold-based detection stats (coverage/precision/lift)
+                        base_rate = float(y_true.mean()) if len(y_true) > 0 else 0.0
+                        for thresh in (0.2, 0.3, 0.4, 0.5, 0.7, 0.9):
+                            mask = y_prob >= thresh
+                            key_prefix = f"{target_name}_th_{int(thresh*100)}"
+                            coverage = float(mask.mean()) if len(mask) > 0 else 0.0
+                            if mask.any():
+                                precision = float(y_true[mask].mean())
+                            else:
+                                precision = 0.0
+                            lift = float(precision / base_rate) if base_rate > 0 else 0.0
+                            metrics[f"{key_prefix}_coverage"] = coverage
+                            metrics[f"{key_prefix}_precision"] = precision
+                            metrics[f"{key_prefix}_lift"] = lift
+
+                        # Quantile-based thresholds: top 5%, 10%, 20%
+                        if len(y_prob) > 0:
+                            for q, label in ((0.95, "top5"), (0.90, "top10"), (0.80, "top20")):
+                                q_thresh = float(y_prob.quantile(q))
+                                mask = y_prob >= q_thresh
+                                key_prefix = f"{target_name}_{label}"
+                                coverage = float(mask.mean()) if len(mask) > 0 else 0.0
+                                if mask.any():
+                                    precision = float(y_true[mask].mean())
+                                else:
+                                    precision = 0.0
+                                lift = float(precision / base_rate) if base_rate > 0 else 0.0
+                                metrics[f"{key_prefix}_coverage"] = coverage
+                                metrics[f"{key_prefix}_precision"] = precision
+                                metrics[f"{key_prefix}_lift"] = lift
                     except Exception:
                         metrics[f"{target_name}_log_loss"] = float("inf")
 
@@ -370,8 +440,17 @@ class MLVolumeForceStep(BaseStep):
                 metrics["oof_start"] = predictions.index.min()
                 metrics["oof_end"] = predictions.index.max()
 
+                # Attach targets and simple forward return to predictions for downstream analysis
+                preds_with_targets = predictions.copy()
+                for tname in target_names:
+                    col_name = f"target_{tname}"
+                    if col_name in y.columns:
+                        preds_with_targets[col_name] = y.loc[preds_with_targets.index, col_name].astype(float)
+                if "future_return_H" in y.columns:
+                    preds_with_targets["future_return_H"] = y.loc[preds_with_targets.index, "future_return_H"].astype(float)
+
                 # Save Predictions Artifact
-                preds_to_save = predictions.reset_index().rename(columns={predictions.index.name or "index": "timestamp"})
+                preds_to_save = preds_with_targets.reset_index().rename(columns={preds_with_targets.index.name or "index": "timestamp"})
                 preds_path = self._save_artifact(
                     data=preds_to_save,
                     artifact_name="ml_volume_force_predictions",
@@ -503,6 +582,9 @@ class MLVolumeForceStep(BaseStep):
             (r_future.abs() >= min_return_future)
         )
         targets["target_trend"] = persistence.astype(int)
+
+        # Simple H-bar forward return for backtesting/analysis
+        targets["future_return_H"] = r_future
 
         return targets
 

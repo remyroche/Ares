@@ -516,6 +516,34 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             if labeled_df is None:
                 raise ValueError("Failed to load labeled_data from any source")
             
+            # CRITICAL FIX: If labeled_df is truncated (e.g. 97 rows) but we have a large feature set,
+            # we MUST recover by using the large feature set and trying to salvage targets.
+            # This happens when a previous step (labeling) runs in a truncated debug mode but we want full features.
+            if large_features_df is not None and len(labeled_df) < 1000 and len(large_features_df) > 1000:
+                tprint_error(f"🚨 DETECTED TRUNCATED LABELED DATA ({len(labeled_df)} rows) vs LARGE FEATURES ({len(large_features_df)} rows)")
+                tprint_error("   Forcing use of LARGE feature set index and attempting target recovery...")
+
+                # Use large features as the base dataframe
+                full_df = large_features_df.copy()
+
+                # Try to map targets from the small labeled_df onto the large df
+                # This only works if the small df is a subset of the large one (by index)
+                # If targets are missing for the rest, they will be NaN -> effectively unsupervised for those rows
+                # BUT this preserves the feature data for calculating stats/distributions
+                target_cols = [c for c in labeled_df.columns if 'target' in c.lower() or c == 'price_target_vol_normalized']
+
+                for col in target_cols:
+                    if col in labeled_df.columns:
+                        # Reindex will introduce NaNs where index doesn't match
+                        full_df[col] = labeled_df[col].reindex(full_df.index)
+
+                # Swap the active dataframe
+                tprint_success(f"   ✅ Swapped to full dataset: {len(full_df)} rows")
+                labeled_df = full_df
+
+                # Note: If targets are all NaN outside the small window, feature selection will only use the small window
+                # BUT the artifacts saved will have the full history, which is critical for backtesting/inference.
+
             # CRITICAL DEBUG: Explicit row count and time range analysis
             tprint_error("=" * 80)
             tprint_error("🔍 CRITICAL: LOADED LABELED DATA ANALYSIS")
@@ -4555,6 +4583,21 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 # Add formatted markdown section
                 report += "\n" + temp_checker.format_for_markdown()
 
+                # Add Expected Sharpe Ratio Calculation
+                summary_local = baseline_check_results.get('summary', {})
+                best_test_r2 = summary_local.get('best_test_r2', 0.0)
+                if best_test_r2 > 0:
+                    # Expected Sharpe ≈ sqrt(R²) * sqrt(N_bets)
+                    # Assumption: 1 trade per day annualized (252 days)
+                    n_bets_annual = 252
+                    expected_sharpe = np.sqrt(best_test_r2) * np.sqrt(n_bets_annual)
+
+                    report += f"\n### Backtest Implications (Expected Sharpe)\n\n"
+                    report += f"- **Best Test R²:** {best_test_r2:.4f}\n"
+                    report += f"- **Assumed Trading Frequency:** 1 trade/day (252/year)\n"
+                    report += f"- **Expected Annualized Sharpe Ratio:** **{expected_sharpe:.2f}**\n"
+                    report += f"  *(Derived from Information Coefficient approximation: Sharpe ≈ IC * sqrt(N))*\n"
+
             # Generated artifacts
             report += "\n## Generated Artifacts\n"
             artifact_count = len([name for name in feature_sets.keys() if name.startswith('selected_features_')]) * 2  # features + dataframes
@@ -5083,6 +5126,21 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 temp_checker = BaselinePredictiveCheck()
                 temp_checker.results = baseline_check_results
                 report += temp_checker.format_for_markdown()
+
+                # Add Expected Sharpe Ratio Calculation
+                summary_local = baseline_check_results.get('summary', {})
+                best_test_r2 = summary_local.get('best_test_r2', 0.0)
+                if best_test_r2 > 0:
+                    # Expected Sharpe ≈ sqrt(R²) * sqrt(N_bets)
+                    # Assumption: 1 trade per day annualized (252 days)
+                    n_bets_annual = 252
+                    expected_sharpe = np.sqrt(best_test_r2) * np.sqrt(n_bets_annual)
+
+                    report += f"\n### Backtest Implications (Expected Sharpe)\n\n"
+                    report += f"- **Best Test R²:** {best_test_r2:.4f}\n"
+                    report += f"- **Assumed Trading Frequency:** 1 trade/day (252/year)\n"
+                    report += f"- **Expected Annualized Sharpe Ratio:** **{expected_sharpe:.2f}**\n"
+                    report += f"  *(Derived from Information Coefficient approximation: Sharpe ≈ IC * sqrt(N))*\n"
 
                 csv_path = baseline_check_results.get('csv_path')
                 if csv_path:

@@ -71,14 +71,16 @@ analyst_config:
             low: 0.1
             high: 1.0
         optimal_params:
-          max_depth: 5
-          learning_rate: 0.13125830316209655
-          reg_lambda: 1.1236203565420875
-          sampling_rate: 0.9852142919229748
-          min_child_samples: 64
-          num_leaves: 32
-          subsample: 0.9852142919229748
-          colsample_bytree: 0.9852142919229748
+          max_depth: 6
+          learning_rate: 0.05
+          reg_lambda: 0.1
+          sampling_rate: 0.8
+          min_child_samples: 20
+          num_leaves: 64
+          subsample: 0.8
+          colsample_bytree: 0.8
+          n_estimators: 1000
+          early_stopping_rounds: 50
         last_optimization:
           timestamp: '2025-11-21T00:42:07.546435'
           best_score: -.inf
@@ -199,11 +201,12 @@ analyst_config:
             low: 10
             high: 30
         optimal_params:
-          n_estimators: 500
-          learning_rate: 0.01
-          minibatch_frac: 0.2
+          n_estimators: 800
+          learning_rate: 0.02
+          minibatch_frac: 0.5
           base_learner_max_depth: 4
           base_learner_min_samples_leaf: 20
+          early_stopping_rounds: 50
         last_optimization:
           timestamp: '2025-11-25T00:00:00.000000'
           best_score: -.inf
@@ -259,6 +262,11 @@ feature_engineering:
     - signal
     - cross
     - divergence
+    - force
+    - alpha
+    - score
+    - regime
+    - probability
   primary_features:
     source: feature_generation_final_feature_selection_step
     artifact_name: analyst_features

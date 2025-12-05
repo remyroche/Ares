@@ -2,7 +2,7 @@
 Gate Model Implementation.
 
 This module defines the GateModel class, which acts as a filter for trading signals.
-It uses a sparse, interpretable ElasticNet model to reject trades in unfavorable regimes.
+It uses a sparse, interpretable ElasticNet regression model to reject trades in unfavorable regimes.
 """
 
 import numpy as np
@@ -10,7 +10,7 @@ import pandas as pd
 import joblib
 import os
 from typing import Dict, Any, Optional, Tuple, List
-from sklearn.linear_model import LogisticRegressionCV
+from sklearn.linear_model import ElasticNetCV
 from sklearn.preprocessing import StandardScaler
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
@@ -20,7 +20,7 @@ class GateModel:
     """
     Gate Model for filtering trading signals.
 
-    This model predicts the probability of a trade being profitable (Option A target)
+    This model predicts the expected PnL of a trade (Regression)
     based on market regime and trade history features.
     It is designed to be sparse, interpretable, and fast.
     """
@@ -33,25 +33,22 @@ class GateModel:
         """
         self.config = config or {}
 
-        # Default behavior: if no explicit calibration settings are provided
-        # by the user, use a percentile-based rule that keeps the "top X% less
-        # bad states" instead of a hard probability cutoff.
-        #
-        # We express this via a target_coverage parameter (fraction of trades
-        # we aim to keep). For example, target_coverage=0.6 keeps the top 60%
-        # of trades by predicted win-probability (i.e., rejects the bottom 40%).
+        # Default behavior: if no explicit calibration settings are provided,
+        # we aim to block the worst trades (e.g. bottom 25%).
+        # target_coverage=0.75 means we keep the top 75% of trades.
         if (
-            'min_win_probability' not in self.config
+            'min_predicted_pnl' not in self.config
             and 'calibration_percentile' not in self.config
             and 'target_coverage' not in self.config
         ):
-            self.config['target_coverage'] = 0.6
+            self.config['target_coverage'] = 0.75
+
         self.pipeline = None
-        self.threshold = 0.5  # Default threshold, updated after training
+        self.threshold = 0.0  # Default threshold (breakeven), updated after training
         self.feature_names = []
 
-        # Hyperparameters for LogisticRegressionCV
-        self.l1_ratios = self.config.get('l1_ratios', [0.1, 0.3, 0.5, 0.7, 0.9])
+        # Hyperparameters for ElasticNetCV
+        self.l1_ratios = self.config.get('l1_ratios', [0.1, 0.3, 0.5, 0.7, 0.9, 0.95, 0.99])
         self.cv_splits = self.config.get('cv_splits', 5)
         self.max_iter = self.config.get('max_iter', 5000)
         self.n_jobs = self.config.get('n_jobs', -1)
@@ -323,72 +320,61 @@ class GateModel:
 
     def train(self, X: pd.DataFrame, y: pd.Series, sample_weight: Optional[pd.Series] = None):
         """
-        Train the Gate Model.
+        Train the Gate Model (Regression).
 
         Args:
             X: Feature DataFrame.
-            y: Target Series (1 = Profitable, 0 = Loss).
+            y: Target Series (Continuous PnL/Return).
             sample_weight: Optional sample weights.
         """
-        # Pipeline: Impute -> Scale -> LogisticRegressionCV
+        # Pipeline: Impute -> Scale -> ElasticNetCV
         self.pipeline = Pipeline([
             ('imputer', SimpleImputer(strategy='median')), # Handle NaNs from rolling windows
             ('scaler', StandardScaler()),                  # Essential for ElasticNet
-            ('clf', LogisticRegressionCV(
-                Cs=20,
+            ('reg', ElasticNetCV(
+                l1_ratio=self.l1_ratios,
                 cv=TimeSeriesSplit(n_splits=self.cv_splits),
-                penalty='elasticnet',
-                solver='saga', # Required for elasticnet
-                l1_ratios=self.l1_ratios,
-                scoring='roc_auc',
                 max_iter=self.max_iter,
                 n_jobs=self.n_jobs,
                 random_state=42
             ))
         ])
 
-        print(f"Training GateModel with {X.shape[0]} samples and {X.shape[1]} features...")
-        self.pipeline.fit(X, y, clf__sample_weight=sample_weight)
+        print(f"Training GateModel (Regression) with {X.shape[0]} samples and {X.shape[1]} features...")
+        self.pipeline.fit(X, y, reg__sample_weight=sample_weight)
 
         # Log coefficients
-        clf = self.pipeline.named_steps['clf']
-        best_l1 = clf.l1_ratio_[0]
-        best_C = clf.C_[0]
-        print(f"Best L1 Ratio: {best_l1}, Best C: {best_C}")
+        reg = self.pipeline.named_steps['reg']
+        best_l1 = reg.l1_ratio_
+        best_alpha = reg.alpha_
+        print(f"Best L1 Ratio: {best_l1}, Best Alpha: {best_alpha}")
 
         # Check sparsity
-        coefs = clf.coef_.flatten()
+        coefs = reg.coef_.flatten()
         n_zero = np.sum(coefs == 0)
         print(f"Sparsity: {n_zero}/{len(coefs)} features set to zero")
 
-    def calibrate_threshold(self, X: pd.DataFrame, percentile: int = 40):
-        """Calibrate the gating threshold using configuration-aware logic.
+    def calibrate_threshold(self, X: pd.DataFrame, percentile: int = 25):
+        """Calibrate the gating threshold based on predicted PnL distribution.
 
-        Priority order:
-        1) If ``min_win_probability`` is provided in ``self.config``, treat the
-           model scores as win probabilities and set the threshold directly to
-           that value (strict rule: e.g. 0.25 to block conditions where >75%
-           of trades lose).
-        2) Else, if ``target_coverage`` is provided, keep the top
-           ``target_coverage`` fraction of trades by score ("top X% less bad
-           states"). This is implemented via an equivalent percentile on the
-           score distribution.
-        3) Otherwise, fall back to a percentile-based threshold using
-           ``calibration_percentile`` from config if present, or the
-           ``percentile`` argument (default 40).
+        Logic:
+        1) If ``min_predicted_pnl`` is in config, use that (e.g., 0.0 for breakeven).
+        2) Else, if ``target_coverage`` is set (e.g. 0.75), we set threshold to the
+           corresponding quantile (25th percentile) to block the bottom 25%.
+        3) Fallback to ``percentile`` arg (default 25).
         """
         if self.pipeline is None:
             raise ValueError("Model not trained yet.")
 
-        scores = self.pipeline.predict_proba(X)[:, 1]
+        scores = self.predict_score(X)
 
-        # 1) Direct probability-based thresholding
-        min_win_prob = self.config.get('min_win_probability', None)
-        if isinstance(min_win_prob, (int, float)):
-            self.threshold = float(min_win_prob)
+        # 1) Direct PnL thresholding
+        min_pnl = self.config.get('min_predicted_pnl', None)
+        if isinstance(min_pnl, (int, float)):
+            self.threshold = float(min_pnl)
             print(
-                f"Threshold set from min_win_probability={self.threshold:.4f} "
-                "(blocking regions where predicted loss probability exceeds this)."
+                f"Threshold set from min_predicted_pnl={self.threshold:.6f} "
+                "(blocking regions where predicted PnL < this)."
             )
             return
 
@@ -396,32 +382,33 @@ class GateModel:
         target_cov = self.config.get('target_coverage', None)
         if isinstance(target_cov, (int, float)):
             tc = float(target_cov)
-            # Clamp to a sensible range (avoid 0 or 1 extremes)
+            # Clamp to a sensible range
             tc = max(0.01, min(0.99, tc))
+            # If coverage is 0.75, we want to block the bottom 0.25
             calib_pct = 100.0 * (1.0 - tc)
             self.threshold = np.percentile(scores, calib_pct)
             print(
                 f"Threshold calibrated from target_coverage={tc:.2f} "
-                f"-> percentile={calib_pct:.1f}: {self.threshold:.4f}"
+                f"-> percentile={calib_pct:.1f}: {self.threshold:.6f}"
             )
             return
 
-        # 3) Percentile-based calibration with direct config override
+        # 3) Percentile-based calibration (default 25th percentile -> block bottom 25%)
         calib_pct = float(self.config.get('calibration_percentile', percentile))
         calib_pct = max(0.0, min(100.0, calib_pct))
         self.threshold = np.percentile(scores, calib_pct)
-        print(f"Threshold calibrated at {calib_pct:.1f}th percentile: {self.threshold:.4f}")
+        print(f"Threshold calibrated at {calib_pct:.1f}th percentile: {self.threshold:.6f}")
 
-    def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
-        """Predict probabilities."""
+    def predict_score(self, X: pd.DataFrame) -> np.ndarray:
+        """Predict expected PnL (continuous score)."""
         if self.pipeline is None:
             raise ValueError("Model not trained yet.")
-        return self.pipeline.predict_proba(X)[:, 1]
+        return self.pipeline.predict(X)
 
     def predict(self, X: pd.DataFrame) -> np.ndarray:
-        """Predict binary decision based on threshold."""
-        probs = self.predict_proba(X)
-        return (probs >= self.threshold).astype(int)
+        """Predict binary decision: 1 (Trade) if score >= threshold, else 0 (Block)."""
+        scores = self.predict_score(X)
+        return (scores >= self.threshold).astype(int)
 
     def save(self, filepath: str):
         """Save the model to disk."""

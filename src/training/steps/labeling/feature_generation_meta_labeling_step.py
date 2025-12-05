@@ -909,7 +909,9 @@ def compute_realized_returns(
     transaction_cost: float = 0.0005,
     min_event_spacing: int = 2,
     volatility_series: Optional[pd.Series] = None,
-    use_multiclass_labels: bool = False  # NEW: 3-class labels (0=timeout, 1=profit, 2=stop)
+    use_multiclass_labels: bool = False,  # NEW: 3-class labels (0=timeout, 1=profit, 2=stop)
+    atr_series: Optional[pd.Series] = None,  # NEW: For trailing stops
+    trail_distance_atr_mult: Optional[float] = None,  # NEW: Trailing distance in ATR
 ) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series, pd.Series, pd.Series, pd.Series, pd.Series]:
     """
     Compute realized returns for each signal event.
@@ -923,11 +925,13 @@ def compute_realized_returns(
     - NEW: Multi-class labels (0=timeout, 1=profit, 2=stop) for more nuanced learning
     - NEW: Directional binary labels (binary_labels_long, binary_labels_short) for training
            direction-specific classifiers
+    - NEW: Simulated trailing profit (activates at TP, exits on reversal)
 
     Args:
         df: DataFrame with OHLCV data
         signals: DataFrame with signal columns
         profit_threshold: Profit target as fraction (float or Series for adaptive)
+                          If trailing is enabled, this acts as the INITIAL activation threshold.
         stop_threshold: Stop loss as fraction (float or Series for adaptive)
         horizon: Base maximum bars to look ahead
         transaction_cost: Transaction cost per trade (round trip)
@@ -935,6 +939,8 @@ def compute_realized_returns(
         volatility_series: Volatility series for dynamic horizon scaling (optional)
         use_multiclass_labels: If True, returns 3-class labels (0=timeout, 1=profit, 2=stop)
                                If False, returns binary labels (0=loss/timeout, 1=profit)
+        atr_series: ATR series for trailing stop calculation (optional)
+        trail_distance_atr_mult: Trailing distance in ATR multiples (optional, enables trailing)
 
     Returns:
         Tuple of (realized_returns, binary_labels, exit_reasons, event_durations, 
@@ -990,6 +996,17 @@ def compute_realized_returns(
         stop_thresholds = np.full(len(df), stop_threshold)
     else:
         stop_thresholds = stop_threshold.values
+
+    # Prepare trailing stop arrays if enabled
+    use_trailing = (atr_series is not None) and (trail_distance_atr_mult is not None) and (trail_distance_atr_mult > 0)
+    # Ensure atr_values is aligned with df
+    if use_trailing:
+        if len(atr_series) != len(df):
+            atr_values = atr_series.reindex(df.index).values
+        else:
+            atr_values = atr_series.values
+    else:
+        atr_values = None
 
     # Dynamic horizon based on volatility (LINEAR with 2x max cap)
     # Lower vol = More time needed (price moves slower in low vol environments)
@@ -1051,6 +1068,25 @@ def compute_realized_returns(
         profit_thr = profit_thresholds[i]
         stop_thr = stop_thresholds[i]
 
+        # Initialize trailing state for this event
+        trailing_active = False
+        peak_price = entry_price  # Initialize peak/trough
+        # Pre-calculate trailing distance if trailing enabled
+        if use_trailing:
+            # Trailing distance = ATR at entry * mult
+            current_atr = atr_values[i]
+            if pd.isna(current_atr):
+                # Fallback if ATR missing: use % of price approx or disable trailing
+                # For safety, disable trailing for this specific event if ATR is missing
+                event_trail_dist = 0.0
+                event_use_trailing = False
+            else:
+                event_trail_dist = current_atr * trail_distance_atr_mult
+                event_use_trailing = True
+        else:
+            event_trail_dist = 0.0
+            event_use_trailing = False
+
         # Track MFE/MAE during the event
         max_favorable = 0.0
         max_adverse = 0.0
@@ -1067,54 +1103,115 @@ def compute_realized_returns(
             close_price = close_prices[idx]
 
             if signal > 0:  # Long signal
-                # Check high for profit target (intra-bar high could have hit TP)
+                # Current P&L states
                 pnl_high = (high_price - entry_price) / entry_price
-                # Check low for stop loss (intra-bar low could have hit SL)
                 pnl_low = (low_price - entry_price) / entry_price
-                # Current P&L based on close
-                pnl_close = (close_price - entry_price) / entry_price
 
                 # Track MFE/MAE
                 max_favorable = max(max_favorable, pnl_high)
                 max_adverse = min(max_adverse, pnl_low)
 
-                # Hit profit target (check high first)
-                if pnl_high >= profit_thr:
-                    # Assume we got filled at profit target price
-                    exit_price = entry_price * (1 + profit_thr)
-                    exit_reason = 'profit'
+                # Determine effective stop level
+                fixed_stop_price = entry_price * (1 - stop_thr)
+                effective_stop = fixed_stop_price
+
+                current_trailing_stop = -np.inf
+                if event_use_trailing and trailing_active:
+                    peak_price = max(peak_price, high_price)
+                    current_trailing_stop = peak_price - event_trail_dist
+                    effective_stop = max(fixed_stop_price, current_trailing_stop)
+
+                # 1. Check Stop Hit (Highest priority exit)
+                if low_price <= effective_stop:
+                    exit_price = effective_stop
+                    # If stop was tightened by trailing, reason is trailing. If stuck at fixed floor, reason is stop.
+                    # Note: If trailing_stop > fixed_stop, reason is trailing.
+                    # If trailing_active is false, effective_stop == fixed_stop, reason is stop.
+                    exit_reason = 'trailing' if (effective_stop > fixed_stop_price + 1e-8) else 'stop'
                     event_end_idx = idx
                     break
-                # Hit stop loss (check low)
-                elif pnl_low <= -stop_thr:
-                    # Assume we got filled at stop loss price
-                    exit_price = entry_price * (1 - stop_thr)
-                    exit_reason = 'stop'
-                    event_end_idx = idx
-                    break
+
+                # 2. Check Activation (if not already active)
+                if event_use_trailing and not trailing_active:
+                    activation_price = entry_price * (1 + profit_thr)
+                    if high_price >= activation_price:
+                        # Intra-bar conflict check
+                        # Assume we hit High (activation) first, then trail
+                        peak_price = high_price
+                        intra_bar_stop = peak_price - event_trail_dist
+                        eff_intra_stop = max(fixed_stop_price, intra_bar_stop)
+
+                        if low_price <= eff_intra_stop:
+                            # Activated and stopped out in same bar
+                            # Assume mid-point exit as requested
+                            exit_price = (high_price + low_price) / 2
+                            exit_reason = 'trailing'
+                            event_end_idx = idx
+                            break
+                        else:
+                            # Activated and survived
+                            trailing_active = True
+
+                # 3. Standard Fixed Take Profit (if trailing disabled)
+                if not event_use_trailing:
+                    if pnl_high >= profit_thr:
+                        exit_price = entry_price * (1 + profit_thr)
+                        exit_reason = 'profit'
+                        event_end_idx = idx
+                        break
 
             elif signal < 0:  # Short signal
                 # For shorts: check low for profit, high for stop
                 pnl_high = (entry_price - high_price) / entry_price  # High is bad for shorts
                 pnl_low = (entry_price - low_price) / entry_price  # Low is good for shorts
-                pnl_close = (entry_price - close_price) / entry_price
 
                 # Track MFE/MAE
                 max_favorable = max(max_favorable, pnl_low)
                 max_adverse = min(max_adverse, pnl_high)
 
-                # Hit profit target (check low for shorts)
-                if pnl_low >= profit_thr:
-                    exit_price = entry_price * (1 - profit_thr)
-                    exit_reason = 'profit'
+                # Determine effective stop level
+                fixed_stop_price = entry_price * (1 + stop_thr)
+                effective_stop = fixed_stop_price
+
+                current_trailing_stop = np.inf
+                if event_use_trailing and trailing_active:
+                    peak_price = min(peak_price, low_price) # "peak" variable reused for trough
+                    current_trailing_stop = peak_price + event_trail_dist
+                    effective_stop = min(fixed_stop_price, current_trailing_stop)
+
+                # 1. Check Stop Hit (Highest priority exit)
+                if high_price >= effective_stop:
+                    exit_price = effective_stop
+                    # If stop was tightened (lowered) by trailing, reason is trailing.
+                    exit_reason = 'trailing' if (effective_stop < fixed_stop_price - 1e-8) else 'stop'
                     event_end_idx = idx
                     break
-                # Hit stop loss (check high for shorts)
-                elif pnl_high <= -stop_thr:
-                    exit_price = entry_price * (1 + stop_thr)
-                    exit_reason = 'stop'
-                    event_end_idx = idx
-                    break
+
+                # 2. Check Activation (if not already active)
+                if event_use_trailing and not trailing_active:
+                    activation_price = entry_price * (1 - profit_thr)
+                    if low_price <= activation_price:
+                        # Activated!
+                        peak_price = low_price
+                        intra_bar_stop = peak_price + event_trail_dist
+                        eff_intra_stop = min(fixed_stop_price, intra_bar_stop)
+
+                        if high_price >= eff_intra_stop:
+                            # Intra-bar conflict
+                            exit_price = (high_price + low_price) / 2
+                            exit_reason = 'trailing'
+                            event_end_idx = idx
+                            break
+                        else:
+                            trailing_active = True
+
+                # 3. Standard Fixed Take Profit (if trailing disabled)
+                if not event_use_trailing:
+                    if pnl_low >= profit_thr:
+                        exit_price = entry_price * (1 - profit_thr)
+                        exit_reason = 'profit'
+                        event_end_idx = idx
+                        break
 
         # If no exit, use end-of-horizon price (timeout)
         if exit_price is None:
@@ -3142,6 +3239,8 @@ def generate_diagnostics_report(
     report_lines.append(f"\n**Symbol:** {config.get('symbol', 'N/A')}")
     report_lines.append(f"**Timeframe:** {config.get('timeframe', 'N/A')}")
     report_lines.append(f"**Horizon:** {config.get('horizon', 'N/A')} bars")
+    if config.get('trail_distance'):
+        report_lines.append(f"**Trailing Distance:** {config.get('trail_distance')} ATR")
     report_lines.append("\n---\n")
 
     # ===== 1. LABEL DISTRIBUTION =====
@@ -6788,6 +6887,7 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                     'stop_threshold': stop_threshold,
                     'horizon': horizon,
                     'transaction_cost': transaction_cost,
+                    'trail_distance_atr': float(trail_dist) if 'trail_dist' in locals() else 0.0,
                     'n_samples': len(labeled_data),
                     'n_labeled': int(n_labeled),
                     'n_positive': int(n_positive),
@@ -6805,6 +6905,16 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             outcomes_dir.mkdir(exist_ok=True)
 
             try:
+                # Create effective config with actual parameters used (including HPO overrides)
+                effective_config = config.copy()
+                effective_config.update({
+                    'profit_threshold': profit_threshold,
+                    'stop_threshold': stop_threshold,
+                    'horizon': horizon,
+                    'transaction_cost': transaction_cost,
+                    'trail_distance': float(trail_dist) if 'trail_dist' in locals() else 0.0,
+                })
+
                 diagnostics_path = generate_diagnostics_report(
                     labeled_data=labeled_data,
                     meta_features=meta_features_enhanced,  # Use enhanced features with disagreement
@@ -6813,7 +6923,7 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                     smoothed_labels=smoothed_labels,
                     probabilities=probabilities,
                     final_model=final_model,
-                    config=config,
+                    config=effective_config,
                     output_dir=outcomes_dir,
                     exit_reasons=exit_reasons,
                     event_durations=event_durations,
@@ -7112,6 +7222,7 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                         'stop_threshold': stop_threshold,
                         'horizon': horizon,
                         'transaction_cost': transaction_cost,
+                        'trail_distance_atr': float(trail_dist) if 'trail_dist' in locals() else 0.0,
                         'min_event_spacing': min_event_spacing,
                         'use_kalman_filtering': True,
                         'use_adaptive_thresholds': True,

@@ -907,7 +907,7 @@ def compute_realized_returns(
     stop_threshold: Union[float, pd.Series] = 0.010,
     horizon: int = 16,
     transaction_cost: float = 0.0005,
-    min_event_spacing: int = 4,
+    min_event_spacing: int = 2,
     volatility_series: Optional[pd.Series] = None,
     use_multiclass_labels: bool = False  # NEW: 3-class labels (0=timeout, 1=profit, 2=stop)
 ) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series, pd.Series, pd.Series, pd.Series, pd.Series]:
@@ -6016,7 +6016,7 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             stop_threshold = config.get('stop_threshold', DEFAULT_STOP_THRESHOLD)  # 0.5%
             horizon = config.get('horizon', 16)
             transaction_cost = config.get('transaction_cost', DEFAULT_TRANSACTION_COST)  # 0.15%
-            min_event_spacing = config.get('min_event_spacing', 4)
+            min_event_spacing = config.get('min_event_spacing', 2)
 
             # Extended labeling parameters (Kalman, volatility adaptation, clipping)
             kalman_Q = float(config.get('kalman_Q', 1e-4))

@@ -1634,10 +1634,26 @@ class MetaLabelingHPOExperimentStep(BaseStep):
         stage1_subsample_window_days = int(
             config.get("stage1_subsample_window_days", default_stage1_window)
         )
+
+        # Precompute ATR for trailing profit simulation
+        # Using 14-period True Range as standard
+        high_prices = market_data["high"] if "high" in market_data.columns else market_data["close"]
+        low_prices = market_data["low"] if "low" in market_data.columns else market_data["close"]
+        close_prices = market_data["close"]
+
+        tr1 = high_prices - low_prices
+        tr2 = (high_prices - close_prices.shift(1)).abs()
+        tr3 = (low_prices - close_prices.shift(1)).abs()
+        true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        # Using 14-period rolling mean for ATR
+        atr_series = true_range.rolling(window=14, min_periods=1).mean()
+
         stage1_market_data = market_data
         stage1_primary_signals = primary_signals
         stage1_volatility_1d = volatility_1d
+        stage1_atr_series = atr_series
         stage1_days_span = days_span
+
         if stage1_enable_subsample:
             try:
                 start_ts = market_data.index.min()
@@ -1647,6 +1663,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     stage1_market_data = market_data.loc[mask].copy()
                     stage1_primary_signals = primary_signals.loc[mask].copy()
                     stage1_volatility_1d = volatility_1d.loc[mask].copy()
+                    stage1_atr_series = atr_series.loc[mask].copy()
                     try:
                         stage1_days_span = max(
                             1,
@@ -1661,6 +1678,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 stage1_market_data = market_data
                 stage1_primary_signals = primary_signals
                 stage1_volatility_1d = volatility_1d
+                stage1_atr_series = atr_series
                 stage1_days_span = days_span
 
         # Build simple arrays for the optimizer API (they are not used in
@@ -1707,6 +1725,11 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                         "type": "float",
                         "low": 3.0,  # Minimum signals per day target
                         "high": 10.0,  # Maximum signals per day target
+                    },
+                    "trail_distance": {
+                        "type": "float",
+                        "low": 0.6,
+                        "high": 1.2,
                     },
                 },
                 priority=1,
@@ -1871,6 +1894,8 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     horizon=int(h),
                     transaction_cost=DEFAULT_TRANSACTION_COST,
                     min_event_spacing=int(warm_start_best_params.get("min_event_spacing", 2)),
+                    atr_series=stage1_atr_series,
+                    trail_distance_atr_mult=float(warm_start_best_params.get("trail_distance", 0.0)),
                 )
                 labeled_mask_h = ~binary_labels_h.isna()
                 n_events_h = int(labeled_mask_h.sum())
@@ -1999,6 +2024,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 # to conservative defaults.
                 profit_thr_base = float(params.get("profit_thr_base", 0.012))
                 stop_ratio = float(params.get("stop_to_profit_ratio", 0.5))
+                trail_dist = float(params.get("trail_distance", 0.0))
 
                 # CONSTRAINT: Ensure profit is at least 1.5x stop
                 stop_thr_base = max(0.0005, profit_thr_base * stop_ratio)
@@ -2164,6 +2190,8 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     horizon=horizon,
                     transaction_cost=effective_tx_cost,  # Use HPO-tunable tx cost
                     min_event_spacing=min_spacing,
+                    atr_series=atr_series,
+                    trail_distance_atr_mult=trail_dist,
                 )
 
                 # Basic diagnostics on raw realized returns and labels before
@@ -3227,16 +3255,18 @@ class MetaLabelingHPOExperimentStep(BaseStep):
             ) -> callable:
                 """Create a wrapper that injects fixed params from previous stages."""
                 def wrapper(params: Dict[str, Any]) -> float:
-                    nonlocal market_data, primary_signals, volatility_1d, days_span
+                    nonlocal market_data, primary_signals, volatility_1d, days_span, atr_series
                     if use_stage1_subsample and model_complexity == "fast" and stage1_enable_subsample:
                         md_backup = market_data
                         ps_backup = primary_signals
                         vol_backup = volatility_1d
+                        atr_backup = atr_series
                         days_backup = days_span
                         try:
                             market_data = stage1_market_data
                             primary_signals = stage1_primary_signals
                             volatility_1d = stage1_volatility_1d
+                            atr_series = stage1_atr_series
                             days_span = stage1_days_span
                             full_params = {**fixed_params, **params}
                             result = labeling_objective(
@@ -3249,6 +3279,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                             market_data = md_backup
                             primary_signals = ps_backup
                             volatility_1d = vol_backup
+                            atr_series = atr_backup
                             days_span = days_backup
                     else:
                         full_params = {**fixed_params, **params}
@@ -3269,9 +3300,9 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     # Stage 1 (fast model, subsampled data):
                     # Group A – event shape / density + signal generation
                     if calibrated_horizon is not None:
-                        stage_param_groups.append(['min_event_spacing', 'cusum_threshold', 'target_signal_density'])
+                        stage_param_groups.append(['min_event_spacing', 'cusum_threshold', 'target_signal_density', 'trail_distance'])
                     else:
-                        stage_param_groups.append(['horizon_bars', 'min_event_spacing', 'cusum_threshold', 'target_signal_density'])
+                        stage_param_groups.append(['horizon_bars', 'min_event_spacing', 'cusum_threshold', 'target_signal_density', 'trail_distance'])
                     # Group B – TPSL geometry
                     stage_param_groups.append(['profit_mult_min', 'profit_mult_max', 'stop_mult_min', 'stop_mult_max'])
                     # Group C – smoothing
@@ -3595,6 +3626,19 @@ class MetaLabelingHPOExperimentStep(BaseStep):
             stop_mult_min = float(diag_params.get("stop_mult_min", 0.5))
             stop_mult_max = float(diag_params.get("stop_mult_max", 2.0))
             
+            # Extract trailing distance if available
+            trail_dist_diag = float(diag_params.get("trail_distance", 0.0))
+
+            # Recompute ATR for diagnostics
+            high_prices = market_data["high"] if "high" in market_data.columns else market_data["close"]
+            low_prices = market_data["low"] if "low" in market_data.columns else market_data["close"]
+            close_prices = market_data["close"]
+            tr1 = high_prices - low_prices
+            tr2 = (high_prices - close_prices.shift(1)).abs()
+            tr3 = (low_prices - close_prices.shift(1)).abs()
+            true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+            atr_series_diag = true_range.rolling(window=14, min_periods=1).mean()
+
             # Compute adaptive thresholds
             vol_baseline = volatility_1d.rolling(vol_baseline_window).mean()
             vol_factor = volatility_1d / (vol_baseline + 1e-8)
@@ -3627,6 +3671,8 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 horizon=horizon,
                 transaction_cost=effective_tx_cost,
                 min_event_spacing=min_spacing,
+                atr_series=atr_series_diag,
+                trail_distance_atr_mult=trail_dist_diag,
             )
             
             # Vol-scaled returns and quantile labels

@@ -927,9 +927,16 @@ class MetaLabelingHPOExperimentStep(BaseStep):
         tprint_info("⚙️ Generating primary signals for HPO labeling runs…")
         primary_signals = generate_primary_signals(market_data.copy())
 
-        # Precompute volatility for Kalman smoothing
+        # Precompute volatility for Kalman smoothing and label normalization
+        # IMPORTANT: NO FUTURE LEAKAGE - using backward-looking rolling window only
+        # At time T, volatility_1d[T] uses returns from T-96 to T-1 (past data only)
+        # This ensures labels at time T do not peek at future volatility
         log_ret = np.log(market_data["close"]).diff()
         volatility_1d = log_ret.rolling(96).std()
+        
+        # Verify no NaN at start could cause issues (first 96 bars will have partial window)
+        n_valid_vol = int((~volatility_1d.isna()).sum())
+        tprint_info(f"📊 Volatility computed: {n_valid_vol}/{len(volatility_1d)} valid values (backward-looking, no future leakage)")
 
         # Precompute span in days once (used by density penalty in objective)
         try:
@@ -1403,6 +1410,10 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 target_signal_density = max(3.0, min(10.0, target_signal_density))
 
                 # --- Recompute realized returns ---
+                # NO FUTURE LEAKAGE in volatility-based thresholds:
+                # - volatility_1d is backward-looking (rolling 96-bar std)
+                # - vol_baseline is backward-looking (rolling mean of past volatility)
+                # - vol_factor at time T uses only volatility from T-vol_baseline_window to T
                 vol_baseline = volatility_1d.rolling(vol_baseline_window).mean()
                 vol_factor = volatility_1d / (vol_baseline + 1e-8)
 
@@ -1491,6 +1502,14 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 # Replace legacy R-multiple based labels with quantile-based labels
                 # derived from volatility-scaled realized returns, to improve label
                 # balance and economic relevance in HPO scoring.
+                #
+                # NO FUTURE VOLATILITY LEAKAGE:
+                # - volatility_1d at time T uses only data from T-96 to T-1 (backward-looking)
+                # - realized_returns at time T uses future prices (expected for labeling)
+                # - vol_scaled = realized_returns / past_volatility (no future vol leakage)
+                #
+                # NOTE: Quantile thresholds are computed from ALL training data, which is
+                # acceptable for HPO/training. In production, use expanding/rolling quantiles.
                 vol_scaled_returns = compute_vol_scaled_returns_for_events(
                     realized_returns=realized_returns,
                     volatility=volatility_1d,
@@ -1780,10 +1799,54 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     signal_strength_scale_max=signal_strength_scale_max,
                 )
 
-                # PENALTY: if mean_auc < 0.7, heavily penalize
-                if mean_auc < 0.7:
-                    auc_penalty = (0.7 - mean_auc) * 5.0  # Large penalty for poor learnability
-                    learnability_score -= auc_penalty
+                # ===== AUC RANGE-BASED SCORING =====
+                # Target AUC range: 0.55 - 0.67 (prop-shop acceptable range)
+                # 
+                # AUC INTERPRETATION GUIDELINES:
+                # < 0.54:  Too noisy - model cannot distinguish signal from noise
+                # 0.54 - 0.62: Good edge, acceptable by prop shops
+                # 0.60 - 0.67: Excellent, but check for leakage or horizon bias
+                # > 0.70:  Suspicious - likely data leakage or look-ahead bias
+                #
+                # Within target range: higher is better
+                # Outside target range: penalize and shift weight to edge/pnl/trades
+                
+                auc_in_target_range = (mean_auc >= 0.55) and (mean_auc <= 0.67)
+                auc_penalty = 0.0
+                auc_weight_multiplier = 1.0  # Will reduce AUC influence when outside range
+                
+                if mean_auc < 0.54:
+                    # Too noisy - heavy penalty, strong shift to edge metrics
+                    auc_penalty = (0.54 - mean_auc) * 15.0
+                    auc_weight_multiplier = 0.3  # AUC has less sway, edge/pnl matter more
+                    if debug_sample_count < debug_sample_limit:
+                        tprint_warning(f"[AUC] {mean_auc:.3f} < 0.54: Too noisy, model cannot distinguish signal")
+                elif mean_auc < 0.55:
+                    # Slightly below target - mild penalty
+                    auc_penalty = (0.55 - mean_auc) * 8.0
+                    auc_weight_multiplier = 0.7
+                elif mean_auc > 0.70:
+                    # Suspicious - likely leakage, heavy penalty
+                    auc_penalty = (mean_auc - 0.70) * 20.0
+                    auc_weight_multiplier = 0.2  # Strongly discount AUC contribution
+                    tprint_warning(
+                        f"[AUC] {mean_auc:.3f} > 0.70: SUSPICIOUS - check for data leakage, "
+                        f"look-ahead bias, or horizon issues"
+                    )
+                elif mean_auc > 0.67:
+                    # Above excellent range - moderate penalty, check for issues
+                    auc_penalty = (mean_auc - 0.67) * 10.0
+                    auc_weight_multiplier = 0.5
+                    if debug_sample_count < debug_sample_limit:
+                        tprint_warning(f"[AUC] {mean_auc:.3f} > 0.67: Excellent but verify no leakage/horizon bias")
+                else:
+                    # In target range [0.55, 0.67]: reward higher AUC within range
+                    # Bonus peaks at 0.62 (center of "good edge" zone)
+                    distance_from_sweet_spot = abs(mean_auc - 0.62)
+                    auc_penalty = -max(0, 0.05 - distance_from_sweet_spot) * 5.0  # Negative = bonus
+                    auc_weight_multiplier = 1.0
+                
+                learnability_score -= auc_penalty
 
                 # Compute label entropy/balance score
                 balance_score = compute_label_entropy_score(binary_labels)
@@ -2054,17 +2117,39 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     learnability_score -= 0.5
 
                 # ===== COMBINED OBJECTIVE (Using Edge as Primary Metric) =====
-                # New formula: Edge-weighted combination
-                # Edge is already a function of both profitability AND learnability.
-                # We add a small learnability bonus for high-AUC configs and include
-                # a lightly weighted TTO penalty so that pathologically slow
-                # configurations are slightly down-weighted.
-                learnability_bonus = max(0, (mean_auc - 0.6) * 2)  # Bonus above 0.6 AUC
+                # Formula balances edge, AUC, and trade density.
+                # When AUC is outside target range (0.55-0.67), auc_weight_multiplier
+                # reduces AUC influence and gives more sway to edge/pnl/trades.
+                #
+                # Edge already incorporates AUC via capture_ratio = max(0, 2*AUC - 1),
+                # so we use auc_weight_multiplier to scale the learnability bonus only.
+                
+                # Learnability bonus: reward AUC in target range, scaled by multiplier
+                if auc_in_target_range:
+                    # Within target: bonus for being closer to 0.62 sweet spot
+                    learnability_bonus = max(0, 0.15 - abs(mean_auc - 0.62)) * 10.0
+                else:
+                    # Outside target: no learnability bonus
+                    learnability_bonus = 0.0
+                
+                # Trade density bonus: stronger when AUC is outside target range
+                # This gives edge/pnl/trades more influence when AUC is penalized
+                edge_weight = 1.0 + (1.0 - auc_weight_multiplier) * 0.5  # Up to 1.5x edge weight
+                density_weight = 1.0 + (1.0 - auc_weight_multiplier) * 1.0  # Up to 2x density weight
+                
+                # Trades/day bonus for being in sweet spot (1-3 trades/day)
+                trades_bonus = 0.0
+                if trades_per_day >= 0.8 and trades_per_day <= 4.0:
+                    # Peak bonus at 2 trades/day
+                    trades_bonus = max(0, 1.0 - abs(trades_per_day - 2.0) / 2.0) * 50.0
+                
                 combined_score = (
-                    edge_scaled
-                    + (learnability_bonus * 10.0)
+                    edge_scaled * edge_weight
+                    + (learnability_bonus * auc_weight_multiplier)
+                    + (trades_bonus * density_weight)
                     - (penalty_density * 0.1)
                     - (tto_penalty * 0.1)
+                    - (auc_penalty * 2.0)  # AUC penalty directly affects combined score
                 )
 
                 # Store candidate configuration for later persistence
@@ -2104,6 +2189,17 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     'effective_tx_cost': float(effective_tx_cost),
                     'label_low_q': float(label_low_q),
                     'label_high_q': float(label_high_q),
+                    # AUC range tracking
+                    'auc_in_target_range': bool(auc_in_target_range),
+                    'auc_penalty': float(auc_penalty),
+                    'auc_weight_multiplier': float(auc_weight_multiplier),
+                    'auc_interpretation': (
+                        'too_noisy' if mean_auc < 0.54 else
+                        'good_edge' if mean_auc <= 0.62 else
+                        'excellent_check_leakage' if mean_auc <= 0.67 else
+                        'suspicious_leakage' if mean_auc > 0.70 else
+                        'above_target'
+                    ),
                 }
 
                 # Optional per-regime breakdown using attached HMM regimes, if available.

@@ -689,6 +689,8 @@ def compute_realistic_pnl_edge(
     transaction_cost: float = DEFAULT_TRANSACTION_COST,
     n_trades: int | None = None,
     reference_trades: float | None = None,
+    days_span: float | None = None,
+    target_trades_per_day: float = 2.0,
 ) -> float:
     """Compute realistic P&L edge using the capture ratio formula.
 
@@ -701,9 +703,9 @@ def compute_realistic_pnl_edge(
 
         Edge = Edge_base × sqrt(min(n_trades, 4×reference_trades) / reference_trades)
 
-    This keeps the original capture-ratio logic while modestly
-    encouraging configurations that achieve good per-trade edge with a
-    reasonable number of trades.
+    ENHANCED: When days_span is provided, add an explicit density bonus
+    for configurations achieving the target trades/day range (1-3/day),
+    to help HPO escape local minima of very sparse configurations.
 
     Args:
         mean_return_positive: Mean return of positive-labeled events
@@ -711,6 +713,8 @@ def compute_realistic_pnl_edge(
         transaction_cost: Transaction cost per trade
         n_trades: Number of labeled events/trades used for this edge
         reference_trades: Reference trade count for scaling (e.g. days_span × target_trades_per_day)
+        days_span: Number of days in the dataset (for density bonus)
+        target_trades_per_day: Target trades/day for density bonus calculation
 
     Returns:
         Realistic P&L edge score
@@ -740,6 +744,25 @@ def compute_realistic_pnl_edge(
         effective_trades = min(float(n_trades), float(reference_trades) * 4.0)
         trade_factor = float(np.sqrt(effective_trades / float(reference_trades)))
         edge *= trade_factor
+
+    # NEW: Explicit density bonus to encourage configurations with
+    # healthy trade counts in the target range (1-3 trades/day).
+    # This helps HPO escape local minima of very sparse configs.
+    if days_span is not None and days_span > 0 and n_trades is not None and n_trades > 0:
+        trades_per_day = float(n_trades) / float(days_span)
+        
+        # Density bonus: reward configurations in the sweet spot (1-3 trades/day)
+        # Peak bonus at target_trades_per_day, with gentle falloff outside range
+        if trades_per_day >= 0.5 and trades_per_day <= 5.0:
+            # Gaussian-like bonus centered at target
+            distance_from_target = abs(trades_per_day - target_trades_per_day)
+            # Max 20% bonus at target, decaying with distance
+            density_bonus = 1.0 + 0.2 * max(0.0, 1.0 - distance_from_target / 2.0)
+            edge *= density_bonus
+        elif trades_per_day < 0.5:
+            # Strong penalty for very sparse configs (< 0.5/day)
+            sparsity_penalty = 0.5 + 0.5 * (trades_per_day / 0.5)  # Range [0.5, 1.0]
+            edge *= sparsity_penalty
 
     return edge
 
@@ -986,12 +1009,23 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     },
                     "min_event_spacing": {
                         "type": "int",
-                        "low": 2,
-                        "high": 8,
+                        "low": 1,  # RELAXED: allow tighter spacing for more trades
+                        "high": 6,  # RELAXED: reduced upper bound
+                    },
+                    # NEW: Signal generation parameters to control base trade density
+                    "cusum_threshold": {
+                        "type": "float",
+                        "low": 0.008,
+                        "high": 0.025,
+                    },
+                    "target_signal_density": {
+                        "type": "float",
+                        "low": 3.0,  # Minimum signals per day target
+                        "high": 10.0,  # Maximum signals per day target
                     },
                 },
                 priority=1,
-                description="Triple-barrier / TPSL event definition",
+                description="Triple-barrier / TPSL event definition + signal generation",
             ),
             # Target transformation & probability clipping group
             create_param_group(
@@ -1011,23 +1045,21 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     # expressed as a multiple of transaction cost.
                     "econ_min_return_multiple": {
                         "type": "float",
-                        "low": 1.5,
+                        "low": 1.0,  # RELAXED: lower floor allows more trades
                         "high": 2.5,
                     },
                     # Quantile thresholds for volatility-scaled label generation.
-                    # Relaxed band so HPO can explore both sparser and denser label
-                    # definitions around the default 0.30/0.80, including more
-                    # central quantiles that increase label density when supported
-                    # by the edge objective.
+                    # WIDENED bounds to allow HPO to explore denser label definitions
+                    # that increase trade count when supported by edge.
                     "label_low_q": {
                         "type": "float",
-                        "low": 0.20,
-                        "high": 0.45,
+                        "low": 0.10,  # WIDENED: allow more liberal bottom cutoff
+                        "high": 0.50,  # WIDENED: allow up to median
                     },
                     "label_high_q": {
                         "type": "float",
-                        "low": 0.55,
-                        "high": 0.85,
+                        "low": 0.50,  # WIDENED: allow from median
+                        "high": 0.90,  # WIDENED: allow more liberal top cutoff
                     },
                     # Maximum scaling factor for signal-strength-based sample
                     # weighting in the learnability scorer.
@@ -1036,10 +1068,23 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                         "low": 1.2,
                         "high": 2.0,
                     },
+                    # NEW: R-multiple threshold for labeling profitable trades
+                    # Lower values allow slower but profitable trades to count
+                    "r_multiple_pos_threshold": {
+                        "type": "float",
+                        "low": 0.3,  # Allow slower profitable trades
+                        "high": 1.0,  # Require faster profitable trades
+                    },
+                    # NEW: Transaction cost (allows HPO to explore cost sensitivity)
+                    "transaction_cost_mult": {
+                        "type": "float",
+                        "low": 0.5,  # 50% of base cost (optimistic)
+                        "high": 1.5,  # 150% of base cost (conservative)
+                    },
                 },
                 priority=2,
                 depends_on=["event_definition"],
-                description="Symmetric clipping for meta probabilities and targets",
+                description="Symmetric clipping for meta probabilities and targets + trade filters",
             ),
             create_param_group(
                 name="kalman_smoothing",
@@ -1188,9 +1233,13 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     metrics_h = _evaluate_horizon_candidate(h)
                     trades_h = metrics_h["trades_per_day"]
                     rr_h = metrics_h["risk_reward"]
-                    if trades_h < 0.5 or trades_h > 3.0:
+                    # RELAXED: Allow wider trade density range (0.2 - 6.0/day)
+                    # to avoid prematurely filtering out potentially good horizons
+                    if trades_h < 0.2 or trades_h > 6.0:
                         continue
-                    if rr_h < 1.2:
+                    # RELAXED: Lower R/R threshold (1.0 instead of 1.2)
+                    # since HPO will refine the TPSL params later
+                    if rr_h < 1.0:
                         continue
                     if metrics_h["profit_potential"] > best_potential:
                         best_potential = metrics_h["profit_potential"]
@@ -1330,12 +1379,28 @@ class MetaLabelingHPOExperimentStep(BaseStep):
 
                 # Label quantile thresholds (regime-aware when regimes are present).
                 label_low_q = float(params.get("label_low_q", 0.30))
-                label_high_q = float(params.get("label_high_q", 0.80))
+                label_high_q = float(params.get("label_high_q", 0.70))
                 # Guard-rail: ensure a proper ordering and keep them away from extremes.
-                label_low_q = max(0.10, min(0.45, label_low_q))
-                label_high_q = max(0.55, min(0.90, label_high_q))
+                # WIDENED bounds to allow denser label configurations
+                label_low_q = max(0.10, min(0.50, label_low_q))
+                label_high_q = max(0.50, min(0.90, label_high_q))
                 if label_high_q <= label_low_q:
-                    label_low_q, label_high_q = 0.30, 0.80
+                    label_low_q, label_high_q = 0.30, 0.70
+
+                # NEW: R-multiple threshold for labeling - controls trade velocity filter
+                r_multiple_threshold = float(params.get("r_multiple_pos_threshold", 0.7))
+                r_multiple_threshold = max(0.3, min(1.0, r_multiple_threshold))
+
+                # NEW: Transaction cost multiplier - allows HPO to explore cost sensitivity
+                tx_cost_mult = float(params.get("transaction_cost_mult", 1.0))
+                tx_cost_mult = max(0.5, min(1.5, tx_cost_mult))
+                effective_tx_cost = DEFAULT_TRANSACTION_COST * tx_cost_mult
+
+                # NEW: Signal generation parameters
+                cusum_threshold = float(params.get("cusum_threshold", 0.015))
+                cusum_threshold = max(0.008, min(0.025, cusum_threshold))
+                target_signal_density = float(params.get("target_signal_density", 4.0))
+                target_signal_density = max(3.0, min(10.0, target_signal_density))
 
                 # --- Recompute realized returns ---
                 vol_baseline = volatility_1d.rolling(vol_baseline_window).mean()
@@ -1378,6 +1443,21 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     lower=stop_thr_base * stop_mult_min,
                     upper=stop_thr_base * stop_mult_max,
                 )
+
+                # NEW: Regenerate primary signals if cusum_threshold differs from default
+                # This allows HPO to explore different signal densities
+                signals_to_use = primary_signals
+                default_cusum = 0.015
+                if abs(cusum_threshold - default_cusum) > 0.001:
+                    try:
+                        signals_to_use = generate_primary_signals(
+                            market_data.copy(),
+                            cusum_threshold=cusum_threshold,
+                            target_trades_per_day=target_signal_density,
+                        )
+                    except Exception:
+                        signals_to_use = primary_signals  # Fallback if regeneration fails
+
                 (
                     realized_returns,
                     binary_labels,
@@ -1389,11 +1469,11 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     _binary_labels_short,  # Not used in HPO objective function
                 ) = compute_realized_returns(
                     market_data,
-                    primary_signals,
+                    signals_to_use,
                     profit_threshold=adaptive_profit,
                     stop_threshold=adaptive_stop,
                     horizon=horizon,
-                    transaction_cost=DEFAULT_TRANSACTION_COST,
+                    transaction_cost=effective_tx_cost,  # Use HPO-tunable tx cost
                     min_event_spacing=min_spacing,
                 )
 
@@ -1735,7 +1815,8 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 std_pos = float(r_pos.std()) if len(r_pos) > 1 else 0.0
                 sharpe_pos = mean_pos / (std_pos + 1e-8) if std_pos > 0 else 0.0
 
-                tx = float(DEFAULT_TRANSACTION_COST)
+                # Use effective transaction cost (HPO-tunable via tx_cost_mult)
+                tx = float(effective_tx_cost)
 
                 # Targeted debug logging for a small sample of trials
                 if debug_sample_count < debug_sample_limit:
@@ -1842,15 +1923,17 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     snr_pre = 0.0
                     snr_post = 0.0
 
-                # Event density penalty: prefer ~0.5–3 trades/day (centered near ~2)
+                # Event density penalty: prefer ~0.5–4 trades/day (centered near ~2)
+                # RELAXED: Wider acceptable range and gentler penalties to allow
+                # HPO to explore more configurations before harsh filtering
                 trades_per_day = n_events / days_span
                 penalty_density = 0.0
-                if trades_per_day < 0.5:
-                    # Strong penalty for extremely sparse regimes
-                    penalty_density += (0.5 - trades_per_day) * 10.0
-                elif trades_per_day > 3.0:
-                    # Stronger penalty once we move into very active regimes
-                    penalty_density += (trades_per_day - 3.0) * 5.0
+                if trades_per_day < 0.3:
+                    # Moderate penalty for very sparse regimes (was 0.5 threshold)
+                    penalty_density += (0.3 - trades_per_day) * 8.0
+                elif trades_per_day > 4.0:
+                    # Gentler penalty for active regimes (was 3.0 threshold, 5.0 weight)
+                    penalty_density += (trades_per_day - 4.0) * 3.0
 
                 penalty_noise = frac_small * 10.0
 
@@ -1940,12 +2023,15 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 # ===== REALISTIC P&L EDGE METRIC =====
                 # Edge = (Mean Return - Cost) × max(0, 2×AUC - 1)
                 # This penalizes "profitable but unlearnable" strategies more realistically
+                # ENHANCED: Pass days_span for density bonus to encourage healthy trade counts
                 edge_score = compute_realistic_pnl_edge(
                     mean_return_positive=mean_pos,
                     mean_auc=mean_auc,
                     transaction_cost=tx,
                     n_trades=n_events,
                     reference_trades=reference_trades,
+                    days_span=float(days_span),
+                    target_trades_per_day=target_signal_density,
                 )
                 # Tie temporal instability to edge: softly down-weight edge when
                 # rolling-window AUC variance is high.
@@ -2011,6 +2097,13 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     'effect_size_post': float(d_post) if np.isfinite(d_post) else 0.0,
                     'n_required_80pct_power': float(n_required_80),
                     'model_complexity': model_complexity,
+                    # NEW: Track trade count control parameters
+                    'cusum_threshold': float(cusum_threshold),
+                    'target_signal_density': float(target_signal_density),
+                    'r_multiple_threshold': float(r_multiple_threshold),
+                    'effective_tx_cost': float(effective_tx_cost),
+                    'label_low_q': float(label_low_q),
+                    'label_high_q': float(label_high_q),
                 }
 
                 # Optional per-regime breakdown using attached HMM regimes, if available.
@@ -2170,6 +2263,11 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     "label_low_q",
                     "label_high_q",
                     "signal_strength_scale_max",
+                    # NEW parameters for trade count control
+                    "cusum_threshold",
+                    "target_signal_density",
+                    "r_multiple_pos_threshold",
+                    "transaction_cost_mult",
                 ]
                 for p in shrinkable_params:
                     if p not in initial_search_space:
@@ -2232,9 +2330,11 @@ class MetaLabelingHPOExperimentStep(BaseStep):
         if calibrated_horizon is not None:
             stage_1_params = [
                 'min_event_spacing',
+                'cusum_threshold', 'target_signal_density',  # NEW: signal generation
                 'iso_min_prob', 'target_clip_high_q',
                 'econ_min_return_multiple', 'label_low_q', 'label_high_q',
                 'signal_strength_scale_max',
+                'r_multiple_pos_threshold', 'transaction_cost_mult',  # NEW: trade filters
                 'kalman_Q', 'kalman_R', 'vol_baseline_window',
                 'profit_mult_min', 'profit_mult_max', 'stop_mult_min', 'stop_mult_max',
             ]
@@ -2245,9 +2345,11 @@ class MetaLabelingHPOExperimentStep(BaseStep):
         else:
             stage_1_params = [
                 'horizon_bars', 'min_event_spacing',
+                'cusum_threshold', 'target_signal_density',  # NEW: signal generation
                 'iso_min_prob', 'target_clip_high_q',
                 'econ_min_return_multiple', 'label_low_q', 'label_high_q',
                 'signal_strength_scale_max',
+                'r_multiple_pos_threshold', 'transaction_cost_mult',  # NEW: trade filters
                 'kalman_Q', 'kalman_R', 'vol_baseline_window',
                 'profit_mult_min', 'profit_mult_max', 'stop_mult_min', 'stop_mult_max',
             ]
@@ -2257,11 +2359,15 @@ class MetaLabelingHPOExperimentStep(BaseStep):
             ]
 
         # Stage 4 specific params (filtering/labeling only)
+        # ENHANCED: Include all trade count-affecting parameters for final refinement
         stage_4_params = [
             'label_low_q', 'label_high_q',
             'econ_min_return_multiple',
             'iso_min_prob', 'target_clip_high_q',
-            'signal_strength_scale_max'
+            'signal_strength_scale_max',
+            'r_multiple_pos_threshold',  # NEW: R-multiple threshold
+            'transaction_cost_mult',  # NEW: transaction cost sensitivity
+            'cusum_threshold', 'target_signal_density',  # NEW: signal density
         ]
 
         # Stage 3 uses all parameters (optionally treating horizon_bars as fixed when calibrated)
@@ -2354,21 +2460,22 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 stage_param_groups: list[list[str]] = []
                 if stage_idx == 0:
                     # Stage 1 (fast model, subsampled data):
-                    # Group A – event shape / density
+                    # Group A – event shape / density + signal generation
                     if calibrated_horizon is not None:
-                        stage_param_groups.append(['min_event_spacing'])
+                        stage_param_groups.append(['min_event_spacing', 'cusum_threshold', 'target_signal_density'])
                     else:
-                        stage_param_groups.append(['horizon_bars', 'min_event_spacing'])
+                        stage_param_groups.append(['horizon_bars', 'min_event_spacing', 'cusum_threshold', 'target_signal_density'])
                     # Group B – TPSL geometry
                     stage_param_groups.append(['profit_mult_min', 'profit_mult_max', 'stop_mult_min', 'stop_mult_max'])
                     # Group C – smoothing
                     stage_param_groups.append(['kalman_Q', 'kalman_R'])
                     # Group D – target transform (clipping, econ floor, label quantiles,
-                    # and signal-strength weighting strength)
+                    # and signal-strength weighting strength) + trade filters
                     stage_param_groups.append([
                         'iso_min_prob', 'target_clip_high_q',
                         'econ_min_return_multiple', 'label_low_q', 'label_high_q',
                         'signal_strength_scale_max',
+                        'r_multiple_pos_threshold', 'transaction_cost_mult',  # NEW
                     ])
                 else:
                     # Stage 2 (medium model, full data): smoothing + TPSL/vol

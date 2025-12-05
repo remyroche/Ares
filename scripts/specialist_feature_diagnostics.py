@@ -500,22 +500,26 @@ def _compute_feature_metrics(
     # Pre-compute numeric target array and detect binary vs continuous target
     y_arr = y.to_numpy(dtype=float)
     uniq = np.unique(y_arr[~np.isnan(y_arr)])
-    uniq_rounded = np.unique(np.round(uniq).astype(int)) if uniq.size > 0 else np.array([])
-    is_binary_target = bool(uniq_rounded.size > 0 and set(uniq_rounded).issubset({0, 1}))
+
+    # Robust binary check: target is binary if it has <= 2 unique values AND those values are a subset of {0, 1}
+    is_binary_target = False
+    if len(uniq) <= 2 and uniq.size > 0:
+        if set(uniq).issubset({0.0, 1.0}):
+            is_binary_target = True
 
     # Debug: log alignment statistics and class distribution actually
     # entering the MI / R^2 computation.
     try:
         logger.info(
-            "📊 Feature metrics alignment: n_samples=%d, n_features=%d, is_binary=%s, classes=%s",
+            "📊 Feature metrics alignment: n_samples=%d, n_features=%d, is_binary=%s, unique_vals=%s",
             len(y),
             X.shape[1],
             is_binary_target,
-            uniq_rounded.tolist() if uniq_rounded.size > 0 else [],
+            uniq[:10].tolist() if len(uniq) > 10 else uniq.tolist(),
         )
         if is_binary_target:
             class_counts = {
-                int(c): int((y_arr == c).sum()) for c in uniq_rounded
+                int(c): int((y_arr == c).sum()) for c in uniq
             }
             logger.info(
                 "📊 Binary target class counts after alignment: %s",
@@ -1110,123 +1114,184 @@ def _compute_probe_models(
         result["error"] = "No valid target samples for probe models"
         return result
 
-    # Round to nearest integer and check if values are in {0,1}
-    uniq_rounded = np.unique(np.round(uniq).astype(int))
-    if not set(uniq_rounded).issubset({0, 1}):
-        result["task_type"] = "non_binary_target"
-        result["error"] = (
-            "Probe models currently implemented only for binary targets"
-        )
-        return result
-
-    # Binary classification setup
-    y_bin = (yc > 0.5).astype(int)
-    pos_frac = float(y_bin.mean())
-    result["task_type"] = "binary_classification"
-    result["class_balance"] = {"pos_frac": pos_frac, "neg_frac": 1.0 - pos_frac}
+    # Check if target is binary (subset of {0, 1})
+    is_binary = False
+    if len(uniq) <= 2:
+        if set(uniq).issubset({0.0, 1.0}):
+            is_binary = True
 
     tscv = TimeSeriesSplit(n_splits=n_splits)
 
-    def _collect_scores(probs: np.ndarray, y_true: np.ndarray) -> Dict[str, float]:
-        # Metrics based on predicted probabilities
-        auc = roc_auc_score(y_true, probs) if len(np.unique(y_true)) > 1 else np.nan
-        acc = accuracy_score(y_true, (probs >= 0.5).astype(int))
-        brier = brier_score_loss(y_true, probs)
-        # Older sklearn versions don't support 'squared' kwarg; compute RMSE
-        mse = mean_squared_error(y_true, probs)
-        rmse = float(np.sqrt(mse)) if np.isfinite(mse) else float("nan")
-        r2 = r2_score(y_true, probs)
-        return {
-            "auc": float(auc) if np.isfinite(auc) else float("nan"),
-            "accuracy": float(acc),
-            "brier": float(brier),
-            "rmse": float(rmse),
-            "pseudo_r2": float(r2),
+    if is_binary:
+        # --- Binary Classification Path ---
+        y_bin = (yc > 0.5).astype(int)
+        pos_frac = float(y_bin.mean())
+        result["task_type"] = "binary_classification"
+        result["class_balance"] = {"pos_frac": pos_frac, "neg_frac": 1.0 - pos_frac}
+
+        def _collect_scores_clf(probs: np.ndarray, y_true: np.ndarray) -> Dict[str, float]:
+            auc = roc_auc_score(y_true, probs) if len(np.unique(y_true)) > 1 else np.nan
+            acc = accuracy_score(y_true, (probs >= 0.5).astype(int))
+            brier = brier_score_loss(y_true, probs)
+            mse = mean_squared_error(y_true, probs)
+            rmse = float(np.sqrt(mse)) if np.isfinite(mse) else float("nan")
+            r2 = r2_score(y_true, probs)
+            return {
+                "auc": float(auc) if np.isfinite(auc) else float("nan"),
+                "accuracy": float(acc),
+                "brier": float(brier),
+                "rmse": float(rmse),
+                "pseudo_r2": float(r2),
+            }
+
+        # Logistic Regression probe
+        logreg_scores: Dict[str, list[float]] = {
+            "auc": [], "accuracy": [], "brier": [], "rmse": [], "pseudo_r2": []
         }
 
-    # Logistic Regression probe
-    logreg_scores: Dict[str, list[float]] = {
-        "auc": [],
-        "accuracy": [],
-        "brier": [],
-        "rmse": [],
-        "pseudo_r2": [],
-    }
-
-    for train_idx, test_idx in tscv.split(Xc):
-        X_tr, X_te = Xc.iloc[train_idx], Xc.iloc[test_idx]
-        y_tr, y_te = y_bin.iloc[train_idx], y_bin.iloc[test_idx]
-        if len(np.unique(y_tr)) < 2 or len(np.unique(y_te)) < 2:
-            continue
-        pipe = Pipeline(
-            [
-                ("scaler", StandardScaler()),
-                (
-                    "clf",
-                    LogisticRegression(
-                        max_iter=200,
-                        n_jobs=-1,
-                        class_weight="balanced",
-                    ),
-                ),
-            ]
-        )
-        pipe.fit(X_tr, y_tr)
-        p_te = pipe.predict_proba(X_te)[:, 1]
-        fold = _collect_scores(p_te, y_te.values)
-        for k, v in fold.items():
-            if np.isfinite(v):
-                logreg_scores[k].append(v)
-
-    if any(logreg_scores.values()):
-        result["logreg"] = {
-            f"{k}_mean": float(np.mean(v)) if v else float("nan"),
-            f"{k}_std": float(np.std(v)) if v else float("nan"),
-        }
-        for k, v in logreg_scores.items():
-            result["logreg"][f"{k}_mean"] = float(np.mean(v)) if v else float("nan")
-            result["logreg"][f"{k}_std"] = float(np.std(v)) if v else float("nan")
-
-    # LightGBM probe (optional)
-    try:
-        import lightgbm as lgb  # type: ignore
-
-        lgbm_scores: Dict[str, list[float]] = {
-            "auc": [],
-            "accuracy": [],
-            "brier": [],
-            "rmse": [],
-            "pseudo_r2": [],
-        }
         for train_idx, test_idx in tscv.split(Xc):
             X_tr, X_te = Xc.iloc[train_idx], Xc.iloc[test_idx]
             y_tr, y_te = y_bin.iloc[train_idx], y_bin.iloc[test_idx]
             if len(np.unique(y_tr)) < 2 or len(np.unique(y_te)) < 2:
                 continue
-            model = lgb.LGBMClassifier(
-                objective="binary",
-                n_estimators=200,
-                learning_rate=0.05,
-                num_leaves=31,
-                subsample=0.8,
-                colsample_bytree=0.8,
-                random_state=42,
-                n_jobs=-1,
-            )
-            model.fit(X_tr, y_tr)
-            p_te = model.predict_proba(X_te)[:, 1]
-            fold = _collect_scores(p_te, y_te.values)
-            for k, v in fold.items():
-                if np.isfinite(v):
-                    lgbm_scores[k].append(v)
+            try:
+                pipe = Pipeline([
+                    ("scaler", StandardScaler()),
+                    ("clf", LogisticRegression(max_iter=200, n_jobs=-1, class_weight="balanced")),
+                ])
+                pipe.fit(X_tr, y_tr)
+                p_te = pipe.predict_proba(X_te)[:, 1]
+                fold = _collect_scores_clf(p_te, y_te.values)
+                for k, v in fold.items():
+                    if np.isfinite(v):
+                        logreg_scores[k].append(v)
+            except Exception:
+                continue
 
-        if any(lgbm_scores.values()):
-            result["lgbm"] = {}
-            for k, v in lgbm_scores.items():
-                result["lgbm"][f"{k}_mean"] = float(np.mean(v)) if v else float("nan")
-                result["lgbm"][f"{k}_std"] = float(np.std(v)) if v else float("nan")
-    except ImportError:
-        result["lgbm"] = {"error": "lightgbm not available"}
+        if any(logreg_scores.values()):
+            result["logreg"] = {}
+            for k, v in logreg_scores.items():
+                result["logreg"][f"{k}_mean"] = float(np.mean(v)) if v else float("nan")
+                result["logreg"][f"{k}_std"] = float(np.std(v)) if v else float("nan")
+
+        # LightGBM probe
+        try:
+            import lightgbm as lgb  # type: ignore
+            lgbm_scores: Dict[str, list[float]] = {
+                "auc": [], "accuracy": [], "brier": [], "rmse": [], "pseudo_r2": []
+            }
+            for train_idx, test_idx in tscv.split(Xc):
+                X_tr, X_te = Xc.iloc[train_idx], Xc.iloc[test_idx]
+                y_tr, y_te = y_bin.iloc[train_idx], y_bin.iloc[test_idx]
+                if len(np.unique(y_tr)) < 2 or len(np.unique(y_te)) < 2:
+                    continue
+                try:
+                    model = lgb.LGBMClassifier(
+                        objective="binary", n_estimators=200, learning_rate=0.05,
+                        num_leaves=31, subsample=0.8, colsample_bytree=0.8,
+                        random_state=42, n_jobs=-1, verbose=-1
+                    )
+                    model.fit(X_tr, y_tr)
+                    p_te = model.predict_proba(X_te)[:, 1]
+                    fold = _collect_scores_clf(p_te, y_te.values)
+                    for k, v in fold.items():
+                        if np.isfinite(v):
+                            lgbm_scores[k].append(v)
+                except Exception:
+                    continue
+
+            if any(lgbm_scores.values()):
+                result["lgbm"] = {}
+                for k, v in lgbm_scores.items():
+                    result["lgbm"][f"{k}_mean"] = float(np.mean(v)) if v else float("nan")
+                    result["lgbm"][f"{k}_std"] = float(np.std(v)) if v else float("nan")
+        except ImportError:
+            result["lgbm"] = {"error": "lightgbm not available"}
+
+    else:
+        # --- Regression Path ---
+        from sklearn.linear_model import Ridge
+        from sklearn.metrics import mean_absolute_error
+
+        result["task_type"] = "regression"
+
+        def _collect_scores_reg(preds: np.ndarray, y_true: np.ndarray) -> Dict[str, float]:
+            mse = mean_squared_error(y_true, preds)
+            rmse = float(np.sqrt(mse)) if np.isfinite(mse) else float("nan")
+            mae = mean_absolute_error(y_true, preds)
+            r2 = r2_score(y_true, preds)
+            return {
+                "rmse": rmse,
+                "mae": float(mae),
+                "r2": float(r2),
+            }
+
+        # Ridge Regression probe (Linear)
+        ridge_scores: Dict[str, list[float]] = {
+            "rmse": [], "mae": [], "r2": []
+        }
+
+        for train_idx, test_idx in tscv.split(Xc):
+            X_tr, X_te = Xc.iloc[train_idx], Xc.iloc[test_idx]
+            y_tr, y_te = yc.iloc[train_idx], yc.iloc[test_idx]
+
+            try:
+                pipe = Pipeline([
+                    ("scaler", StandardScaler()),
+                    ("reg", Ridge(alpha=1.0)),
+                ])
+                pipe.fit(X_tr, y_tr)
+                p_te = pipe.predict(X_te)
+                fold = _collect_scores_reg(p_te, y_te.values)
+                for k, v in fold.items():
+                    if np.isfinite(v):
+                        ridge_scores[k].append(v)
+            except Exception:
+                continue
+
+        if any(ridge_scores.values()):
+            result["logreg"] = {}  # Store under logreg key for unified reporting, or separate
+            # Actually better to rename for clarity, but keeping structure for report function
+            # Renaming key to 'linear_reg' or reuse 'logreg' but report reg metrics
+
+            # We will use 'linear_reg' and update report function to handle it
+            result["linear_reg"] = {}
+            for k, v in ridge_scores.items():
+                result["linear_reg"][f"{k}_mean"] = float(np.mean(v)) if v else float("nan")
+                result["linear_reg"][f"{k}_std"] = float(np.std(v)) if v else float("nan")
+
+        # LightGBM Regressor probe
+        try:
+            import lightgbm as lgb
+            lgbm_reg_scores: Dict[str, list[float]] = {
+                "rmse": [], "mae": [], "r2": []
+            }
+            for train_idx, test_idx in tscv.split(Xc):
+                X_tr, X_te = Xc.iloc[train_idx], Xc.iloc[test_idx]
+                y_tr, y_te = yc.iloc[train_idx], yc.iloc[test_idx]
+
+                try:
+                    model = lgb.LGBMRegressor(
+                        n_estimators=200, learning_rate=0.05, num_leaves=31,
+                        subsample=0.8, colsample_bytree=0.8, random_state=42,
+                        n_jobs=-1, verbose=-1
+                    )
+                    model.fit(X_tr, y_tr)
+                    p_te = model.predict(X_te)
+                    fold = _collect_scores_reg(p_te, y_te.values)
+                    for k, v in fold.items():
+                        if np.isfinite(v):
+                            lgbm_reg_scores[k].append(v)
+                except Exception:
+                    continue
+
+            if any(lgbm_reg_scores.values()):
+                result["lgbm"] = {}
+                for k, v in lgbm_reg_scores.items():
+                    result["lgbm"][f"{k}_mean"] = float(np.mean(v)) if v else float("nan")
+                    result["lgbm"][f"{k}_std"] = float(np.std(v)) if v else float("nan")
+        except ImportError:
+            result["lgbm"] = {"error": "lightgbm not available"}
 
     return result
 
@@ -1553,11 +1618,10 @@ def _compute_probe_model_pnl(
     n_splits: int = 5,
     thresholds: list[float] = [0.6, 0.7, 0.8, 0.9],
 ) -> Dict[str, Any]:
-    """Compute trading PnL metrics for probe models (LogReg/LGBM) using cross-validation predictions.
+    """Compute trading PnL metrics for probe models using cross-validation predictions.
     
-    This function trains probe models with TimeSeriesSplit cross-validation,
-    collects out-of-sample probability predictions, and computes trading PnL
-    at various confidence thresholds.
+    Supports both classification (LogisticRegression, LGBMClassifier) and
+    regression (Ridge, LGBMRegressor) depending on the target type.
     """
     results = {}
     
@@ -1582,67 +1646,129 @@ def _compute_probe_model_pnl(
     if len(X_aligned) < 100:
         return {"error": f"Insufficient valid data: {len(X_aligned)} samples"}
     
-    # Convert target to binary (for classification)
-    y_binary = (y_aligned > 0).astype(int)
-    
+    # Determine task type
+    y_vals = y_aligned.values
+    uniq = np.unique(y_vals)
+    is_binary = False
+    if len(uniq) <= 2:
+        if set(uniq).issubset({0.0, 1.0}):
+            is_binary = True
+
     tscv = TimeSeriesSplit(n_splits=n_splits)
     
-    # Collect out-of-sample predictions
-    oos_probs_logreg = pd.Series(index=X_aligned.index, dtype=float)
-    oos_probs_lgbm = pd.Series(index=X_aligned.index, dtype=float)
-    
-    for train_idx, val_idx in tscv.split(X_aligned):
-        X_train = X_aligned.iloc[train_idx]
-        X_val = X_aligned.iloc[val_idx]
-        y_train = y_binary.iloc[train_idx]
+    if is_binary:
+        # --- Classification PnL ---
+        y_train_target = (y_aligned > 0.5).astype(int)
         
-        # Logistic Regression
-        try:
-            logreg = Pipeline([
-                ("scaler", StandardScaler()),
-                ("clf", LogisticRegression(max_iter=500, solver="lbfgs", random_state=42)),
-            ])
-            logreg.fit(X_train, y_train)
-            probs = logreg.predict_proba(X_val)[:, 1]
-            oos_probs_logreg.iloc[val_idx] = probs
-        except Exception:
-            pass
+        oos_probs_logreg = pd.Series(index=X_aligned.index, dtype=float)
+        oos_probs_lgbm = pd.Series(index=X_aligned.index, dtype=float)
         
-        # LightGBM
-        try:
-            import lightgbm as lgb
-            lgbm_clf = lgb.LGBMClassifier(
-                n_estimators=100,
-                max_depth=5,
-                learning_rate=0.05,
-                random_state=42,
-                verbose=-1,
+        for train_idx, val_idx in tscv.split(X_aligned):
+            X_train, X_val = X_aligned.iloc[train_idx], X_aligned.iloc[val_idx]
+            y_train = y_train_target.iloc[train_idx]
+
+            # Logistic Regression
+            try:
+                pipe = Pipeline([
+                    ("scaler", StandardScaler()),
+                    ("clf", LogisticRegression(max_iter=500, solver="lbfgs", random_state=42)),
+                ])
+                pipe.fit(X_train, y_train)
+                probs = pipe.predict_proba(X_val)[:, 1]
+                oos_probs_logreg.iloc[val_idx] = probs
+            except Exception:
+                pass
+
+            # LightGBM
+            try:
+                import lightgbm as lgb
+                lgbm_clf = lgb.LGBMClassifier(
+                    n_estimators=100, max_depth=5, learning_rate=0.05,
+                    random_state=42, verbose=-1
+                )
+                lgbm_clf.fit(X_train, y_train)
+                probs = lgbm_clf.predict_proba(X_val)[:, 1]
+                oos_probs_lgbm.iloc[val_idx] = probs
+            except Exception:
+                pass
+
+        # Compute trading PnL for classification
+        if oos_probs_logreg.notna().sum() >= 10:
+            results["logreg"] = _compute_trading_simulation_pnl(
+                confidence_scores=oos_probs_logreg,
+                realized_returns=rets_aligned,
+                thresholds=thresholds,
             )
-            lgbm_clf.fit(X_train, y_train)
-            probs = lgbm_clf.predict_proba(X_val)[:, 1]
-            oos_probs_lgbm.iloc[val_idx] = probs
-        except Exception:
-            pass
-    
-    # Compute trading PnL for each model
-    if oos_probs_logreg.notna().sum() >= 10:
-        results["logreg"] = _compute_trading_simulation_pnl(
-            confidence_scores=oos_probs_logreg,
-            realized_returns=rets_aligned,
-            thresholds=thresholds,
-        )
+        else:
+            results["logreg"] = {"error": "Insufficient LogReg predictions"}
+
+        if oos_probs_lgbm.notna().sum() >= 10:
+            results["lgbm"] = _compute_trading_simulation_pnl(
+                confidence_scores=oos_probs_lgbm,
+                realized_returns=rets_aligned,
+                thresholds=thresholds,
+            )
+        else:
+            results["lgbm"] = {"error": "Insufficient LGBM predictions"}
+
     else:
-        results["logreg"] = {"error": "Insufficient LogReg predictions"}
-    
-    if oos_probs_lgbm.notna().sum() >= 10:
-        results["lgbm"] = _compute_trading_simulation_pnl(
-            confidence_scores=oos_probs_lgbm,
-            realized_returns=rets_aligned,
-            thresholds=thresholds,
-        )
-    else:
-        results["lgbm"] = {"error": "Insufficient LGBM predictions"}
-    
+        # --- Regression PnL ---
+        from sklearn.linear_model import Ridge
+
+        # Define regression thresholds (expected return > X)
+        reg_thresholds = [0.0, 0.0005, 0.001, 0.0015, 0.002]
+
+        oos_preds_linear = pd.Series(index=X_aligned.index, dtype=float)
+        oos_preds_lgbm = pd.Series(index=X_aligned.index, dtype=float)
+
+        for train_idx, val_idx in tscv.split(X_aligned):
+            X_train, X_val = X_aligned.iloc[train_idx], X_aligned.iloc[val_idx]
+            y_train = y_aligned.iloc[train_idx]
+
+            # Ridge Regression
+            try:
+                pipe = Pipeline([
+                    ("scaler", StandardScaler()),
+                    ("reg", Ridge(alpha=1.0)),
+                ])
+                pipe.fit(X_train, y_train)
+                preds = pipe.predict(X_val)
+                oos_preds_linear.iloc[val_idx] = preds
+            except Exception:
+                pass
+
+            # LightGBM Regressor
+            try:
+                import lightgbm as lgb
+                lgbm_reg = lgb.LGBMRegressor(
+                    n_estimators=100, max_depth=5, learning_rate=0.05,
+                    random_state=42, verbose=-1
+                )
+                lgbm_reg.fit(X_train, y_train)
+                preds = lgbm_reg.predict(X_val)
+                oos_preds_lgbm.iloc[val_idx] = preds
+            except Exception:
+                pass
+
+        # Compute trading PnL for regression (using predicted return as score)
+        if oos_preds_linear.notna().sum() >= 10:
+            results["linear_reg"] = _compute_trading_simulation_pnl(
+                confidence_scores=oos_preds_linear,
+                realized_returns=rets_aligned,
+                thresholds=reg_thresholds,
+            )
+        else:
+            results["linear_reg"] = {"error": "Insufficient LinearReg predictions"}
+
+        if oos_preds_lgbm.notna().sum() >= 10:
+            results["lgbm"] = _compute_trading_simulation_pnl(
+                confidence_scores=oos_preds_lgbm,
+                realized_returns=rets_aligned,
+                thresholds=reg_thresholds,
+            )
+        else:
+            results["lgbm"] = {"error": "Insufficient LGBM predictions"}
+
     return results
 
 
@@ -1911,26 +2037,50 @@ def run_diagnostics(
     ]
 
     # Add brief probe model summary if available
-    logreg_summary = probe_models.get("logreg", {}) if isinstance(probe_models, dict) else {}
-    lgbm_summary = probe_models.get("lgbm", {}) if isinstance(probe_models, dict) else {}
+    task_type = probe_models.get("task_type", "unknown")
 
-    def _fmt_probe(model_name: str, summary_dict: Dict[str, Any]) -> str:
-        if not summary_dict or "auc_mean" not in summary_dict:
-            return f"- {model_name}: not available"
-        auc_mean = summary_dict.get("auc_mean", float("nan"))
-        auc_std = summary_dict.get("auc_std", float("nan"))
-        acc_mean = summary_dict.get("accuracy_mean", float("nan"))
-        return (
-            f"- {model_name}: AUC={auc_mean:.3f}±{auc_std:.3f}, "
-            f"Accuracy={acc_mean:.3f}"
+    if task_type == "binary_classification":
+        logreg_summary = probe_models.get("logreg", {}) if isinstance(probe_models, dict) else {}
+        lgbm_summary = probe_models.get("lgbm", {}) if isinstance(probe_models, dict) else {}
+
+        def _fmt_probe_clf(model_name: str, summary_dict: Dict[str, Any]) -> str:
+            if not summary_dict or "auc_mean" not in summary_dict:
+                return f"- {model_name}: not available"
+            auc_mean = summary_dict.get("auc_mean", float("nan"))
+            auc_std = summary_dict.get("auc_std", float("nan"))
+            acc_mean = summary_dict.get("accuracy_mean", float("nan"))
+            return (
+                f"- {model_name}: AUC={auc_mean:.3f}±{auc_std:.3f}, "
+                f"Accuracy={acc_mean:.3f}"
+            )
+
+        md_lines.extend(
+            [
+                _fmt_probe_clf("Logistic Regression", logreg_summary),
+                _fmt_probe_clf("LightGBM", lgbm_summary),
+            ]
         )
+    elif task_type == "regression":
+        linear_summary = probe_models.get("linear_reg", {}) if isinstance(probe_models, dict) else {}
+        lgbm_summary = probe_models.get("lgbm", {}) if isinstance(probe_models, dict) else {}
 
-    md_lines.extend(
-        [
-            _fmt_probe("Logistic Regression", logreg_summary),
-            _fmt_probe("LightGBM", lgbm_summary),
-        ]
-    )
+        def _fmt_probe_reg(model_name: str, summary_dict: Dict[str, Any]) -> str:
+            if not summary_dict or "rmse_mean" not in summary_dict:
+                return f"- {model_name}: not available"
+            rmse_mean = summary_dict.get("rmse_mean", float("nan"))
+            rmse_std = summary_dict.get("rmse_std", float("nan"))
+            r2_mean = summary_dict.get("r2_mean", float("nan"))
+            return (
+                f"- {model_name}: RMSE={rmse_mean:.4f}±{rmse_std:.4f}, "
+                f"R2={r2_mean:.4f}"
+            )
+
+        md_lines.extend(
+            [
+                _fmt_probe_reg("Linear Regression (Ridge)", linear_summary),
+                _fmt_probe_reg("LightGBM Regressor", lgbm_summary),
+            ]
+        )
 
     # Add Trading PnL Simulation section
     md_lines.extend(
@@ -1944,8 +2094,15 @@ def run_diagnostics(
     if "error" in probe_pnl:
         md_lines.append(f"- Trading simulation unavailable: {probe_pnl['error']}")
     else:
+        # Determine models to display based on task type
+        models_to_display = []
+        if task_type == "regression":
+            models_to_display = [("Linear Regression", "linear_reg"), ("LightGBM Regressor", "lgbm")]
+        else:
+            models_to_display = [("Logistic Regression", "logreg"), ("LightGBM", "lgbm")]
+
         # Display results for each model
-        for model_name, model_key in [("Logistic Regression", "logreg"), ("LightGBM", "lgbm")]:
+        for model_name, model_key in models_to_display:
             model_pnl = probe_pnl.get(model_key, {})
             if "error" in model_pnl:
                 md_lines.append(f"**{model_name}**: {model_pnl['error']}")
@@ -1963,9 +2120,10 @@ def run_diagnostics(
             md_lines.append("| Threshold | Trades | Trades/Day | Win Rate | PnL/Trade | PnL/Day | PnL/Month | Sharpe |")
             md_lines.append("|----------:|-------:|-----------:|---------:|----------:|--------:|----------:|-------:|")
             
-            for threshold_key in ["60%", "70%", "80%", "90%"]:
-                if threshold_key not in per_threshold:
-                    continue
+            # Use dynamic threshold keys since regression thresholds differ from classification
+            sorted_thresholds = sorted(per_threshold.keys())
+
+            for threshold_key in sorted_thresholds:
                 t = per_threshold[threshold_key]
                 md_lines.append(
                     f"| {threshold_key} | "

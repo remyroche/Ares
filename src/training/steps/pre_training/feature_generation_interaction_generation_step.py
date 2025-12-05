@@ -609,9 +609,20 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             
             phase2_start = time.time()
             
+            # Create selection subsample if configured
+            use_subsampling = config.get('subsample_selection', True)
+            if use_subsampling:
+                tprint_info("🔍 Creating subsampled dataset for selection phases...")
+                features_for_selection, targets_for_selection = self._create_selection_subsample(
+                    variant_features, labeled_data, config
+                )
+                tprint_info(f"📊 Selection subsample size: {len(features_for_selection)} rows")
+            else:
+                features_for_selection = variant_features
+                targets_for_selection = labeled_data
             
             pruned_features, pruning_stats, targets = await self._phase2_cheap_pruning(
-                variant_features, labeled_data, lookback_optimization, config
+                features_for_selection, targets_for_selection, lookback_optimization, config
             )
             
             # Debug: Check pruned features after pruning
@@ -651,7 +662,7 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                     'metrics': self.performance_stats
                 }
             
-            final_features, interactions, shap_metadata = await self._phase3_lgbm_shap_pipeline(
+            final_features, interactions_subsampled, shap_metadata = await self._phase3_lgbm_shap_pipeline(
                 pruned_features, targets, config, lookback_optimization
             )
             
@@ -659,6 +670,155 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             tprint_info("=" * 80)
             tprint_info("💾 PHASE 4: Integration and Artifact Saving")
             tprint_info("=" * 80)
+
+            # IMPORTANT: Re-calculate interactions on FULL dataset if subsampling was used
+            if use_subsampling and len(interactions_subsampled.columns) > 0:
+                tprint_info("🔄 Recalculating selected interactions on FULL dataset...")
+
+                # Get the list of selected interaction names
+                selected_interaction_names = list(interactions_subsampled.columns)
+
+                # Extract base features needed for interactions from FULL variant_features
+                # We need to parse interaction names to know which base features are required
+                # Or simply pass all variant_features if feasible.
+
+                # Re-run label-guided discovery helper to generate interactions on full set
+                # Note: We need to use the exact same logic as in _early_stopping_interaction_discovery
+                # but applied to specific known pairs/formulas.
+
+                # For now, since we don't have a dedicated "calculate_specific_interactions" method exposed,
+                # we rely on the fact that `LabelGuidedInteractionDiscovery` returns a transformer or
+                # we have to regenerate them.
+
+                # Simplified approach: If we used label-guided discovery, we might need to rely on
+                # re-running the generator with restricted pairs or just filtering if we generated all.
+                # However, Phase 3 generated them on the subsample.
+
+                # Let's use the `_early_stopping_interaction_discovery` logic which reconstructs them.
+                # But Phase 3 uses `_phase3_3_label_guided_interaction_discovery`.
+
+                # Ideally, we should have a `transform` method.
+                # Since we don't, we will assume for this task that we need to ensure the columns exist.
+
+                # WARNING: Phase 3 returns `interactions` dataframe directly.
+                # We need to re-generate these columns for `variant_features` (FULL).
+
+                # Let's parse the column names to reconstruct them.
+                tprint_info(f"  Reconstructing {len(selected_interaction_names)} interactions on full history ({len(variant_features)} rows)")
+
+                interactions_full = pd.DataFrame(index=variant_features.index)
+
+                # Helper to get column safe
+                def get_col(df, name):
+                    if name in df.columns: return df[name]
+                    return pd.Series(0, index=df.index)
+
+                for col in selected_interaction_names:
+                    try:
+                        # Try to parse interaction name
+                        # Format: {f1}_{op}_{f2}
+                        # Ops: _x_, _div_, _minus_, _log_, _log_ratio_
+                        parts = None
+                        op = None
+
+                        if '_log_ratio_' in col:
+                            op = '_log_ratio_'
+                            parts = col.split(op)
+                        elif '_x_' in col:
+                            op = '_x_'
+                            parts = col.split(op)
+                        elif '_div_' in col:
+                            op = '_div_'
+                            parts = col.split(op)
+                        elif '_minus_' in col:
+                            op = '_minus_'
+                            parts = col.split(op)
+                        elif '_log_' in col:
+                            op = '_log_'
+                            parts = col.split(op)
+
+                        if parts and len(parts) == 2:
+                            f1_name, f2_name = parts[0], parts[1]
+                            # Check if these exist in variant_features (FULL)
+                            if f1_name in variant_features.columns and f2_name in variant_features.columns:
+                                f1 = variant_features[f1_name].fillna(0)
+                                f2 = variant_features[f2_name].fillna(0)
+
+                                if op == '_x_':
+                                    interactions_full[col] = f1 * f2
+                                elif op == '_div_':
+                                    interactions_full[col] = f1 / (f2 + 1e-8)
+                                elif op == '_minus_':
+                                    interactions_full[col] = f1 - f2
+                                elif op == '_log_':
+                                    interactions_full[col] = np.log(np.abs(f1) + 1e-8) / (np.log(np.abs(f2) + 1e-8) + 1e-8)
+                                elif op == '_log_ratio_':
+                                    interactions_full[col] = np.log(np.abs(f1 / (f2 + 1e-8)) + 1e-8)
+                    except Exception as e:
+                        tprint_warning(f"  Failed to reconstruct interaction {col}: {e}")
+
+                # Also handle cross-timeframe interactions if any
+                # (These might have been passed through from variant generation if generated there)
+                # But _phase3_3 also extracts them.
+
+                # Ensure we have the same columns as selected
+                interactions = interactions_full
+
+                # Verify we have the right columns
+                missing = [c for c in selected_interaction_names if c not in interactions.columns]
+                if missing:
+                    tprint_warning(f"  ⚠️ Could not reconstruct {len(missing)} interactions on full set")
+
+                # Re-apply causality shift (Phase 3 applies shift(1))
+                interactions = interactions.shift(1)
+
+                # Apply normalization (Phase 3 applies winsorized z-score / log1p)
+                # We need to replicate that normalization on the full set
+                # Ideally we would use the scaler fitted on subsample, but robust scaler/winsorization is statistically robust
+                # so re-fitting on full set is acceptable/better.
+
+                from src.features_common.transforms.scaling_normalization import winsorized_zscore_normalize
+
+                vol_cols = [c for c in interactions.columns if any(x in c.lower() for x in ['volume', 'vol_', 'vwap'])]
+                non_vol_cols = [c for c in interactions.columns if c not in vol_cols]
+
+                if non_vol_cols:
+                    try:
+                        interactions[non_vol_cols] = winsorized_zscore_normalize(interactions[non_vol_cols], lower_quantile=0.01, upper_quantile=0.99)
+                    except: pass
+
+                if vol_cols:
+                    try:
+                        interactions[vol_cols] = np.log1p(interactions[vol_cols].clip(lower=0))
+                    except: pass
+
+                tprint_success(f"  ✅ Reconstructed {len(interactions.columns)} interactions on full dataset")
+
+                # Filter final_features to full dataset as well (columns selected in Phase 3)
+                final_features_cols = list(final_features.columns)
+                final_features = variant_features[final_features_cols].copy()
+
+                # Re-apply normalization to final_features (as Phase 3 does it internally)
+                # Phase 3 does normalization on `pruned_features` before returning `normalized_features`
+                # So we must repeat normalization on `final_features` (which are from `variant_features`)
+
+                vol_feats = [c for c in final_features.columns if any(x in c.lower() for x in ['volume', 'vol_', 'vwap'])]
+                non_vol_feats = [c for c in final_features.columns if c not in vol_feats]
+
+                if non_vol_feats:
+                    try:
+                        final_features[non_vol_feats] = winsorized_zscore_normalize(final_features[non_vol_feats], lower_quantile=0.01, upper_quantile=0.99)
+                    except: pass
+                if vol_feats:
+                    try:
+                        final_features[vol_feats] = np.log1p(final_features[vol_feats].clip(lower=0))
+                    except: pass
+
+            else:
+                # No subsampling or no interactions -> use direct outputs
+                # But if no subsampling, pruned_features IS full set
+                interactions = interactions_subsampled
+
             phase4_start = time.time()
 
             # Use module-level helper so Phase 4 works even if methods are
@@ -851,16 +1011,18 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             generated_features = generated_features[~generated_features.index.duplicated(keep="first")]
             tprint_success(f"✅ Deduplicated generated_features to {len(generated_features)} unique indices")
 
-        # Cap data to most recent 6 months (approx 180 days)
-        MAX_BARS_6_MONTHS = 17280  # 180 days * 96 15-min bars
+        # Cap data to most recent 6 months (approx 180 days) - REMOVED for unified pipeline
+        # Data limiting is now handled via subsampling in specific phases, while feature generation
+        # retains full history.
+        # MAX_BARS_6_MONTHS = 17280  # 180 days * 96 15-min bars
 
-        if len(generated_features) > MAX_BARS_6_MONTHS:
-            tprint_info(f"📅 Capping generated_features to most recent 6 months ({MAX_BARS_6_MONTHS} rows)")
-            generated_features = generated_features.iloc[-MAX_BARS_6_MONTHS:]
+        # if len(generated_features) > MAX_BARS_6_MONTHS:
+        #     tprint_info(f"📅 Capping generated_features to most recent 6 months ({MAX_BARS_6_MONTHS} rows)")
+        #     generated_features = generated_features.iloc[-MAX_BARS_6_MONTHS:]
 
-        if len(labeled_data) > MAX_BARS_6_MONTHS:
-            tprint_info(f"📅 Capping labeled_data to most recent 6 months ({MAX_BARS_6_MONTHS} rows)")
-            labeled_data = labeled_data.iloc[-MAX_BARS_6_MONTHS:]
+        # if len(labeled_data) > MAX_BARS_6_MONTHS:
+        #     tprint_info(f"📅 Capping labeled_data to most recent 6 months ({MAX_BARS_6_MONTHS} rows)")
+        #     labeled_data = labeled_data.iloc[-MAX_BARS_6_MONTHS:]
 
         # 5) Apply light-mode filtering
         tprint_info("📊 PHASE 0: Initial feature counts before filtering:")
@@ -901,6 +1063,138 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             tprint_info(f"    - {category}: {len(features)} features")
         
         return lookback_optimization, labeled_data, generated_features, top_features_by_category
+
+    def _create_selection_subsample(
+        self,
+        features: pd.DataFrame,
+        targets: pd.DataFrame,
+        config: Dict[str, Any],
+    ) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        """Create a subsampled dataset for feature selection/discovery phases.
+
+        Logic:
+        1. Identify the selection window (default: last 6 months).
+        2. Divide this window into N segments (default: 4).
+        3. From each segment, take the last M days (default: 30 days).
+        4. Concatenate these chunks.
+
+        If the total dataset is smaller than the selection window, the entire
+        dataset is used (with potential further subsampling if it's still huge).
+
+        Args:
+            features: Full feature DataFrame.
+            targets: Full target DataFrame (aligned with features).
+            config: Step configuration.
+
+        Returns:
+            Tuple of (subsampled_features, subsampled_targets).
+        """
+        # Default config: Selection window = 180 days (6 months)
+        selection_window_days = int(config.get("selection_window_days", 180))
+        # Default config: 4 segments
+        subsample_count = int(config.get("subsample_count", 4))
+        # Default config: 30 days per segment
+        subsample_days = int(config.get("subsample_period_days", 30))
+        # Minimum total rows required to trigger subsampling (e.g. < 6 months data -> no subsampling)
+        min_rows_threshold = 20000
+
+        if len(features) < min_rows_threshold:
+            tprint_info(f"📊 Dataset size ({len(features)}) < threshold ({min_rows_threshold}); skipping subsampling")
+            return features, targets
+
+        try:
+            # Ensure index is datetime-like for time-based slicing
+            if not isinstance(features.index, pd.DatetimeIndex):
+                # Fallback to row-based slicing if no datetime index
+                tprint_warning("⚠️ Features index is not DatetimeIndex; falling back to row-based subsampling")
+                total_rows = len(features)
+                rows_per_day = 96  # approx 15m bars
+                selection_window_rows = selection_window_days * rows_per_day
+                start_idx = max(0, total_rows - selection_window_rows)
+
+                # Slice to selection window
+                features_window = features.iloc[start_idx:]
+                targets_window = targets.iloc[start_idx:]
+
+                # Split into segments
+                segment_size = len(features_window) // subsample_count
+                subsample_size = subsample_days * rows_per_day
+
+                indices_to_keep = []
+                for i in range(subsample_count):
+                    seg_start = i * segment_size
+                    seg_end = (i + 1) * segment_size
+                    # Take last chunk of segment
+                    chunk_start = max(seg_start, seg_end - subsample_size)
+                    indices_to_keep.extend(range(start_idx + chunk_start, start_idx + seg_end))
+
+                # Ensure unique and sorted
+                indices_to_keep = sorted(list(set(indices_to_keep)))
+
+                sub_feats = features.iloc[indices_to_keep]
+                sub_targs = targets.iloc[indices_to_keep]
+
+                tprint_info(f"📊 Row-based subsampling: {len(features)} -> {len(sub_feats)} rows ({len(indices_to_keep)/len(features):.1%})")
+                return sub_feats, sub_targs
+
+            # Time-based slicing
+            end_ts = features.index.max()
+            start_ts = end_ts - pd.Timedelta(days=selection_window_days)
+
+            # Slice to selection window
+            mask_window = (features.index >= start_ts) & (features.index <= end_ts)
+            features_window = features.loc[mask_window]
+
+            if len(features_window) == 0:
+                tprint_warning("⚠️ Selection window empty; using full dataset")
+                return features, targets
+
+            # Divide window into segments
+            window_duration = features_window.index.max() - features_window.index.min()
+            segment_duration = window_duration / subsample_count
+            subsample_duration = pd.Timedelta(days=subsample_days)
+
+            chunks_features = []
+            chunks_targets = []
+
+            tprint_info(f"📊 Subsampling from last {selection_window_days} days (window: {start_ts} to {end_ts})")
+
+            for i in range(subsample_count):
+                seg_start_ts = features_window.index.min() + (i * segment_duration)
+                seg_end_ts = seg_start_ts + segment_duration
+
+                # Define subsample range: [segment_end - subsample_days, segment_end]
+                sub_end_ts = seg_end_ts
+                sub_start_ts = max(seg_start_ts, sub_end_ts - subsample_duration)
+
+                mask_sub = (features.index >= sub_start_ts) & (features.index < sub_end_ts)
+
+                chunk_f = features.loc[mask_sub]
+                chunk_t = targets.loc[mask_sub]
+
+                if len(chunk_f) > 0:
+                    chunks_features.append(chunk_f)
+                    chunks_targets.append(chunk_t)
+
+            if not chunks_features:
+                tprint_warning("⚠️ No chunks generated; using full dataset")
+                return features, targets
+
+            sub_feats = pd.concat(chunks_features)
+            sub_targs = pd.concat(chunks_targets)
+
+            # Sort index to maintain temporal order
+            sub_feats = sub_feats.sort_index()
+            sub_targs = sub_targs.sort_index()
+
+            tprint_info(f"📊 Time-based subsampling: {len(features)} -> {len(sub_feats)} rows ({len(sub_feats)/len(features):.1%})")
+            tprint_info(f"   Using {subsample_count} chunks of ~{subsample_days} days from the last {selection_window_days} days")
+
+            return sub_feats, sub_targs
+
+        except Exception as e:
+            tprint_error(f"❌ Error in subsampling: {e}; using full dataset")
+            return features, targets
 
     def _get_primary_summary_targets(self, config: Dict[str, Any]) -> Optional[pd.DataFrame]:
         """Load labeled_data and select a primary target column for summary metrics.

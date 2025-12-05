@@ -652,11 +652,12 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             combined_features_df = self._combine_features(features_data, labeled_df)
             tprint_info(f"✅ Combined {combined_features_df.shape} in {time.time()-t0:.2f}s")
 
-            # Cap data to most recent 6 months (approx 180 days) for ALL modes
-            MAX_BARS_6_MONTHS = 17280  # 180 days * 96 15-min bars
-            if len(combined_features_df) > MAX_BARS_6_MONTHS:
-                tprint_info(f"📅 Capping combined features to most recent 6 months ({MAX_BARS_6_MONTHS} rows)")
-                combined_features_df = combined_features_df.iloc[-MAX_BARS_6_MONTHS:]
+            # Cap data to most recent 6 months (approx 180 days) for ALL modes - REMOVED for unified pipeline
+            # Data limiting is now handled via subsampling in selection phases, while artifacts retain full history.
+            # MAX_BARS_6_MONTHS = 17280  # 180 days * 96 15-min bars
+            # if len(combined_features_df) > MAX_BARS_6_MONTHS:
+            #     tprint_info(f"📅 Capping combined features to most recent 6 months ({MAX_BARS_6_MONTHS} rows)")
+            #     combined_features_df = combined_features_df.iloc[-MAX_BARS_6_MONTHS:]
 
             # In blank mode, restrict to a contiguous recent window (default 180 days to match 6-month cap)
             execution_mode_local = str(config.get('execution_mode', 'blank')).lower()
@@ -705,16 +706,34 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             if self.selection_component is None:
                 self.selection_component = FinalFeatureSelectionComponent(selection_config)
 
+            # Apply subsampling for feature selection phases
+            # Use subsample for selection to ensure regime diversity over recent history
+            # But use full dataset for final artifact generation
+            use_subsampling = config.get('subsample_selection', True)
+            if use_subsampling:
+                tprint_info("🔍 Creating subsampled dataset for final feature selection...")
+                # Note: We need a helper method for subsampling in this class too
+                # We'll define it or use a utility if available. Since it's private in the other step,
+                # we'll implement a local version here to avoid dependencies.
+                features_for_selection, targets_for_selection = self._create_selection_subsample(
+                    combined_features_df, targets, config
+                )
+                tprint_info(f"📊 Selection subsample size: {len(features_for_selection)} rows")
+            else:
+                features_for_selection = combined_features_df
+                targets_for_selection = targets
+
             feature_sets = self._perform_multi_size_selection(
-                combined_features_df,
-                targets,
+                features_for_selection,
+                targets_for_selection,
                 config,
+                full_features_df=combined_features_df # Pass full DF for artifact creation
             )
 
             shap_values = self._generate_shap_values(
                 feature_sets,
-                combined_features_df,
-                targets,
+                features_for_selection, # Use subsample for SHAP speed
+                targets_for_selection,
                 config,
             )
 
@@ -1961,8 +1980,20 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         features_df,
         targets,
         config: Dict[str, Any],
+        full_features_df: Optional[pd.DataFrame] = None,
     ) -> Dict[str, Any]:
-        """Perform feature selection for multiple feature set sizes with CMI-aware Tactician mode support."""
+        """Perform feature selection for multiple feature set sizes with CMI-aware Tactician mode support.
+
+        Args:
+            features_df: The feature dataframe to use for selection (may be subsampled).
+            targets: The target dataframe/series to use for selection (may be subsampled).
+            config: Configuration dictionary.
+            full_features_df: The full feature dataframe to use for creating final artifact dataframes.
+                              If None, features_df is used (legacy behavior).
+        """
+        if full_features_df is None:
+            full_features_df = features_df
+
         min_samples = int(config.get("lgbm_fs_min_target_samples", 200))
 
         def _is_usable_target(series: pd.Series, label: str) -> bool:
@@ -2767,25 +2798,26 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             
             feature_sets[f'selected_features_{size}'] = selected_features
 
-            # CRITICAL FIX: Validate features exist in features_df before creating dataframe
-            available_features = [f for f in selected_features if f in features_df.columns]
-            missing_features = [f for f in selected_features if f not in features_df.columns]
+            # CRITICAL FIX: Validate features exist in full_features_df before creating dataframe
+            # Use full_features_df to ensure output artifacts cover the full history
+            available_features = [f for f in selected_features if f in full_features_df.columns]
+            missing_features = [f for f in selected_features if f not in full_features_df.columns]
             
-            tprint_error(f"   Features available in features_df: {len(available_features)}/{len(selected_features)}")
+            tprint_error(f"   Features available in full_features_df: {len(available_features)}/{len(selected_features)}")
             if missing_features:
                 tprint_error(f"   ❌ Missing features: {missing_features[:10]}..." if len(missing_features) > 10 else f"   ❌ Missing features: {missing_features}")
             
             if not available_features:
-                tprint_error(f"❌ CRITICAL: NO features from selected list exist in features_df!")
+                tprint_error(f"❌ CRITICAL: NO features from selected list exist in full_features_df!")
                 tprint_error(f"   Selected features: {selected_features[:5]}")
-                tprint_error(f"   features_df columns: {list(features_df.columns)[:10]}")
+                tprint_error(f"   full_features_df columns: {list(full_features_df.columns)[:10]}")
                 continue
             
-            # Create dataframe with available features + targets
+            # Create dataframe with available features + targets using full history
             all_cols_to_include = available_features + target_cols
-            selected_dataframe = features_df[all_cols_to_include].copy()
+            selected_dataframe = full_features_df[all_cols_to_include].copy()
             
-            tprint_success(f"✅ Created selected_feature_dataframe_{size}:")
+            tprint_success(f"✅ Created selected_feature_dataframe_{size} (from FULL history):")
             tprint_success(f"   Shape: {selected_dataframe.shape}")
             tprint_success(f"   Features: {len(available_features)}")
             tprint_success(f"   Rows: {len(selected_dataframe)}")

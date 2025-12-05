@@ -51,6 +51,11 @@ try:
 except ImportError as exc:  # pragma: no cover - runtime dependency
     raise SystemExit("xgboost is required for this research script") from exc
 
+try:
+    import scipy  # type: ignore
+except ImportError as exc:  # pragma: no cover - runtime dependency
+    raise SystemExit("scipy is required for this research script") from exc
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -190,54 +195,118 @@ def generate_sr_levels(ohlcv: pd.DataFrame) -> pd.DataFrame:
     # available level among the three generators (priority: KDE, Fractal, HTF).
     close = ohlcv["close"].astype(float)
 
-    def pick_nearest_level(row: pd.Series) -> Tuple[float, str, str]:
-        candidates: list[tuple[float, str, str]] = []
+    def process_row_for_confluence(row: pd.Series) -> Dict[str, Any]:
+        """
+        Process a single row to:
+        1. Pick the primary level (nearest).
+        2. Recover metadata for that primary level.
+        3. Calculate confluence score.
+        """
         price = float(close.at[row.name]) if row.name in close.index else float("nan")
         if not np.isfinite(price):
-            return float("nan"), "", ""
+            return {
+                "primary_level_price": float("nan"),
+                "primary_level_type": np.nan,
+                "primary_level_source": np.nan,
+                "primary_level_touch_count": 0,
+                "primary_level_prominence": 0.0,
+                "primary_level_volume_depth_ratio": 0.0,
+                "primary_level_first_touch_ts": pd.NaT,
+                "primary_level_last_touch_ts": pd.NaT,
+                "confluence_score": 0,
+                "weighted_confluence_score": 0.0,
+            }
 
+        # 1. Gather all candidates on this row
+        candidates: list[dict] = []
         for prefix, src_tag in [("kde_", "kde"), ("fractal_", "fractal"), ("htf_", "htf")]:
             p_col = f"{prefix}primary_level_price"
-            t_col = f"{prefix}primary_level_type"
-            s_col = f"{prefix}primary_level_source"
             lp = row.get(p_col, np.nan)
             if np.isfinite(lp):
-                dist = abs(float(lp) - price)
-                level_type = row.get(t_col, np.nan)
-                level_source = row.get(s_col, src_tag)
-                candidates.append((dist, str(level_type), str(level_source)))
+                cand = {
+                    "prefix": prefix,
+                    "source": src_tag,
+                    "price": float(lp),
+                    "type": row.get(f"{prefix}primary_level_type", np.nan),
+                    "dist": abs(float(lp) - price),
+                    "touch_count": row.get(f"{prefix}primary_level_touch_count", 0),
+                    "prominence": row.get(f"{prefix}primary_level_prominence", 0.0),
+                    "volume_depth_ratio": row.get(f"{prefix}primary_level_volume_depth_ratio", 0.0),
+                    "first_touch_ts": row.get(f"{prefix}primary_level_first_touch_ts", pd.NaT),
+                    "last_touch_ts": row.get(f"{prefix}primary_level_last_touch_ts", pd.NaT),
+                }
+                candidates.append(cand)
 
         if not candidates:
-            return float("nan"), np.nan, np.nan
+            return {
+                "primary_level_price": float("nan"),
+                "primary_level_type": np.nan,
+                "primary_level_source": np.nan,
+                "primary_level_touch_count": 0,
+                "primary_level_prominence": 0.0,
+                "primary_level_volume_depth_ratio": 0.0,
+                "primary_level_first_touch_ts": pd.NaT,
+                "primary_level_last_touch_ts": pd.NaT,
+                "confluence_score": 0,
+                "weighted_confluence_score": 0.0,
+            }
 
-        best = min(candidates, key=lambda x: x[0])
-        dist, level_type, level_source = best
-        # Reconstruct level price from type/source pair
-        # We re-lookup the underlying price to avoid ambiguity.
-        for prefix in ("kde_", "fractal_", "htf_"):
-            p_col = f"{prefix}primary_level_price"
-            t_col = f"{prefix}primary_level_type"
-            s_col = f"{prefix}primary_level_source"
-            if str(row.get(t_col, "")) == level_type and str(row.get(s_col, "")) == level_source:
-                lp = row.get(p_col, np.nan)
-                if np.isfinite(lp):
-                    return float(lp), level_type, level_source
-        return float("nan"), level_type, level_source
+        # Pick nearest as primary
+        best = min(candidates, key=lambda x: x["dist"])
 
-    primary_price: list[float] = []
-    primary_type: list[str | float] = []
-    primary_source: list[str | float] = []
+        # 2. Calculate Confluence
+        # Count other levels within X% of the PRIMARY level price (not just current price)
+        # Use 0.2% as a tight confluence band
+        confluence_band = 0.002
+        confluence_score = 0
+        weighted_confluence_score = 0.0
 
+        for cand in candidates:
+            # Distance from PRIMARY level
+            d_pct = abs(cand["price"] - best["price"]) / best["price"]
+            if d_pct <= confluence_band:
+                confluence_score += 1
+
+                # Weighting logic
+                base_weight = 1.0
+                multiplier = 1.0
+
+                if cand["source"] == "htf":
+                    base_weight = 2.0  # HTF is stronger
+                elif cand["source"] == "kde":
+                    base_weight = 1.0
+                    # Scale by volume depth if available (often > 1.0 for strong levels)
+                    # Clip to reasonable range to avoid exploding scores
+                    vol_scale = cand.get("volume_depth_ratio", 1.0)
+                    if np.isfinite(vol_scale):
+                        multiplier = max(0.5, min(vol_scale, 5.0))
+                elif cand["source"] == "fractal":
+                    base_weight = 1.0
+                    # Fractal prominence is usually 1.0, but if we had it, we'd use it
+                    prom = cand.get("prominence", 1.0)
+                    if np.isfinite(prom):
+                        multiplier = max(0.5, min(prom, 3.0))
+
+                weighted_confluence_score += base_weight * multiplier
+
+        return {
+            "primary_level_price": best["price"],
+            "primary_level_type": best["type"],
+            "primary_level_source": best["source"],
+            "primary_level_touch_count": best.get("touch_count", 0),
+            "primary_level_prominence": best.get("prominence", 0.0),
+            "primary_level_volume_depth_ratio": best.get("volume_depth_ratio", 0.0),
+            "primary_level_first_touch_ts": best.get("first_touch_ts", pd.NaT),
+            "primary_level_last_touch_ts": best.get("last_touch_ts", pd.NaT),
+            "confluence_score": confluence_score,
+            "weighted_confluence_score": weighted_confluence_score,
+        }
+
+    results = []
     for ts, row in base.iterrows():
-        lp, lt, ls = pick_nearest_level(row)
-        primary_price.append(lp)
-        primary_type.append(lt)
-        primary_source.append(ls)
+        results.append(process_row_for_confluence(row))
 
-    sr = pd.DataFrame(index=idx)
-    sr["primary_level_price"] = primary_price
-    sr["primary_level_type"] = primary_type
-    sr["primary_level_source"] = primary_source
+    sr = pd.DataFrame(results, index=idx)
 
     sr["is_support"] = sr["primary_level_type"].astype(str).str.contains("support", case=False, na=False)
     sr["is_resistance"] = sr["primary_level_type"].astype(str).str.contains("resistance", case=False, na=False)
@@ -260,16 +329,37 @@ def build_event_dataset(
         y_cls: binary strong-move indicator (|ret| >= min_ret).
     """
 
+    # Calculate ATR first for dynamic touch definition
+    high = ohlcv["high"].astype(float)
+    low = ohlcv["low"].astype(float)
+    close = ohlcv["close"].astype(float)
+    prev_close = close.shift(1)
+
+    tr = pd.concat([
+        (high - low).abs(),
+        (high - prev_close).abs(),
+        (low - prev_close).abs(),
+    ], axis=1).max(axis=1)
+    atr_14 = tr.rolling(14, min_periods=10).mean()
+
+    # Join S/R
     df = ohlcv.join(sr, how="inner")
     df = df.dropna(subset=["primary_level_price"])  # require a level
+
+    # Align ATR
+    atr = atr_14.loc[df.index]
 
     close = df["close"].astype(float)
     level = df["primary_level_price"].astype(float)
 
-    # Define a reasonably loose touch band (1 * ATR proxy via simple pct distance).
-    touch_band = 0.004
-    dist = (close - level).abs() / level.replace(0.0, np.nan)
-    touch_mask = dist <= touch_band
+    # Dynamic Touch Band: 0.5 * ATR
+    # If ATR is nan (start of data), fallback to 0.4%
+    touch_dist_price = 0.5 * atr
+    fallback_dist = 0.004 * level
+    touch_dist_price = touch_dist_price.fillna(fallback_dist)
+
+    abs_diff = (close - level).abs()
+    touch_mask = abs_diff <= touch_dist_price
 
     event_df = df.loc[touch_mask].copy()
     if event_df.empty:
@@ -297,6 +387,10 @@ def build_event_dataset(
     fwd_ret = fwd_ret.replace([np.inf, -np.inf], np.nan).dropna()
     event_df = event_df.loc[fwd_ret.index]
 
+    # Re-align support/resistance flags to the filtered event set
+    is_support = event_df["is_support"].astype(bool)
+    is_resistance = event_df["is_resistance"].astype(bool)
+
     y_reg = fwd_ret
     y_cls = (fwd_ret.abs() >= min_ret).astype(int)
 
@@ -315,15 +409,47 @@ def build_event_dataset(
     lvl_feats["src_is_htf"] = src_series.str.contains("htf|pdh|pdl", case=False, na=False).astype(float)
 
     # More granular level-type flags:
-    # - HVN / volume-node levels from KDE (pure volume clusters)
-    # - Swing-based levels (swing highs/lows and fractal swings)
-    # - Pivot-style levels (previous-day high/low)
     lvl_feats["lvl_is_hvn"] = src_series.str.contains("volume_node", case=False, na=False).astype(float)
     lvl_feats["lvl_is_swing"] = src_series.str.contains("swing_high|swing_low|fractal", case=False, na=False).astype(float)
     lvl_feats["lvl_is_pivot"] = src_series.str.contains("pdh|pdl", case=False, na=False).astype(float)
 
     lvl_feats["is_support"] = is_support.astype(float)
     lvl_feats["is_resistance"] = is_resistance.astype(float)
+
+    # NEW METADATA FEATURES (Blind Spot Fixes)
+    # 1. Raw Metadata
+    lvl_feats["meta_touch_count"] = event_df["primary_level_touch_count"].astype(float)
+    lvl_feats["meta_prominence"] = event_df["primary_level_prominence"].astype(float)
+    lvl_feats["meta_vol_depth"] = event_df["primary_level_volume_depth_ratio"].astype(float)
+
+    # 2. Confluence Scores
+    lvl_feats["confluence_score"] = event_df["confluence_score"].astype(float)
+    lvl_feats["weighted_confluence_score"] = event_df["weighted_confluence_score"].astype(float)
+
+    # 3. Age / Decay
+    # We need to convert timestamps to "bars ago"
+    # Current index is datetime
+    # We can use get_indexer to find integer locations if needed, or simple timedelta math
+    # Since ohlcv is equidistant (mostly), timedelta / freq is easiest approximation
+
+    # Convert index to Series for subtraction
+    current_ts = event_df.index.to_series()
+
+    first_touch = pd.to_datetime(event_df["primary_level_first_touch_ts"])
+    last_touch = pd.to_datetime(event_df["primary_level_last_touch_ts"])
+
+    # Approximate bars using Minutes (assuming 15m timeframe if not passed, but we can just use total seconds)
+    # The script uses 'timeframe' arg but it's string.
+    # Let's assume standard 15m for the denominator or just use raw seconds as a proxy for age
+    # Or better: simply (current_ts - timestamp).dt.total_seconds() / (15 * 60)
+    # Since we might be on 1h, let's just use hours as the unit for "Age"
+
+    lvl_feats["level_age_hours"] = (current_ts - first_touch).dt.total_seconds() / 3600.0
+    lvl_feats["hours_since_last_test"] = (current_ts - last_touch).dt.total_seconds() / 3600.0
+
+    # Fill NaT with 0.0 (fresh level)
+    lvl_feats["level_age_hours"] = lvl_feats["level_age_hours"].fillna(0.0)
+    lvl_feats["hours_since_last_test"] = lvl_feats["hours_since_last_test"].fillna(0.0)
 
     # ------------------------------------------------------------------
     # Push / move features around the touch
@@ -368,6 +494,81 @@ def build_event_dataset(
     denom = body.replace(0.0, np.nan)
     push_feats["upper_wick_rel"] = (upper_wick / denom).loc[event_df.index]
     push_feats["lower_wick_rel"] = (lower_wick / denom).loc[event_df.index]
+
+    # --- ADVANCED PUSH FEATURES ---
+
+    # 1. Approach Velocity (Momentum into the level)
+    # Calculate return over last 3 bars normalized by ATR
+    # Positive means moving UP towards level (if resistance) or DOWN towards level (if support) ?
+    # Actually, we want velocity *towards* the level.
+    # We already have `dist` = abs(close - level).
+    # Velocity = change in distance / time
+    # Let's use simple signed momentum relative to the level direction.
+    # If Support: Price is falling. We want to know how fast.
+    # If Resistance: Price is rising. We want to know how fast.
+
+    ret_3 = close.diff(3)
+    atr_val = atr.loc[event_df.index]
+
+    # For support (price falling), negative return is high velocity towards level.
+    # For resistance (price rising), positive return is high velocity towards level.
+    # Let's normalize so positive = fast approach towards level.
+
+    velocity_proxy = pd.Series(index=event_df.index, dtype=float)
+
+    # Extract ret_3 values for the events to ensure alignment with boolean masks
+    ret_3_events = ret_3.loc[event_df.index]
+
+    velocity_proxy.loc[is_support] = -ret_3_events.loc[is_support] # Falling = +velocity
+    velocity_proxy.loc[is_resistance] = ret_3_events.loc[is_resistance] # Rising = +velocity
+
+    push_feats["approach_velocity_3_atr"] = (velocity_proxy / atr_val).loc[event_df.index]
+
+    # 2. Volume Trend (Slope of volume)
+    # Simple linear regression slope of last 5 volume bars
+    from scipy.stats import linregress
+
+    def calc_slope(series):
+        if len(series) < 5: return 0.0
+        # Normalize volume by its mean to get comparable slopes
+        y = series.values / (series.mean() + 1e-9)
+        x = np.arange(len(y))
+        slope, _, _, _, _ = linregress(x, y)
+        return slope
+
+    # Rolling apply is slow, but we only need it for event indices.
+    # Optimization: Extract windows for events only
+    vol_slope = []
+    vol_series = df["volume"].astype(float)
+    for idx_ts in event_df.index:
+        loc = df.index.get_loc(idx_ts)
+        if loc < 5:
+            vol_slope.append(0.0)
+            continue
+        window = vol_series.iloc[loc-4:loc+1]
+        vol_slope.append(calc_slope(window))
+
+    push_feats["volume_trend_slope_5"] = vol_slope
+
+    # 3. Candle Compression (Coiling)
+    # Ratio of short-term ATR (3) to medium-term ATR (14)
+    # Low values (< 1) imply coiling/tightening range
+    atr_3 = tr.rolling(3).mean()
+    push_feats["candle_compression_ratio"] = (atr_3 / atr_14).loc[event_df.index]
+
+    # 4. Close Location (Buying/Selling Pressure)
+    # (Close - Low) / (High - Low)
+    # 1.0 = Close at High, 0.0 = Close at Low
+    # Averaged over last 3 bars
+    clv = (close - low) / (high - low).replace(0.0, np.nan)
+    clv_avg = clv.rolling(3).mean()
+    push_feats["close_location_score_3"] = clv_avg.loc[event_df.index]
+
+    # 5. Consecutive Tests (Grinding)
+    # How many of the last 10 bars touched the level band?
+    # touch_mask is the full boolean series defined earlier
+    recent_touches = touch_mask.rolling(10).sum()
+    push_feats["consecutive_test_count_10"] = recent_touches.loc[event_df.index]
 
     # Distance to opposing level (if available)
     # We re-use the HTF generator's opposing level if present; otherwise this
@@ -474,7 +675,7 @@ def train_and_report(X: pd.DataFrame, y_reg: pd.Series, y_cls: pd.Series) -> Non
 
     def _bucket_stats(name: str, bucket: pd.DataFrame) -> Dict[str, float]:
         if bucket.empty:
-            return {"n": 0, "mean": float("nan"), "std": float("nan")}
+            return {"n": 0, "mean": float("nan"), "std": float("nan"), "sharpe": float("nan")}
         r = bucket["fwd_ret"].values
         mean = float(np.nanmean(r))
         std = float(np.nanstd(r))

@@ -338,12 +338,21 @@ def compute_learnability_with_calibration(
 
     try:
         # Collect probability predictions and AUC scores from all models
-        all_oof_probs = []
+        all_full_probs = []
         all_aucs = []
 
-        for model in models:
+        # Store OOF predictions for each model to build ensemble OOF
+        # This allows accurate OOF-based calibration
+        all_model_oof_preds: List[np.ndarray] = []
+        oof_indices: np.ndarray = np.array([], dtype=int)
+
+        for i, model in enumerate(models):
             # Manual time-series CV with sample weights
             fold_aucs = []
+
+            # Temporary storage for this model's OOF predictions across folds
+            model_oof_parts: List[np.ndarray] = []
+            current_oof_indices: List[np.ndarray] = []
 
             for train_idx, test_idx in cv.split(X_clean):
                 X_train_cv = X_clean.iloc[train_idx]
@@ -361,6 +370,11 @@ def compute_learnability_with_calibration(
 
                 y_proba_cv = model.predict_proba(X_test_cv)[:, 1]
 
+                # Store OOF predictions
+                model_oof_parts.append(y_proba_cv)
+                if i == 0:
+                    current_oof_indices.append(test_idx)
+
                 try:
                     fold_auc = roc_auc_score(y_test_cv, y_proba_cv)
                     fold_aucs.append(fold_auc)
@@ -372,7 +386,14 @@ def compute_learnability_with_calibration(
             else:
                 mean_auc = 0.5
 
-            # Fit on full cleaned data with weights for calibrated probabilities
+            # Combine OOF parts for this model
+            if model_oof_parts:
+                all_model_oof_preds.append(np.concatenate(model_oof_parts))
+
+            if i == 0 and current_oof_indices:
+                oof_indices = np.concatenate(current_oof_indices)
+
+            # Fit on full cleaned data with weights for final probabilities
             try:
                 model.fit(X_clean, y_clean, sample_weight=sample_weights)
             except TypeError:
@@ -380,18 +401,18 @@ def compute_learnability_with_calibration(
 
             full_probs = model.predict_proba(X_clean)[:, 1]
 
-            all_oof_probs.append(full_probs)
+            all_full_probs.append(full_probs)
             all_aucs.append(mean_auc)
 
         # Ensemble: average probabilities (with signal disagreement awareness)
         if len(models) > 1:
-            oof_probs_array = np.array(all_oof_probs)
+            full_probs_array = np.array(all_full_probs)
 
             # Calculate disagreement (std across models)
-            disagreement = np.std(oof_probs_array, axis=0)
+            disagreement = np.std(full_probs_array, axis=0)
 
             # Average probabilities
-            avg_probs = np.mean(oof_probs_array, axis=0)
+            avg_probs = np.mean(full_probs_array, axis=0)
 
             # Penalize high-disagreement predictions slightly
             # (reduce confidence when models disagree)
@@ -401,30 +422,60 @@ def compute_learnability_with_calibration(
 
             mean_auc = np.mean(all_aucs)
         else:
-            final_probs = all_oof_probs[0]
+            final_probs = all_full_probs[0]
             mean_auc = all_aucs[0]
 
         std_auc = np.std(all_aucs) if len(all_aucs) > 1 else 0.0
 
-        # Apply isotonic calibration to probabilities
+        # Apply isotonic calibration to probabilities using OOF predictions
         iso_reg = None
-        if model_complexity in ["medium", "strong"]:
+        calibrated_probs = final_probs
+
+        if model_complexity in ["medium", "strong"] and all_model_oof_preds and len(oof_indices) > 50:
             try:
+                # Build Ensemble OOF predictions
+                oof_probs_array = np.array(all_model_oof_preds)
+
+                if len(models) > 1:
+                    avg_oof_probs = np.mean(oof_probs_array, axis=0)
+                    disagreement_oof = np.std(oof_probs_array, axis=0)
+                    confidence_penalty_oof = 1.0 - (disagreement_oof * 0.5)
+                    final_oof_probs = avg_oof_probs * confidence_penalty_oof + (1 - confidence_penalty_oof) * 0.5
+                    final_oof_probs = np.clip(final_oof_probs, 0.0, 1.0)
+                else:
+                    final_oof_probs = oof_probs_array[0]
+
+                # Get OOF returns for calibration
+                oof_returns = returns_clean.iloc[oof_indices].values
+
                 iso_reg = IsotonicRegression(out_of_bounds='clip')
 
-                # Fit on valid (finite) samples
-                valid_for_iso = np.isfinite(returns_clean.values) & np.isfinite(final_probs)
+                # Fit on valid OOF samples
+                valid_for_iso = np.isfinite(oof_returns) & np.isfinite(final_oof_probs)
                 if np.sum(valid_for_iso) > 50:
-                    iso_reg.fit(final_probs[valid_for_iso], returns_clean.values[valid_for_iso])
-                    # Calibrate probabilities
+                    iso_reg.fit(final_oof_probs[valid_for_iso], oof_returns[valid_for_iso])
+                    # Calibrate full model probabilities using OOF-learned mapping
                     calibrated_probs = iso_reg.predict(final_probs)
                 else:
-                    calibrated_probs = final_probs
+                    # Fallback to in-sample if OOF not valid
+                    valid_in_sample = np.isfinite(returns_clean.values) & np.isfinite(final_probs)
+                    if np.sum(valid_in_sample) > 50:
+                         iso_reg.fit(final_probs[valid_in_sample], returns_clean.values[valid_in_sample])
+                         calibrated_probs = iso_reg.predict(final_probs)
             except Exception:
                 calibrated_probs = final_probs
                 iso_reg = None
         else:
-            calibrated_probs = final_probs
+             # Fallback calibration using in-sample data if OOF unavailable (e.g. data too small for CV)
+             if model_complexity in ["medium", "strong"]:
+                 try:
+                     iso_reg = IsotonicRegression(out_of_bounds='clip')
+                     valid_for_iso = np.isfinite(returns_clean.values) & np.isfinite(final_probs)
+                     if np.sum(valid_for_iso) > 50:
+                        iso_reg.fit(final_probs[valid_for_iso], returns_clean.values[valid_for_iso])
+                        calibrated_probs = iso_reg.predict(final_probs)
+                 except Exception:
+                     pass
 
         # Learnability score: penalize instability
         learnability = mean_auc - (0.5 * std_auc)

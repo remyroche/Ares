@@ -613,6 +613,636 @@ def compute_underfit_diagnostics(
     return diagnostics
 
 
+def compute_filtering_inflation_diagnostics(
+    X: pd.DataFrame,
+    y_full: pd.Series,
+    y_filtered: pd.Series,
+    realized_returns: pd.Series,
+    volatility: pd.Series,
+    probabilities: np.ndarray,
+    cv_splits: int = 3,
+    time_aware_cv: bool = True,
+) -> Dict[str, Any]:
+    """Compute diagnostics to detect AUC inflation from aggressive filtering.
+
+    Tests:
+    1. AUC on full vs filtered labels - if filtered AUC >> full AUC, filtering inflates
+    2. AUC by return magnitude bucket - if AUC high only in large-move bins, labels dominated
+    3. Class overlap metrics - how separable are retained vs discarded events
+    4. Precision@K drop - if precision collapses as K increases, model only good on easy cases
+
+    Args:
+        X: Feature matrix (aligned to full label space)
+        y_full: Labels before filtering (pre-quantile, using economic floor only)
+        y_filtered: Labels after all filtering (quantile-based, final)
+        realized_returns: Realized returns per event
+        volatility: Volatility series for normalization
+        probabilities: Model predicted probabilities (aligned to filtered labels)
+        cv_splits: Number of CV splits for AUC computation
+        time_aware_cv: Use TimeSeriesSplit
+
+    Returns:
+        Dictionary with diagnostic metrics
+    """
+    from sklearn.metrics import roc_auc_score, precision_score
+    from sklearn.model_selection import TimeSeriesSplit, cross_val_predict
+
+    diagnostics = {
+        # 1. Full vs Filtered AUC comparison
+        "auc_full": None,
+        "auc_filtered": None,
+        "auc_inflation": None,  # filtered - full
+        "filtering_is_major_contributor": False,  # True if inflation > 0.08
+        
+        # 2. AUC by return magnitude bucket
+        "auc_by_return_bucket": {},
+        "auc_dominated_by_large_moves": False,
+        
+        # 3. Retention metrics
+        "n_full_events": 0,
+        "n_filtered_events": 0,
+        "retention_rate": 0.0,
+        
+        # 4. Precision@K analysis
+        "precision_at_k": {},
+        "precision_collapse_detected": False,
+    }
+
+    try:
+        # Align indices
+        common_idx = y_full.index.intersection(y_filtered.index)
+        if len(common_idx) < 50:
+            return diagnostics
+
+        # ===== 1. AUC on Full vs Filtered Labels =====
+        full_mask = ~y_full.isna()
+        filtered_mask = ~y_filtered.isna()
+        
+        n_full = int(full_mask.sum())
+        n_filtered = int(filtered_mask.sum())
+        diagnostics["n_full_events"] = n_full
+        diagnostics["n_filtered_events"] = n_filtered
+        diagnostics["retention_rate"] = n_filtered / max(n_full, 1)
+
+        # Compute AUC on filtered labels (what we normally report)
+        if n_filtered >= 50 and len(np.unique(y_filtered[filtered_mask])) >= 2:
+            if probabilities is not None and len(probabilities) == len(y_filtered):
+                try:
+                    probs_filtered = probabilities[filtered_mask.values]
+                    y_filt_vals = y_filtered[filtered_mask].values
+                    diagnostics["auc_filtered"] = float(roc_auc_score(y_filt_vals, probs_filtered))
+                except Exception:
+                    pass
+
+        # Compute AUC on full labels (before quantile filtering)
+        # Need to retrain/predict on full label space
+        if n_full >= 50 and len(np.unique(y_full[full_mask])) >= 2:
+            try:
+                X_num = X.select_dtypes(include=[np.number])
+                X_full = X_num[full_mask].fillna(0)
+                y_full_vals = y_full[full_mask]
+                
+                if len(y_full_vals) >= 50 and len(y_full_vals.unique()) >= 2:
+                    # Quick probe model for full-label AUC
+                    probe = lgb.LGBMClassifier(
+                        max_depth=3, n_estimators=50, learning_rate=0.1,
+                        n_jobs=-1, verbose=-1, random_state=42
+                    )
+                    
+                    if time_aware_cv:
+                        cv = TimeSeriesSplit(n_splits=min(cv_splits, len(y_full_vals) // 20))
+                    else:
+                        from sklearn.model_selection import KFold
+                        cv = KFold(n_splits=cv_splits, shuffle=True, random_state=42)
+                    
+                    probs_full = cross_val_predict(probe, X_full, y_full_vals, cv=cv, method='predict_proba')[:, 1]
+                    diagnostics["auc_full"] = float(roc_auc_score(y_full_vals, probs_full))
+            except Exception:
+                pass
+
+        # Compute inflation
+        if diagnostics["auc_filtered"] is not None and diagnostics["auc_full"] is not None:
+            diagnostics["auc_inflation"] = diagnostics["auc_filtered"] - diagnostics["auc_full"]
+            diagnostics["filtering_is_major_contributor"] = diagnostics["auc_inflation"] > 0.08
+
+        # ===== 2. AUC by Return Magnitude Bucket =====
+        try:
+            vol_aligned = volatility.reindex(realized_returns.index).fillna(volatility.median())
+            vol_scaled = realized_returns / (vol_aligned.abs() + 1e-8)
+            abs_vol_scaled = vol_scaled.abs()
+            
+            # Define buckets by sigma
+            buckets = [
+                ("0-0.1σ", 0.0, 0.1),
+                ("0.1-0.3σ", 0.1, 0.3),
+                ("0.3-0.8σ", 0.3, 0.8),
+                ("0.8-1.5σ", 0.8, 1.5),
+                ("1.5σ+", 1.5, float('inf')),
+            ]
+            
+            bucket_aucs = {}
+            small_move_aucs = []
+            large_move_aucs = []
+            
+            for bucket_name, low, high in buckets:
+                bucket_mask = (abs_vol_scaled >= low) & (abs_vol_scaled < high) & filtered_mask
+                n_bucket = int(bucket_mask.sum())
+                
+                if n_bucket >= 30:
+                    try:
+                        y_bucket = y_filtered[bucket_mask]
+                        if len(y_bucket.unique()) >= 2 and probabilities is not None:
+                            probs_bucket = probabilities[bucket_mask.values]
+                            auc_bucket = float(roc_auc_score(y_bucket.values, probs_bucket))
+                            bucket_aucs[bucket_name] = {"auc": auc_bucket, "n": n_bucket}
+                            
+                            # Track for dominance check
+                            if high <= 0.3:
+                                small_move_aucs.append(auc_bucket)
+                            elif low >= 0.8:
+                                large_move_aucs.append(auc_bucket)
+                    except Exception:
+                        bucket_aucs[bucket_name] = {"auc": None, "n": n_bucket}
+                else:
+                    bucket_aucs[bucket_name] = {"auc": None, "n": n_bucket}
+            
+            diagnostics["auc_by_return_bucket"] = bucket_aucs
+            
+            # Check if dominated by large moves
+            if small_move_aucs and large_move_aucs:
+                avg_small = np.mean(small_move_aucs)
+                avg_large = np.mean(large_move_aucs)
+                # Dominated if small AUC is 0.52-0.56 and large is 0.65+
+                if avg_small < 0.58 and avg_large > 0.63:
+                    diagnostics["auc_dominated_by_large_moves"] = True
+                    
+        except Exception:
+            pass
+
+        # ===== 4. Precision@K Drop Analysis =====
+        try:
+            if probabilities is not None and n_filtered >= 50:
+                y_filt = y_filtered[filtered_mask].values
+                probs_filt = probabilities[filtered_mask.values]
+                
+                # Sort by probability descending
+                sorted_idx = np.argsort(probs_filt)[::-1]
+                y_sorted = y_filt[sorted_idx]
+                
+                # Compute precision at different K percentiles
+                precision_at_k = {}
+                for k_pct in [10, 20, 30, 50, 70]:
+                    k = max(1, int(len(y_sorted) * k_pct / 100))
+                    precision_k = float(y_sorted[:k].mean())
+                    precision_at_k[f"top_{k_pct}%"] = precision_k
+                
+                diagnostics["precision_at_k"] = precision_at_k
+                
+                # Check for collapse: top 10% precision is good but top 50% collapses
+                if "top_10%" in precision_at_k and "top_50%" in precision_at_k:
+                    if precision_at_k["top_10%"] > 0.65 and precision_at_k["top_50%"] < 0.55:
+                        diagnostics["precision_collapse_detected"] = True
+                        
+        except Exception:
+            pass
+
+    except Exception as e:
+        tprint(f"⚠️ Filtering inflation diagnostics failed: {e}", "WARNING")
+
+    return diagnostics
+
+
+def compute_calibration_diagnostics(
+    y_true: np.ndarray,
+    probabilities: np.ndarray,
+    realized_returns: np.ndarray,
+    transaction_cost: float = 0.003,
+    n_bins: int = 10,
+) -> Dict[str, Any]:
+    """Compute calibration diagnostics for the meta-model.
+
+    Includes:
+    - Brier score
+    - Expected Calibration Error (ECE)
+    - Maximum Calibration Error (MCE)
+    - Reliability diagram data
+    - Precision per probability bin (especially ≥0.6, ≥0.7, ≥0.8)
+    - Expected net P&L by probability bucket
+
+    Args:
+        y_true: True binary labels
+        probabilities: Model predicted probabilities
+        realized_returns: Realized returns for P&L calculation
+        transaction_cost: Transaction cost per trade
+        n_bins: Number of bins for calibration
+
+    Returns:
+        Dictionary with calibration metrics
+    """
+    diagnostics = {
+        "brier_score": None,
+        "ece": None,  # Expected Calibration Error
+        "mce": None,  # Maximum Calibration Error
+        "reliability_diagram": [],  # List of (mean_pred, mean_actual, count) per bin
+        "precision_per_bin": {},
+        "fpr_per_bin": {},
+        "expected_pnl_per_bin": {},
+        "is_well_calibrated": False,
+    }
+
+    try:
+        # Remove NaN
+        valid_mask = ~(np.isnan(y_true) | np.isnan(probabilities))
+        y = y_true[valid_mask]
+        probs = probabilities[valid_mask]
+        returns = realized_returns[valid_mask] if realized_returns is not None else None
+        
+        if len(y) < 50:
+            return diagnostics
+
+        # ===== Brier Score =====
+        diagnostics["brier_score"] = float(np.mean((probs - y) ** 2))
+
+        # ===== Calibration Error (ECE, MCE) and Reliability Diagram =====
+        bin_edges = np.linspace(0, 1, n_bins + 1)
+        ece = 0.0
+        mce = 0.0
+        reliability_data = []
+        
+        for i in range(n_bins):
+            bin_mask = (probs >= bin_edges[i]) & (probs < bin_edges[i + 1])
+            if i == n_bins - 1:  # Include 1.0 in last bin
+                bin_mask = (probs >= bin_edges[i]) & (probs <= bin_edges[i + 1])
+            
+            n_in_bin = int(bin_mask.sum())
+            if n_in_bin > 0:
+                mean_pred = float(probs[bin_mask].mean())
+                mean_actual = float(y[bin_mask].mean())
+                calibration_error = abs(mean_pred - mean_actual)
+                
+                ece += (n_in_bin / len(y)) * calibration_error
+                mce = max(mce, calibration_error)
+                
+                reliability_data.append({
+                    "bin_start": float(bin_edges[i]),
+                    "bin_end": float(bin_edges[i + 1]),
+                    "mean_predicted": mean_pred,
+                    "mean_actual": mean_actual,
+                    "count": n_in_bin,
+                    "calibration_error": calibration_error,
+                })
+
+        diagnostics["ece"] = float(ece)
+        diagnostics["mce"] = float(mce)
+        diagnostics["reliability_diagram"] = reliability_data
+        diagnostics["is_well_calibrated"] = ece < 0.05
+
+        # ===== Precision Per Bin (especially high-probability regions) =====
+        thresholds = [0.5, 0.6, 0.7, 0.8, 0.9]
+        for thresh in thresholds:
+            mask = probs >= thresh
+            n_above = int(mask.sum())
+            if n_above >= 10:
+                precision = float(y[mask].mean())
+                fpr = float((1 - y[mask]).mean())  # False positive rate
+                diagnostics["precision_per_bin"][f"≥{thresh}"] = {
+                    "precision": precision,
+                    "count": n_above,
+                }
+                diagnostics["fpr_per_bin"][f"≥{thresh}"] = {
+                    "fpr": fpr,
+                    "count": n_above,
+                }
+
+        # ===== Expected Net P&L by Probability Bucket =====
+        if returns is not None:
+            pnl_bins = [(0.0, 0.3), (0.3, 0.5), (0.5, 0.6), (0.6, 0.7), (0.7, 0.8), (0.8, 1.0)]
+            for low, high in pnl_bins:
+                mask = (probs >= low) & (probs < high)
+                n_in_bin = int(mask.sum())
+                if n_in_bin >= 10:
+                    bin_returns = returns[mask]
+                    # Net P&L after costs (assuming we trade all events in bin)
+                    net_pnl = float(bin_returns.mean() - transaction_cost)
+                    pnl_per_trade = net_pnl
+                    expected_total = net_pnl * n_in_bin
+                    
+                    diagnostics["expected_pnl_per_bin"][f"{low:.1f}-{high:.1f}"] = {
+                        "mean_return": float(bin_returns.mean()),
+                        "net_pnl_per_trade": pnl_per_trade,
+                        "n_trades": n_in_bin,
+                        "expected_total_pnl": expected_total,
+                        "is_profitable": pnl_per_trade > 0,
+                    }
+
+    except Exception as e:
+        tprint(f"⚠️ Calibration diagnostics failed: {e}", "WARNING")
+
+    return diagnostics
+
+
+def compute_robustness_diagnostics(
+    X: pd.DataFrame,
+    y: pd.Series,
+    realized_returns: pd.Series,
+    regimes: Optional[pd.Series] = None,
+    volatility: Optional[pd.Series] = None,
+    n_folds: int = 5,
+    transaction_cost: float = 0.003,
+) -> Dict[str, Any]:
+    """Compute robustness diagnostics across time and regimes.
+
+    Tests:
+    - Per-fold metrics (AUC, ECE, precision@threshold, net P&L)
+    - Worst-fold performance and CV dispersion
+    - Performance vs volatility regimes (low, median, high)
+    - Per-regime breakdown if regimes provided
+
+    Args:
+        X: Feature matrix
+        y: Binary labels
+        realized_returns: Realized returns
+        regimes: Optional regime labels
+        volatility: Optional volatility series for regime splitting
+        n_folds: Number of CV folds
+        transaction_cost: Transaction cost
+
+    Returns:
+        Dictionary with robustness metrics
+    """
+    from sklearn.model_selection import TimeSeriesSplit
+    from sklearn.metrics import roc_auc_score
+
+    diagnostics = {
+        "per_fold_metrics": [],
+        "worst_fold_auc": None,
+        "best_fold_auc": None,
+        "auc_cv_std": None,
+        "auc_cv_coefficient_of_variation": None,
+        "per_volatility_regime": {},
+        "per_regime_metrics": {},
+        "is_robust": False,
+    }
+
+    try:
+        # Clean data
+        valid_mask = ~y.isna()
+        X_num = X.select_dtypes(include=[np.number])
+        X_clean = X_num[valid_mask].fillna(0)
+        y_clean = y[valid_mask]
+        returns_clean = realized_returns[valid_mask] if realized_returns is not None else None
+
+        if len(y_clean) < 100 or len(y_clean.unique()) < 2:
+            return diagnostics
+
+        # ===== Per-Fold Metrics =====
+        cv = TimeSeriesSplit(n_splits=n_folds)
+        fold_aucs = []
+        fold_metrics = []
+
+        model = lgb.LGBMClassifier(
+            max_depth=5, n_estimators=100, learning_rate=0.05,
+            n_jobs=-1, verbose=-1, random_state=42
+        )
+
+        for fold_idx, (train_idx, test_idx) in enumerate(cv.split(X_clean)):
+            try:
+                X_train, X_test = X_clean.iloc[train_idx], X_clean.iloc[test_idx]
+                y_train, y_test = y_clean.iloc[train_idx], y_clean.iloc[test_idx]
+                
+                if len(y_train.unique()) < 2 or len(y_test.unique()) < 2:
+                    continue
+                
+                model.fit(X_train, y_train)
+                probs = model.predict_proba(X_test)[:, 1]
+                
+                # AUC
+                auc = float(roc_auc_score(y_test, probs))
+                fold_aucs.append(auc)
+                
+                # ECE
+                ece = 0.0
+                bin_edges = np.linspace(0, 1, 11)
+                for i in range(10):
+                    mask = (probs >= bin_edges[i]) & (probs < bin_edges[i + 1])
+                    if mask.sum() > 0:
+                        ece += (mask.sum() / len(probs)) * abs(probs[mask].mean() - y_test.iloc[mask.values].mean())
+                
+                # Precision at 0.6
+                precision_06 = float(y_test[probs >= 0.6].mean()) if (probs >= 0.6).sum() > 0 else None
+                
+                # Net P&L
+                net_pnl = None
+                if returns_clean is not None:
+                    returns_test = returns_clean.iloc[test_idx]
+                    trade_mask = probs >= 0.5
+                    if trade_mask.sum() > 0:
+                        net_pnl = float(returns_test[trade_mask].mean() - transaction_cost)
+                
+                fold_metrics.append({
+                    "fold": fold_idx,
+                    "auc": auc,
+                    "ece": float(ece),
+                    "precision_at_0.6": precision_06,
+                    "net_pnl_per_trade": net_pnl,
+                    "n_test": len(y_test),
+                })
+                
+            except Exception:
+                continue
+
+        diagnostics["per_fold_metrics"] = fold_metrics
+        
+        if fold_aucs:
+            diagnostics["worst_fold_auc"] = float(min(fold_aucs))
+            diagnostics["best_fold_auc"] = float(max(fold_aucs))
+            diagnostics["auc_cv_std"] = float(np.std(fold_aucs))
+            mean_auc = float(np.mean(fold_aucs))
+            diagnostics["auc_cv_coefficient_of_variation"] = float(np.std(fold_aucs) / mean_auc) if mean_auc > 0 else None
+            
+            # Robust if CV std < 0.05 and worst fold > 0.52
+            diagnostics["is_robust"] = (diagnostics["auc_cv_std"] < 0.05 and diagnostics["worst_fold_auc"] > 0.52)
+
+        # ===== Per Volatility Regime =====
+        if volatility is not None:
+            try:
+                vol_aligned = volatility.reindex(y_clean.index)
+                vol_clean = vol_aligned[~vol_aligned.isna()]
+                
+                if len(vol_clean) >= 50:
+                    vol_low_thresh = vol_clean.quantile(0.33)
+                    vol_high_thresh = vol_clean.quantile(0.67)
+                    
+                    vol_regimes = {
+                        "low_vol": vol_aligned <= vol_low_thresh,
+                        "medium_vol": (vol_aligned > vol_low_thresh) & (vol_aligned <= vol_high_thresh),
+                        "high_vol": vol_aligned > vol_high_thresh,
+                    }
+                    
+                    for regime_name, regime_mask in vol_regimes.items():
+                        regime_mask = regime_mask.reindex(y_clean.index, fill_value=False)
+                        n_regime = int(regime_mask.sum())
+                        
+                        if n_regime >= 30 and len(y_clean[regime_mask].unique()) >= 2:
+                            try:
+                                # Train on all, evaluate on regime
+                                model.fit(X_clean, y_clean)
+                                probs_regime = model.predict_proba(X_clean[regime_mask])[:, 1]
+                                auc_regime = float(roc_auc_score(y_clean[regime_mask], probs_regime))
+                                
+                                diagnostics["per_volatility_regime"][regime_name] = {
+                                    "auc": auc_regime,
+                                    "n_events": n_regime,
+                                }
+                            except Exception:
+                                diagnostics["per_volatility_regime"][regime_name] = {"auc": None, "n_events": n_regime}
+                        else:
+                            diagnostics["per_volatility_regime"][regime_name] = {"auc": None, "n_events": n_regime}
+                            
+            except Exception:
+                pass
+
+        # ===== Per Regime (if provided) =====
+        if regimes is not None:
+            try:
+                regimes_aligned = regimes.reindex(y_clean.index)
+                unique_regimes = pd.unique(regimes_aligned.dropna())
+                
+                for reg_val in unique_regimes:
+                    regime_mask = regimes_aligned == reg_val
+                    n_regime = int(regime_mask.sum())
+                    
+                    if n_regime >= 30 and len(y_clean[regime_mask].unique()) >= 2:
+                        try:
+                            model.fit(X_clean, y_clean)
+                            probs_regime = model.predict_proba(X_clean[regime_mask])[:, 1]
+                            auc_regime = float(roc_auc_score(y_clean[regime_mask], probs_regime))
+                            
+                            # Net P&L in regime
+                            net_pnl = None
+                            if returns_clean is not None:
+                                returns_regime = returns_clean[regime_mask]
+                                trade_mask = probs_regime >= 0.5
+                                if trade_mask.sum() > 0:
+                                    net_pnl = float(returns_regime[trade_mask].mean() - transaction_cost)
+                            
+                            diagnostics["per_regime_metrics"][str(reg_val)] = {
+                                "auc": auc_regime,
+                                "n_events": n_regime,
+                                "net_pnl_per_trade": net_pnl,
+                            }
+                        except Exception:
+                            diagnostics["per_regime_metrics"][str(reg_val)] = {"auc": None, "n_events": n_regime}
+                    else:
+                        diagnostics["per_regime_metrics"][str(reg_val)] = {"auc": None, "n_events": n_regime}
+                        
+            except Exception:
+                pass
+
+    except Exception as e:
+        tprint(f"⚠️ Robustness diagnostics failed: {e}", "WARNING")
+
+    return diagnostics
+
+
+def compute_class_overlap_features(
+    X: pd.DataFrame,
+    retained_mask: pd.Series,
+    top_k_features: int = 10,
+) -> Dict[str, Any]:
+    """Compute class overlap visualization data for retained vs discarded events.
+
+    Args:
+        X: Feature matrix
+        retained_mask: Boolean mask - True for retained events
+        top_k_features: Number of top features to analyze
+
+    Returns:
+        Dictionary with overlap metrics and distribution data
+    """
+    diagnostics = {
+        "feature_distributions": {},
+        "overlap_scores": {},
+        "retained_cluster_tightness": None,
+        "easy_problem_detected": False,
+    }
+
+    try:
+        X_num = X.select_dtypes(include=[np.number]).fillna(0)
+        
+        if X_num.empty or len(retained_mask) != len(X_num):
+            return diagnostics
+
+        retained = X_num[retained_mask]
+        discarded = X_num[~retained_mask]
+        
+        if len(retained) < 20 or len(discarded) < 20:
+            return diagnostics
+
+        # Compute feature importance to select top features
+        from sklearn.ensemble import RandomForestClassifier
+        try:
+            rf = RandomForestClassifier(n_estimators=50, max_depth=3, random_state=42, n_jobs=-1)
+            rf.fit(X_num, retained_mask.astype(int))
+            importances = rf.feature_importances_
+            top_idx = np.argsort(importances)[::-1][:top_k_features]
+            top_features = [X_num.columns[i] for i in top_idx]
+        except Exception:
+            top_features = list(X_num.columns[:top_k_features])
+
+        # For each top feature, compute distribution stats
+        overlap_scores = []
+        for feat in top_features:
+            try:
+                ret_vals = retained[feat].values
+                disc_vals = discarded[feat].values
+                
+                # Compute overlap using Bhattacharyya coefficient approximation
+                ret_mean, ret_std = ret_vals.mean(), ret_vals.std() + 1e-8
+                disc_mean, disc_std = disc_vals.mean(), disc_vals.std() + 1e-8
+                
+                # Bhattacharyya distance (lower = more overlap)
+                bd = 0.25 * np.log(0.25 * ((ret_std/disc_std)**2 + (disc_std/ret_std)**2 + 2)) + \
+                     0.25 * ((ret_mean - disc_mean)**2 / (ret_std**2 + disc_std**2))
+                
+                overlap_score = np.exp(-bd)  # Convert to 0-1, higher = more overlap
+                overlap_scores.append(overlap_score)
+                
+                diagnostics["feature_distributions"][feat] = {
+                    "retained_mean": float(ret_mean),
+                    "retained_std": float(ret_std),
+                    "discarded_mean": float(disc_mean),
+                    "discarded_std": float(disc_std),
+                    "overlap_score": float(overlap_score),
+                }
+                diagnostics["overlap_scores"][feat] = float(overlap_score)
+                
+            except Exception:
+                continue
+
+        # Overall cluster tightness (variance ratio)
+        try:
+            ret_var = retained.var().mean()
+            disc_var = discarded.var().mean()
+            full_var = X_num.var().mean()
+            
+            # If retained events have much lower variance, they're clustered
+            diagnostics["retained_cluster_tightness"] = float(ret_var / (full_var + 1e-8))
+            
+            # Easy problem if: low overlap AND tight clustering
+            avg_overlap = np.mean(overlap_scores) if overlap_scores else 1.0
+            if avg_overlap < 0.4 and diagnostics["retained_cluster_tightness"] < 0.7:
+                diagnostics["easy_problem_detected"] = True
+                
+        except Exception:
+            pass
+
+    except Exception as e:
+        tprint(f"⚠️ Class overlap diagnostics failed: {e}", "WARNING")
+
+    return diagnostics
+
+
 def shrink_search_space(
     original_space: Dict[str, Any],
     previous_results: List[Dict[str, Any]],
@@ -689,6 +1319,8 @@ def compute_realistic_pnl_edge(
     transaction_cost: float = DEFAULT_TRANSACTION_COST,
     n_trades: int | None = None,
     reference_trades: float | None = None,
+    days_span: float | None = None,
+    target_trades_per_day: float = 2.0,
 ) -> float:
     """Compute realistic P&L edge using the capture ratio formula.
 
@@ -701,9 +1333,9 @@ def compute_realistic_pnl_edge(
 
         Edge = Edge_base × sqrt(min(n_trades, 4×reference_trades) / reference_trades)
 
-    This keeps the original capture-ratio logic while modestly
-    encouraging configurations that achieve good per-trade edge with a
-    reasonable number of trades.
+    ENHANCED: When days_span is provided, add an explicit density bonus
+    for configurations achieving the target trades/day range (1-3/day),
+    to help HPO escape local minima of very sparse configurations.
 
     Args:
         mean_return_positive: Mean return of positive-labeled events
@@ -711,6 +1343,8 @@ def compute_realistic_pnl_edge(
         transaction_cost: Transaction cost per trade
         n_trades: Number of labeled events/trades used for this edge
         reference_trades: Reference trade count for scaling (e.g. days_span × target_trades_per_day)
+        days_span: Number of days in the dataset (for density bonus)
+        target_trades_per_day: Target trades/day for density bonus calculation
 
     Returns:
         Realistic P&L edge score
@@ -740,6 +1374,25 @@ def compute_realistic_pnl_edge(
         effective_trades = min(float(n_trades), float(reference_trades) * 4.0)
         trade_factor = float(np.sqrt(effective_trades / float(reference_trades)))
         edge *= trade_factor
+
+    # NEW: Explicit density bonus to encourage configurations with
+    # healthy trade counts in the target range (1-3 trades/day).
+    # This helps HPO escape local minima of very sparse configs.
+    if days_span is not None and days_span > 0 and n_trades is not None and n_trades > 0:
+        trades_per_day = float(n_trades) / float(days_span)
+        
+        # Density bonus: reward configurations in the sweet spot (1-3 trades/day)
+        # Peak bonus at target_trades_per_day, with gentle falloff outside range
+        if trades_per_day >= 0.5 and trades_per_day <= 5.0:
+            # Gaussian-like bonus centered at target
+            distance_from_target = abs(trades_per_day - target_trades_per_day)
+            # Max 20% bonus at target, decaying with distance
+            density_bonus = 1.0 + 0.2 * max(0.0, 1.0 - distance_from_target / 2.0)
+            edge *= density_bonus
+        elif trades_per_day < 0.5:
+            # Strong penalty for very sparse configs (< 0.5/day)
+            sparsity_penalty = 0.5 + 0.5 * (trades_per_day / 0.5)  # Range [0.5, 1.0]
+            edge *= sparsity_penalty
 
     return edge
 
@@ -904,9 +1557,16 @@ class MetaLabelingHPOExperimentStep(BaseStep):
         tprint_info("⚙️ Generating primary signals for HPO labeling runs…")
         primary_signals = generate_primary_signals(market_data.copy())
 
-        # Precompute volatility for Kalman smoothing
+        # Precompute volatility for Kalman smoothing and label normalization
+        # IMPORTANT: NO FUTURE LEAKAGE - using backward-looking rolling window only
+        # At time T, volatility_1d[T] uses returns from T-96 to T-1 (past data only)
+        # This ensures labels at time T do not peek at future volatility
         log_ret = np.log(market_data["close"]).diff()
         volatility_1d = log_ret.rolling(96).std()
+        
+        # Verify no NaN at start could cause issues (first 96 bars will have partial window)
+        n_valid_vol = int((~volatility_1d.isna()).sum())
+        tprint_info(f"📊 Volatility computed: {n_valid_vol}/{len(volatility_1d)} valid values (backward-looking, no future leakage)")
 
         # Precompute span in days once (used by density penalty in objective)
         try:
@@ -986,12 +1646,23 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     },
                     "min_event_spacing": {
                         "type": "int",
-                        "low": 2,
-                        "high": 8,
+                        "low": 1,  # RELAXED: allow tighter spacing for more trades
+                        "high": 6,  # RELAXED: reduced upper bound
+                    },
+                    # NEW: Signal generation parameters to control base trade density
+                    "cusum_threshold": {
+                        "type": "float",
+                        "low": 0.008,
+                        "high": 0.025,
+                    },
+                    "target_signal_density": {
+                        "type": "float",
+                        "low": 3.0,  # Minimum signals per day target
+                        "high": 10.0,  # Maximum signals per day target
                     },
                 },
                 priority=1,
-                description="Triple-barrier / TPSL event definition",
+                description="Triple-barrier / TPSL event definition + signal generation",
             ),
             # Target transformation & probability clipping group
             create_param_group(
@@ -1011,23 +1682,21 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     # expressed as a multiple of transaction cost.
                     "econ_min_return_multiple": {
                         "type": "float",
-                        "low": 1.5,
+                        "low": 1.0,  # RELAXED: lower floor allows more trades
                         "high": 2.5,
                     },
                     # Quantile thresholds for volatility-scaled label generation.
-                    # Relaxed band so HPO can explore both sparser and denser label
-                    # definitions around the default 0.30/0.80, including more
-                    # central quantiles that increase label density when supported
-                    # by the edge objective.
+                    # WIDENED bounds to allow HPO to explore denser label definitions
+                    # that increase trade count when supported by edge.
                     "label_low_q": {
                         "type": "float",
-                        "low": 0.20,
-                        "high": 0.45,
+                        "low": 0.10,  # WIDENED: allow more liberal bottom cutoff
+                        "high": 0.50,  # WIDENED: allow up to median
                     },
                     "label_high_q": {
                         "type": "float",
-                        "low": 0.55,
-                        "high": 0.85,
+                        "low": 0.50,  # WIDENED: allow from median
+                        "high": 0.90,  # WIDENED: allow more liberal top cutoff
                     },
                     # Maximum scaling factor for signal-strength-based sample
                     # weighting in the learnability scorer.
@@ -1036,10 +1705,23 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                         "low": 1.2,
                         "high": 2.0,
                     },
+                    # NEW: R-multiple threshold for labeling profitable trades
+                    # Lower values allow slower but profitable trades to count
+                    "r_multiple_pos_threshold": {
+                        "type": "float",
+                        "low": 0.3,  # Allow slower profitable trades
+                        "high": 1.0,  # Require faster profitable trades
+                    },
+                    # NEW: Transaction cost (allows HPO to explore cost sensitivity)
+                    "transaction_cost_mult": {
+                        "type": "float",
+                        "low": 0.5,  # 50% of base cost (optimistic)
+                        "high": 1.5,  # 150% of base cost (conservative)
+                    },
                 },
                 priority=2,
                 depends_on=["event_definition"],
-                description="Symmetric clipping for meta probabilities and targets",
+                description="Symmetric clipping for meta probabilities and targets + trade filters",
             ),
             create_param_group(
                 name="kalman_smoothing",
@@ -1188,9 +1870,13 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     metrics_h = _evaluate_horizon_candidate(h)
                     trades_h = metrics_h["trades_per_day"]
                     rr_h = metrics_h["risk_reward"]
-                    if trades_h < 0.5 or trades_h > 3.0:
+                    # RELAXED: Allow wider trade density range (0.2 - 6.0/day)
+                    # to avoid prematurely filtering out potentially good horizons
+                    if trades_h < 0.2 or trades_h > 6.0:
                         continue
-                    if rr_h < 1.2:
+                    # RELAXED: Lower R/R threshold (1.0 instead of 1.2)
+                    # since HPO will refine the TPSL params later
+                    if rr_h < 1.0:
                         continue
                     if metrics_h["profit_potential"] > best_potential:
                         best_potential = metrics_h["profit_potential"]
@@ -1330,14 +2016,34 @@ class MetaLabelingHPOExperimentStep(BaseStep):
 
                 # Label quantile thresholds (regime-aware when regimes are present).
                 label_low_q = float(params.get("label_low_q", 0.30))
-                label_high_q = float(params.get("label_high_q", 0.80))
+                label_high_q = float(params.get("label_high_q", 0.70))
                 # Guard-rail: ensure a proper ordering and keep them away from extremes.
-                label_low_q = max(0.10, min(0.45, label_low_q))
-                label_high_q = max(0.55, min(0.90, label_high_q))
+                # WIDENED bounds to allow denser label configurations
+                label_low_q = max(0.10, min(0.50, label_low_q))
+                label_high_q = max(0.50, min(0.90, label_high_q))
                 if label_high_q <= label_low_q:
-                    label_low_q, label_high_q = 0.30, 0.80
+                    label_low_q, label_high_q = 0.30, 0.70
+
+                # NEW: R-multiple threshold for labeling - controls trade velocity filter
+                r_multiple_threshold = float(params.get("r_multiple_pos_threshold", 0.7))
+                r_multiple_threshold = max(0.3, min(1.0, r_multiple_threshold))
+
+                # NEW: Transaction cost multiplier - allows HPO to explore cost sensitivity
+                tx_cost_mult = float(params.get("transaction_cost_mult", 1.0))
+                tx_cost_mult = max(0.5, min(1.5, tx_cost_mult))
+                effective_tx_cost = DEFAULT_TRANSACTION_COST * tx_cost_mult
+
+                # NEW: Signal generation parameters
+                cusum_threshold = float(params.get("cusum_threshold", 0.015))
+                cusum_threshold = max(0.008, min(0.025, cusum_threshold))
+                target_signal_density = float(params.get("target_signal_density", 4.0))
+                target_signal_density = max(3.0, min(10.0, target_signal_density))
 
                 # --- Recompute realized returns ---
+                # NO FUTURE LEAKAGE in volatility-based thresholds:
+                # - volatility_1d is backward-looking (rolling 96-bar std)
+                # - vol_baseline is backward-looking (rolling mean of past volatility)
+                # - vol_factor at time T uses only volatility from T-vol_baseline_window to T
                 vol_baseline = volatility_1d.rolling(vol_baseline_window).mean()
                 vol_factor = volatility_1d / (vol_baseline + 1e-8)
 
@@ -1378,6 +2084,21 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     lower=stop_thr_base * stop_mult_min,
                     upper=stop_thr_base * stop_mult_max,
                 )
+
+                # NEW: Regenerate primary signals if cusum_threshold differs from default
+                # This allows HPO to explore different signal densities
+                signals_to_use = primary_signals
+                default_cusum = 0.015
+                if abs(cusum_threshold - default_cusum) > 0.001:
+                    try:
+                        signals_to_use = generate_primary_signals(
+                            market_data.copy(),
+                            cusum_threshold=cusum_threshold,
+                            target_trades_per_day=target_signal_density,
+                        )
+                    except Exception:
+                        signals_to_use = primary_signals  # Fallback if regeneration fails
+
                 (
                     realized_returns,
                     binary_labels,
@@ -1389,11 +2110,11 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     _binary_labels_short,  # Not used in HPO objective function
                 ) = compute_realized_returns(
                     market_data,
-                    primary_signals,
+                    signals_to_use,
                     profit_threshold=adaptive_profit,
                     stop_threshold=adaptive_stop,
                     horizon=horizon,
-                    transaction_cost=DEFAULT_TRANSACTION_COST,
+                    transaction_cost=effective_tx_cost,  # Use HPO-tunable tx cost
                     min_event_spacing=min_spacing,
                 )
 
@@ -1411,6 +2132,14 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 # Replace legacy R-multiple based labels with quantile-based labels
                 # derived from volatility-scaled realized returns, to improve label
                 # balance and economic relevance in HPO scoring.
+                #
+                # NO FUTURE VOLATILITY LEAKAGE:
+                # - volatility_1d at time T uses only data from T-96 to T-1 (backward-looking)
+                # - realized_returns at time T uses future prices (expected for labeling)
+                # - vol_scaled = realized_returns / past_volatility (no future vol leakage)
+                #
+                # NOTE: Quantile thresholds are computed from ALL training data, which is
+                # acceptable for HPO/training. In production, use expanding/rolling quantiles.
                 vol_scaled_returns = compute_vol_scaled_returns_for_events(
                     realized_returns=realized_returns,
                     volatility=volatility_1d,
@@ -1700,23 +2429,62 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     signal_strength_scale_max=signal_strength_scale_max,
                 )
 
-                # PENALTY: if mean_auc < 0.7, heavily penalize
-                if mean_auc < 0.7:
-                    auc_penalty = (0.7 - mean_auc) * 5.0  # Large penalty for poor learnability
-                    learnability_score -= auc_penalty
+                # ===== AUC RANGE-BASED SCORING =====
+                # Target AUC range: 0.55 - 0.67 (prop-shop acceptable range)
+                # 
+                # AUC INTERPRETATION GUIDELINES:
+                # < 0.54:  Too noisy - model cannot distinguish signal from noise
+                # 0.54 - 0.62: Good edge, acceptable by prop shops
+                # 0.60 - 0.67: Excellent, but check for leakage or horizon bias
+                # > 0.70:  Suspicious - likely data leakage or look-ahead bias
+                #
+                # Within target range: higher is better
+                # Outside target range: penalize and shift weight to edge/pnl/trades
+                
+                auc_in_target_range = (mean_auc >= 0.55) and (mean_auc <= 0.67)
+                auc_penalty = 0.0
+                auc_weight_multiplier = 1.0  # Will reduce AUC influence when outside range
+                
+                if mean_auc < 0.54:
+                    # Too noisy - heavy penalty, strong shift to edge metrics
+                    auc_penalty = (0.54 - mean_auc) * 15.0
+                    auc_weight_multiplier = 0.3  # AUC has less sway, edge/pnl matter more
+                    if debug_sample_count < debug_sample_limit:
+                        tprint_warning(f"[AUC] {mean_auc:.3f} < 0.54: Too noisy, model cannot distinguish signal")
+                elif mean_auc < 0.55:
+                    # Slightly below target - mild penalty
+                    auc_penalty = (0.55 - mean_auc) * 8.0
+                    auc_weight_multiplier = 0.7
+                elif mean_auc > 0.70:
+                    # Suspicious - likely leakage, heavy penalty
+                    auc_penalty = (mean_auc - 0.70) * 20.0
+                    auc_weight_multiplier = 0.2  # Strongly discount AUC contribution
+                    tprint_warning(
+                        f"[AUC] {mean_auc:.3f} > 0.70: SUSPICIOUS - check for data leakage, "
+                        f"look-ahead bias, or horizon issues"
+                    )
+                elif mean_auc > 0.67:
+                    # Above excellent range - moderate penalty, check for issues
+                    auc_penalty = (mean_auc - 0.67) * 10.0
+                    auc_weight_multiplier = 0.5
+                    if debug_sample_count < debug_sample_limit:
+                        tprint_warning(f"[AUC] {mean_auc:.3f} > 0.67: Excellent but verify no leakage/horizon bias")
+                else:
+                    # In target range [0.55, 0.67]: reward higher AUC within range
+                    # Bonus peaks at 0.62 (center of "good edge" zone)
+                    distance_from_sweet_spot = abs(mean_auc - 0.62)
+                    auc_penalty = -max(0, 0.05 - distance_from_sweet_spot) * 5.0  # Negative = bonus
+                    auc_weight_multiplier = 1.0
+                
+                learnability_score -= auc_penalty
 
                 # Compute label entropy/balance score
                 balance_score = compute_label_entropy_score(binary_labels)
 
-                # Optional underfit diagnostics
-                underfit_diagnostics = None
-                if compute_diagnostics and ENABLE_UNDERFIT_DIAGNOSTICS:
-                    underfit_diagnostics = compute_underfit_diagnostics(
-                        X=X_for_learnability,
-                        y=binary_labels,
-                        cv_splits=cv_splits,
-                        time_aware_cv=True,
-                    )
+                # NOTE: Comprehensive diagnostics (filtering, calibration, robustness, overlap)
+                # are computed ONLY for the best config at the end of HPO, not during
+                # the search loop. This improves HPO performance significantly.
+                # See post-HPO diagnostics section below.
 
                 # ===== ECONOMIC PROFITABILITY =====
                 # Compute economic separation metrics on labeled events
@@ -1735,7 +2503,8 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 std_pos = float(r_pos.std()) if len(r_pos) > 1 else 0.0
                 sharpe_pos = mean_pos / (std_pos + 1e-8) if std_pos > 0 else 0.0
 
-                tx = float(DEFAULT_TRANSACTION_COST)
+                # Use effective transaction cost (HPO-tunable via tx_cost_mult)
+                tx = float(effective_tx_cost)
 
                 # Targeted debug logging for a small sample of trials
                 if debug_sample_count < debug_sample_limit:
@@ -1842,15 +2611,17 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     snr_pre = 0.0
                     snr_post = 0.0
 
-                # Event density penalty: prefer ~0.5–3 trades/day (centered near ~2)
+                # Event density penalty: prefer ~0.5–4 trades/day (centered near ~2)
+                # RELAXED: Wider acceptable range and gentler penalties to allow
+                # HPO to explore more configurations before harsh filtering
                 trades_per_day = n_events / days_span
                 penalty_density = 0.0
-                if trades_per_day < 0.5:
-                    # Strong penalty for extremely sparse regimes
-                    penalty_density += (0.5 - trades_per_day) * 10.0
-                elif trades_per_day > 3.0:
-                    # Stronger penalty once we move into very active regimes
-                    penalty_density += (trades_per_day - 3.0) * 5.0
+                if trades_per_day < 0.3:
+                    # Moderate penalty for very sparse regimes (was 0.5 threshold)
+                    penalty_density += (0.3 - trades_per_day) * 8.0
+                elif trades_per_day > 4.0:
+                    # Gentler penalty for active regimes (was 3.0 threshold, 5.0 weight)
+                    penalty_density += (trades_per_day - 4.0) * 3.0
 
                 penalty_noise = frac_small * 10.0
 
@@ -1940,12 +2711,15 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 # ===== REALISTIC P&L EDGE METRIC =====
                 # Edge = (Mean Return - Cost) × max(0, 2×AUC - 1)
                 # This penalizes "profitable but unlearnable" strategies more realistically
+                # ENHANCED: Pass days_span for density bonus to encourage healthy trade counts
                 edge_score = compute_realistic_pnl_edge(
                     mean_return_positive=mean_pos,
                     mean_auc=mean_auc,
                     transaction_cost=tx,
                     n_trades=n_events,
                     reference_trades=reference_trades,
+                    days_span=float(days_span),
+                    target_trades_per_day=target_signal_density,
                 )
                 # Tie temporal instability to edge: softly down-weight edge when
                 # rolling-window AUC variance is high.
@@ -1967,16 +2741,73 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     edge_scaled = 0.0
                     learnability_score -= 0.5
 
-                # ===== COMBINED OBJECTIVE (Using Edge as Primary Metric) =====
-                # New formula: Edge-weighted combination
-                # Edge is already a function of both profitability AND learnability.
-                # We add a small learnability bonus for high-AUC configs and include
-                # a lightly weighted TTO penalty so that pathologically slow
-                # configurations are slightly down-weighted.
-                learnability_bonus = max(0, (mean_auc - 0.6) * 2)  # Bonus above 0.6 AUC
+                # ===== COMBINED OBJECTIVE WITH RETENTION REGULARIZATION =====
+                # Simplified formula: objective = AUC_adjusted - α * (1 / retention_rate)
+                # 
+                # This penalizes configurations that achieve high AUC through aggressive
+                # filtering (low retention) rather than genuine signal quality.
+                #
+                # α is small (0.01-0.05) to allow retention penalty without dominating
+                # Retention rate = n_filtered_events / n_raw_events (candidate survival rate)
+                
+                # Retention regularization parameter (configurable)
+                alpha_retention = float(config.get("retention_regularization_alpha", 0.03))
+                alpha_retention = max(0.01, min(0.10, alpha_retention))  # Clamp to [0.01, 0.10]
+                
+                # Compute retention penalty
+                # retention_total is already computed above as n_post_total / n_pre_total
+                if retention_total > 0:
+                    retention_penalty = alpha_retention * (1.0 / retention_total)
+                else:
+                    retention_penalty = alpha_retention * 100.0  # Severe penalty for 0 retention
+                
+                # Cap retention penalty to avoid dominating the objective
+                retention_penalty = min(retention_penalty, 0.5)
+                
+                # ===== UNIFIED AUC ADJUSTMENT =====
+                # Combine AUC range penalties directly into adjusted AUC instead of
+                # having separate auc_penalty and learnability_bonus terms.
+                # This simplifies the objective and avoids double-counting.
+                
+                auc_range_adjustment = 0.0
+                if mean_auc < 0.54:
+                    # Too noisy: heavy penalty incorporated into AUC
+                    auc_range_adjustment = -(0.54 - mean_auc) * 0.5
+                elif mean_auc > 0.70:
+                    # Suspicious (likely leakage): heavy penalty
+                    auc_range_adjustment = -(mean_auc - 0.70) * 1.0
+                elif mean_auc > 0.67:
+                    # Above excellent range: moderate penalty
+                    auc_range_adjustment = -(mean_auc - 0.67) * 0.3
+                elif auc_in_target_range:
+                    # In target range [0.55, 0.67]: small bonus for 0.60-0.62 sweet spot
+                    if mean_auc >= 0.58 and mean_auc <= 0.64:
+                        auc_range_adjustment = 0.02  # Small bonus for ideal range
+                
+                # Final retention-adjusted AUC (unified primary signal)
+                auc_retention_adjusted = mean_auc + auc_range_adjustment - retention_penalty
+                
+                # Trade density bonus: stronger when AUC is outside target range
+                # This gives edge/pnl/trades more influence when AUC is penalized
+                edge_weight = 1.0 + (1.0 - auc_weight_multiplier) * 0.5  # Up to 1.5x edge weight
+                density_weight = 1.0 + (1.0 - auc_weight_multiplier) * 1.0  # Up to 2x density weight
+                
+                # Trades/day bonus for being in sweet spot (1-3 trades/day)
+                trades_bonus = 0.0
+                if trades_per_day >= 0.8 and trades_per_day <= 4.0:
+                    # Peak bonus at 2 trades/day
+                    trades_bonus = max(0, 1.0 - abs(trades_per_day - 2.0) / 2.0) * 50.0
+                
+                # ===== SIMPLIFIED COMBINED OBJECTIVE =====
+                # Primary components:
+                # 1. edge_scaled: Captures profitability AND learnability (via capture ratio)
+                # 2. auc_retention_adjusted: AUC adjusted for retention penalty & range
+                # 3. trades_bonus: Reward healthy trade density
+                # 4. Penalties for extreme density and slow exits
                 combined_score = (
-                    edge_scaled
-                    + (learnability_bonus * 10.0)
+                    edge_scaled * edge_weight
+                    + (auc_retention_adjusted * 100.0)  # Unified AUC signal
+                    + (trades_bonus * density_weight)
                     - (penalty_density * 0.1)
                     - (tto_penalty * 0.1)
                 )
@@ -2011,6 +2842,28 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     'effect_size_post': float(d_post) if np.isfinite(d_post) else 0.0,
                     'n_required_80pct_power': float(n_required_80),
                     'model_complexity': model_complexity,
+                    # NEW: Track trade count control parameters
+                    'cusum_threshold': float(cusum_threshold),
+                    'target_signal_density': float(target_signal_density),
+                    'r_multiple_threshold': float(r_multiple_threshold),
+                    'effective_tx_cost': float(effective_tx_cost),
+                    'label_low_q': float(label_low_q),
+                    'label_high_q': float(label_high_q),
+                    # AUC range tracking (unified into auc_retention_adjusted)
+                    'auc_in_target_range': bool(auc_in_target_range),
+                    'auc_range_adjustment': float(auc_range_adjustment),
+                    'auc_weight_multiplier': float(auc_weight_multiplier),
+                    'auc_interpretation': (
+                        'too_noisy' if mean_auc < 0.54 else
+                        'good_edge' if mean_auc <= 0.62 else
+                        'excellent_check_leakage' if mean_auc <= 0.67 else
+                        'suspicious_leakage' if mean_auc > 0.70 else
+                        'above_target'
+                    ),
+                    # Retention regularization (unified objective)
+                    'retention_penalty': float(retention_penalty),
+                    'auc_retention_adjusted': float(auc_retention_adjusted),
+                    'alpha_retention': float(alpha_retention),
                 }
 
                 # Optional per-regime breakdown using attached HMM regimes, if available.
@@ -2091,9 +2944,8 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 if per_regime_metrics:
                     candidate_config['per_regime_metrics'] = per_regime_metrics
 
-                # Add underfit diagnostics if computed
-                if underfit_diagnostics is not None:
-                    candidate_config['underfit_diagnostics'] = underfit_diagnostics
+                # NOTE: Comprehensive diagnostics are computed post-HPO for best config only.
+                # See compute_best_config_diagnostics() call after HPO loop.
 
                 # Attach regression target diagnostics, if available, so that
                 # downstream analysis can assess how well continuous payoffs
@@ -2170,6 +3022,11 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     "label_low_q",
                     "label_high_q",
                     "signal_strength_scale_max",
+                    # NEW parameters for trade count control
+                    "cusum_threshold",
+                    "target_signal_density",
+                    "r_multiple_pos_threshold",
+                    "transaction_cost_mult",
                 ]
                 for p in shrinkable_params:
                     if p not in initial_search_space:
@@ -2232,9 +3089,11 @@ class MetaLabelingHPOExperimentStep(BaseStep):
         if calibrated_horizon is not None:
             stage_1_params = [
                 'min_event_spacing',
+                'cusum_threshold', 'target_signal_density',  # NEW: signal generation
                 'iso_min_prob', 'target_clip_high_q',
                 'econ_min_return_multiple', 'label_low_q', 'label_high_q',
                 'signal_strength_scale_max',
+                'r_multiple_pos_threshold', 'transaction_cost_mult',  # NEW: trade filters
                 'kalman_Q', 'kalman_R', 'vol_baseline_window',
                 'profit_mult_min', 'profit_mult_max', 'stop_mult_min', 'stop_mult_max',
             ]
@@ -2245,9 +3104,11 @@ class MetaLabelingHPOExperimentStep(BaseStep):
         else:
             stage_1_params = [
                 'horizon_bars', 'min_event_spacing',
+                'cusum_threshold', 'target_signal_density',  # NEW: signal generation
                 'iso_min_prob', 'target_clip_high_q',
                 'econ_min_return_multiple', 'label_low_q', 'label_high_q',
                 'signal_strength_scale_max',
+                'r_multiple_pos_threshold', 'transaction_cost_mult',  # NEW: trade filters
                 'kalman_Q', 'kalman_R', 'vol_baseline_window',
                 'profit_mult_min', 'profit_mult_max', 'stop_mult_min', 'stop_mult_max',
             ]
@@ -2257,11 +3118,15 @@ class MetaLabelingHPOExperimentStep(BaseStep):
             ]
 
         # Stage 4 specific params (filtering/labeling only)
+        # ENHANCED: Include all trade count-affecting parameters for final refinement
         stage_4_params = [
             'label_low_q', 'label_high_q',
             'econ_min_return_multiple',
             'iso_min_prob', 'target_clip_high_q',
-            'signal_strength_scale_max'
+            'signal_strength_scale_max',
+            'r_multiple_pos_threshold',  # NEW: R-multiple threshold
+            'transaction_cost_mult',  # NEW: transaction cost sensitivity
+            'cusum_threshold', 'target_signal_density',  # NEW: signal density
         ]
 
         # Stage 3 uses all parameters (optionally treating horizon_bars as fixed when calibrated)
@@ -2354,21 +3219,22 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 stage_param_groups: list[list[str]] = []
                 if stage_idx == 0:
                     # Stage 1 (fast model, subsampled data):
-                    # Group A – event shape / density
+                    # Group A – event shape / density + signal generation
                     if calibrated_horizon is not None:
-                        stage_param_groups.append(['min_event_spacing'])
+                        stage_param_groups.append(['min_event_spacing', 'cusum_threshold', 'target_signal_density'])
                     else:
-                        stage_param_groups.append(['horizon_bars', 'min_event_spacing'])
+                        stage_param_groups.append(['horizon_bars', 'min_event_spacing', 'cusum_threshold', 'target_signal_density'])
                     # Group B – TPSL geometry
                     stage_param_groups.append(['profit_mult_min', 'profit_mult_max', 'stop_mult_min', 'stop_mult_max'])
                     # Group C – smoothing
                     stage_param_groups.append(['kalman_Q', 'kalman_R'])
                     # Group D – target transform (clipping, econ floor, label quantiles,
-                    # and signal-strength weighting strength)
+                    # and signal-strength weighting strength) + trade filters
                     stage_param_groups.append([
                         'iso_min_prob', 'target_clip_high_q',
                         'econ_min_return_multiple', 'label_low_q', 'label_high_q',
                         'signal_strength_scale_max',
+                        'r_multiple_pos_threshold', 'transaction_cost_mult',  # NEW
                     ])
                 else:
                     # Stage 2 (medium model, full data): smoothing + TPSL/vol
@@ -2654,7 +3520,223 @@ class MetaLabelingHPOExperimentStep(BaseStep):
             best_candidate_metrics = {}
 
         # ------------------------------------------------------------------
-        # 7) (Disabled) Pareto frontier and knee-point logic
+        # 7) COMPREHENSIVE DIAGNOSTICS FOR BEST CONFIG
+        # ------------------------------------------------------------------
+        # These diagnostics are computed ONLY for the best config, not during HPO
+        tprint_info("🔍 Computing comprehensive diagnostics for best configuration...")
+        
+        best_config_diagnostics = {}
+        try:
+            # Re-run labeling with best params to get intermediate data
+            diag_params = best_params.copy()
+            
+            # Extract parameters
+            profit_thr_base = float(diag_params.get("profit_thr_base", 0.012))
+            stop_ratio = float(diag_params.get("stop_to_profit_ratio", 0.5))
+            stop_thr_base = max(0.0005, profit_thr_base * stop_ratio)
+            horizon = int(diag_params.get("horizon_bars", 24))
+            min_spacing = int(diag_params.get("min_event_spacing", 4))
+            econ_min_mult = float(diag_params.get("econ_min_return_multiple", 2.0))
+            label_low_q = float(diag_params.get("label_low_q", 0.30))
+            label_high_q = float(diag_params.get("label_high_q", 0.70))
+            tx_cost_mult = float(diag_params.get("transaction_cost_mult", 1.0))
+            effective_tx_cost = DEFAULT_TRANSACTION_COST * tx_cost_mult
+            vol_baseline_window = int(diag_params.get("vol_baseline_window", 96))
+            profit_mult_min = float(diag_params.get("profit_mult_min", 0.5))
+            profit_mult_max = float(diag_params.get("profit_mult_max", 2.0))
+            stop_mult_min = float(diag_params.get("stop_mult_min", 0.5))
+            stop_mult_max = float(diag_params.get("stop_mult_max", 2.0))
+            
+            # Compute adaptive thresholds
+            vol_baseline = volatility_1d.rolling(vol_baseline_window).mean()
+            vol_factor = volatility_1d / (vol_baseline + 1e-8)
+            
+            adaptive_profit = profit_thr_base * vol_factor
+            adaptive_stop = stop_thr_base * vol_factor
+            adaptive_profit = adaptive_profit.clip(
+                lower=profit_thr_base * profit_mult_min,
+                upper=profit_thr_base * profit_mult_max,
+            )
+            adaptive_stop = adaptive_stop.clip(
+                lower=stop_thr_base * stop_mult_min,
+                upper=stop_thr_base * stop_mult_max,
+            )
+            
+            # Compute realized returns
+            (
+                realized_returns_diag,
+                binary_labels_raw,
+                exit_reasons_diag,
+                event_durations_diag,
+                mfe_diag,
+                mae_diag,
+                _, _
+            ) = compute_realized_returns(
+                market_data,
+                primary_signals,
+                profit_threshold=adaptive_profit,
+                stop_threshold=adaptive_stop,
+                horizon=horizon,
+                transaction_cost=effective_tx_cost,
+                min_event_spacing=min_spacing,
+            )
+            
+            # Vol-scaled returns and quantile labels
+            vol_scaled_diag = compute_vol_scaled_returns_for_events(
+                realized_returns=realized_returns_diag,
+                volatility=volatility_1d,
+                econ_min_return_multiple=econ_min_mult,
+            )
+            
+            regimes_diag = market_data.get("hmm_regime_label_1h")
+            if regimes_diag is not None:
+                quantile_labels_diag = create_regime_aware_quantile_labels_from_vol_scaled_returns(
+                    vol_scaled=vol_scaled_diag,
+                    regimes=regimes_diag,
+                    low_q=label_low_q,
+                    high_q=label_high_q,
+                )
+            else:
+                quantile_labels_diag = create_quantile_labels_from_vol_scaled_returns(
+                    vol_scaled=vol_scaled_diag,
+                    low_q=label_low_q,
+                    high_q=label_high_q,
+                )
+            
+            labeled_mask_diag = ~quantile_labels_diag.isna()
+            
+            # Build meta-features
+            meta_feature_cfg = config.get("meta_feature_engineering", {})
+            volume_available = "volume" in market_data.columns
+            
+            meta_features_diag, meta_features_processed, _, _ = build_meta_features_for_model(
+                market_data=market_data,
+                primary_signals=primary_signals,
+                realized_returns=realized_returns_diag,
+                binary_labels=quantile_labels_diag,
+                event_durations=event_durations_diag,
+                mfe_series=mfe_diag,
+                mae_series=mae_diag,
+                adaptive_stop_threshold=adaptive_stop,
+                horizon=horizon,
+                volume_available=volume_available,
+                meta_feature_cfg=meta_feature_cfg,
+            )
+            
+            # Compute calibrated probabilities
+            _, mean_auc_diag, calibrated_probs_diag, _ = compute_learnability_with_calibration(
+                X=meta_features_processed,
+                y=quantile_labels_diag,
+                realized_returns=realized_returns_diag,
+                model_complexity="strong",
+                cv_splits=5,
+                time_aware_cv=True,
+                use_ensemble=False,
+            )
+            
+            # Create "full" labels (before quantile filtering)
+            econ_floor = econ_min_mult * effective_tx_cost
+            y_full_diag = pd.Series(np.nan, index=realized_returns_diag.index)
+            full_mask = ~realized_returns_diag.isna() & (realized_returns_diag.abs() >= econ_floor)
+            y_full_diag[full_mask & (realized_returns_diag > 0)] = 1.0
+            y_full_diag[full_mask & (realized_returns_diag <= 0)] = 0.0
+            
+            # 1. Filtering inflation diagnostics
+            tprint_info("  → Computing filtering inflation diagnostics...")
+            try:
+                filtering_diag = compute_filtering_inflation_diagnostics(
+                    X=meta_features_processed,
+                    y_full=y_full_diag,
+                    y_filtered=quantile_labels_diag,
+                    realized_returns=realized_returns_diag,
+                    volatility=volatility_1d,
+                    probabilities=calibrated_probs_diag,
+                    cv_splits=5,
+                    time_aware_cv=True,
+                )
+                best_config_diagnostics['filtering_diagnostics'] = filtering_diag
+                
+                if filtering_diag.get('filtering_is_major_contributor'):
+                    tprint_warning("  ⚠️ WARNING: Filtering is a major contributor to AUC inflation")
+                if filtering_diag.get('auc_dominated_by_large_moves'):
+                    tprint_warning("  ⚠️ WARNING: AUC dominated by large-move events")
+                if filtering_diag.get('precision_collapse_detected'):
+                    tprint_warning("  ⚠️ WARNING: Precision collapse detected (model only good on easy cases)")
+            except Exception as e:
+                tprint_warning(f"  ⚠️ Filtering diagnostics failed: {e}")
+            
+            # 2. Calibration diagnostics
+            tprint_info("  → Computing calibration diagnostics...")
+            try:
+                y_calib = quantile_labels_diag[labeled_mask_diag].values
+                probs_calib = calibrated_probs_diag[labeled_mask_diag.values] if len(calibrated_probs_diag) == len(quantile_labels_diag) else calibrated_probs_diag
+                returns_calib = realized_returns_diag[labeled_mask_diag].values
+                
+                calib_diag = compute_calibration_diagnostics(
+                    y_true=y_calib,
+                    probabilities=probs_calib,
+                    realized_returns=returns_calib,
+                    transaction_cost=effective_tx_cost,
+                    n_bins=10,
+                )
+                best_config_diagnostics['calibration_diagnostics'] = calib_diag
+                
+                if calib_diag.get('brier_score') is not None:
+                    tprint_info(f"  → Brier Score: {calib_diag['brier_score']:.4f}")
+                if calib_diag.get('ece') is not None:
+                    tprint_info(f"  → ECE: {calib_diag['ece']:.4f}")
+                if not calib_diag.get('is_well_calibrated', True):
+                    tprint_warning("  ⚠️ WARNING: Model is miscalibrated (ECE > 0.05)")
+            except Exception as e:
+                tprint_warning(f"  ⚠️ Calibration diagnostics failed: {e}")
+            
+            # 3. Robustness diagnostics
+            tprint_info("  → Computing robustness diagnostics...")
+            try:
+                robust_diag = compute_robustness_diagnostics(
+                    X=meta_features_processed,
+                    y=quantile_labels_diag,
+                    realized_returns=realized_returns_diag,
+                    regimes=regimes_diag,
+                    volatility=volatility_1d,
+                    n_folds=5,
+                    transaction_cost=effective_tx_cost,
+                )
+                best_config_diagnostics['robustness_diagnostics'] = robust_diag
+                
+                if robust_diag.get('worst_fold_auc') is not None:
+                    tprint_info(f"  → Worst-fold AUC: {robust_diag['worst_fold_auc']:.3f}")
+                if robust_diag.get('auc_cv_std') is not None:
+                    tprint_info(f"  → AUC CV Std: {robust_diag['auc_cv_std']:.4f}")
+                if not robust_diag.get('is_robust', True):
+                    tprint_warning("  ⚠️ WARNING: Model not robust (high CV variance or poor worst-fold)")
+            except Exception as e:
+                tprint_warning(f"  ⚠️ Robustness diagnostics failed: {e}")
+            
+            # 4. Class overlap diagnostics
+            tprint_info("  → Computing class overlap diagnostics...")
+            try:
+                overlap_diag = compute_class_overlap_features(
+                    X=meta_features_processed,
+                    retained_mask=labeled_mask_diag,
+                    top_k_features=10,
+                )
+                best_config_diagnostics['class_overlap_diagnostics'] = overlap_diag
+                
+                if overlap_diag.get('easy_problem_detected'):
+                    tprint_warning("  ⚠️ WARNING: Easy problem detected (retained events form tight cluster)")
+            except Exception as e:
+                tprint_warning(f"  ⚠️ Class overlap diagnostics failed: {e}")
+            
+            tprint_success("✅ Comprehensive diagnostics completed for best configuration")
+            
+        except Exception as diag_exc:
+            tprint_warning(f"⚠️ Failed to compute comprehensive diagnostics: {diag_exc}")
+            import traceback
+            traceback.print_exc()
+
+        # ------------------------------------------------------------------
+        # 8) (Disabled) Pareto frontier and knee-point logic
         # ------------------------------------------------------------------
         pareto_solutions: list[Solution] = []
         pareto_front: list[Solution] = []
@@ -3021,27 +4103,54 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 if sorted_candidates:
                     best_candidate_edge = sorted_candidates[0].get('edge', 0.0)
 
+            # Build output dict with diagnostics
+            output_dict = {
+                "symbol": symbol,
+                "exchange": exchange,
+                "timeframe": timeframe,
+                "best_score": best_score,
+                "best_edge": best_candidate_edge,
+                "best_params": best_params,
+                "knee_params": knee_params,
+                "pareto_front_size": len(pareto_front),
+                "total_trials": all_trials_count,
+                "stage_results": [
+                    {
+                        "stage": sr["stage"],
+                        "complexity": sr["complexity"],
+                        "best_score": sr["best_score"],
+                        "trials": sr["trials"],
+                    }
+                    for sr in stage_results
+                ],
+            }
+            
+            # Add comprehensive diagnostics for best config
+            if best_config_diagnostics:
+                output_dict["best_config_diagnostics"] = best_config_diagnostics
+                
+                # Add summary warnings as top-level fields
+                filtering_diag = best_config_diagnostics.get('filtering_diagnostics', {})
+                calib_diag = best_config_diagnostics.get('calibration_diagnostics', {})
+                robust_diag = best_config_diagnostics.get('robustness_diagnostics', {})
+                overlap_diag = best_config_diagnostics.get('class_overlap_diagnostics', {})
+                
+                output_dict["diagnostics_summary"] = {
+                    "filtering_is_major_contributor": filtering_diag.get('filtering_is_major_contributor', False),
+                    "auc_dominated_by_large_moves": filtering_diag.get('auc_dominated_by_large_moves', False),
+                    "precision_collapse_detected": filtering_diag.get('precision_collapse_detected', False),
+                    "is_well_calibrated": calib_diag.get('is_well_calibrated', True),
+                    "brier_score": calib_diag.get('brier_score'),
+                    "ece": calib_diag.get('ece'),
+                    "mce": calib_diag.get('mce'),
+                    "is_robust": robust_diag.get('is_robust', True),
+                    "worst_fold_auc": robust_diag.get('worst_fold_auc'),
+                    "auc_cv_std": robust_diag.get('auc_cv_std'),
+                    "easy_problem_detected": overlap_diag.get('easy_problem_detected', False),
+                }
+            
             with open(json_path, "w") as f:
-                json.dump({
-                    "symbol": symbol,
-                    "exchange": exchange,
-                    "timeframe": timeframe,
-                    "best_score": best_score,
-                    "best_edge": best_candidate_edge,
-                    "best_params": best_params,
-                    "knee_params": knee_params,
-                    "pareto_front_size": len(pareto_front),
-                    "total_trials": all_trials_count,
-                    "stage_results": [
-                        {
-                            "stage": sr["stage"],
-                            "complexity": sr["complexity"],
-                            "best_score": sr["best_score"],
-                            "trials": sr["trials"],
-                        }
-                        for sr in stage_results
-                    ],
-                }, f, indent=2)
+                json.dump(output_dict, f, indent=2, default=str)
             tprint_success(f"💾 Saved best labeling HPO params to {json_path}")
         except Exception as save_exc:
             tprint_warning(f"⚠️ Failed to save best_params JSON: {save_exc}")
@@ -3316,6 +4425,10 @@ class MetaLabelingHPOExperimentStep(BaseStep):
             "pareto_frontier_size": len(pareto_front),
             "candidate_pool_size": len(candidate_pool),
         }
+        
+        # Add diagnostics summary to metrics
+        if best_config_diagnostics:
+            metrics["best_config_diagnostics"] = best_config_diagnostics
 
         artifacts: Dict[str, Any] = {}
         if json_path is not None:

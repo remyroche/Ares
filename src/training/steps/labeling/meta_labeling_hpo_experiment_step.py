@@ -1695,7 +1695,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     "min_event_spacing": {
                         "type": "int",
                         "low": 1,  # RELAXED: allow tighter spacing for more trades
-                        "high": 6,  # RELAXED: reduced upper bound
+                        "high": 3,  # RELAXED: reduced upper bound
                     },
                     # NEW: Signal generation parameters to control base trade density
                     "cusum_threshold": {
@@ -1870,7 +1870,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     stop_threshold=float(warm_start_best_params.get("profit_thr_base", 0.012)) * float(warm_start_best_params.get("stop_to_profit_ratio", 0.5)),
                     horizon=int(h),
                     transaction_cost=DEFAULT_TRANSACTION_COST,
-                    min_event_spacing=int(warm_start_best_params.get("min_event_spacing", 4)),
+                    min_event_spacing=int(warm_start_best_params.get("min_event_spacing", 2)),
                 )
                 labeled_mask_h = ~binary_labels_h.isna()
                 n_events_h = int(labeled_mask_h.sum())
@@ -3885,7 +3885,8 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 stop_thr_base = max(0.0005, profit_thr_base * stop_ratio)
 
                 horizon = int(diag_params["horizon_bars"])
-                min_spacing = int(diag_params["min_event_spacing"])
+                # Use safer get() with default 2 if key missing (e.g. older artifact)
+                min_spacing = int(diag_params.get("min_event_spacing", 2))
 
                 kalman_Q = float(diag_params.get("kalman_Q", 1e-4))
                 kalman_R = float(diag_params.get("kalman_R", 0.01))

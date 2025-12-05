@@ -32,6 +32,7 @@ from src.utils.feature_common.volume_transforms import log1p_zscore_normalize
 from src.feature_generation.categories.smc_regime_features import (
     generate_smc_regime_features,
 )
+from src.utils.ml_common.evaluation.hsic import calculate_hsic
 from sklearn.isotonic import IsotonicRegression
 from src.utils.versioned_artifacts.temporal_splits import (
     create_temporal_split_config_for_pipeline,
@@ -110,6 +111,7 @@ class MLSMCRegimeStep(BaseStep):
                     "smc_xgb_oof_sharpe_gated_25pct": metrics.get("smc_xgb_oof_sharpe_gated_25pct", float("-inf")),
                     "smc_xgb_oof_logloss": metrics.get("smc_xgb_oof_logloss", float("inf")),
                     "smc_xgb_oof_accuracy": metrics.get("smc_xgb_oof_accuracy", 0.0),
+                "smc_xgb_oof_hsic": metrics.get("smc_xgb_oof_hsic", 0.0),
                     "error": result.get("error", ""),
                 }
 
@@ -778,8 +780,26 @@ class MLSMCRegimeStep(BaseStep):
                 tprint_warning(f"Failed to calculate gated Sharpe: {e}")
                 oof_sharpe_gated = float("-inf")
 
+            # Calculate HSIC for Scalar Prediction vs Target ATR Return
+            try:
+                hsic_mask = np.isfinite(y_pred_scalar_oof) & np.isfinite(y_true_atr_oof)
+                if hsic_mask.sum() > 100:
+                    oof_hsic = calculate_hsic(
+                        y_pred_scalar_oof[hsic_mask].values.reshape(-1, 1),
+                        y_true_atr_oof[hsic_mask].values.reshape(-1, 1),
+                        kernel_X='rbf', # Continuous prediction
+                        kernel_Y='rbf'  # Continuous target
+                    )
+                    tprint_info(f"  SMC XGB OOF HSIC: {oof_hsic:.6f}")
+                else:
+                    oof_hsic = 0.0
+            except Exception as hsic_exc:
+                tprint_warning(f"Failed to calculate HSIC: {hsic_exc}")
+                oof_hsic = 0.0
+
             metrics.update({
                 "smc_xgb_oof_accuracy": float(oof_accuracy),
+                "smc_xgb_oof_hsic": float(oof_hsic),
                 "smc_xgb_oof_f1": float(oof_f1),
                 "smc_xgb_oof_logloss": float(oof_logloss),
                 "smc_xgb_oof_rmse": float(oof_rmse),

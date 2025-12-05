@@ -57,6 +57,7 @@ from src.feature_generation.categories.volume_force_features import (
 from src.feature_generation.categories.liquidity_regime_features import (
     generate_liquidity_regime_features,
 )
+from src.utils.ml_common.evaluation.hsic import calculate_hsic
 
 logger = logging.getLogger(__name__)
 
@@ -465,6 +466,21 @@ class MLVolumeForceStep(BaseStep):
                             # Information Coefficient (IC) - Correlation between pred and target
                             ic = np.corrcoef(y_pred, y_true)[0, 1]
                             metrics[f"{target_name}_ic"] = float(ic)
+
+                            # Calculate HSIC for regression targets
+                            try:
+                                hsic_mask = np.isfinite(y_pred) & np.isfinite(y_true)
+                                if hsic_mask.sum() > 100:
+                                    hsic_score = calculate_hsic(
+                                        y_pred[hsic_mask].values.reshape(-1, 1),
+                                        y_true[hsic_mask].values.reshape(-1, 1),
+                                        kernel_X='rbf', # Continuous
+                                        kernel_Y='rbf'  # Continuous
+                                    )
+                                    metrics[f"{target_name}_hsic"] = float(hsic_score)
+                                    tprint_info(f"   {target_name.capitalize()} HSIC: {hsic_score:.6f}")
+                            except Exception as hsic_exc:
+                                tprint_warning(f"HSIC calculation failed for {target_name}: {hsic_exc}")
 
                     except Exception as e:
                         tprint_warning(f"Error calculating metrics for {target_name}: {e}")

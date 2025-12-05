@@ -80,6 +80,7 @@ from src.utils.versioned_artifacts.temporal_splits import (
     create_temporal_split_config_for_pipeline,
     TemporalSplitConfig,
 )
+from src.utils.ml_common.evaluation.hsic import calculate_hsic
 
 
 logger = logging.getLogger(__name__)
@@ -786,6 +787,30 @@ class MLRiskRegimeStepHMM(BaseStep):
         unique, counts = np.unique(regime_labels[regime_labels >= 0], return_counts=True)
         regime_distribution = {int(r): int(c) for r, c in zip(unique, counts)}
 
+        # Calculate HSIC between regime labels and volatility-of-volatility (or parkinson)
+        # to ensure regimes are predictive of risk structure
+        hsic_score = 0.0
+        try:
+            target_metric = None
+            if 'volatility_of_volatility' in risk_df.columns:
+                target_metric = risk_df['volatility_of_volatility']
+            elif 'parkinson_volatility' in risk_df.columns:
+                target_metric = risk_df['parkinson_volatility']
+
+            if target_metric is not None:
+                # Use valid samples only
+                valid_hsic = (regime_labels >= 0) & target_metric.notna()
+                if valid_hsic.sum() > 50:
+                    hsic_score = calculate_hsic(
+                        regime_labels[valid_hsic],
+                        target_metric[valid_hsic].values,
+                        kernel_X='delta',  # Discrete regimes
+                        kernel_Y='rbf'     # Continuous volatility
+                    )
+                    tprint_info(f"  HSIC(Regime, Risk): {hsic_score:.6f}")
+        except Exception as hsic_exc:
+            tprint_warning(f"HSIC calculation failed: {hsic_exc}")
+
         training_metrics = {
             'n_regimes': n_regimes,
             'n_samples': len(risk_features_clean),
@@ -796,11 +821,12 @@ class MLRiskRegimeStepHMM(BaseStep):
             'training_duration_hmm': hmm_duration,
             'hmm_converged': hmm.monitor_.converged,
             'hmm_n_iter': hmm.monitor_.iter,
+            'risk_regime_hsic': hsic_score,
         }
 
         tprint_success(
             f"✅ HMM training complete: {n_regimes} regimes, "
-            f"converged in {hmm.monitor_.iter} iterations"
+            f"converged in {hmm.monitor_.iter} iterations, HSIC={hsic_score:.4f}"
         )
 
         return hmm, regime_labels, training_metrics

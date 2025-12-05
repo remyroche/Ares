@@ -17,7 +17,6 @@ from typing import Any, Dict, List, Tuple, Optional
 import json
 from datetime import datetime
 from pathlib import Path
-from functools import partial
 
 import numpy as np
 import pandas as pd
@@ -47,9 +46,7 @@ from src.training.steps.labeling.feature_generation_meta_labeling_step import (
     generate_primary_signals,
     DEFAULT_TRANSACTION_COST,
     ECON_MIN_RETURN_MULTIPLE,
-    create_meta_features,
     build_meta_features_for_model,
-    compute_learnability_score,
     compute_label_entropy_score,
     generate_diagnostics_report,
     compute_vol_scaled_returns_for_events,
@@ -2254,7 +2251,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     if debug_sample_count < debug_sample_limit:
                         tprint_warning(
                             f"[HPO_DEBUG_LABELS] rejecting config with zero labeled events: "
-                            f"raw_labeled={n_raw_labeled}, vol_non_nan={n_vol_non_nan}, "
+                            f"raw_labeled={n_raw_labeled}, vol_non_nan={n_vol_scaled_events}, "
                             f"quantile_non_nan={n_quantile_non_nan}",
                         )
                     tprint_warning(

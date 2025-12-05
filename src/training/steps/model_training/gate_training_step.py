@@ -12,7 +12,7 @@ import os
 import json
 from datetime import datetime
 from typing import Dict, Any, List, Optional
-from sklearn.metrics import roc_auc_score, precision_score, recall_score, f1_score, accuracy_score
+from sklearn.metrics import mean_squared_error, r2_score
 
 from src.training.steps.base_step import BaseStep
 from src.training.steps.model_training.gate_model import GateModel
@@ -44,17 +44,6 @@ class GateTrainingStep(BaseStep):
             tprint(f"🚪 Starting Gate Training for {config.get('symbol')}", "INFO")
 
             # 1. Load Data (OHLCV + Main Model OOF Predictions)
-            # We assume OHLCV is available via normal data loading or artifacts
-            # We assume OOF predictions are in 'analyst_ensemble_outputs_oof'
-
-            # Load OHLCV (using feature_generation artifacts for simplicity/consistency)
-            # Or use raw data loader if preferred. Let's try 'selected_features' first as it has OHLCV-aligned index
-            # Actually, GateModel calculates its own regime features from raw OHLCV.
-            # So we need raw OHLCV.
-            # We can get it from 'data_validation_step' artifact 'validated_data' or similar.
-            # Or simpler: use 'selected_features' and extract/reconstruct if OHLCV columns present.
-            # Best robust way: Load from 'validated_data' artifact if possible.
-
             symbol = config.get('symbol', 'ETHUSDT')
             exchange = config.get('exchange', 'binance')
             timeframe = config.get('timeframe', '15m')
@@ -195,9 +184,6 @@ class GateTrainingStep(BaseStep):
             # 2. Simulate Ungated Trades (Baseline)
             # Define Signal Logic with auto-relaxation if no candidates
             signal_threshold = config.get('gate_config', {}).get('signal_threshold', 0.05)  # default
-            # Main model output is continuous; we use abs(prediction) > threshold.
-            # If the configured threshold yields no candidates, relax to 0.0 so that
-            # any directional conviction can be considered for gating.
 
             thresholds_to_try = [signal_threshold]
             if signal_threshold != 0.0:
@@ -233,19 +219,6 @@ class GateTrainingStep(BaseStep):
                 )
                 return {'success': True, 'message': 'No candidates'}
 
-            # We need to simulate the trades to get 'profit' for labeling
-            # Simple simulation:
-            # Entry: Next Open (or current Close if vectorizing simply) -> Let's use Close to Close for simplicity/speed in this step,
-            # or better: Vectorized simulation with fixed horizon or TP/SL.
-            # User req: "realized trade (executed as the main model would have executed it) produced profit after costs"
-            # Since we don't have the full Tactician logic here, we'll use a simplified assumption:
-            # Fixed horizon hold (e.g. 12 bars ~ 3 hours) or until TP/SL.
-            # Let's use a standard simplified horizon for the label definition if not provided.
-            # Better: if 'labeled_data' exists, use realized returns from there?
-            # 'labeled_data' usually has 'target_long', 'target_short'.
-            # If those targets represent "Profit after costs", we can use them directly!
-            # Let's check if we can use 'labeled_data'.
-
             labeled_data = self._get_artifact("labeled_data", artifact_type="data")
             targets = None
             if labeled_data is not None:
@@ -260,52 +233,20 @@ class GateTrainingStep(BaseStep):
                 "INFO",
             )
 
-            # Create Ungated Trade Log (for history features)
-            # We need a log of ALL signals as if they were trades.
-            trade_log_rows = []
-
             # Transaction Costs
             tc_bps = config.get('gate_config', {}).get('transaction_costs_bps', 5.0)
             cost_pct = tc_bps / 10000.0
 
             # Determine outcome for each candidate
-            # If we have 'labeled_data', 'target_long' > 0 means profit.
-            # If not, we calculate simple forward return.
-
-            # Helper to get forward return
-            def get_forward_ret(idx, direction, horizon=12):
-                # Simple horizon return
-                try:
-                    curr_price = ohlcv_data.loc[idx, 'close']
-                    future_idx_pos = ohlcv_data.index.get_loc(idx) + horizon
-                    if future_idx_pos >= len(ohlcv_data):
-                        return 0.0
-                    future_price = ohlcv_data.iloc[future_idx_pos]['close']
-                    ret = (future_price - curr_price) / curr_price
-                    return ret * direction
-                except:
-                    return 0.0
-
-            labels = []
-            valid_indices = []
-
-            # We iterate to build trade log. Vectorization is preferred but for log building loop is ok-ish if N is small.
-            # candidates are a subset.
-            # Actually, `prepare_features` needs the trade log.
-
             tprint("Simulating ungated trades...", "INFO")
 
-            # Vectorized approach for efficiency
-            # 1. Filter data to candidates
-            cand_df = ohlcv_data.loc[candidate_indices].copy()
             cand_preds = preds.loc[candidate_indices]
 
             # 2. Calculate outcomes
             # Use labeled_data targets if aligned, else compute forward returns
             if targets is not None:
                 # If signal is Long, look at target_long
-                # If signal is Short, look at target_short (or inverse of target_long if single target)
-                # Assuming 'target_long' and 'target_short' columns exist
+                # If signal is Short, look at target_short
                 outcomes = pd.Series(0.0, index=candidate_indices)
                 if 'target_long' in targets.columns:
                     mask_l = cand_preds > 0
@@ -314,17 +255,10 @@ class GateTrainingStep(BaseStep):
                     mask_s = cand_preds < 0
                     outcomes[mask_s] = targets.loc[candidate_indices[mask_s], 'target_short']
                 elif 'target_long' in targets.columns:
-                     # Fallback if no specific short target, assume symmetry if appropriate or 0
+                     # Fallback if no specific short target, assume symmetry
                      pass
             else:
-                # Compute returns manually (simplified 12-bar horizon)
-                # This is slower
-                # Let's assume we rely on labeled_data for consistency with Main Model training
-                pass
-
-            # If we don't have outcomes yet (no labeled_data), fast calc:
-            if 'outcomes' not in locals():
-                 # Fast shift
+                # Fallback if no labeled_data
                  horizon = 12
                  future_close = ohlcv_data['close'].shift(-horizon)
                  ret = (future_close - ohlcv_data['close']) / ohlcv_data['close']
@@ -335,7 +269,6 @@ class GateTrainingStep(BaseStep):
 
             # Apply costs
             # Net Profit approx = outcome - (2 * cost) # entry + exit
-            # outcome is usually a return.
             net_returns = outcomes - (2 * cost_pct)
 
             # Create Trade Log DataFrame
@@ -351,10 +284,10 @@ class GateTrainingStep(BaseStep):
                 'realized_return': net_returns.values
             })
 
-            # Generate Labels (Target A)
-            y = (net_returns > 0).astype(int)
+            # Generate Labels (Regression Target)
+            y = net_returns
 
-            tprint_success(f"Generated {len(y)} labels. Positive rate: {y.mean():.2%}")
+            tprint_success(f"Generated {len(y)} regression targets. Mean PnL: {y.mean():.4f}")
 
             # 3. Initialize and Train GateModel
             gate_config = config.get('gate_config', {})
@@ -362,10 +295,6 @@ class GateTrainingStep(BaseStep):
 
             # Prepare Features
             tprint("Generating features...", "INFO")
-            # We calculate features on ALL ohlcv data first?
-            # No, `prepare_features` takes full ohlcv to calculate rolling windows correctly.
-            # Then we slice to `candidate_indices` for training.
-
             X_full = model.prepare_features(ohlcv_data, trade_log)
 
             # Basic diagnostics on NaNs at the feature level
@@ -375,26 +304,13 @@ class GateTrainingStep(BaseStep):
             )
             if isinstance(X_full, pd.DataFrame) and len(X_full) > 0:
                 nan_per_col = X_full.isnull().sum()
-                # Log top features by NaN count for debugging
-                try:
-                    top_nan = nan_per_col.sort_values(ascending=False).head(10).to_dict()
-                    tprint(
-                        f"[GateTrainingStep] Top NaN-heavy features (count): {top_nan}",
-                        "INFO",
-                    )
-                except Exception:
-                    pass
-
-                # Drop features that are mostly NaN, keep the rest and rely on the model's
-                # internal imputer for residual sparsity.
+                # Drop features that are mostly NaN
                 max_nan_frac = gate_config.get('max_nan_fraction', 0.8)
                 col_nan_frac = nan_per_col / float(len(X_full))
                 bad_cols = col_nan_frac[col_nan_frac > max_nan_frac].index.tolist()
                 if bad_cols:
-                    preview = bad_cols[:10]
-                    more_flag = "..." if len(bad_cols) > 10 else ""
                     tprint_warning(
-                        f"[GateTrainingStep] Dropping {len(bad_cols)} features with NaN fraction > {max_nan_frac}: {preview}{more_flag}",
+                        f"[GateTrainingStep] Dropping {len(bad_cols)} features with NaN fraction > {max_nan_frac}.",
                     )
                     X_full = X_full.drop(columns=bad_cols)
 
@@ -406,8 +322,7 @@ class GateTrainingStep(BaseStep):
             X_train = X_full.loc[candidate_indices]
             y_train = y  # y is already aligned to candidate_indices
 
-            # Row-level NaN handling: allow partial NaNs and rely on the model's imputer.
-            # Require that each row has at least a minimum fraction of non-NaN features.
+            # Row-level NaN handling
             if isinstance(X_train, pd.DataFrame) and X_train.shape[1] > 0:
                 non_nan_counts = X_train.notnull().sum(axis=1)
                 min_non_nan_frac = gate_config.get('min_non_nan_fraction', 0.5)
@@ -431,15 +346,15 @@ class GateTrainingStep(BaseStep):
                 )
                 return {'success': False, 'error': 'Insufficient samples'}
 
-            # Train
+            # Train (Regression)
             model.train(X_train, y_train)
 
-            # Calibrate Threshold (default 40th percentile -> keep top 60%)
-            model.calibrate_threshold(X_train, percentile=40)
+            # Calibrate Threshold (default 25th percentile -> block bottom 25%)
+            model.calibrate_threshold(X_train, percentile=25)
 
-            # 4. Evaluate (classification metrics + trade-level pre/post metrics)
-            probs = model.predict_proba(X_train)
-            preds_bin = model.predict(X_train)
+            # 4. Evaluate (Regression metrics + Strategy lift)
+            scores = model.predict_score(X_train)
+            preds_bin = model.predict(X_train) # 1 = Trade, 0 = Block
 
             # Restrict net_returns to the same index used for training to ensure alignment
             train_indices = X_train.index
@@ -455,7 +370,6 @@ class GateTrainingStep(BaseStep):
                         'median_return': 0.0,
                         'total_return': 0.0,
                     }
-                wins = returns[returns > 0]
                 win_rate = float((returns > 0).mean())
                 avg_ret = float(returns.mean())
                 med_ret = float(returns.median())
@@ -479,11 +393,10 @@ class GateTrainingStep(BaseStep):
             avg_lift = float(post_stats['avg_return'] - pre_stats['avg_return'])
 
             metrics = {
-                'auc': float(roc_auc_score(y_train, probs)),
-                'precision': float(precision_score(y_train, preds_bin)),
-                'recall': float(recall_score(y_train, preds_bin)),
-                'f1': float(f1_score(y_train, preds_bin)),
-                'accuracy': float(accuracy_score(y_train, preds_bin)),
+                # Regression Metrics
+                'rmse': float(np.sqrt(mean_squared_error(y_train, scores))),
+                'r2': float(r2_score(y_train, scores)),
+                # Strategy Metrics
                 'candidate_count': len(y_train),
                 'accepted_count': int(preds_bin.sum()),
                 'acceptance_rate': float(preds_bin.mean()),
@@ -503,8 +416,8 @@ class GateTrainingStep(BaseStep):
             }
 
             tprint_success(
-                f"Gate Training Metrics: AUC={metrics['auc']:.4f}, "
-                f"Precision={metrics['precision']:.4f}, AcceptRate={metrics['acceptance_rate']:.2%}, "
+                f"Gate Training Metrics: RMSE={metrics['rmse']:.6f}, R2={metrics['r2']:.4f}, "
+                f"AcceptRate={metrics['acceptance_rate']:.2%}, "
                 f"PreWin={metrics['pre_win_rate']:.2%}, PostWin={metrics['post_win_rate']:.2%}, "
                 f"AvgLift={metrics['avg_return_lift']:.5f}"
             )
@@ -514,29 +427,13 @@ class GateTrainingStep(BaseStep):
 
             # Save Model
             model_filename = f"gate_model_{symbol}_{timeframe}_{timestamp_str}.joblib"
-            # Use a temporary path or ensure artifact manager handles paths.
-            # BaseStep._save_artifact handles paths if we pass data.
-            # GateModel.save writes to a file. We can write to a temp file then upload/register.
-
-            # Workaround: serialize model components manually or use save locally then artifact manager?
-            # Better: Create a dictionary of model state and save as 'model' type artifact.
-            # Actually GateModel has a save method. Let's use it to a temp path.
-            temp_path = os.path.join("artifacts", model_filename) # Local temp
+            temp_path = os.path.join("artifacts", model_filename)
             os.makedirs("artifacts", exist_ok=True)
             model.save(temp_path)
 
-            # Register this file as an artifact
-            # BaseStep doesn't strictly support uploading arbitrary files easily in all versions,
-            # but usually we return paths or use specific methods.
-            # Assuming we can just return the path in the artifacts dict for now,
-            # or if we want to use the artifact store properly:
-            # We can pickling the object and save it using _save_artifact.
-            # But GateModel uses joblib which is file-based.
-            # Let's trust the temp file approach for now and return the path.
-
             # Save OOF Predictions (Gate scores on candidates)
             oof_df = pd.DataFrame({
-                'gate_score': probs,
+                'gate_score': scores,
                 'gate_decision': preds_bin,
                 'target': y_train
             }, index=X_train.index)

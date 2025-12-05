@@ -56,6 +56,10 @@ try:
 except ImportError as exc:  # pragma: no cover - runtime dependency
     raise SystemExit("scipy is required for this research script") from exc
 
+try:
+    import yaml
+except ImportError:
+    yaml = None  # type: ignore
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -101,8 +105,45 @@ def parse_args() -> argparse.Namespace:
         default=20000,
         help="Optional cap on number of events (for speed)",
     )
+    parser.add_argument(
+        "--output-features",
+        type=str,
+        default="sr_research_best_features.yaml",
+        help="Path to save the best features list",
+    )
 
     return parser.parse_args()
+
+
+def calculate_rsi(series: pd.Series, period: int = 14) -> pd.Series:
+    delta = series.diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+    rs = gain / loss
+    return 100 - (100 / (1 + rs))
+
+
+def calculate_adx(
+    high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14
+) -> Tuple[pd.Series, pd.Series, pd.Series]:
+    """Calculate ADX, Plus DI, Minus DI."""
+    plus_dm = high.diff()
+    minus_dm = low.diff()
+    plus_dm[plus_dm < 0] = 0
+    minus_dm[minus_dm > 0] = 0
+
+    tr1 = pd.DataFrame(high - low)
+    tr2 = pd.DataFrame(abs(high - close.shift(1)))
+    tr3 = pd.DataFrame(abs(low - close.shift(1)))
+    frames = [tr1, tr2, tr3]
+    tr = pd.concat(frames, axis=1, join="outer").max(axis=1)
+    atr = tr.rolling(period).mean()
+
+    plus_di = 100 * (plus_dm.ewm(alpha=1 / period).mean() / atr)
+    minus_di = abs(100 * (minus_dm.ewm(alpha=1 / period).mean() / atr))
+    dx = (abs(plus_di - minus_di) / abs(plus_di + minus_di)) * 100
+    adx = dx.rolling(period).mean()
+    return adx, plus_di, minus_di
 
 
 def load_market_data(
@@ -328,7 +369,59 @@ def build_event_dataset(
         y_reg: continuous forward return vs level.
         y_cls: binary strong-move indicator (|ret| >= min_ret).
     """
+    # ------------------------------------------------------------------
+    # 0. Pre-calculate HTF & Regime Features (Full History)
+    # ------------------------------------------------------------------
+    # Resample to 1H and 4H
+    # NOTE: We shift(1) after resampling to ensure we are using COMPLETED candles
+    # to avoid look-ahead bias when reindexing back to 15m.
+    df_1h = ohlcv.resample("1h").agg(
+        {"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"}
+    ).dropna()
+    df_4h = ohlcv.resample("4h").agg(
+        {"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"}
+    ).dropna()
 
+    # Calculate HTF Indicators
+    for label, frame in [("1h", df_1h), ("4h", df_4h)]:
+        # Trend (SMA)
+        frame[f"sma_20_{label}"] = frame["close"].rolling(20).mean()
+        frame[f"trend_{label}"] = (frame["close"] / frame[f"sma_20_{label}"] - 1.0)
+        # RSI
+        frame[f"rsi_{label}"] = calculate_rsi(frame["close"], 14)
+        # Volatility (ATR-ish on close)
+        frame[f"vol_{label}"] = frame["close"].pct_change().rolling(20).std()
+
+    # Reindex HTF features back to 15m (Forward Fill)
+    htf_feats = pd.DataFrame(index=ohlcv.index)
+
+    # 1H Features: Shift 1 to use only completed candles
+    aligned_1h = df_1h.shift(1).reindex(ohlcv.index, method="ffill")
+    htf_feats["trend_1h"] = aligned_1h["trend_1h"]
+    htf_feats["rsi_1h"] = aligned_1h["rsi_1h"]
+    htf_feats["vol_1h"] = aligned_1h["vol_1h"]
+
+    # 4H Features: Shift 1 to use only completed candles
+    aligned_4h = df_4h.shift(1).reindex(ohlcv.index, method="ffill")
+    htf_feats["trend_4h"] = aligned_4h["trend_4h"]
+    htf_feats["rsi_4h"] = aligned_4h["rsi_4h"]
+    htf_feats["vol_4h"] = aligned_4h["vol_4h"]
+
+    # Market Regime (15m)
+    adx, plus_di, minus_di = calculate_adx(
+        ohlcv["high"], ohlcv["low"], ohlcv["close"]
+    )
+    htf_feats["adx_15m"] = adx
+    htf_feats["di_spread_15m"] = plus_di - minus_di
+
+    sma_50 = ohlcv["close"].rolling(50).mean()
+    sma_200 = ohlcv["close"].rolling(200).mean()
+    htf_feats["trend_regime_sma"] = (sma_50 > sma_200).astype(float)
+    htf_feats["regime_interaction"] = htf_feats["adx_15m"] * (htf_feats["trend_regime_sma"] * 2 - 1) # +/- ADX based on trend
+
+    # ------------------------------------------------------------------
+    # 1. Standard Setup
+    # ------------------------------------------------------------------
     # Calculate ATR first for dynamic touch definition
     high = ohlcv["high"].astype(float)
     low = ohlcv["low"].astype(float)
@@ -358,8 +451,31 @@ def build_event_dataset(
     fallback_dist = 0.004 * level
     touch_dist_price = touch_dist_price.fillna(fallback_dist)
 
+    # Improved Touch Logic: Check if level is within High-Low range OR close proximity
+    # This captures "wick tests" better than just close proximity.
+    # We still use the threshold for the 'close' check, but strictly use range for wicks.
+    is_within_range = (low <= level) & (high >= level)
     abs_diff = (close - level).abs()
-    touch_mask = abs_diff <= touch_dist_price
+    is_close_proximity = abs_diff <= touch_dist_price
+
+    touch_mask = is_within_range | is_close_proximity
+
+    # Pre-calculate Volume Consumption Features on the full dataframe
+    # "Volume Consumed": Volume of bars that are touching the active level
+    vol_touching = df["volume"].where(touch_mask, 0.0)
+    # Recent volume consumed (last 10 bars)
+    df["recent_vol_consumed"] = vol_touching.rolling(10).sum()
+    # Intensity: Volume consumed / Average Volume
+    vol_ma = df["volume"].rolling(50).mean()
+    df["recent_vol_intensity"] = df["recent_vol_consumed"] / (vol_ma * 10).replace(0, np.nan)
+
+    # "Time Since Last Touch" refinement:
+    # We want exact bars since last True in touch_mask
+    # This is a bit complex to vectorise perfectly for "active level" switches,
+    # but using the existing `hours_since_last_test` from the generator is good.
+    # We will add "Bars Since Last Touch" based on the boolean mask for the current regime
+    # A simple expanding group count can proxy this if levels were constant, but they aren't.
+    # We will rely on generator metadata for 'last_touch_ts' but add a 'local' recency.
 
     event_df = df.loc[touch_mask].copy()
     if event_df.empty:
@@ -395,11 +511,11 @@ def build_event_dataset(
     y_cls = (fwd_ret.abs() >= min_ret).astype(int)
 
     # ------------------------------------------------------------------
-    # Level-strength features
+    # Feature Assembly
     # ------------------------------------------------------------------
     lvl_feats = pd.DataFrame(index=event_df.index)
 
-    # Basic proximity
+    # --- 1. Basic Level Features ---
     lvl_feats["dist_to_level_pct"] = ((close - level) / level).loc[event_df.index]
 
     # Generator/type/source indicators (one-hot-ish flags)
@@ -451,8 +567,20 @@ def build_event_dataset(
     lvl_feats["level_age_hours"] = lvl_feats["level_age_hours"].fillna(0.0)
     lvl_feats["hours_since_last_test"] = lvl_feats["hours_since_last_test"].fillna(0.0)
 
+    # --- 2. Advanced Level Physics (Resistance Testing) ---
+    # Volume Consumed Features (Joined from pre-calculation)
+    lvl_feats["recent_vol_consumed_ratio"] = event_df["recent_vol_intensity"]
+
+    # Decay/Reinforcement Interactions
+    # High touch count + Low Age = Frequent testing (Weakening?)
+    # High touch count + High Age = Historic Level (Strong?)
+    lvl_feats["touch_frequency"] = lvl_feats["meta_touch_count"] / (lvl_feats["level_age_hours"] + 1.0)
+
+    # Volume Depth per Touch (Efficiency)
+    lvl_feats["vol_depth_per_touch"] = lvl_feats["meta_vol_depth"] / (lvl_feats["meta_touch_count"] + 1.0)
+
     # ------------------------------------------------------------------
-    # Push / move features around the touch
+    # 3. Push / Move Features (Momentum & Volatility)
     # ------------------------------------------------------------------
     push_feats = pd.DataFrame(index=event_df.index)
 
@@ -578,14 +706,35 @@ def build_event_dataset(
         opp_price = df[opp_cols[0]].astype(float)
         push_feats["dist_to_opp_level_pct"] = ((opp_price - level) / level).loc[event_df.index]
 
+    # ------------------------------------------------------------------
+    # 4. HTF & Regime Context Features (New)
+    # ------------------------------------------------------------------
+    context_feats = htf_feats.loc[event_df.index].copy()
+
+    # Cross-Timeframe Interactions
+    # "Push" Alignment: Is 15m momentum aligned with 1H/4H trend?
+    context_feats["trend_alignment_1h"] = np.sign(push_feats["trend_slope_fast"]) == np.sign(context_feats["trend_1h"])
+    context_feats["trend_alignment_1h"] = context_feats["trend_alignment_1h"].astype(float)
+
+    context_feats["trend_alignment_4h"] = np.sign(push_feats["trend_slope_fast"]) == np.sign(context_feats["trend_4h"])
+    context_feats["trend_alignment_4h"] = context_feats["trend_alignment_4h"].astype(float)
+
+    # Interaction: Confluence * HTF Trend Strength
+    # Strong level + Strong HTF trend into it = Breakout?
+    # Strong level + Overextended HTF trend (High RSI) = Bounce?
+    context_feats["confluence_x_rsi1h"] = lvl_feats["confluence_score"] * context_feats["rsi_1h"]
+    context_feats["confluence_x_trend4h"] = lvl_feats["confluence_score"] * context_feats["trend_4h"].abs()
+
     # Final feature frame
-    X = pd.concat([lvl_feats, push_feats], axis=1)
+    X = pd.concat([lvl_feats, push_feats, context_feats], axis=1)
     X = X.replace([np.inf, -np.inf], np.nan).fillna(0.0)
 
     return X, y_reg, y_cls
 
 
-def train_and_report(X: pd.DataFrame, y_reg: pd.Series, y_cls: pd.Series) -> None:
+def train_and_report(
+    X: pd.DataFrame, y_reg: pd.Series, y_cls: pd.Series, output_features_path: str
+) -> None:
     """Train simple XGB models and print feature importances and bucketed PnL."""
 
     if len(X) < 200:
@@ -639,22 +788,42 @@ def train_and_report(X: pd.DataFrame, y_reg: pd.Series, y_cls: pd.Series) -> Non
     clf.fit(X_train.values, y_cls_train.values)
 
     # ------------------------------------------------------------------
-    # Feature importances
+    # Feature importances & Selection
     # ------------------------------------------------------------------
-    def _sorted_importances(model, feature_names: list[str], title: str) -> None:
+    feature_names = list(X.columns)
+
+    def _get_top_features(model) -> Dict[str, float]:
         try:
             importances = model.feature_importances_
+            indices = np.argsort(importances)[::-1]
+            return {feature_names[i]: float(importances[i]) for i in indices[:30]}
         except Exception:
-            tprint_warning(f"Model {title} has no feature_importances_")
-            return
-        order = np.argsort(importances)[::-1]
-        tprint_info(f"Top 20 features for {title}:")
-        for idx in order[:20]:
-            tprint_info(f"  {feature_names[idx]:30s}  {importances[idx]:.4f}")
+            return {}
 
-    feature_names = list(X.columns)
-    _sorted_importances(reg, feature_names, "XGBRegressor (magnitude)")
-    _sorted_importances(clf, feature_names, "XGBClassifier (strong/weak)")
+    reg_top = _get_top_features(reg)
+    clf_top = _get_top_features(clf)
+
+    def _print_importances(top_dict, title):
+        tprint_info(f"Top 20 features for {title}:")
+        for name, imp in list(top_dict.items())[:20]:
+            tprint_info(f"  {name:30s}  {imp:.4f}")
+
+    _print_importances(reg_top, "XGBRegressor (magnitude)")
+    _print_importances(clf_top, "XGBClassifier (strong/weak)")
+
+    # Save best features to YAML
+    # We union the top 20 from both models
+    best_features = sorted(list(set(list(reg_top.keys())[:20] + list(clf_top.keys())[:20])))
+
+    if yaml is not None:
+        try:
+            with open(output_features_path, "w") as f:
+                yaml.dump({"selected_features": best_features}, f)
+            tprint_info(f"Saved {len(best_features)} unique best features to {output_features_path}")
+        except Exception as e:
+            tprint_error(f"Failed to save features to YAML: {e}")
+    else:
+        tprint_warning("PyYAML not installed; skipping feature export to YAML.")
 
     # ------------------------------------------------------------------
     # Bucketed backtest by predicted strength (classifier probabilities)
@@ -753,7 +922,7 @@ def main() -> None:
         max_samples=args.max_samples,
     )
 
-    train_and_report(X, y_reg, y_cls)
+    train_and_report(X, y_reg, y_cls, args.output_features)
 
 
 if __name__ == "__main__":

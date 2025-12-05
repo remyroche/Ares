@@ -613,6 +613,636 @@ def compute_underfit_diagnostics(
     return diagnostics
 
 
+def compute_filtering_inflation_diagnostics(
+    X: pd.DataFrame,
+    y_full: pd.Series,
+    y_filtered: pd.Series,
+    realized_returns: pd.Series,
+    volatility: pd.Series,
+    probabilities: np.ndarray,
+    cv_splits: int = 3,
+    time_aware_cv: bool = True,
+) -> Dict[str, Any]:
+    """Compute diagnostics to detect AUC inflation from aggressive filtering.
+
+    Tests:
+    1. AUC on full vs filtered labels - if filtered AUC >> full AUC, filtering inflates
+    2. AUC by return magnitude bucket - if AUC high only in large-move bins, labels dominated
+    3. Class overlap metrics - how separable are retained vs discarded events
+    4. Precision@K drop - if precision collapses as K increases, model only good on easy cases
+
+    Args:
+        X: Feature matrix (aligned to full label space)
+        y_full: Labels before filtering (pre-quantile, using economic floor only)
+        y_filtered: Labels after all filtering (quantile-based, final)
+        realized_returns: Realized returns per event
+        volatility: Volatility series for normalization
+        probabilities: Model predicted probabilities (aligned to filtered labels)
+        cv_splits: Number of CV splits for AUC computation
+        time_aware_cv: Use TimeSeriesSplit
+
+    Returns:
+        Dictionary with diagnostic metrics
+    """
+    from sklearn.metrics import roc_auc_score, precision_score
+    from sklearn.model_selection import TimeSeriesSplit, cross_val_predict
+
+    diagnostics = {
+        # 1. Full vs Filtered AUC comparison
+        "auc_full": None,
+        "auc_filtered": None,
+        "auc_inflation": None,  # filtered - full
+        "filtering_is_major_contributor": False,  # True if inflation > 0.08
+        
+        # 2. AUC by return magnitude bucket
+        "auc_by_return_bucket": {},
+        "auc_dominated_by_large_moves": False,
+        
+        # 3. Retention metrics
+        "n_full_events": 0,
+        "n_filtered_events": 0,
+        "retention_rate": 0.0,
+        
+        # 4. Precision@K analysis
+        "precision_at_k": {},
+        "precision_collapse_detected": False,
+    }
+
+    try:
+        # Align indices
+        common_idx = y_full.index.intersection(y_filtered.index)
+        if len(common_idx) < 50:
+            return diagnostics
+
+        # ===== 1. AUC on Full vs Filtered Labels =====
+        full_mask = ~y_full.isna()
+        filtered_mask = ~y_filtered.isna()
+        
+        n_full = int(full_mask.sum())
+        n_filtered = int(filtered_mask.sum())
+        diagnostics["n_full_events"] = n_full
+        diagnostics["n_filtered_events"] = n_filtered
+        diagnostics["retention_rate"] = n_filtered / max(n_full, 1)
+
+        # Compute AUC on filtered labels (what we normally report)
+        if n_filtered >= 50 and len(np.unique(y_filtered[filtered_mask])) >= 2:
+            if probabilities is not None and len(probabilities) == len(y_filtered):
+                try:
+                    probs_filtered = probabilities[filtered_mask.values]
+                    y_filt_vals = y_filtered[filtered_mask].values
+                    diagnostics["auc_filtered"] = float(roc_auc_score(y_filt_vals, probs_filtered))
+                except Exception:
+                    pass
+
+        # Compute AUC on full labels (before quantile filtering)
+        # Need to retrain/predict on full label space
+        if n_full >= 50 and len(np.unique(y_full[full_mask])) >= 2:
+            try:
+                X_num = X.select_dtypes(include=[np.number])
+                X_full = X_num[full_mask].fillna(0)
+                y_full_vals = y_full[full_mask]
+                
+                if len(y_full_vals) >= 50 and len(y_full_vals.unique()) >= 2:
+                    # Quick probe model for full-label AUC
+                    probe = lgb.LGBMClassifier(
+                        max_depth=3, n_estimators=50, learning_rate=0.1,
+                        n_jobs=-1, verbose=-1, random_state=42
+                    )
+                    
+                    if time_aware_cv:
+                        cv = TimeSeriesSplit(n_splits=min(cv_splits, len(y_full_vals) // 20))
+                    else:
+                        from sklearn.model_selection import KFold
+                        cv = KFold(n_splits=cv_splits, shuffle=True, random_state=42)
+                    
+                    probs_full = cross_val_predict(probe, X_full, y_full_vals, cv=cv, method='predict_proba')[:, 1]
+                    diagnostics["auc_full"] = float(roc_auc_score(y_full_vals, probs_full))
+            except Exception:
+                pass
+
+        # Compute inflation
+        if diagnostics["auc_filtered"] is not None and diagnostics["auc_full"] is not None:
+            diagnostics["auc_inflation"] = diagnostics["auc_filtered"] - diagnostics["auc_full"]
+            diagnostics["filtering_is_major_contributor"] = diagnostics["auc_inflation"] > 0.08
+
+        # ===== 2. AUC by Return Magnitude Bucket =====
+        try:
+            vol_aligned = volatility.reindex(realized_returns.index).fillna(volatility.median())
+            vol_scaled = realized_returns / (vol_aligned.abs() + 1e-8)
+            abs_vol_scaled = vol_scaled.abs()
+            
+            # Define buckets by sigma
+            buckets = [
+                ("0-0.1σ", 0.0, 0.1),
+                ("0.1-0.3σ", 0.1, 0.3),
+                ("0.3-0.8σ", 0.3, 0.8),
+                ("0.8-1.5σ", 0.8, 1.5),
+                ("1.5σ+", 1.5, float('inf')),
+            ]
+            
+            bucket_aucs = {}
+            small_move_aucs = []
+            large_move_aucs = []
+            
+            for bucket_name, low, high in buckets:
+                bucket_mask = (abs_vol_scaled >= low) & (abs_vol_scaled < high) & filtered_mask
+                n_bucket = int(bucket_mask.sum())
+                
+                if n_bucket >= 30:
+                    try:
+                        y_bucket = y_filtered[bucket_mask]
+                        if len(y_bucket.unique()) >= 2 and probabilities is not None:
+                            probs_bucket = probabilities[bucket_mask.values]
+                            auc_bucket = float(roc_auc_score(y_bucket.values, probs_bucket))
+                            bucket_aucs[bucket_name] = {"auc": auc_bucket, "n": n_bucket}
+                            
+                            # Track for dominance check
+                            if high <= 0.3:
+                                small_move_aucs.append(auc_bucket)
+                            elif low >= 0.8:
+                                large_move_aucs.append(auc_bucket)
+                    except Exception:
+                        bucket_aucs[bucket_name] = {"auc": None, "n": n_bucket}
+                else:
+                    bucket_aucs[bucket_name] = {"auc": None, "n": n_bucket}
+            
+            diagnostics["auc_by_return_bucket"] = bucket_aucs
+            
+            # Check if dominated by large moves
+            if small_move_aucs and large_move_aucs:
+                avg_small = np.mean(small_move_aucs)
+                avg_large = np.mean(large_move_aucs)
+                # Dominated if small AUC is 0.52-0.56 and large is 0.65+
+                if avg_small < 0.58 and avg_large > 0.63:
+                    diagnostics["auc_dominated_by_large_moves"] = True
+                    
+        except Exception:
+            pass
+
+        # ===== 4. Precision@K Drop Analysis =====
+        try:
+            if probabilities is not None and n_filtered >= 50:
+                y_filt = y_filtered[filtered_mask].values
+                probs_filt = probabilities[filtered_mask.values]
+                
+                # Sort by probability descending
+                sorted_idx = np.argsort(probs_filt)[::-1]
+                y_sorted = y_filt[sorted_idx]
+                
+                # Compute precision at different K percentiles
+                precision_at_k = {}
+                for k_pct in [10, 20, 30, 50, 70]:
+                    k = max(1, int(len(y_sorted) * k_pct / 100))
+                    precision_k = float(y_sorted[:k].mean())
+                    precision_at_k[f"top_{k_pct}%"] = precision_k
+                
+                diagnostics["precision_at_k"] = precision_at_k
+                
+                # Check for collapse: top 10% precision is good but top 50% collapses
+                if "top_10%" in precision_at_k and "top_50%" in precision_at_k:
+                    if precision_at_k["top_10%"] > 0.65 and precision_at_k["top_50%"] < 0.55:
+                        diagnostics["precision_collapse_detected"] = True
+                        
+        except Exception:
+            pass
+
+    except Exception as e:
+        tprint(f"⚠️ Filtering inflation diagnostics failed: {e}", "WARNING")
+
+    return diagnostics
+
+
+def compute_calibration_diagnostics(
+    y_true: np.ndarray,
+    probabilities: np.ndarray,
+    realized_returns: np.ndarray,
+    transaction_cost: float = 0.003,
+    n_bins: int = 10,
+) -> Dict[str, Any]:
+    """Compute calibration diagnostics for the meta-model.
+
+    Includes:
+    - Brier score
+    - Expected Calibration Error (ECE)
+    - Maximum Calibration Error (MCE)
+    - Reliability diagram data
+    - Precision per probability bin (especially ≥0.6, ≥0.7, ≥0.8)
+    - Expected net P&L by probability bucket
+
+    Args:
+        y_true: True binary labels
+        probabilities: Model predicted probabilities
+        realized_returns: Realized returns for P&L calculation
+        transaction_cost: Transaction cost per trade
+        n_bins: Number of bins for calibration
+
+    Returns:
+        Dictionary with calibration metrics
+    """
+    diagnostics = {
+        "brier_score": None,
+        "ece": None,  # Expected Calibration Error
+        "mce": None,  # Maximum Calibration Error
+        "reliability_diagram": [],  # List of (mean_pred, mean_actual, count) per bin
+        "precision_per_bin": {},
+        "fpr_per_bin": {},
+        "expected_pnl_per_bin": {},
+        "is_well_calibrated": False,
+    }
+
+    try:
+        # Remove NaN
+        valid_mask = ~(np.isnan(y_true) | np.isnan(probabilities))
+        y = y_true[valid_mask]
+        probs = probabilities[valid_mask]
+        returns = realized_returns[valid_mask] if realized_returns is not None else None
+        
+        if len(y) < 50:
+            return diagnostics
+
+        # ===== Brier Score =====
+        diagnostics["brier_score"] = float(np.mean((probs - y) ** 2))
+
+        # ===== Calibration Error (ECE, MCE) and Reliability Diagram =====
+        bin_edges = np.linspace(0, 1, n_bins + 1)
+        ece = 0.0
+        mce = 0.0
+        reliability_data = []
+        
+        for i in range(n_bins):
+            bin_mask = (probs >= bin_edges[i]) & (probs < bin_edges[i + 1])
+            if i == n_bins - 1:  # Include 1.0 in last bin
+                bin_mask = (probs >= bin_edges[i]) & (probs <= bin_edges[i + 1])
+            
+            n_in_bin = int(bin_mask.sum())
+            if n_in_bin > 0:
+                mean_pred = float(probs[bin_mask].mean())
+                mean_actual = float(y[bin_mask].mean())
+                calibration_error = abs(mean_pred - mean_actual)
+                
+                ece += (n_in_bin / len(y)) * calibration_error
+                mce = max(mce, calibration_error)
+                
+                reliability_data.append({
+                    "bin_start": float(bin_edges[i]),
+                    "bin_end": float(bin_edges[i + 1]),
+                    "mean_predicted": mean_pred,
+                    "mean_actual": mean_actual,
+                    "count": n_in_bin,
+                    "calibration_error": calibration_error,
+                })
+
+        diagnostics["ece"] = float(ece)
+        diagnostics["mce"] = float(mce)
+        diagnostics["reliability_diagram"] = reliability_data
+        diagnostics["is_well_calibrated"] = ece < 0.05
+
+        # ===== Precision Per Bin (especially high-probability regions) =====
+        thresholds = [0.5, 0.6, 0.7, 0.8, 0.9]
+        for thresh in thresholds:
+            mask = probs >= thresh
+            n_above = int(mask.sum())
+            if n_above >= 10:
+                precision = float(y[mask].mean())
+                fpr = float((1 - y[mask]).mean())  # False positive rate
+                diagnostics["precision_per_bin"][f"≥{thresh}"] = {
+                    "precision": precision,
+                    "count": n_above,
+                }
+                diagnostics["fpr_per_bin"][f"≥{thresh}"] = {
+                    "fpr": fpr,
+                    "count": n_above,
+                }
+
+        # ===== Expected Net P&L by Probability Bucket =====
+        if returns is not None:
+            pnl_bins = [(0.0, 0.3), (0.3, 0.5), (0.5, 0.6), (0.6, 0.7), (0.7, 0.8), (0.8, 1.0)]
+            for low, high in pnl_bins:
+                mask = (probs >= low) & (probs < high)
+                n_in_bin = int(mask.sum())
+                if n_in_bin >= 10:
+                    bin_returns = returns[mask]
+                    # Net P&L after costs (assuming we trade all events in bin)
+                    net_pnl = float(bin_returns.mean() - transaction_cost)
+                    pnl_per_trade = net_pnl
+                    expected_total = net_pnl * n_in_bin
+                    
+                    diagnostics["expected_pnl_per_bin"][f"{low:.1f}-{high:.1f}"] = {
+                        "mean_return": float(bin_returns.mean()),
+                        "net_pnl_per_trade": pnl_per_trade,
+                        "n_trades": n_in_bin,
+                        "expected_total_pnl": expected_total,
+                        "is_profitable": pnl_per_trade > 0,
+                    }
+
+    except Exception as e:
+        tprint(f"⚠️ Calibration diagnostics failed: {e}", "WARNING")
+
+    return diagnostics
+
+
+def compute_robustness_diagnostics(
+    X: pd.DataFrame,
+    y: pd.Series,
+    realized_returns: pd.Series,
+    regimes: Optional[pd.Series] = None,
+    volatility: Optional[pd.Series] = None,
+    n_folds: int = 5,
+    transaction_cost: float = 0.003,
+) -> Dict[str, Any]:
+    """Compute robustness diagnostics across time and regimes.
+
+    Tests:
+    - Per-fold metrics (AUC, ECE, precision@threshold, net P&L)
+    - Worst-fold performance and CV dispersion
+    - Performance vs volatility regimes (low, median, high)
+    - Per-regime breakdown if regimes provided
+
+    Args:
+        X: Feature matrix
+        y: Binary labels
+        realized_returns: Realized returns
+        regimes: Optional regime labels
+        volatility: Optional volatility series for regime splitting
+        n_folds: Number of CV folds
+        transaction_cost: Transaction cost
+
+    Returns:
+        Dictionary with robustness metrics
+    """
+    from sklearn.model_selection import TimeSeriesSplit
+    from sklearn.metrics import roc_auc_score
+
+    diagnostics = {
+        "per_fold_metrics": [],
+        "worst_fold_auc": None,
+        "best_fold_auc": None,
+        "auc_cv_std": None,
+        "auc_cv_coefficient_of_variation": None,
+        "per_volatility_regime": {},
+        "per_regime_metrics": {},
+        "is_robust": False,
+    }
+
+    try:
+        # Clean data
+        valid_mask = ~y.isna()
+        X_num = X.select_dtypes(include=[np.number])
+        X_clean = X_num[valid_mask].fillna(0)
+        y_clean = y[valid_mask]
+        returns_clean = realized_returns[valid_mask] if realized_returns is not None else None
+
+        if len(y_clean) < 100 or len(y_clean.unique()) < 2:
+            return diagnostics
+
+        # ===== Per-Fold Metrics =====
+        cv = TimeSeriesSplit(n_splits=n_folds)
+        fold_aucs = []
+        fold_metrics = []
+
+        model = lgb.LGBMClassifier(
+            max_depth=5, n_estimators=100, learning_rate=0.05,
+            n_jobs=-1, verbose=-1, random_state=42
+        )
+
+        for fold_idx, (train_idx, test_idx) in enumerate(cv.split(X_clean)):
+            try:
+                X_train, X_test = X_clean.iloc[train_idx], X_clean.iloc[test_idx]
+                y_train, y_test = y_clean.iloc[train_idx], y_clean.iloc[test_idx]
+                
+                if len(y_train.unique()) < 2 or len(y_test.unique()) < 2:
+                    continue
+                
+                model.fit(X_train, y_train)
+                probs = model.predict_proba(X_test)[:, 1]
+                
+                # AUC
+                auc = float(roc_auc_score(y_test, probs))
+                fold_aucs.append(auc)
+                
+                # ECE
+                ece = 0.0
+                bin_edges = np.linspace(0, 1, 11)
+                for i in range(10):
+                    mask = (probs >= bin_edges[i]) & (probs < bin_edges[i + 1])
+                    if mask.sum() > 0:
+                        ece += (mask.sum() / len(probs)) * abs(probs[mask].mean() - y_test.iloc[mask.values].mean())
+                
+                # Precision at 0.6
+                precision_06 = float(y_test[probs >= 0.6].mean()) if (probs >= 0.6).sum() > 0 else None
+                
+                # Net P&L
+                net_pnl = None
+                if returns_clean is not None:
+                    returns_test = returns_clean.iloc[test_idx]
+                    trade_mask = probs >= 0.5
+                    if trade_mask.sum() > 0:
+                        net_pnl = float(returns_test[trade_mask].mean() - transaction_cost)
+                
+                fold_metrics.append({
+                    "fold": fold_idx,
+                    "auc": auc,
+                    "ece": float(ece),
+                    "precision_at_0.6": precision_06,
+                    "net_pnl_per_trade": net_pnl,
+                    "n_test": len(y_test),
+                })
+                
+            except Exception:
+                continue
+
+        diagnostics["per_fold_metrics"] = fold_metrics
+        
+        if fold_aucs:
+            diagnostics["worst_fold_auc"] = float(min(fold_aucs))
+            diagnostics["best_fold_auc"] = float(max(fold_aucs))
+            diagnostics["auc_cv_std"] = float(np.std(fold_aucs))
+            mean_auc = float(np.mean(fold_aucs))
+            diagnostics["auc_cv_coefficient_of_variation"] = float(np.std(fold_aucs) / mean_auc) if mean_auc > 0 else None
+            
+            # Robust if CV std < 0.05 and worst fold > 0.52
+            diagnostics["is_robust"] = (diagnostics["auc_cv_std"] < 0.05 and diagnostics["worst_fold_auc"] > 0.52)
+
+        # ===== Per Volatility Regime =====
+        if volatility is not None:
+            try:
+                vol_aligned = volatility.reindex(y_clean.index)
+                vol_clean = vol_aligned[~vol_aligned.isna()]
+                
+                if len(vol_clean) >= 50:
+                    vol_low_thresh = vol_clean.quantile(0.33)
+                    vol_high_thresh = vol_clean.quantile(0.67)
+                    
+                    vol_regimes = {
+                        "low_vol": vol_aligned <= vol_low_thresh,
+                        "medium_vol": (vol_aligned > vol_low_thresh) & (vol_aligned <= vol_high_thresh),
+                        "high_vol": vol_aligned > vol_high_thresh,
+                    }
+                    
+                    for regime_name, regime_mask in vol_regimes.items():
+                        regime_mask = regime_mask.reindex(y_clean.index, fill_value=False)
+                        n_regime = int(regime_mask.sum())
+                        
+                        if n_regime >= 30 and len(y_clean[regime_mask].unique()) >= 2:
+                            try:
+                                # Train on all, evaluate on regime
+                                model.fit(X_clean, y_clean)
+                                probs_regime = model.predict_proba(X_clean[regime_mask])[:, 1]
+                                auc_regime = float(roc_auc_score(y_clean[regime_mask], probs_regime))
+                                
+                                diagnostics["per_volatility_regime"][regime_name] = {
+                                    "auc": auc_regime,
+                                    "n_events": n_regime,
+                                }
+                            except Exception:
+                                diagnostics["per_volatility_regime"][regime_name] = {"auc": None, "n_events": n_regime}
+                        else:
+                            diagnostics["per_volatility_regime"][regime_name] = {"auc": None, "n_events": n_regime}
+                            
+            except Exception:
+                pass
+
+        # ===== Per Regime (if provided) =====
+        if regimes is not None:
+            try:
+                regimes_aligned = regimes.reindex(y_clean.index)
+                unique_regimes = pd.unique(regimes_aligned.dropna())
+                
+                for reg_val in unique_regimes:
+                    regime_mask = regimes_aligned == reg_val
+                    n_regime = int(regime_mask.sum())
+                    
+                    if n_regime >= 30 and len(y_clean[regime_mask].unique()) >= 2:
+                        try:
+                            model.fit(X_clean, y_clean)
+                            probs_regime = model.predict_proba(X_clean[regime_mask])[:, 1]
+                            auc_regime = float(roc_auc_score(y_clean[regime_mask], probs_regime))
+                            
+                            # Net P&L in regime
+                            net_pnl = None
+                            if returns_clean is not None:
+                                returns_regime = returns_clean[regime_mask]
+                                trade_mask = probs_regime >= 0.5
+                                if trade_mask.sum() > 0:
+                                    net_pnl = float(returns_regime[trade_mask].mean() - transaction_cost)
+                            
+                            diagnostics["per_regime_metrics"][str(reg_val)] = {
+                                "auc": auc_regime,
+                                "n_events": n_regime,
+                                "net_pnl_per_trade": net_pnl,
+                            }
+                        except Exception:
+                            diagnostics["per_regime_metrics"][str(reg_val)] = {"auc": None, "n_events": n_regime}
+                    else:
+                        diagnostics["per_regime_metrics"][str(reg_val)] = {"auc": None, "n_events": n_regime}
+                        
+            except Exception:
+                pass
+
+    except Exception as e:
+        tprint(f"⚠️ Robustness diagnostics failed: {e}", "WARNING")
+
+    return diagnostics
+
+
+def compute_class_overlap_features(
+    X: pd.DataFrame,
+    retained_mask: pd.Series,
+    top_k_features: int = 10,
+) -> Dict[str, Any]:
+    """Compute class overlap visualization data for retained vs discarded events.
+
+    Args:
+        X: Feature matrix
+        retained_mask: Boolean mask - True for retained events
+        top_k_features: Number of top features to analyze
+
+    Returns:
+        Dictionary with overlap metrics and distribution data
+    """
+    diagnostics = {
+        "feature_distributions": {},
+        "overlap_scores": {},
+        "retained_cluster_tightness": None,
+        "easy_problem_detected": False,
+    }
+
+    try:
+        X_num = X.select_dtypes(include=[np.number]).fillna(0)
+        
+        if X_num.empty or len(retained_mask) != len(X_num):
+            return diagnostics
+
+        retained = X_num[retained_mask]
+        discarded = X_num[~retained_mask]
+        
+        if len(retained) < 20 or len(discarded) < 20:
+            return diagnostics
+
+        # Compute feature importance to select top features
+        from sklearn.ensemble import RandomForestClassifier
+        try:
+            rf = RandomForestClassifier(n_estimators=50, max_depth=3, random_state=42, n_jobs=-1)
+            rf.fit(X_num, retained_mask.astype(int))
+            importances = rf.feature_importances_
+            top_idx = np.argsort(importances)[::-1][:top_k_features]
+            top_features = [X_num.columns[i] for i in top_idx]
+        except Exception:
+            top_features = list(X_num.columns[:top_k_features])
+
+        # For each top feature, compute distribution stats
+        overlap_scores = []
+        for feat in top_features:
+            try:
+                ret_vals = retained[feat].values
+                disc_vals = discarded[feat].values
+                
+                # Compute overlap using Bhattacharyya coefficient approximation
+                ret_mean, ret_std = ret_vals.mean(), ret_vals.std() + 1e-8
+                disc_mean, disc_std = disc_vals.mean(), disc_vals.std() + 1e-8
+                
+                # Bhattacharyya distance (lower = more overlap)
+                bd = 0.25 * np.log(0.25 * ((ret_std/disc_std)**2 + (disc_std/ret_std)**2 + 2)) + \
+                     0.25 * ((ret_mean - disc_mean)**2 / (ret_std**2 + disc_std**2))
+                
+                overlap_score = np.exp(-bd)  # Convert to 0-1, higher = more overlap
+                overlap_scores.append(overlap_score)
+                
+                diagnostics["feature_distributions"][feat] = {
+                    "retained_mean": float(ret_mean),
+                    "retained_std": float(ret_std),
+                    "discarded_mean": float(disc_mean),
+                    "discarded_std": float(disc_std),
+                    "overlap_score": float(overlap_score),
+                }
+                diagnostics["overlap_scores"][feat] = float(overlap_score)
+                
+            except Exception:
+                continue
+
+        # Overall cluster tightness (variance ratio)
+        try:
+            ret_var = retained.var().mean()
+            disc_var = discarded.var().mean()
+            full_var = X_num.var().mean()
+            
+            # If retained events have much lower variance, they're clustered
+            diagnostics["retained_cluster_tightness"] = float(ret_var / (full_var + 1e-8))
+            
+            # Easy problem if: low overlap AND tight clustering
+            avg_overlap = np.mean(overlap_scores) if overlap_scores else 1.0
+            if avg_overlap < 0.4 and diagnostics["retained_cluster_tightness"] < 0.7:
+                diagnostics["easy_problem_detected"] = True
+                
+        except Exception:
+            pass
+
+    except Exception as e:
+        tprint(f"⚠️ Class overlap diagnostics failed: {e}", "WARNING")
+
+    return diagnostics
+
+
 def shrink_search_space(
     original_space: Dict[str, Any],
     previous_results: List[Dict[str, Any]],
@@ -1853,6 +2483,11 @@ class MetaLabelingHPOExperimentStep(BaseStep):
 
                 # Optional underfit diagnostics
                 underfit_diagnostics = None
+                filtering_diagnostics = None
+                calibration_diagnostics = None
+                robustness_diagnostics = None
+                class_overlap_diagnostics = None
+                
                 if compute_diagnostics and ENABLE_UNDERFIT_DIAGNOSTICS:
                     underfit_diagnostics = compute_underfit_diagnostics(
                         X=X_for_learnability,
@@ -1860,6 +2495,75 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                         cv_splits=cv_splits,
                         time_aware_cv=True,
                     )
+                    
+                    # ===== COMPREHENSIVE DIAGNOSTICS =====
+                    # 1. Create "full" labels (before quantile filtering, using economic floor only)
+                    #    This allows comparing AUC on full vs filtered labels
+                    econ_floor = econ_min_mult * effective_tx_cost
+                    y_full = pd.Series(np.nan, index=realized_returns.index)
+                    full_mask = ~realized_returns.isna() & (realized_returns.abs() >= econ_floor)
+                    y_full[full_mask & (realized_returns > 0)] = 1.0
+                    y_full[full_mask & (realized_returns <= 0)] = 0.0
+                    
+                    # 2. Filtering inflation diagnostics
+                    try:
+                        filtering_diagnostics = compute_filtering_inflation_diagnostics(
+                            X=X_for_learnability,
+                            y_full=y_full,
+                            y_filtered=binary_labels,
+                            realized_returns=realized_returns,
+                            volatility=volatility_1d,
+                            probabilities=calibrated_probs,
+                            cv_splits=cv_splits,
+                            time_aware_cv=True,
+                        )
+                    except Exception as e_filt:
+                        if debug_sample_count < debug_sample_limit:
+                            tprint_warning(f"[DIAG] Filtering diagnostics failed: {e_filt}")
+                    
+                    # 3. Calibration diagnostics
+                    try:
+                        y_for_calib = binary_labels[labeled_mask].values
+                        probs_for_calib = calibrated_probs[labeled_mask.values] if len(calibrated_probs) == len(binary_labels) else calibrated_probs
+                        returns_for_calib = realized_returns[labeled_mask].values
+                        
+                        calibration_diagnostics = compute_calibration_diagnostics(
+                            y_true=y_for_calib,
+                            probabilities=probs_for_calib,
+                            realized_returns=returns_for_calib,
+                            transaction_cost=effective_tx_cost,
+                            n_bins=10,
+                        )
+                    except Exception as e_calib:
+                        if debug_sample_count < debug_sample_limit:
+                            tprint_warning(f"[DIAG] Calibration diagnostics failed: {e_calib}")
+                    
+                    # 4. Robustness diagnostics
+                    try:
+                        regime_series = market_data.get("hmm_regime_label_1h")
+                        robustness_diagnostics = compute_robustness_diagnostics(
+                            X=X_for_learnability,
+                            y=binary_labels,
+                            realized_returns=realized_returns,
+                            regimes=regime_series,
+                            volatility=volatility_1d,
+                            n_folds=min(5, cv_splits + 2),
+                            transaction_cost=effective_tx_cost,
+                        )
+                    except Exception as e_robust:
+                        if debug_sample_count < debug_sample_limit:
+                            tprint_warning(f"[DIAG] Robustness diagnostics failed: {e_robust}")
+                    
+                    # 5. Class overlap diagnostics (retained vs discarded)
+                    try:
+                        class_overlap_diagnostics = compute_class_overlap_features(
+                            X=X_for_learnability,
+                            retained_mask=labeled_mask,
+                            top_k_features=10,
+                        )
+                    except Exception as e_overlap:
+                        if debug_sample_count < debug_sample_limit:
+                            tprint_warning(f"[DIAG] Class overlap diagnostics failed: {e_overlap}")
 
                 # ===== ECONOMIC PROFITABILITY =====
                 # Compute economic separation metrics on labeled events
@@ -2116,11 +2820,33 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     edge_scaled = 0.0
                     learnability_score -= 0.5
 
-                # ===== COMBINED OBJECTIVE (Using Edge as Primary Metric) =====
-                # Formula balances edge, AUC, and trade density.
+                # ===== COMBINED OBJECTIVE WITH RETENTION REGULARIZATION =====
+                # New formula: objective = AUC_filtered - α * (1 / retention_rate)
+                # This penalizes configurations that achieve high AUC through aggressive
+                # filtering (low retention) rather than genuine signal quality.
+                #
+                # α is small (0.01-0.05) to allow retention penalty without dominating
+                # Retention rate = n_filtered_events / n_raw_events (candidate survival rate)
+                
+                # Retention regularization parameter (configurable)
+                alpha_retention = float(config.get("retention_regularization_alpha", 0.03))
+                alpha_retention = max(0.01, min(0.10, alpha_retention))  # Clamp to [0.01, 0.10]
+                
+                # Compute retention-adjusted AUC objective
+                # retention_total is already computed above as n_post_total / n_pre_total
+                if retention_total > 0:
+                    retention_penalty = alpha_retention * (1.0 / retention_total)
+                else:
+                    retention_penalty = alpha_retention * 100.0  # Severe penalty for 0 retention
+                
+                # Cap retention penalty to avoid dominating the objective
+                retention_penalty = min(retention_penalty, 0.5)
+                
+                # Retention-adjusted AUC (this is the primary HPO signal)
+                auc_retention_adjusted = mean_auc - retention_penalty
+                
                 # When AUC is outside target range (0.55-0.67), auc_weight_multiplier
                 # reduces AUC influence and gives more sway to edge/pnl/trades.
-                #
                 # Edge already incorporates AUC via capture_ratio = max(0, 2*AUC - 1),
                 # so we use auc_weight_multiplier to scale the learnability bonus only.
                 
@@ -2143,13 +2869,16 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     # Peak bonus at 2 trades/day
                     trades_bonus = max(0, 1.0 - abs(trades_per_day - 2.0) / 2.0) * 50.0
                 
+                # Combined score with retention-adjusted AUC as the primary component
                 combined_score = (
                     edge_scaled * edge_weight
+                    + (auc_retention_adjusted * 100.0)  # Scale AUC-retention term
                     + (learnability_bonus * auc_weight_multiplier)
                     + (trades_bonus * density_weight)
                     - (penalty_density * 0.1)
                     - (tto_penalty * 0.1)
-                    - (auc_penalty * 2.0)  # AUC penalty directly affects combined score
+                    - (auc_penalty * 2.0)  # AUC range penalty
+                    - (retention_penalty * 50.0)  # Explicit retention penalty term
                 )
 
                 # Store candidate configuration for later persistence
@@ -2200,6 +2929,10 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                         'suspicious_leakage' if mean_auc > 0.70 else
                         'above_target'
                     ),
+                    # Retention regularization
+                    'retention_penalty': float(retention_penalty),
+                    'auc_retention_adjusted': float(auc_retention_adjusted),
+                    'alpha_retention': float(alpha_retention),
                 }
 
                 # Optional per-regime breakdown using attached HMM regimes, if available.
@@ -2283,6 +3016,38 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 # Add underfit diagnostics if computed
                 if underfit_diagnostics is not None:
                     candidate_config['underfit_diagnostics'] = underfit_diagnostics
+                
+                # Add comprehensive diagnostics if computed
+                if filtering_diagnostics is not None:
+                    candidate_config['filtering_diagnostics'] = filtering_diagnostics
+                    # Flag if filtering is inflating AUC
+                    if filtering_diagnostics.get('filtering_is_major_contributor', False):
+                        candidate_config['warning_filtering_inflation'] = True
+                    if filtering_diagnostics.get('auc_dominated_by_large_moves', False):
+                        candidate_config['warning_large_move_dominance'] = True
+                    if filtering_diagnostics.get('precision_collapse_detected', False):
+                        candidate_config['warning_precision_collapse'] = True
+                
+                if calibration_diagnostics is not None:
+                    candidate_config['calibration_diagnostics'] = calibration_diagnostics
+                    # Flag calibration issues
+                    if not calibration_diagnostics.get('is_well_calibrated', True):
+                        candidate_config['warning_calibration_issue'] = True
+                    candidate_config['brier_score'] = calibration_diagnostics.get('brier_score')
+                    candidate_config['ece'] = calibration_diagnostics.get('ece')
+                
+                if robustness_diagnostics is not None:
+                    candidate_config['robustness_diagnostics'] = robustness_diagnostics
+                    # Flag robustness issues
+                    if not robustness_diagnostics.get('is_robust', True):
+                        candidate_config['warning_robustness_issue'] = True
+                    candidate_config['worst_fold_auc'] = robustness_diagnostics.get('worst_fold_auc')
+                    candidate_config['auc_cv_std'] = robustness_diagnostics.get('auc_cv_std')
+                
+                if class_overlap_diagnostics is not None:
+                    candidate_config['class_overlap_diagnostics'] = class_overlap_diagnostics
+                    if class_overlap_diagnostics.get('easy_problem_detected', False):
+                        candidate_config['warning_easy_problem'] = True
 
                 # Attach regression target diagnostics, if available, so that
                 # downstream analysis can assess how well continuous payoffs

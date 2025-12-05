@@ -74,6 +74,7 @@ from src.training.steps.market_analysis.clusters.liquidity_cluster_quality_asses
     LiquidityClusterQualityMetrics,
 )
 from src.utils.ml_common.feature_engineering.feature_smoothing import apply_ewm_smoothing
+from src.utils.ml_common.evaluation.hsic import calculate_hsic
 
 logger = logging.getLogger(__name__)
 
@@ -1054,6 +1055,27 @@ class MLLiquidityRegimeStep(BaseStep):
                         training_metrics["forward_return_mean_1h_best_regime"] = float(best_forward)
                 except Exception:
                     pass
+
+                # Calculate HSIC for Regime Independence from Target (Validation)
+                try:
+                    # Use forward 1h returns as validation target
+                    hsic_target = liquidity_df.get("return_1h").shift(-1)
+                    hsic_regimes = liquidity_df["liquidity_regime"]
+
+                    # Align mask
+                    mask = hsic_target.notna() & hsic_regimes.notna() & (hsic_regimes >= 0)
+
+                    if mask.sum() > 100:
+                        hsic_score = calculate_hsic(
+                            hsic_regimes[mask].values,
+                            hsic_target[mask].values,
+                            kernel_X='delta', # Categorical
+                            kernel_Y='rbf'    # Continuous
+                        )
+                        training_metrics["liquidity_regime_hsic"] = float(hsic_score)
+                        tprint_info(f"  HSIC(Regime, FwdReturn1h): {hsic_score:.6f}")
+                except Exception as hsic_exc:
+                    tprint_warning(f"HSIC calculation failed: {hsic_exc}")
 
                 # Generate human-readable reports in outcomes/
                 liquidity_cluster_md_path = assessor.save_markdown_report(

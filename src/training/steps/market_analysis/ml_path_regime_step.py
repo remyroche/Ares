@@ -93,6 +93,7 @@ from src.utils.ml_common.optimization import (
     default_objective_function,
 )
 from src.utils.ml_common.feature_engineering.feature_smoothing import apply_ewm_smoothing
+from src.utils.ml_common.evaluation.hsic import calculate_hsic
 from src.feature_generation.categories.entropy import PermutationEntropyGenerator
 from src.feature_generation.categories.path_regime_features import (
     generate_path_regime_features,
@@ -3120,6 +3121,37 @@ class MLPathRegimeStep(BaseStep):
 
         # Add risk scores to metrics for return
         metrics['full_risk_scores'] = full_risk_scores
+
+        # Calculate HSIC for Regime Independence from Target (Validation)
+        try:
+            # Use forward returns as the primary validation target
+            hsic_target = None
+            if 'alpha_forward_return_12' in risk_df.columns: # 3h
+                hsic_target = risk_df['alpha_forward_return_12']
+            elif 'return_3h' in risk_df.columns:
+                hsic_target = risk_df['return_3h']
+            elif 'close' in risk_df.columns:
+                # Calculate 3h returns on the fly (12 bars)
+                hsic_target = np.log(risk_df['close'].shift(-12) / risk_df['close'])
+
+            if hsic_target is not None:
+                # Align with valid_mask used for final_labels
+                target_vals = hsic_target[valid_mask].values
+
+                if len(final_labels) == len(target_vals):
+                    # Filter NaNs
+                    valid_hsic = np.isfinite(target_vals) & (final_labels >= 0)
+                    if valid_hsic.sum() > 100:
+                        hsic_score = calculate_hsic(
+                            final_labels[valid_hsic],
+                            target_vals[valid_hsic],
+                            kernel_X='delta', # Categorical
+                            kernel_Y='rbf'    # Continuous
+                        )
+                        metrics['path_regime_hsic'] = float(hsic_score)
+                        tprint_info(f"  HSIC(Regime, Target): {hsic_score:.6f}")
+        except Exception as hsic_exc:
+            tprint_warning(f"HSIC calculation failed: {hsic_exc}")
 
         return full_labels, metrics
 

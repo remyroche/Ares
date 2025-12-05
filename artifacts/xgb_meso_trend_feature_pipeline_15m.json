@@ -59,7 +59,7 @@
       "htf_4h_trend",
       "htf_4h_vol"
     ],
-    "scaler": "<src.features_common.transforms.scaling_normalization.ScalingNormalizer object at 0x3482fe290>"
+    "scaler": "<src.features_common.transforms.scaling_normalization.ScalingNormalizer object at 0x3481806d0>"
   },
   "metadata": {
     "symbol": "ETHUSDT",
@@ -71,5 +71,5 @@
     "training_end": "2024-05-30 22:00:00",
     "htf_features_enabled": true
   },
-  "saved_at": "2025-12-04T00:40:40.659645"
+  "saved_at": "2025-12-04T20:35:27.112240"
 }

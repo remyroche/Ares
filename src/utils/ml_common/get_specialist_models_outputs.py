@@ -764,145 +764,7 @@ def get_specialist_models_outputs(
         log_warning(f"⚠️ Failed to load Path specialist outputs: {e}")
 
     # ------------------------------------------------------------------
-    # 6) Short-horizon alpha specialist – XGB meso trend (fallback to HMM Meso Trend)
-    # ------------------------------------------------------------------
-    try:
-        log_info("=" * 80)
-        log_info("📐 LOADING SPECIALIST: XGB MESO ALPHA (TREND) OUTPUTS")
-        log_info("=" * 80)
-
-        # Primary source: XGB meso trend training data from xgb_meso_regime.
-        meso_context = {
-            "symbol": symbol,
-            "exchange": exchange,
-            "timeframe": base_timeframe,
-            "direction": direction,
-            "model": "regime_meso_trend",
-            "step_name": "xgb_meso_regime",
-        }
-
-        meso_artifact_name = f"xgb_meso_trend_training_data_{base_timeframe}"
-        log_info(f"Attempting to load XGB Meso Trend data: {meso_artifact_name}")
-        alpha_training = artifact_router.load(
-            artifact_name=meso_artifact_name,
-            artifact_type="data",
-            data_category="features",
-            context=meso_context,
-        )
-
-        if alpha_training is not None and not getattr(alpha_training, "empty", True):
-            if not isinstance(alpha_training, pd.DataFrame):
-                alpha_training = pd.DataFrame(alpha_training)
-            alpha_training = _standardize_index(alpha_training)
-
-            if isinstance(alpha_training.index, pd.DatetimeIndex) and len(alpha_training.index) > 0:
-                log_info(
-                    "📈 XGB Meso Trend (xgb_meso_trend_training_data_15m) index range: %s → %s (n=%d)"
-                    % (
-                        alpha_training.index.min(),
-                        alpha_training.index.max(),
-                        len(alpha_training.index),
-                    )
-                )
-
-            # Prefer the canonical continuous alpha score; fall back to calibrated
-            # expectation-style columns if necessary.
-            alpha_cols: List[str] = []
-            if "meso_trend_score_continuous" in alpha_training.columns:
-                alpha_cols.append("meso_trend_score_continuous")
-            if not alpha_cols:
-                for c in ("meso_trend_expectation_raw_01", "meso_trend_expectation_ema_01"):
-                    if c in alpha_training.columns:
-                        alpha_cols.append(c)
-                        break
-
-            if alpha_cols:
-                before_block = alpha_training[alpha_cols].copy()
-                nnz_before = int(before_block.notna().sum().sum())
-                block = before_block.shift(1).fillna(method="ffill")
-                block = block.reindex(training_index, method="ffill")
-                nnz_after = int(block.notna().sum().sum())
-                blocks.append(block)
-                log_success(
-                    "✅ Added XGB Meso Trend specialist block from 'xgb_meso_trend_training_data_15m': "
-                    f"shape={block.shape}, non_null_before={nnz_before}, "
-                    f"non_null_after={nnz_after}"
-                )
-                if nnz_after == 0:
-                    log_warning(
-                        "⚠️ XGB Meso Trend block aligned to training_index is all-NaN. "
-                        "Check meso alpha timestamps and values."
-                    )
-        else:
-            log_warning(
-                "⚠️ XGB Meso Trend artifacts not found; falling back to legacy HMM Meso Trend specialist."
-            )
-
-            try:
-                legacy_context = {
-                    "symbol": symbol,
-                    "exchange": exchange,
-                    "timeframe": base_timeframe,
-                    "direction": direction,
-                    "model": "regime_meso_trend",
-                    "step_name": "hmm_ml_alpha_step",
-                }
-
-                legacy_training = artifact_router.load(
-                    artifact_name="hmm_meso_trend_training_data_15m",
-                    artifact_type="data",
-                    data_category="features",
-                    context=legacy_context,
-                )
-
-                if legacy_training is not None and not getattr(legacy_training, "empty", True):
-                    if not isinstance(legacy_training, pd.DataFrame):
-                        legacy_training = pd.DataFrame(legacy_training)
-                    legacy_training = _standardize_index(legacy_training)
-
-                    if isinstance(legacy_training.index, pd.DatetimeIndex) and len(legacy_training.index) > 0:
-                        log_info(
-                            "📈 HMM Meso Trend (hmm_meso_trend_training_data_15m) index range: %s → %s (n=%d)"
-                            % (
-                                legacy_training.index.min(),
-                                legacy_training.index.max(),
-                                len(legacy_training.index),
-                            )
-                        )
-
-                    legacy_cols: List[str] = []
-                    if "meso_trend_score_continuous" in legacy_training.columns:
-                        legacy_cols.append("meso_trend_score_continuous")
-                    if not legacy_cols:
-                        for c in ("meso_trend_expectation_raw_01", "meso_trend_expectation_ema_01"):
-                            if c in legacy_training.columns:
-                                legacy_cols.append(c)
-                                break
-
-                    if legacy_cols:
-                        before_block = legacy_training[legacy_cols].copy()
-                        nnz_before = int(before_block.notna().sum().sum())
-                        block = before_block.shift(1).fillna(method="ffill")
-                        block = block.reindex(training_index, method="ffill")
-                        nnz_after = int(block.notna().sum().sum())
-                        blocks.append(block)
-                        log_success(
-                            "✅ Added legacy HMM Meso Trend specialist block from 'hmm_meso_trend_training_data_15m': "
-                            f"shape={block.shape}, non_null_before={nnz_before}, "
-                            f"non_null_after={nnz_after}"
-                        )
-                        if nnz_after == 0:
-                            log_warning(
-                                "⚠️ HMM Meso Trend block aligned to training_index is all-NaN. "
-                                "Check HMM alpha timestamps and values."
-                            )
-            except Exception as legacy_e:
-                log_warning(f"⚠️ Failed to load legacy HMM Meso Trend specialist outputs: {legacy_e}")
-    except Exception as e:
-        log_warning(f"⚠️ Failed to load meso-horizon trend specialist outputs: {e}")
-
-    # ------------------------------------------------------------------
-    # 6b) Macro Trend specialist – macro regime alpha signal from xgb_macro_regime
+    # 6) Macro Trend specialist – macro regime alpha signal from xgb_macro_regime
     # ------------------------------------------------------------------
     try:
         log_info("=" * 80)
@@ -914,7 +776,10 @@ def get_specialist_models_outputs(
             "exchange": exchange,
             "timeframe": regime_timeframe,
             "direction": direction,
-            "model": "regime_meso_trend",
+            # Updated model namespace to match the current xgb_macro_regime
+            # step, ensuring we load artifacts from the correct
+            # ETHUSDT_binance_15m_long_regime_macro_trend store.
+            "model": "regime_macro_trend",
             "step_name": "xgb_macro_regime",
         }
 
@@ -985,7 +850,80 @@ def get_specialist_models_outputs(
         log_warning(f"⚠️ Failed to load Macro Trend specialist outputs: {e}")
 
     # ------------------------------------------------------------------
-    # 7) Volume Force specialist – scalar directional prediction
+    # 7) MR Trend specialist – XGB MR vs Trend classifier outputs
+    # ------------------------------------------------------------------
+    try:
+        log_info("=" * 80)
+        log_info("📈 LOADING SPECIALIST: MR TREND (XGB) OUTPUTS")
+        log_info("=" * 80)
+
+        mr_trend_context = {
+            "symbol": symbol,
+            "exchange": exchange,
+            "timeframe": base_timeframe,
+            "direction": direction,
+            "model": "regime_mr_trend",
+            "step_name": "xgb_mr_trend_step",
+        }
+
+        mr_trend_training = artifact_router.load(
+            artifact_name="xgb_mr_trend_training_data",
+            artifact_type="data",
+            data_category="features",
+            context=mr_trend_context,
+        )
+
+        if mr_trend_training is not None and not getattr(mr_trend_training, "empty", True):
+            if not isinstance(mr_trend_training, pd.DataFrame):
+                mr_trend_training = pd.DataFrame(mr_trend_training)
+            mr_trend_training = _standardize_index(mr_trend_training)
+
+            if (
+                isinstance(mr_trend_training.index, pd.DatetimeIndex)
+                and len(mr_trend_training.index) > 0
+            ):
+                log_info(
+                    "📈 MR Trend (xgb_mr_trend_training_data) index range: %s → %s (n=%d)"
+                    % (
+                        mr_trend_training.index.min(),
+                        mr_trend_training.index.max(),
+                        len(mr_trend_training.index),
+                    )
+                )
+
+            if "target" in mr_trend_training.columns:
+                # Use the discrete regime label as a compact scalar and
+                # expose a helper binary flag marking explicit MR (class 2).
+                before_block = pd.DataFrame(
+                    index=mr_trend_training.index,
+                    data={
+                        "mr_trend_state": mr_trend_training["target"].astype(float),
+                        "mr_trend_is_mr": (mr_trend_training["target"] == 2).astype(float),
+                    },
+                )
+                nnz_before = int(before_block.notna().sum().sum())
+
+                # Align to training_index with a one-bar lag, mirroring other
+                # regime specialists to avoid look-ahead.
+                block = before_block.shift(1).fillna(method="ffill")
+                block = block.reindex(training_index, method="ffill")
+                nnz_after = int(block.notna().sum().sum())
+
+                blocks.append(block)
+                log_success(
+                    "✅ Added MR Trend specialist block from 'xgb_mr_trend_training_data': "
+                    f"shape={block.shape}, non_null_before={nnz_before}, "
+                    f"non_null_after={nnz_after}"
+                )
+                if nnz_after == 0:
+                    log_warning(
+                        "⚠️ MR Trend block aligned to training_index is all-NaN. "
+                        "Check MR Trend timestamps and values."
+                    )
+    except Exception as e:
+        log_warning(f"⚠️ Failed to load MR Trend specialist outputs: {e}")
+
+    # 8) Volume Force specialist – scalar directional prediction
     # ------------------------------------------------------------------
     try:
         log_info("=" * 80)

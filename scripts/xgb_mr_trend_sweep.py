@@ -32,7 +32,8 @@ async def run_sweep():
         "exchange": "binance",
         "timeframe": "15m",
         "sweep_max_configs": 20,
-        "execution_mode": "full" # Use full data for sweep to get valid metrics
+        "execution_mode": "full", # Use full data for sweep to get valid metrics
+        "fast_sweep": True,
     }
 
     tprint(f"🚀 Starting MR vs Trend Sweep for {base_config['symbol']}...")

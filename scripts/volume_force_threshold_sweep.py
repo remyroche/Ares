@@ -94,55 +94,123 @@ def build_base_config(args: argparse.Namespace) -> Dict[str, Any]:
 def build_sweep_configs(base_config: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Generate configs for the sweep."""
 
-    # Define sweep ranges
+    # Stage 1: sweep structural / target parameters with baseline XGB settings.
+
     # Focused ATR band around lower thresholds
     atr_thresholds = [0.8, 1.0, 1.2]
+    # Forward lookahead in bars (15m)
     lookaheads = [8, 12, 16]  # 2h, 3h, 4h
-    # Feature norm window
-    norm_windows = [96, 192] # approx 1 day, 2 days
+    # Feature normalization window (approx 1–3 days)
+    norm_windows = [96, 192]
 
-    # Target Definitions
+    # Target definitions
     vol_percentiles = [70, 75, 80]
     trend_betas = [0.5, 0.75]
 
-    # XGB Params
-    max_depths = [4, 6]
-    learning_rates = [0.03] # Keeping simple for now, can add 0.01
+    # Baseline XGB settings for stage 1
+    base_depth = 6
+    base_lr = 0.03
+    base_estimators = 800
 
     configs: List[Dict[str, Any]] = []
 
-    # Generate Cartesian product
-    # Note: This can generate a lot of configs. Be mindful of execution time.
-    # Current count: 3 * 3 * 2 * 3 * 2 * 2 * 1 = 216 configs.
-    # That might be too many for a quick run.
-    # Let's reduce lookaheads and norm windows for the full grid, or create a 'focused' grid.
-
-    # Reduced Grid
     combinations = itertools.product(
         atr_thresholds,
         lookaheads,
         norm_windows,
         vol_percentiles,
         trend_betas,
-        max_depths
     )
 
-    for atr, lookahead, norm, vol_pct, trend_beta, depth in combinations:
+    for atr, lookahead, norm, vol_pct, trend_beta in combinations:
         cfg = dict(base_config)
         cfg["volume_force_target_threshold_atr"] = atr
         cfg["volume_force_lookahead"] = lookahead
         cfg["volume_force_normalization_window"] = norm
         cfg["volume_force_volatility_percentile"] = vol_pct
         cfg["volume_force_trend_beta"] = trend_beta
-        cfg["volume_force_xgb_max_depth"] = depth
-        cfg["volume_force_xgb_learning_rate"] = 0.03 # Fixed for now
+
+        # Baseline XGB hyperparameters (refined separately in stage 2)
+        cfg["volume_force_xgb_max_depth"] = base_depth
+        cfg["volume_force_xgb_learning_rate"] = base_lr
+        cfg["volume_force_xgb_n_estimators"] = base_estimators
 
         # Tag for easy identification
-        cfg["sweep_tag"] = f"atr{atr}_lah{lookahead}_vol{vol_pct}_tr{trend_beta}_d{depth}"
+        cfg["sweep_tag"] = (
+            f"stage1_atr{atr}_lah{lookahead}_norm{norm}_vol{vol_pct}_tr{trend_beta}"
+        )
 
         configs.append(cfg)
 
     return configs
+
+
+def build_refinement_configs(
+    base_config: Dict[str, Any],
+    successful_df: pd.DataFrame,
+    top_struct_configs: int = 5,
+) -> List[Dict[str, Any]]:
+    """Generate refinement configs around the best structural settings.
+
+    Stage 2 focuses on XGB hyperparameters (depth, learning rate, n_estimators)
+    for the top structural/target configurations from stage 1.
+    """
+
+    if successful_df is None or successful_df.empty:
+        return []
+
+    # Columns defining the structural part of the configuration
+    struct_cols = [
+        "config_volume_force_target_threshold_atr",
+        "config_volume_force_lookahead",
+        "config_volume_force_normalization_window",
+        "config_volume_force_volatility_percentile",
+        "config_volume_force_trend_beta",
+    ]
+
+    for col in struct_cols:
+        if col not in successful_df.columns:
+            # If any structural column is missing, bail out gracefully
+            return []
+
+    # Sort by aggregate metric, then deduplicate by structural parameters
+    ranked = successful_df.sort_values("oof_log_loss", ascending=True)
+    ranked_struct = ranked.drop_duplicates(subset=struct_cols).head(top_struct_configs)
+
+    # Refinement grid over XGB hyperparameters
+    depths = [4, 6, 8]
+    learning_rates = [0.02, 0.03, 0.05]
+    n_estimators_list = [600, 800, 1000]
+
+    refinement_configs: List[Dict[str, Any]] = []
+
+    for _, row in ranked_struct.iterrows():
+        struct_cfg: Dict[str, Any] = {}
+        for col in struct_cols:
+            key = col.replace("config_", "")
+            struct_cfg[key] = row.get(col)
+
+        for depth, lr, n_estimators in itertools.product(
+            depths, learning_rates, n_estimators_list
+        ):
+            cfg = dict(base_config)
+            cfg.update(struct_cfg)
+            cfg["volume_force_xgb_max_depth"] = int(depth)
+            cfg["volume_force_xgb_learning_rate"] = float(lr)
+            cfg["volume_force_xgb_n_estimators"] = int(n_estimators)
+
+            cfg["sweep_tag"] = (
+                f"stage2_atr{struct_cfg['volume_force_target_threshold_atr']}"
+                f"_lah{struct_cfg['volume_force_lookahead']}"
+                f"_norm{struct_cfg['volume_force_normalization_window']}"
+                f"_vol{struct_cfg['volume_force_volatility_percentile']}"
+                f"_tr{struct_cfg['volume_force_trend_beta']}"
+                f"_d{depth}_lr{lr}_n{n_estimators}"
+            )
+
+            refinement_configs.append(cfg)
+
+    return refinement_configs
 
 
 def build_single_config_from_yaml(
@@ -427,6 +495,7 @@ async def main_async() -> None:
 
         return
 
+    # Stage 1: structural sweep
     sweep_configs = build_sweep_configs(base_config)
 
     # Limit for safety during initial testing if list is huge
@@ -434,50 +503,76 @@ async def main_async() -> None:
         print(f"⚠️ Warning: {len(sweep_configs)} configs generated. Truncating to 500.")
         sweep_configs = sweep_configs[:500]
 
-    print(f"\n🔧 Generated {len(sweep_configs)} sweep configurations")
+    print(f"\n🔧 Stage 1: Generated {len(sweep_configs)} structural sweep configurations")
 
     # Initialize step
     step = MLVolumeForceStep()
 
-    # Run batch
-    results = await step.run_config_batch(sweep_configs, args.symbol, args.exchange)
+    # Run batch for stage 1
+    results_stage1 = await step.run_config_batch(sweep_configs, args.symbol, args.exchange)
 
-    # Analyze results
-    results_df, base_analysis = step.analyze_and_rank_results(results)
+    # Analyze stage-1 results
+    results_df_stage1, base_analysis = step.analyze_and_rank_results(results_stage1)
 
-    if results_df.empty:
+    if results_df_stage1.empty:
         print("\n❌ No results to save; all configurations appear to have failed.")
         return
 
-    # Add Independent Analysis
-    successful = results_df[results_df.get("success", False) == True].copy()
+    successful_stage1 = results_df_stage1[results_df_stage1.get("success", False) == True].copy()
 
-    analysis = base_analysis.copy()
+    # Stage 2: refinement over XGB hyperparameters for top structural configs
+    refinement_configs: List[Dict[str, Any]] = []
+    if not successful_stage1.empty:
+        refinement_configs = build_refinement_configs(base_config, successful_stage1)
+
+    results_stage2: List[Dict[str, Any]] = []
+    if refinement_configs:
+        print(f"\n🔧 Stage 2: Generated {len(refinement_configs)} refinement configurations")
+        results_stage2 = await step.run_config_batch(refinement_configs, args.symbol, args.exchange)
+
+    # Combine stage-1 and stage-2 results for final analysis
+    all_results: List[Dict[str, Any]] = list(results_stage1)
+    if results_stage2:
+        all_results.extend(results_stage2)
+
+    final_df, final_analysis = step.analyze_and_rank_results(all_results)
+
+    if final_df.empty:
+        print("\n❌ No results to save after refinement.")
+        return
+
+    # Add Independent Analysis on combined successful runs
+    successful = final_df[final_df.get("success", False) == True].copy()
+
+    analysis = final_analysis.copy()
 
     if not successful.empty:
         # Best Breakout
-        best_breakout = successful.sort_values("breakout_log_loss", ascending=True).iloc[0].to_dict()
-        analysis["best_config_breakout"] = {k: v for k, v in best_breakout.items() if k.startswith("config_")}
-        analysis["best_loss_breakout"] = best_breakout.get("breakout_log_loss")
+        if "breakout_log_loss" in successful.columns:
+            best_breakout = successful.sort_values("breakout_log_loss", ascending=True).iloc[0].to_dict()
+            analysis["best_config_breakout"] = {k: v for k, v in best_breakout.items() if k.startswith("config_")}
+            analysis["best_loss_breakout"] = best_breakout.get("breakout_log_loss")
 
-        # Best Volatility
-        best_volatility = successful.sort_values("volatility_log_loss", ascending=True).iloc[0].to_dict()
-        analysis["best_config_volatility"] = {k: v for k, v in best_volatility.items() if k.startswith("config_")}
-        analysis["best_loss_volatility"] = best_volatility.get("volatility_log_loss")
+        # Best Volatility (when available)
+        if "volatility_log_loss" in successful.columns:
+            best_volatility = successful.sort_values("volatility_log_loss", ascending=True).iloc[0].to_dict()
+            analysis["best_config_volatility"] = {k: v for k, v in best_volatility.items() if k.startswith("config_")}
+            analysis["best_loss_volatility"] = best_volatility.get("volatility_log_loss")
 
-        # Best Trend
-        best_trend = successful.sort_values("trend_log_loss", ascending=True).iloc[0].to_dict()
-        analysis["best_config_trend"] = {k: v for k, v in best_trend.items() if k.startswith("config_")}
-        analysis["best_loss_trend"] = best_trend.get("trend_log_loss")
+        # Best Trend (when available)
+        if "trend_log_loss" in successful.columns:
+            best_trend = successful.sort_values("trend_log_loss", ascending=True).iloc[0].to_dict()
+            analysis["best_config_trend"] = {k: v for k, v in best_trend.items() if k.startswith("config_")}
+            analysis["best_loss_trend"] = best_trend.get("trend_log_loss")
 
-    # Persist outputs
-    save_sweep_results(results_df, analysis, args.symbol, args.outcomes_dir)
+    # Persist outputs using combined results
+    save_sweep_results(final_df, analysis, args.symbol, args.outcomes_dir)
 
     if successful.empty:
-        print("\n⚠️ No successful configurations in sweep.")
+        print("\n⚠️ No successful configurations in combined sweep.")
         return
 
-    # Print differentiated summaries
+    # Print differentiated summaries from combined successful runs
     cols = [
         "config_id",
         "breakout_log_loss",
@@ -492,13 +587,16 @@ async def main_async() -> None:
     available_cols = [c for c in cols if c in successful.columns]
 
     print("\n🏆 Top 3 Configs for BREAKOUT (min LogLoss):")
-    print(successful.sort_values("breakout_log_loss").head(3)[available_cols].to_string(index=False))
+    if "breakout_log_loss" in successful.columns:
+        print(successful.sort_values("breakout_log_loss").head(3)[available_cols].to_string(index=False))
 
     print("\n🏆 Top 3 Configs for VOLATILITY (min LogLoss):")
-    print(successful.sort_values("volatility_log_loss").head(3)[available_cols].to_string(index=False))
+    if "volatility_log_loss" in successful.columns:
+        print(successful.sort_values("volatility_log_loss").head(3)[available_cols].to_string(index=False))
 
     print("\n🏆 Top 3 Configs for TREND (min LogLoss):")
-    print(successful.sort_values("trend_log_loss").head(3)[available_cols].to_string(index=False))
+    if "trend_log_loss" in successful.columns:
+        print(successful.sort_values("trend_log_loss").head(3)[available_cols].to_string(index=False))
 
 
 def main() -> None:

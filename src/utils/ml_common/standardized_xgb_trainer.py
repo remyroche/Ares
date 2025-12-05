@@ -161,6 +161,10 @@ class XGBTrainingConfig:
     hpo_stratified_sampling_pct: Tuple[float, float] = (0.1, 0.5)  # 10-50% sampling
     enable_warm_start: bool = True  # Use previous best params as starting point
 
+    # Fast-mode switches (used by sweeps / diagnostics)
+    enable_hpo: bool = True  # Master switch to allow or disable HPO entirely
+    enable_oof_training: bool = True  # When False, use a single global training pass
+
     # Parameter search ranges for HPO
     learning_rate_range: Tuple[float, float] = (0.01, 0.3)
     max_depth_range: Tuple[int, int] = (4, 9)
@@ -264,6 +268,18 @@ class StandardizedXGBTrainer:
         Returns:
             XGBTrainingResults with OOF predictions, models, and metadata
         """
+        use_oof = getattr(self.config, "enable_oof_training", True)
+
+        if not use_oof:
+            return self._train_single_pass(
+                X=X,
+                y=y,
+                data_start=data_start,
+                data_end=data_end,
+                sample_weight=sample_weight,
+                eval_metric=eval_metric,
+                verbose=verbose,
+            )
         if verbose:
             logger.info("=" * 80)
             logger.info("🚀 Starting Standardized XGBoost Training with OOF Predictions")
@@ -459,6 +475,9 @@ class StandardizedXGBTrainer:
 
         HPO runs every 30 days, regular training every 10 days.
         """
+        if not getattr(self.config, "enable_hpo", True):
+            return False
+
         hpo_model_id = f"{self.model_id}_hpo"
         last_hpo = self.retrain_manager.get_last_training_time(hpo_model_id)
 
@@ -475,6 +494,92 @@ class StandardizedXGBTrainer:
             return True
 
         return False
+
+    def _train_single_pass(
+        self,
+        X: pd.DataFrame,
+        y: pd.Series,
+        data_start: datetime,
+        data_end: datetime,
+        sample_weight: Optional[np.ndarray],
+        eval_metric: str,
+        verbose: bool,
+    ) -> XGBTrainingResults:
+        """Fast path: train a single model on the full dataset without OOF windows."""
+        if verbose:
+            logger.info("=" * 80)
+            logger.info("🚀 Starting fast single-pass XGBoost training (no OOF windows)")
+            logger.info("=" * 80)
+            logger.info(f"Model ID: {self.model_id}")
+            logger.info(f"Data range: {data_start} → {data_end}")
+            logger.info(f"Samples: {len(X)}, Features: {len(X.columns)}")
+
+        aligned_data = pd.DataFrame(index=X.index)
+        for col in X.columns:
+            aligned_data[col] = X[col]
+        aligned_data["__target__"] = y
+        if sample_weight is not None:
+            aligned_data["__weight__"] = sample_weight
+
+        if len(aligned_data) < self.config.min_samples_for_training:
+            raise ValueError(
+                f"Insufficient samples for fast training: {len(aligned_data)} < "
+                f"{self.config.min_samples_for_training}"
+            )
+
+        window_start_time = time.time()
+        model = self._train_single_window(
+            train_data=aligned_data,
+            window_id=0,
+            window_start=data_start,
+            eval_metric=eval_metric,
+            verbose=verbose,
+        )
+        training_time = time.time() - window_start_time
+
+        predictions = self._predict_single_window(model, aligned_data)
+
+        metadata = [
+            {
+                "window_id": 0,
+                "training_samples": len(aligned_data),
+                "prediction_samples": len(predictions),
+                "training_start": data_start.isoformat(),
+                "training_end": data_end.isoformat(),
+                "prediction_start": data_start.isoformat(),
+                "prediction_end": data_end.isoformat(),
+                "training_time": training_time,
+                "used_hpo": getattr(model, "__used_hpo__", False),
+            }
+        ]
+
+        training_windows = [
+            {
+                "training_start": data_start.isoformat(),
+                "training_end": data_end.isoformat(),
+                "prediction_start": data_start.isoformat(),
+                "prediction_end": data_end.isoformat(),
+                "window_id": 0,
+            }
+        ]
+
+        if verbose:
+            logger.info("=" * 80)
+            logger.info(
+                f"✅ Fast single-pass training complete in {training_time:.2f}s "
+                f"({training_time/60:.2f} minutes)"
+            )
+            logger.info(f"   Total windows: 1")
+            logger.info(f"   Total predictions: {len(predictions)}")
+            logger.info("=" * 80)
+
+        return XGBTrainingResults(
+            oof_predictions=predictions,
+            models=[model],
+            metadata=metadata,
+            hpo_history=None,
+            training_windows=training_windows,
+        )
 
     def _create_dmatrix(
         self,

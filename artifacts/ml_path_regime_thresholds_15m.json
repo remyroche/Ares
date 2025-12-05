@@ -1,6 +1,6 @@
 {
   "data": {
-    "extraction_timestamp": "2025-12-04T00:55:31.905812",
+    "extraction_timestamp": "2025-12-04T23:07:00.577115",
     "symbol": "ETHUSDT",
     "regime_col_name": "risk_regime",
     "total_samples": 2343,
@@ -15,5 +15,5 @@
     "timeframe": "15m",
     "n_regimes": 5
   },
-  "saved_at": "2025-12-04T00:55:31.906323"
+  "saved_at": "2025-12-04T23:07:00.577612"
 }

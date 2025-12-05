@@ -94,6 +94,10 @@ from .label_config import (
     build_label_config,
     compute_label_config_id,
 )
+from src.feature_generation.utils.step06_labeling_components.trend_aware_meta_labeling import (
+    TrendAwareMetaLabeler,
+    MultiTimeframeConfig,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -1408,6 +1412,16 @@ def create_meta_features(
     Returns:
         DataFrame of features for meta-model
     """
+    zigzag_features = None
+    try:
+        labeler = TrendAwareMetaLabeler()
+        zigzag_single = labeler.detect_zigzag_trend(df)
+        mtf_config = MultiTimeframeConfig()
+        zigzag_mtf = labeler.detect_zigzag_multi_timeframe(df, mtf_config=mtf_config)
+        zigzag_features = zigzag_single.join(zigzag_mtf, how="outer", rsuffix="_mtf")
+    except Exception:
+        zigzag_features = None
+
     # Hard-align df and signals to a shared tail window to avoid any
     # length mismatch when assigning signal-based features. We align
     # positionally (most recent data) and then construct features on
@@ -1440,9 +1454,26 @@ def create_meta_features(
     if (not df.index.equals(signals.index)) or df.index.has_duplicates or signals.index.has_duplicates:
         df = df.reset_index(drop=True)
         signals = signals.reset_index(drop=True)
+        if zigzag_features is not None:
+            if len(zigzag_features) > len(df):
+                zigzag_features = zigzag_features.iloc[-len(df):, :]
+            zigzag_features = zigzag_features.reset_index(drop=True)
 
     features = pd.DataFrame(index=df.index)
     n_features = len(features)
+    if zigzag_features is not None:
+        if len(zigzag_features) > n_features:
+            zigzag_features = zigzag_features.iloc[-n_features:, :]
+        elif len(zigzag_features) < n_features:
+            pad = pd.DataFrame(
+                np.nan,
+                index=range(n_features - len(zigzag_features)),
+                columns=zigzag_features.columns,
+            )
+            zigzag_features = pd.concat([pad, zigzag_features], axis=0, ignore_index=True)
+        for col in zigzag_features.columns:
+            if col not in features.columns:
+                features[col] = zigzag_features[col].to_numpy()
 
     # ===== VOLATILITY FEATURES (ENHANCED) =====
 
@@ -1728,6 +1759,18 @@ def create_meta_features(
         features['momentum_10'] = mom10_series.to_numpy()
         features['momentum_20'] = mom20_series.to_numpy()
         features['momentum_ema'] = mom10_series.ewm(span=5).mean().to_numpy()
+
+    # Autocorrelation of returns (lag 1) to capture trend vs mean reversion
+    autocorr_window = 50
+    lag = 1
+    returns_for_autocorr = returns
+    shifted_returns = returns_for_autocorr.shift(lag)
+    autocorr_series = returns_for_autocorr.rolling(window=autocorr_window, min_periods=10).corr(shifted_returns)
+
+    if use_kalman:
+        features['return_autocorr_lag1_w50'] = _align_to_features(autocorr_series, n_features)
+    else:
+        features['return_autocorr_lag1_w50'] = autocorr_series.to_numpy()
 
     # ===== RANGE POSITION =====
 
@@ -2772,8 +2815,8 @@ def translate_to_targets_with_isotonic(
     Returns:
         Tuple of (target_long, target_short) with raw expected returns
     """
-    target_long = pd.Series(0.0, index=realized_returns.index)
-    target_short = pd.Series(0.0, index=realized_returns.index)
+    target_long = pd.Series(np.nan, index=realized_returns.index)
+    target_short = pd.Series(np.nan, index=realized_returns.index)
 
     consensus = signals['consensus'].values
 
@@ -2793,8 +2836,8 @@ def translate_to_targets_with_isotonic(
     sig_tail = signals.iloc[-n_common:]
     prob_tail = np.asarray(probabilities, dtype=float)[-n_common:]
 
-    target_long_tail = pd.Series(0.0, index=rr_tail.index)
-    target_short_tail = pd.Series(0.0, index=rr_tail.index)
+    target_long_tail = pd.Series(np.nan, index=rr_tail.index)
+    target_short_tail = pd.Series(np.nan, index=rr_tail.index)
 
     consensus = sig_tail['consensus'].to_numpy()
 
@@ -2837,8 +2880,8 @@ def translate_to_targets_with_isotonic(
 
     # DEBUG LOGGING: Verify assignment coverage (compact)
     # Count non-zero assignments (both positive and negative targets are meaningful)
-    n_long_assigned = (target_long_tail != 0).sum()
-    n_short_assigned = (target_short_tail != 0).sum()
+    n_long_assigned = target_long_tail.notna().sum()
+    n_short_assigned = target_short_tail.notna().sum()
 
     try:
         tprint(
@@ -2854,11 +2897,11 @@ def translate_to_targets_with_isotonic(
     except Exception:
         logger.debug("Target diagnostics logging failed", exc_info=True)
 
-    # Reindex tail targets back to the full realized_returns index, filling
-    # missing entries with zero so that downstream code can safely assign
-    # them to labeled_data without index length mismatches.
-    target_long = target_long_tail.reindex(realized_returns.index).fillna(0.0)
-    target_short = target_short_tail.reindex(realized_returns.index).fillna(0.0)
+    # Reindex tail targets back to the full realized_returns index so that
+    # downstream code can safely assign them to labeled_data without index
+    # length mismatches.
+    target_long = target_long_tail.reindex(realized_returns.index)
+    target_short = target_short_tail.reindex(realized_returns.index)
 
     return target_long, target_short
 
@@ -6170,9 +6213,37 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             vol_baseline = volatility_1d.rolling(vol_baseline_window).mean()
             vol_factor = volatility_1d / (vol_baseline + 1e-8)
 
-            # Adaptive thresholds based on volatility and HPO multipliers
-            adaptive_profit_threshold = profit_threshold * vol_factor
-            adaptive_stop_threshold = stop_threshold * vol_factor
+            # === Trend-aware ATR modulation for triple-barrier distances ===
+            high_prices = market_data['high'] if 'high' in market_data.columns else market_data['close']
+            low_prices = market_data['low'] if 'low' in market_data.columns else market_data['close']
+            close_prices = market_data['close']
+
+            tr1 = high_prices - low_prices
+            tr2 = (high_prices - close_prices.shift(1)).abs()
+            tr3 = (low_prices - close_prices.shift(1)).abs()
+            true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+
+            trend_atr_window = int(config.get("trend_strength_atr_window", 14))
+            atr_series = true_range.rolling(window=trend_atr_window, min_periods=1).mean()
+
+            trend_delta_lookback = int(config.get("trend_strength_delta_lookback", 4))
+            price_delta = close_prices.diff(trend_delta_lookback).abs()
+
+            trend_strength = (price_delta / (atr_series + 1e-8)).replace([np.inf, -np.inf], np.nan)
+            trend_strength = trend_strength.clip(
+                lower=0.0,
+                upper=float(config.get("trend_strength_clip", 5.0)),
+            ).fillna(0.0)
+
+            trend_alpha = float(config.get("trend_strength_alpha_profit", 0.5))
+            trend_beta = float(config.get("trend_strength_beta_stop", 0.5))
+
+            profit_factor = 1.0 + trend_alpha * trend_strength
+            stop_factor = 1.0 + trend_beta * trend_strength
+
+            # Adaptive thresholds based on volatility and trend-aware multipliers
+            adaptive_profit_threshold = profit_threshold * vol_factor * profit_factor
+            adaptive_stop_threshold = stop_threshold * vol_factor * stop_factor
 
             # Enforce hard floor based on transaction costs (0.5% = 50 bps)
             # This ensures profit targets remain viable after slippage + fees

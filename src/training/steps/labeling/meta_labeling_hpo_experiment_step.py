@@ -1003,15 +1003,18 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                         "high": 2.5,
                     },
                     # Quantile thresholds for volatility-scaled label generation.
-                    # Constrained to a narrow band around the default 0.30/0.80.
+                    # Relaxed band so HPO can explore both sparser and denser label
+                    # definitions around the default 0.30/0.80, including more
+                    # central quantiles that increase label density when supported
+                    # by the edge objective.
                     "label_low_q": {
                         "type": "float",
-                        "low": 0.25,
-                        "high": 0.35,
+                        "low": 0.20,
+                        "high": 0.45,
                     },
                     "label_high_q": {
                         "type": "float",
-                        "low": 0.75,
+                        "low": 0.55,
                         "high": 0.85,
                     },
                     # Maximum scaling factor for signal-strength-based sample
@@ -1325,8 +1328,36 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 # --- Recompute realized returns ---
                 vol_baseline = volatility_1d.rolling(vol_baseline_window).mean()
                 vol_factor = volatility_1d / (vol_baseline + 1e-8)
-                adaptive_profit = profit_thr_base * vol_factor
-                adaptive_stop = stop_thr_base * vol_factor
+
+                high_prices = market_data["high"] if "high" in market_data.columns else market_data["close"]
+                low_prices = market_data["low"] if "low" in market_data.columns else market_data["close"]
+                close_prices = market_data["close"]
+
+                tr1 = high_prices - low_prices
+                tr2 = (high_prices - close_prices.shift(1)).abs()
+                tr3 = (low_prices - close_prices.shift(1)).abs()
+                true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+
+                trend_atr_window = int(config.get("trend_strength_atr_window", 14))
+                atr_series = true_range.rolling(window=trend_atr_window, min_periods=1).mean()
+
+                trend_delta_lookback = int(config.get("trend_strength_delta_lookback", 4))
+                price_delta = close_prices.diff(trend_delta_lookback).abs()
+
+                trend_strength = (price_delta / (atr_series + 1e-8)).replace([np.inf, -np.inf], np.nan)
+                trend_strength = trend_strength.clip(
+                    lower=0.0,
+                    upper=float(config.get("trend_strength_clip", 5.0)),
+                ).fillna(0.0)
+
+                trend_alpha = float(config.get("trend_strength_alpha_profit", 0.5))
+                trend_beta = float(config.get("trend_strength_beta_stop", 0.5))
+
+                profit_factor = 1.0 + trend_alpha * trend_strength
+                stop_factor = 1.0 + trend_beta * trend_strength
+
+                adaptive_profit = profit_thr_base * vol_factor * profit_factor
+                adaptive_stop = stop_thr_base * vol_factor * stop_factor
                 adaptive_profit = adaptive_profit.clip(
                     lower=profit_thr_base * profit_mult_min,
                     upper=profit_thr_base * profit_mult_max,
@@ -1521,18 +1552,99 @@ class MetaLabelingHPOExperimentStep(BaseStep):
 
                 # Construct a unified target magnitude (as in diagnostics)
                 target_mag = pd.Series(0.0, index=market_data.index)
-                long_mask = target_long > 0
-                short_mask = target_short > 0
-                target_mag[long_mask] = target_long[long_mask]
-                target_mag[short_mask] = target_short[short_mask]
+                long_mask_meta = (target_long > 0).reindex(target_mag.index, fill_value=False)
+                short_mask_meta = (target_short > 0).reindex(target_mag.index, fill_value=False)
+                target_mag[long_mask_meta] = target_long.reindex(target_mag.index)[long_mask_meta]
+                target_mag[short_mask_meta] = target_short.reindex(target_mag.index)[short_mask_meta]
 
-                # Quantile clipping of non-zero targets (symmetric tails)
+                # Quantile clipping of non-zero targets (symmetric tails) and write
+                # clipped values back into target_mag so downstream diagnostics see
+                # the effect of winsorisation.
                 target_nz = target_mag[target_mag > 0]
                 if len(target_nz) >= 100:
                     low_val = target_nz.quantile(q_low)
                     high_val = target_nz.quantile(q_high)
                     if low_val < high_val:
-                        target_nz = target_nz.clip(low_val, high_val)
+                        target_nz_clipped = target_nz.clip(low_val, high_val)
+                        target_mag.loc[target_nz_clipped.index] = target_nz_clipped
+
+                # ===== REGRESSION TARGETS (EVENT-ONLY, DIAGNOSTIC) =====
+                # Build an event-only, signed regression target from the
+                # isotonic-based long/short targets. This is used only for
+                # diagnostics and does not directly affect the main edge
+                # metric, but provides a clearer view of payoff learnability
+                # for regressors.
+                try:
+                    # Event mask and direction
+                    event_mask_reg = labeled_mask.reindex(realized_returns.index, fill_value=False)
+                    consensus_dir = primary_signals.get("consensus")
+                    if isinstance(consensus_dir, pd.Series):
+                        consensus_dir = consensus_dir.reindex(realized_returns.index)
+
+                    if isinstance(consensus_dir, pd.Series):
+                        long_event_mask = event_mask_reg & (consensus_dir > 0)
+                        short_event_mask = event_mask_reg & (consensus_dir < 0)
+                    else:
+                        long_event_mask = event_mask_reg
+                        short_event_mask = event_mask_reg & False
+
+                    # Signed regression base target: long>0, short<0
+                    y_reg_base = pd.Series(np.nan, index=realized_returns.index)
+                    if target_long is not None:
+                        tl = target_long.reindex(realized_returns.index)
+                        y_reg_base.loc[long_event_mask] = tl.loc[long_event_mask]
+                    if target_short is not None:
+                        ts = target_short.reindex(realized_returns.index)
+                        y_reg_base.loc[short_event_mask] = -ts.loc[short_event_mask]
+
+                    # Drop NaNs to derive clipping/scaling statistics
+                    y_ev = y_reg_base[event_mask_reg].dropna()
+
+                    if len(y_ev) >= 50:
+                        reg_cfg = config.get("regression_targets", {}) or {}
+                        clip_low_q = float(reg_cfg.get("clip_low_q", 0.01))
+                        clip_high_q = float(reg_cfg.get("clip_high_q", 0.99))
+
+                        clip_low_q = max(0.0, min(0.2, clip_low_q))
+                        clip_high_q = max(0.8, min(1.0, clip_high_q))
+                        if clip_low_q >= clip_high_q:
+                            clip_low_q, clip_high_q = 0.01, 0.99
+
+                        lo = float(y_ev.quantile(clip_low_q))
+                        hi = float(y_ev.quantile(clip_high_q))
+
+                        if np.isfinite(lo) and np.isfinite(hi) and lo < hi:
+                            y_reg_base = y_reg_base.clip(lo, hi)
+                            y_ev = y_reg_base[event_mask_reg].dropna()
+
+                        # Robust scaling
+                        med = float(y_ev.median())
+                        q25 = float(y_ev.quantile(0.25))
+                        q75 = float(y_ev.quantile(0.75))
+                        iqr = q75 - q25
+                        scale = iqr if iqr > 1e-8 else float(y_ev.mad()) if hasattr(y_ev, "mad") else 0.0
+
+                        if scale > 0:
+                            y_reg_scaled = (y_reg_base - med) / scale
+                        else:
+                            y_reg_scaled = y_reg_base * 0.0
+
+                        # Store compact diagnostics in candidate_config later
+                        # via local variables captured in this scope.
+                        reg_target_stats = {
+                            "n_events_reg": int(y_ev.shape[0]),
+                            "mean_raw": float(y_ev.mean()),
+                            "std_raw": float(y_ev.std()),
+                            "min_raw": float(y_ev.min()),
+                            "max_raw": float(y_ev.max()),
+                            "median_raw": float(med),
+                        }
+                    else:
+                        y_reg_scaled = y_reg_base
+                        reg_target_stats = None
+                except Exception:
+                    y_reg_scaled = None
+                    reg_target_stats = None
 
                 # ===== LEARNABILITY ASSESSMENT WITH CALIBRATION =====
                 # Create meta-features for this labeling configuration using the
@@ -1968,6 +2080,12 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 # Add underfit diagnostics if computed
                 if underfit_diagnostics is not None:
                     candidate_config['underfit_diagnostics'] = underfit_diagnostics
+
+                # Attach regression target diagnostics, if available, so that
+                # downstream analysis can assess how well continuous payoffs
+                # behaved for this labeling configuration.
+                if reg_target_stats is not None:
+                    candidate_config['regression_target_stats'] = reg_target_stats
 
                 candidate_pool.append(candidate_config)
 
@@ -2632,8 +2750,36 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 # Recompute adaptive profit/stop thresholds
                 vol_baseline = volatility_1d.rolling(vol_baseline_window).mean()
                 vol_factor = volatility_1d / (vol_baseline + 1e-8)
-                adaptive_profit = profit_thr_base * vol_factor
-                adaptive_stop = stop_thr_base * vol_factor
+
+                high_prices = market_data["high"] if "high" in market_data.columns else market_data["close"]
+                low_prices = market_data["low"] if "low" in market_data.columns else market_data["close"]
+                close_prices = market_data["close"]
+
+                tr1 = high_prices - low_prices
+                tr2 = (high_prices - close_prices.shift(1)).abs()
+                tr3 = (low_prices - close_prices.shift(1)).abs()
+                true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+
+                trend_atr_window = int(config.get("trend_strength_atr_window", 14))
+                atr_series = true_range.rolling(window=trend_atr_window, min_periods=1).mean()
+
+                trend_delta_lookback = int(config.get("trend_strength_delta_lookback", 4))
+                price_delta = close_prices.diff(trend_delta_lookback).abs()
+
+                trend_strength = (price_delta / (atr_series + 1e-8)).replace([np.inf, -np.inf], np.nan)
+                trend_strength = trend_strength.clip(
+                    lower=0.0,
+                    upper=float(config.get("trend_strength_clip", 5.0)),
+                ).fillna(0.0)
+
+                trend_alpha = float(config.get("trend_strength_alpha_profit", 0.5))
+                trend_beta = float(config.get("trend_strength_beta_stop", 0.5))
+
+                profit_factor = 1.0 + trend_alpha * trend_strength
+                stop_factor = 1.0 + trend_beta * trend_strength
+
+                adaptive_profit = profit_thr_base * vol_factor * profit_factor
+                adaptive_stop = stop_thr_base * vol_factor * stop_factor
                 adaptive_profit = adaptive_profit.clip(
                     lower=profit_thr_base * profit_mult_min,
                     upper=profit_thr_base * profit_mult_max,

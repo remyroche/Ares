@@ -5566,12 +5566,19 @@ class MLBreakoutBounceRegimeStep(BaseStep):
             ),
         )
 
-        prim_touch = df["primary_level_touch_count"]
-        opp_touch = df["opposing_level_touch_count"]
-        prim_prom = df["primary_level_prominence"]
-        opp_prom = df["opposing_level_prominence"]
-        prim_depth = df["primary_level_volume_depth_ratio"]
-        opp_depth = df["opposing_level_volume_depth_ratio"]
+        idx = df.index
+
+        # Some level generators (e.g., HTF, Fractal) do not provide full opposing-level
+        # statistics. Use safe fallbacks so that feature construction remains robust
+        # across different SR methods.
+
+        prim_touch = df.get("primary_level_touch_count", pd.Series(np.nan, index=idx))
+        prim_prom = df.get("primary_level_prominence", pd.Series(np.nan, index=idx))
+        prim_depth = df.get("primary_level_volume_depth_ratio", pd.Series(np.nan, index=idx))
+
+        opp_touch = df.get("opposing_level_touch_count", prim_touch)
+        opp_prom = df.get("opposing_level_prominence", prim_prom)
+        opp_depth = df.get("opposing_level_volume_depth_ratio", prim_depth)
 
         prim_std = float(prim_prom.std(ddof=0))
         if np.isfinite(prim_std) and prim_std > 0.0:
@@ -5585,8 +5592,11 @@ class MLBreakoutBounceRegimeStep(BaseStep):
         else:
             opp_prom_z = opp_prom * 0.0
 
-        prim_last = df["primary_level_last_touch_ts"]
-        opp_last = df["opposing_level_last_touch_ts"]
+        prim_last = df.get(
+            "primary_level_last_touch_ts",
+            pd.Series(idx, index=idx),
+        )
+        opp_last = df.get("opposing_level_last_touch_ts", prim_last)
 
         hours_since_prim = (
             (df.index.to_series() - prim_last).dt.total_seconds() / 3600.0
@@ -8266,6 +8276,29 @@ class MLBreakoutBounceRegimeStep(BaseStep):
         else:
             fwd_returns = pd.Series(0.0, index=X.index)
 
+        # ====================================================================
+        # DIAGNOSTIC: Label/return consistency by class
+        # ====================================================================
+        try:
+            aligned_ret = (
+                fwd_returns
+                .replace([np.inf, -np.inf], np.nan)
+            )
+            class_stats = {}
+            for c in [0, 1, 2]:
+                mask_c = (y == c)
+                if mask_c.any():
+                    ret_c = aligned_ret[mask_c]
+                    class_stats[c] = {
+                        "count": int(mask_c.sum()),
+                        "mean": float(ret_c.mean(skipna=True)),
+                        "median": float(ret_c.median(skipna=True)),
+                    }
+            if class_stats:
+                tprint_info(f"📊 Fwd return stats by class: {class_stats}")
+        except Exception as diag_exc:
+            tprint_warning(f"⚠️ Failed to compute label/return diagnostics: {diag_exc}")
+
         abs_move = (
             fwd_returns
             .replace([np.inf, -np.inf], np.nan)
@@ -8292,6 +8325,24 @@ class MLBreakoutBounceRegimeStep(BaseStep):
                     event_min_move = float(config.get("breakout_meta_min_ret", 0.015))
         if event_min_move <= 0.0:
             event_min_move = float(config.get("breakout_meta_min_ret", 0.015))
+
+        # ====================================================================
+        # STEP 3: Refine labels using realized forward returns
+        # Downgrade small-move breaks (y != 0) whose |fwd_return| is below
+        # event_min_move into class 0 so that only economically meaningful
+        # breaks remain in classes 1/2.
+        # ====================================================================
+        try:
+            small_move_breaks = (y != 0) & (abs_move < event_min_move)
+            n_small = int(small_move_breaks.sum())
+            if n_small > 0:
+                tprint_info(
+                    f"🔧 Relabeling {n_small} small-move breaks to class 0 "
+                    f"(event_min_move={event_min_move:.6f})"
+                )
+                y.loc[small_move_breaks] = 0
+        except Exception as refine_exc:
+            tprint_warning(f"⚠️ Failed to refine labels with event_min_move: {refine_exc}")
 
         # Directional target distribution (for logging)
         n_samples = len(X)
@@ -8384,6 +8435,40 @@ class MLBreakoutBounceRegimeStep(BaseStep):
         X_test = X[test_mask] if test_mask.sum() > 0 else None
         y_test = y[test_mask] if test_mask.sum() > 0 else None
 
+        # ====================================================================
+        # STEP 4: Tighten training to regimes where moves matter
+        # Optionally filter Stage 1 training samples to those with
+        # sufficiently large |fwd_move|, while leaving val/test intact so
+        # evaluation still reflects the full distribution.
+        # ====================================================================
+        try:
+            # Use a configurable lower bound; default to half of event_min_move.
+            train_min_move_cfg = config.get("breakout_train_min_move_pct")
+            if train_min_move_cfg is not None:
+                train_min_move = float(train_min_move_cfg)
+            else:
+                train_min_move = float(event_min_move * 0.5)
+
+            if train_min_move > 0.0:
+                train_abs_move = abs_move.loc[X_train.index].replace([np.inf, -np.inf], np.nan).fillna(0.0)
+                keep_mask = train_abs_move >= train_min_move
+                n_keep = int(keep_mask.sum())
+                n_total = int(len(X_train))
+                if n_keep >= 100 and n_keep < n_total:
+                    tprint_info(
+                        f"📊 Regime filter: keeping {n_keep}/{n_total} train "
+                        f"samples with |move|>={train_min_move:.6f}"
+                    )
+                    X_train = X_train.loc[keep_mask]
+                    y_train = y_train.loc[keep_mask]
+                else:
+                    tprint_info(
+                        f"📊 Regime filter skipped (keep={n_keep}, total={n_total}, "
+                        f"threshold={train_min_move:.6f})"
+                    )
+        except Exception as regime_exc:
+            tprint_warning(f"⚠️ Failed to apply regime-based training filter: {regime_exc}")
+
         # ========================================================================
         # STAGE 1: Multi-Class Directional Classification (0=NoBreak, 1=Up, 2=Down)
         # ========================================================================
@@ -8421,7 +8506,9 @@ class MLBreakoutBounceRegimeStep(BaseStep):
             y=pd.Series(y_train.values, index=X_train.index),
             data_start=X_train.index.min(),
             data_end=X_train.index.max(),
-            eval_metric="logloss",
+            # For multi:softprob, use multi-class logloss to align
+            # prediction/label dimensions.
+            eval_metric="mlogloss",
             verbose=True
         )
 
@@ -8479,7 +8566,20 @@ class MLBreakoutBounceRegimeStep(BaseStep):
                 "gamma": stage1_config.gamma,
                 "lambda": stage1_config.reg_lambda,
                 "tree_method": stage1_config.tree_method,
-                "eval_metric": "logloss",
+                # Multi-class classification with multi:softprob requires
+                # a multi-class metric (mlogloss/merror) to avoid shape
+                # mismatches between predictions and labels.
+                "eval_metric": "mlogloss",
+                # Ensure multi-class classification has a valid num_class.
+                # Prefer the config value, but fall back to the number of
+                # unique training labels (at least 2) if needed.
+                "num_class": int(
+                    getattr(
+                        stage1_config,
+                        "num_class",
+                        max(2, int(y_train.nunique())),
+                    )
+                ),
             }
 
             evals = [(dtrain_fb, "train"), (dval_fb, "val")]
@@ -8493,14 +8593,31 @@ class MLBreakoutBounceRegimeStep(BaseStep):
             )
 
             # Synthesize pseudo-OOF probabilities on the full training set
-            # for use as confidence weights in Stage 2.
+            # for use as confidence weights in Stage 2. For multi-class
+            # (multi:softprob), XGBoost returns a 2D probability matrix
+            # (n_samples, num_class); collapse this to a 1D breakout
+            # confidence score so downstream weighting logic can stay
+            # unchanged.
             dall_fb = _xgb.DMatrix(
                 X_train.values.astype(np.float32),
                 label=y_train.values.astype(int),
                 feature_names=X_train.columns.tolist(),
             )
             p_train_fb = stage1_model.predict(dall_fb)
-            stage1_oof = pd.DataFrame({"probability": p_train_fb}, index=X_train.index)
+
+            p_train_fb = np.asarray(p_train_fb)
+            if p_train_fb.ndim == 1:
+                prob_1d = p_train_fb
+            else:
+                # Assume class 0 corresponds to "no breakout"; treat
+                # breakout confidence as 1 - P(class 0). If fewer than
+                # 2 columns for some reason, just flatten.
+                if p_train_fb.shape[1] >= 2:
+                    prob_1d = 1.0 - p_train_fb[:, 0]
+                else:
+                    prob_1d = p_train_fb.ravel()
+
+            stage1_oof = pd.DataFrame({"probability": prob_1d}, index=X_train.index)
             stage1_models = [stage1_model]
 
         # Create DMatrix for predictions
@@ -8519,12 +8636,22 @@ class MLBreakoutBounceRegimeStep(BaseStep):
         else:
             stage1_test_probs = None
 
-        # Stage 1 metrics
-        val_preds = (stage1_val_probs >= 0.5).astype(int)
+        # Stage 1 metrics (handle both binary and multi-class probabilities)
+        probs_val = np.asarray(stage1_val_probs)
+        if probs_val.ndim == 1 or probs_val.shape[1] == 1:
+            # Binary case: threshold
+            val_preds = (probs_val >= 0.5).astype(int)
+        else:
+            # Multi-class case: argmax over class probabilities
+            val_preds = np.argmax(probs_val, axis=1)
+
         val_accuracy = accuracy_score(y_val, val_preds)
-        val_log_loss = self._safe_log_loss(y_val, stage1_val_probs)
+        val_log_loss = self._safe_log_loss(y_val, probs_val)
         try:
-            val_roc_auc = roc_auc_score(y_val, stage1_val_probs)
+            if probs_val.ndim == 1 or probs_val.shape[1] == 1:
+                val_roc_auc = roc_auc_score(y_val, probs_val)
+            else:
+                val_roc_auc = roc_auc_score(y_val, probs_val, multi_class="ovr")
         except Exception:
             val_roc_auc = float("nan")
 
@@ -8532,6 +8659,39 @@ class MLBreakoutBounceRegimeStep(BaseStep):
             f"✅ Stage 1 Val: accuracy={val_accuracy:.4f}, "
             f"log_loss={val_log_loss:.4f}, auc={val_roc_auc if np.isfinite(val_roc_auc) else float('nan'):.4f}"
         )
+
+        # ====================================================================
+        # DIAGNOSTIC: Direct baseline XGBoost classifier (without OOF wrapper)
+        # ====================================================================
+        try:
+            baseline_clf = xgb.XGBClassifier(
+                objective="multi:softprob",
+                num_class=3,
+                eval_metric="mlogloss",
+                n_estimators=300,
+                learning_rate=0.05,
+                max_depth=4,
+                subsample=0.8,
+                colsample_bytree=0.8,
+                tree_method="hist",
+            )
+
+            baseline_clf.fit(X_train.values, y_train.values)
+            base_val_probs = baseline_clf.predict_proba(X_val.values)
+            base_val_preds = np.argmax(base_val_probs, axis=1)
+
+            base_val_acc = accuracy_score(y_val, base_val_preds)
+            try:
+                base_val_auc = roc_auc_score(y_val, base_val_probs, multi_class="ovr")
+            except Exception:
+                base_val_auc = float("nan")
+
+            tprint_info(
+                f"📊 Baseline XGB (direct): val_acc={base_val_acc:.4f}, "
+                f"val_auc={base_val_auc if np.isfinite(base_val_auc) else float('nan'):.4f}"
+            )
+        except Exception as base_exc:
+            tprint_warning(f"⚠️ Baseline XGB diagnostic training failed: {base_exc}")
 
         tprint_info("🔄 Stage 2/2: Training quality regression with StandardizedXGBTrainer")
 
@@ -8582,8 +8742,38 @@ class MLBreakoutBounceRegimeStep(BaseStep):
                 # Fallback: drop duplicates, keeping the last occurrence
                 prob_series = prob_series[~prob_series.index.duplicated(keep="last")]
 
-        confidence_weights = np.abs(prob_series.reindex(X_train.index).fillna(0.5) - 0.5) * 2
-        confidence_weights = confidence_weights.values
+        # Base confidence weights from Stage 1: 0 at ambiguous probs (0.5),
+        # 1 at confident extremes (0 or 1).
+        confidence_weights_series = np.abs(prob_series.reindex(X_train.index).fillna(0.5) - 0.5) * 2
+        confidence_weights = confidence_weights_series.values.astype(float)
+
+        # PnL-aware modulation: increase weight for samples with larger
+        # absolute forward returns, while clipping to avoid domination
+        # by a few extreme outliers. This encourages Stage 2 to focus on
+        # economically meaningful moves.
+        pnl_mag = np.abs(fwd_returns_train.values.astype(float))
+        pnl_mag_finite = pnl_mag[np.isfinite(pnl_mag)]
+        if pnl_mag_finite.size > 0:
+            pnl_ref = np.nanpercentile(pnl_mag_finite, 95.0)
+            if not np.isfinite(pnl_ref) or pnl_ref <= 0.0:
+                max_mag = float(np.nanmax(pnl_mag_finite)) if pnl_mag_finite.size > 0 else 1.0
+                pnl_ref = max_mag if max_mag > 0.0 else 1.0
+        else:
+            pnl_ref = 1.0
+
+        if not np.isfinite(pnl_ref) or pnl_ref <= 0.0:
+            pnl_ref = 1.0
+
+        pnl_scaled = np.clip(pnl_mag / pnl_ref, 0.0, 1.0)
+        # Use a square-root transform so medium-sized moves still get
+        # substantial weight without letting the largest moves dominate.
+        pnl_weights = np.sqrt(pnl_scaled)
+
+        # Final weights combine directional confidence and PnL magnitude.
+        # When pnl_weights=0 -> keep 50% of confidence; when pnl_weights=1
+        # -> keep 100% of confidence.
+        confidence_scale = 0.5 + 0.5 * pnl_weights
+        confidence_weights = confidence_weights * confidence_scale
 
         # Train Stage 2 with OOF predictions (StandardizedXGBTrainer)
         stage2_results = stage2_trainer.train_and_predict(
@@ -8720,12 +8910,22 @@ class MLBreakoutBounceRegimeStep(BaseStep):
         alpha = 0.6  # Weight for stage 1 (direction)
         beta = 0.4   # Weight for stage 2 (quality)
 
-        # For validation set
-        val_final_probs = alpha * stage1_val_probs + beta * stage2_val_norm
+        # For validation set: collapse multi-class directional probs into a
+        # scalar "break" probability so we can combine with the 1D quality
+        # score from Stage 2.
+        stage1_val_arr = np.asarray(stage1_val_probs)
+        if stage1_val_arr.ndim == 1 or stage1_val_arr.shape[1] == 1:
+            p_break_dir = stage1_val_arr.reshape(-1)
+        else:
+            # Class 0 = NoBreak, classes 1/2 = directional break (Up/Down)
+            p_no_break = stage1_val_arr[:, 0]
+            p_break_dir = 1.0 - p_no_break
+
+        val_final_probs = alpha * p_break_dir + beta * stage2_val_norm
         val_final_probs = np.clip(val_final_probs, 0.0, 1.0)
 
         # Derive 3-class probabilities for validation (bounce, break, trap)
-        val_uncertainty = 1.0 - np.abs(stage1_val_probs - 0.5) * 2.0
+        val_uncertainty = 1.0 - np.abs(p_break_dir - 0.5) * 2.0
         val_trap_prob = val_uncertainty * (1.0 - stage2_val_norm)
 
         val_p_break = val_final_probs * (1.0 - val_trap_prob * 0.5)
@@ -8749,16 +8949,30 @@ class MLBreakoutBounceRegimeStep(BaseStep):
         # Create full predictions on entire dataset
         dfull = create_dmatrix(X)
         full_stage1_probs = stage1_model.predict(dfull)
+        full_stage1_probs = np.asarray(full_stage1_probs)
 
-        # Overlay OOF predictions for stage 1 to prevent lookahead bias in training set
+        # Overlay OOF predictions for stage 1 to prevent lookahead bias in training set.
+        # For multi-class (Nx3) probabilities, we keep model predictions as-is
+        # and only apply the 1D OOF series when the output is effectively 1D.
         if stage1_oof is not None:
-            # Align OOF predictions to the full index
-            # stage1_oof index should match X_train index
             oof_series = stage1_oof["probability"].reindex(X.index)
             valid_oof = oof_series.notna()
             if valid_oof.any():
-                full_stage1_probs[valid_oof] = oof_series[valid_oof].values
-                tprint_info(f"Overlaying {valid_oof.sum()} OOF predictions for Stage 1")
+                oof_vals = oof_series[valid_oof].values.astype(float)
+
+                if full_stage1_probs.ndim == 1 or (
+                    full_stage1_probs.ndim == 2 and full_stage1_probs.shape[1] == 1
+                ):
+                    full_stage1_probs[valid_oof.values] = oof_vals
+                    tprint_info(f"Overlaying {valid_oof.sum()} OOF predictions for Stage 1 (1D)")
+                else:
+                    # Multi-class case: skip direct overlay to avoid broadcasting
+                    # mismatches. The OOF series is still used downstream for
+                    # sample-weighting in Stage 2.
+                    tprint_warning(
+                        "Skipping direct Stage 1 OOF overlay for multi-class "
+                        "probabilities; using model probabilities for full set."
+                    )
 
         if stage2_model is not None:
             full_stage2_preds = stage2_model.predict(dfull)
@@ -8844,6 +9058,10 @@ class MLBreakoutBounceRegimeStep(BaseStep):
         # ========================================================================
         # COMPILE METRICS
         # ========================================================================
+        # Binary breakout ratio (fraction of samples with any breakout vs no-break)
+        y_series_full = pd.Series(y).astype(int)
+        break_ratio = float((y_series_full > 0).mean()) if len(y_series_full) > 0 else float("nan")
+
         metrics = {
             "val_accuracy": float(val_accuracy),
             "val_log_loss": float(val_log_loss),
@@ -8865,9 +9083,14 @@ class MLBreakoutBounceRegimeStep(BaseStep):
 
         # Test metrics if available
         if X_test is not None and y_test is not None and stage1_test_probs is not None:
-            test_preds = (stage1_test_probs >= 0.5).astype(int)
+            probs_test = np.asarray(stage1_test_probs)
+            if probs_test.ndim == 1 or probs_test.shape[1] == 1:
+                test_preds = (probs_test >= 0.5).astype(int)
+            else:
+                test_preds = np.argmax(probs_test, axis=1)
+
             test_accuracy = accuracy_score(y_test, test_preds)
-            test_log_loss = self._safe_log_loss(y_test, stage1_test_probs)
+            test_log_loss = self._safe_log_loss(y_test, probs_test)
 
             metrics["test_accuracy"] = float(test_accuracy)
             metrics["test_log_loss"] = float(test_log_loss)

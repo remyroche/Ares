@@ -32,6 +32,7 @@ from sklearn.metrics import (
     mean_absolute_error,
     r2_score,
 )
+from sklearn.isotonic import IsotonicRegression
 
 from src.training.steps.base_step import BaseStep
 from src.utils.tprint import (
@@ -319,6 +320,33 @@ class MLVolumeForceStep(BaseStep):
                         class_weights = np.where(y_target.values == 1, pos_w, neg_w)
                         target_weights = target_weights * class_weights
 
+                    # Optionally tilt weights toward breakouts with larger future moves.
+                    # This encourages the classifier to focus more on economically
+                    # meaningful events without changing the target definition.
+                    move_weight_scale = float(config.get("volume_force_breakout_move_weight_scale", 0.5))
+                    move_weight_cap = float(config.get("volume_force_breakout_move_weight_cap", 3.0))
+                    if "future_return_H" in y.columns and move_weight_scale > 0.0:
+                        try:
+                            fwd = y["future_return_H"].loc[y_target.index].astype(float)
+                            fwd_abs = fwd.abs().replace([np.inf, -np.inf], np.nan).fillna(0.0)
+
+                            positive_mask = fwd_abs > 0
+                            ref_scale = 0.0
+                            if positive_mask.any():
+                                ref_scale = float(fwd_abs[positive_mask].quantile(0.75))
+                            if not np.isfinite(ref_scale) or ref_scale <= 0.0:
+                                ref_scale = float(fwd_abs.max())
+                            if not np.isfinite(ref_scale) or ref_scale <= 0.0:
+                                ref_scale = 0.01
+
+                            move_intensity = (fwd_abs / ref_scale).clip(0.0, move_weight_cap)
+                            move_weights = 1.0 + move_weight_scale * move_intensity.to_numpy()
+                            # Only upweight positive breakout examples; keep negatives at 1.0
+                            move_weights = np.where(y_target.values == 1, move_weights, 1.0)
+                            target_weights = target_weights * move_weights
+                        except Exception as e:
+                            tprint_warning(f"Failed to apply breakout move-based weighting: {e}")
+
                 else:
                     # Volatility and Trend are Regression
                     objective = "reg:squarederror"
@@ -332,6 +360,11 @@ class MLVolumeForceStep(BaseStep):
                 xgb_lr = float(config.get("volume_force_xgb_learning_rate", 0.03))
                 xgb_depth = int(config.get("volume_force_xgb_max_depth", 6))
                 xgb_n_estimators = int(config.get("volume_force_xgb_n_estimators", 800))
+                xgb_min_child_weight = float(config.get("volume_force_xgb_min_child_weight", 10.0))
+                xgb_gamma = float(config.get("volume_force_xgb_gamma", 1.5))
+                xgb_reg_lambda = float(config.get("volume_force_xgb_reg_lambda", 3.0))
+                xgb_subsample = float(config.get("volume_force_xgb_subsample", 0.8))
+                xgb_colsample_bytree = float(config.get("volume_force_xgb_colsample_bytree", 0.8))
 
                 training_config = XGBTrainingConfig(
                     model_id=model_id,
@@ -345,11 +378,11 @@ class MLVolumeForceStep(BaseStep):
                     objective=objective,
                     learning_rate=xgb_lr,
                     max_depth=xgb_depth,
-                    min_child_weight=10.0,
-                    gamma=1.5,
-                    reg_lambda=3.0,
-                    subsample=0.8,
-                    colsample_bytree=0.8,
+                    min_child_weight=xgb_min_child_weight,
+                    gamma=xgb_gamma,
+                    reg_lambda=xgb_reg_lambda,
+                    subsample=xgb_subsample,
+                    colsample_bytree=xgb_colsample_bytree,
                 )
 
                 trainer = StandardizedXGBTrainer(model_id=model_id, config=training_config)
@@ -468,6 +501,44 @@ class MLVolumeForceStep(BaseStep):
                 if "future_return_H" in y.columns:
                     preds_with_targets["future_return_H"] = y.loc[preds_with_targets.index, "future_return_H"].astype(float)
 
+                # Calibrate breakout probabilities into a 0-1 scalar score when possible.
+                if "vol_force_breakout" in preds_with_targets.columns and "target_breakout" in preds_with_targets.columns:
+                    raw_prob = preds_with_targets["vol_force_breakout"].astype(float)
+                    y_break = preds_with_targets["target_breakout"].astype(float)
+
+                    raw_vals = raw_prob.values
+                    y_vals = y_break.values
+                    mask = (
+                        np.isfinite(raw_vals)
+                        & np.isfinite(y_vals)
+                    )
+
+                    min_cal_samples = int(config.get("volume_force_min_calibration_samples", 200))
+                    if mask.sum() >= max(50, min_cal_samples) and np.unique(y_vals[mask]).size >= 2:
+                        try:
+                            ir = IsotonicRegression(y_min=0.0, y_max=1.0)
+                            ir.fit(raw_vals[mask], y_vals[mask])
+
+                            prob_cal = np.full_like(raw_vals, np.nan, dtype=float)
+                            valid_mask = np.isfinite(raw_vals)
+                            if valid_mask.any():
+                                prob_cal[valid_mask] = ir.transform(raw_vals[valid_mask])
+
+                            prob_series = pd.Series(prob_cal, index=raw_prob.index).clip(0.0, 1.0)
+                            preds_with_targets["vol_force_breakout_score"] = prob_series
+                            metrics["breakout_calibration_method"] = "isotonic_oof"
+                        except Exception:
+                            preds_with_targets["vol_force_breakout_score"] = raw_prob.clip(0.0, 1.0)
+                            metrics["breakout_calibration_method"] = "identity_fallback"
+                    else:
+                        preds_with_targets["vol_force_breakout_score"] = raw_prob.clip(0.0, 1.0)
+                        metrics["breakout_calibration_method"] = "identity_insufficient_samples"
+
+                breakout_metrics = self._compute_breakout_trading_effectiveness(preds_with_targets, config)
+                for k, v in breakout_metrics.items():
+                    if k not in metrics:
+                        metrics[k] = v
+
                 # Save Predictions Artifact
                 preds_to_save = preds_with_targets.reset_index().rename(columns={preds_with_targets.index.name or "index": "timestamp"})
                 preds_path = self._save_artifact(
@@ -482,8 +553,11 @@ class MLVolumeForceStep(BaseStep):
                 )
                 artifacts.append(preds_path)
 
+                avg_ll = float(metrics.get("avg_log_loss", float("inf")) or float("inf"))
+                avg_acc = float(metrics.get("avg_accuracy", 0.0) or 0.0)
+
                 tprint_success(
-                    f"✅ Training Complete. Avg OOF LogLoss: {avg_ll:.4f}, Acc: {avg_acc:.4f}"
+                    f" Training Complete. Avg OOF LogLoss: {avg_ll:.4f}, Acc: {avg_acc:.4f}"
                 )
 
             # Save Models (Dict of models is not directly supported by save_artifact for 'model' type usually,
@@ -575,6 +649,95 @@ class MLVolumeForceStep(BaseStep):
         targets["future_return_H"] = r_future
 
         return targets
+
+    def _compute_breakout_trading_effectiveness(
+        self,
+        preds_with_targets: pd.DataFrame,
+        config: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        metrics: Dict[str, Any] = {}
+        score_col = "vol_force_breakout_score" if "vol_force_breakout_score" in preds_with_targets.columns else "vol_force_breakout"
+        if score_col not in preds_with_targets.columns:
+            return metrics
+        if "future_return_H" not in preds_with_targets.columns:
+            return metrics
+
+        prob = preds_with_targets[score_col].astype(float)
+        fwd = preds_with_targets["future_return_H"].astype(float)
+
+        mask = prob.notna() & fwd.notna() & np.isfinite(fwd.values)
+        prob = prob[mask]
+        fwd = fwd[mask]
+        if len(prob) == 0:
+            return metrics
+
+        raw_thresholds = config.get("volume_force_trade_thresholds")
+        if isinstance(raw_thresholds, (list, tuple)):
+            thresholds = [float(t) for t in raw_thresholds if t is not None]
+        elif raw_thresholds is not None:
+            thresholds = [float(raw_thresholds)]
+        else:
+            thresholds = [0.6, 0.7, 0.8]
+
+        raw_quantiles = config.get("volume_force_trade_quantiles")
+        if isinstance(raw_quantiles, (list, tuple)):
+            quantiles = [float(q) for q in raw_quantiles if q is not None]
+        elif raw_quantiles is not None:
+            quantiles = [float(raw_quantiles)]
+        else:
+            # Default to a small set of high-quantile slices, including top-30%
+            quantiles = [0.95, 0.9, 0.7]
+
+        def _add_stats(prefix: str, sel: pd.Series) -> None:
+            n = int(sel.shape[0])
+            total = int(fwd.shape[0])
+            coverage = float(n / total) if total > 0 else 0.0
+            mean_ret = float(sel.mean()) if n > 0 else 0.0
+            std_ret = float(sel.std(ddof=0)) if n > 1 else 0.0
+            if n > 0:
+                hit_rate = float((sel > 0).mean())
+            else:
+                hit_rate = 0.0
+            if std_ret > 0.0 and n > 1:
+                sharpe = float(mean_ret / std_ret * np.sqrt(float(n)))
+            else:
+                sharpe = 0.0
+            metrics[prefix + "_coverage"] = coverage
+            metrics[prefix + "_hit_rate"] = hit_rate
+            metrics[prefix + "_mean_return"] = mean_ret
+            metrics[prefix + "_sharpe"] = sharpe
+            metrics[prefix + "_n_trades"] = n
+
+        for thr in thresholds:
+            try:
+                thr_val = float(thr)
+            except (TypeError, ValueError):
+                continue
+            mask_thr = prob >= thr_val
+            if not mask_thr.any():
+                continue
+            sel = fwd[mask_thr]
+            label_val = int(round(thr_val * 100))
+            prefix = f"breakout_trade_p{label_val}"
+            _add_stats(prefix, sel)
+
+        for q in quantiles:
+            try:
+                q_val = float(q)
+            except (TypeError, ValueError):
+                continue
+            if not 0.0 < q_val < 1.0:
+                continue
+            prob_thr = float(prob.quantile(q_val))
+            mask_q = prob >= prob_thr
+            if not mask_q.any():
+                continue
+            sel = fwd[mask_q]
+            pct = int(round((1.0 - q_val) * 100))
+            prefix = f"breakout_trade_top{pct}"
+            _add_stats(prefix, sel)
+
+        return metrics
 
     def _load_market_data_with_cache(self, config: Dict[str, Any], timeframe: str) -> Tuple[pd.DataFrame, str]:
         """Load market data with caching."""

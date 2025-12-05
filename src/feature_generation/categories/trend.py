@@ -101,6 +101,12 @@ from ..base_calculations import (
     BaseCalculationConfig,
     create_base_calculator
 )
+try:
+    from src.utils.feature_common.volume_transforms import log1p_zscore_normalize
+    ROBUST_NORMALIZATION_AVAILABLE = True
+except ImportError:
+    log1p_zscore_normalize = None
+    ROBUST_NORMALIZATION_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -2444,8 +2450,6 @@ class VectorBTEMAGenerator(VectorBTFeatureGenerator):
         return ema.rename(f'vectorbt_ema_{self.period}')
 
 class VectorBTADXGenerator(VectorBTFeatureGenerator):
-    """VectorBT-optimized ADX generator."""
-
     def __init__(self, period: int = 14, config: Optional[FeatureConfig] = None):
         if config is None:
             config = self._create_default_config(period)
@@ -2469,7 +2473,6 @@ class VectorBTADXGenerator(VectorBTFeatureGenerator):
         )
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        """Generate ADX using VectorBT."""
         if data.empty:
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_adx_{self.period}')
 
@@ -2477,6 +2480,126 @@ class VectorBTADXGenerator(VectorBTFeatureGenerator):
         adx = self._vectorbt_technical_indicator(data, 'adx', window=self.period)
 
         return adx.rename(f'vectorbt_adx_{self.period}')
+
+
+class ATRTrendStrengthGenerator(VectorizedFeatureGenerator):
+    def __init__(self, period: int = 14):
+        config = FeatureConfig(
+            name=f"atr_trend_strength_{period}",
+            category=FeatureCategory.TREND,
+            description=f"ATR-normalized price move magnitude over {period} periods",
+            required_columns=["high", "low", "close"],
+            default_lookback=max(period + 1, 2),
+            min_lookback=max(period + 1, 2),
+            max_lookback=max(period + 1, 2),
+            parameters={"period": period},
+            matrix_optimized=True,
+            gpu_accelerated=False,
+        )
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        self.period = period
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        if not all(col in data.columns for col in ("high", "low", "close")):
+            return pd.Series(np.nan, index=data.index, name=self.config.name)
+
+        high = data["high"].astype(float)
+        low = data["low"].astype(float)
+        close = data["close"].astype(float)
+
+        tr1 = high - low
+        tr2 = (high - close.shift(1)).abs()
+        tr3 = (low - close.shift(1)).abs()
+        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+
+        atr = tr.rolling(window=self.period, min_periods=self.period).mean()
+        price_change = close.diff().abs()
+
+        strength = price_change / atr.replace(0, np.nan)
+        strength = strength.replace([np.inf, -np.inf], np.nan)
+
+        if ROBUST_NORMALIZATION_AVAILABLE and log1p_zscore_normalize is not None:
+            window = max(self.period * 2, 50)
+            strength = log1p_zscore_normalize(strength.fillna(0.0), window=window)
+
+        return strength.rename(self.config.name)
+
+
+class PriceAutocorrelationGenerator(VectorizedFeatureGenerator):
+    def __init__(self, window: int = 20):
+        config = FeatureConfig(
+            name=f"price_autocorrelation_{window}",
+            category=FeatureCategory.TREND,
+            description=f"Lag-1 autocorrelation of returns over {window} periods",
+            required_columns=["close"],
+            default_lookback=window,
+            min_lookback=window,
+            max_lookback=window,
+            parameters={"window": window},
+            matrix_optimized=True,
+            gpu_accelerated=False,
+        )
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        self.window = window
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        if "close" not in data.columns or len(data) < self.window + 1:
+            return pd.Series(np.nan, index=data.index, name=self.config.name)
+
+        close = data["close"].astype(float)
+        returns = close.pct_change()
+
+        autocorr = returns.rolling(window=self.window, min_periods=self.window).apply(
+            lambda x: x.autocorr(lag=1) if len(x) > 1 else 0.0,
+            raw=False,
+        )
+
+        autocorr = autocorr.clip(-1.0, 1.0)
+        return autocorr.rename(self.config.name)
+
+
+class ChoppinessIndexGenerator(VectorizedFeatureGenerator):
+    def __init__(self, period: int = 14):
+        config = FeatureConfig(
+            name=f"choppiness_index_{period}",
+            category=FeatureCategory.TREND,
+            description=f"Choppiness Index over {period} periods (0-100)",
+            required_columns=["high", "low", "close"],
+            default_lookback=period + 1,
+            min_lookback=period + 1,
+            max_lookback=max(period + 1, period * 2),
+            parameters={"period": period},
+            matrix_optimized=True,
+            gpu_accelerated=False,
+        )
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        self.period = period
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        if not all(col in data.columns for col in ("high", "low", "close")):
+            return pd.Series(np.nan, index=data.index, name=self.config.name)
+
+        high = data["high"].astype(float)
+        low = data["low"].astype(float)
+        close = data["close"].astype(float)
+
+        tr1 = high - low
+        tr2 = (high - close.shift(1)).abs()
+        tr3 = (low - close.shift(1)).abs()
+        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+
+        tr_sum = tr.rolling(window=self.period, min_periods=self.period).sum()
+        highest_high = high.rolling(window=self.period, min_periods=self.period).max()
+        lowest_low = low.rolling(window=self.period, min_periods=self.period).min()
+        price_range = (highest_high - lowest_low).replace(0, np.nan)
+
+        ratio = (tr_sum / price_range).replace([np.inf, -np.inf], np.nan)
+
+        with np.errstate(divide="ignore", invalid="ignore"):
+            chop = 100.0 * np.log10(ratio) / np.log10(float(self.period))
+
+        chop = chop.clip(lower=0.0, upper=100.0)
+        return chop.rename(self.config.name)
 
 def create_default_trend_generators() -> List[FeatureGenerator]:
     """Create default trend generators with VectorBT optimization."""
@@ -2600,16 +2723,21 @@ def create_default_trend_generators() -> List[FeatureGenerator]:
     for period in periods.get('keltner_channels', [20]):
         generators.append(KeltnerChannelsGenerator(period))
 
-    # ADX generators
     for period in periods.get('adx', [14]):
         generators.append(ADXGenerator(period))
 
-    # Directional Signal generators
     generators.append(DirectionalSignalGenerator())
 
-    # Trend Score generators
     for period in periods.get('trend_score', [14]):
         generators.append(TrendScoreGenerator(adx_period=period))
+
+    generators.append(ATRTrendStrengthGenerator(period=14))
+
+    for window in [20, 50]:
+        generators.append(PriceAutocorrelationGenerator(window=window))
+
+    for period in [14]:
+        generators.append(ChoppinessIndexGenerator(period=period))
 
     return generators
 

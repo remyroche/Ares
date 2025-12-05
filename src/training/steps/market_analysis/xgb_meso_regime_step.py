@@ -257,6 +257,88 @@ class XGBMesoTrendStep(BaseStep):
                 # Assign to canonical column
                 meso_df["meso_trend_score_continuous"] = meso_scores
 
+            # Optionally compute simple 2h-forward trading metrics on the test window
+            if config.get("meso_compute_2h_stats", False):
+                try:
+                    test_period = getattr(split_config, "test", None)
+                    if test_period is not None:
+                        test_start = getattr(test_period, "start", None)
+                        test_end = getattr(test_period, "effective_end", getattr(test_period, "end", None))
+                    else:
+                        test_start = None
+                        test_end = None
+
+                    if test_start is not None and test_end is not None:
+                        df_test = meso_df.loc[
+                            (meso_df.index >= test_start) & (meso_df.index <= test_end)
+                        ].copy()
+
+                        needed_cols = [
+                            "meso_trend_forward_return_2h",
+                            "meso_trend_score_continuous",
+                        ]
+                        missing_cols = [c for c in needed_cols if c not in df_test.columns]
+                        if not missing_cols:
+                            df_test = df_test.dropna(subset=needed_cols)
+                            if not df_test.empty:
+                                target_2h = df_test["meso_trend_forward_return_2h"].astype(float)
+                                score_2h = df_test["meso_trend_score_continuous"].astype(float)
+
+                                def _compute_stats(returns: pd.Series) -> Dict[str, float]:
+                                    if returns is None or returns.empty:
+                                        return {
+                                            "mean": float("nan"),
+                                            "std": float("nan"),
+                                            "sharpe": float("nan"),
+                                            "hit_rate": float("nan"),
+                                            "n": 0,
+                                        }
+
+                                    mean_ret = float(returns.mean())
+                                    std_ret = float(returns.std(ddof=0))
+                                    sharpe = mean_ret / std_ret if std_ret > 0 else float("nan")
+                                    hit_rate = float((returns > 0).mean())
+                                    return {
+                                        "mean": mean_ret,
+                                        "std": std_ret,
+                                        "sharpe": sharpe,
+                                        "hit_rate": hit_rate,
+                                        "n": int(len(returns)),
+                                    }
+
+                                # Strategy 1: Long/short by sign of meso score (uses all non-zero scores)
+                                pos_ls = np.sign(score_2h.values)
+                                mask_ls = pos_ls != 0
+                                if mask_ls.any():
+                                    ret_ls = pd.Series(
+                                        pos_ls[mask_ls], index=target_2h.index[mask_ls]
+                                    ) * target_2h[mask_ls]
+                                    ls_stats = _compute_stats(ret_ls)
+                                    training_metrics["test_2h_ls_mean"] = ls_stats["mean"]
+                                    training_metrics["test_2h_ls_std"] = ls_stats["std"]
+                                    training_metrics["test_2h_ls_sharpe"] = ls_stats["sharpe"]
+                                    training_metrics["test_2h_ls_hit_rate"] = ls_stats["hit_rate"]
+                                    training_metrics["test_2h_ls_n"] = ls_stats["n"]
+
+                                # Strategy 2: Long/flat on top 20% of meso scores
+                                if not score_2h.empty:
+                                    try:
+                                        threshold = float(score_2h.quantile(0.8))
+                                        mask_lf = score_2h > threshold
+                                        if mask_lf.any():
+                                            ret_lf = target_2h[mask_lf]
+                                            lf_stats = _compute_stats(ret_lf)
+                                            training_metrics["test_2h_lf20_mean"] = lf_stats["mean"]
+                                            training_metrics["test_2h_lf20_std"] = lf_stats["std"]
+                                            training_metrics["test_2h_lf20_sharpe"] = lf_stats["sharpe"]
+                                            training_metrics["test_2h_lf20_hit_rate"] = lf_stats["hit_rate"]
+                                            training_metrics["test_2h_lf20_n"] = lf_stats["n"]
+                                    except Exception:
+                                        pass
+                except Exception:
+                    # Do not allow trading-metric computation to break training
+                    pass
+
             # ------------------------------------------------------------------
             # 6) Save Artifacts
             # ------------------------------------------------------------------
@@ -429,7 +511,24 @@ class XGBMesoTrendStep(BaseStep):
                     "rmse_improvement_vs_zero": rmse_improvement_vs_zero,
                     "n_samples": result.get("n_samples", 0),
                     "error": result.get("error", ""),
+                    "training_data_path": result.get("training_data_path"),
                 }
+
+                # Attach optional 2h-forward trading metrics if present
+                for key in [
+                    "test_2h_ls_mean",
+                    "test_2h_ls_std",
+                    "test_2h_ls_sharpe",
+                    "test_2h_ls_hit_rate",
+                    "test_2h_ls_n",
+                    "test_2h_lf20_mean",
+                    "test_2h_lf20_std",
+                    "test_2h_lf20_sharpe",
+                    "test_2h_lf20_hit_rate",
+                    "test_2h_lf20_n",
+                ]:
+                    if key in metrics:
+                        res_entry[key] = metrics.get(key)
 
                 # Add config params
                 for k in config:
@@ -646,15 +745,25 @@ class XGBMesoTrendStep(BaseStep):
         X_full_scaled = scaler.transform(X)
 
         model_id = f"{config.get('symbol')}_meso_trend"
+
+        fast_sweep = bool(config.get("fast_sweep", False))
+
         trainer_config = XGBTrainingConfig(
             model_id=model_id,
             task_type="regression",
             objective="reg:squarederror",
-            n_estimators=500,
-            learning_rate=0.05,
+            n_estimators=200 if fast_sweep else 500,
+            learning_rate=0.1 if fast_sweep else 0.05,
             max_depth=6,
-            early_stopping_rounds=30,
+            early_stopping_rounds=20 if fast_sweep else 30,
+            retrain_interval_days=21 if not fast_sweep else 9999,
+            hpo_interval_days=30 if not fast_sweep else 999999,
+            min_samples_for_training=500 if fast_sweep else 1000,
         )
+
+        if fast_sweep:
+            trainer_config.enable_hpo = False
+            trainer_config.enable_oof_training = False
 
         trainer = StandardizedXGBTrainer(model_id, trainer_config)
 

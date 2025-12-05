@@ -164,8 +164,8 @@
       "step_name": "ml_path_regime_step",
       "source_market_data": "historical_data"
     },
-    "ml_path_training_data_15m_20251204_005027_795": {
-      "created_at": "2025-12-04T00:50:27.795019",
+    "ml_path_training_data_15m_20251204_230645_123": {
+      "created_at": "2025-12-04T23:06:45.123046",
       "num_rows": 2343,
       "num_columns": 27,
       "columns": [
@@ -206,8 +206,8 @@
       "step_name": "ml_path_regime_step",
       "source_market_data": "historical_data"
     },
-    "ml_path_training_data_15m_20251204_005030_216": {
-      "created_at": "2025-12-04T00:50:30.216025",
+    "ml_path_training_data_15m_20251204_230648_942": {
+      "created_at": "2025-12-04T23:06:48.942804",
       "num_rows": 2343,
       "num_columns": 27,
       "columns": [
@@ -248,8 +248,8 @@
       "step_name": "ml_path_regime_step",
       "source_market_data": "historical_data"
     },
-    "ml_path_training_data_15m_20251204_005033_050": {
-      "created_at": "2025-12-04T00:50:33.050217",
+    "ml_path_training_data_15m_20251204_230652_465": {
+      "created_at": "2025-12-04T23:06:52.465264",
       "num_rows": 2343,
       "num_columns": 27,
       "columns": [
@@ -290,8 +290,8 @@
       "step_name": "ml_path_regime_step",
       "source_market_data": "historical_data"
     },
-    "ml_path_training_data_15m_20251204_005035_622": {
-      "created_at": "2025-12-04T00:50:35.622231",
+    "ml_path_training_data_15m_20251204_230656_839": {
+      "created_at": "2025-12-04T23:06:56.839101",
       "num_rows": 2343,
       "num_columns": 27,
       "columns": [
@@ -332,8 +332,8 @@
       "step_name": "ml_path_regime_step",
       "source_market_data": "historical_data"
     },
-    "ml_path_training_data_15m_20251204_005532_058": {
-      "created_at": "2025-12-04T00:55:32.058754",
+    "ml_path_training_data_15m_20251204_230700_705": {
+      "created_at": "2025-12-04T23:07:00.705296",
       "num_rows": 2343,
       "num_columns": 27,
       "columns": [
@@ -375,8 +375,8 @@
       "source_market_data": "historical_data"
     }
   },
-  "current_version": "ml_path_training_data_15m_20251204_005532_058",
+  "current_version": "ml_path_training_data_15m_20251204_230700_705",
   "created_at": "2025-11-27T19:29:54.408553",
   "load_error": "Expecting value: line 1 column 1 (char 0)",
-  "updated_at": "2025-12-04T01:04:46.124335"
+  "updated_at": "2025-12-05T00:23:38.319216"
 }

@@ -68,6 +68,11 @@ from src.utils.ml_common.standardized_xgb_trainer import (
     StandardizedXGBTrainer,
     XGBTrainingConfig,
 )
+from src.utils.ml_common.oof_probability_calibration import (
+    OOFProbabilityCalibrator,
+    OOFCalibrationConfig,
+    get_recommended_calibration_method,
+)
 
 # Feature analysis and selection tools
 try:
@@ -149,7 +154,7 @@ class XGBMacroTrendStep(BaseStep):
                 "macro_trend_target_smoothing_window": 16,
                 "macro_trend_score_smoothing_method": "ewm",
                 # Much smoother score for macro trend
-                "macro_trend_score_smoothing_window": 48,
+                "macro_trend_score_smoothing_window": 8,
                 # Keep HPO opt-in; these defaults are used when explicitly enabled
                 "macro_trend_enable_hpo": False,
                 "macro_trend_hpo_cv_folds": 3,
@@ -181,15 +186,18 @@ class XGBMacroTrendStep(BaseStep):
                 # Minimum run length for regime persistence (NOT scaled). Use a
                 # small positive value so macro regimes are more persistent than
                 # the core alpha regimes.
-                "macro_trend_regime_min_run_bars": 4,
+                "macro_trend_regime_min_run_bars": 1,
                 # Enable quality report generation
                 "macro_trend_enable_quality_report": True,
                 # Regime configuration: macro trend should use fewer, smoother
                 # regimes than the core alpha step. Default to 3 bins and
                 # explore 2–4 in experiments, allowing a 4-regime optimized
                 # configuration when economically justified.
-                "macro_trend_regime_counts": [2, 3, 4],
+                "macro_trend_regime_counts": [3, 4],
                 "macro_trend_regime_bins": 3,
+                "macro_trend_use_flexible_regimes": True,
+                "macro_trend_min_bin_pct": 0.05,
+                "macro_trend_max_bin_pct": 0.40,
             }
             for k, v in macro_trend_defaults.items():
                 config.setdefault(k, v)
@@ -474,6 +482,13 @@ class XGBMacroTrendStep(BaseStep):
             if macro_trend_df.empty:
                 raise ValueError("Alpha dataset is empty after label construction")
 
+            # Ensure a unique time index before model training and regime assignment
+            if not macro_trend_df.index.is_unique:
+                tprint_warning(
+                    "Macro trend alpha dataset index contained duplicates; deduplicating before model training"
+                )
+                macro_trend_df = macro_trend_df[~macro_trend_df.index.duplicated(keep="last")].copy()
+
             # ------------------------------------------------------------------
             # 5) Train LightGBM alpha model and derive alpha regimes
             # ------------------------------------------------------------------
@@ -531,7 +546,7 @@ class XGBMacroTrendStep(BaseStep):
                                 config.get("macro_trend_enable_expectation_calibration", True)
                             )
                             positive_threshold = float(
-                                config.get("macro_trend_expectation_positive_threshold", 0.0)
+                                config.get("macro_trend_expectation_positive_threshold", 0.0001)
                             )
                             min_samples = int(
                                 config.get("macro_trend_expectation_min_samples", 200)
@@ -539,9 +554,11 @@ class XGBMacroTrendStep(BaseStep):
 
                             if expectation_calibration_enabled:
                                 try:
-                                    from sklearn.isotonic import IsotonicRegression
-
-                                    y_target = macro_trend_df["macro_trend_target"].reindex(macro_trend_scores.index)
+                                    # Use an out-of-fold style calibration on macro_trend_scores
+                                    # against a binary up/down label derived from macro_trend_target.
+                                    y_target = macro_trend_df["macro_trend_target"].reindex(
+                                        macro_trend_scores.index
+                                    )
                                     base_mask = (
                                         macro_trend_scores.notna()
                                         & y_target.notna()
@@ -549,65 +566,48 @@ class XGBMacroTrendStep(BaseStep):
                                         & np.isfinite(y_target)
                                     )
 
-                                    # Use an out-of-fold style calibration: fit isotonic only on
-                                    # the validation tail defined by macro_trend_train_fraction.
                                     n_valid = int(base_mask.sum())
                                     if n_valid >= max(min_samples, 50):
-                                        train_frac_local = float(config.get("macro_trend_train_fraction", 0.8))
-                                        train_frac_local = min(max(train_frac_local, 0.5), 0.95)
+                                        scores_valid = macro_trend_scores.loc[base_mask].astype(float)
+                                        y_valid = y_target.loc[base_mask].astype(float)
+                                        y_bin_valid = (y_valid > positive_threshold).astype(float)
 
-                                        # Chronological ordering for effective validation split
-                                        valid_index = macro_trend_scores.index[base_mask]
-                                        split_idx_local = int(n_valid * train_frac_local)
-                                        split_idx_local = max(min(split_idx_local, n_valid - 1), 1)
+                                        method = get_recommended_calibration_method(n_valid)
+                                        calib_config = OOFCalibrationConfig(
+                                            method=method,
+                                            min_samples_for_calibration=min_samples,
+                                        )
+                                        calibrator = OOFProbabilityCalibrator(config=calib_config)
+                                        calibrator.fit(
+                                            oof_predictions=scores_valid,
+                                            y_true=y_bin_valid,
+                                            data_index=scores_valid.index,
+                                        )
 
-                                        val_index = valid_index[split_idx_local:]
-                                        if len(val_index) >= max(50, min_samples // 2):
-                                            scores_val = macro_trend_scores.loc[val_index]
-                                            y_val = y_target.loc[val_index]
-                                            y_bin_val = (y_val > positive_threshold).astype(float)
+                                        calibrated_all = calibrator.transform(
+                                            macro_trend_scores.astype(float)
+                                        )
+                                        expectation_series = pd.Series(
+                                            calibrated_all,
+                                            index=macro_trend_scores.index,
+                                            name="macro_trend_expectation_raw_01",
+                                        ).clip(0.0, 1.0)
 
-                                            iso = IsotonicRegression(
-                                                out_of_bounds="clip",
-                                                y_min=0.0,
-                                                y_max=1.0,
-                                            )
-                                            iso.fit(
-                                                scores_val.to_numpy(
-                                                    dtype=float,
-                                                    copy=False,
-                                                ),
-                                                y_bin_val.to_numpy(
-                                                    dtype=float,
-                                                    copy=False,
-                                                ),
-                                            )
+                                        training_metrics["macro_trend_expectation_calibration_used"] = True
+                                        training_metrics[
+                                            "macro_trend_expectation_positive_threshold"
+                                        ] = positive_threshold
+                                        training_metrics[
+                                            "macro_trend_expectation_calibration_method"
+                                        ] = f"oof_calibrator_{method}"
 
-                                            calibrated_vals = iso.predict(
-                                                macro_trend_scores.to_numpy(
-                                                    dtype=float,
-                                                    copy=False,
-                                                )
-                                            )
-                                            expectation_series = pd.Series(
-                                                calibrated_vals,
-                                                index=macro_trend_scores.index,
-                                                name="macro_trend_expectation_raw_01",
-                                            ).clip(0.0, 1.0)
-
-                                            training_metrics["macro_trend_expectation_calibration_used"] = True
+                                        calib_metrics = calibrator.get_calibration_metrics()
+                                        for k, v in calib_metrics.items():
                                             training_metrics[
-                                                "macro_trend_expectation_positive_threshold"
-                                            ] = positive_threshold
-                                            training_metrics[
-                                                "macro_trend_expectation_calibration_method"
-                                            ] = "isotonic_regression_binary_oof"
-                                        else:
-                                            training_metrics["macro_trend_expectation_calibration_used"] = False
+                                                f"macro_trend_expectation_calibration_{k}"
+                                            ] = v
                                     else:
                                         training_metrics["macro_trend_expectation_calibration_used"] = False
-                                except ImportError:
-                                    training_metrics["macro_trend_expectation_calibration_used"] = False
                                 except Exception as exp_calib_exc:
                                     training_metrics["macro_trend_expectation_calibration_used"] = False
                                     training_metrics["macro_trend_expectation_calibration_error"] = str(
@@ -650,7 +650,7 @@ class XGBMacroTrendStep(BaseStep):
                                     ema_period = int(
                                         config.get(
                                             "macro_trend_expectation_ema_period",
-                                            4,
+                                            1,
                                         )
                                     )
                                     if ema_weight_raw is None:
@@ -702,8 +702,10 @@ class XGBMacroTrendStep(BaseStep):
                             )
                             score_clean = score_base.dropna()
                             if not score_clean.empty:
-                                q_low = float(score_clean.quantile(0.01))
-                                q_high = float(score_clean.quantile(0.99))
+                                # Use slightly wider tails to reduce shrinkage while still
+                                # guarding against extreme outliers.
+                                q_low = float(score_clean.quantile(0.005))
+                                q_high = float(score_clean.quantile(0.995))
 
                                 if np.isfinite(q_low) and np.isfinite(q_high) and q_high > q_low:
                                     scaled = (score_base - q_low) / (q_high - q_low)
@@ -801,10 +803,29 @@ class XGBMacroTrendStep(BaseStep):
                     f"XGBoost not available; skipping alpha model training: {xgb_err}"
                 )
             except Exception as model_exc:
-                tprint_warning(
-                    f"Alpha model training failed; continuing with labels only: {model_exc}"
-                )
-                training_metrics["macro_trend_model_training_failed"] = 1
+                try:
+                    import traceback as _traceback
+
+                    err_type = type(model_exc).__name__
+                    err_msg = str(model_exc)
+                    err_summary = f"{err_type}: {err_msg}"
+                    tb_str = _traceback.format_exc()
+
+                    tprint_warning(
+                        f"Alpha model training failed; continuing with labels only (summary={err_summary})"
+                    )
+                    tprint_warning(
+                        f"[MACRO_XGB_TRAINING_EXCEPTION] {tb_str}"
+                    )
+
+                    training_metrics["macro_trend_model_training_failed"] = 1
+                    training_metrics["macro_trend_model_training_error_type"] = err_type
+                    training_metrics["macro_trend_model_training_error"] = err_msg
+                except Exception:
+                    tprint_warning(
+                        f"Alpha model training failed; continuing with labels only: {model_exc}"
+                    )
+                    training_metrics["macro_trend_model_training_failed"] = 1
 
             # Only trigger fallback if we genuinely have no regime column.
             # This keeps macro_trend_fallback_used=False for healthy runs where
@@ -2118,6 +2139,11 @@ class XGBMacroTrendStep(BaseStep):
         horizon = int(config.get("macro_trend_horizon_bars", 1))
 
         df = macro_trend_df.copy()
+        if not df.index.is_unique:
+            tprint_warning(
+                "Macro trend dataset index contained duplicates; deduplicating before XGB training"
+            )
+            df = df[~df.index.duplicated(keep="last")]
         if "macro_trend_target" not in df.columns:
             raise ValueError("macro_trend_target column not found in dataset")
 
@@ -2509,12 +2535,12 @@ class XGBMacroTrendStep(BaseStep):
                 burnin_pct=float(config.get("macro_trend_burnin_pct", 1.0 / 12.0)),
                 min_samples_for_training=int(config.get("macro_trend_min_samples_for_xgb", 1000)),
                 tree_method=str(config.get("macro_trend_tree_method", "hist")),
-                n_estimators=int(config.get("macro_trend_n_estimators", 500)),
-                learning_rate=float(config.get("macro_trend_learning_rate", 0.05)),
-                max_depth=int(config.get("macro_trend_max_depth", 6)),
-                min_child_weight=float(config.get("macro_trend_min_child_weight", 30.0)),
-                subsample=float(config.get("macro_trend_subsample", 0.8)),
-                colsample_bytree=float(config.get("macro_trend_colsample_bytree", 0.8)),
+                n_estimators=int(config.get("macro_trend_n_estimators", 600)),
+                learning_rate=float(config.get("macro_trend_learning_rate", 0.04)),
+                max_depth=int(config.get("macro_trend_max_depth", 5)),
+                min_child_weight=float(config.get("macro_trend_min_child_weight", 20.0)),
+                subsample=float(config.get("macro_trend_subsample", 0.85)),
+                colsample_bytree=float(config.get("macro_trend_colsample_bytree", 0.85)),
                 gamma=float(config.get("macro_trend_gamma", 1.0)),
                 reg_lambda=float(config.get("macro_trend_reg_lambda", 3.0)),
                 reg_alpha=float(config.get("macro_trend_reg_alpha", 0.5)),
@@ -2533,6 +2559,12 @@ class XGBMacroTrendStep(BaseStep):
             )
 
             oof_df = results.oof_predictions if results.oof_predictions is not None else pd.DataFrame()
+            if not oof_df.empty and not oof_df.index.is_unique:
+                tprint_warning(
+                    "Macro trend OOF predictions index contained duplicates; deduplicating before alignment"
+                )
+                oof_df = oof_df[~oof_df.index.duplicated(keep="last")].copy()
+
             window_metadata = results.metadata or []
             training_metrics["xgb_oof_windows"] = len(window_metadata)
             training_metrics["xgb_oof_predictions"] = int(oof_df.shape[0])
@@ -2595,7 +2627,7 @@ class XGBMacroTrendStep(BaseStep):
                     )
 
                     # 2. Overlay OOF predictions where available (Training/Validation data)
-                    oof_preds = results.oof_predictions
+                    oof_preds = oof_df
                     if oof_preds is not None and not oof_preds.empty:
                         # Identify the prediction column ('prediction' or 'probability')
                         pred_col = 'prediction' if 'prediction' in oof_preds.columns else 'probability'
@@ -3197,15 +3229,15 @@ class XGBMacroTrendStep(BaseStep):
         5. Reports both CV and Winsorized CV metrics
         """
         # Get configuration for regime optimization
-        use_flexible_regimes = bool(config.get("macro_trend_use_flexible_regimes", True))
-        regime_counts_to_test = config.get("macro_trend_regime_counts", [2, 3, 4])
-        min_bin_pct = float(config.get("macro_trend_min_bin_pct", 0.15))
-        max_bin_pct = float(config.get("macro_trend_max_bin_pct", 0.35))
+        use_flexible_regimes = bool(config.get("macro_trend_use_flexible_regimes", False))
+        regime_counts_to_test = config.get("macro_trend_regime_counts", [3, 4])
+        min_bin_pct = float(config.get("macro_trend_min_bin_pct", 0.10))
+        max_bin_pct = float(config.get("macro_trend_max_bin_pct", 0.30))
 
-        # Validate regime counts within compact 2–4 range
+        # Validate regime counts within compact 3–5 range
         if isinstance(regime_counts_to_test, int):
             regime_counts_to_test = [regime_counts_to_test]
-        regime_counts_to_test = [n for n in regime_counts_to_test if 2 <= n <= 4]
+        regime_counts_to_test = [n for n in regime_counts_to_test if 3 <= n <= 5]
         if not regime_counts_to_test:
             regime_counts_to_test = [3]  # Fallback to 3 regimes for macro
 

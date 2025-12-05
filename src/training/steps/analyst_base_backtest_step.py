@@ -369,7 +369,37 @@ class AnalystBaseBacktestStep(BaseStep):
 
             position = signal.shift(1).fillna(0.0)
 
+            # Optional gate overlay using gate_decision from GateTrainingStep
+            gate_mask = None
+            gated_position = None
+            gated_strategy_returns = None
+            try:
+                gate_artifact_name = f"gate_oof_predictions_{symbol}"
+                tprint_info(f"🔎 Attempting to load gate decisions: {gate_artifact_name}")
+
+                gate_oof = self._get_artifact(
+                    artifact_name=gate_artifact_name,
+                    artifact_type="data",
+                    data_category="predictions",
+                )
+
+                if (
+                    gate_oof is not None
+                    and isinstance(gate_oof, pd.DataFrame)
+                    and "gate_decision" in gate_oof.columns
+                ):
+                    gate_series = gate_oof["gate_decision"].astype(float)
+                    # Align to the ML-scored index; missing values default to "no gating" (1.0)
+                    gate_series = gate_series.sort_index().reindex(ml_df.index).fillna(1.0)
+                    gate_mask = gate_series.clip(0.0, 1.0)
+            except Exception:
+                gate_mask = None
+
             strategy_returns = position * raw_returns
+
+            if gate_mask is not None:
+                gated_position = position * gate_mask
+                gated_strategy_returns = gated_position * raw_returns
 
             n_bars = int(len(strategy_returns))
             total_return = float((1.0 + strategy_returns).prod() - 1.0) if n_bars > 0 else 0.0
@@ -432,6 +462,81 @@ class AnalystBaseBacktestStep(BaseStep):
                 "avg_loss": avg_loss,
                 "approx_trades": approx_trades,
             }
+
+            # Compute gated bar-level metrics when gate decisions are available
+            if gated_strategy_returns is not None and gated_position is not None:
+                g_n_bars = int(len(gated_strategy_returns))
+                if g_n_bars > 0:
+                    g_total_return = float((1.0 + gated_strategy_returns).prod() - 1.0)
+                else:
+                    g_total_return = 0.0
+
+                g_mean_ret = float(gated_strategy_returns.mean()) if g_n_bars > 0 else 0.0
+                g_vol = float(gated_strategy_returns.std()) if g_n_bars > 1 else 0.0
+
+                if g_n_bars > 0:
+                    g_annualized_return = float((1.0 + g_mean_ret) ** bars_per_year - 1.0)
+                else:
+                    g_annualized_return = 0.0
+
+                g_annualized_vol = float(g_vol * np.sqrt(bars_per_year)) if g_vol > 0 else 0.0
+
+                g_risk_free = 0.0
+                g_sharpe = float((g_annualized_return - g_risk_free) / g_annualized_vol) if g_annualized_vol > 0 else 0.0
+
+                g_downside = gated_strategy_returns[gated_strategy_returns < 0]
+                if len(g_downside) > 1:
+                    g_downside_vol = float(g_downside.std() * np.sqrt(bars_per_year))
+                else:
+                    g_downside_vol = 0.0
+                g_sortino = float((g_annualized_return - g_risk_free) / g_downside_vol) if g_downside_vol > 0 else g_sharpe
+
+                g_equity = (1.0 + gated_strategy_returns).cumprod()
+                g_running_max = g_equity.cummax()
+                g_drawdown = g_equity / g_running_max - 1.0
+                g_max_drawdown = float(g_drawdown.min()) if len(g_drawdown) > 0 else 0.0
+
+                g_in_position = (gated_position != 0.0).astype(int)
+                g_pos_changes = g_in_position.diff().fillna(0)
+                g_entries = g_pos_changes == 1
+                g_approx_trades = int(g_entries.sum())
+
+                g_positive = gated_strategy_returns[gated_strategy_returns > 0]
+                g_negative = gated_strategy_returns[gated_strategy_returns < 0]
+                g_n_pos = int(len(g_positive))
+                g_n_neg = int(len(g_negative))
+                g_n_nonzero = g_n_pos + g_n_neg
+                g_win_rate_bar = float(g_n_pos / g_n_nonzero) if g_n_nonzero > 0 else 0.0
+                g_avg_win = float(g_positive.mean()) if g_n_pos > 0 else 0.0
+                g_avg_loss = float(g_negative.mean()) if g_n_neg > 0 else 0.0
+                g_gross_profit = float(g_positive.sum()) if g_n_pos > 0 else 0.0
+                g_gross_loss = float(-g_negative.sum()) if g_n_neg > 0 else 0.0
+                g_profit_factor = float(g_gross_profit / g_gross_loss) if g_gross_loss > 0 else 0.0
+
+                gate_coverage_rate = float((gated_position != 0.0).mean()) if len(gated_position) > 0 else 0.0
+
+                metrics.update(
+                    {
+                        "gated_total_return": g_total_return,
+                        "gated_annualized_return": g_annualized_return,
+                        "gated_annualized_volatility": g_annualized_vol,
+                        "gated_sharpe_ratio": g_sharpe,
+                        "gated_sortino_ratio": g_sortino,
+                        "gated_max_drawdown": g_max_drawdown,
+                        "gated_bar_win_rate": g_win_rate_bar,
+                        "gated_profit_factor": g_profit_factor,
+                        "gated_avg_win": g_avg_win,
+                        "gated_avg_loss": g_avg_loss,
+                        "gated_approx_trades": g_approx_trades,
+                        "gate_coverage_rate": gate_coverage_rate,
+                    }
+                )
+
+                tprint_info(
+                    f"🔐 Gate overlay: Sharpe {sharpe:.3f} → {g_sharpe:.3f}, "
+                    f"Bar win-rate {win_rate_bar:.3f} → {g_win_rate_bar:.3f}, "
+                    f"Coverage={gate_coverage_rate:.2%}"
+                )
 
             try:
                 if len(confidence) >= 100:
@@ -571,6 +676,23 @@ class AnalystBaseBacktestStep(BaseStep):
                 f.write(f"| Avg Win per Bar | {pct(avg_win)} |\n")
                 f.write(f"| Avg Loss per Bar | {pct(avg_loss)} |\n")
                 f.write(f"| Approx. Trades (position entries) | {approx_trades} |\n")
+
+                if "gated_sharpe_ratio" in metrics:
+                    f.write("\n## Gate-Aware Overlay Metrics\n\n")
+                    f.write("| Metric | Value |\n")
+                    f.write("|--------|-------|\n")
+                    f.write(f"| Gated Total Return (bar-level) | {pct(metrics['gated_total_return'])} |\n")
+                    f.write(f"| Gated Annualized Return | {pct(metrics['gated_annualized_return'])} |\n")
+                    f.write(f"| Gated Annualized Volatility | {pct(metrics['gated_annualized_volatility'])} |\n")
+                    f.write(f"| Gated Sharpe Ratio | {num(metrics['gated_sharpe_ratio'])} |\n")
+                    f.write(f"| Gated Sortino Ratio | {num(metrics['gated_sortino_ratio'])} |\n")
+                    f.write(f"| Gated Max Drawdown | {pct(metrics['gated_max_drawdown'])} |\n")
+                    f.write(f"| Gated Bar Win Rate | {pct(metrics['gated_bar_win_rate'])} |\n")
+                    f.write(f"| Gated Profit Factor | {num(metrics['gated_profit_factor'])} |\n")
+                    f.write(f"| Gated Avg Win per Bar | {pct(metrics['gated_avg_win'])} |\n")
+                    f.write(f"| Gated Avg Loss per Bar | {pct(metrics['gated_avg_loss'])} |\n")
+                    f.write(f"| Gated Approx. Trades | {metrics['gated_approx_trades']} |\n")
+                    f.write(f"| Gate Coverage Rate | {pct(metrics['gate_coverage_rate'])} |\n")
                 if grid_n_trades is not None:
                     f.write(
                         f"| Trades (grid TPSL best config) | {grid_n_trades} |\n"

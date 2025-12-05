@@ -169,14 +169,28 @@ def evaluate_trading_effectiveness(args: argparse.Namespace) -> None:
 
         df_full[timestamp_col] = pd.to_datetime(df_full[timestamp_col])
 
+        has_target = "meso_trend_target" in df_full.columns
+        has_vol = "meso_trend_target_vol" in df_full.columns
+
         window_mask = (df_full[timestamp_col] >= test_start) & (
             df_full[timestamp_col] <= test_end
         )
-        # Attempt to load target vol if available, for fee estimation
-        has_vol = "meso_trend_target_vol" in df_full.columns
-        cols = ["meso_trend_target", "meso_trend_score_continuous"]
+
+        base_cols = ["meso_trend_forward_return_2h", "meso_trend_score_continuous"]
+        cols = list(base_cols)
+        if has_target:
+            cols.append("meso_trend_target")
         if has_vol:
             cols.append("meso_trend_target_vol")
+
+        missing_cols = [c for c in base_cols if c not in df_full.columns]
+        if missing_cols:
+            print(
+                "\n⚠️ Required columns for 2h trading evaluation are missing from "
+                f"meso trend data: {missing_cols}; skipping trading effectiveness "
+                "evaluation."
+            )
+            return
 
         df_test = df_full.loc[window_mask, cols]
 
@@ -187,7 +201,7 @@ def evaluate_trading_effectiveness(args: argparse.Namespace) -> None:
             )
             return
 
-        df_test = df_test.dropna(subset=cols)
+        df_test = df_test.dropna(subset=base_cols)
         if df_test.empty:
             print(
                 "\n⚠️ Test window meso trend data is empty after dropping NaNs; "
@@ -195,20 +209,19 @@ def evaluate_trading_effectiveness(args: argparse.Namespace) -> None:
             )
             return
 
-        target = df_test["meso_trend_target"].astype(float)
+        target = df_test["meso_trend_forward_return_2h"].astype(float)
         score = df_test["meso_trend_score_continuous"].astype(float)
-        vol = df_test["meso_trend_target_vol"].astype(float) if has_vol else None
-
-        # Calculate duration in days for trades/day metric
-        total_days = (test_end - test_start).total_seconds() / 86400.0
-
-        print("\n🔎 Trading effectiveness on test window (vol-normalized target):")
-        print(
-            f"   Test window: {test_start} → {test_end} "
-            f"(n={len(df_test)}, days={total_days:.1f})"
+        target_vol_norm = (
+            df_test["meso_trend_target"].astype(float) if has_target else None
         )
 
-        def compute_stats(returns: pd.Series, label: str, vol_col: pd.Series = None) -> None:
+        print("\n🔎 Trading effectiveness on test window (2h forward returns):")
+        print(
+            f"   Test window: {test_start} → {test_end} "
+            f"(n={len(df_test)})"
+        )
+
+        def compute_stats(returns: pd.Series, label: str) -> None:
             if returns is None or returns.empty:
                 print(f"\n⚠️ {label}: no returns to evaluate.")
                 return
@@ -217,47 +230,177 @@ def evaluate_trading_effectiveness(args: argparse.Namespace) -> None:
             std_ret = float(returns.std(ddof=0))
             sharpe = mean_ret / std_ret if std_ret > 0 else float("nan")
             hit_rate = float((returns > 0).mean())
-            trades_per_day = len(returns) / total_days
+            downside = returns[returns < 0]
+            downside_std = float(downside.std(ddof=0)) if not downside.empty else float("nan")
+            sortino = mean_ret / downside_std if downside_std > 0 else float("nan")
+
+            p05 = float(returns.quantile(0.05))
+            p95 = float(returns.quantile(0.95))
+
+            pos = returns[returns > 0]
+            neg = returns[returns < 0]
+            avg_gain = float(pos.mean()) if not pos.empty else float("nan")
+            avg_loss = float(neg.mean()) if not neg.empty else float("nan")
+            profit_factor = (
+                abs(avg_gain / avg_loss)
+                if avg_gain > 0 and avg_loss < 0
+                else float("nan")
+            )
+
+            cum = returns.cumsum()
+            drawdown = cum - cum.cummax()
+            max_dd = float(drawdown.min()) if not drawdown.empty else float("nan")
 
             print(f"\n📈 {label}:")
             print(f"   Samples (trades): {len(returns)}")
-            print(f"   Avg trades/day: {trades_per_day:.1f}")
             print(f"   Mean (per-sample): {mean_ret:.4f}")
             print(f"   Std  (per-sample): {std_ret:.4f}")
             print(f"   Sharpe (per-sample, unannualized): {sharpe:.3f}")
             print(f"   Hit rate (>0): {hit_rate:.3%}")
 
-            if vol_col is not None:
-                # 0.3% fee per round trade.
-                # Since target is vol-normalized (target_raw / vol),
-                # we must subtract (fee / vol) to get net vol-normalized return.
-                # Fee is always positive cost, so we subtract from the PnL vector.
-                # Align vol to returns index
-                vol_subset = vol_col.loc[returns.index]
-                cost_penalty = 0.003 / (vol_subset + 1e-8)
-                net_returns = returns - cost_penalty
+            print(f"   Sortino (downside): {sortino:.3f}")
+            print(f"   5th/95th pct: {p05:.4f} / {p95:.4f}")
+            print(f"   Avg gain / loss: {avg_gain:.4f} / {avg_loss:.4f}")
+            print(f"   Profit factor: {profit_factor:.3f}")
+            print(f"   Max drawdown (cum): {max_dd:.4f}")
 
-                mean_net = float(net_returns.mean())
-                std_net = float(net_returns.std(ddof=0))
-                sharpe_net = mean_net / std_net if std_net > 0 else float("nan")
-                hit_rate_net = float((net_returns > 0).mean())
+        def compute_ic(target_series: pd.Series, label: str) -> None:
+            if target_series is None or target_series.empty:
+                print(f"\n⚠️ {label}: no data for IC.")
+                return
 
-                print(f"   -- With 0.3% fees --")
-                print(f"   Mean (Net): {mean_net:.4f}")
-                print(f"   Sharpe (Net): {sharpe_net:.3f}")
-                print(f"   Hit rate (Net): {hit_rate_net:.3%}")
+            common = target_series.index.intersection(score.index)
+            if common.empty:
+                print(f"\n⚠️ {label}: no overlapping index for IC.")
+                return
+
+            t = target_series.loc[common].astype(float)
+            s = score.loc[common].astype(float)
+
+            if t.nunique() <= 1 or s.nunique() <= 1:
+                print(f"\n⚠️ {label}: insufficient variation for IC.")
+                return
+
+            pearson = float(t.corr(s, method="pearson"))
+            spearman = float(t.corr(s, method="spearman"))
+
+            print(f"\n📊 {label} vs meso score IC:")
+            print(f"   Pearson IC:  {pearson:.4f}")
+            print(f"   Spearman IC: {spearman:.4f}")
+
+        def compute_deciles(target_series: pd.Series, label: str) -> None:
+            if target_series is None or target_series.empty:
+                return
+
+            common = target_series.index.intersection(score.index)
+            if len(common) < 20:
+                return
+
+            s = score.loc[common].astype(float)
+            t = target_series.loc[common].astype(float)
+
+            try:
+                ranks = s.rank(method="first")
+                deciles = pd.qcut(ranks, 10, labels=False, duplicates="drop")
+            except Exception:
+                print(f"\n⚠️ {label}: failed to compute score deciles.")
+                return
+
+            df_dec = pd.DataFrame({"decile": deciles, "target": t})
+            dec_means = df_dec.groupby("decile")["target"].mean()
+
+            print(
+                f"\n📊 {label}: mean target by score decile (0=lowest, 9=highest):"
+            )
+            print(dec_means.to_string())
+
+        def compute_top_bucket_calibration(
+            target_series: pd.Series,
+            label: str,
+            top_pct: float = 0.2,
+        ) -> None:
+            """Calibration-style summary for top-pct scores vs the rest."""
+            if target_series is None or target_series.empty:
+                return
+
+            common = target_series.index.intersection(score.index)
+            if len(common) < 20:
+                return
+
+            t = target_series.loc[common].astype(float)
+            s = score.loc[common].astype(float)
+
+            try:
+                threshold = s.quantile(1.0 - top_pct)
+            except Exception:
+                return
+
+            mask_top = s >= threshold
+            mask_rest = ~mask_top
+
+            if not mask_top.any() or not mask_rest.any():
+                return
+
+            top = t[mask_top]
+            rest = t[mask_rest]
+
+            def _summary(x: pd.Series) -> Tuple[float, float, float, float]:
+                mean_ret = float(x.mean())
+                std_ret = float(x.std(ddof=0))
+                sharpe = mean_ret / std_ret if std_ret > 0 else float("nan")
+                hit_rate = float((x > 0).mean())
+                return mean_ret, std_ret, sharpe, hit_rate
+
+            top_mean, top_std, top_sharpe, top_hit = _summary(top)
+            rest_mean, rest_std, rest_sharpe, rest_hit = _summary(rest)
+
+            var_s = float(s.var(ddof=0))
+            slope_global = (
+                float(np.cov(s, t)[0, 1]) / var_s if var_s > 0 else float("nan")
+            )
+
+            s_top = s[mask_top]
+            var_s_top = float(s_top.var(ddof=0))
+            slope_top = (
+                float(np.cov(s_top, top)[0, 1]) / var_s_top
+                if var_s_top > 0
+                else float("nan")
+            )
+
+            print(
+                f"\n📊 Calibration for {label} (top {int(top_pct * 100)}% scores vs rest):"
+            )
+            print(
+                f"   Top bucket:   mean={top_mean:.4f}, std={top_std:.4f}, "
+                f"Sharpe={top_sharpe:.3f}, hit={top_hit:.3%}"
+            )
+            print(
+                f"   Rest bucket:  mean={rest_mean:.4f}, std={rest_std:.4f}, "
+                f"Sharpe={rest_sharpe:.3f}, hit={rest_hit:.3%}"
+            )
+            print(
+                f"   Lift (top - rest): mean={top_mean - rest_mean:.4f}, "
+                f"hit={top_hit - rest_hit:.3%}"
+            )
+            print(
+                f"   Slope target~score (global/top): {slope_global:.4f} / {slope_top:.4f}"
+            )
 
         # Strategy 1: Long/short by sign of meso score (uses all samples with non-zero score)
         pos_ls = pd.Series(np.sign(score.values), index=score.index)
         mask_ls = pos_ls != 0
         if mask_ls.any():
             ret_ls = pos_ls[mask_ls] * target[mask_ls]
-            vol_ls = vol[mask_ls] if vol is not None else None
             compute_stats(
                 ret_ls,
-                "Meso score long/short on vol-normalized target (non-zero scores)",
-                vol_ls
+                "Meso score long/short on 2h forward returns (non-zero scores)",
             )
+            if target_vol_norm is not None:
+                ret_ls_vol = pos_ls[mask_ls] * target_vol_norm[mask_ls]
+                compute_stats(
+                    ret_ls_vol,
+                    "Meso score long/short on vol-normalized target (non-zero scores)",
+                )
         else:
             print("\n⚠️ Long/short strategy: all meso scores are zero; no trades.")
 
@@ -268,12 +411,16 @@ def evaluate_trading_effectiveness(args: argparse.Namespace) -> None:
             mask_lf = pos_lf > 0
             if mask_lf.any():
                 ret_lf = pos_lf[mask_lf] * target[mask_lf]
-                vol_lf = vol[mask_lf] if vol is not None else None
                 compute_stats(
                     ret_lf,
-                    "Meso score long/flat (top 20%) on vol-normalized target",
-                    vol_lf
+                    "Meso score long/flat (top 20%) on 2h forward returns",
                 )
+                if target_vol_norm is not None:
+                    ret_lf_vol = pos_lf[mask_lf] * target_vol_norm[mask_lf]
+                    compute_stats(
+                        ret_lf_vol,
+                        "Meso score long/flat (top 20%) on vol-normalized target",
+                    )
             else:
                 print(
                     "\n⚠️ Long/flat strategy: no samples exceed top-20% "
@@ -282,6 +429,22 @@ def evaluate_trading_effectiveness(args: argparse.Namespace) -> None:
         except Exception as quantile_exc:
             print(
                 f"\n⚠️ Failed to compute long/flat strategy threshold: {quantile_exc}"
+            )
+
+        compute_ic(target, "2h forward returns")
+        if target_vol_norm is not None:
+            compute_ic(target_vol_norm, "Vol-normalized target")
+
+        compute_deciles(target, "2h forward returns")
+        if target_vol_norm is not None:
+            compute_deciles(target_vol_norm, "Vol-normalized target")
+
+        compute_top_bucket_calibration(target, "2h forward returns", top_pct=0.2)
+        if target_vol_norm is not None:
+            compute_top_bucket_calibration(
+                target_vol_norm,
+                "Vol-normalized target",
+                top_pct=0.2,
             )
 
     except Exception as e:

@@ -8,7 +8,7 @@
     "version": "2025-12-03T23:45:00",
     "transaction_cost": 0.0015,
     "entry": {
-      "prob_threshold": 0.65,
+      "prob_threshold": 0.5,
       "use_expected_return": false,
       "expected_return_threshold": 0.0,
       "expected_return_unit": "fraction",
@@ -31,8 +31,8 @@
       "trades_gated": 353
     },
     "filters": {
-      "use_volatility_filter": true,
-      "volatility_quantile": 0.30
+      "use_volatility_filter": false,
+      "volatility_quantile": 0.20
     },
     "regime_specific": {}
   }

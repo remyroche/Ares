@@ -256,6 +256,18 @@ except ImportError as e:
     create_feature_selection_pipeline = None
     tprint_warning(f"⚠️ FeatureSelectionPipeline not available: {e}")
 
+try:
+    from src.training.steps.pre_training.components.final_feature_selection import (
+        FinalFeatureSelectionComponent,
+        FinalFeatureSelectionConfig,
+    )
+    FINAL_FS_COMPONENT_AVAILABLE = True
+except ImportError as e:
+    FINAL_FS_COMPONENT_AVAILABLE = False
+    FinalFeatureSelectionComponent = None
+    FinalFeatureSelectionConfig = None
+    tprint_warning(f"⚠️ FinalFeatureSelectionComponent not available: {e}")
+
 # Import FeatureSelector
 try:
     from feature_selection.feature_selection_with_lgbm import FeatureSelector
@@ -3106,6 +3118,92 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
 
                 if aligned_features.empty or aligned_target.empty:
                     tprint_warning("  ⚠️ No valid samples after alignment; skipping Phase 3.4 selection")
+                elif FINAL_FS_COMPONENT_AVAILABLE and FinalFeatureSelectionComponent is not None and FinalFeatureSelectionConfig is not None:
+                    target_n_features = int(config.get('target_n_features_selector', 200))
+                    tprint_info("  🌟 Phase 3.4: FinalFeatureSelectionComponent (multi-stage LGBM + permutation)")
+                    tprint_info(
+                        f"  🔍 Input features for FS: {aligned_features.shape[1]}, "
+                        f"target_n={target_n_features}"
+                    )
+
+                    pre_lgbm_target = int(config.get('phase3_pre_lgbm_target_features', target_n_features * 3))
+                    stability_weight = float(config.get('phase3_stability_weight', 0.1))
+                    mi_proxy_folds = int(config.get('phase3_mi_proxy_folds', 3))
+
+                    fs_config = FinalFeatureSelectionConfig(
+                        max_features=target_n_features,
+                        pre_lgbm_target_features=pre_lgbm_target,
+                        stability_weight=stability_weight,
+                        mi_proxy_folds=mi_proxy_folds,
+                    )
+
+                    selector = FinalFeatureSelectionComponent(fs_config)
+                    selected_features_list = selector.select_features(
+                        aligned_features,
+                        aligned_target,
+                        feature_names=list(aligned_features.columns),
+                        target_name=getattr(primary_target, 'name', 'target'),
+                    )
+
+                    tprint_success(
+                        f"  ✅ FinalFeatureSelectionComponent selected {len(selected_features_list)} features "
+                        f"(target={target_n_features})"
+                    )
+
+                    if selected_features_list:
+                        tprint_info("  📋 Final selected features (FinalFeatureSelectionComponent):")
+                        for name in selected_features_list:
+                            tprint_info(f"    {name}")
+
+                    selected_set = set(selected_features_list)
+                    base_cols = [c for c in normalized_features.columns if c in selected_set]
+                    interaction_cols = [c for c in interactions.columns if c in selected_set]
+
+                    normalized_features = normalized_features[base_cols]
+
+                    keep_variant_bias = bool(config.get("phase3_keep_mostly_variant_ct", True))
+                    if keep_variant_bias and not normalized_features.empty:
+                        variant_ct_cols: List[str] = []
+                        core_cols: List[str] = []
+                        for col in normalized_features.columns:
+                            nl = str(col).lower()
+                            is_variant = nl.endswith(("_volnorm", "_vwap", "_trend_adj", "_base"))
+                            is_ct = (
+                                "cross_timeframe" in nl
+                                or "ctf_" in nl
+                                or "_3x_ratio" in nl
+                                or "_6x_ratio" in nl
+                                or "_9x_ratio" in nl
+                                or "_15x_ratio" in nl
+                            )
+                            if is_variant or is_ct:
+                                variant_ct_cols.append(col)
+                            else:
+                                core_cols.append(col)
+
+                        if variant_ct_cols:
+                            max_core = int(config.get("phase3_core_fallback_count", 10))
+                            keep_cols = variant_ct_cols + core_cols[:max_core]
+                            normalized_features = normalized_features[keep_cols]
+
+                    if interaction_cols:
+                        interactions = interactions[interaction_cols]
+                    elif interactions is not None and len(interactions.columns) > 0:
+                        max_fallback_interactions = int(
+                            config.get("phase3_interaction_fallback_count", 50)
+                        )
+                        interactions = interactions.iloc[:, :max_fallback_interactions]
+                        tprint_warning(
+                            f"  ⚠️ Phase 3.4 selection kept 0 interaction features; "
+                            f"using {interactions.shape[1]} LGID interactions as fallback"
+                        )
+
+                    lgbm_fs_stats = {
+                        "method": "FinalFeatureSelectionComponent",
+                        "target_n_features": target_n_features,
+                        "selected_count": len(selected_features_list),
+                        "selected_features": selected_features_list,
+                    }
                 elif FEATURE_SELECTION_PIPELINE_AVAILABLE and create_feature_selection_pipeline is not None:
                     target_n_features = int(config.get('target_n_features_selector', 200))
                     tprint_info("  🌟 Phase 3.4: FeatureSelectionPipeline (4-stage feature selection)")
@@ -3147,12 +3245,8 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                     base_cols = [c for c in normalized_features.columns if c in selected_set]
                     interaction_cols = [c for c in interactions.columns if c in selected_set]
 
-                    # Always restrict base features to those selected by Phase 3.4
                     normalized_features = normalized_features[base_cols]
 
-                    # Optional bias: keep mostly variant and cross-timeframe-style features
-                    # at the interaction-generation stage, while allowing a small
-                    # fallback core of other features for stability.
                     keep_variant_bias = bool(config.get("phase3_keep_mostly_variant_ct", True))
                     if keep_variant_bias and not normalized_features.empty:
                         variant_ct_cols: List[str] = []
@@ -3178,10 +3272,6 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                             keep_cols = variant_ct_cols + core_cols[:max_core]
                             normalized_features = normalized_features[keep_cols]
 
-                    # If the selector chose no interaction columns but LGID produced
-                    # interactions, keep a capped fallback set so that downstream
-                    # steps always see some interaction features instead of an
-                    # empty interaction layer.
                     if interaction_cols:
                         interactions = interactions[interaction_cols]
                     elif interactions is not None and len(interactions.columns) > 0:
@@ -3193,7 +3283,6 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                             f"  ⚠️ Phase 3.4 selection kept 0 interaction features; "
                             f"using {interactions.shape[1]} LGID interactions as fallback"
                         )
-                    # else: interactions is already empty and remains so
 
                     perf_summary = pipeline.get_performance_summary()
                     lgbm_fs_stats = {

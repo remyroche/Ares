@@ -1294,6 +1294,27 @@ class MLMeanReversionRegimeStep(BaseStep):
         feats = feats.replace([np.inf, -np.inf], np.nan)
         feats = feats.dropna()
 
+        if bool(config.get("mr_enable_core_feature_subset", False)):
+            core_cols = [
+                "z_price_ma_slow",
+                "z_price_vwap",
+                "rsi",
+                "bb_width",
+                "bb_pct_b_fast",
+                "bb_pct_b_slow",
+                "range_pos_slow",
+                "rsi_smoothed",
+                "below_ma_periods",
+                "below_vwap_periods",
+                "oversold_periods",
+                "overbought_periods",
+                "extreme_below_periods",
+                "extreme_above_periods",
+            ]
+            existing_core = [c for c in core_cols if c in feats.columns]
+            if existing_core:
+                feats = feats[existing_core]
+
         # Optional: augment with balanced feature extractor
         if bool(config.get("mr_enable_balanced_features", True)):
             try:
@@ -1520,23 +1541,24 @@ class MLMeanReversionRegimeStep(BaseStep):
         # are available.
         try:
             teacher_mask = None
-            if "mr_teacher_mean_reversion" in df.columns:
-                mr_core = df["mr_teacher_mean_reversion"].astype(float) == 1.0
-                teacher_mask = mr_core
+            if bool(config.get("mr_enable_teacher_gating", True)):
+                if "mr_teacher_mean_reversion" in df.columns:
+                    mr_core = df["mr_teacher_mean_reversion"].astype(float) == 1.0
+                    teacher_mask = mr_core
 
-            if "mr_teacher_score" in df.columns:
-                score = df["mr_teacher_score"].astype(float)
-                # Relaxed gating from 0.8 to 0.65 to expand scope
-                q_conf = float(config.get("mr_teacher_score_quantile", 0.65))
-                try:
-                    thr = float(score.quantile(q_conf))
-                    hi_band = score >= thr
-                except Exception:
-                    hi_band = score.notna()
-                if teacher_mask is None:
-                    teacher_mask = hi_band
-                else:
-                    teacher_mask = teacher_mask | hi_band
+                if "mr_teacher_score" in df.columns:
+                    score = df["mr_teacher_score"].astype(float)
+                    # Relaxed gating from 0.8 to 0.65 to expand scope
+                    q_conf = float(config.get("mr_teacher_score_quantile", 0.65))
+                    try:
+                        thr = float(score.quantile(q_conf))
+                        hi_band = score >= thr
+                    except Exception:
+                        hi_band = score.notna()
+                    if teacher_mask is None:
+                        teacher_mask = hi_band
+                    else:
+                        teacher_mask = teacher_mask | hi_band
 
             if teacher_mask is None:
                 gating_mask = y_series.notna().to_numpy()
@@ -1545,7 +1567,7 @@ class MLMeanReversionRegimeStep(BaseStep):
 
             # RSI gating: drop labels where RSI is in a neutral range.
             # Relaxed neutral band (40-60 instead of 35-65) to expand scope
-            if "rsi" in df.columns:
+            if bool(config.get("mr_enable_rsi_gating", True)) and "rsi" in df.columns:
                 rsi = df["rsi"].astype(float)
                 rsi_norm = rsi / 100.0
                 rsi_low = float(config.get("mr_rsi_neutral_low", 0.40))
@@ -1942,6 +1964,8 @@ class MLMeanReversionRegimeStep(BaseStep):
 
         tprint_info(f"🚀 Using StandardizedXGBTrainer for OOF predictions (model_id={model_id})")
 
+        eval_metric = str(config.get("mr_xgb_eval_metric", "auc"))
+
         # Create custom config
         training_config = XGBTrainingConfig(
             model_id=model_id,
@@ -1952,14 +1976,15 @@ class MLMeanReversionRegimeStep(BaseStep):
 
             # XGBoost parameters
             tree_method="hist",
-            n_estimators=int(config.get("mr_n_estimators", 500)),
+            n_estimators=int(config.get("mr_n_estimators", 400)),
             learning_rate=float(config.get("mr_learning_rate", 0.03)),
             max_depth=int(config.get("mr_max_depth", 5)),
-            min_child_weight=float(config.get("mr_min_child_weight", 5.0)),
+            min_child_weight=float(config.get("mr_min_child_weight", 10.0)),
             subsample=float(config.get("mr_subsample", 0.8)),
             colsample_bytree=float(config.get("mr_colsample_bytree", 0.8)),
-            gamma=float(config.get("mr_gamma", 0.05)),
-            reg_lambda=float(config.get("mr_reg_lambda", 0.5)),
+            gamma=float(config.get("mr_gamma", 1.0)),
+            reg_lambda=float(config.get("mr_reg_lambda", 2.0)),
+            reg_alpha=float(config.get("mr_reg_alpha", 0.5)),
             early_stopping_rounds=20,
 
             # HPO config
@@ -1978,13 +2003,27 @@ class MLMeanReversionRegimeStep(BaseStep):
             config=training_config
         )
 
+        sample_weight = None
+        if bool(config.get("mr_enable_class_weighting", True)):
+            try:
+                y_arr = y.astype(int).values
+                pos_rate = float((y_arr == 1).mean())
+                neg_rate = 1.0 - pos_rate
+                if 0.0 < pos_rate < 1.0:
+                    pos_w = 0.5 / max(pos_rate, 1e-6)
+                    neg_w = 0.5 / max(neg_rate, 1e-6)
+                    sample_weight = np.where(y_arr == 1, pos_w, neg_w).astype(float)
+            except Exception:
+                sample_weight = None
+
         # Train and get OOF predictions
         results = trainer.train_and_predict(
             X=X,
             y=y,
             data_start=market_data.index.min(),
             data_end=market_data.index.max(),
-            eval_metric="logloss",
+            sample_weight=sample_weight,
+            eval_metric=eval_metric,
             verbose=True
         )
 
@@ -3006,18 +3045,47 @@ class MLMeanReversionRegimeStep(BaseStep):
                     })
                     continue
 
-                # Extract key metrics
                 metrics = result.get("metrics", {})
                 student_metrics = metrics.get("student", {})
                 teacher_metrics = metrics.get("teacher", {})
                 forward_metrics = metrics.get("forward", {})
 
-                # Prefer global OOF-calibrated metrics when available so that
-                # ranking reflects a longer effective OOF period. Fall back to
-                # the test-calibrated split for backwards compatibility.
                 base_cal = student_metrics.get("oof_global_calibrated")
                 if not isinstance(base_cal, dict) or not base_cal:
                     base_cal = student_metrics.get("test_calibrated", {})
+
+                train_cal = student_metrics.get("train_calibrated", {})
+                val_cal = student_metrics.get("val_calibrated", {})
+                test_cal = student_metrics.get("test_calibrated", {})
+
+                def _safe_auc(m: Dict[str, Any]) -> float:
+                    try:
+                        v = m.get("auc")
+                        if v is None:
+                            return float("nan")
+                        return float(v)
+                    except Exception:
+                        return float("nan")
+
+                train_auc = _safe_auc(train_cal)
+                val_auc = _safe_auc(val_cal)
+                base_auc = float(base_cal.get("auc", 0.0) or 0.0)
+                test_auc = _safe_auc(test_cal)
+                if not np.isfinite(test_auc):
+                    test_auc = base_auc
+
+                split_aucs = [v for v in (train_auc, val_auc, test_auc) if np.isfinite(v)]
+                if split_aucs:
+                    split_auc_mean = float(np.mean(split_aucs))
+                    if len(split_aucs) > 1:
+                        split_auc_std = float(np.std(split_aucs))
+                    else:
+                        split_auc_std = 0.0
+                    split_auc_min = float(np.min(split_aucs))
+                else:
+                    split_auc_mean = base_auc
+                    split_auc_std = 0.0
+                    split_auc_min = base_auc
 
                 trial_result = {
                     "config_signature": config_sig,
@@ -3025,24 +3093,25 @@ class MLMeanReversionRegimeStep(BaseStep):
                     "execution_time": execution_time,
                     "success": True,
 
-                    # Primary ranking metrics (OOF/Test performance)
-                    "student_test_auc": float(base_cal.get("auc", 0.0) or 0.0),
+                    "student_test_auc": float(base_auc),
                     "student_test_acc": float(base_cal.get("acc", 0.0) or 0.0),
                     "student_test_logloss": float(base_cal.get("logloss", 0.0) or 0.0),
+                    "student_train_auc": float(train_auc) if np.isfinite(train_auc) else 0.0,
+                    "student_val_auc": float(val_auc) if np.isfinite(val_auc) else 0.0,
+                    "split_auc_mean": float(split_auc_mean),
+                    "split_auc_std": float(split_auc_std),
+                    "split_auc_min": float(split_auc_min),
 
-                    # Teacher stats
                     "teacher_positive_rate": float(teacher_metrics.get("teacher_positive_rate", 0.0) or 0.0),
                     "n_regimes": teacher_metrics.get("n_components"),
                     "mean_reversion_cluster": teacher_metrics.get("mean_reversion_cluster"),
 
-                    # Forward Analysis (using horizon 4 or 12 as available)
                     "fwd_dir_acc": 0.0,
                     "fwd_corr": 0.0,
                     "fwd_mean_return": 0.0,
                     "fwd_std_return": 0.0,
                     "fwd_sharpe": 0.0,
 
-                    # Grid backtest economics (when available)
                     "grid_sharpe_with_fees": float(student_metrics.get("grid_sharpe_with_fees", 0.0) or 0.0),
                     "grid_total_return_with_fees_pct": float(student_metrics.get("grid_total_return_with_fees_pct", 0.0) or 0.0),
                     "grid_calmar_with_fees": float(student_metrics.get("grid_calmar_with_fees", 0.0) or 0.0),
@@ -3050,7 +3119,6 @@ class MLMeanReversionRegimeStep(BaseStep):
                     "grid_max_holding_bars": int(student_metrics.get("grid_max_holding_bars", 0) or 0),
                 }
 
-                # Populate forward metrics (prefer horizon 12, then 8, then 4)
                 for h in [12, 8, 4]:
                     if h in forward_metrics:
                         fm = forward_metrics[h]
@@ -3065,8 +3133,6 @@ class MLMeanReversionRegimeStep(BaseStep):
                             trial_result["fwd_sharpe"] = 0.0
                         break
 
-                # Add configuration details
-                # Capture all mr_ keys that are not huge objects
                 trial_result.update({
                     f"config_{k}": v for k, v in config.items()
                     if k.startswith("mr_") and not callable(v) and not isinstance(v, (list, dict))
@@ -3117,7 +3183,7 @@ class MLMeanReversionRegimeStep(BaseStep):
 
         return "|".join(parts)
 
-    def analyze_and_rank_results(self, results: List[Dict[str, Any]]) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+    def analyze_and_rank_results(self, results: List[Dict[str, Any]], stability_penalty_weight: float = 0.3) -> Tuple[pd.DataFrame, Dict[str, Any]]:
         """Analyze results and rank configurations by quality."""
 
         if not results:
@@ -3137,6 +3203,14 @@ class MLMeanReversionRegimeStep(BaseStep):
 
         def calculate_score(row):
             auc = float(row.get("student_test_auc", 0.5) or 0.5)
+            split_auc_mean = float(row.get("split_auc_mean", auc) or auc)
+            split_auc_min = float(row.get("split_auc_min", auc) or auc)
+            split_auc_std = float(row.get("split_auc_std", 0.0) or 0.0)
+            auc_core = (0.7 * split_auc_mean) + (0.3 * split_auc_min)
+            stability_factor = 1.0
+            if split_auc_std > 0.0:
+                stability_factor = max(0.0, 1.0 - stability_penalty_weight * split_auc_std)
+            auc = auc_core * stability_factor
             fwd_acc = float(row.get("fwd_dir_acc", 0.5) or 0.5)
             acc = float(row.get("student_test_acc", 0.5) or 0.5)
             tp_rate = float(row.get("teacher_positive_rate", 0.0) or 0.0)

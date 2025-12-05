@@ -1,8 +1,8 @@
 {
   "versions": {
-    "ml_mean_reversion_training_data_15m_20251203_234332_100": {
-      "created_at": "2025-12-03T23:43:32.100524",
-      "num_rows": 2343,
+    "ml_mean_reversion_training_data_15m_20251204_210336_608": {
+      "created_at": "2025-12-04T21:03:36.608431",
+      "num_rows": 4675,
       "num_columns": 8,
       "columns": [
         "timestamp",
@@ -30,16 +30,16 @@
       "test_start": "2025-03-02 22:00:00",
       "test_end": "2025-11-29 22:00:00",
       "prediction_method": "oof",
-      "oof_windows": 6,
+      "oof_windows": 22,
       "hpo_runs": 0,
       "retrain_interval_days": 10,
       "hpo_interval_days": 30,
       "burnin_start": "2021-10-30 22:00:00",
       "burnin_end": "2022-03-02 22:00:00"
     },
-    "ml_mean_reversion_training_data_15m_20251203_234407_479": {
-      "created_at": "2025-12-03T23:44:07.479361",
-      "num_rows": 2343,
+    "ml_mean_reversion_training_data_15m_20251204_210344_675": {
+      "created_at": "2025-12-04T21:03:44.675477",
+      "num_rows": 4675,
       "num_columns": 8,
       "columns": [
         "timestamp",
@@ -67,16 +67,16 @@
       "test_start": "2025-03-02 22:00:00",
       "test_end": "2025-11-29 22:00:00",
       "prediction_method": "oof",
-      "oof_windows": 6,
+      "oof_windows": 22,
       "hpo_runs": 0,
       "retrain_interval_days": 10,
       "hpo_interval_days": 30,
       "burnin_start": "2021-10-30 22:00:00",
       "burnin_end": "2022-03-02 22:00:00"
     },
-    "ml_mean_reversion_training_data_15m_20251203_234437_997": {
-      "created_at": "2025-12-03T23:44:37.997201",
-      "num_rows": 2343,
+    "ml_mean_reversion_training_data_15m_20251204_210350_688": {
+      "created_at": "2025-12-04T21:03:50.688692",
+      "num_rows": 4675,
       "num_columns": 8,
       "columns": [
         "timestamp",
@@ -104,16 +104,16 @@
       "test_start": "2025-03-02 22:00:00",
       "test_end": "2025-11-29 22:00:00",
       "prediction_method": "oof",
-      "oof_windows": 6,
+      "oof_windows": 22,
       "hpo_runs": 0,
       "retrain_interval_days": 10,
       "hpo_interval_days": 30,
       "burnin_start": "2021-10-30 22:00:00",
       "burnin_end": "2022-03-02 22:00:00"
     },
-    "ml_mean_reversion_training_data_15m_20251203_234508_135": {
-      "created_at": "2025-12-03T23:45:08.135374",
-      "num_rows": 2343,
+    "ml_mean_reversion_training_data_15m_20251204_210356_465": {
+      "created_at": "2025-12-04T21:03:56.465228",
+      "num_rows": 4675,
       "num_columns": 8,
       "columns": [
         "timestamp",
@@ -141,16 +141,16 @@
       "test_start": "2025-03-02 22:00:00",
       "test_end": "2025-11-29 22:00:00",
       "prediction_method": "oof",
-      "oof_windows": 6,
+      "oof_windows": 21,
       "hpo_runs": 0,
       "retrain_interval_days": 10,
       "hpo_interval_days": 30,
       "burnin_start": "2021-10-30 22:00:00",
       "burnin_end": "2022-03-02 22:00:00"
     },
-    "ml_mean_reversion_training_data_15m_20251204_001526_850": {
-      "created_at": "2025-12-04T00:15:26.850308",
-      "num_rows": 2343,
+    "ml_mean_reversion_training_data_15m_20251204_210402_491": {
+      "created_at": "2025-12-04T21:04:02.491116",
+      "num_rows": 4675,
       "num_columns": 8,
       "columns": [
         "timestamp",
@@ -178,7 +178,7 @@
       "test_start": "2025-03-02 22:00:00",
       "test_end": "2025-11-29 22:00:00",
       "prediction_method": "oof",
-      "oof_windows": 6,
+      "oof_windows": 22,
       "hpo_runs": 0,
       "retrain_interval_days": 10,
       "hpo_interval_days": 30,
@@ -186,7 +186,7 @@
       "burnin_end": "2022-03-02 22:00:00"
     }
   },
-  "current_version": "ml_mean_reversion_training_data_15m_20251204_001526_850",
+  "current_version": "ml_mean_reversion_training_data_15m_20251204_210402_491",
   "created_at": "2025-12-02T22:43:39.638964",
-  "updated_at": "2025-12-04T01:04:46.110692"
+  "updated_at": "2025-12-05T00:23:38.308523"
 }

@@ -368,16 +368,26 @@ class XGBMrTrendStep(BaseStep):
 
         # Setup Trainer
         model_id = f"{config.get('symbol')}_mr_trend"
+
+        fast_sweep = bool(config.get("fast_sweep", False))
+
         trainer_config = XGBTrainingConfig(
             model_id=model_id,
             task_type="classification",
             objective="multi:softprob",
             num_class=3,
-            n_estimators=500,
-            learning_rate=0.05,
+            n_estimators=200 if fast_sweep else 500,
+            learning_rate=0.1 if fast_sweep else 0.05,
             max_depth=5,
-            early_stopping_rounds=30,
+            early_stopping_rounds=20 if fast_sweep else 30,
+            retrain_interval_days=21 if not fast_sweep else 9999,
+            hpo_interval_days=30 if not fast_sweep else 999999,
+            min_samples_for_training=500 if fast_sweep else 1000,
         )
+
+        if fast_sweep:
+            trainer_config.enable_hpo = False
+            trainer_config.enable_oof_training = False
 
         trainer = StandardizedXGBTrainer(model_id, trainer_config)
 

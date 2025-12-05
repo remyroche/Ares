@@ -65,6 +65,7 @@ Thumbs.db
 # =============================================================================
 # Log directories and files
 /log/
+/logs/
 *.log
 ares_*.log
 ares_errors_*.log

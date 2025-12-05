@@ -1,0 +1,6 @@
+{
+  "model_id": "ETHUSDT_binance_15m_breakout_bounce_directional_stage2_regression_hpo",
+  "last_training_time": "2025-12-04T22:56:51.538749",
+  "model_type": "xgb",
+  "retrain_interval_days": 5
+}

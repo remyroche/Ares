@@ -26,13 +26,26 @@ class GateModel:
     """
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
-        """
-        Initialize the GateModel.
+        """Initialize the GateModel.
 
         Args:
             config: Configuration dictionary.
         """
         self.config = config or {}
+
+        # Default behavior: if no explicit calibration settings are provided
+        # by the user, use a percentile-based rule that keeps the "top X% less
+        # bad states" instead of a hard probability cutoff.
+        #
+        # We express this via a target_coverage parameter (fraction of trades
+        # we aim to keep). For example, target_coverage=0.6 keeps the top 60%
+        # of trades by predicted win-probability (i.e., rejects the bottom 40%).
+        if (
+            'min_win_probability' not in self.config
+            and 'calibration_percentile' not in self.config
+            and 'target_coverage' not in self.config
+        ):
+            self.config['target_coverage'] = 0.6
         self.pipeline = None
         self.threshold = 0.5  # Default threshold, updated after training
         self.feature_names = []
@@ -132,6 +145,8 @@ class GateModel:
         # Cast to object to hold timestamps safely
         spike_times = spike_times.astype('object')
 
+        int_index = pd.Series(np.arange(len(df)), index=df.index)
+
         if len(spike_indices) > 0:
             spike_times.loc[spike_indices] = spike_indices
             spike_times = spike_times.ffill()
@@ -140,7 +155,6 @@ class GateModel:
             # Since index might not be uniform, we can use rank/position
             # Efficient way for bars:
             # Create an integer index series
-            int_index = pd.Series(np.arange(len(df)), index=df.index)
             last_spike_int_idx = int_index.where(is_vol_spike == 1).ffill()
             features['time_since_last_vol_spike'] = int_index - last_spike_int_idx
             features['time_since_last_vol_spike'] = features['time_since_last_vol_spike'].fillna(1000)
@@ -348,34 +362,55 @@ class GateModel:
         print(f"Sparsity: {n_zero}/{len(coefs)} features set to zero")
 
     def calibrate_threshold(self, X: pd.DataFrame, percentile: int = 40):
-        """
-        Set the threshold based on score percentile.
+        """Calibrate the gating threshold using configuration-aware logic.
 
-        Args:
-            X: Feature DataFrame (can be training set or validation set).
-            percentile: Percentile of scores to reject.
-                        e.g., 40 means reject bottom 40% (accept top 60%).
-                        User req: "threshold = percentile(scores, 60%)" implies keeping top X%.
-                        Wait, requirements say: "percentile(past_500_scores, 60%) ... ensure only trade when confidence is among top X%"
-                        If I set threshold at 60th percentile, I keep top 40%.
-                        If I want to keep 60% of trades, I set threshold at 40th percentile.
-
-                        Let's clarify: "threshold = percentile(..., 60%)".
-                        Usually np.percentile(x, 60) gives value below which 60% of data falls.
-                        So score > threshold means top 40%.
-
-                        Requirements: "Keep ~60–80% of trades"
-                        So we need to cut bottom 20-40%.
-                        So threshold should be at 20th-40th percentile.
-
-                        Let's default to 40th percentile (keep top 60%).
+        Priority order:
+        1) If ``min_win_probability`` is provided in ``self.config``, treat the
+           model scores as win probabilities and set the threshold directly to
+           that value (strict rule: e.g. 0.25 to block conditions where >75%
+           of trades lose).
+        2) Else, if ``target_coverage`` is provided, keep the top
+           ``target_coverage`` fraction of trades by score ("top X% less bad
+           states"). This is implemented via an equivalent percentile on the
+           score distribution.
+        3) Otherwise, fall back to a percentile-based threshold using
+           ``calibration_percentile`` from config if present, or the
+           ``percentile`` argument (default 40).
         """
         if self.pipeline is None:
             raise ValueError("Model not trained yet.")
 
         scores = self.pipeline.predict_proba(X)[:, 1]
-        self.threshold = np.percentile(scores, percentile)
-        print(f"Threshold calibrated at {percentile}th percentile: {self.threshold:.4f}")
+
+        # 1) Direct probability-based thresholding
+        min_win_prob = self.config.get('min_win_probability', None)
+        if isinstance(min_win_prob, (int, float)):
+            self.threshold = float(min_win_prob)
+            print(
+                f"Threshold set from min_win_probability={self.threshold:.4f} "
+                "(blocking regions where predicted loss probability exceeds this)."
+            )
+            return
+
+        # 2) Coverage-based calibration: keep top X% (target_coverage)
+        target_cov = self.config.get('target_coverage', None)
+        if isinstance(target_cov, (int, float)):
+            tc = float(target_cov)
+            # Clamp to a sensible range (avoid 0 or 1 extremes)
+            tc = max(0.01, min(0.99, tc))
+            calib_pct = 100.0 * (1.0 - tc)
+            self.threshold = np.percentile(scores, calib_pct)
+            print(
+                f"Threshold calibrated from target_coverage={tc:.2f} "
+                f"-> percentile={calib_pct:.1f}: {self.threshold:.4f}"
+            )
+            return
+
+        # 3) Percentile-based calibration with direct config override
+        calib_pct = float(self.config.get('calibration_percentile', percentile))
+        calib_pct = max(0.0, min(100.0, calib_pct))
+        self.threshold = np.percentile(scores, calib_pct)
+        print(f"Threshold calibrated at {calib_pct:.1f}th percentile: {self.threshold:.4f}")
 
     def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
         """Predict probabilities."""

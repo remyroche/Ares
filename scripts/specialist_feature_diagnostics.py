@@ -36,7 +36,7 @@ import logging
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Tuple, Optional
+from typing import Any, Dict, Tuple, Optional, List
 
 import numpy as np
 import pandas as pd
@@ -62,6 +62,7 @@ from src.utils.logger import system_logger  # type: ignore
 from src.utils.ml_common.get_specialist_models_outputs import (  # type: ignore
     get_specialist_models_outputs,
 )
+from src.utils.ml_common.feature_selection import get_feature_selection_utils  # type: ignore
 from src.training.steps.labeling.feature_generation_meta_labeling_step import (  # type: ignore
     FeatureGenerationMetaLabelingStep,
 )
@@ -98,7 +99,6 @@ async def _run_specialist_training(
         "ml_volume_force_step",
         "ml_breakout_bounce_regime_step",
         "ml_mean_reversion_step",
-        "xgb_meso_regime",
         "xgb_macro_regime",
         "ml_smc_regime_step",
         "ml_liquidity_regime_step",
@@ -446,10 +446,11 @@ def _load_specialist_features(
         # only when explicitly enabled so diagnostics can match the exact
         # specialist feature block used for training.
         "enable_risk_hmm_specialist": enable_risk_hmm_specialist,
-        # Use the same canonical per-specialist scalar projection as unified
-        # training so diagnostics operate on the identical feature block when
-        # projection_mode="raw".
-        "use_canonical_specialist_scalars": True,
+        # For diagnostics we prefer to start from the raw specialist blocks
+        # and collapse to scalars locally via _select_specialist_scalars,
+        # so that we can choose alternative MR scalars when dense series are
+        # effectively constant over the evaluation window.
+        "use_canonical_specialist_scalars": False,
     }
 
     specialist_df = get_specialist_models_outputs(
@@ -483,7 +484,7 @@ def _compute_feature_metrics(
     y: pd.Series,
     cv_folds: int = 5,
 ) -> Dict[str, Dict[str, float]]:
-    """Compute MI proxy, MI stability, correlation, and R^2 per feature."""
+    """Compute MI proxy, HSIC, MI stability, correlation, and R^2 per feature."""
     # Align and clean
     common_index = X.index.intersection(y.index)
     X = X.loc[common_index].copy()
@@ -533,6 +534,22 @@ def _compute_feature_metrics(
     # Use FinalFeatureSelectionComponent utilities for MI proxy and stability by default
     config = FinalFeatureSelectionConfig()
     component = FinalFeatureSelectionComponent(config=config)
+
+    # HSIC scores (kernel-based dependence) via the unified feature selection utils.
+    # This complements the MI proxy and can capture non-linear relationships.
+    hsic_scores: Dict[str, float] = {}
+    try:
+        fs_utils = get_feature_selection_utils()
+        X_mat = X.to_numpy(dtype=float)
+        hsic_scores = fs_utils.compute_hsic_features(
+            X=X_mat,
+            y=y_arr,
+            feature_names=list(X.columns),
+            kernel="rbf",
+        )
+    except Exception as hsic_exc:
+        logger.warning("Failed to compute HSIC scores; defaulting to 0.0: %s", hsic_exc)
+        hsic_scores = {col: 0.0 for col in X.columns}
 
     if is_binary_target:
         # Binary-aware MI proxy: use absolute Pearson correlation as a cheap MI proxy
@@ -624,6 +641,7 @@ def _compute_feature_metrics(
             "mi_proxy_full": float(mi_full.get(col, 0.0)),
             "mi_mean_cv": float(mi_mean.get(col, 0.0)),
             "mi_cv": float(mi_cv.get(col, float("inf"))),
+            "hsic": float(hsic_scores.get(col, 0.0)),
             "pearson_corr": corr,
             "r2": r2,
         }
@@ -747,20 +765,31 @@ def _select_specialist_scalars(X: pd.DataFrame) -> pd.DataFrame:
         cols = list(X.columns)
 
     # ------------------------------------------------------------------
-    # Mean reversion: keep a single XGB score, preferring dense
-    # probabilities when available.
+    # Mean reversion: keep a single XGB score, preferring a non-constant
+    # scalar over the diagnostics window. Priority:
+    #   1) mr_probability_dense (if it varies)
+    #   2) mr_probability       (if it varies)
+    #   3) mr_raw_score         (if it varies)
     # ------------------------------------------------------------------
     mr_cols = [c for c in cols if c.startswith("mr_")]
     mr_keep: set[str] = set()
-    if "mr_probability_dense" in X.columns:
+
+    def _is_non_constant(name: str) -> bool:
+        if name not in X.columns:
+            return False
+        s = X[name].astype(float)
+        s = s.replace([np.inf, -np.inf], np.nan).dropna()
+        return s.nunique() > 1
+
+    if _is_non_constant("mr_probability_dense"):
         mr_keep.add("mr_probability_dense")
-    elif "mr_probability" in X.columns:
+    elif _is_non_constant("mr_probability"):
         mr_keep.add("mr_probability")
-    elif "mr_raw_score" in X.columns:
+    elif _is_non_constant("mr_raw_score"):
         mr_keep.add("mr_raw_score")
 
     mr_drop = [c for c in mr_cols if c not in mr_keep]
-    if mr_drop:
+    if mr_keep and mr_drop:
         X = X.drop(columns=mr_drop, errors="ignore")
 
     return X
@@ -794,6 +823,14 @@ def _compute_model_reliability(
     for group, data in groups.items():
         mi_arr = np.array(data["mi_values"], dtype=float)
         r2_arr = np.array(data["r2_values"], dtype=float)
+        # Optional HSIC aggregation if present in the metrics
+        hsic_vals: list[float] = []
+        for feat in data["features"]:
+            met = feature_metrics.get(feat, {})
+            hsic_val = float(met.get("hsic", 0.0))
+            if np.isfinite(hsic_val):
+                hsic_vals.append(hsic_val)
+        hsic_arr = np.array(hsic_vals, dtype=float) if hsic_vals else np.array([], dtype=float)
         n_features = len(data["features"])
         model_summary: Dict[str, float] = {
             "n_features": int(n_features),
@@ -803,23 +840,31 @@ def _compute_model_reliability(
             "r2_median": float(np.median(r2_arr)) if r2_arr.size else 0.0,
             "n_high_mi": int(np.sum(mi_arr > 0.1)) if mi_arr.size else 0,
             "n_high_r2": int(np.sum(r2_arr > 0.05)) if r2_arr.size else 0,
+            "hsic_mean": float(hsic_arr.mean()) if hsic_arr.size else 0.0,
+            "hsic_median": float(np.median(hsic_arr)) if hsic_arr.size else 0.0,
         }
 
         best_mi: Optional[float] = None
         best_mi_feat: Optional[str] = None
         best_r2: Optional[float] = None
         best_r2_feat: Optional[str] = None
+        best_hsic: Optional[float] = None
+        best_hsic_feat: Optional[str] = None
 
         for feat in data["features"]:
             met = feature_metrics.get(feat, {})
             mi_val = float(met.get("mi_mean_cv", 0.0))
             r2_val = float(met.get("r2", 0.0))
+            hsic_val = float(met.get("hsic", 0.0))
             if np.isfinite(mi_val) and (best_mi is None or mi_val > best_mi):
                 best_mi = mi_val
                 best_mi_feat = feat
             if np.isfinite(r2_val) and (best_r2 is None or r2_val > best_r2):
                 best_r2 = r2_val
                 best_r2_feat = feat
+            if np.isfinite(hsic_val) and (best_hsic is None or hsic_val > best_hsic):
+                best_hsic = hsic_val
+                best_hsic_feat = feat
 
         if best_mi is not None:
             model_summary["best_mi_feature_value"] = float(best_mi)
@@ -829,6 +874,10 @@ def _compute_model_reliability(
             model_summary["best_r2_feature_value"] = float(best_r2)
         if best_r2_feat is not None:
             model_summary["best_r2_feature"] = best_r2_feat
+        if best_hsic is not None:
+            model_summary["best_hsic_feature_value"] = float(best_hsic)
+        if best_hsic_feat is not None:
+            model_summary["best_hsic_feature"] = best_hsic_feat
 
         per_model[group] = model_summary
 
@@ -1597,6 +1646,130 @@ def _compute_probe_model_pnl(
     return results
 
 
+def _compute_group_lgbm_auc(
+    X: pd.DataFrame,
+    y: pd.Series,
+    cv_folds: int = 3,
+) -> Dict[str, Any]:
+    """Train simple LGBM classifiers on combinations of specialist groups (1–3 groups).
+
+    For each group and group-combination (up to triples), this computes a
+    cross-validated AUC using a small LGBM classifier on the corresponding
+    specialist features to quantify joint interaction potential.
+    """
+    try:
+        import lightgbm as lgb  # type: ignore
+        from sklearn.metrics import roc_auc_score
+        from sklearn.model_selection import TimeSeriesSplit
+    except Exception:
+        return {"error": "lightgbm or sklearn not available for group LGBM probes"}
+
+    common_idx = X.index.intersection(y.index)
+    X = X.loc[common_idx].copy()
+    y = y.loc[common_idx].astype(float)
+
+    mask = ~y.isna()
+    X = X.loc[mask]
+    y = y.loc[mask]
+
+    if len(X) < max(cv_folds * 20, 120):
+        return {"error": f"Insufficient samples for group LGBM probe: {len(X)}"}
+
+    y_bin = (y > 0).astype(int)
+    if y_bin.nunique() < 2:
+        return {"error": "Binary target for group LGBM probe is single-class"}
+
+    # Group features by specialist model
+    group_features: Dict[str, List[str]] = {}
+    for col in X.columns:
+        group = _infer_model_group(col)
+        if group == "other":
+            continue
+        group_features.setdefault(group, []).append(col)
+
+    if not group_features:
+        return {"error": "No specialist groups found for group LGBM probe"}
+
+    tscv = TimeSeriesSplit(n_splits=cv_folds)
+
+    def _cv_auc_for_features(feat_list: List[str]) -> Optional[Tuple[float, int]]:
+        if not feat_list:
+            return None
+        X_sub = X[feat_list]
+        oof = pd.Series(index=X_sub.index, dtype=float)
+        for train_idx, val_idx in tscv.split(X_sub):
+            X_tr = X_sub.iloc[train_idx]
+            X_val = X_sub.iloc[val_idx]
+            y_tr = y_bin.iloc[train_idx]
+            if y_tr.nunique() < 2:
+                continue
+            try:
+                clf = lgb.LGBMClassifier(
+                    n_estimators=100,
+                    max_depth=4,
+                    learning_rate=0.05,
+                    random_state=42,
+                    verbose=-1,
+                )
+                clf.fit(X_tr, y_tr)
+                probs = clf.predict_proba(X_val)[:, 1]
+                oof.iloc[val_idx] = probs
+            except Exception:
+                continue
+
+        valid = oof.notna()
+        if valid.sum() < max(20, 2 * cv_folds) or y_bin[valid].nunique() < 2:
+            return None
+        try:
+            auc = roc_auc_score(y_bin[valid], oof[valid])
+        except Exception:
+            return None
+        return float(auc), int(valid.sum())
+
+    results: Dict[str, Dict[str, Any]] = {}
+
+    groups = sorted(group_features.keys())
+
+    # Single-group probes
+    for g in groups:
+        feats = group_features[g]
+        res = _cv_auc_for_features(feats)
+        if res is None:
+            continue
+        auc, n_valid = res
+        key = g
+        results[key] = {
+            "combination": key,
+            "n_features": int(len(feats)),
+            "auc": auc,
+            "n_samples": n_valid,
+        }
+
+    # Pairwise and triple-group probes
+    import itertools
+
+    for r in (2, 3):
+        for combo in itertools.combinations(groups, r):
+            combo_key = "|".join(combo)
+            feat_list: List[str] = []
+            for g in combo:
+                feat_list.extend(group_features.get(g, []))
+            if not feat_list:
+                continue
+            res = _cv_auc_for_features(feat_list)
+            if res is None:
+                continue
+            auc, n_valid = res
+            results[combo_key] = {
+                "combination": combo_key,
+                "n_features": int(len(feat_list)),
+                "auc": auc,
+                "n_samples": n_valid,
+            }
+
+    return {"group_lgbm_auc": results}
+
+
 def run_diagnostics(
     symbol: str,
     exchange: str,
@@ -1651,6 +1824,7 @@ def run_diagnostics(
     model_reliability = _compute_model_reliability(feature_metrics=feature_metrics)
     model_coverage = _compute_model_coverage(X=X, y=y)
     model_relationships = _compute_model_pairwise_relationships(X=X, feature_metrics=feature_metrics)
+    group_lgbm_auc = _compute_group_lgbm_auc(X=X, y=y, cv_folds=cv_folds)
 
     # 3b) Compute target date range
     y_start = y.index.min()
@@ -1900,6 +2074,39 @@ def run_diagnostics(
     md_lines.extend(
         [
             "",
+            "### LGBM interaction probes (specialist groups)",
+        ]
+    )
+
+    if isinstance(group_lgbm_auc, dict) and "group_lgbm_auc" in group_lgbm_auc:
+        group_auc_entries = group_lgbm_auc.get("group_lgbm_auc", {})
+        if group_auc_entries:
+            md_lines.append("")
+            md_lines.append("| Groups | n_features | AUC | n_oof_samples |")
+            md_lines.append("|--------|-----------:|----:|--------------:|")
+            for key, entry in sorted(
+                group_auc_entries.items(),
+                key=lambda kv: kv[1].get("auc", 0.0),
+                reverse=True,
+            )[:20]:
+                md_lines.append(
+                    f"| {entry.get('combination', key)} | "
+                    f"{int(entry.get('n_features', 0))} | "
+                    f"{entry.get('auc', 0.0):.3f} | "
+                    f"{int(entry.get('n_samples', 0))} |"
+                )
+        else:
+            err_msg = group_lgbm_auc.get("error")
+            if err_msg:
+                md_lines.append(f"- Group LGBM probes unavailable: {err_msg}")
+            else:
+                md_lines.append("- Group LGBM probes unavailable")
+    else:
+        md_lines.append("- Group LGBM probes unavailable")
+
+    md_lines.extend(
+        [
+            "",
             "### Global stability (TimeSeriesSplit AUC)",
         ]
     )
@@ -2021,6 +2228,7 @@ def run_diagnostics(
         "interactions": interactions,
         "model_reliability": model_reliability,
         "model_pairwise": model_relationships,
+        "group_lgbm_auc": group_lgbm_auc,
         "model_coverage": model_coverage,
     }
 
@@ -2117,12 +2325,21 @@ def main() -> None:
     # Determine default target column based on direction if not explicitly provided
     if args.target_col is None:
         if args.direction == "long":
-            args.target_col = "binary_label_long"
+            args.target_col = "target_long"
         elif args.direction == "short":
-            args.target_col = "binary_label_short"
+            args.target_col = "target_short"
         else:
             args.target_col = "binary_label"  # Fallback for 'both' direction
         print(f"Using direction-aware default target: {args.target_col}")
+
+    # Normalize legacy/unified binary_label to direction-aware labels when possible
+    if args.target_col == "binary_label":
+        if args.direction == "long":
+            args.target_col = "binary_label_long"
+            print("Normalizing target_col 'binary_label' to 'binary_label_long' for long direction.")
+        elif args.direction == "short":
+            args.target_col = "binary_label_short"
+            print("Normalizing target_col 'binary_label' to 'binary_label_short' for short direction.")
 
     targets_to_run = [args.target_col]
     if args.compare_targets:

@@ -231,6 +231,57 @@ def build_sweep_configs(
             }
         )
 
+    # =========================================================================
+    # CORE MR FEATURE / GATING VARIANTS
+    # =========================================================================
+
+    # Core, stricter MR definition: focus on strong teacher signals and
+    # non-neutral RSI, restrict student to core MR feature subset and use
+    # AUC as primary eval metric with class weighting.
+    #
+    # Use the best-performing student windows (10/30/9) from the sweep and
+    # apply variant-specific regularization so the model can learn structure
+    # within the tightly gated MR regime.
+    add_variant(
+        "mr_core_strict",
+        {
+            "mr_ma_fast_window": 10,
+            "mr_ma_slow_window": 30,
+            "mr_vwap_window": 15,
+            "mr_rsi_window": 9,
+            "mr_enable_teacher_gating": True,
+            "mr_teacher_score_quantile": 0.65,
+            "mr_enable_rsi_gating": True,
+            "mr_rsi_neutral_low": 0.45,
+            "mr_rsi_neutral_high": 0.55,
+            "mr_forward_target_horizon": 8,
+            "mr_enable_core_feature_subset": True,
+            "mr_enable_balanced_features": False,
+            "mr_enable_class_weighting": True,
+            "mr_xgb_eval_metric": "auc",
+            "mr_min_child_weight": 3.0,
+            "mr_gamma": 0.1,
+            "mr_reg_lambda": 0.8,
+            "mr_reg_alpha": 0.3,
+            "mr_n_estimators": 600,
+        },
+    )
+
+    # Core MR features but broader gating: keep core subset and class
+    # weighting but relax teacher/RSI constraints for more coverage.
+    add_variant(
+        "mr_core_broad",
+        {
+            "mr_enable_teacher_gating": True,
+            "mr_teacher_score_quantile": 0.6,
+            "mr_enable_rsi_gating": False,
+            "mr_enable_core_feature_subset": True,
+            "mr_enable_balanced_features": False,
+            "mr_enable_class_weighting": True,
+            "mr_xgb_eval_metric": "auc",
+        },
+    )
+
     return configs
 
 

@@ -356,7 +356,7 @@ class ProfitBasedFeatureEngineering:
         return result
 
     def _gpu_accelerated_profit_features(self, data: pd.DataFrame, feature_categories: Optional[List[str]], correlation_id: str) -> pd.DataFrame:
-        """Use
+        """Use GPU acceleration for profit-based feature engineering when available."""
         try:
             with self.matrix_ops.gpu_context(f"profit_features_{correlation_id}"):
                 # Convert profit data to tensor
@@ -392,7 +392,9 @@ class ProfitBasedFeatureEngineering:
                 return result_data
 
         except Exception as e:
-            self.logger.warning(f"⚠️
+            self.logger.warning(
+                f"⚠️ GPU-accelerated profit features failed: {e}, falling back to M1-optimized implementation"
+            )
             return self._m1_optimized_profit_features(data, feature_categories, correlation_id)
 
     def _m1_optimized_profit_features(self, data: pd.DataFrame, feature_categories: Optional[List[str]], correlation_id: str) -> pd.DataFrame:
@@ -427,7 +429,7 @@ class ProfitBasedFeatureEngineering:
         return result_data
 
     def _gpu_calculate_momentum_features(self, profit_tensor) -> Dict[str, Any]:
-        """Calculate momentum features using
+        """Calculate momentum features using GPU acceleration when available."""
         if not TORCH_AVAILABLE or torch is None:
             # Fallback to numpy-based calculation
             return self._cpu_calculate_momentum_features(profit_tensor)
@@ -488,7 +490,7 @@ class ProfitBasedFeatureEngineering:
         return features
 
     def _gpu_calculate_volatility_features(self, profit_tensor) -> Dict[str, Any]:
-        """Calculate volatility features using
+        """Calculate volatility features using GPU acceleration when available."""
         if not TORCH_AVAILABLE or torch is None:
             # Fallback to numpy-based calculation
             return self._cpu_calculate_volatility_features(profit_tensor)
@@ -925,74 +927,99 @@ class ProfitBasedFeatureEngineering:
         Returns:
             List of selected feature names
         """
-        profit_features = [col for col in data.columns if self.profit_column in col and col != self.profit_column]
+        profit_features = [
+            col for col in data.columns
+            if self.profit_column in col and col != self.profit_column
+        ]
+
+        selected: List[str] = []
 
         if method == "correlation":
             # Select features based on correlation with target
-            # Filter out categorical features for correlation
-            numerical_features = []
+            numerical_features: List[str] = []
             for feature in profit_features:
-                if data[feature].dtype in ['int64', 'float64']:
+                if data[feature].dtype in ["int64", "float64"]:
                     numerical_features.append(feature)
 
             if numerical_features:
-                correlations = data[numerical_features].corrwith(data[self.profit_column]).abs()
+                correlations = data[numerical_features].corrwith(
+                    data[self.profit_column]
+                ).abs()
                 selected = correlations[correlations > threshold].index.tolist()
-            else:
-                selected = []
 
         elif method == "variance":
             # Select features based on variance
-            # Filter out categorical features for variance
             numerical_features = []
             for feature in profit_features:
-                if data[feature].dtype in ['int64', 'float64']:
+                if data[feature].dtype in ["int64", "float64"]:
                     numerical_features.append(feature)
 
             if numerical_features:
                 variances = data[numerical_features].var()
                 selected = variances[variances > threshold].index.tolist()
-            else:
-                selected = []
 
         elif method == "mutual_info":
             # Select features based on mutual information (requires scikit-learn)
             try:
                 from sklearn.feature_selection import mutual_info_regression
-                # Filter out categorical features for mutual info
+
                 numerical_features = []
                 for feature in profit_features:
-                    if data[feature].dtype in ['int64', 'float64']:
+                    if data[feature].dtype in ["int64", "float64"]:
                         numerical_features.append(feature)
 
                 if numerical_features:
                     mi_scores = mutual_info_regression(
                         data[numerical_features].fillna(0),
-                        data[self.profit_column]
+                        data[self.profit_column],
                     )
                     mi_series = pd.Series(mi_scores, index=numerical_features)
                     selected = mi_series[mi_series > threshold].index.tolist()
-                else:
-                    selected = []
             except ImportError:
-                self.logger.warning("scikit-learn not available, falling back to correlation method")
-                # Filter out categorical features for correlation
+                # Fall back to correlation-based selection if sklearn is unavailable
+                self.logger.warning(
+                    "scikit-learn not available, falling back to correlation method"
+                )
                 numerical_features = []
                 for feature in profit_features:
-                    if data[feature].dtype in ['int64', 'float64']:
+                    if data[feature].dtype in ["int64", "float64"]:
                         numerical_features.append(feature)
 
                 if numerical_features:
-                    correlations = data[numerical_features].corrwith(data[self.profit_column]).abs()
+                    correlations = data[numerical_features].corrwith(
+                        data[self.profit_column]
+                    ).abs()
                     selected = correlations[correlations > threshold].index.tolist()
-                else:
-                    selected = []
+
+        else:
+            raise ValueError(f"Unknown feature selection method: {method}")
+
+        # Limit number of features if specified
+        if max_features is not None and selected:
+            selected = selected[:max_features]
+
+        return selected
 
 # VectorBT imports for native optimization
 try:
     import vectorbt as vbt
-    from src.utils.vectorbt_compat import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
-    from src.utils.vectorbt_compat import scale, rank, zscore, winsorize, clip, quantile
+    from src.utils.vectorbt_compat import (
+        rolling_mean,
+        rolling_std,
+        rolling_var,
+        rolling_min,
+        rolling_max,
+        rolling_sum,
+        rolling_apply,
+        rolling_corr,
+        rolling_cov,
+        scale,
+        rank,
+        zscore,
+        winsorize,
+        clip,
+        quantile,
+    )
     VECTORBT_AVAILABLE = True
 except ImportError:
     VECTORBT_AVAILABLE = False
@@ -1012,28 +1039,9 @@ except ImportError:
     winsorize = None
     clip = None
     quantile = None
-    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
-                self.logger.warning("scikit-learn not available, falling back to correlation method")
-                # Filter out categorical features for correlation
-                numerical_features = []
-                for feature in profit_features:
-                    if data[feature].dtype in ['int64', 'float64']:
-                        numerical_features.append(feature)
-
-                if numerical_features:
-                    correlations = data[numerical_features].corrwith(data[self.profit_column]).abs()
-                    selected = correlations[correlations > threshold].index.tolist()
-                else:
-                    selected = []
-
-        else:
-            raise ValueError(f"Unknown feature selection method: {method}")
-
-        # Limit number of features if specified
-        if max_features is not None:
-            selected = selected[:max_features]
-
-        return selected
+    warnings.warn(
+        "VectorBT not available. Install with: pip install vectorbt for optimized performance"
+    )
 
 @handles_errors(exceptions=(Exception,), default_return={}, context="benchmark_profit_features")
 def benchmark_profit_feature_engineering(data: pd.DataFrame) -> Dict[str, float]:
@@ -1099,52 +1107,3 @@ if __name__ == "__main__":
     benchmark_results = benchmark_profit_feature_engineering(data)
     tprint(f"Performance benchmark: {benchmark_results}")
 #!/usr/bin/env python3
-
-    def _should_use_vectorbt(self, data) -> bool:
-        """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
-                VECTORBT_AVAILABLE)
-
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
-                                  window: int, **kwargs) -> pd.Series:
-        """Perform VectorBT rolling operation with fallback to pandas."""
-        if not self._should_use_vectorbt(data):
-            return self._pandas_rolling_operation(data, operation, window, **kwargs)
-
-        try:
-            if operation == 'mean':
-                return rolling_mean(data, window=window, **kwargs)
-            elif operation == 'std':
-                return rolling_std(data, window=window, **kwargs)
-            elif operation == 'var':
-                return rolling_var(data, window=window, **kwargs)
-            elif operation == 'min':
-                return rolling_min(data, window=window, **kwargs)
-            elif operation == 'max':
-                return rolling_max(data, window=window, **kwargs)
-            elif operation == 'sum':
-                return rolling_sum(data, window=window, **kwargs)
-            else:
-                raise ValueError(f"Unsupported operation: {operation}")
-        except Exception as e:
-            self.logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
-            return self._pandas_rolling_operation(data, operation, window, **kwargs)
-
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
-                                 window: int, **kwargs) -> pd.Series:
-        """Fallback rolling operation using pandas."""
-        if operation == 'mean':
-            return data.rolling(window=window).mean()
-        elif operation == 'std':
-            return data.rolling(window=window).std()
-        elif operation == 'var':
-            return data.rolling(window=window).var()
-        elif operation == 'min':
-            return data.rolling(window=window).min()
-        elif operation == 'max':
-            return data.rolling(window=window).max()
-        elif operation == 'sum':
-            return data.rolling(window=window).sum()
-        else:
-            raise ValueError(f"Unsupported operation: {operation}")

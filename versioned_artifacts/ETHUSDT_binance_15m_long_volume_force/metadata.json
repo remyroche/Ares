@@ -431,9 +431,9 @@
       "step_name": "ml_volume_force_step",
       "source": "historical_data"
     },
-    "ml_volume_force_predictions_20251204_002223_457": {
-      "created_at": "2025-12-04T00:22:23.457965",
-      "num_rows": 2036,
+    "ml_volume_force_predictions_20251204_210058_516": {
+      "created_at": "2025-12-04T21:00:58.516423",
+      "num_rows": 2044,
       "num_columns": 8,
       "columns": [
         "vol_force_breakout",
@@ -447,11 +447,11 @@
       "direction": "long",
       "model": "volume_force",
       "step_name": "ml_volume_force_step",
-      "lookahead": 16
+      "lookahead": 8
     },
-    "ml_volume_force_predictions_20251204_002225_179": {
-      "created_at": "2025-12-04T00:22:25.179084",
-      "num_rows": 2036,
+    "ml_volume_force_predictions_20251204_210059_946": {
+      "created_at": "2025-12-04T21:00:59.946209",
+      "num_rows": 2044,
       "num_columns": 8,
       "columns": [
         "vol_force_breakout",
@@ -465,11 +465,11 @@
       "direction": "long",
       "model": "volume_force",
       "step_name": "ml_volume_force_step",
-      "lookahead": 16
+      "lookahead": 8
     },
-    "ml_volume_force_predictions_20251204_002226_708": {
-      "created_at": "2025-12-04T00:22:26.708070",
-      "num_rows": 2036,
+    "ml_volume_force_predictions_20251204_210101_586": {
+      "created_at": "2025-12-04T21:01:01.586299",
+      "num_rows": 2044,
       "num_columns": 8,
       "columns": [
         "vol_force_breakout",
@@ -483,11 +483,11 @@
       "direction": "long",
       "model": "volume_force",
       "step_name": "ml_volume_force_step",
-      "lookahead": 16
+      "lookahead": 8
     },
-    "ml_volume_force_predictions_20251204_002228_493": {
-      "created_at": "2025-12-04T00:22:28.493715",
-      "num_rows": 2036,
+    "ml_volume_force_predictions_20251204_210103_800": {
+      "created_at": "2025-12-04T21:01:03.800799",
+      "num_rows": 2044,
       "num_columns": 8,
       "columns": [
         "vol_force_breakout",
@@ -501,11 +501,11 @@
       "direction": "long",
       "model": "volume_force",
       "step_name": "ml_volume_force_step",
-      "lookahead": 16
+      "lookahead": 8
     },
-    "ml_volume_force_predictions_20251204_002230_852": {
-      "created_at": "2025-12-04T00:22:30.852887",
-      "num_rows": 2036,
+    "ml_volume_force_predictions_20251204_210106_736": {
+      "created_at": "2025-12-04T21:01:06.736385",
+      "num_rows": 2044,
       "num_columns": 8,
       "columns": [
         "vol_force_breakout",
@@ -519,10 +519,10 @@
       "direction": "long",
       "model": "volume_force",
       "step_name": "ml_volume_force_step",
-      "lookahead": 16
+      "lookahead": 8
     }
   },
-  "current_version": "ml_volume_force_predictions_20251204_002230_852",
+  "current_version": "ml_volume_force_predictions_20251204_210106_736",
   "created_at": "2025-12-02T22:54:31.427519",
-  "updated_at": "2025-12-04T01:04:46.094046"
+  "updated_at": "2025-12-05T00:23:38.291969"
 }

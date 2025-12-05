@@ -126,6 +126,18 @@ DEFAULT_STAGE_CONFIG = [
             "cv_splits": 5,
         },
     },
+    {
+        "name": "Stage 4 (Labeling Refinement)",
+        "complexity": "strong",
+        "n_trials": 30,
+        "top_k_to_pass": 1,
+        "model_params": {
+            "n_estimators": 300,
+            "max_depth": 8,
+            "learning_rate": 0.01,
+            "cv_splits": 5,
+        },
+    },
 ]
 
 
@@ -1405,10 +1417,10 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     econ_min_return_multiple=econ_min_mult,
                 )
 
-                n_vol_non_nan = int(vol_scaled_returns.dropna().size)
+                n_vol_scaled_events = int(vol_scaled_returns.dropna().size)
                 if debug_sample_count < debug_sample_limit:
                     tprint_info(
-                        f"[HPO_DEBUG_LABELS] vol_scaled_non_nan={n_vol_non_nan}",
+                        f"[HPO_DEBUG_LABELS] vol_scaled_events={n_vol_scaled_events}",
                     )
 
                 # Decide whether to use regime-aware quantiles based on the
@@ -1982,6 +1994,8 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     'mean_neg': float(mean_neg),
                     'sharpe_pos': float(sharpe_pos),
                     'n_events': int(n_events),
+                    'n_raw_events': int(n_raw_events),
+                    'n_vol_scaled_events': int(n_vol_scaled_events),
                     'balance_score': float(balance_score),
                     'trades_per_day': float(trades_per_day),
                     'mean_tto': float(mean_tto) if np.isfinite(mean_tto) else float('nan'),
@@ -2208,6 +2222,8 @@ class MetaLabelingHPOExperimentStep(BaseStep):
         #          stop_mult_min/max
         # Stage 3: All parameters (profit_thr_base, stop_to_profit_ratio,
         #          iso_min_prob, target_transform refinements, etc.)
+        # Stage 4: Filtering parameters only (label_low_q, label_high_q, econ_min_return_multiple, etc.)
+        #          with fixed structural parameters.
         #
         # The multi-stage process progressively increases model complexity to find
         # configurations that are both profitable AND learnable by production models.
@@ -2239,6 +2255,15 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 'kalman_Q', 'kalman_R', 'vol_baseline_window',
                 'profit_mult_min', 'profit_mult_max', 'stop_mult_min', 'stop_mult_max'
             ]
+
+        # Stage 4 specific params (filtering/labeling only)
+        stage_4_params = [
+            'label_low_q', 'label_high_q',
+            'econ_min_return_multiple',
+            'iso_min_prob', 'target_clip_high_q',
+            'signal_strength_scale_max'
+        ]
+
         # Stage 3 uses all parameters (optionally treating horizon_bars as fixed when calibrated)
 
         stages = DEFAULT_STAGE_CONFIG
@@ -2260,7 +2285,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 active_params = stage_1_params
             elif stage_idx == 1:  # Stage 2
                 active_params = stage_2_params
-            else:  # Stage 3 - all parameters
+            elif stage_idx == 2:  # Stage 3 - all parameters
                 if calibrated_horizon is not None:
                     active_params = [
                         k for k in initial_search_space.keys()
@@ -2268,6 +2293,8 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     ]
                 else:
                     active_params = list(initial_search_space.keys())
+            else:  # Stage 4 - Labeling Refinement
+                active_params = stage_4_params
 
             # Create stage-specific search space
             current_search_space = {
@@ -2450,8 +2477,8 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     'trials': stage_trials_total,
                 })
 
-                # For Stage 2, shrink Stage 3 search space using medium-model candidates
-                if stage_idx == len(stages) - 2:
+                # For Stage 2 (index 1), shrink Stage 3 search space using medium-model candidates
+                if stage_idx == 1:
                     stage_candidates = [
                         c for c in candidate_pool
                         if c.get('model_complexity') == stage['complexity']
@@ -2557,18 +2584,34 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     if c.get('model_complexity') == stage['complexity']
                 ]
 
-                # For Stage 3, shrink search space based on previous stages' best results
-                if stage_idx == len(stages) - 2 and stage_candidates:
-                    # Shrink the initial space for Stage 3 based on top candidates
-                    initial_search_space = shrink_search_space(
-                        original_space=initial_search_space,
-                        previous_results=stage_candidates,
-                        top_k=stage['top_k_to_pass'],
-                    )
+                # Identify best candidate from this stage for explicit reporting
+                if stage_candidates:
+                    best_cand = max(stage_candidates, key=lambda x: x.get('edge', x.get('combined', 0)))
                     tprint_info(
-                        f"   📉 Narrowed Stage 3 search space based on "
-                        f"Top {min(len(stage_candidates), stage['top_k_to_pass'])} candidates"
+                        f"   🏆 Best candidate {stage['name']}: "
+                        f"Edge={best_cand.get('edge', 0):.4f}, "
+                        f"AUC={best_cand.get('mean_auc', 0):.3f}, "
+                        f"Trades/Day={best_cand.get('trades_per_day', 0):.2f}, "
+                        f"Raw={best_cand.get('n_raw_events', 0)} → Vol={best_cand.get('n_vol_scaled_events', 0)} → Final={best_cand.get('n_events', 0)}"
                     )
+
+                # For 4-stage setup:
+                # - After Stage 2 (index 1): Shrink space for Stage 3 (handled above in group block or here if not group)
+                # - After Stage 3 (index 2): No shrinking needed for Stage 4 because Stage 4 uses a specific subset
+                #   of parameters (labeling only), and structural params are fixed via accumulated_best_params.
+                if stage_idx == 1 and stage_candidates:
+                    try:
+                        initial_search_space = shrink_search_space(
+                            original_space=initial_search_space,
+                            previous_results=stage_candidates,
+                            top_k=stage['top_k_to_pass'],
+                        )
+                        tprint_info(
+                            f"   📉 Narrowed Stage 3 search space based on "
+                            f"Top {min(len(stage_candidates), stage['top_k_to_pass'])} candidates"
+                        )
+                    except Exception:
+                        pass
 
                 # Per-stage early stopping: if no improvement in this stage, move to next
                 # (This is handled by the optimizer's early_stopping_patience setting)

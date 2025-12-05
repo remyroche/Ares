@@ -1634,10 +1634,26 @@ class MetaLabelingHPOExperimentStep(BaseStep):
         stage1_subsample_window_days = int(
             config.get("stage1_subsample_window_days", default_stage1_window)
         )
+
+        # Precompute ATR for trailing profit simulation
+        # Using 14-period True Range as standard
+        high_prices = market_data["high"] if "high" in market_data.columns else market_data["close"]
+        low_prices = market_data["low"] if "low" in market_data.columns else market_data["close"]
+        close_prices = market_data["close"]
+
+        tr1 = high_prices - low_prices
+        tr2 = (high_prices - close_prices.shift(1)).abs()
+        tr3 = (low_prices - close_prices.shift(1)).abs()
+        true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        # Using 14-period rolling mean for ATR
+        atr_series = true_range.rolling(window=14, min_periods=1).mean()
+
         stage1_market_data = market_data
         stage1_primary_signals = primary_signals
         stage1_volatility_1d = volatility_1d
+        stage1_atr_series = atr_series
         stage1_days_span = days_span
+
         if stage1_enable_subsample:
             try:
                 start_ts = market_data.index.min()
@@ -1647,6 +1663,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     stage1_market_data = market_data.loc[mask].copy()
                     stage1_primary_signals = primary_signals.loc[mask].copy()
                     stage1_volatility_1d = volatility_1d.loc[mask].copy()
+                    stage1_atr_series = atr_series.loc[mask].copy()
                     try:
                         stage1_days_span = max(
                             1,
@@ -1661,6 +1678,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 stage1_market_data = market_data
                 stage1_primary_signals = primary_signals
                 stage1_volatility_1d = volatility_1d
+                stage1_atr_series = atr_series
                 stage1_days_span = days_span
 
         # Build simple arrays for the optimizer API (they are not used in
@@ -1672,10 +1690,39 @@ class MetaLabelingHPOExperimentStep(BaseStep):
         # 2) Define parameter groups for hierarchical HPO
         # ------------------------------------------------------------------
         param_groups = [
-            # Event / TPSL definition group
+            # Group 1: Signal Structure (3 params)
             create_param_group(
-                name="event_definition",
+                name="signal_structure",
                 params={
+                    "cusum_threshold": {
+                        "type": "float",
+                        "low": 0.008,
+                        "high": 0.025,
+                    },
+                    "target_signal_density": {
+                        "type": "float",
+                        "low": 3.0,
+                        "high": 10.0,
+                    },
+                    "min_event_spacing": {
+                        "type": "int",
+                        "low": 1,
+                        "high": 3,
+                    },
+                },
+                priority=1,
+                description="Signal generation and event spacing",
+            ),
+            # Group 2: Event Geometry (4 params) - Depends on Signal Structure
+            create_param_group(
+                name="event_geometry",
+                params={
+                    "horizon_bars": {
+                        "type": "int",
+                        "low": 8,
+                        "high": 56,
+                        "step": 2,
+                    },
                     "profit_thr_base": {
                         "type": "float",
                         "low": 0.008,
@@ -1684,113 +1731,19 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     "stop_to_profit_ratio": {
                         "type": "float",
                         "low": 0.3,
-                        "high": 0.67,  # CONSTRAINT: profit must be >= 1.5x stop
+                        "high": 0.67,
                     },
-                    "horizon_bars": {
-                        "type": "int",
-                        "low": 8,  # Changed from 2 to 8
-                        "high": 56,  # Expanded upper bound for longer horizons
-                        "step": 2,  # Increments of 2 or 4
-                    },
-                    "min_event_spacing": {
-                        "type": "int",
-                        "low": 1,  # RELAXED: allow tighter spacing for more trades
-                        "high": 3,  # RELAXED: reduced upper bound
-                    },
-                    # NEW: Signal generation parameters to control base trade density
-                    "cusum_threshold": {
+                    "trail_distance": {
                         "type": "float",
-                        "low": 0.008,
-                        "high": 0.025,
-                    },
-                    "target_signal_density": {
-                        "type": "float",
-                        "low": 3.0,  # Minimum signals per day target
-                        "high": 10.0,  # Maximum signals per day target
-                    },
-                },
-                priority=1,
-                description="Triple-barrier / TPSL event definition + signal generation",
-            ),
-            # Target transformation & probability clipping group
-            create_param_group(
-                name="target_transform",
-                params={
-                    "iso_min_prob": {
-                        "type": "float",
-                        "low": 0.05,
-                        "high": 0.15,
-                    },
-                    "target_clip_high_q": {
-                        "type": "float",
-                        "low": 0.90,
-                        "high": 0.98,
-                    },
-                    # Economic floor for isotonic mapping and vol-scaled labels,
-                    # expressed as a multiple of transaction cost.
-                    "econ_min_return_multiple": {
-                        "type": "float",
-                        "low": 1.0,  # RELAXED: lower floor allows more trades
-                        "high": 2.5,
-                    },
-                    # Quantile thresholds for volatility-scaled label generation.
-                    # WIDENED bounds to allow HPO to explore denser label definitions
-                    # that increase trade count when supported by edge.
-                    "label_low_q": {
-                        "type": "float",
-                        "low": 0.10,  # WIDENED: allow more liberal bottom cutoff
-                        "high": 0.50,  # WIDENED: allow up to median
-                    },
-                    "label_high_q": {
-                        "type": "float",
-                        "low": 0.50,  # WIDENED: allow from median
-                        "high": 0.90,  # WIDENED: allow more liberal top cutoff
-                    },
-                    # Maximum scaling factor for signal-strength-based sample
-                    # weighting in the learnability scorer.
-                    "signal_strength_scale_max": {
-                        "type": "float",
-                        "low": 1.2,
-                        "high": 2.0,
-                    },
-                    # NEW: R-multiple threshold for labeling profitable trades
-                    # Lower values allow slower but profitable trades to count
-                    "r_multiple_pos_threshold": {
-                        "type": "float",
-                        "low": 0.3,  # Allow slower profitable trades
-                        "high": 1.0,  # Require faster profitable trades
-                    },
-                    # NEW: Transaction cost (allows HPO to explore cost sensitivity)
-                    "transaction_cost_mult": {
-                        "type": "float",
-                        "low": 0.5,  # 50% of base cost (optimistic)
-                        "high": 1.5,  # 150% of base cost (conservative)
+                        "low": 0.6,
+                        "high": 1.2,
                     },
                 },
                 priority=2,
-                depends_on=["event_definition"],
-                description="Symmetric clipping for meta probabilities and targets + trade filters",
+                depends_on=["signal_structure"],
+                description="Triple-barrier shape and trailing stop logic",
             ),
-            create_param_group(
-                name="kalman_smoothing",
-                params={
-                    "kalman_Q": {
-                        "type": "float",
-                        "low": 1e-5,
-                        "high": 1e-3,
-                        "log": True,
-                    },
-                    "kalman_R": {
-                        "type": "float",
-                        "low": 1e-3,
-                        "high": 0.1,
-                        "log": True,
-                    },
-                },
-                priority=3,
-                depends_on=["event_definition"],
-                description="Kalman smoothing noise parameters",
-            ),
+            # Group 3: Volatility Adaptation (5 params) - Depends on Event Geometry
             create_param_group(
                 name="volatility_adaptation",
                 params={
@@ -1820,9 +1773,88 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                         "high": 1.5,
                     },
                 },
-                priority=4,
-                depends_on=["event_definition"],
+                priority=3,
+                depends_on=["event_geometry"],
                 description="Volatility adaptation baseline and multipliers",
+            ),
+            # Group 4: Label Definition (3 params) - Depends on Volatility Adaptation
+            create_param_group(
+                name="label_definition",
+                params={
+                    "label_low_q": {
+                        "type": "float",
+                        "low": 0.10,
+                        "high": 0.50,
+                    },
+                    "label_high_q": {
+                        "type": "float",
+                        "low": 0.50,
+                        "high": 0.90,
+                    },
+                    "econ_min_return_multiple": {
+                        "type": "float",
+                        "low": 1.0,
+                        "high": 2.5,
+                    },
+                },
+                priority=4,
+                depends_on=["volatility_adaptation"],
+                description="Quantile-based label definition",
+            ),
+            # Group 5: Target Engineering (5 params) - Depends on Label Definition
+            create_param_group(
+                name="target_engineering",
+                params={
+                    "iso_min_prob": {
+                        "type": "float",
+                        "low": 0.05,
+                        "high": 0.15,
+                    },
+                    "target_clip_high_q": {
+                        "type": "float",
+                        "low": 0.90,
+                        "high": 0.98,
+                    },
+                    "signal_strength_scale_max": {
+                        "type": "float",
+                        "low": 1.2,
+                        "high": 2.0,
+                    },
+                    "r_multiple_pos_threshold": {
+                        "type": "float",
+                        "low": 0.3,
+                        "high": 1.0,
+                    },
+                    "transaction_cost_mult": {
+                        "type": "float",
+                        "low": 0.5,
+                        "high": 1.5,
+                    },
+                },
+                priority=5,
+                depends_on=["label_definition"],
+                description="Target transformation and trade filters",
+            ),
+            # Group 6: Smoothing (2 params) - Independent/Late stage
+            create_param_group(
+                name="kalman_smoothing",
+                params={
+                    "kalman_Q": {
+                        "type": "float",
+                        "low": 1e-5,
+                        "high": 1e-3,
+                        "log": True,
+                    },
+                    "kalman_R": {
+                        "type": "float",
+                        "low": 1e-3,
+                        "high": 0.1,
+                        "log": True,
+                    },
+                },
+                priority=6,
+                depends_on=["event_geometry"],
+                description="Kalman smoothing noise parameters",
             ),
         ]
 
@@ -1871,6 +1903,8 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     horizon=int(h),
                     transaction_cost=DEFAULT_TRANSACTION_COST,
                     min_event_spacing=int(warm_start_best_params.get("min_event_spacing", 2)),
+                    atr_series=stage1_atr_series,
+                    trail_distance_atr_mult=float(warm_start_best_params.get("trail_distance", 0.0)),
                 )
                 labeled_mask_h = ~binary_labels_h.isna()
                 n_events_h = int(labeled_mask_h.sum())
@@ -1999,6 +2033,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 # to conservative defaults.
                 profit_thr_base = float(params.get("profit_thr_base", 0.012))
                 stop_ratio = float(params.get("stop_to_profit_ratio", 0.5))
+                trail_dist = float(params.get("trail_distance", 0.0))
 
                 # CONSTRAINT: Ensure profit is at least 1.5x stop
                 stop_thr_base = max(0.0005, profit_thr_base * stop_ratio)
@@ -2164,6 +2199,8 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     horizon=horizon,
                     transaction_cost=effective_tx_cost,  # Use HPO-tunable tx cost
                     min_event_spacing=min_spacing,
+                    atr_series=atr_series,
+                    trail_distance_atr_mult=trail_dist,
                 )
 
                 # Basic diagnostics on raw realized returns and labels before
@@ -3137,11 +3174,12 @@ class MetaLabelingHPOExperimentStep(BaseStep):
         if calibrated_horizon is not None:
             stage_1_params = [
                 'min_event_spacing',
-                'cusum_threshold', 'target_signal_density',  # NEW: signal generation
+                'cusum_threshold', 'target_signal_density',
+                'profit_thr_base', 'stop_to_profit_ratio', 'trail_distance',
                 'iso_min_prob', 'target_clip_high_q',
                 'econ_min_return_multiple', 'label_low_q', 'label_high_q',
                 'signal_strength_scale_max',
-                'r_multiple_pos_threshold', 'transaction_cost_mult',  # NEW: trade filters
+                'r_multiple_pos_threshold', 'transaction_cost_mult',
                 'kalman_Q', 'kalman_R', 'vol_baseline_window',
                 'profit_mult_min', 'profit_mult_max', 'stop_mult_min', 'stop_mult_max',
             ]
@@ -3152,11 +3190,12 @@ class MetaLabelingHPOExperimentStep(BaseStep):
         else:
             stage_1_params = [
                 'horizon_bars', 'min_event_spacing',
-                'cusum_threshold', 'target_signal_density',  # NEW: signal generation
+                'cusum_threshold', 'target_signal_density',
+                'profit_thr_base', 'stop_to_profit_ratio', 'trail_distance',
                 'iso_min_prob', 'target_clip_high_q',
                 'econ_min_return_multiple', 'label_low_q', 'label_high_q',
                 'signal_strength_scale_max',
-                'r_multiple_pos_threshold', 'transaction_cost_mult',  # NEW: trade filters
+                'r_multiple_pos_threshold', 'transaction_cost_mult',
                 'kalman_Q', 'kalman_R', 'vol_baseline_window',
                 'profit_mult_min', 'profit_mult_max', 'stop_mult_min', 'stop_mult_max',
             ]
@@ -3227,16 +3266,18 @@ class MetaLabelingHPOExperimentStep(BaseStep):
             ) -> callable:
                 """Create a wrapper that injects fixed params from previous stages."""
                 def wrapper(params: Dict[str, Any]) -> float:
-                    nonlocal market_data, primary_signals, volatility_1d, days_span
+                    nonlocal market_data, primary_signals, volatility_1d, days_span, atr_series
                     if use_stage1_subsample and model_complexity == "fast" and stage1_enable_subsample:
                         md_backup = market_data
                         ps_backup = primary_signals
                         vol_backup = volatility_1d
+                        atr_backup = atr_series
                         days_backup = days_span
                         try:
                             market_data = stage1_market_data
                             primary_signals = stage1_primary_signals
                             volatility_1d = stage1_volatility_1d
+                            atr_series = stage1_atr_series
                             days_span = stage1_days_span
                             full_params = {**fixed_params, **params}
                             result = labeling_objective(
@@ -3249,6 +3290,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                             market_data = md_backup
                             primary_signals = ps_backup
                             volatility_1d = vol_backup
+                            atr_series = atr_backup
                             days_span = days_backup
                     else:
                         full_params = {**fixed_params, **params}
@@ -3269,9 +3311,9 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     # Stage 1 (fast model, subsampled data):
                     # Group A – event shape / density + signal generation
                     if calibrated_horizon is not None:
-                        stage_param_groups.append(['min_event_spacing', 'cusum_threshold', 'target_signal_density'])
+                        stage_param_groups.append(['min_event_spacing', 'cusum_threshold', 'target_signal_density', 'trail_distance'])
                     else:
-                        stage_param_groups.append(['horizon_bars', 'min_event_spacing', 'cusum_threshold', 'target_signal_density'])
+                        stage_param_groups.append(['horizon_bars', 'min_event_spacing', 'cusum_threshold', 'target_signal_density', 'trail_distance'])
                     # Group B – TPSL geometry
                     stage_param_groups.append(['profit_mult_min', 'profit_mult_max', 'stop_mult_min', 'stop_mult_max'])
                     # Group C – smoothing
@@ -3595,6 +3637,19 @@ class MetaLabelingHPOExperimentStep(BaseStep):
             stop_mult_min = float(diag_params.get("stop_mult_min", 0.5))
             stop_mult_max = float(diag_params.get("stop_mult_max", 2.0))
             
+            # Extract trailing distance if available
+            trail_dist_diag = float(diag_params.get("trail_distance", 0.0))
+
+            # Recompute ATR for diagnostics
+            high_prices = market_data["high"] if "high" in market_data.columns else market_data["close"]
+            low_prices = market_data["low"] if "low" in market_data.columns else market_data["close"]
+            close_prices = market_data["close"]
+            tr1 = high_prices - low_prices
+            tr2 = (high_prices - close_prices.shift(1)).abs()
+            tr3 = (low_prices - close_prices.shift(1)).abs()
+            true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+            atr_series_diag = true_range.rolling(window=14, min_periods=1).mean()
+
             # Compute adaptive thresholds
             vol_baseline = volatility_1d.rolling(vol_baseline_window).mean()
             vol_factor = volatility_1d / (vol_baseline + 1e-8)
@@ -3627,6 +3682,8 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 horizon=horizon,
                 transaction_cost=effective_tx_cost,
                 min_event_spacing=min_spacing,
+                atr_series=atr_series_diag,
+                trail_distance_atr_mult=trail_dist_diag,
             )
             
             # Vol-scaled returns and quantile labels

@@ -2481,89 +2481,10 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 # Compute label entropy/balance score
                 balance_score = compute_label_entropy_score(binary_labels)
 
-                # Optional underfit diagnostics
-                underfit_diagnostics = None
-                filtering_diagnostics = None
-                calibration_diagnostics = None
-                robustness_diagnostics = None
-                class_overlap_diagnostics = None
-                
-                if compute_diagnostics and ENABLE_UNDERFIT_DIAGNOSTICS:
-                    underfit_diagnostics = compute_underfit_diagnostics(
-                        X=X_for_learnability,
-                        y=binary_labels,
-                        cv_splits=cv_splits,
-                        time_aware_cv=True,
-                    )
-                    
-                    # ===== COMPREHENSIVE DIAGNOSTICS =====
-                    # 1. Create "full" labels (before quantile filtering, using economic floor only)
-                    #    This allows comparing AUC on full vs filtered labels
-                    econ_floor = econ_min_mult * effective_tx_cost
-                    y_full = pd.Series(np.nan, index=realized_returns.index)
-                    full_mask = ~realized_returns.isna() & (realized_returns.abs() >= econ_floor)
-                    y_full[full_mask & (realized_returns > 0)] = 1.0
-                    y_full[full_mask & (realized_returns <= 0)] = 0.0
-                    
-                    # 2. Filtering inflation diagnostics
-                    try:
-                        filtering_diagnostics = compute_filtering_inflation_diagnostics(
-                            X=X_for_learnability,
-                            y_full=y_full,
-                            y_filtered=binary_labels,
-                            realized_returns=realized_returns,
-                            volatility=volatility_1d,
-                            probabilities=calibrated_probs,
-                            cv_splits=cv_splits,
-                            time_aware_cv=True,
-                        )
-                    except Exception as e_filt:
-                        if debug_sample_count < debug_sample_limit:
-                            tprint_warning(f"[DIAG] Filtering diagnostics failed: {e_filt}")
-                    
-                    # 3. Calibration diagnostics
-                    try:
-                        y_for_calib = binary_labels[labeled_mask].values
-                        probs_for_calib = calibrated_probs[labeled_mask.values] if len(calibrated_probs) == len(binary_labels) else calibrated_probs
-                        returns_for_calib = realized_returns[labeled_mask].values
-                        
-                        calibration_diagnostics = compute_calibration_diagnostics(
-                            y_true=y_for_calib,
-                            probabilities=probs_for_calib,
-                            realized_returns=returns_for_calib,
-                            transaction_cost=effective_tx_cost,
-                            n_bins=10,
-                        )
-                    except Exception as e_calib:
-                        if debug_sample_count < debug_sample_limit:
-                            tprint_warning(f"[DIAG] Calibration diagnostics failed: {e_calib}")
-                    
-                    # 4. Robustness diagnostics
-                    try:
-                        regime_series = market_data.get("hmm_regime_label_1h")
-                        robustness_diagnostics = compute_robustness_diagnostics(
-                            X=X_for_learnability,
-                            y=binary_labels,
-                            realized_returns=realized_returns,
-                            regimes=regime_series,
-                            volatility=volatility_1d,
-                            n_folds=min(5, cv_splits + 2),
-                            transaction_cost=effective_tx_cost,
-                        )
-                    except Exception as e_robust:
-                        if debug_sample_count < debug_sample_limit:
-                            tprint_warning(f"[DIAG] Robustness diagnostics failed: {e_robust}")
-                    
-                    # 5. Class overlap diagnostics (retained vs discarded)
-                    try:
-                        class_overlap_diagnostics = compute_class_overlap_features(
-                            X=X_for_learnability,
-                            retained_mask=labeled_mask,
-                            top_k_features=10,
-                        )
-                    except Exception as e_overlap:
-                        if debug_sample_count < debug_sample_limit:
-                            tprint_warning(f"[DIAG] Class overlap diagnostics failed: {e_overlap}")
+                # NOTE: Comprehensive diagnostics (filtering, calibration, robustness, overlap)
+                # are computed ONLY for the best config at the end of HPO, not during
+                # the search loop. This improves HPO performance significantly.
+                # See post-HPO diagnostics section below.
 
                 # ===== ECONOMIC PROFITABILITY =====
                 # Compute economic separation metrics on labeled events
@@ -2821,7 +2742,8 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     learnability_score -= 0.5
 
                 # ===== COMBINED OBJECTIVE WITH RETENTION REGULARIZATION =====
-                # New formula: objective = AUC_filtered - α * (1 / retention_rate)
+                # Simplified formula: objective = AUC_adjusted - α * (1 / retention_rate)
+                # 
                 # This penalizes configurations that achieve high AUC through aggressive
                 # filtering (low retention) rather than genuine signal quality.
                 #
@@ -2832,7 +2754,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 alpha_retention = float(config.get("retention_regularization_alpha", 0.03))
                 alpha_retention = max(0.01, min(0.10, alpha_retention))  # Clamp to [0.01, 0.10]
                 
-                # Compute retention-adjusted AUC objective
+                # Compute retention penalty
                 # retention_total is already computed above as n_post_total / n_pre_total
                 if retention_total > 0:
                     retention_penalty = alpha_retention * (1.0 / retention_total)
@@ -2842,21 +2764,28 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 # Cap retention penalty to avoid dominating the objective
                 retention_penalty = min(retention_penalty, 0.5)
                 
-                # Retention-adjusted AUC (this is the primary HPO signal)
-                auc_retention_adjusted = mean_auc - retention_penalty
+                # ===== UNIFIED AUC ADJUSTMENT =====
+                # Combine AUC range penalties directly into adjusted AUC instead of
+                # having separate auc_penalty and learnability_bonus terms.
+                # This simplifies the objective and avoids double-counting.
                 
-                # When AUC is outside target range (0.55-0.67), auc_weight_multiplier
-                # reduces AUC influence and gives more sway to edge/pnl/trades.
-                # Edge already incorporates AUC via capture_ratio = max(0, 2*AUC - 1),
-                # so we use auc_weight_multiplier to scale the learnability bonus only.
+                auc_range_adjustment = 0.0
+                if mean_auc < 0.54:
+                    # Too noisy: heavy penalty incorporated into AUC
+                    auc_range_adjustment = -(0.54 - mean_auc) * 0.5
+                elif mean_auc > 0.70:
+                    # Suspicious (likely leakage): heavy penalty
+                    auc_range_adjustment = -(mean_auc - 0.70) * 1.0
+                elif mean_auc > 0.67:
+                    # Above excellent range: moderate penalty
+                    auc_range_adjustment = -(mean_auc - 0.67) * 0.3
+                elif auc_in_target_range:
+                    # In target range [0.55, 0.67]: small bonus for 0.60-0.62 sweet spot
+                    if mean_auc >= 0.58 and mean_auc <= 0.64:
+                        auc_range_adjustment = 0.02  # Small bonus for ideal range
                 
-                # Learnability bonus: reward AUC in target range, scaled by multiplier
-                if auc_in_target_range:
-                    # Within target: bonus for being closer to 0.62 sweet spot
-                    learnability_bonus = max(0, 0.15 - abs(mean_auc - 0.62)) * 10.0
-                else:
-                    # Outside target: no learnability bonus
-                    learnability_bonus = 0.0
+                # Final retention-adjusted AUC (unified primary signal)
+                auc_retention_adjusted = mean_auc + auc_range_adjustment - retention_penalty
                 
                 # Trade density bonus: stronger when AUC is outside target range
                 # This gives edge/pnl/trades more influence when AUC is penalized
@@ -2869,16 +2798,18 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     # Peak bonus at 2 trades/day
                     trades_bonus = max(0, 1.0 - abs(trades_per_day - 2.0) / 2.0) * 50.0
                 
-                # Combined score with retention-adjusted AUC as the primary component
+                # ===== SIMPLIFIED COMBINED OBJECTIVE =====
+                # Primary components:
+                # 1. edge_scaled: Captures profitability AND learnability (via capture ratio)
+                # 2. auc_retention_adjusted: AUC adjusted for retention penalty & range
+                # 3. trades_bonus: Reward healthy trade density
+                # 4. Penalties for extreme density and slow exits
                 combined_score = (
                     edge_scaled * edge_weight
-                    + (auc_retention_adjusted * 100.0)  # Scale AUC-retention term
-                    + (learnability_bonus * auc_weight_multiplier)
+                    + (auc_retention_adjusted * 100.0)  # Unified AUC signal
                     + (trades_bonus * density_weight)
                     - (penalty_density * 0.1)
                     - (tto_penalty * 0.1)
-                    - (auc_penalty * 2.0)  # AUC range penalty
-                    - (retention_penalty * 50.0)  # Explicit retention penalty term
                 )
 
                 # Store candidate configuration for later persistence
@@ -2918,9 +2849,9 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     'effective_tx_cost': float(effective_tx_cost),
                     'label_low_q': float(label_low_q),
                     'label_high_q': float(label_high_q),
-                    # AUC range tracking
+                    # AUC range tracking (unified into auc_retention_adjusted)
                     'auc_in_target_range': bool(auc_in_target_range),
-                    'auc_penalty': float(auc_penalty),
+                    'auc_range_adjustment': float(auc_range_adjustment),
                     'auc_weight_multiplier': float(auc_weight_multiplier),
                     'auc_interpretation': (
                         'too_noisy' if mean_auc < 0.54 else
@@ -2929,7 +2860,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                         'suspicious_leakage' if mean_auc > 0.70 else
                         'above_target'
                     ),
-                    # Retention regularization
+                    # Retention regularization (unified objective)
                     'retention_penalty': float(retention_penalty),
                     'auc_retention_adjusted': float(auc_retention_adjusted),
                     'alpha_retention': float(alpha_retention),
@@ -3013,41 +2944,8 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 if per_regime_metrics:
                     candidate_config['per_regime_metrics'] = per_regime_metrics
 
-                # Add underfit diagnostics if computed
-                if underfit_diagnostics is not None:
-                    candidate_config['underfit_diagnostics'] = underfit_diagnostics
-                
-                # Add comprehensive diagnostics if computed
-                if filtering_diagnostics is not None:
-                    candidate_config['filtering_diagnostics'] = filtering_diagnostics
-                    # Flag if filtering is inflating AUC
-                    if filtering_diagnostics.get('filtering_is_major_contributor', False):
-                        candidate_config['warning_filtering_inflation'] = True
-                    if filtering_diagnostics.get('auc_dominated_by_large_moves', False):
-                        candidate_config['warning_large_move_dominance'] = True
-                    if filtering_diagnostics.get('precision_collapse_detected', False):
-                        candidate_config['warning_precision_collapse'] = True
-                
-                if calibration_diagnostics is not None:
-                    candidate_config['calibration_diagnostics'] = calibration_diagnostics
-                    # Flag calibration issues
-                    if not calibration_diagnostics.get('is_well_calibrated', True):
-                        candidate_config['warning_calibration_issue'] = True
-                    candidate_config['brier_score'] = calibration_diagnostics.get('brier_score')
-                    candidate_config['ece'] = calibration_diagnostics.get('ece')
-                
-                if robustness_diagnostics is not None:
-                    candidate_config['robustness_diagnostics'] = robustness_diagnostics
-                    # Flag robustness issues
-                    if not robustness_diagnostics.get('is_robust', True):
-                        candidate_config['warning_robustness_issue'] = True
-                    candidate_config['worst_fold_auc'] = robustness_diagnostics.get('worst_fold_auc')
-                    candidate_config['auc_cv_std'] = robustness_diagnostics.get('auc_cv_std')
-                
-                if class_overlap_diagnostics is not None:
-                    candidate_config['class_overlap_diagnostics'] = class_overlap_diagnostics
-                    if class_overlap_diagnostics.get('easy_problem_detected', False):
-                        candidate_config['warning_easy_problem'] = True
+                # NOTE: Comprehensive diagnostics are computed post-HPO for best config only.
+                # See compute_best_config_diagnostics() call after HPO loop.
 
                 # Attach regression target diagnostics, if available, so that
                 # downstream analysis can assess how well continuous payoffs
@@ -3622,7 +3520,223 @@ class MetaLabelingHPOExperimentStep(BaseStep):
             best_candidate_metrics = {}
 
         # ------------------------------------------------------------------
-        # 7) (Disabled) Pareto frontier and knee-point logic
+        # 7) COMPREHENSIVE DIAGNOSTICS FOR BEST CONFIG
+        # ------------------------------------------------------------------
+        # These diagnostics are computed ONLY for the best config, not during HPO
+        tprint_info("🔍 Computing comprehensive diagnostics for best configuration...")
+        
+        best_config_diagnostics = {}
+        try:
+            # Re-run labeling with best params to get intermediate data
+            diag_params = best_params.copy()
+            
+            # Extract parameters
+            profit_thr_base = float(diag_params.get("profit_thr_base", 0.012))
+            stop_ratio = float(diag_params.get("stop_to_profit_ratio", 0.5))
+            stop_thr_base = max(0.0005, profit_thr_base * stop_ratio)
+            horizon = int(diag_params.get("horizon_bars", 24))
+            min_spacing = int(diag_params.get("min_event_spacing", 4))
+            econ_min_mult = float(diag_params.get("econ_min_return_multiple", 2.0))
+            label_low_q = float(diag_params.get("label_low_q", 0.30))
+            label_high_q = float(diag_params.get("label_high_q", 0.70))
+            tx_cost_mult = float(diag_params.get("transaction_cost_mult", 1.0))
+            effective_tx_cost = DEFAULT_TRANSACTION_COST * tx_cost_mult
+            vol_baseline_window = int(diag_params.get("vol_baseline_window", 96))
+            profit_mult_min = float(diag_params.get("profit_mult_min", 0.5))
+            profit_mult_max = float(diag_params.get("profit_mult_max", 2.0))
+            stop_mult_min = float(diag_params.get("stop_mult_min", 0.5))
+            stop_mult_max = float(diag_params.get("stop_mult_max", 2.0))
+            
+            # Compute adaptive thresholds
+            vol_baseline = volatility_1d.rolling(vol_baseline_window).mean()
+            vol_factor = volatility_1d / (vol_baseline + 1e-8)
+            
+            adaptive_profit = profit_thr_base * vol_factor
+            adaptive_stop = stop_thr_base * vol_factor
+            adaptive_profit = adaptive_profit.clip(
+                lower=profit_thr_base * profit_mult_min,
+                upper=profit_thr_base * profit_mult_max,
+            )
+            adaptive_stop = adaptive_stop.clip(
+                lower=stop_thr_base * stop_mult_min,
+                upper=stop_thr_base * stop_mult_max,
+            )
+            
+            # Compute realized returns
+            (
+                realized_returns_diag,
+                binary_labels_raw,
+                exit_reasons_diag,
+                event_durations_diag,
+                mfe_diag,
+                mae_diag,
+                _, _
+            ) = compute_realized_returns(
+                market_data,
+                primary_signals,
+                profit_threshold=adaptive_profit,
+                stop_threshold=adaptive_stop,
+                horizon=horizon,
+                transaction_cost=effective_tx_cost,
+                min_event_spacing=min_spacing,
+            )
+            
+            # Vol-scaled returns and quantile labels
+            vol_scaled_diag = compute_vol_scaled_returns_for_events(
+                realized_returns=realized_returns_diag,
+                volatility=volatility_1d,
+                econ_min_return_multiple=econ_min_mult,
+            )
+            
+            regimes_diag = market_data.get("hmm_regime_label_1h")
+            if regimes_diag is not None:
+                quantile_labels_diag = create_regime_aware_quantile_labels_from_vol_scaled_returns(
+                    vol_scaled=vol_scaled_diag,
+                    regimes=regimes_diag,
+                    low_q=label_low_q,
+                    high_q=label_high_q,
+                )
+            else:
+                quantile_labels_diag = create_quantile_labels_from_vol_scaled_returns(
+                    vol_scaled=vol_scaled_diag,
+                    low_q=label_low_q,
+                    high_q=label_high_q,
+                )
+            
+            labeled_mask_diag = ~quantile_labels_diag.isna()
+            
+            # Build meta-features
+            meta_feature_cfg = config.get("meta_feature_engineering", {})
+            volume_available = "volume" in market_data.columns
+            
+            meta_features_diag, meta_features_processed, _, _ = build_meta_features_for_model(
+                market_data=market_data,
+                primary_signals=primary_signals,
+                realized_returns=realized_returns_diag,
+                binary_labels=quantile_labels_diag,
+                event_durations=event_durations_diag,
+                mfe_series=mfe_diag,
+                mae_series=mae_diag,
+                adaptive_stop_threshold=adaptive_stop,
+                horizon=horizon,
+                volume_available=volume_available,
+                meta_feature_cfg=meta_feature_cfg,
+            )
+            
+            # Compute calibrated probabilities
+            _, mean_auc_diag, calibrated_probs_diag, _ = compute_learnability_with_calibration(
+                X=meta_features_processed,
+                y=quantile_labels_diag,
+                realized_returns=realized_returns_diag,
+                model_complexity="strong",
+                cv_splits=5,
+                time_aware_cv=True,
+                use_ensemble=False,
+            )
+            
+            # Create "full" labels (before quantile filtering)
+            econ_floor = econ_min_mult * effective_tx_cost
+            y_full_diag = pd.Series(np.nan, index=realized_returns_diag.index)
+            full_mask = ~realized_returns_diag.isna() & (realized_returns_diag.abs() >= econ_floor)
+            y_full_diag[full_mask & (realized_returns_diag > 0)] = 1.0
+            y_full_diag[full_mask & (realized_returns_diag <= 0)] = 0.0
+            
+            # 1. Filtering inflation diagnostics
+            tprint_info("  → Computing filtering inflation diagnostics...")
+            try:
+                filtering_diag = compute_filtering_inflation_diagnostics(
+                    X=meta_features_processed,
+                    y_full=y_full_diag,
+                    y_filtered=quantile_labels_diag,
+                    realized_returns=realized_returns_diag,
+                    volatility=volatility_1d,
+                    probabilities=calibrated_probs_diag,
+                    cv_splits=5,
+                    time_aware_cv=True,
+                )
+                best_config_diagnostics['filtering_diagnostics'] = filtering_diag
+                
+                if filtering_diag.get('filtering_is_major_contributor'):
+                    tprint_warning("  ⚠️ WARNING: Filtering is a major contributor to AUC inflation")
+                if filtering_diag.get('auc_dominated_by_large_moves'):
+                    tprint_warning("  ⚠️ WARNING: AUC dominated by large-move events")
+                if filtering_diag.get('precision_collapse_detected'):
+                    tprint_warning("  ⚠️ WARNING: Precision collapse detected (model only good on easy cases)")
+            except Exception as e:
+                tprint_warning(f"  ⚠️ Filtering diagnostics failed: {e}")
+            
+            # 2. Calibration diagnostics
+            tprint_info("  → Computing calibration diagnostics...")
+            try:
+                y_calib = quantile_labels_diag[labeled_mask_diag].values
+                probs_calib = calibrated_probs_diag[labeled_mask_diag.values] if len(calibrated_probs_diag) == len(quantile_labels_diag) else calibrated_probs_diag
+                returns_calib = realized_returns_diag[labeled_mask_diag].values
+                
+                calib_diag = compute_calibration_diagnostics(
+                    y_true=y_calib,
+                    probabilities=probs_calib,
+                    realized_returns=returns_calib,
+                    transaction_cost=effective_tx_cost,
+                    n_bins=10,
+                )
+                best_config_diagnostics['calibration_diagnostics'] = calib_diag
+                
+                if calib_diag.get('brier_score') is not None:
+                    tprint_info(f"  → Brier Score: {calib_diag['brier_score']:.4f}")
+                if calib_diag.get('ece') is not None:
+                    tprint_info(f"  → ECE: {calib_diag['ece']:.4f}")
+                if not calib_diag.get('is_well_calibrated', True):
+                    tprint_warning("  ⚠️ WARNING: Model is miscalibrated (ECE > 0.05)")
+            except Exception as e:
+                tprint_warning(f"  ⚠️ Calibration diagnostics failed: {e}")
+            
+            # 3. Robustness diagnostics
+            tprint_info("  → Computing robustness diagnostics...")
+            try:
+                robust_diag = compute_robustness_diagnostics(
+                    X=meta_features_processed,
+                    y=quantile_labels_diag,
+                    realized_returns=realized_returns_diag,
+                    regimes=regimes_diag,
+                    volatility=volatility_1d,
+                    n_folds=5,
+                    transaction_cost=effective_tx_cost,
+                )
+                best_config_diagnostics['robustness_diagnostics'] = robust_diag
+                
+                if robust_diag.get('worst_fold_auc') is not None:
+                    tprint_info(f"  → Worst-fold AUC: {robust_diag['worst_fold_auc']:.3f}")
+                if robust_diag.get('auc_cv_std') is not None:
+                    tprint_info(f"  → AUC CV Std: {robust_diag['auc_cv_std']:.4f}")
+                if not robust_diag.get('is_robust', True):
+                    tprint_warning("  ⚠️ WARNING: Model not robust (high CV variance or poor worst-fold)")
+            except Exception as e:
+                tprint_warning(f"  ⚠️ Robustness diagnostics failed: {e}")
+            
+            # 4. Class overlap diagnostics
+            tprint_info("  → Computing class overlap diagnostics...")
+            try:
+                overlap_diag = compute_class_overlap_features(
+                    X=meta_features_processed,
+                    retained_mask=labeled_mask_diag,
+                    top_k_features=10,
+                )
+                best_config_diagnostics['class_overlap_diagnostics'] = overlap_diag
+                
+                if overlap_diag.get('easy_problem_detected'):
+                    tprint_warning("  ⚠️ WARNING: Easy problem detected (retained events form tight cluster)")
+            except Exception as e:
+                tprint_warning(f"  ⚠️ Class overlap diagnostics failed: {e}")
+            
+            tprint_success("✅ Comprehensive diagnostics completed for best configuration")
+            
+        except Exception as diag_exc:
+            tprint_warning(f"⚠️ Failed to compute comprehensive diagnostics: {diag_exc}")
+            import traceback
+            traceback.print_exc()
+
+        # ------------------------------------------------------------------
+        # 8) (Disabled) Pareto frontier and knee-point logic
         # ------------------------------------------------------------------
         pareto_solutions: list[Solution] = []
         pareto_front: list[Solution] = []
@@ -3989,27 +4103,54 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 if sorted_candidates:
                     best_candidate_edge = sorted_candidates[0].get('edge', 0.0)
 
+            # Build output dict with diagnostics
+            output_dict = {
+                "symbol": symbol,
+                "exchange": exchange,
+                "timeframe": timeframe,
+                "best_score": best_score,
+                "best_edge": best_candidate_edge,
+                "best_params": best_params,
+                "knee_params": knee_params,
+                "pareto_front_size": len(pareto_front),
+                "total_trials": all_trials_count,
+                "stage_results": [
+                    {
+                        "stage": sr["stage"],
+                        "complexity": sr["complexity"],
+                        "best_score": sr["best_score"],
+                        "trials": sr["trials"],
+                    }
+                    for sr in stage_results
+                ],
+            }
+            
+            # Add comprehensive diagnostics for best config
+            if best_config_diagnostics:
+                output_dict["best_config_diagnostics"] = best_config_diagnostics
+                
+                # Add summary warnings as top-level fields
+                filtering_diag = best_config_diagnostics.get('filtering_diagnostics', {})
+                calib_diag = best_config_diagnostics.get('calibration_diagnostics', {})
+                robust_diag = best_config_diagnostics.get('robustness_diagnostics', {})
+                overlap_diag = best_config_diagnostics.get('class_overlap_diagnostics', {})
+                
+                output_dict["diagnostics_summary"] = {
+                    "filtering_is_major_contributor": filtering_diag.get('filtering_is_major_contributor', False),
+                    "auc_dominated_by_large_moves": filtering_diag.get('auc_dominated_by_large_moves', False),
+                    "precision_collapse_detected": filtering_diag.get('precision_collapse_detected', False),
+                    "is_well_calibrated": calib_diag.get('is_well_calibrated', True),
+                    "brier_score": calib_diag.get('brier_score'),
+                    "ece": calib_diag.get('ece'),
+                    "mce": calib_diag.get('mce'),
+                    "is_robust": robust_diag.get('is_robust', True),
+                    "worst_fold_auc": robust_diag.get('worst_fold_auc'),
+                    "auc_cv_std": robust_diag.get('auc_cv_std'),
+                    "easy_problem_detected": overlap_diag.get('easy_problem_detected', False),
+                }
+            
             with open(json_path, "w") as f:
-                json.dump({
-                    "symbol": symbol,
-                    "exchange": exchange,
-                    "timeframe": timeframe,
-                    "best_score": best_score,
-                    "best_edge": best_candidate_edge,
-                    "best_params": best_params,
-                    "knee_params": knee_params,
-                    "pareto_front_size": len(pareto_front),
-                    "total_trials": all_trials_count,
-                    "stage_results": [
-                        {
-                            "stage": sr["stage"],
-                            "complexity": sr["complexity"],
-                            "best_score": sr["best_score"],
-                            "trials": sr["trials"],
-                        }
-                        for sr in stage_results
-                    ],
-                }, f, indent=2)
+                json.dump(output_dict, f, indent=2, default=str)
             tprint_success(f"💾 Saved best labeling HPO params to {json_path}")
         except Exception as save_exc:
             tprint_warning(f"⚠️ Failed to save best_params JSON: {save_exc}")
@@ -4284,6 +4425,10 @@ class MetaLabelingHPOExperimentStep(BaseStep):
             "pareto_frontier_size": len(pareto_front),
             "candidate_pool_size": len(candidate_pool),
         }
+        
+        # Add diagnostics summary to metrics
+        if best_config_diagnostics:
+            metrics["best_config_diagnostics"] = best_config_diagnostics
 
         artifacts: Dict[str, Any] = {}
         if json_path is not None:

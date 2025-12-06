@@ -264,6 +264,10 @@ class KlinesParquetManager:
                 
                 # Load and combine all data
                 combined_df = self._load_and_combine_files(files, None, None)
+                tprint_info(
+                    f"📊 Combined dataset before time filter: shape={combined_df.shape if hasattr(combined_df, 'shape') else 'NA'}; "
+                    f"index_type={type(combined_df.index).__name__ if hasattr(combined_df, 'index') else 'NA'}"
+                )
                 
                 if combined_df.empty:
                     tprint_warning(f"⚠️ No data found for {symbol} {exchange} {interval}")
@@ -909,7 +913,7 @@ class KlinesParquetManager:
         # Try processed directory first (contains partitioned parquet files)
         if processed_dir.exists():
             # Processed data is partitioned by year, so we need to search recursively
-            all_files = list(processed_dir.glob("**/*.parquet"))
+            all_files = sorted(processed_dir.glob("**/*.parquet"))
             if all_files:
                 tprint_info(f"📁 Loading from processed directory: {len(all_files)} files found")
         
@@ -918,7 +922,7 @@ class KlinesParquetManager:
             pattern = f"klines_{exchange}_{symbol}_{interval}_*.parquet"
             if batch_id:
                 pattern = f"klines_{exchange}_{symbol}_{interval}_{batch_id}.parquet"
-            all_files = list(klines_dir.glob(pattern))
+            all_files = sorted(klines_dir.glob(pattern))
             if all_files:
                 tprint_info(f"📁 Loading from klines directory: {len(all_files)} files found")
         
@@ -974,9 +978,31 @@ class KlinesParquetManager:
             try:
                 df = self.parquet_utils.safe_read_parquet(str(file_path))
                 if df is not None and not df.empty:
+                    # Infer span for diagnostics (best-effort)
+                    span_start = span_end = None
+                    ts_candidate = None
+                    if isinstance(df.index, pd.DatetimeIndex):
+                        ts_candidate = df.index
+                    elif 'timestamp' in df.columns:
+                        ts_candidate = pd.to_datetime(df['timestamp'], errors='coerce')
+                    elif 'open_time' in df.columns:
+                        # allow automatic unit inference if ms parse fails
+                        try:
+                            ts_candidate = pd.to_datetime(df['open_time'], errors='coerce', unit='ms')
+                        except Exception:
+                            ts_candidate = pd.to_datetime(df['open_time'], errors='coerce')
+                    if ts_candidate is not None and ts_candidate.notna().any():
+                        span_start = ts_candidate.min()
+                        span_end = ts_candidate.max()
+
                     dataframes.append(df)
                     if i < 3 or i >= len(files) - 3:  # Log first and last 3 files
-                        tprint(f"🐛 DEBUG [KlinesParquetManager]: File {i+1}/{len(files)}: {file_path.name} - {len(df)} rows", "INFO")
+                        tprint(
+                            f"🐛 DEBUG [KlinesParquetManager]: File {i+1}/{len(files)}: "
+                            f"{file_path} - {len(df)} rows, "
+                            f"span=({span_start}, {span_end})",
+                            "INFO",
+                        )
                 elif i < 3:
                     tprint(f"🐛 DEBUG [KlinesParquetManager]: File {i+1}/{len(files)}: {file_path.name} - EMPTY/NONE", "WARNING")
             except Exception as e:

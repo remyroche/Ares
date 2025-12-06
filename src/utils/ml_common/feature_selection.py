@@ -5043,56 +5043,61 @@ class FeatureSelectionFramework:
             HSIC value (higher indicates stronger dependence)
         """
         try:
-            # Ensure proper shape
             X = np.asarray(X).flatten() if X.ndim > 1 and X.shape[1] == 1 else np.asarray(X)
             y = np.asarray(y).flatten()
-            
+
             n = len(y)
             if n < 10:
                 return 0.0
-                
-            # Handle multi-dimensional X
+
+            max_samples = 2000
+            if n > max_samples:
+                rng = np.random.RandomState(42)
+                indices = rng.choice(n, max_samples, replace=False)
+                X = X[indices]
+                y = y[indices]
+                n = max_samples
+
             if X.ndim == 1:
                 X = X.reshape(-1, 1)
-            
-            # Compute kernel matrices
+
             if kernel == 'rbf':
-                # Use median heuristic for bandwidth if not specified
                 if sigma_x is None:
-                    # Pairwise distances for X
                     X_diff = X[:, np.newaxis, :] - X[np.newaxis, :, :]
                     X_dist = np.sqrt(np.sum(X_diff ** 2, axis=2))
                     sigma_x = np.median(X_dist[X_dist > 0]) if np.any(X_dist > 0) else 1.0
                     sigma_x = max(sigma_x, 1e-8)
-                    
+
                 if sigma_y is None:
                     y_diff = y[:, np.newaxis] - y[np.newaxis, :]
                     y_dist = np.abs(y_diff)
                     sigma_y = np.median(y_dist[y_dist > 0]) if np.any(y_dist > 0) else 1.0
                     sigma_y = max(sigma_y, 1e-8)
-                
-                # Compute RBF kernels
+
                 X_diff = X[:, np.newaxis, :] - X[np.newaxis, :, :]
                 K_X = np.exp(-np.sum(X_diff ** 2, axis=2) / (2 * sigma_x ** 2))
-                
+
                 y_diff = y[:, np.newaxis] - y[np.newaxis, :]
                 K_y = np.exp(-y_diff ** 2 / (2 * sigma_y ** 2))
-                
+
             elif kernel == 'linear':
-                # Linear kernel
                 K_X = X @ X.T
                 K_y = np.outer(y, y)
             else:
                 raise ValueError(f"Unknown kernel: {kernel}")
-            
-            # Center the kernel matrices
-            H = np.eye(n) - np.ones((n, n)) / n
-            K_X_centered = H @ K_X @ H
-            K_y_centered = H @ K_y @ H
-            
-            # Compute HSIC
-            hsic = np.trace(K_X_centered @ K_y_centered) / ((n - 1) ** 2)
-            
+
+            K_X_row_mean = K_X.mean(axis=1, keepdims=True)
+            K_X_col_mean = K_X.mean(axis=0, keepdims=True)
+            K_X_mean = K_X.mean()
+            K_X_centered = K_X - K_X_row_mean - K_X_col_mean + K_X_mean
+
+            K_y_row_mean = K_y.mean(axis=1, keepdims=True)
+            K_y_col_mean = K_y.mean(axis=0, keepdims=True)
+            K_y_mean = K_y.mean()
+            K_y_centered = K_y - K_y_row_mean - K_y_col_mean + K_y_mean
+
+            hsic = (K_X_centered * K_y_centered).sum() / ((n - 1) ** 2)
+
             return float(validate_finite(hsic, "hsic"))
             
         except Exception as e:

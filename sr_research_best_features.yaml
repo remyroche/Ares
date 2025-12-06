@@ -1,0 +1,27 @@
+selected_features:
+- age_log_hours
+- atr20_rel_level
+- confluence_score
+- confluence_x_trend4h
+- consecutive_test_count_10
+- di_spread_15m
+- level_age_hours
+- level_hist_bounce_rate
+- level_hist_break_rate
+- level_hist_event_count
+- level_hist_strong_rate
+- ma_slow_rel
+- meta_prominence
+- meta_touch_count
+- touch_frequency
+- trend_1h
+- trend_4h
+- trend_into_level_4h
+- trend_regime_sma
+- vol_1h
+- vol_20
+- vol_4h
+- vol_60
+- vol_depth_per_touch
+- vol_ratio_1h_4h
+- weighted_confluence_score

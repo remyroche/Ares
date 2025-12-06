@@ -546,8 +546,8 @@ def generate_primary_signals(
     sma_fast: int = 10,
     sma_slow: int = 30,
     momentum_period: int = 10,
-    rsi_oversold: float = 25.0,  # LOOSER (was 30)
-    rsi_overbought: float = 75.0,  # LOOSER (was 70)
+    rsi_oversold: float = 30.0,  
+    rsi_overbought: float = 70.0,  # LOOSER (was 70)
     macd_fast: int = 12,
     macd_slow: int = 26,
     macd_signal: int = 9,
@@ -602,11 +602,11 @@ def generate_primary_signals(
         tprint(f"🔧 Dynamic threshold tuning: Target {target_trades_per_day:.1f} trades/day × {n_days:.1f} days = {target_total_signals} signals", "INFO")
 
         # Binary search for optimal threshold
-        low_thresh, high_thresh = 0.001, 0.015  # Search range
-        best_thresh = 0.006  # Fallback
+        low_thresh, high_thresh = 0.001, 0.2  # Search range
+        best_thresh = 0.01  # Fallback
         tolerance = 0.15  # Accept within 15% of target
 
-        for iteration in range(12):  # Max 12 iterations
+        for iteration in range(15):  # Max 15 iterations
             mid_thresh = (low_thresh + high_thresh) / 2
 
             # Test with candidate threshold (run momentum calc only)
@@ -626,7 +626,7 @@ def generate_primary_signals(
             else:
                 low_thresh = mid_thresh  # Tighten (raise threshold)
 
-            if iteration == 11:  # Last iteration
+            if iteration == 14:  # Last iteration
                 best_thresh = mid_thresh
                 tprint(f"  ⚠️ Max iterations reached: threshold={best_thresh:.4f} → {test_count} signals (target: {target_total_signals})", "WARNING")
 
@@ -830,14 +830,21 @@ def generate_primary_signals(
     # Count raw signals for funnel
     all_signal_cols = momentum_cols + mr_cols
     raw_consensus = signals[all_signal_cols].sum(axis=1).apply(np.sign)
-    raw_signal_count = (raw_consensus != 0).sum()
+    raw_signal_count = int((raw_consensus != 0).sum())
     funnel['raw_signals'] = raw_signal_count
-    funnel['momentum_signals'] = (momentum_score != 0).sum()
-    funnel['mr_signals'] = (mr_score != 0).sum()
+    funnel['momentum_signals'] = int((momentum_score != 0).sum())
+    funnel['mr_signals'] = int((mr_score != 0).sum())
 
     # Weighted consensus: blend momentum and mean-reversion based on vol regime
     weighted_score = momentum_weight * momentum_score + mr_weight * mr_score
-    signals['consensus'] = weighted_score.apply(np.sign)
+    strict_consensus = weighted_score.apply(np.sign)
+
+    # Relax consensus slightly: where the strict vol-weighted consensus is 0 but
+    # there is a clear raw consensus, fall back to the raw consensus direction.
+    consensus_relaxed = strict_consensus.copy()
+    relaxed_mask = (consensus_relaxed == 0) & (raw_consensus != 0)
+    consensus_relaxed[relaxed_mask] = raw_consensus[relaxed_mask]
+    signals['consensus'] = consensus_relaxed
 
     # Store diagnostic info
     signals['momentum_weight'] = momentum_weight
@@ -847,15 +854,28 @@ def generate_primary_signals(
     signals['mr_score'] = mr_score
 
     # SIGNAL FUNNEL LOGGING
-    final_signal_count = (signals['consensus'] != 0).sum()
+    final_signal_count = int((signals['consensus'] != 0).sum())
     funnel['final_signals'] = final_signal_count
+    funnel['raw_long_signals'] = int((raw_consensus > 0).sum())
+    funnel['raw_short_signals'] = int((raw_consensus < 0).sum())
+    funnel['final_long_signals'] = int((signals['consensus'] > 0).sum())
+    funnel['final_short_signals'] = int((signals['consensus'] < 0).sum())
+    funnel['relaxed_extra_signals'] = int(relaxed_mask.sum())
+    funnel['raw_to_final_ratio'] = float(final_signal_count) / max(raw_signal_count, 1)
+
+    # Attach funnel statistics to the signal DataFrame for downstream diagnostics
+    try:
+        signals.attrs['signal_funnel'] = funnel
+    except Exception:
+        pass
 
     tprint(f"📊 Signal Funnel (Vol-Aware Dual-Mode):", "INFO")
     tprint(f"  Total bars: {funnel['total_bars']}", "INFO")
     tprint(f"  Raw signals generated: {funnel['raw_signals']}", "INFO")
-    tprint(f"  Momentum signals: {funnel['momentum_signals']}", "INFO")
-    tprint(f"  Mean-reversion signals: {funnel['mr_signals']}", "INFO")
-    tprint(f"  Final consensus signals: {funnel['final_signals']}", "INFO")
+    tprint(f"  Final consensus signals: {funnel['final_signals']} (ratio={funnel['raw_to_final_ratio']:.3f})", "INFO")
+    tprint(f"  Long/short raw: {funnel['raw_long_signals']}/{funnel['raw_short_signals']}", "INFO")
+    tprint(f"  Long/short final: {funnel['final_long_signals']}/{funnel['final_short_signals']}", "INFO")
+    tprint(f"  Relaxed extra signals (strict=0 but raw≠0): {funnel['relaxed_extra_signals']}", "INFO")
     tprint(f"  ℹ️  Using linear vol-aware weighting: low-vol favors MR, high-vol favors momentum", "INFO")
 
     # Store raw indicator values for meta-features (signal disagreement, magnitude, etc.)
@@ -1514,7 +1534,7 @@ def create_meta_features(
         labeler = TrendAwareMetaLabeler()
         zigzag_single = labeler.detect_zigzag_trend(df)
         mtf_config = MultiTimeframeConfig()
-        zigzag_mtf = labeler.detect_zigzag_multi_timeframe(df, mtf_config=mtf_config)
+        zigzag_mtf = labeler.detect_zigzag_multi_timeframe(df, mtf_config=mtf_config, base_zigzag=zigzag_single)
         zigzag_features = zigzag_single.join(zigzag_mtf, how="outer", rsuffix="_mtf")
     except Exception:
         zigzag_features = None
@@ -2458,6 +2478,20 @@ def build_meta_features_for_model(
     volume_available: bool,
     meta_feature_cfg: Dict[str, Any],
 ) -> Tuple[pd.DataFrame, pd.DataFrame, List[str], Optional[np.ndarray]]:
+    # Cache static, label-independent meta-features (e.g., ZigZag, volatility,
+    # external regimes) per unique (market_data, primary_signals, volume
+    # availability) combination so that expensive computations are reused
+    # across different labeling configurations.
+    if not hasattr(build_meta_features_for_model, "_static_meta_cache"):
+        setattr(build_meta_features_for_model, "_static_meta_cache", {})
+
+    static_cache = getattr(build_meta_features_for_model, "_static_meta_cache")
+
+    cache_key = (
+        id(market_data),
+        id(primary_signals),
+        bool(volume_available),
+    )
     # Optional: label uncertainty can be passed via meta_feature_cfg to enable
     # quality-aware weighting without requiring direct access to the caller's
     # local variables.
@@ -2537,13 +2571,17 @@ def build_meta_features_for_model(
 
     # STEP 5: Create meta-features with Kalman filtering
     tprint("🔧 [5/13] Creating meta-features with Kalman filtering...", "INFO")
-    meta_features = create_meta_features(
-        market_data,
-        primary_signals,
-        volume_available,
-        include_raw_signals=False,  # CRITICAL: avoid circular behavior
-        use_kalman=True  # Enable Kalman filtering
-    )
+    if cache_key in static_cache:
+        meta_features = static_cache[cache_key].copy()
+    else:
+        meta_features = create_meta_features(
+            market_data,
+            primary_signals,
+            volume_available,
+            include_raw_signals=False,  # CRITICAL: avoid circular behavior
+            use_kalman=True,  # Enable Kalman filtering
+        )
+        static_cache[cache_key] = meta_features.copy()
 
     # Attach event-centric and label-history features
     event_meta_features = pd.DataFrame(index=market_data.index)
@@ -3242,6 +3280,64 @@ def generate_diagnostics_report(
     if config.get('trail_distance'):
         report_lines.append(f"**Trailing Distance:** {config.get('trail_distance')} ATR")
     report_lines.append("\n---\n")
+
+    # ===== 0. SIGNAL FUNNEL (if available) =====
+    signal_funnel = config.get('signal_funnel') or {}
+    if isinstance(signal_funnel, dict) and signal_funnel:
+        report_lines.append("\n## 0. Signal Funnel (Primary Signals)\n")
+        total_bars_sf = int(signal_funnel.get('total_bars', n_samples))
+        raw_sf = int(signal_funnel.get('raw_signals', 0))
+        final_sf = int(signal_funnel.get('final_signals', 0))
+        ratio_sf = float(signal_funnel.get('raw_to_final_ratio', (final_sf / max(raw_sf, 1)) if raw_sf else 0.0))
+
+        report_lines.append(f"- **Total bars:** {total_bars_sf}")
+        report_lines.append(f"- **Raw non-zero signals:** {raw_sf}")
+        report_lines.append(f"- **Final consensus signals:** {final_sf} (ratio={ratio_sf:.3f})")
+
+        # Long/short breakdown
+        rl = int(signal_funnel.get('raw_long_signals', 0))
+        rs = int(signal_funnel.get('raw_short_signals', 0))
+        fl = int(signal_funnel.get('final_long_signals', 0))
+        fs = int(signal_funnel.get('final_short_signals', 0))
+        extra = int(signal_funnel.get('relaxed_extra_signals', 0))
+
+        report_lines.append(f"- **Raw long/short:** {rl}/{rs}")
+        report_lines.append(f"- **Final long/short:** {fl}/{fs}")
+        report_lines.append(f"- **Relaxed extra signals (strict=0 but raw≠0):** {extra}")
+
+        # Densities per bar and per day (approximate)
+        raw_density_bar = raw_sf / max(total_bars_sf, 1)
+        final_density_bar = final_sf / max(total_bars_sf, 1)
+
+        report_lines.append(f"- **Raw signal density:** {raw_density_bar:.5f} per bar")
+        report_lines.append(f"- **Final signal density:** {final_density_bar:.5f} per bar")
+
+        # If we have a DatetimeIndex, estimate per-day densities directly
+        raw_per_day = None
+        final_per_day = None
+        if isinstance(labeled_data.index, pd.DatetimeIndex) and len(labeled_data.index) > 1:
+            try:
+                dt_start = labeled_data.index[0]
+                dt_end = labeled_data.index[-1]
+                days_span_sf = max((dt_end - dt_start).total_seconds() / 86400.0, 1e-6)
+                raw_per_day = raw_sf / days_span_sf
+                final_per_day = final_sf / days_span_sf
+                report_lines.append(f"- **Raw signals per day (approx):** {raw_per_day:.3f}")
+                report_lines.append(f"- **Final consensus signals per day (approx):** {final_per_day:.3f}")
+            except Exception:
+                pass
+
+        # Heuristic warnings for extreme pruning or density
+        if raw_sf > 0 and ratio_sf < 0.25:
+            report_lines.append("\n⚠️ **Warning:** Consensus is pruning heavily (final/raw < 0.25). Consider relaxing signal gating.")
+        if raw_sf > 0 and ratio_sf > 0.9:
+            report_lines.append("\nℹ️ **Note:** Consensus preserves most raw signals (final/raw > 0.90).")
+
+        if final_per_day is not None:
+            if final_per_day < 0.3:
+                report_lines.append(f"\n⚠️ **Warning:** Very sparse primary signals ({final_per_day:.3f} trades/day). Downstream labels may be too sparse.")
+            elif final_per_day > 10.0:
+                report_lines.append(f"\n⚠️ **Warning:** Very dense primary signals ({final_per_day:.3f} trades/day). Overlapping events may be frequent.")
 
     # ===== 1. LABEL DISTRIBUTION =====
     report_lines.append("\n## 1. Label Distribution Analysis\n")
@@ -5770,6 +5866,7 @@ def attach_rolling_hmm_regimes_to_market_data(
 
     labels = None
     probs = None
+    attach_probs = bool(config.get("attach_hmm_probabilities", True))
 
     try:
         step.set_context(
@@ -5784,10 +5881,11 @@ def attach_rolling_hmm_regimes_to_market_data(
             "rolling_hmm_regime_labels",
             artifact_type="data",
         )
-        probs = step._get_artifact(
-            "rolling_hmm_regime_probabilities",
-            artifact_type="data",
-        )
+        if attach_probs:
+            probs = step._get_artifact(
+                "rolling_hmm_regime_probabilities",
+                artifact_type="data",
+            )
     except Exception as e:
         tprint(f"⚠️ Could not load rolling HMM regime artifacts: {e}", "WARNING")
     finally:
@@ -5884,6 +5982,7 @@ def attach_rolling_hmm_regimes_to_market_data(
             "timeframe": base_timeframe,
             "regime_timeframe": regime_timeframe,
             "direction": direction,
+            "enable_risk_hmm_specialist": False,
         }
 
         specialist_df = get_specialist_models_outputs(
@@ -6231,9 +6330,25 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             tprint("🎯 [1/13] Generating fixed primary signals...", "INFO")
             primary_signals = generate_primary_signals(market_data)
 
-            n_long_signals = (primary_signals['consensus'] > 0).sum()
-            n_short_signals = (primary_signals['consensus'] < 0).sum()
+            n_long_signals = int((primary_signals['consensus'] > 0).sum())
+            n_short_signals = int((primary_signals['consensus'] < 0).sum())
             tprint(f"📊 Primary signals: {n_long_signals} long, {n_short_signals} short", "INFO")
+
+            # Surface signal funnel statistics from the signal generator if available
+            signal_funnel = {}
+            try:
+                signal_funnel = primary_signals.attrs.get('signal_funnel', {}) or {}
+            except Exception:
+                signal_funnel = {}
+
+            if signal_funnel:
+                total_bars_sf = int(signal_funnel.get('total_bars', len(primary_signals)))
+                raw_sf = int(signal_funnel.get('raw_signals', n_long_signals + n_short_signals))
+                final_sf = int(signal_funnel.get('final_signals', n_long_signals + n_short_signals))
+                ratio_sf = float(signal_funnel.get('raw_to_final_ratio', final_sf / max(raw_sf, 1)))
+
+                tprint("📊 Signal funnel summary (from generator):", "INFO")
+                tprint(f"  Bars: {total_bars_sf}, Raw signals: {raw_sf}, Final consensus: {final_sf} (ratio={ratio_sf:.3f})", "INFO")
 
             # Define canonical training index based on primary signals
             train_index = primary_signals.index
@@ -6279,10 +6394,12 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
 
             # Attach specialist model outputs (liquidity regimes, etc.) aligned to train_index
             try:
+                specialist_config = dict(config)
+                specialist_config.setdefault("enable_risk_hmm_specialist", False)
                 specialist_df = get_specialist_models_outputs(
                     artifact_router=self.artifact_router,
                     training_index=train_index,
-                    config=config,
+                    config=specialist_config,
                     logger=self.logger,
                     strict=False,
                 )
@@ -6367,6 +6484,37 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
 
             # STEP 3: Compute realized returns (continuous) and binary labels with adaptive thresholds
             tprint("💰 [3/13] Computing realized returns with adaptive thresholds and transaction costs...", "INFO")
+
+            # ATR series for trailing stops (aligned with HPO behaviour). We use a
+            # True Range based ATR so trailing distance is comparable across steps.
+            try:
+                high_prices = market_data["high"] if "high" in market_data.columns else market_data["close"]
+                low_prices = market_data["low"] if "low" in market_data.columns else market_data["close"]
+                close_prices = market_data["close"]
+
+                tr1 = high_prices - low_prices
+                tr2 = (high_prices - close_prices.shift(1)).abs()
+                tr3 = (low_prices - close_prices.shift(1)).abs()
+                true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+
+                atr_lookback = int(config.get("trail_atr_window", 14))
+                atr_lookback = max(2, atr_lookback)
+                atr_series = true_range.rolling(window=atr_lookback, min_periods=1).mean()
+            except Exception:
+                atr_series = None
+
+            # Trailing distance in ATR multiples. Prefer explicit trail_distance_atr,
+            # but fall back to the generic trail_distance used by HPO if present.
+            trail_dist = float(config.get("trail_distance_atr", config.get("trail_distance", 0.0)))
+            if not np.isfinite(trail_dist):
+                trail_dist = 0.0
+
+            # For type safety: only pass a Series (or None) into compute_realized_returns.
+            if isinstance(atr_series, pd.Series):
+                atr_series_trailing = atr_series
+            else:
+                atr_series_trailing = None
+
             (
                 realized_returns, 
                 binary_labels, 
@@ -6385,6 +6533,8 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                 transaction_cost=transaction_cost,
                 min_event_spacing=min_event_spacing,
                 volatility_series=volatility_1d,  # Enable dynamic horizon based on volatility
+                atr_series=atr_series_trailing,
+                trail_distance_atr_mult=trail_dist,
             )
 
             # NEW: Volatility-scaled returns and quantile-based labels to improve
@@ -6914,6 +7064,14 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                     'transaction_cost': transaction_cost,
                     'trail_distance': float(trail_dist) if 'trail_dist' in locals() else 0.0,
                 })
+
+                # Attach signal funnel statistics if they were produced during signal generation
+                try:
+                    signal_funnel = primary_signals.attrs.get('signal_funnel', {})  # type: ignore[name-defined]
+                except Exception:
+                    signal_funnel = {}
+                if signal_funnel:
+                    effective_config['signal_funnel'] = signal_funnel
 
                 diagnostics_path = generate_diagnostics_report(
                     labeled_data=labeled_data,

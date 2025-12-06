@@ -305,11 +305,38 @@ def _lazy_import_quality_utilities():
 # Initialize quality utilities at module load time
 _lazy_import_quality_utilities()
 # Import ExchangeInterface from the proper location
-from src.trading.execution.exchange_interface import ExchangeInterface, create_exchange_interface
-from exchanges.exchange_types import ExchangeType
+try:
+    from src.trading.execution.exchange_interface import ExchangeInterface, create_exchange_interface
+    EXCHANGE_INTERFACE_AVAILABLE = True
+except ImportError as e:  # Allow running without trading stack (use existing klines only)
+    EXCHANGE_INTERFACE_AVAILABLE = False
+    ExchangeInterface = None  # type: ignore
+    create_exchange_interface = None  # type: ignore
+    # Retry import after stubs are available
+    try:
+        from src.trading.execution.exchange_interface import ExchangeInterface as _EI, create_exchange_interface as _CEI
+        ExchangeInterface = _EI
+        create_exchange_interface = _CEI
+        EXCHANGE_INTERFACE_AVAILABLE = True
+    except Exception:
+        pass
+from exchanges.exchange_types import ExchangeType, TradingMode
+# Dispatcher factory to wire exchange-specific adapters
+try:
+    from exchanges.exchange_dispatcher import create_exchange_dispatcher, ExchangeConfig
+except Exception:
+    create_exchange_dispatcher = None  # type: ignore
+    ExchangeConfig = None  # type: ignore
 
-# Import the proper classes from their locations
-from exchanges.shared.unified_ohlcv_standardizer import UnifiedOHLCVStandardizer
+# Import the proper classes from their locations (fallback stubs to bypass missing exchange deps)
+try:
+    from exchanges.shared.unified_ohlcv_standardizer import UnifiedOHLCVStandardizer
+except Exception:
+    class UnifiedOHLCVStandardizer:  # type: ignore
+        """Fallback no-op standardizer when exchange shared modules are unavailable."""
+        def standardize(self, df, *args, **kwargs):
+            return df
+
 from src.utils.data.klines_parquet import KlinesParquetManager
 
 class StorageConfig:
@@ -443,6 +470,9 @@ class EnhancedKlinesProcessingPipeline:
 
         # Resampling configuration
         self.default_resampling_config = ResamplingConfig()
+
+        # Prefer 15m for validation/resample span checks
+        self.primary_validation_interval: str = "15m"
 
         if self.enable_logging:
             tprint_success(f"✅ Enhanced Klines Processing Pipeline initialized for {self.exchange}")
@@ -939,8 +969,7 @@ class EnhancedKlinesProcessingPipeline:
         if not symbol or not interval or years <= 0:
             raise ValueError("Invalid parameters: symbol, interval, and years must be valid")
 
-        if not exchange_interface:
-            raise ValueError("ExchangeInterface is required for data processing")
+        # ExchangeInterface can be None when relying solely on existing parquet data.
 
         # Use config default if max_gap_minutes not provided
         if max_gap_minutes is None:
@@ -1073,8 +1102,13 @@ class EnhancedKlinesProcessingPipeline:
 
             # Step 7: Resample data if enabled and data is older than threshold
             if self.config.enable_resampling and resampling_config.enable_auto_resampling:
+                filled_ranges = None
+                try:
+                    filled_ranges = gap_result.metadata.get("filled_ranges") if self.config.enable_gap_filling else None
+                except Exception:
+                    filled_ranges = None
                 resample_result = await self._resample_data_with_age_check(
-                    current_data, symbol, resampling_config, batch_id
+                    current_data, symbol, resampling_config, batch_id, filled_ranges=filled_ranges
                 )
                 self.processing_results.append(resample_result)
 
@@ -1254,7 +1288,8 @@ class EnhancedKlinesProcessingPipeline:
             
         finally:
             # Disconnect from exchange
-            await exchange_interface.disconnect()
+            if exchange_interface is not None:
+                await exchange_interface.disconnect()
 
     def _parse_lookback_period(self, lookback_period: str) -> int:
         """
@@ -1303,151 +1338,140 @@ class EnhancedKlinesProcessingPipeline:
             # Check if we have existing data first
             data_dir = Path(self.config.data_dir) / self.exchange / symbol.lower() / "raw"
             parquet_files = list(data_dir.glob(f"{symbol.lower()}_{interval}_*.parquet")) if data_dir.exists() else []
-            
-            if parquet_files and not getattr(self.config, 'force_download', False):
-                # Load existing data from parquet files
+
+            # Prefer existing klines; only download gaps or fresh when forced or empty
+            if parquet_files and not getattr(self.config, "force_download", False):
                 if self.enable_logging:
-                    tprint_info(f"📁 Found {len(parquet_files)} existing parquet files")
-                
-                all_data = []
-                for file_path in sorted(parquet_files):
+                    tprint_info(f"📁 Using existing parquet files ({len(parquet_files)})")
+
+                combined_df_list = []
+                for pf in parquet_files:
                     try:
-                        df = pd.read_parquet(file_path)
-                        df = self._ensure_naive_datetime_index(df)
-                        if not df.empty:
-                            all_data.append(df)
-                            # Show date range of loaded file
-                            if self.enable_logging and hasattr(df.index, 'min'):
-                                date_min = df.index.min()
-                                date_max = df.index.max()
-                                tprint_info(f"  📊 Loaded {len(df)} records from {file_path.name} ({date_min} to {date_max})")
-                            elif self.enable_logging:
-                                tprint_info(f"  📊 Loaded {len(df)} records from {file_path.name}")
+                        df = pd.read_parquet(pf)
+                        if df is not None and not df.empty:
+                            combined_df_list.append(df)
                     except Exception as e:
-                        result.warnings.append(f"Failed to load {file_path.name}: {e}")
                         if self.enable_logging:
-                            tprint_warning(f"  ⚠️ Failed to load {file_path.name}: {e}")
-                
-                if all_data:
-                    # Concatenate but DON'T ignore the index - it's our timestamp!
-                    klines_data = pd.concat(all_data, ignore_index=False)
-                    klines_data = self._ensure_naive_datetime_index(klines_data)
-                    klines_data = klines_data.sort_index().drop_duplicates()
-                    
-                    if self.enable_logging:
-                        tprint_success(f"✅ Loaded {len(klines_data)} total records from existing files")
-                        # Show overall date range using the index
-                        if isinstance(klines_data.index, pd.DatetimeIndex):
-                            date_min = klines_data.index.min()
-                            date_max = klines_data.index.max()
-                            tprint_info(f"📅 Existing data range: {date_min} to {date_max}")
-                    
-                    # Identify missing data gaps relative to target range
-                    end_date = datetime.now()
-                    start_date = end_date - timedelta(days=years * 365)
-                    
-                    if isinstance(klines_data.index, pd.DatetimeIndex):
-                        existing_start = klines_data.index.min().to_pydatetime().replace(tzinfo=None)
-                        existing_end = klines_data.index.max().to_pydatetime().replace(tzinfo=None)
-                        
-                        gaps_to_fill = []
-                        
-                        # Gap 1: Historical data before existing data
-                        if existing_start > start_date:
-                            gap_days = (existing_start - start_date).days
-                            if self.enable_logging:
-                                tprint_warning(f"⚠️ Gap 1: Missing {gap_days} days before {existing_start.strftime('%Y-%m-%d')}")
-                            gaps_to_fill.append(("historical", start_date, existing_start))
-                        
-                        # Gap 2: Recent data after existing data
-                        if existing_end < end_date - timedelta(hours=1):  # Allow 1 hour tolerance
-                            gap_hours = (end_date - existing_end).total_seconds() / 3600
-                            if self.enable_logging:
-                                tprint_warning(f"⚠️ Gap 2: Missing {gap_hours:.1f} hours after {existing_end.strftime('%Y-%m-%d %H:%M')}")
-                            gaps_to_fill.append(("recent", existing_end, end_date))
-                        
-                        # Download and merge gaps
-                        if gaps_to_fill:
-                            if self.enable_logging:
-                                tprint_info(f"📥 Downloading {len(gaps_to_fill)} gap(s) to complete {years}-year dataset")
-                            
-                            for gap_type, gap_start, gap_end in gaps_to_fill:
-                                if self.enable_logging:
-                                    tprint_info(f"📦 Filling {gap_type} gap: {gap_start.strftime('%Y-%m-%d')} to {gap_end.strftime('%Y-%m-%d')}")
-                                
-                                gap_batches = []
-                                current_start = gap_start
-                                batch_size = 1000
-                                batch_num = 1
-                                interval_minutes = self._interval_to_minutes(interval) or 1
-                                batch_duration = timedelta(minutes=batch_size * interval_minutes)
-                                total_gap_minutes = (gap_end - gap_start).total_seconds() / 60
-                                
-                                while current_start < gap_end:
-                                    batch_end = min(current_start + batch_duration, gap_end)
-                                    
-                                    if self.enable_logging and (batch_num == 1 or batch_num % 100 == 0):
-                                        progress_minutes = (current_start - gap_start).total_seconds() / 60
-                                        progress_pct = (progress_minutes / total_gap_minutes) * 100 if total_gap_minutes > 0 else 0
-                                        tprint_info(f"  Batch {batch_num}: {current_start.strftime('%Y-%m-%d %H:%M')} ({progress_pct:.1f}%)")
-                                    
-                                    try:
-                                        batch_data = await exchange_interface.get_klines(
-                                            symbol=symbol,
-                                            interval=interval,
-                                            start_time=current_start,
-                                            end_time=batch_end,
-                                            limit=batch_size
-                                        )
-                                        
-                                        if batch_data and len(batch_data) > 0:
-                                            gap_batches.append(batch_data)
-                                        else:
-                                            break
-                                        
-                                        current_start = batch_end
-                                        batch_num += 1
-                                        await asyncio.sleep(0.05)
-                                        
-                                    except Exception as e:
-                                        if self.enable_logging:
-                                            tprint_warning(f"  ⚠️ Batch {batch_num} failed: {e}")
-                                        current_start = batch_end
-                                        batch_num += 1
-                                        await asyncio.sleep(1.0)
-                                
-                                # Convert and merge gap data
-                                if gap_batches:
-                                    gap_klines = []
-                                    for batch in gap_batches:
-                                        gap_klines.extend(batch)
-                                    
+                            tprint_warning(f"⚠️ Failed to read {pf}: {e}")
+                        continue
+
+                if combined_df_list:
+                    klines_data = pd.concat(combined_df_list).sort_index().drop_duplicates()
+
+                    earliest_data_time = klines_data.index.min()
+                    latest_data_time = klines_data.index.max()
+                    desired_start = datetime.now() - timedelta(days=365 * years)
+                    desired_end = datetime.now()
+
+                    gaps_to_fill: List[Tuple[str, datetime, datetime]] = []
+                    gap_dfs: List[pd.DataFrame] = []
+                    expected_frequency = pd.Timedelta(minutes=self._interval_to_minutes(interval))
+
+                    # Historical gap
+                    if earliest_data_time > desired_start:
+                        gaps_to_fill.append(("historical", desired_start, earliest_data_time))
+                    # Recent gap
+                    if latest_data_time < desired_end:
+                        gaps_to_fill.append(("recent", latest_data_time, desired_end))
+                    # Internal gaps
+                    time_diffs = klines_data.index.to_series().diff().dropna()
+                    gap_mask = time_diffs > expected_frequency * 1.1
+                    if gap_mask.any():
+                        gap_indices = gap_mask[gap_mask].index
+                        for gap_start in gap_indices:
+                            prev_time = klines_data.index[klines_data.index.get_loc(gap_start) - 1]
+                            gap_end = gap_start
+                            if (gap_end - prev_time) > expected_frequency * 1.1:
+                                gaps_to_fill.append(("internal", prev_time + expected_frequency, gap_end))
+
+                    if gaps_to_fill and exchange_interface is not None:
+                        if self.enable_logging:
+                            tprint_info(f"📥 Filling {len(gaps_to_fill)} gap(s); download only missing ranges")
+                        for gap_type, gap_start, gap_end in gaps_to_fill:
+                            if gap_end <= gap_start:
+                                continue
+                            batch_size = 1000
+                            current_start = gap_start
+                            gap_klines = []
+                            for _ in range(10000):
+                                current_end = min(gap_end, current_start + timedelta(minutes=batch_size * self._interval_to_minutes(interval)))
+                                try:
+                                    batch = await exchange_interface.fetch_ohlcv(
+                                        symbol=symbol,
+                                        timeframe=interval,
+                                        since=int(current_start.timestamp() * 1000),
+                                        limit=batch_size,
+                                    )
+                                except Exception as e:
                                     if self.enable_logging:
-                                        tprint_success(f"  ✅ Downloaded {len(gap_klines):,} candles for {gap_type} gap")
-                                    
-                                    # Convert to DataFrame
-                                    gap_df = self._klines_to_dataframe(gap_klines, symbol, interval)
-                                    if not gap_df.empty:
-                                        # Merge with existing data
-                                        klines_data = pd.concat([klines_data, gap_df], ignore_index=False)
-                                        klines_data = self._ensure_naive_datetime_index(klines_data)
-                                        klines_data = klines_data.sort_index().drop_duplicates()
-                                        
-                                        if self.enable_logging:
-                                            tprint_success(f"  ✅ Merged {gap_type} gap: now have {len(klines_data):,} total records")
-                            
-                            if self.enable_logging and isinstance(klines_data.index, pd.DatetimeIndex):
-                                tprint_success(f"✅ Complete dataset: {len(klines_data):,} records")
-                                tprint_info(f"📅 Full range: {klines_data.index.min()} to {klines_data.index.max()}")
-                        else:
-                            if self.enable_logging:
-                                tprint_success(f"✅ Existing data covers full {years}-year range")
+                                        tprint_warning(f"⚠️ Gap download failed ({gap_type}): {e}")
+                                    break
+                                if not batch:
+                                    break
+                                gap_klines.extend(batch)
+                                last_ts = datetime.fromtimestamp(batch[-1][0] / 1000)
+                                current_start = last_ts + expected_frequency
+                                if current_start >= gap_end:
+                                    break
+                            if gap_klines:
+                                gap_df = self._klines_to_dataframe(gap_klines, symbol, interval)
+                                gap_dfs.append(gap_df)
+                        if gap_dfs:
+                            klines_data = pd.concat([klines_data] + gap_dfs).drop_duplicates().sort_index()
+                    elif gaps_to_fill and exchange_interface is None and self.enable_logging:
+                        tprint_warning("⚠️ Skipping gap download because exchange interface is unavailable; using existing data only")
+
+                    # Finalize using existing data (+ gaps if any)
+                    total_gap_records = sum(len(df) for df in gap_dfs) if gap_dfs else 0
+                    result.success = True
+                    result.data = klines_data
+                    result.metadata = {
+                        "records_downloaded": total_gap_records,
+                        "date_range": {
+                            "start": klines_data.index.min().isoformat() if len(klines_data) else None,
+                            "end": klines_data.index.max().isoformat() if len(klines_data) else None,
+                        },
+                        "storage_location": str(data_dir),
+                        "gaps_filled": len(gaps_to_fill),
+                    }
+                    if self.enable_logging and isinstance(klines_data.index, pd.DatetimeIndex):
+                        tprint_success(f"✅ Using existing data: {len(klines_data):,} records (gaps filled: {len(gaps_to_fill)})")
+                        tprint_info(f"📅 Full range: {klines_data.index.min()} to {klines_data.index.max()}")
+                    return result
                 else:
-                    raise ValueError("No valid data found in parquet files")
-            else:
-                # Download fresh data from exchange in batches
-                if self.enable_logging:
-                    tprint_info(f"🌐 Downloading fresh data from {exchange_interface.exchange_type.upper()} exchange")
+                    # No readable parquet data; fall through to fresh download
+                    if self.enable_logging:
+                        tprint_warning("⚠️ No valid data found in existing parquet files; downloading fresh data")
+
+            # If no data and no exchange interface available, fail fast
+            if not parquet_files and exchange_interface is None:
+                raise RuntimeError("No existing raw klines found and exchange interface unavailable; cannot download.")
+
+            # Ensure dispatcher is wired for live download
+            if exchange_interface is not None and getattr(exchange_interface, "dispatcher", None) is None:
+                if create_exchange_dispatcher is not None and ExchangeConfig is not None:
+                    try:
+                        ex_type = ExchangeType(self.exchange) if isinstance(self.exchange, str) else self.exchange
+                    except Exception:
+                        ex_type = ExchangeType.BINANCE if str(self.exchange).lower() == "binance" else ExchangeType.BINANCE
+                    try:
+                        dispatcher_cfg = ExchangeConfig(
+                            exchange_type=ex_type,
+                            api_key=getattr(exchange_interface, "api_key", None),
+                            api_secret=getattr(exchange_interface, "api_secret", None),
+                            password=getattr(exchange_interface, "password", None),
+                            subaccount_id=None,
+                            use_testnet=getattr(exchange_interface, "use_testnet", False),
+                            trade_symbol=symbol,
+                        )
+                        exchange_interface.dispatcher = create_exchange_dispatcher(dispatcher_cfg)
+                    except Exception as e:
+                        if self.enable_logging:
+                            tprint_warning(f"⚠️ Failed to wire dispatcher; live download may be empty: {e}")
+
+            # Download fresh data from exchange in batches
+            if self.enable_logging:
+                tprint_info(f"🌐 Downloading fresh data from {exchange_interface.exchange_type.upper()} exchange")
                 
                 # Calculate date range
                 end_date = datetime.now()
@@ -2069,10 +2093,37 @@ class EnhancedKlinesProcessingPipeline:
 
             result.success = True
             result.data = filled_data
+            # Capture filled ranges for downstream selective resampling
+            filled_ranges = [(g.start_time, g.end_time) for g in gaps if g.priority == 1]
+
+            # Post-fill gap recheck on base interval
+            post_gaps_base = self._detect_gaps(filled_data, interval, max_gap_minutes)
+
+            # Post-fill validation on primary (15m) interval
+            post_gaps_15m: List[GapInfo] = []
+            try:
+                resampled_for_validation = self._perform_resampling(
+                    filled_data,
+                    self.primary_validation_interval,
+                    self.default_resampling_config
+                )
+                if not resampled_for_validation.empty:
+                    post_gaps_15m = self._detect_gaps(
+                        resampled_for_validation,
+                        self.primary_validation_interval,
+                        max(max_gap_minutes, 15)
+                    )
+            except Exception as e:
+                if self.enable_logging:
+                    tprint_warning(f"⚠️ 15m validation resample failed: {e}")
+
             result.metadata = {
                 "gaps_detected": len(gaps),
                 "gaps_filled": len([g for g in gaps if g.priority == 1]),
-                "total_gap_duration": sum(g.duration_minutes for g in gaps)
+                "total_gap_duration": sum(g.duration_minutes for g in gaps),
+                "post_gap_check_base": len(post_gaps_base),
+                "post_gap_check_15m": len(post_gaps_15m),
+                "filled_ranges": filled_ranges
             }
 
             if self.enable_logging:
@@ -2080,6 +2131,10 @@ class EnhancedKlinesProcessingPipeline:
                 tprint_info(f"   Data before gap filling: {len(df):,} records")
                 tprint_info(f"   Data after gap filling: {len(filled_data):,} records")
                 tprint_info(f"   Net gain: {len(filled_data) - len(df):,} records")
+                if post_gaps_base:
+                    tprint_warning(f"⚠️ Remaining gaps after fill (base {interval}): {len(post_gaps_base)}")
+                if post_gaps_15m:
+                    tprint_warning(f"⚠️ Remaining gaps after 15m validation: {len(post_gaps_15m)}")
 
         except Exception as e:
             error_msg = f"Gap handling failed: {str(e)}"
@@ -3097,7 +3152,8 @@ class EnhancedKlinesProcessingPipeline:
         df: pd.DataFrame,
         symbol: str,
         resampling_config: ResamplingConfig,
-        batch_id: Optional[str]
+        batch_id: Optional[str],
+        filled_ranges: Optional[List[Tuple[datetime, datetime]]] = None
     ) -> ProcessingResult:
         """Resample data with age-based filtering."""
         start_time = datetime.now()
@@ -3142,14 +3198,36 @@ class EnhancedKlinesProcessingPipeline:
             # Perform resampling
             resampled_intervals = []
             stored_files = []
+            span_mismatches: List[str] = []
+            resample_modes: Dict[str, str] = {}
+
+            base_start = df.index.min() if len(df) else None
+            base_end = df.index.max() if len(df) else None
 
             for target_interval in resampling_config.target_intervals:
                 try:
                     if self.enable_logging:
                         tprint_info(f"🔄 Resampling to {target_interval}")
 
-                    # Resample data
-                    resampled_df = self._perform_resampling(df, target_interval, resampling_config)
+                    # Decide whether to resample only filled windows
+                    source_df = df
+                    mode = "full"
+                    if filled_ranges:
+                        mask = pd.Series(False, index=df.index)
+                        for start, end in filled_ranges:
+                            mask |= (df.index >= start) & (df.index <= end)
+                        if mask.any():
+                            source_df = df.loc[mask]
+                            mode = "selective"
+
+                    resampled_df = self._perform_resampling(source_df, target_interval, resampling_config)
+
+                    # If selective produced empty, fall back to full dataset
+                    if resampled_df.empty and mode == "selective":
+                        if self.enable_logging:
+                            tprint_warning(f"⚠️ Selective resample empty for {target_interval}; falling back to full data")
+                        resampled_df = self._perform_resampling(df, target_interval, resampling_config)
+                        mode = "fallback_full"
 
                     if not resampled_df.empty:
                         normalized_resampled = self._normalize_calendar_columns(resampled_df)
@@ -3163,6 +3241,21 @@ class EnhancedKlinesProcessingPipeline:
                         if success:
                             resampled_intervals.append(target_interval)
                             stored_files.append(f"{symbol}_{target_interval}_resampled")
+                            resample_modes[target_interval] = mode
+
+                            # Span consistency check
+                            resampled_start = resampled_df.index.min()
+                            resampled_end = resampled_df.index.max()
+                            if base_start and base_end:
+                                if resampled_start > base_start or resampled_end < base_end:
+                                    span_mismatches.append(
+                                        f"{target_interval}: {resampled_start}→{resampled_end} vs base {base_start}→{base_end}"
+                                    )
+                                    if self.enable_logging:
+                                        tprint_warning(
+                                            f"⚠️ Span mismatch for {target_interval}: "
+                                            f"{resampled_start}→{resampled_end} vs base {base_start}→{base_end}"
+                                        )
 
                             if self.enable_logging:
                                 tprint_success(f"✅ Resampled to {target_interval}: {len(resampled_df)} records")
@@ -3178,7 +3271,9 @@ class EnhancedKlinesProcessingPipeline:
             result.metadata = {
                 "resampled_intervals": resampled_intervals,
                 "stored_files": stored_files,
-                "data_age_days": data_age_days
+                "data_age_days": data_age_days,
+                "span_mismatches": span_mismatches,
+                "resample_modes": resample_modes
             }
 
         except Exception as e:
@@ -3366,24 +3461,68 @@ if __name__ == "__main__":
             print(f"✅ Pipeline initialized")
             print()
             
-            # Create exchange interface
+            # Create exchange interface (prefer factory + dispatcher)
             print(f"🔗 Connecting to {args.exchange.upper()}...")
-            exchange_config = {
-                'exchange_type': args.exchange,
-                'api_key': args.api_key or None,
-                'api_secret': args.api_secret or None,
-                'password': args.api_password or None,
-                'testnet': args.use_testnet,
-                'rate_limits': {}
-            }
-            exchange_interface = ExchangeInterface(exchange_config)
-            
-            try:
-                await exchange_interface.connect()
-                print(f"✅ Connected to {args.exchange.upper()}")
-            except Exception as e:
-                tprint_warning(f"⚠️ Connection warning: {e}")
-                tprint_info("📝 Continuing with public data access...")
+            exchange_interface = None
+            if EXCHANGE_INTERFACE_AVAILABLE and ExchangeInterface is not None:
+                dispatcher = None
+                if create_exchange_dispatcher is not None and ExchangeConfig is not None:
+                    try:
+                        ex_type = ExchangeType(args.exchange) if isinstance(args.exchange, str) else args.exchange
+                    except Exception:
+                        ex_type = ExchangeType.BINANCE if str(args.exchange).lower() == "binance" else ExchangeType.BINANCE
+                    try:
+                        dispatcher_cfg = ExchangeConfig(
+                            exchange_type=ex_type,
+                            api_key=args.api_key or None,
+                            api_secret=args.api_secret or None,
+                            password=args.api_password or None,
+                            subaccount_id=None,
+                            use_testnet=args.use_testnet,
+                            trade_symbol=args.symbol,
+                            mode=TradingMode.TRADE,  # allow live data pulls
+                        )
+                        dispatcher = create_exchange_dispatcher(dispatcher_cfg)
+                        # Initialize dispatcher if supported
+                        try:
+                            init_ret = dispatcher.initialize()
+                            # If initialize is coroutine, await it and check success
+                            if hasattr(init_ret, "__await__"):
+                                init_ret = await init_ret
+                            if init_ret is False:
+                                tprint_warning("⚠️ Dispatcher initialize returned False; live download may fail")
+                                dispatcher = None
+                        except Exception as e:
+                            tprint_warning(f"⚠️ Dispatcher initialize failed: {e}")
+                        if dispatcher is not None:
+                            exchange_interface.dispatcher = dispatcher
+                    except Exception as e:
+                        tprint_warning(f"⚠️ Failed to create dispatcher: {e}")
+                        dispatcher = None
+
+                exchange_config = {
+                    'exchange_type': args.exchange,
+                    'api_key': args.api_key or None,
+                    'api_secret': args.api_secret or None,
+                    'password': args.api_password or None,
+                    'testnet': args.use_testnet,
+                    'rate_limits': {},
+                }
+                try:
+                    if create_exchange_interface is not None:
+                        exchange_interface = create_exchange_interface(exchange_config)
+                    else:
+                        exchange_interface = ExchangeInterface(exchange_config)
+                    if dispatcher is not None:
+                        exchange_interface.dispatcher = dispatcher
+                    await exchange_interface.connect()
+                    print(f"✅ Connected to {args.exchange.upper()}")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Connection warning: {e}")
+                    tprint_info("📝 Continuing with existing/local data only...")
+                    exchange_interface = None
+            else:
+                tprint_warning("⚠️ ExchangeInterface unavailable; using existing/local data only")
             print()
             
             # Process data
@@ -3427,7 +3566,8 @@ if __name__ == "__main__":
             
             print(f"⏰ End time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
             
-            await exchange_interface.disconnect()
+            if exchange_interface is not None:
+                await exchange_interface.disconnect()
             
         except Exception as e:
             print()

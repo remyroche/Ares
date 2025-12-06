@@ -1,0 +1,32 @@
+{
+  "symbol": "ETHUSDT",
+  "exchange": "binance",
+  "timeframe": "15m",
+  "n_samples": 409,
+  "baseline_params": {
+    "n_estimators": 300,
+    "max_depth": 6,
+    "learning_rate": 0.05,
+    "min_child_weight": 20.0,
+    "subsample": 0.8,
+    "colsample_bytree": 0.8,
+    "gamma": 1.0,
+    "reg_lambda": 3.0,
+    "reg_alpha": 0.5
+  },
+  "baseline_auc": 0.7950860832137733,
+  "best_params": {
+    "max_depth": 6,
+    "learning_rate": 0.03574712922600244,
+    "gamma": 2.49816047538945,
+    "min_child_weight": 39.01428612819832,
+    "lambda": 3.9279757672456204,
+    "alpha": 0.6789267873576292,
+    "colsample_bytree": 0.6312037280884872,
+    "subsample": 0.7311989040672405
+  },
+  "best_auc": 0.7950860832137733,
+  "auc_improvement": 0.0,
+  "baseline_model_id": "ETHUSDT_binance_15m_sr_labeling_xgb_baseline",
+  "tuned_model_id": "ETHUSDT_binance_15m_sr_labeling_xgb_hpo"
+}

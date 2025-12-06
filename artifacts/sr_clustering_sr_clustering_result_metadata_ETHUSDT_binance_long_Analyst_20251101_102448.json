@@ -1,8 +1,0 @@
-{
-  "artifact_name": "sr_clustering_result",
-  "artifact_type": "data",
-  "file_path": "artifacts/pre_training/ETHUSDT/binance/long/Analyst/sr_clustering/sr_clustering_sr_clustering_result_ETHUSDT_binance_long_Analyst_20251101_102448.parquet",
-  "file_size": 90727,
-  "timestamp": "2025-11-01T10:24:48.620147",
-  "compression": "auto"
-}

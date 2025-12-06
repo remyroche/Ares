@@ -15,11 +15,13 @@ Intended consumers:
 
 from typing import Any, Dict, List, Optional
 import logging
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
 from src.utils.tprint import tprint_info, tprint_warning, tprint_success
+from src.utils.versioned_artifacts import VersionedArtifactStore
 
 
 def _standardize_index(df: pd.DataFrame) -> pd.DataFrame:
@@ -527,7 +529,6 @@ def get_specialist_models_outputs(
             if prob_cols:
                 before_block = liquidity_probs[prob_cols].copy()
                 nnz_before = int(before_block.notna().sum().sum())
-                # Pre-reindex NaN diagnostics
                 try:
                     log_info("🔍 [LIQUIDITY] Pre-reindex NaN coverage by column:")
                     for c in before_block.columns:
@@ -540,6 +541,67 @@ def get_specialist_models_outputs(
 
                 block = before_block.reindex(training_index, method="ffill")
                 nnz_after = int(block.notna().sum().sum())
+
+                try:
+                    rows_nonnull = int(block.notna().any(axis=1).sum())
+                    total_rows = int(len(training_index))
+                    coverage_ratio = (
+                        rows_nonnull / float(total_rows) if total_rows > 0 else 0.0
+                    )
+                except Exception:
+                    rows_nonnull = 0
+                    coverage_ratio = 0.0
+
+                if coverage_ratio < 0.9 and len(training_index) > 0:
+                    try:
+                        store_name = f"{symbol}_{exchange}_{base_timeframe}_{direction}_liquidity_regime"
+                        store_path = Path("versioned_artifacts") / store_name
+                        store = VersionedArtifactStore(store_path)
+
+                        best_version = None
+                        best_rows = 0
+                        for v in store.list_versions():
+                            info = store.get_version_info(v)
+                            if info.get("artifact_name") != liquidity_artifact_name:
+                                continue
+                            if str(info.get("timeframe")) != base_timeframe:
+                                continue
+                            src_tf = str(info.get("source_regime_timeframe", base_timeframe))
+                            if src_tf != base_timeframe:
+                                continue
+                            num_rows = int(info.get("num_rows", 0) or 0)
+                            if num_rows > best_rows:
+                                best_rows = num_rows
+                                best_version = v
+
+                        if best_version is not None:
+                            log_info(
+                                "🔁 [LIQUIDITY] Low coverage detected ("
+                                f"{coverage_ratio:.3f}); reloading full 15m probabilities "
+                                f"from version '{best_version}'."
+                            )
+                            view = store.get_view(best_version)
+                            full_probs = view.materialize()
+                            if not isinstance(full_probs, pd.DataFrame):
+                                full_probs = pd.DataFrame(full_probs)
+                            full_probs = _standardize_index(full_probs)
+                            before_block = full_probs[prob_cols].copy()
+                            block = before_block.reindex(training_index, method="ffill")
+                            nnz_after = int(block.notna().sum().sum())
+                            rows_nonnull = int(block.notna().any(axis=1).sum())
+                            try:
+                                log_info(
+                                    "🔁 [LIQUIDITY] Coverage after reload: "
+                                    f"rows_nonnull={rows_nonnull}/{len(training_index)}"
+                                )
+                            except Exception:
+                                pass
+                    except Exception as reload_exc:
+                        log_warning(
+                            f"⚠️ [LIQUIDITY] Coverage repair via VersionedArtifactStore "
+                            f"failed: {reload_exc}"
+                        )
+
                 blocks.append(block)
                 log_success(
                     "✅ Added Liquidity specialist block from 'ml_liquidity_regime_probs_15m': "
@@ -552,145 +614,148 @@ def get_specialist_models_outputs(
                         "Check liquidity_probs timestamps and values."
                     )
     except Exception as e:
-        log_warning(f"⚠️ Failed to load Liquidity specialist outputs: {e}")
+        log_warning(f" Failed to load Liquidity specialist outputs: {e}")
 
     # ------------------------------------------------------------------
     # 4) Breakout/Bounce regimes – 1h probabilities + edge scores
     # ------------------------------------------------------------------
     try:
-        log_info("=" * 80)
-        log_info("🔥 LOADING SPECIALIST: BREAKOUT/BOUNCE REGIME OUTPUTS")
-        log_info("=" * 80)
+        if config.get("enable_breakout_specialist", True):
+            log_info("=" * 80)
+            log_info(" LOADING SPECIALIST: BREAKOUT/BOUNCE REGIME OUTPUTS")
+            log_info("=" * 80)
 
-        breakout_context = {
-            "symbol": symbol,
-            "exchange": exchange,
-            "timeframe": base_timeframe,
-            "direction": direction,
-            "model": "breakout_bounce",
-            "step_name": "ml_breakout_bounce_regime_step",
-        }
+            breakout_context = {
+                "symbol": symbol,
+                "exchange": exchange,
+                "timeframe": base_timeframe,
+                "direction": direction,
+                "model": "breakout_bounce",
+                "step_name": "ml_breakout_bounce_regime_step",
+            }
 
-        breakout_artifact_name = f"ml_breakout_bounce_training_data_{base_timeframe}"
-        log_info(f"Attempting to load Breakout/Bounce training data: {breakout_artifact_name}")
-        breakout_training = artifact_router.load(
-            artifact_name=breakout_artifact_name,
-            artifact_type="data",
-            data_category="features",
-            context=breakout_context,
-        )
+            breakout_artifact_name = f"ml_breakout_bounce_training_data_{base_timeframe}"
+            log_info(f"Attempting to load Breakout/Bounce training data: {breakout_artifact_name}")
+            breakout_training = artifact_router.load(
+                artifact_name=breakout_artifact_name,
+                artifact_type="data",
+                data_category="features",
+                context=breakout_context,
+            )
 
-        if breakout_training is not None and not getattr(breakout_training, "empty", True):
-            if not isinstance(breakout_training, pd.DataFrame):
-                breakout_training = pd.DataFrame(breakout_training)
-            breakout_training = _standardize_index(breakout_training)
+            if breakout_training is not None and not getattr(breakout_training, "empty", True):
+                if not isinstance(breakout_training, pd.DataFrame):
+                    breakout_training = pd.DataFrame(breakout_training)
+                breakout_training = _standardize_index(breakout_training)
 
-            if isinstance(breakout_training.index, pd.DatetimeIndex) and len(breakout_training.index) > 0:
-                log_info(
-                    "📈 Breakout/Bounce (ml_breakout_bounce_training_data_15m) index range: %s → %s (n=%d)"
-                    % (
-                        breakout_training.index.min(),
-                        breakout_training.index.max(),
-                        len(breakout_training.index),
+                if isinstance(breakout_training.index, pd.DatetimeIndex) and len(breakout_training.index) > 0:
+                    log_info(
+                        " Breakout/Bounce (ml_breakout_bounce_training_data_15m) index range: %s → %s (n=%d)"
+                        % (
+                            breakout_training.index.min(),
+                            breakout_training.index.max(),
+                            len(breakout_training.index),
+                        )
                     )
-                )
 
-            # Select a compact but expressive set of breakout features, including
-            # regime probabilities, directional scalars, edge scores, side
-            # indicators, and calibrated success-probability gating signals.
-            breakout_candidate_cols = [
-                # Core regime probabilities
-                "breakout_regime_0_prob",
-                "breakout_regime_1_prob",
-                "breakout_regime_2_prob",
-                # Directional scalars (new unified scalar output)
-                "resistance_scalar",
-                "breakout_scalar_resistance",
-                "support_scalar",
-                "breakout_scalar_support",
-                # Edge scores
-                "breakout_long_edge_score",
-                "breakout_short_edge_score",
-                # Side indicators
-                "is_resistance",
-                "is_support",
-                # Calibrated success probability and high-confidence flag
-                "breakout_success_prob",
-                "breakout_high_conf_signal",
-            ]
-
-            breakout_cols = [
-                c
-                for c in breakout_candidate_cols
-                if c in breakout_training.columns
-            ]
-
-            if breakout_cols:
-                before_block = breakout_training[breakout_cols].copy()
-
-                # Normalize legacy breakout scalar aliases to canonical names so
-                # downstream consumers only see support_scalar / resistance_scalar.
-                if "breakout_scalar_support" in before_block.columns and "support_scalar" not in before_block.columns:
-                    before_block["support_scalar"] = before_block["breakout_scalar_support"]
-                if "breakout_scalar_resistance" in before_block.columns and "resistance_scalar" not in before_block.columns:
-                    before_block["resistance_scalar"] = before_block["breakout_scalar_resistance"]
-
-                alias_drop = [
-                    c
-                    for c in ("breakout_scalar_support", "breakout_scalar_resistance")
-                    if c in before_block.columns
+                # Select a compact but expressive set of breakout features, including
+                # regime probabilities, directional scalars, edge scores, side
+                # indicators, and calibrated success-probability gating signals.
+                breakout_candidate_cols = [
+                    # Core regime probabilities
+                    "breakout_regime_0_prob",
+                    "breakout_regime_1_prob",
+                    "breakout_regime_2_prob",
+                    # Directional scalars (new unified scalar output)
+                    "resistance_scalar",
+                    "breakout_scalar_resistance",
+                    "support_scalar",
+                    "breakout_scalar_support",
+                    # Edge scores
+                    "breakout_long_edge_score",
+                    "breakout_short_edge_score",
+                    # Side indicators
+                    "is_resistance",
+                    "is_support",
+                    # Calibrated success probability and high-confidence flag
+                    "breakout_success_prob",
+                    "breakout_high_conf_signal",
                 ]
-                if alias_drop:
-                    before_block = before_block.drop(columns=alias_drop)
 
-                # Guard against using stale breakout artifacts whose index does not
-                # overlap the training_index. In that case, reindex+ffill would
-                # produce a constant block, which is misleading. Instead, skip
-                # the specialist block and emit a clear warning.
-                if isinstance(before_block.index, pd.DatetimeIndex):
-                    overlap = before_block.index.intersection(training_index)
-                    if overlap.empty:
-                        log_warning(
-                            "⚠️ Breakout/Bounce specialist index has no overlap with "
-                            "training_index; skipping breakout block. Check timeframe "
-                            "and artifact recency."
-                        )
-                    else:
-                        nnz_before = int(before_block.notna().sum().sum())
-                        # Pre-reindex NaN diagnostics
-                        try:
-                            log_info("🔍 [BREAKOUT] Pre-reindex NaN coverage by column:")
-                            for c in before_block.columns:
-                                total = len(before_block)
-                                nnz_col = int(before_block[c].notna().sum())
-                                ratio = nnz_col / float(total) if total > 0 else 0.0
-                                log_info(f"   - {c}: non-null={nnz_col}, ratio={ratio:.3f}")
-                        except Exception as diag_exc:
-                            log_warning(f"⚠️ Failed to log Breakout pre-reindex NaN coverage: {diag_exc}")
+                breakout_cols = [
+                    c
+                    for c in breakout_candidate_cols
+                    if c in breakout_training.columns
+                ]
 
-                        block = before_block.shift(1).fillna(method="ffill")
-                        block = block.reindex(training_index, method="ffill")
-                        nnz_after = int(block.notna().sum().sum())
-                        blocks.append(block)
-                        log_success(
-                            "✅ Added Breakout/Bounce specialist block from 'ml_breakout_bounce_training_data_15m': "
-                            f"shape={block.shape}, non_null_before={nnz_before}, "
-                            f"non_null_after={nnz_after}"
-                        )
-                        if nnz_after == 0:
+                if breakout_cols:
+                    before_block = breakout_training[breakout_cols].copy()
+
+                    # Normalize legacy breakout scalar aliases to canonical names so
+                    # downstream consumers only see support_scalar / resistance_scalar.
+                    if "breakout_scalar_support" in before_block.columns and "support_scalar" not in before_block.columns:
+                        before_block["support_scalar"] = before_block["breakout_scalar_support"]
+                    if "breakout_scalar_resistance" in before_block.columns and "resistance_scalar" not in before_block.columns:
+                        before_block["resistance_scalar"] = before_block["breakout_scalar_resistance"]
+
+                    alias_drop = [
+                        c
+                        for c in ("breakout_scalar_support", "breakout_scalar_resistance")
+                        if c in before_block.columns
+                    ]
+                    if alias_drop:
+                        before_block = before_block.drop(columns=alias_drop)
+
+                    # Guard against using stale breakout artifacts whose index does not
+                    # overlap the training_index. In that case, reindex+ffill would
+                    # produce a constant block, which is misleading. Instead, skip
+                    # the specialist block and emit a clear warning.
+                    if isinstance(before_block.index, pd.DatetimeIndex):
+                        overlap = before_block.index.intersection(training_index)
+                        if overlap.empty:
                             log_warning(
-                                "⚠️ Breakout/Bounce block aligned to training_index is all-NaN. "
-                                "Check breakout_training timestamps and values."
+                                " Breakout/Bounce specialist index has no overlap with "
+                                "training_index; skipping breakout block. Check timeframe "
+                                "and artifact recency."
                             )
+                        else:
+                            nnz_before = int(before_block.notna().sum().sum())
+                            # Pre-reindex NaN diagnostics
+                            try:
+                                log_info(" [BREAKOUT] Pre-reindex NaN coverage by column:")
+                                for c in before_block.columns:
+                                    total = len(before_block)
+                                    nnz_col = int(before_block[c].notna().sum())
+                                    ratio = nnz_col / float(total) if total > 0 else 0.0
+                                    log_info(f"   - {c}: non-null={nnz_col}, ratio={ratio:.3f}")
+                            except Exception as diag_exc:
+                                log_warning(f" Failed to log Breakout pre-reindex NaN coverage: {diag_exc}")
+
+                            block = before_block.shift(1).fillna(method="ffill")
+                            block = block.reindex(training_index, method="ffill")
+                            nnz_after = int(block.notna().sum().sum())
+                            blocks.append(block)
+                            log_success(
+                                " Added Breakout/Bounce specialist block from 'ml_breakout_bounce_training_data_15m': "
+                                f"shape={block.shape}, non_null_before={nnz_before}, "
+                                f"non_null_after={nnz_after}"
+                            )
+                            if nnz_after == 0:
+                                log_warning(
+                                    " Breakout/Bounce block aligned to training_index is all-NaN. "
+                                    "Check breakout_training timestamps and values."
+                                )
+        else:
+            log_info(" Skipping Breakout/Bounce specialist outputs (enable_breakout_specialist=False)")
     except Exception as e:
-        log_warning(f"⚠️ Failed to load Breakout/Bounce specialist outputs: {e}")
+        log_warning(f" Failed to load Breakout/Bounce specialist outputs: {e}")
 
     # ------------------------------------------------------------------
     # 5) Path regimes – HMM Path specialist (optional)
     # ------------------------------------------------------------------
     try:
         log_info("=" * 80)
-        log_info("🧭 LOADING SPECIALIST: PATH REGIME OUTPUTS")
+        log_info(" LOADING SPECIALIST: PATH REGIME OUTPUTS")
         log_info("=" * 80)
 
         path_context = {
@@ -719,7 +784,7 @@ def get_specialist_models_outputs(
 
             if isinstance(path_training.index, pd.DatetimeIndex) and len(path_training.index) > 0:
                 log_info(
-                    "📈 Path (ml_path_training_data_15m under ml_path_regime_step) index range: %s → %s (n=%d)"
+                    " Path (ml_path_training_data_15m under ml_path_regime_step) index range: %s → %s (n=%d)"
                     % (
                         path_training.index.min(),
                         path_training.index.max(),
@@ -751,183 +816,189 @@ def get_specialist_models_outputs(
                 nnz_after = int(block.notna().sum().sum())
                 blocks.append(block)
                 log_success(
-                    "✅ Added Path specialist block from 'ml_path_training_data_15m' (ml_path_regime_step): "
+                    " Added Path specialist block from 'ml_path_training_data_15m' (ml_path_regime_step): "
                     f"shape={block.shape}, non_null_before={nnz_before}, "
                     f"non_null_after={nnz_after}"
                 )
                 if nnz_after == 0:
                     log_warning(
-                        "⚠️ Path block aligned to training_index is all-NaN. "
+                        " Path block aligned to training_index is all-NaN. "
                         "Check path_training timestamps and values."
                     )
     except Exception as e:
-        log_warning(f"⚠️ Failed to load Path specialist outputs: {e}")
+        log_warning(f" Failed to load Path specialist outputs: {e}")
 
     # ------------------------------------------------------------------
     # 6) Macro Trend specialist – macro regime alpha signal from xgb_macro_regime
     # ------------------------------------------------------------------
     try:
-        log_info("=" * 80)
-        log_info("🌍 LOADING SPECIALIST: MACRO TREND (XGB) OUTPUTS")
-        log_info("=" * 80)
+        if config.get("enable_macro_trend_specialist", True):
+            log_info("=" * 80)
+            log_info(" LOADING SPECIALIST: MACRO TREND (XGB) OUTPUTS")
+            log_info("=" * 80)
 
-        macro_context = {
-            "symbol": symbol,
-            "exchange": exchange,
-            "timeframe": regime_timeframe,
-            "direction": direction,
-            # Updated model namespace to match the current xgb_macro_regime
-            # step, ensuring we load artifacts from the correct
-            # ETHUSDT_binance_15m_long_regime_macro_trend store.
-            "model": "regime_macro_trend",
-            "step_name": "xgb_macro_regime",
-        }
+            macro_context = {
+                "symbol": symbol,
+                "exchange": exchange,
+                "timeframe": regime_timeframe,
+                "direction": direction,
+                # Updated model namespace to match the current xgb_macro_regime
+                # step, ensuring we load artifacts from the correct
+                # ETHUSDT_binance_15m_long_regime_macro_trend store.
+                "model": "regime_macro_trend",
+                "step_name": "xgb_macro_regime",
+            }
 
-        macro_artifact_name = f"hmm_macro_trend_training_data_{base_timeframe}"
-        log_info(f"Attempting to load Macro Trend data: {macro_artifact_name}")
-        macro_training = artifact_router.load(
-            artifact_name=macro_artifact_name,
-            artifact_type="data",
-            data_category="features",
-            context=macro_context,
-        )
+            macro_artifact_name = f"hmm_macro_trend_training_data_{base_timeframe}"
+            log_info(f"Attempting to load Macro Trend data: {macro_artifact_name}")
+            macro_training = artifact_router.load(
+                artifact_name=macro_artifact_name,
+                artifact_type="data",
+                data_category="features",
+                context=macro_context,
+            )
 
-        if macro_training is not None and not getattr(macro_training, "empty", True):
-            if not isinstance(macro_training, pd.DataFrame):
-                macro_training = pd.DataFrame(macro_training)
-            macro_training = _standardize_index(macro_training)
+            if macro_training is not None and not getattr(macro_training, "empty", True):
+                if not isinstance(macro_training, pd.DataFrame):
+                    macro_training = pd.DataFrame(macro_training)
+                macro_training = _standardize_index(macro_training)
 
-            if (
-                isinstance(macro_training.index, pd.DatetimeIndex)
-                and len(macro_training.index) > 0
-            ):
-                log_info(
-                    "📈 Macro Trend (hmm_macro_trend_training_data_15m) index range: %s → %s (n=%d)"
-                    % (
-                        macro_training.index.min(),
-                        macro_training.index.max(),
-                        len(macro_training.index),
+                if (
+                    isinstance(macro_training.index, pd.DatetimeIndex)
+                    and len(macro_training.index) > 0
+                ):
+                    log_info(
+                        " Macro Trend (hmm_macro_trend_training_data_15m) index range: %s → %s (n=%d)"
+                        % (
+                            macro_training.index.min(),
+                            macro_training.index.max(),
+                            len(macro_training.index),
+                        )
                     )
-                )
 
-            # Prefer the canonical 0-1 continuous macro alpha score; fall back to
-            # calibrated expectation-style columns if necessary.
-            score_col: Optional[str] = None
-            for c in ("macro_trend_score_continuous", "macro_trend_expectation_ema_01", "macro_trend_expectation_raw_01"):
-                if c in macro_training.columns:
-                    score_col = c
-                    break
+                # Prefer the canonical 0-1 continuous macro alpha score; fall back to
+                # calibrated expectation-style columns if necessary.
+                score_col: Optional[str] = None
+                for c in ("macro_trend_score_continuous", "macro_trend_expectation_ema_01", "macro_trend_expectation_raw_01"):
+                    if c in macro_training.columns:
+                        score_col = c
+                        break
 
-            if score_col is not None:
-                before_block = macro_training[[score_col]].copy()
-                # Expose the canonical 0-1 macro trend scalar under the
-                # established name used in analyst training and diagnostics.
-                # This ensures downstream users see a single
-                # `macro_trend_score_continuous` feature backed by the new
-                # XGB macro regime model rather than any legacy macro outputs.
-                before_block = before_block.rename(
-                    columns={score_col: "macro_trend_score_continuous"}
-                )
-                nnz_before = int(before_block.notna().sum().sum())
-
-                # Align to training_index with a one-bar lag to avoid look-ahead,
-                # mirroring the convention used for other regime specialists.
-                block = before_block.shift(1).fillna(method="ffill")
-                block = block.reindex(training_index, method="ffill")
-                nnz_after = int(block.notna().sum().sum())
-
-                blocks.append(block)
-                log_success(
-                    "✅ Added Macro Trend specialist block from 'hmm_macro_trend_training_data_15m': "
-                    f"shape={block.shape}, non_null_before={nnz_before}, non_null_after={nnz_after}"
-                )
-                if nnz_after == 0:
-                    log_warning(
-                        "⚠️ Macro Trend block aligned to training_index is all-NaN. "
-                        "Check macro alpha timestamps and values."
+                if score_col is not None:
+                    before_block = macro_training[[score_col]].copy()
+                    # Expose the canonical 0-1 macro trend scalar under the
+                    # established name used in analyst training and diagnostics.
+                    # This ensures downstream users see a single
+                    # `macro_trend_score_continuous` feature backed by the new
+                    # XGB macro regime model rather than any legacy macro outputs.
+                    before_block = before_block.rename(
+                        columns={score_col: "macro_trend_score_continuous"}
                     )
+                    nnz_before = int(before_block.notna().sum().sum())
+
+                    # Align to training_index with a one-bar lag to avoid look-ahead,
+                    # mirroring the convention used for other regime specialists.
+                    block = before_block.shift(1).fillna(method="ffill")
+                    block = block.reindex(training_index, method="ffill")
+                    nnz_after = int(block.notna().sum().sum())
+
+                    blocks.append(block)
+                    log_success(
+                        " Added Macro Trend specialist block from 'hmm_macro_trend_training_data_15m': "
+                        f"shape={block.shape}, non_null_before={nnz_before}, non_null_after={nnz_after}"
+                    )
+                    if nnz_after == 0:
+                        log_warning(
+                            " Macro Trend block aligned to training_index is all-NaN. "
+                            "Check macro alpha timestamps and values."
+                        )
+        else:
+            log_info(" Skipping Macro Trend specialist outputs (enable_macro_trend_specialist=False)")
     except Exception as e:
-        log_warning(f"⚠️ Failed to load Macro Trend specialist outputs: {e}")
+        log_warning(f" Failed to load Macro Trend specialist outputs: {e}")
 
     # ------------------------------------------------------------------
     # 7) MR Trend specialist – XGB MR vs Trend classifier outputs
     # ------------------------------------------------------------------
     try:
-        log_info("=" * 80)
-        log_info("📈 LOADING SPECIALIST: MR TREND (XGB) OUTPUTS")
-        log_info("=" * 80)
+        if config.get("enable_mr_trend_specialist", True):
+            log_info("=" * 80)
+            log_info(" LOADING SPECIALIST: MR TREND (XGB) OUTPUTS")
+            log_info("=" * 80)
 
-        mr_trend_context = {
-            "symbol": symbol,
-            "exchange": exchange,
-            "timeframe": base_timeframe,
-            "direction": direction,
-            "model": "regime_mr_trend",
-            "step_name": "xgb_mr_trend_step",
-        }
+            mr_trend_context = {
+                "symbol": symbol,
+                "exchange": exchange,
+                "timeframe": base_timeframe,
+                "direction": direction,
+                "model": "regime_mr_trend",
+                "step_name": "xgb_mr_trend_step",
+            }
 
-        mr_trend_training = artifact_router.load(
-            artifact_name="xgb_mr_trend_training_data",
-            artifact_type="data",
-            data_category="features",
-            context=mr_trend_context,
-        )
+            mr_trend_training = artifact_router.load(
+                artifact_name="xgb_mr_trend_training_data",
+                artifact_type="data",
+                data_category="features",
+                context=mr_trend_context,
+            )
 
-        if mr_trend_training is not None and not getattr(mr_trend_training, "empty", True):
-            if not isinstance(mr_trend_training, pd.DataFrame):
-                mr_trend_training = pd.DataFrame(mr_trend_training)
-            mr_trend_training = _standardize_index(mr_trend_training)
+            if mr_trend_training is not None and not getattr(mr_trend_training, "empty", True):
+                if not isinstance(mr_trend_training, pd.DataFrame):
+                    mr_trend_training = pd.DataFrame(mr_trend_training)
+                mr_trend_training = _standardize_index(mr_trend_training)
 
-            if (
-                isinstance(mr_trend_training.index, pd.DatetimeIndex)
-                and len(mr_trend_training.index) > 0
-            ):
-                log_info(
-                    "📈 MR Trend (xgb_mr_trend_training_data) index range: %s → %s (n=%d)"
-                    % (
-                        mr_trend_training.index.min(),
-                        mr_trend_training.index.max(),
-                        len(mr_trend_training.index),
+                if (
+                    isinstance(mr_trend_training.index, pd.DatetimeIndex)
+                    and len(mr_trend_training.index) > 0
+                ):
+                    log_info(
+                        " MR Trend (xgb_mr_trend_training_data) index range: %s → %s (n=%d)"
+                        % (
+                            mr_trend_training.index.min(),
+                            mr_trend_training.index.max(),
+                            len(mr_trend_training.index),
+                        )
                     )
-                )
 
-            if "target" in mr_trend_training.columns:
-                # Use the discrete regime label as a compact scalar and
-                # expose a helper binary flag marking explicit MR (class 2).
-                before_block = pd.DataFrame(
-                    index=mr_trend_training.index,
-                    data={
-                        "mr_trend_state": mr_trend_training["target"].astype(float),
-                        "mr_trend_is_mr": (mr_trend_training["target"] == 2).astype(float),
-                    },
-                )
-                nnz_before = int(before_block.notna().sum().sum())
-
-                # Align to training_index with a one-bar lag, mirroring other
-                # regime specialists to avoid look-ahead.
-                block = before_block.shift(1).fillna(method="ffill")
-                block = block.reindex(training_index, method="ffill")
-                nnz_after = int(block.notna().sum().sum())
-
-                blocks.append(block)
-                log_success(
-                    "✅ Added MR Trend specialist block from 'xgb_mr_trend_training_data': "
-                    f"shape={block.shape}, non_null_before={nnz_before}, "
-                    f"non_null_after={nnz_after}"
-                )
-                if nnz_after == 0:
-                    log_warning(
-                        "⚠️ MR Trend block aligned to training_index is all-NaN. "
-                        "Check MR Trend timestamps and values."
+                if "target" in mr_trend_training.columns:
+                    # Use the discrete regime label as a compact scalar and
+                    # expose a helper binary flag marking explicit MR (class 2).
+                    before_block = pd.DataFrame(
+                        index=mr_trend_training.index,
+                        data={
+                            "mr_trend_state": mr_trend_training["target"].astype(float),
+                            "mr_trend_is_mr": (mr_trend_training["target"] == 2).astype(float),
+                        },
                     )
+                    nnz_before = int(before_block.notna().sum().sum())
+
+                    # Align to training_index with a one-bar lag, mirroring other
+                    # regime specialists to avoid look-ahead.
+                    block = before_block.shift(1).fillna(method="ffill")
+                    block = block.reindex(training_index, method="ffill")
+                    nnz_after = int(block.notna().sum().sum())
+
+                    blocks.append(block)
+                    log_success(
+                        " Added MR Trend specialist block from 'xgb_mr_trend_training_data': "
+                        f"shape={block.shape}, non_null_before={nnz_before}, "
+                        f"non_null_after={nnz_after}"
+                    )
+                    if nnz_after == 0:
+                        log_warning(
+                            " MR Trend block aligned to training_index is all-NaN. "
+                            "Check MR Trend timestamps and values."
+                        )
+        else:
+            log_info(" Skipping MR Trend specialist outputs (enable_mr_trend_specialist=False)")
     except Exception as e:
-        log_warning(f"⚠️ Failed to load MR Trend specialist outputs: {e}")
+        log_warning(f" Failed to load MR Trend specialist outputs: {e}")
 
     # 8) Volume Force specialist – scalar directional prediction
     # ------------------------------------------------------------------
     try:
         log_info("=" * 80)
-        log_info("🌪️ LOADING SPECIALIST: VOLUME FORCE OUTPUTS")
+        log_info(" LOADING SPECIALIST: VOLUME FORCE OUTPUTS")
         log_info("=" * 80)
 
         vol_force_context = {
@@ -953,7 +1024,7 @@ def get_specialist_models_outputs(
 
             if isinstance(vol_force_preds.index, pd.DatetimeIndex) and len(vol_force_preds.index) > 0:
                 log_info(
-                    "📈 Volume Force (ml_volume_force_predictions) index range: %s → %s (n=%d)"
+                    " Volume Force (ml_volume_force_predictions) index range: %s → %s (n=%d)"
                     % (
                         vol_force_preds.index.min(),
                         vol_force_preds.index.max(),
@@ -1003,17 +1074,17 @@ def get_specialist_models_outputs(
 
                 blocks.append(block)
                 log_success(
-                    "✅ Added Volume Force specialist block from 'ml_volume_force_predictions': "
+                    " Added Volume Force specialist block from 'ml_volume_force_predictions': "
                     f"shape={block.shape}, non_null_before={nnz_before}, "
                     f"non_null_after={nnz_after}"
                 )
                 if nnz_after == 0:
                     log_warning(
-                        "⚠️ Volume Force block aligned to training_index is all-NaN. "
+                        " Volume Force block aligned to training_index is all-NaN. "
                         "Check volume force timestamps."
                     )
     except Exception as e:
-        log_warning(f"⚠️ Failed to load Volume Force specialist outputs: {e}")
+        log_warning(f" Failed to load Volume Force specialist outputs: {e}")
 
     # ------------------------------------------------------------------
     # 8) ML Risk HMM regimes – optional second risk flavor
@@ -1021,7 +1092,7 @@ def get_specialist_models_outputs(
     if config.get("enable_risk_hmm_specialist", True):
         try:
             log_info("=" * 80)
-            log_info("📐 LOADING SPECIALIST: ML RISK HMM OUTPUTS")
+            log_info(" LOADING SPECIALIST: ML RISK HMM OUTPUTS")
             log_info("=" * 80)
 
             # Risk HMM training artifacts are produced on a higher timeframe
@@ -1060,7 +1131,7 @@ def get_specialist_models_outputs(
 
                 if isinstance(risk_hmm_training.index, pd.DatetimeIndex) and len(risk_hmm_training.index) > 0:
                     log_info(
-                        "📈 ML Risk HMM (%s) index range: %s → %s (n=%d)"
+                        " ML Risk HMM (%s) index range: %s → %s (n=%d)"
                         % (
                             risk_hmm_name,
                             risk_hmm_training.index.min(),
@@ -1100,25 +1171,25 @@ def get_specialist_models_outputs(
 
                     if nnz_after == 0:
                         log_warning(
-                            "⚠️ ML Risk HMM block aligned to training_index is all-NaN. "
+                            " ML Risk HMM block aligned to training_index is all-NaN. "
                             "Dropping ML Risk HMM specialist features for this run; check timestamps and values."
                         )
                     else:
                         blocks.append(block)
                         log_success(
-                            f"✅ Added ML Risk HMM specialist block from '{risk_hmm_name}': "
+                            f" Added ML Risk HMM specialist block from '{risk_hmm_name}': "
                             f"shape={block.shape}, non_null_before={nnz_before}, "
                             f"non_null_after={nnz_after}"
                         )
         except Exception as e:
-            log_warning(f"⚠️ Failed to load ML Risk HMM specialist outputs: {e}")
+            log_warning(f" Failed to load ML Risk HMM specialist outputs: {e}")
     else:
-        log_info("ℹ️ Skipping ML Risk HMM specialist outputs (enable_risk_hmm_specialist=False)")
+        log_info(" Skipping ML Risk HMM specialist outputs (enable_risk_hmm_specialist=False)")
 
     # SMC specialist block: scalar regime predictions from MLSMCRegimeStep
     try:
         log_info("=" * 80)
-        log_info("📊 LOADING SPECIALIST: SMC REGIME OUTPUTS")
+        log_info(" LOADING SPECIALIST: SMC REGIME OUTPUTS")
         log_info("=" * 80)
 
         smc_context = {
@@ -1144,7 +1215,7 @@ def get_specialist_models_outputs(
 
             if isinstance(smc.index, pd.DatetimeIndex) and len(smc.index) > 0:
                 log_info(
-                    "📊 SMC (smc_predictions_with_confidence) index range: %s → %s (n=%d)"
+                    " SMC (smc_predictions_with_confidence) index range: %s → %s (n=%d)"
                     % (
                         smc.index.min(),
                         smc.index.max(),
@@ -1175,88 +1246,91 @@ def get_specialist_models_outputs(
                 blocks.append(block)
                 if nnz_after == 0:
                     log_warning(
-                        "⚠️ SMC block aligned to training_index is all-NaN. "
+                        " SMC block aligned to training_index is all-NaN. "
                         "Keeping SMC specialist features, but they will be effectively missing; "
                         "check SMC timestamps, index alignment, and values."
                     )
                 else:
                     log_success(
-                        "✅ Added SMC specialist block from 'smc_predictions_with_confidence': "
+                        " Added SMC specialist block from 'smc_predictions_with_confidence': "
                         f"shape={block.shape}, non_null_before={nnz_before}, "
                         f"non_null_after={nnz_after}"
                     )
     except Exception as e:
-        log_warning(f"⚠️ Failed to load SMC specialist outputs: {e}")
+        log_warning(f" Failed to load SMC specialist outputs: {e}")
 
     # Mean-reversion specialist block: mr_* features from MLMeanReversionRegimeStep
     try:
-        log_info("=" * 80)
-        log_info("📈 LOADING SPECIALIST: MEAN-REVERSION OUTPUTS")
-        log_info("=" * 80)
+        if config.get("enable_mean_reversion_specialist", True):
+            log_info("=" * 80)
+            log_info(" LOADING SPECIALIST: MEAN-REVERSION OUTPUTS")
+            log_info("=" * 80)
 
-        mr_artifact_name = f"ml_mean_reversion_training_data_{regime_timeframe}"
-        mr_context = {
-            "symbol": symbol,
-            "exchange": exchange,
-            "timeframe": regime_timeframe,
-            "direction": direction,
-            "model": "mean_reversion",
-            "step_name": "ml_mean_reversion_step",
-        }
+            mr_artifact_name = f"ml_mean_reversion_training_data_{regime_timeframe}"
+            mr_context = {
+                "symbol": symbol,
+                "exchange": exchange,
+                "timeframe": regime_timeframe,
+                "direction": direction,
+                "model": "mean_reversion",
+                "step_name": "ml_mean_reversion_step",
+            }
 
-        log_info(f"Attempting to load Mean Reversion data: {mr_artifact_name}")
-        mr = artifact_router.load(
-            artifact_name=mr_artifact_name,
-            artifact_type="data",
-            data_category="features",
-            context=mr_context,
-        )
+            log_info(f"Attempting to load Mean Reversion data: {mr_artifact_name}")
+            mr = artifact_router.load(
+                artifact_name=mr_artifact_name,
+                artifact_type="data",
+                data_category="features",
+                context=mr_context,
+            )
 
-        if mr is not None and not getattr(mr, "empty", True):
-            if not isinstance(mr, pd.DataFrame):
-                mr = pd.DataFrame(mr)
-            mr = _standardize_index(mr)
+            if mr is not None and not getattr(mr, "empty", True):
+                if not isinstance(mr, pd.DataFrame):
+                    mr = pd.DataFrame(mr)
+                mr = _standardize_index(mr)
 
-            if isinstance(mr.index, pd.DatetimeIndex) and len(mr.index) > 0:
-                log_info(
-                    "📈 Mean-reversion (%s) index range: %s → %s (n=%d)"
-                    % (
-                        mr_artifact_name,
-                        mr.index.min(),
-                        mr.index.max(),
-                        len(mr.index),
+                if isinstance(mr.index, pd.DatetimeIndex) and len(mr.index) > 0:
+                    log_info(
+                        " Mean-reversion (%s) index range: %s → %s (n=%d)"
+                        % (
+                            mr_artifact_name,
+                            mr.index.min(),
+                            mr.index.max(),
+                            len(mr.index),
+                        )
                     )
-                )
 
-            mr_cols = [c for c in mr.columns if c.startswith("mr_")]
+                mr_cols = [c for c in mr.columns if c.startswith("mr_")]
 
-            if mr_cols:
-                before_block = mr[mr_cols].copy()
-                nnz_before = int(before_block.notna().sum().sum())
-                block = before_block.reindex(training_index, method="ffill")
-                nnz_after = int(block.notna().sum().sum())
-                # Always keep the mean-reversion block, even if currently all-NaN,
-                # mirroring the SMC behavior so we don't silently lose this
-                # specialist source when alignment is misconfigured.
-                if nnz_after == 0:
-                    log_warning(
-                        "⚠️ Mean-reversion block aligned to training_index is all-NaN. "
-                        "Keeping mean-reversion specialist features, but they will be effectively missing; "
-                        "check mean-reversion timestamps, index alignment, and values."
-                    )
-                else:
-                    blocks.append(block)
-                    log_success(
-                        f"✅ Added Mean-reversion specialist block from '{mr_artifact_name}': "
-                        f"shape={block.shape}, non_null_before={nnz_before}, "
-                        f"non_null_after={nnz_after}"
-                    )
+                if mr_cols:
+                    before_block = mr[mr_cols].copy()
+                    nnz_before = int(before_block.notna().sum().sum())
+                    block = before_block.reindex(training_index, method="ffill")
+                    nnz_after = int(block.notna().sum().sum())
+                    # Always keep the mean-reversion block, even if currently all-NaN,
+                    # mirroring the SMC behavior so we don't silently lose this
+                    # specialist source when alignment is misconfigured.
+                    if nnz_after == 0:
+                        log_warning(
+                            " Mean-reversion block aligned to training_index is all-NaN. "
+                            "Keeping mean-reversion specialist features, but they will be effectively missing; "
+                            "check mean-reversion timestamps, index alignment, and values."
+                        )
+                    else:
+                        blocks.append(block)
+                        log_success(
+                            f" Added Mean-reversion specialist block from '{mr_artifact_name}': "
+                            f"shape={block.shape}, non_null_before={nnz_before}, "
+                            f"non_null_after={nnz_after}"
+                        )
+        else:
+            log_info(" Skipping Mean-reversion specialist outputs (enable_mean_reversion_specialist=False)")
     except Exception as e:
-        log_warning(f"⚠️ Failed to load Mean-reversion specialist outputs: {e}")
+        log_warning(f" Failed to load Mean-reversion specialist outputs: {e}")
 
     if not blocks:
         msg = (
-            "❌ No specialist model outputs found (ML Risk / Liquidity / Breakout/Bounce). "
+            " No specialist model outputs found (ML Risk / Liquidity / Breakout/Bounce). "
             "These features are strongly recommended for downstream models."
         )
         log_warning(msg)

@@ -881,8 +881,20 @@ class StandardizedXGBTrainer:
             verbose=verbose,
         )
 
+        try:
+            y_train_hpo = dtrain_hpo.get_label()
+        except Exception:
+            y_train_hpo = None
+        try:
+            y_val_hpo = dval_hpo.get_label()
+        except Exception:
+            y_val_hpo = None
+
         learning_result = learning_optimizer.optimize(
-            X_train=dtrain_hpo, y_train=None, X_val=dval_hpo, y_val=None
+            X_train=dtrain_hpo,
+            y_train=y_train_hpo,
+            X_val=dval_hpo,
+            y_val=y_val_hpo,
         )
         best_learning_rate = float(learning_result.best_params.get("learning_rate", 0.05))
 

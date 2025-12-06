@@ -106,12 +106,11 @@ class MLSMCRegimeStep(BaseStep):
                     "config_id": i + 1,
                     "execution_time": execution_time,
                     "success": result.get("success", False),
-                    # Primary Objectives
+                    # Primary Objectives (IC + downstream trading metrics)
                     "smc_xgb_oof_ic": metrics.get("smc_xgb_oof_ic", float("nan")),
                     "smc_xgb_oof_sharpe_gated_25pct": metrics.get("smc_xgb_oof_sharpe_gated_25pct", float("-inf")),
                     "smc_xgb_oof_logloss": metrics.get("smc_xgb_oof_logloss", float("inf")),
                     "smc_xgb_oof_accuracy": metrics.get("smc_xgb_oof_accuracy", 0.0),
-                "smc_xgb_oof_hsic": metrics.get("smc_xgb_oof_hsic", 0.0),
                     "error": result.get("error", ""),
                 }
 
@@ -780,26 +779,8 @@ class MLSMCRegimeStep(BaseStep):
                 tprint_warning(f"Failed to calculate gated Sharpe: {e}")
                 oof_sharpe_gated = float("-inf")
 
-            # Calculate HSIC for Scalar Prediction vs Target ATR Return
-            try:
-                hsic_mask = np.isfinite(y_pred_scalar_oof) & np.isfinite(y_true_atr_oof)
-                if hsic_mask.sum() > 100:
-                    oof_hsic = calculate_hsic(
-                        y_pred_scalar_oof[hsic_mask].values.reshape(-1, 1),
-                        y_true_atr_oof[hsic_mask].values.reshape(-1, 1),
-                        kernel_X='rbf', # Continuous prediction
-                        kernel_Y='rbf'  # Continuous target
-                    )
-                    tprint_info(f"  SMC XGB OOF HSIC: {oof_hsic:.6f}")
-                else:
-                    oof_hsic = 0.0
-            except Exception as hsic_exc:
-                tprint_warning(f"Failed to calculate HSIC: {hsic_exc}")
-                oof_hsic = 0.0
-
             metrics.update({
                 "smc_xgb_oof_accuracy": float(oof_accuracy),
-                "smc_xgb_oof_hsic": float(oof_hsic),
                 "smc_xgb_oof_f1": float(oof_f1),
                 "smc_xgb_oof_logloss": float(oof_logloss),
                 "smc_xgb_oof_rmse": float(oof_rmse),
@@ -964,13 +945,15 @@ class MLSMCRegimeStep(BaseStep):
         except Exception as report_exc:
             tprint_warning(f"SMC XGB report generation failed: {report_exc}")
 
-        # Save model
+        # Save model and predictions
         model_metadata = {
             "symbol": symbol,
             "exchange": exchange,
             "timeframe": regime_timeframe,
             "n_features": len(feature_cols),
-            "prediction_method": "oof",
+            # Use OOF predictions where available, backed off with full-sample
+            # predictions from the latest model elsewhere for diagnostics.
+            "prediction_method": "oof+full_merged",
             "oof_windows": len(oof_metadata),
             "hpo_runs": sum(1 for m in oof_metadata if m.get('used_hpo', False)),
             "retrain_interval_days": 10,
@@ -995,12 +978,59 @@ class MLSMCRegimeStep(BaseStep):
         )
         artifacts.append(model_path)
 
-        # Save OOF predictions (scalar output: 0=downtrend, 1=uptrend)
-        predictions_df = oof_predictions.reset_index().rename(columns={oof_predictions.index.name or "index": "timestamp"})
-        predictions_df = predictions_df.rename(columns={"scalar": "predicted"})
+        # ------------------------------------------------------------------
+        # Persist scalar SMC predictions with full temporal coverage
+        # ------------------------------------------------------------------
+        # Build a scalar prediction series aligned to df_with_target.index.
+        # - Where OOF predictions exist, use their scalar values.
+        # - Elsewhere, use full-sample predictions from the latest model
+        #   (report_y_pred_scalar) so diagnostics see the complete history.
+        if report_y_pred_scalar is not None:
+            try:
+                full_pred_series = pd.Series(
+                    report_y_pred_scalar,
+                    index=df_with_target.index,
+                    dtype=float,
+                )
 
-        # Keep only timestamp and predicted scalar (drop probability columns)
-        predictions_df = predictions_df[["timestamp", "predicted"]]
+                # Overlay OOF scalar predictions where available
+                if not oof_predictions.empty and "scalar" in oof_predictions.columns:
+                    try:
+                        full_pred_series.loc[oof_predictions.index] = (
+                            oof_predictions["scalar"].astype(float)
+                        )
+                    except Exception:
+                        # Best-effort overlay; fall back to full-sample only on error
+                        pass
+
+                # Respect burn-in: mask out any timestamps before the
+                # effective burn-in end so diagnostics don't treat the
+                # warm-up period as valid signal.
+                try:
+                    if split_config.burnin is not None and split_config.burnin.effective_end is not None:
+                        burnin_cutoff = split_config.burnin.effective_end
+                        full_pred_series.loc[full_pred_series.index < burnin_cutoff] = np.nan
+                except Exception:
+                    # Non-fatal; if burn-in metadata is unavailable, keep series as-is
+                    pass
+
+                predictions_df = full_pred_series.to_frame(name="predicted").reset_index().rename(
+                    columns={full_pred_series.index.name or "index": "timestamp"}
+                )
+            except Exception:
+                # Fallback: keep legacy OOF-only behavior
+                predictions_df = oof_predictions.reset_index().rename(
+                    columns={oof_predictions.index.name or "index": "timestamp"}
+                )
+                predictions_df = predictions_df.rename(columns={"scalar": "predicted"})
+                predictions_df = predictions_df[["timestamp", "predicted"]]
+        else:
+            # No full-sample predictions available; fall back to OOF-only
+            predictions_df = oof_predictions.reset_index().rename(
+                columns={oof_predictions.index.name or "index": "timestamp"}
+            )
+            predictions_df = predictions_df.rename(columns={"scalar": "predicted"})
+            predictions_df = predictions_df[["timestamp", "predicted"]]
 
         predictions_path = self._save_artifact(
             data=predictions_df,

@@ -497,6 +497,28 @@ def _compute_feature_metrics(
     # Replace infinities and fill remaining NaNs in X for robust correlation-based metrics
     X = X.replace([np.inf, -np.inf], np.nan).fillna(0.0)
 
+    # Drop breakout/bounce and mean-reversion specialist features from diagnostics.
+    # These specialists are evaluated via their own dedicated pipelines and are
+    # not used as direct objectives for the meta-target here, so excluding them
+    # keeps the report focused on the core regime block (risk, liquidity,
+    # macro/path, SMC) without clutter from very weak or constant scalars.
+    drop_cols = [
+        col
+        for col in X.columns
+        if col.startswith("breakout_")
+        or col in {
+            "is_resistance",
+            "is_support",
+            "support_scalar",
+            "resistance_scalar",
+            "breakout_success_prob",
+            "breakout_high_conf_signal",
+        }
+        or col.startswith("mr_")
+    ]
+    if drop_cols:
+        X = X.drop(columns=drop_cols)
+
     # Pre-compute numeric target array and detect binary vs continuous target
     y_arr = y.to_numpy(dtype=float)
     uniq = np.unique(y_arr[~np.isnan(y_arr)])

@@ -731,8 +731,7 @@ async def main():
         config['enable_hpo'] = True
         config['risk_enable_hpo'] = True
 
-    # Map XGB: when running ml_map_regime_step with --enable-hpo, enable XGB training
-    # and feature pruning by default so we exercise the WCoV objective and pruning logic.
+    # Map XGB/HPO behaviour for specific steps when --enable-hpo is provided.
     if getattr(args, 'enable_hpo', False):
         target_steps: List[str] = []
         if args.step:
@@ -742,9 +741,19 @@ async def main():
         elif args.command:
             target_steps = [args.command]
 
+        # When running the MAP regime step with --enable-hpo, enable XGB
+        # training and feature pruning so we exercise the WCoV objective and
+        # pruning logic.
         if 'ml_map_regime_step' in target_steps:
             config['map_xgb_enable_training'] = True
             config['map_xgb_enable_feature_pruning'] = True
+
+        # When running the sr_labeling_xgb (meta-labeling HPO) step with
+        # --enable-hpo, automatically enable XGB model HPO inside the step.
+        # Keep compatibility with the legacy step name
+        # 'meta_labeling_hpo_experiment'.
+        if 'sr_labeling_xgb' in target_steps or 'meta_labeling_hpo_experiment' in target_steps:
+            config['enable_xgb_model_hpo'] = True
 
     # Optional meta-gated backtest diagnostics configuration
     # These flags are no-ops for other steps; MetaGatedBacktestStep will

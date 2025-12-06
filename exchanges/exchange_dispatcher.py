@@ -21,7 +21,6 @@ from src.interfaces.base_interfaces import MarketData
 
 from .base_exchange import BaseExchange
 from .exchange_types import ExchangeType  # Use the shared ExchangeType enum
-from .okx import create_okx_exchange
 from .shared.auth import AuthenticationManager
 from .shared.market import MarketMetadataManager
 from .shared.pricing import PriceManager, OHLCVManager
@@ -175,6 +174,8 @@ class ExchangeDispatcher:
         tprint_info(f"Creating exchange instance: type={self.config.exchange_type.value}, testnet={self.config.use_testnet}")
         try:
             if self.config.exchange_type == ExchangeType.OKX:
+                # Lazy import to avoid loading OKX dependencies when not needed
+                from .okx import create_okx_exchange
                 return create_okx_exchange(
                     api_key=self.config.api_key,
                     api_secret=self.config.api_secret,

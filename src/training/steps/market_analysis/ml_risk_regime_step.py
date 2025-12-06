@@ -883,10 +883,13 @@ class MLRiskRegimeStepHMM(BaseStep):
         try:
             safe_cov_inv = np.linalg.inv(safe_cov)
         except np.linalg.LinAlgError:
-            # Add regularization if singular
             tprint_warning("Safe state covariance is singular, adding regularization")
-            safe_cov += np.eye(safe_cov.shape[0]) * 1e-6
-            safe_cov_inv = np.linalg.inv(safe_cov)
+            safe_cov_arr = np.asarray(safe_cov)
+            if safe_cov_arr.ndim == 1:
+                safe_cov_arr = np.diag(safe_cov_arr)
+            safe_cov_arr = safe_cov_arr.astype(float, copy=True)
+            safe_cov_arr = safe_cov_arr + np.eye(safe_cov_arr.shape[0]) * 1e-6
+            safe_cov_inv = np.linalg.inv(safe_cov_arr)
 
         # Calculate raw Mahalanobis distances (log-stabilized)
         mahal_distances_raw = np.full(len(risk_features), np.nan)

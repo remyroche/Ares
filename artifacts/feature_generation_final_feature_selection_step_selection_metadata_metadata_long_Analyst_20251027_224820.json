@@ -1,8 +1,0 @@
-{
-  "artifact_name": "selection_metadata",
-  "artifact_type": "data",
-  "file_path": "artifacts/pre_training/long/Analyst/feature_generation_final_feature_selection_step/feature_generation_final_feature_selection_step_selection_metadata_long_Analyst_20251027_224820.parquet",
-  "file_size": 5943,
-  "timestamp": "2025-10-27T22:48:33.958410",
-  "compression": "auto"
-}

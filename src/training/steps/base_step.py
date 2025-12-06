@@ -378,6 +378,12 @@ class BaseStep(ABC):
             Market data DataFrame or None
         """
         try:
+            tprint(
+                f"📥 BASESTEP historical load: symbol={symbol}, exchange={exchange}, timeframe={timeframe}, "
+                f"execution_mode={self._current_context.get('execution_mode')}, "
+                f"start_date={start_date}, end_date={end_date}",
+                "INFO",
+            )
             from src.utils.kline_parquet import KlinesParquetManager, StorageConfig
 
             start_dt: Optional[datetime]
@@ -401,101 +407,143 @@ class BaseStep(ABC):
                 config=StorageConfig(base_dir=data_dir)
             )
 
-            # Prefer explicit execution_mode from context, then launcher/ENV,
-            # and finally fall back to 'light' for legacy behaviour.
-            from os import environ as _os_environ
-            execution_mode = str(
-                self._current_context.get(
-                    'execution_mode',
-                    self._current_context.get('mode', _os_environ.get('EXECUTION_MODE', 'light')),
-                )
-            ).lower()
-
-            requested_start = self._current_context.get('start_date')
-            requested_end = self._current_context.get('end_date')
-
-            if start_date is None:
-                start_date = requested_start
-            if end_date is None:
-                end_date = requested_end
-
-            timeframe = self._current_context.get('timeframe', timeframe)
-
-            days_limit: Optional[int] = None
-            if start_date is None:
-                # Add validation for mode-specific days
-                tprint(f"🔧 BASESTEP: Using execution_mode={execution_mode}", "INFO")
-                tprint(f"🔧 BASESTEP: blank_mode_days in context: {self._current_context.get('blank_mode_days', 'NOT FOUND')}", "INFO")
-                tprint(f"🔧 BASESTEP: light_mode_days in context: {self._current_context.get('light_mode_days', 'NOT FOUND')}", "INFO")
-                tprint(f"🔧 BASESTEP: Context keys available: {list(self._current_context.keys())}", "INFO")
-
-                # Use centralized execution mode configuration for defaults
-                from src.training.steps.market_analysis.shared_utils.execution_mode_lookback_config import get_execution_mode_config
-                execution_config = get_execution_mode_config()
-
-                # Support light/blank/full modes for historical loading; other
-                # modes fall back to centralized defaults.
-                mode_days_defaults = {
-                    'light': self._current_context.get('light_mode_days', execution_config.get_data_loading_days('light')),
-                    'blank': self._current_context.get('blank_mode_days', execution_config.get_data_loading_days('blank')),
-                    'full': self._current_context.get('full_mode_days', execution_config.get_data_loading_days('full')),
-                }
-                days_limit = mode_days_defaults.get(execution_mode)
-
-                # Add fallback logic with warnings when context values are missing
-                if days_limit is None:
-                    # Fallback to centralized configuration
-                    days_limit = execution_config.get_data_loading_days(execution_mode)
-                    tprint(
-                        f"⚠️ Using centralized config {execution_mode}_mode_days={days_limit} (not found in context)",
-                        "WARNING",
+            # 1) Try historical storage (priority)
+            try:
+                # Quick probe of available files
+                try:
+                    files_probe = klines_manager._find_klines_files(  # type: ignore[attr-defined]
+                        symbol=symbol,
+                        exchange=exchange,
+                        interval=timeframe,
+                        batch_id=None,
+                        start_time=None,
+                        end_time=None,
                     )
+                    if files_probe:
+                        tprint(
+                            f"📁 BASESTEP probe: {len(files_probe)} files for {symbol} {timeframe} "
+                            f"(sample: {files_probe[0]} ... {files_probe[-1]})",
+                            "INFO",
+                        )
+                    else:
+                        tprint_warning(f"⚠️ BASESTEP probe: no files found for {symbol} {timeframe}")
+                except Exception as probe_exc:
+                    tprint_warning(f"⚠️ BASESTEP file probe failed: {probe_exc}")
+
+                # Data info (processed first, then raw)
+                try:
+                    info_proc = klines_manager.get_data_info(symbol=symbol, interval=timeframe, data_type="processed")
+                    tprint_info(f"📊 Data info (processed {symbol} {timeframe}): {info_proc}")
+                    if not info_proc.get("available"):
+                        info_raw = klines_manager.get_data_info(symbol=symbol, interval=timeframe, data_type="raw")
+                        tprint_info(f"📊 Data info (raw {symbol} {timeframe}): {info_raw}")
+                except Exception as info_exc:
+                    tprint_warning(f"⚠️ BASESTEP data-info failed: {info_exc}")
+
+                requested_start = self._current_context.get('start_date')
+                requested_end = self._current_context.get('end_date')
+
+                if start_date is None:
+                    start_date = requested_start
+                if end_date is None:
+                    end_date = requested_end
+
+                timeframe = self._current_context.get('timeframe', timeframe)
+
+                days_limit: Optional[int] = None
+                if start_date is None:
+                    # Add validation for mode-specific days
+                    tprint(f"🔧 BASESTEP: Using execution_mode={execution_mode}", "INFO")
+                    tprint(f"🔧 BASESTEP: blank_mode_days in context: {self._current_context.get('blank_mode_days', 'NOT FOUND')}", "INFO")
+                    tprint(f"🔧 BASESTEP: light_mode_days in context: {self._current_context.get('light_mode_days', 'NOT FOUND')}", "INFO")
+                    tprint(f"🔧 BASESTEP: Context keys available: {list(self._current_context.keys())}", "INFO")
+
+                    # Use centralized execution mode configuration for defaults
+                    from src.training.steps.market_analysis.shared_utils.execution_mode_lookback_config import get_execution_mode_config
+                    execution_config = get_execution_mode_config()
+
+                    # Support light/blank/full modes for historical loading; other
+                    # modes fall back to centralized defaults.
+                    mode_days_defaults = {
+                        'light': self._current_context.get('light_mode_days', execution_config.get_data_loading_days('light')),
+                        'blank': self._current_context.get('blank_mode_days', execution_config.get_data_loading_days('blank')),
+                        'full': self._current_context.get('full_mode_days', execution_config.get_data_loading_days('full')),
+                    }
+                    days_limit = mode_days_defaults.get(execution_mode)
                     tprint(
-                        f"🔧 BASESTEP: Context keys available: {list(self._current_context.keys())}",
+                        f"📏 BASESTEP days_limit resolved: execution_mode={execution_mode}, days_limit={days_limit}",
                         "INFO",
                     )
 
-                if days_limit is not None:
-                    message_prefix = {
-                        'light': "💡 Light",
-                        'blank': "⚪ Blank",
-                        'full': "📅 Full",
-                    }.get(execution_mode, "📅 Mode")
-                    tprint(
-                        f"{message_prefix} mode pre-filter: requesting last {days_limit} days "
-                        f"(anchored at latest available data, timeframe {timeframe})",
+                    # Add fallback logic with warnings when context values are missing
+                    if days_limit is None:
+                        # Fallback to centralized configuration
+                        days_limit = execution_config.get_data_loading_days(execution_mode)
+                        tprint(
+                            f"⚠️ Using centralized config {execution_mode}_mode_days={days_limit} (not found in context)",
+                            "WARNING",
+                        )
+                        tprint(
+                            f"🔧 BASESTEP: Context keys available: {list(self._current_context.keys())}",
+                            "INFO",
+                        )
+
+                    if days_limit is not None:
+                        message_prefix = {
+                            'light': "💡 Light",
+                            'blank': "⚪ Blank",
+                            'full': "📅 Full",
+                        }.get(execution_mode, "📅 Mode")
+                        tprint(
+                            f"{message_prefix} mode pre-filter: requesting last {days_limit} days "
+                            f"(anchored at latest available data, timeframe {timeframe})",
+                        )
+                        tprint(
+                            f"🔧 BASESTEP: Using execution_mode={execution_mode} with days_limit={days_limit}",
+                            "INFO",
+                        )
+
+                # If no explicit start_date and we have a mode-specific days_limit,
+                # load the last N days anchored at the most recent available data
+                # using KlinesParquetManager's last_n_days helper. Otherwise, honour
+                # explicit start/end bounds.
+                if start_date is None:
+                    market_data = klines_manager.load_klines(
+                        symbol=symbol,
+                        exchange=exchange,
+                        interval=timeframe,
+                        last_n_days=days_limit,
                     )
-                    tprint(
-                        f"🔧 BASESTEP: Using execution_mode={execution_mode} with days_limit={days_limit}",
-                        "INFO",
+                else:
+                    market_data = klines_manager.load_klines(
+                        symbol=symbol,
+                        exchange=exchange,
+                        interval=timeframe,
+                        start_time=start_dt,
+                        end_time=end_dt,
                     )
 
-            # If no explicit start_date and we have a mode-specific days_limit,
-            # load the last N days anchored at the most recent available data
-            # using KlinesParquetManager's last_n_days helper. Otherwise, honour
-            # explicit start/end bounds.
-            if start_date is None and days_limit is not None:
-                market_data = klines_manager.load_klines(
-                    symbol=symbol,
-                    exchange=exchange,
-                    interval=timeframe,
-                    last_n_days=days_limit,
-                )
-            else:
-                market_data = klines_manager.load_klines(
-                    symbol=symbol,
-                    exchange=exchange,
-                    interval=timeframe,
-                    start_time=start_dt,
-                    end_time=end_dt,
+                tprint_info(
+                    f"📊 BASESTEP load result: rows={getattr(market_data, 'shape', ['NA'])[0] if market_data is not None else 'None'} "
+                    f"from historical storage (days_limit={days_limit}, start_dt={start_dt}, end_dt={end_dt})"
                 )
 
-            if market_data is not None and not getattr(market_data, "empty", False):
-                tprint(
-                    f"✅ Loaded {len(market_data)} rows from historical storage",
-                    color="green",
+                if market_data is not None and not getattr(market_data, "empty", False):
+                    tprint(
+                        f"✅ Loaded {len(market_data)} rows from historical storage",
+                        color="green",
+                    )
+                    return market_data
+
+            except Exception as exc:  # pragma: no cover - defensive logging
+                self.logger.debug(
+                    "Historical storage load failed for %s %s %s: %s",
+                    symbol,
+                    exchange,
+                    timeframe,
+                    exc,
                 )
-                return market_data
+                tprint_warning(f"⚠️ BASESTEP historical load exception: {exc}")
 
         except Exception as exc:  # pragma: no cover - defensive logging
             self.logger.debug(
@@ -626,6 +674,87 @@ class BaseStep(ABC):
                 end_date=config.get("end_date"),
             )
             source_name = "historical_data"
+
+        tprint(
+            f"📊 load_market_data_or_fail post-historical: type={type(data).__name__ if data is not None else 'None'}, "
+            f"rows={(len(data) if pandas_available and isinstance(data, pd.DataFrame) else 'NA')}",
+            "INFO",
+        )
+
+        # Immediate fallback if historical load returned None
+        if data is None:
+            try:
+                from src.utils.kline_parquet import KlinesParquetManager, StorageConfig
+                km = KlinesParquetManager(config=StorageConfig(base_dir=config.get("data_dir", "historical_data")))
+                fallback_days = config.get("lookback_days", 1095)
+                fallback_df = km.load_klines(
+                    symbol=symbol,
+                    exchange=exchange,
+                    interval=timeframe,
+                    last_n_days=fallback_days,
+                )
+                tprint(
+                    f"📊 Fallback load: type={type(fallback_df).__name__ if fallback_df is not None else 'None'}, "
+                    f"rows={(len(fallback_df) if pandas_available and isinstance(fallback_df, pd.DataFrame) else 'NA')}, "
+                    f"days={fallback_days}",
+                    "INFO",
+                )
+                if fallback_df is not None and not getattr(fallback_df, "empty", False):
+                    return fallback_df, "historical_data"
+                data = fallback_df
+            except Exception as fallback_exc:
+                tprint_warning(f"⚠️ Fallback historical load failed: {fallback_exc}")
+                data = None
+
+        # If data is missing or empty, final fallback: attempt direct historical load using mode lookback
+        needs_fallback = data is None or (pandas_available and isinstance(data, pd.DataFrame) and data.empty)
+        if needs_fallback:
+            try:
+                from src.utils.kline_parquet import KlinesParquetManager, StorageConfig
+                from src.training.steps.market_analysis.shared_utils.execution_mode_lookback_config import (
+                    get_execution_mode_config,
+                )
+
+                execution_mode = config.get("execution_mode", "full")
+                execution_config = get_execution_mode_config()
+                days_limit = execution_config.get_data_loading_days(execution_mode)
+
+                tprint_warning(
+                    f"⚠️ load_market_data_or_fail fallback: retrying direct historical load "
+                    f"for {symbol}/{exchange}/{timeframe} with last_n_days={days_limit}"
+                )
+
+                km = KlinesParquetManager(config=StorageConfig(base_dir=config.get("data_dir", "historical_data")))
+                fallback_df = km.load_klines(
+                    symbol=symbol,
+                    exchange=exchange,
+                    interval=timeframe,
+                    last_n_days=days_limit,
+                )
+
+                if fallback_df is not None and not getattr(fallback_df, "empty", False):
+                    tprint(
+                        f"✅ Fallback loaded {len(fallback_df)} rows from historical storage",
+                        color="green",
+                    )
+                    source_name = "historical_data"
+                    data = fallback_df
+                else:
+                    data = fallback_df
+            except Exception as fallback_exc:  # pragma: no cover
+                self.logger.debug(
+                    "Fallback historical load failed for %s %s %s: %s",
+                    symbol,
+                    exchange,
+                    timeframe,
+                    fallback_exc,
+                )
+                data = None
+
+        # Normalize non-DataFrame responses to None so we can fallback
+        if data is not None and pandas_available and not isinstance(data, pd.DataFrame):
+            tprint_warning(f"⚠️ load_market_data_or_fail: data returned is not a DataFrame (type={type(data)}), treating as missing")
+            data = None
 
         if data is None:
             raise ValueError(

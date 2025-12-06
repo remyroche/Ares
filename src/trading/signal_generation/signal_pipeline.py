@@ -625,126 +625,107 @@ class SignalGenerationPipeline:
         model_selection_result: Optional[ModelSelectionResult] = None
     ) -> List[AnalystBaseOutput]:
         """Step 2: Run analyst base models sequentially with regime probabilities."""
-        try:
-            base_outputs = []
+        base_outputs = []
 
-            # Prepare regime probabilities as features for base models
-            # Convert RegimeType keys to a format models can use
-            regime_probs_array = np.array([
-                regime_output.regime_probabilities.get(rt, 0.0) 
-                for rt in RegimeType
-            ])
+        # Prepare regime probabilities as features for base models
+        # Convert RegimeType keys to a format models can use
+        regime_probs_array = np.array([
+            regime_output.regime_probabilities.get(rt, 0.0) 
+            for rt in RegimeType
+        ])
 
-            # Run the trained analyst base models from training steps
-            # These are the models trained in analyst_models_training_refactored.py
-            # Use model selection result if available
-            selected_analyst_model = None
-            if model_selection_result and 'analyst' in model_selection_result.selected_models:
-                selected_analyst_model = model_selection_result.selected_models['analyst']
-                self.logger.info(f"🎯 Using selected analyst model: {selected_analyst_model}")
+        # Run the trained analyst base models from training steps
+        # These are the models trained in analyst_models_training_refactored.py
+        # Use model selection result if available
+        selected_analyst_model = None
+        if model_selection_result and 'analyst' in model_selection_result.selected_models:
+            selected_analyst_model = model_selection_result.selected_models['analyst']
+            self.logger.info(f"🎯 Using selected analyst model: {selected_analyst_model}")
 
-            for i, model in enumerate(self.analyst_base_models):
-                try:
-                    # Prepare input: features + regime probabilities
-                    # Combine market_data features with regime probabilities
-                    regime_probs_values = np.array([
-                        regime_output.regime_probabilities.get(rt, 0.0) 
-                        for rt in RegimeType
-                    ])
-                    
-                    # Create enhanced features by combining market_data with regime probabilities
-                    # Use shared feature engineering for consistency with training
-                    if hasattr(model, 'predict'):
-                        # Prepare market_data DataFrame (use last row for single prediction)
-                        if isinstance(market_data, pd.DataFrame):
-                            # Use last row for prediction
-                            market_data_row = market_data.iloc[[-1]].copy()
+        for i, model in enumerate(self.analyst_base_models):
+            try:
+                # Prepare input: features + regime probabilities
+                regime_probs_values = np.array([
+                    regime_output.regime_probabilities.get(rt, 0.0) 
+                    for rt in RegimeType
+                ])
+                
+                if hasattr(model, 'predict'):
+                    # Prepare market_data DataFrame (use last row for single prediction)
+                    if isinstance(market_data, pd.DataFrame):
+                        market_data_row = market_data.iloc[[-1]].copy()
 
-                            # Apply shared feature engineering (same as training).
-                            # Build explicit regime index -> probability mapping so that
-                            # AnalystFeatureEngineer can add regime_confidence_0-3 features.
-                            regime_probs_for_engineer: Dict[int, float] = {}
-                            try:
-                                regime_list = list(RegimeType)
-                                for idx, rt in enumerate(regime_list[:4]):
-                                    regime_probs_for_engineer[idx] = float(
-                                        regime_output.regime_probabilities.get(rt, 0.0)
-                                    )
-                            except Exception:
-                                regime_probs_for_engineer = {}
-
-                            engineered_data = self.analyst_feature_engineer.engineer_features(
-                                market_data_row,
-                                regime_probabilities=regime_probs_for_engineer or None,
-                            )
-                            
-                            # Extract all numeric features (including engineered ones)
-                            numeric_data = engineered_data.select_dtypes(include=[np.number])
-                            if len(numeric_data) > 0:
-                                market_features = numeric_data.iloc[-1].values
-                            else:
-                                market_features = np.array([])
-                        else:
-                            market_features = np.array([])
-                        
-                        # Combine market features (now includes engineered features) with regime probabilities
-                        combined_features = np.concatenate([market_features, regime_probs_values]) if len(market_features) > 0 else regime_probs_values
-                        
-                        # Reshape to (1, n_features) for single prediction
-                        if combined_features.ndim == 1:
-                            combined_features = combined_features.reshape(1, -1)
-                        
-                        # Predict with combined features (market_data + regime probabilities)
-                        # Some models might accept the original market_data + regime_probs separately
-                        # Try combined first, fallback to market_data if needed
+                        regime_probs_for_engineer: Dict[int, float] = {}
                         try:
-                            prediction = model.predict(combined_features)
-                            self.logger.debug(
-                                f"Analyst base model {i}: used combined features "
-                                f"({len(market_features)} market + {len(regime_probs_values)} regime = {combined_features.shape[1]} total)"
-                            )
+                            regime_list = list(RegimeType)
+                            for idx, rt in enumerate(regime_list[:4]):
+                                regime_probs_for_engineer[idx] = float(
+                                    regime_output.regime_probabilities.get(rt, 0.0)
+                                )
                         except Exception:
-                            # Fallback: try with market_data only (model might handle regime internally)
-                            prediction = model.predict(market_data)
-                            self.logger.debug(
-                                f"Analyst base model {i}: fallback to market_data only "
-                                f"(model may handle regime probabilities internally)"
-                            )
-                        
-                        confidence = getattr(prediction, 'confidence', 0.5) if hasattr(prediction, 'confidence') else 0.5
-                        if isinstance(prediction, np.ndarray) and prediction.size == 1:
-                            confidence = float(prediction[0])
-                        elif isinstance(prediction, (int, float)):
-                            confidence = float(prediction)
-                        
-                        features = getattr(prediction, 'features', {}) if hasattr(prediction, 'features') else {}
-                        
-                        # Store regime information in features dict
-                        features['regime_probabilities'] = dict(regime_output.regime_probabilities)
-                        features['primary_regime'] = regime_output.primary_regime.value
-                        features['regime_confidence'] = regime_output.confidence
+                            regime_probs_for_engineer = {}
+
+                        engineered_data = self.analyst_feature_engineer.engineer_features(
+                            market_data_row,
+                            regime_probabilities=regime_probs_for_engineer or None,
+                        )
+
+                        numeric_data = engineered_data.select_dtypes(include=[np.number])
+                        market_features = numeric_data.iloc[-1].values if len(numeric_data) > 0 else np.array([])
                     else:
-                        # Fallback for models without standard predict interface
-                        self.logger.warning(f"⚠️ Analyst base model {i} missing 'predict' method, using fallback confidence")
-                        confidence = 0.5
-                        features = {
-                            'regime_probabilities': regime_output.regime_probabilities,
-                            'primary_regime': regime_output.primary_regime.value,
-                            'regime_confidence': regime_output.confidence
-                        }
+                        market_features = np.array([])
+                    
+                    combined_features = np.concatenate([market_features, regime_probs_values]) if len(market_features) > 0 else regime_probs_values
+                    if combined_features.ndim == 1:
+                        combined_features = combined_features.reshape(1, -1)
+                    
+                    try:
+                        prediction = model.predict(combined_features)
+                        self.logger.debug(
+                            f"Analyst base model {i}: used combined features "
+                            f"({len(market_features)} market + {len(regime_probs_values)} regime = {combined_features.shape[1]} total)"
+                        )
+                    except Exception:
+                        prediction = model.predict(market_data)
+                        self.logger.debug(
+                            f"Analyst base model {i}: fallback to market_data only "
+                            f"(model may handle regime probabilities internally)"
+                        )
+                    
+                    confidence = getattr(prediction, 'confidence', 0.5) if hasattr(prediction, 'confidence') else 0.5
+                    if isinstance(prediction, np.ndarray) and prediction.size == 1:
+                        confidence = float(prediction[0])
+                    elif isinstance(prediction, (int, float)):
+                        confidence = float(prediction)
+                    
+                    features = getattr(prediction, 'features', {}) if hasattr(prediction, 'features') else {}
+                    
+                    features['regime_probabilities'] = dict(regime_output.regime_probabilities)
+                    features['primary_regime'] = regime_output.primary_regime.value
+                    features['regime_confidence'] = regime_output.confidence
+                else:
+                    self.logger.warning(f"⚠️ Analyst base model {i} missing 'predict' method, using fallback confidence")
+                    confidence = 0.5
+                    features = {
+                        'regime_probabilities': regime_output.regime_probabilities,
+                        'primary_regime': regime_output.primary_regime.value,
+                        'regime_confidence': regime_output.confidence
+                    }
 
-                    # Create base output with regime information
-                    base_output = AnalystBaseOutput(
-                        timestamp=timestamp,
-                        market_health={},  # Ignored as requested
-                        volatility_analysis={},
-                        liquidity_analysis={},
-                        stress_analysis={},  # Ignored as requested
-                        base_confidence=confidence,
-                        features=features
-                    )
+                base_output = AnalystBaseOutput(
+                    timestamp=timestamp,
+                    market_health={},  # Ignored as requested
+                    volatility_analysis={},
+                    liquidity_analysis={},
+                    stress_analysis={},  # Ignored as requested
+                    base_confidence=confidence,
+                    features=features
+                )
 
-                    base_outputs.append(base_output)
+                base_outputs.append(base_output)
+            except Exception as e:
+                self.logger.error(f"❌ Analyst base model {i} failed: {e}")
+                continue
 
         # Validation & Rate Limiting
         validate_market_data(market_data)
@@ -755,7 +736,6 @@ class SignalGenerationPipeline:
 
         try:
             # 1. Feature Engineering
-            # Use last row context but need enough history for lookbacks
             engineered_features = self.feature_engineer.engineer_features(market_data)
             
             # 2. Regime Detection
@@ -766,7 +746,6 @@ class SignalGenerationPipeline:
             specialist_output = self._run_specialist_models(market_data, engineered_features)
             
             # 4. Construct Analyst Input Vector
-            # Combine engineered features + specialist scalars + regime probs
             analyst_input = self._prepare_analyst_input(
                 engineered_features,
                 specialist_output,
@@ -775,7 +754,7 @@ class SignalGenerationPipeline:
             
             # 5. Analyst Inference (LGBM + NGBoost)
             analyst_output = self._run_analyst_models(analyst_input, timestamp)
-
+ 
             # Prepare specialist scalar features (SMC, Volume Force, Path Score, etc.)
             # These must match the order and presence of features used during training.
             # While the ensemble model likely expects a specific order, we can pass
@@ -889,44 +868,30 @@ class SignalGenerationPipeline:
             else:
                 ensemble_input = ensemble_input.reshape(1, -1) if ensemble_input.ndim == 1 else ensemble_input
             
+            # 6. Ensemble voting / stacking
+            ensemble_output = self._run_ensemble_models(
+                analyst_output,
+                specialist_output,
+                regime_output,
+                base_predictions_array,
+            )
+            
             # 6. Exit Logic (if position open)
             should_exit, exit_reason = self._check_exit_conditions(
-                analyst_output, market_data, timestamp
+                ensemble_output, market_data, timestamp
             )
             
             # 7. Final Signal Decision
-            final_signal_data = self._decide_signal(
-                analyst_output,
+            signal_output = self._prepare_signal_output(
+                ensemble_output,
                 regime_output,
-                should_exit,
-                exit_reason
-            )
-            
-            # 8. Update State
-            self._update_position_state(final_signal_data, analyst_output, market_data, timestamp)
-            
-            # 9. Result
-            result = SignalGenerationResult(
-                timestamp=timestamp,
-                symbol=symbol,
-                regime_output=regime_output,
-                specialist_output=specialist_output,
-                analyst_output=analyst_output,
-                final_signal=final_signal_data['signal'],
-                final_confidence=final_signal_data['confidence'],
-                signal_strength=final_signal_data['strength'],
-                uncertainty=analyst_output.uncertainty,
-                optimization_parameters=self.optimization_params,
-                metadata={'data_points': len(market_data)},
-                exit_confidence=analyst_output.signal_confidence, # Using signal confidence as proxy for now
-                should_exit=should_exit,
-                exit_reason=exit_reason,
-                position_state=self.current_position
+                analyst_output,
+                specialist_output,
             )
 
-            self.signal_history.append(result)
+            self.signal_history.append(signal_output)
             self.circuit_breaker._on_success()
-            return result
+            return signal_output
 
         except Exception as e:
             self.circuit_breaker._on_failure()

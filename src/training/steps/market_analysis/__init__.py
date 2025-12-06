@@ -68,7 +68,9 @@ from .ml_volume_force_step import MLVolumeForceStep
 # Import Feature Generation Meta-Labeling Step (now in labeling module)
 from src.training.steps.labeling import FeatureGenerationMetaLabelingStep
 
-# Import Meta-Labeling HPO Experiment Step (offline, optional) (now in labeling module)
+# Import Meta-Labeling HPO Experiment Step (offline, optional) (now in labeling
+# module). Register it under the user-facing step name 'sr_labeling_xgb' while
+# keeping 'meta_labeling_hpo_experiment' as a backward-compatible alias.
 from src.training.steps.labeling import MetaLabelingHPOExperimentStep
 
 # Note: EconomicRegimeFeatureSelector removed - it had circular dependency issues
@@ -105,4 +107,8 @@ step_registry.register("ml_liquidity_regime_step", MLLiquidityRegimeStep)
 step_registry.register("ml_volume_force_step", MLVolumeForceStep)
 step_registry.register("feature_generation_meta_labeling_step", FeatureGenerationMetaLabelingStep)
 if MetaLabelingHPOExperimentStep is not None:
+    # New user-facing name for the meta-labeling HPO / sr_labeling_xgb step.
+    step_registry.register("sr_labeling_xgb", MetaLabelingHPOExperimentStep)
+    # Backward-compatible alias so existing tooling using the old name keeps
+    # working without modification.
     step_registry.register("meta_labeling_hpo_experiment", MetaLabelingHPOExperimentStep)

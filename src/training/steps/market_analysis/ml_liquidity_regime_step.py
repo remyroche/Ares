@@ -606,9 +606,22 @@ class MLLiquidityRegimeStep(BaseStep):
         try:
             symbol = str(config.get("symbol", "ETHUSDT"))
             exchange = str(config.get("exchange", "binance"))
-            regime_timeframe = str(config.get("regime_timeframe", config.get("timeframe", "15m")))
+            base_timeframe = str(config.get("timeframe", "15m"))
+            regime_timeframe = str(config.get("regime_timeframe", base_timeframe))
             direction = str(config.get("direction", "long"))
             execution_mode = str(config.get("execution_mode", "light")).lower()
+
+            # Enforce 15m-native liquidity regimes when the base timeframe is
+            # 15m, overriding any conflicting regime_timeframe (such as 1h)
+            # so that regimes and probabilities are generated directly on the
+            # 15m grid rather than a coarser 1h grid.
+            if base_timeframe == "15m" and regime_timeframe != base_timeframe:
+                tprint_warning(
+                    f"Overriding regime_timeframe={regime_timeframe} to base timeframe={base_timeframe} "
+                    "for ml_liquidity_regime_step to ensure 15m-native regimes and probabilities."
+                )
+                regime_timeframe = base_timeframe
+                config["regime_timeframe"] = regime_timeframe
 
             if not symbol or not exchange:
                 raise ValueError("Config must include 'symbol' and 'exchange'")
@@ -3161,6 +3174,7 @@ class MLLiquidityRegimeStep(BaseStep):
             return None
 
         output_timeframe = str(config.get("liquidity_output_timeframe", "15m"))
+        regime_timeframe = str(config.get("regime_timeframe", output_timeframe))
         if output_timeframe == "1h":
             return proba_df
 
@@ -3179,11 +3193,17 @@ class MLLiquidityRegimeStep(BaseStep):
             market_data_15m = market_data_15m.copy()
             market_data_15m.index = pd.to_datetime(market_data_15m.index)
 
-        # Ensure 1h index is DatetimeIndex
+        # Ensure probability index is DatetimeIndex
         if not isinstance(proba_df.index, pd.DatetimeIndex):
             idx = pd.to_datetime(proba_df.index)
             proba_df = proba_df.copy()
             proba_df.index = idx
+
+        # If regimes are already computed on the 15m grid, simply align to the
+        # 15m market index via forward-fill instead of applying 1h→15m mapping.
+        if regime_timeframe == output_timeframe:
+            mapped = proba_df.reindex(market_data_15m.index, method="ffill")
+            return mapped
 
         mode = str(config.get("liquidity_prob_interpolation_mode", "step")).lower()
 

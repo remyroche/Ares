@@ -818,7 +818,8 @@ class TrendAwareMetaLabeler:
     def detect_zigzag_multi_timeframe(
         self,
         data: pd.DataFrame,
-        mtf_config: Optional[MultiTimeframeConfig] = None
+        mtf_config: Optional[MultiTimeframeConfig] = None,
+        base_zigzag: Optional[pd.DataFrame] = None,
     ) -> pd.DataFrame:
         """Detect ZigZag trend across multiple timeframes.
         
@@ -852,12 +853,13 @@ class TrendAwareMetaLabeler:
         result = pd.DataFrame(index=data.index)
         
         # 1. Analyze base timeframe
-        base_zigzag = self.detect_zigzag_trend(
-            data,
-            use_atr=self.config.use_atr_for_zigzag,
-            pct_threshold=self.config.zigzag_pct_threshold,
-            atr_multiplier=self.config.zigzag_atr_multiplier
-        )
+        if base_zigzag is None:
+            base_zigzag = self.detect_zigzag_trend(
+                data,
+                use_atr=self.config.use_atr_for_zigzag,
+                pct_threshold=self.config.zigzag_pct_threshold,
+                atr_multiplier=self.config.zigzag_atr_multiplier,
+            )
         
         # Store base timeframe results with prefix
         result['trend_base'] = base_zigzag['zigzag_trend_direction'].values

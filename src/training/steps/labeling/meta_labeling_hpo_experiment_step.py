@@ -64,6 +64,10 @@ from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
     BayesianTPEOptimizer,
     OptimizationConfig,
 )
+from src.utils.ml_common.standardized_xgb_trainer import (
+    StandardizedXGBTrainer,
+    XGBTrainingConfig,
+)
 from src.utils.ml_common.optimization.pareto import (
     Solution,
     ParetoFront,
@@ -147,7 +151,7 @@ def compute_learnability_with_calibration(
     time_aware_cv: bool = True,
     use_ensemble: bool = False,
     signal_strength_scale_max: float = 1.5,
-) -> Tuple[float, float, np.ndarray, Optional[IsotonicRegression]]:
+) -> Tuple[float, float, np.ndarray, Optional[IsotonicRegression], np.ndarray]:
     """Compute learnability score with isotonic calibration for accurate P&L estimation.
 
     Unlike the basic compute_learnability_score, this function:
@@ -174,17 +178,17 @@ def compute_learnability_with_calibration(
     valid_mask = ~y.isna()
     X_num = X.select_dtypes(include=[np.number]) if isinstance(X, pd.DataFrame) else X
     if isinstance(X_num, pd.DataFrame) and X_num.empty:
-        return 0.0, 0.5, np.array([]), None
+        return 0.0, 0.5, np.array([]), None, np.array([])
 
     X_clean = X_num[valid_mask].fillna(0)
     y_clean = y[valid_mask]
     returns_clean = realized_returns[valid_mask]
 
     if len(y_clean) < 50:
-        return 0.0, 0.5, np.array([]), None
+        return 0.0, 0.5, np.array([]), None, np.array([])
 
     if len(y_clean.unique()) < 2:
-        return 0.0, 0.5, np.array([]), None
+        return 0.0, 0.5, np.array([]), None, np.array([])
 
     # Select model based on complexity
     if model_complexity == "fast":
@@ -192,7 +196,7 @@ def compute_learnability_with_calibration(
             boosting_type='gbdt',
             objective='binary',
             max_depth=3,
-            n_estimators=50,
+            n_estimators=40,
             learning_rate=0.1,
             subsample=0.7,
             colsample_bytree=0.7,
@@ -208,8 +212,8 @@ def compute_learnability_with_calibration(
         models = [lgb.LGBMClassifier(
             boosting_type='gbdt',
             objective='binary',
-            max_depth=5,
-            n_estimators=150,
+            max_depth=4,
+            n_estimators=120,
             learning_rate=0.05,
             subsample=0.8,
             colsample_bytree=0.8,
@@ -226,9 +230,9 @@ def compute_learnability_with_calibration(
             lgb.LGBMClassifier(
                 boosting_type='gbdt',
                 objective='binary',
-                max_depth=6,
-                n_estimators=300,
-                learning_rate=0.01,
+                max_depth=5,
+                n_estimators=200,
+                learning_rate=0.02,
                 subsample=0.8,
                 colsample_bytree=0.8,
                 min_child_samples=10,
@@ -244,9 +248,9 @@ def compute_learnability_with_calibration(
         if use_ensemble:
             if XGBOOST_AVAILABLE:
                 models.append(xgb.XGBClassifier(
-                    max_depth=6,
-                    n_estimators=500,
-                    learning_rate=0.01,
+                    max_depth=5,
+                    n_estimators=300,
+                    learning_rate=0.02,
                     subsample=0.8,
                     colsample_bytree=0.8,
                     reg_alpha=0.01,
@@ -257,19 +261,31 @@ def compute_learnability_with_calibration(
                 ))
 
             models.append(RandomForestClassifier(
-                n_estimators=300,
-                max_depth=8,
+                n_estimators=200,
+                max_depth=6,
                 min_samples_leaf=10,
                 n_jobs=-1,
                 random_state=42
             ))
 
-    # Time-aware CV
+    # Time-aware CV: use purged K-fold splits with a small embargo to
+    # reduce leakage across folds. For non-time-aware CV, fall back to
+    # standard shuffled KFold.
     if time_aware_cv:
-        cv = TimeSeriesSplit(n_splits=cv_splits)
+        from src.utils.ml_common.labeling.meta_labeling import purged_kfold_splits
+
+        n_samples = len(X_clean)
+        embargo = 5  # small embargo in bars
+        cv_splits_indices = purged_kfold_splits(
+            n_samples=n_samples,
+            n_splits=cv_splits,
+            embargo=embargo,
+        )
     else:
         from sklearn.model_selection import KFold
-        cv = KFold(n_splits=cv_splits, shuffle=True, random_state=42)
+
+        kf = KFold(n_splits=cv_splits, shuffle=True, random_state=42)
+        cv_splits_indices = list(kf.split(X_clean))
 
     # Cost/return-aware sample weights with slight positive class bias (1.2x)
     returns_array = returns_clean.fillna(0.0).to_numpy(dtype=float)
@@ -334,24 +350,18 @@ def compute_learnability_with_calibration(
         sample_weights = sample_weights / mean_w
 
     try:
-        # Collect probability predictions and AUC scores from all models
         all_full_probs = []
         all_aucs = []
-
-        # Store OOF predictions for each model to build ensemble OOF
-        # This allows accurate OOF-based calibration
         all_model_oof_preds: List[np.ndarray] = []
         oof_indices: np.ndarray = np.array([], dtype=int)
+        reference_fold_aucs: List[float] = []
 
         for i, model in enumerate(models):
-            # Manual time-series CV with sample weights
-            fold_aucs = []
-
-            # Temporary storage for this model's OOF predictions across folds
+            fold_aucs: List[float] = []
             model_oof_parts: List[np.ndarray] = []
             current_oof_indices: List[np.ndarray] = []
 
-            for train_idx, test_idx in cv.split(X_clean):
+            for train_idx, test_idx in cv_splits_indices:
                 X_train_cv = X_clean.iloc[train_idx]
                 y_train_cv = y_clean.iloc[train_idx]
                 X_test_cv = X_clean.iloc[test_idx]
@@ -362,12 +372,10 @@ def compute_learnability_with_calibration(
                 try:
                     model.fit(X_train_cv, y_train_cv, sample_weight=w_train_cv)
                 except TypeError:
-                    # Some models may not support sample_weight
                     model.fit(X_train_cv, y_train_cv)
 
                 y_proba_cv = model.predict_proba(X_test_cv)[:, 1]
 
-                # Store OOF predictions
                 model_oof_parts.append(y_proba_cv)
                 if i == 0:
                     current_oof_indices.append(test_idx)
@@ -383,14 +391,13 @@ def compute_learnability_with_calibration(
             else:
                 mean_auc = 0.5
 
-            # Combine OOF parts for this model
             if model_oof_parts:
                 all_model_oof_preds.append(np.concatenate(model_oof_parts))
 
             if i == 0 and current_oof_indices:
                 oof_indices = np.concatenate(current_oof_indices)
+                reference_fold_aucs = list(fold_aucs)
 
-            # Fit on full cleaned data with weights for final probabilities
             try:
                 model.fit(X_clean, y_clean, sample_weight=sample_weights)
             except TypeError:
@@ -401,36 +408,30 @@ def compute_learnability_with_calibration(
             all_full_probs.append(full_probs)
             all_aucs.append(mean_auc)
 
-        # Ensemble: average probabilities (with signal disagreement awareness)
         if len(models) > 1:
             full_probs_array = np.array(all_full_probs)
-
-            # Calculate disagreement (std across models)
             disagreement = np.std(full_probs_array, axis=0)
-
-            # Average probabilities
             avg_probs = np.mean(full_probs_array, axis=0)
-
-            # Penalize high-disagreement predictions slightly
-            # (reduce confidence when models disagree)
-            confidence_penalty = 1.0 - (disagreement * 0.5)  # Max 50% penalty
+            confidence_penalty = 1.0 - (disagreement * 0.5)
             final_probs = avg_probs * confidence_penalty + (1 - confidence_penalty) * 0.5
             final_probs = np.clip(final_probs, 0.0, 1.0)
-
             mean_auc = np.mean(all_aucs)
         else:
             final_probs = all_full_probs[0]
             mean_auc = all_aucs[0]
 
-        std_auc = np.std(all_aucs) if len(all_aucs) > 1 else 0.0
+        if reference_fold_aucs:
+            fold_aucs_array = np.asarray(reference_fold_aucs, dtype=float)
+            std_auc_cv = float(np.std(fold_aucs_array))
+        else:
+            fold_aucs_array = np.asarray([], dtype=float)
+            std_auc_cv = 0.0
 
-        # Apply isotonic calibration to probabilities using OOF predictions
         iso_reg = None
         calibrated_probs = final_probs
 
         if model_complexity in ["medium", "strong"] and all_model_oof_preds and len(oof_indices) > 50:
             try:
-                # Build Ensemble OOF predictions
                 oof_probs_array = np.array(all_model_oof_preds)
 
                 if len(models) > 1:
@@ -442,46 +443,63 @@ def compute_learnability_with_calibration(
                 else:
                     final_oof_probs = oof_probs_array[0]
 
-                # Get OOF returns for calibration
-                oof_returns = returns_clean.iloc[oof_indices].values
+                y_oof = y_clean.iloc[oof_indices].to_numpy(dtype=float)
 
                 iso_reg = IsotonicRegression(out_of_bounds='clip')
 
-                # Fit on valid OOF samples
-                valid_for_iso = np.isfinite(oof_returns) & np.isfinite(final_oof_probs)
+                valid_for_iso = np.isfinite(y_oof) & np.isfinite(final_oof_probs)
                 if np.sum(valid_for_iso) > 50:
-                    iso_reg.fit(final_oof_probs[valid_for_iso], oof_returns[valid_for_iso])
-                    # Calibrate full model probabilities using OOF-learned mapping
+                    iso_reg.fit(final_oof_probs[valid_for_iso], y_oof[valid_for_iso])
                     calibrated_probs = iso_reg.predict(final_probs)
                 else:
-                    # Fallback to in-sample if OOF not valid
-                    valid_in_sample = np.isfinite(returns_clean.values) & np.isfinite(final_probs)
+                    y_array_full = y_clean.to_numpy(dtype=float)
+                    valid_in_sample = np.isfinite(y_array_full) & np.isfinite(final_probs)
                     if np.sum(valid_in_sample) > 50:
-                         iso_reg.fit(final_probs[valid_in_sample], returns_clean.values[valid_in_sample])
-                         calibrated_probs = iso_reg.predict(final_probs)
+                        iso_reg.fit(final_probs[valid_in_sample], y_array_full[valid_in_sample])
+                        calibrated_probs = iso_reg.predict(final_probs)
             except Exception:
                 calibrated_probs = final_probs
                 iso_reg = None
         else:
-             # Fallback calibration using in-sample data if OOF unavailable (e.g. data too small for CV)
-             if model_complexity in ["medium", "strong"]:
-                 try:
-                     iso_reg = IsotonicRegression(out_of_bounds='clip')
-                     valid_for_iso = np.isfinite(returns_clean.values) & np.isfinite(final_probs)
-                     if np.sum(valid_for_iso) > 50:
-                        iso_reg.fit(final_probs[valid_for_iso], returns_clean.values[valid_for_iso])
+            if model_complexity in ["medium", "strong"]:
+                try:
+                    iso_reg = IsotonicRegression(out_of_bounds='clip')
+                    y_array_full = y_clean.to_numpy(dtype=float)
+                    valid_for_iso = np.isfinite(y_array_full) & np.isfinite(final_probs)
+                    if np.sum(valid_for_iso) > 50:
+                        iso_reg.fit(final_probs[valid_for_iso], y_array_full[valid_for_iso])
                         calibrated_probs = iso_reg.predict(final_probs)
-                 except Exception:
-                     pass
+                except Exception:
+                    pass
 
-        # Learnability score: penalize instability
-        learnability = mean_auc - (0.5 * std_auc)
+        learnability = mean_auc - (0.5 * std_auc_cv)
 
-        return learnability, mean_auc, calibrated_probs, iso_reg
+        return learnability, mean_auc, calibrated_probs, iso_reg, fold_aucs_array
 
     except Exception as e:
         tprint(f"⚠️ Calibrated learnability scoring failed: {e}", "WARNING")
-        return 0.0, 0.5, np.array([]), None
+        return 0.0, 0.5, np.array([]), None, np.array([])
+
+def _discrete_mi(x: pd.Series, y: pd.Series) -> float:
+    valid = x.notna() & y.notna()
+    if not valid.any():
+        return float("nan")
+    xv = x.loc[valid]
+    yv = y.loc[valid]
+    joint = pd.crosstab(xv, yv, normalize=True)
+    px = joint.sum(axis=1)
+    py = joint.sum(axis=0)
+    mi_val = 0.0
+    for xi in joint.index:
+        for yi in joint.columns:
+            pxy = float(joint.loc[xi, yi])
+            if pxy <= 0.0:
+                continue
+            denom = float(px[xi] * py[yi])
+            if denom <= 0.0:
+                continue
+            mi_val += pxy * np.log(pxy / denom)
+    return float(mi_val)
 
 
 def compute_underfit_diagnostics(
@@ -1507,6 +1525,16 @@ class MetaLabelingHPOExperimentStep(BaseStep):
         try:
             exec_mode = str(config.get("execution_mode", "full")).lower()
             lookback_days = int(config.get("lookback_days", 0) or 0)
+            try:
+                md_start = market_data.index.min()
+                md_end = market_data.index.max()
+                md_span_days = max(1, (md_end - md_start).days)
+                tprint_info(
+                    f"📅 HPO load: rows={len(market_data)}, "
+                    f"start={md_start}, end={md_end}, span_days={md_span_days}"
+                )
+            except Exception:
+                pass
             if (
                 lookback_days > 0
                 and exec_mode in {"full", "blank"}
@@ -1548,12 +1576,90 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 f"⚠️ Failed to apply lookback_days to HPO market_data; proceeding with raw window: {lb_exc}",
             )
 
+        # Optional: restrict HPO evaluation to multiple non-consecutive slices
+        # to better probe temporal robustness across distinct regimes without
+        # requiring a single contiguous multi-year window.
+        try:
+            slice_days = int(config.get("hpo_slice_days", 40) or 0)
+            slice_count = int(config.get("hpo_slice_count", 4) or 0)
+
+            if (
+                slice_days > 0
+                and slice_count > 1
+                and isinstance(market_data.index, pd.DatetimeIndex)
+            ):
+                full_start = market_data.index.min()
+                full_end = market_data.index.max()
+                full_span_days = max(1, (full_end - full_start).days)
+
+                # Only slice when we have at least one full slice available
+                if full_span_days < slice_days:
+                    tprint_warning(
+                        f"⚠️ HPO multi-slice skipped: span_days={full_span_days} < slice_days={slice_days} "
+                        f"(rows={len(market_data)})"
+                    )
+                else:
+                    min_required_span = slice_days * slice_count
+
+                    # Build deterministic, approximately evenly spaced slices.
+                    masks: List[pd.Series] = []
+                    if full_span_days <= min_required_span:
+                        # Fallback: use the trailing min_required_span days as a
+                        # single contiguous window (may be shorter than requested).
+                        start_global = full_end - pd.Timedelta(days=min_required_span)
+                        mask_global = market_data.index >= start_global
+                        masks.append(mask_global)
+                    else:
+                        # Evenly distribute slice starts across the available span.
+                        available_span = full_span_days - slice_days
+                        step_days = available_span / float(slice_count - 1)
+
+                        for i in range(slice_count):
+                            offset_days = int(round(i * step_days))
+                            slice_start = full_start + pd.Timedelta(days=offset_days)
+                            slice_end = slice_start + pd.Timedelta(days=slice_days)
+                            masks.append(
+                                (market_data.index >= slice_start)
+                                & (market_data.index <= slice_end)
+                            )
+
+                    if masks:
+                        multi_mask = masks[0].copy()
+                        for m in masks[1:]:
+                            multi_mask |= m
+
+                        orig_rows = len(market_data)
+                        market_data = market_data.loc[multi_mask].copy()
+
+                        try:
+                            new_span_days = max(
+                                1,
+                                (market_data.index.max() - market_data.index.min()).days,
+                            )
+                        except Exception:
+                            new_span_days = -1
+
+                        tprint_info(
+                            f"📆 HPO multi-slice selection: slices={slice_count}, "
+                            f"slice_days={slice_days}, span_days={new_span_days}, "
+                            f"rows {orig_rows}→{len(market_data)}",
+                        )
+        except Exception as ms_exc:
+            tprint_warning(
+                f"⚠️ Failed to apply multi-slice selection for HPO: {ms_exc}",
+            )
+
         # Attach rolling HMM regimes (typically 1h) to the market_data frame so that
         # regime-aware features and thresholds can be evaluated during HPO.
+        #
+        # For HPO, we explicitly disable attaching rolling_hmm_regime_probabilities
+        # to avoid loading deprecated probability artifacts while still using
+        # the discrete regime labels.
         try:
             regime_cfg = dict(config)
             if "regime_timeframe" not in regime_cfg:
                 regime_cfg["regime_timeframe"] = "1h"
+            regime_cfg["attach_hmm_probabilities"] = False
             market_data = attach_rolling_hmm_regimes_to_market_data(
                 self,
                 market_data,
@@ -1568,6 +1674,14 @@ class MetaLabelingHPOExperimentStep(BaseStep):
 
             config_for_specialists = dict(config)
             config_for_specialists.setdefault("use_canonical_specialist_scalars", True)
+            # For HPO we want ML Risk + Liquidity + other non-deprecated
+            # specialists, but we explicitly disable the legacy specialists
+            # whose artifacts are no longer maintained.
+            config_for_specialists.setdefault("enable_risk_hmm_specialist", False)
+            config_for_specialists.setdefault("enable_breakout_specialist", False)
+            config_for_specialists.setdefault("enable_macro_trend_specialist", False)
+            config_for_specialists.setdefault("enable_mr_trend_specialist", False)
+            config_for_specialists.setdefault("enable_mean_reversion_specialist", False)
 
             specialist_df = get_specialist_models_outputs(
                 artifact_router=self.artifact_router,
@@ -1696,18 +1810,18 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 params={
                     "cusum_threshold": {
                         "type": "float",
-                        "low": 0.008,
-                        "high": 0.025,
+                        "low": 0.010,
+                        "high": 0.03,
                     },
                     "target_signal_density": {
                         "type": "float",
                         "low": 3.0,
-                        "high": 10.0,
+                        "high": 7.0,
                     },
                     "min_event_spacing": {
                         "type": "int",
                         "low": 1,
-                        "high": 3,
+                        "high": 5,
                     },
                 },
                 priority=1,
@@ -1720,7 +1834,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     "horizon_bars": {
                         "type": "int",
                         "low": 8,
-                        "high": 56,
+                        "high": 32,
                         "step": 2,
                     },
                     "profit_thr_base": {
@@ -1783,13 +1897,13 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 params={
                     "label_low_q": {
                         "type": "float",
-                        "low": 0.10,
+                        "low": 0.30,
                         "high": 0.50,
                     },
                     "label_high_q": {
                         "type": "float",
                         "low": 0.50,
-                        "high": 0.90,
+                        "high": 0.80,
                     },
                     "econ_min_return_multiple": {
                         "type": "float",
@@ -1938,7 +2052,9 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     "profit_potential": profit_potential_h,
                 }
             try:
-                event_group = param_groups[0]
+                # Use the event_geometry group (index 1) for horizon calibration so that
+                # the calibrated horizon respects the same search-space bounds as HPO.
+                event_group = param_groups[1]
                 horizon_spec = event_group.params.get("horizon_bars", {})
                 h_low = int(horizon_spec.get("low", 8))
                 h_high = int(horizon_spec.get("high", 56))
@@ -1984,6 +2100,8 @@ class MetaLabelingHPOExperimentStep(BaseStep):
         debug_sample_limit = 50
         debug_sample_count = 0
 
+        gate_stats: Dict[str, Any] = {}
+
         # ------------------------------------------------------------------
         # 3) Define objective function for labeling quality (with learnability)
         # ------------------------------------------------------------------
@@ -2027,7 +2145,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
             cv_splits = cv_splits_map.get(model_complexity, 3)
 
             try:
-                nonlocal debug_sample_count
+                nonlocal debug_sample_count, gate_stats
                 # Enforce profit >= 1.5x stop constraint. During stages that do not
                 # actively optimize profit_thr_base/stop_to_profit_ratio, fall back
                 # to conservative defaults.
@@ -2038,7 +2156,11 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 # CONSTRAINT: Ensure profit is at least 1.5x stop
                 stop_thr_base = max(0.0005, profit_thr_base * stop_ratio)
                 if profit_thr_base < 1.5 * stop_thr_base:
-                    tprint_warning(f"⚠️ Config rejected: profit {profit_thr_base:.4f} < 1.5x stop {stop_thr_base:.4f}")
+                    # Early exit: invalid RR geometry
+                    tprint_warning(
+                        f"[EARLY_EXIT_RR] Config rejected: profit {profit_thr_base:.4f} < 1.5x stop {stop_thr_base:.4f}"
+                    )
+                    gate_stats["rr_profit_vs_stop"] = gate_stats.get("rr_profit_vs_stop", 0) + 1
                     return {
                         'learnability': 0.0,
                         'profitability': -1e9,
@@ -2053,17 +2175,13 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 kalman_Q = float(params.get("kalman_Q", 1e-4))
                 kalman_R = float(params.get("kalman_R", 0.01))
                 vol_baseline_window = int(params.get("vol_baseline_window", 96))
+
+                # TPSL multipliers: use current params if present, otherwise fall back
+                # to broad but reasonable defaults (kept consistent with diagnostics).
                 profit_mult_min = float(params.get("profit_mult_min", 0.5))
                 profit_mult_max = float(params.get("profit_mult_max", 2.0))
                 stop_mult_min = float(params.get("stop_mult_min", 0.5))
                 stop_mult_max = float(params.get("stop_mult_max", 2.0))
-
-                # Enforce horizon is in 8-56 range with steps of 2
-                horizon = max(8, min(56, horizon))
-                if horizon % 2 != 0:
-                    horizon = (horizon // 2) * 2  # Round down to even
-                min_spacing = max(1, min(16, min_spacing))
-                vol_baseline_window = max(8, min(512, vol_baseline_window))
 
                 if profit_mult_min > profit_mult_max:
                     profit_mult_min, profit_mult_max = profit_mult_max, profit_mult_min
@@ -2074,6 +2192,14 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 # require a minimum RR ~1.4 (≈1.25 net after fees).
                 worst_rr = (profit_thr_base * profit_mult_min) / max(stop_thr_base * stop_mult_max, 1e-8)
                 if worst_rr < 1.4:
+                    if debug_sample_count < debug_sample_limit:
+                        tprint_warning(
+                            f"[EARLY_EXIT_RR] Rejecting config due to worst_rr={worst_rr:.3f} < 1.4 "
+                            f"(profit_thr_base={profit_thr_base:.4f}, stop_thr_base={stop_thr_base:.4f}, "
+                            f"profit_mult_min={profit_mult_min:.3f}, stop_mult_max={stop_mult_max:.3f})"
+                        )
+                        debug_sample_count += 1
+                    gate_stats["rr_worst_rr"] = gate_stats.get("rr_worst_rr", 0) + 1
                     return {
                         'learnability': 0.0,
                         'profitability': -1e9,
@@ -2118,9 +2244,9 @@ class MetaLabelingHPOExperimentStep(BaseStep):
 
                 # NEW: Signal generation parameters
                 cusum_threshold = float(params.get("cusum_threshold", 0.015))
-                cusum_threshold = max(0.008, min(0.025, cusum_threshold))
+                cusum_threshold = max(0.010, min(0.03, cusum_threshold))
                 target_signal_density = float(params.get("target_signal_density", 4.0))
-                target_signal_density = max(3.0, min(10.0, target_signal_density))
+                target_signal_density = max(3.0, min(5.0, target_signal_density))
 
                 # --- Recompute realized returns ---
                 # NO FUTURE LEAKAGE in volatility-based thresholds:
@@ -2283,7 +2409,18 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 # softer density penalties further down.
                 labeled_mask = ~binary_labels.isna()
                 n_events = int(labeled_mask.sum())
-                events_per_day = n_events / max(days_span, 1)
+
+                effective_days_span = max(1.0, float(days_span))
+                try:
+                    labeled_idx = binary_labels.index[labeled_mask]
+                    if len(labeled_idx) > 1:
+                        total_seconds = (labeled_idx.max() - labeled_idx.min()).total_seconds()
+                        if np.isfinite(total_seconds) and total_seconds > 0:
+                            effective_days_span = max(1.0, total_seconds / 86400.0)
+                except Exception:
+                    pass
+
+                events_per_day = n_events / max(effective_days_span, 1.0)
                 if n_events == 0:
                     if debug_sample_count < debug_sample_limit:
                         tprint_warning(
@@ -2292,8 +2429,11 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                             f"quantile_non_nan={n_quantile_non_nan}",
                         )
                     tprint_warning(
-                        f"⚠️ HPO config produced zero labeled events (n={n_events}, {events_per_day:.3f} events/day), rejecting",
+                        f"[EARLY_EXIT_EVENTS] Zero labeled events: n_events={n_events}, "
+                        f"events_per_day={events_per_day:.3f}, raw_labeled={n_raw_labeled}, "
+                        f"vol_non_nan={n_vol_scaled_events}, quantile_non_nan={n_quantile_non_nan}",
                     )
+                    gate_stats["events_zero"] = gate_stats.get("events_zero", 0) + 1
                     return -1e9
 
                 # Lightweight density diagnostics for the first few configs:
@@ -2301,8 +2441,8 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 # targets and event filters more precisely.
                 if debug_sample_count < debug_sample_limit:
                     tprint_info(
-                        f"[HPO_DEBUG_DENSITY] days_span={days_span}, n_events={n_events}, "
-                        f"events_per_day={events_per_day:.3f}",
+                        f"[HPO_DEBUG_DENSITY] days_span={days_span}, effective_days_span={effective_days_span:.3f}, "
+                        f"n_events={n_events}, events_per_day={events_per_day:.3f}",
                     )
 
                 # --- Time-to-Outcome (TTO) metrics for constraints & penalties ---
@@ -2325,8 +2465,10 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     tto_hard_max = float(config.get("tto_max", 0.6))
                     if np.isfinite(mean_tto) and mean_tto > tto_hard_max:
                         tprint_warning(
-                            f"⚠️ HPO config rejected due to high mean TTO={mean_tto:.3f} (> {tto_hard_max:.2f})"
+                            f"[EARLY_EXIT_TTO] mean_tto={mean_tto:.3f} > tto_max={tto_hard_max:.2f} "
+                            f"(n_events={n_events}, events_per_day={events_per_day:.3f}, horizon={horizon})"
                         )
+                        gate_stats["tto_hard"] = gate_stats.get("tto_hard", 0) + 1
                         return {
                             'learnability': 0.0,
                             'profitability': -1e9,
@@ -2503,7 +2645,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 if not np.isfinite(signal_strength_scale_max) or signal_strength_scale_max < 1.0:
                     signal_strength_scale_max = 1.5
 
-                learnability_score, mean_auc, calibrated_probs, iso_reg_probe = compute_learnability_with_calibration(
+                learnability_score, mean_auc, calibrated_probs, iso_reg_probe, fold_aucs = compute_learnability_with_calibration(
                     X=X_for_learnability,
                     y=binary_labels,
                     realized_returns=realized_returns,
@@ -2563,6 +2705,40 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 
                 learnability_score -= auc_penalty
 
+                # ===== ROBUSTNESS HARD CONSTRAINTS (CV-based) =====
+                worst_fold_auc_cv: Optional[float] = None
+                auc_cv_std: Optional[float] = None
+                robustness_penalty = 0.0
+                if isinstance(fold_aucs, np.ndarray) and fold_aucs.size > 0:
+                    try:
+                        worst_fold_auc_cv = float(np.nanmin(fold_aucs))
+                        if fold_aucs.size > 1:
+                            auc_cv_std = float(np.nanstd(fold_aucs))
+                    except Exception:
+                        worst_fold_auc_cv = None
+                        auc_cv_std = None
+
+                # Configurable thresholds: HPO-specific robustness gate (looser than
+                # final diagnostics). When violated, apply a large penalty instead
+                # of outright rejecting the configuration.
+                min_worst_fold_auc = float(config.get("hpo_min_worst_fold_auc", 0.45))
+                max_auc_cv_std = float(config.get("hpo_max_auc_cv_std", 0.12))
+
+                if (worst_fold_auc_cv is not None) and (auc_cv_std is not None):
+                    is_robust_cv = (auc_cv_std < max_auc_cv_std) and (worst_fold_auc_cv >= min_worst_fold_auc)
+                    if not is_robust_cv:
+                        if debug_sample_count < debug_sample_limit:
+                            tprint_warning(
+                                f"[ROBUSTNESS] Penalizing config: worst_fold_auc={worst_fold_auc_cv:.3f}, "
+                                f"auc_cv_std={auc_cv_std:.3f} (min_worst={min_worst_fold_auc:.3f}, max_std={max_auc_cv_std:.3f})"
+                            )
+                            debug_sample_count += 1
+
+                        shortfall_auc = max(0.0, min_worst_fold_auc - float(worst_fold_auc_cv))
+                        excess_std = max(0.0, float(auc_cv_std) - max_auc_cv_std)
+                        penalty_weight = float(config.get("hpo_robustness_penalty_weight", 300.0))
+                        robustness_penalty = penalty_weight * (shortfall_auc + excess_std)
+
                 # Compute label entropy/balance score
                 balance_score = compute_label_entropy_score(binary_labels)
 
@@ -2601,6 +2777,13 @@ class MetaLabelingHPOExperimentStep(BaseStep):
 
                 # Hard economic gate: positive bucket must beat transaction cost
                 if mean_pos <= tx:
+                    if debug_sample_count < debug_sample_limit:
+                        tprint_warning(
+                            f"[EARLY_EXIT_ECON] Rejecting config: mean_pos={mean_pos:.6f} <= tx={tx:.6f} "
+                            f"(n_events={n_events}, events_per_day={events_per_day:.3f})"
+                        )
+                        debug_sample_count += 1
+                    gate_stats["econ_gate"] = gate_stats.get("econ_gate", 0) + 1
                     return {
                         'learnability': float(learnability_score),
                         'profitability': -1e9,
@@ -2696,14 +2879,13 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     snr_pre = 0.0
                     snr_post = 0.0
 
-                # Event density penalty: prefer ~0.5–4 trades/day (centered near ~2)
-                # RELAXED: Wider acceptable range and gentler penalties to allow
-                # HPO to explore more configurations before harsh filtering
-                trades_per_day = n_events / days_span
+                # Event density penalty: prefer ~1–4 trades/day (centered near ~2)
+                # Slightly stricter lower bound to discourage very sparse regimes
+                trades_per_day = n_events / max(effective_days_span, 1.0)
                 penalty_density = 0.0
-                if trades_per_day < 0.3:
-                    # Moderate penalty for very sparse regimes (was 0.5 threshold)
-                    penalty_density += (0.3 - trades_per_day) * 8.0
+                if trades_per_day < 0.5:
+                    # Moderate penalty for sparse regimes (threshold raised from 0.3)
+                    penalty_density += (0.5 - trades_per_day) * 10.0
                 elif trades_per_day > 4.0:
                     # Gentler penalty for active regimes (was 3.0 threshold, 5.0 weight)
                     penalty_density += (trades_per_day - 4.0) * 3.0
@@ -2780,8 +2962,8 @@ class MetaLabelingHPOExperimentStep(BaseStep):
 
                         if len(window_aucs) >= 2:
                             auc_variance = float(np.var(window_aucs))
-                            # Penalize high variance (instability across time)
-                            temporal_stability_penalty = auc_variance * 10.0
+                            # Penalize high variance (instability across time) more strongly
+                            temporal_stability_penalty = auc_variance * 30.0
                             profitability_score -= temporal_stability_penalty
                 except Exception:
                     pass  # Skip if temporal check fails
@@ -2791,7 +2973,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 # density band above so that edge mildly rewards configurations
                 # that achieve a healthy number of good trades.
                 target_trades_per_day = float(config.get("edge_target_trades_per_day", 2.0))
-                reference_trades = max(1.0, float(days_span) * target_trades_per_day)
+                reference_trades = max(1.0, float(effective_days_span) * target_trades_per_day)
 
                 # ===== REALISTIC P&L EDGE METRIC =====
                 # Edge = (Mean Return - Cost) × max(0, 2×AUC - 1)
@@ -2803,8 +2985,8 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     transaction_cost=tx,
                     n_trades=n_events,
                     reference_trades=reference_trades,
-                    days_span=float(days_span),
-                    target_trades_per_day=target_signal_density,
+                    days_span=float(effective_days_span),
+                    target_trades_per_day=target_trades_per_day,
                 )
                 # Tie temporal instability to edge: softly down-weight edge when
                 # rolling-window AUC variance is high.
@@ -2822,30 +3004,36 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 # for diagnostics.
                 if len(r_pos) == 0 or len(r_neg) == 0:
                     profitability_score = -1e9
-                    edge_score = 0.0
-                    edge_scaled = 0.0
-                    learnability_score -= 0.5
 
                 # ===== COMBINED OBJECTIVE WITH RETENTION REGULARIZATION =====
-                # Simplified formula: objective = AUC_adjusted - α * (1 / retention_rate)
-                # 
-                # This penalizes configurations that achieve high AUC through aggressive
-                # filtering (low retention) rather than genuine signal quality.
+                # New formulation: objective adjusts the filtered AUC based on how far
+                # the retention rate falls below a soft target.
                 #
-                # α is small (0.01-0.05) to allow retention penalty without dominating
-                # Retention rate = n_filtered_events / n_raw_events (candidate survival rate)
-                
+                #   ret_target = 0.35  (35% of pre-events retained)
+                #   penalty    = alpha * (max(0, ret_target - retention_total))^2
+                #   objective  = AUC_filtered -  penalty
+                #
+                # This penalizes overly aggressive filtering (very low retention) while
+                # not rewarding sparse configs purely via 1/retention.
+
                 # Retention regularization parameter (configurable)
                 alpha_retention = float(config.get("retention_regularization_alpha", 0.03))
                 alpha_retention = max(0.01, min(0.10, alpha_retention))  # Clamp to [0.01, 0.10]
-                
-                # Compute retention penalty
+
+                # Soft target for overall retention (fraction of pre-events kept)
+                retention_target = float(config.get("retention_target", 0.30))
+                retention_target = max(0.05, min(0.80, retention_target))
+
+                # Compute nonlinear shortfall penalty relative to the target
                 # retention_total is already computed above as n_post_total / n_pre_total
                 if retention_total > 0:
-                    retention_penalty = alpha_retention * (1.0 / retention_total)
+                    retention_shortfall = max(0.0, retention_target - float(retention_total))
+                    # Quadratic penalty so that very low retention is punished more strongly
+                    retention_penalty = alpha_retention * (retention_shortfall ** 2)
                 else:
-                    retention_penalty = alpha_retention * 100.0  # Severe penalty for 0 retention
-                
+                    # If no events survive, apply maximal penalty against the target
+                    retention_penalty = alpha_retention * retention_target
+
                 # Cap retention penalty to avoid dominating the objective
                 retention_penalty = min(retention_penalty, 0.5)
                 
@@ -2882,19 +3070,90 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 if trades_per_day >= 0.8 and trades_per_day <= 4.0:
                     # Peak bonus at 2 trades/day
                     trades_bonus = max(0, 1.0 - abs(trades_per_day - 2.0) / 2.0) * 50.0
+
+                # Geometry penalty: if profit threshold is unrealistically large
+                # relative to the average trailing stop distance (ATR-based) while
+                # overall retention is below target, down-weight the configuration.
+                trail_geom_penalty = 0.0
+                try:
+                    if trail_dist > 0.0 and isinstance(atr_series, pd.Series) and "close" in market_data.columns:
+                        atr_events = atr_series[labeled_mask]
+                        price_events = market_data["close"][labeled_mask]
+                        denom = price_events.abs().replace(0.0, np.nan)
+                        avg_trail_pct = float(((trail_dist * atr_events) / (denom + 1e-8)).replace([np.inf, -np.inf], np.nan).mean())
+
+                        if np.isfinite(avg_trail_pct) and avg_trail_pct > 0:
+                            k_trail = float(config.get("trail_profit_ratio_k", 3.5))
+                            # Only activate when retention is below target (over-selection regime)
+                            if float(retention_total) < retention_target:
+                                threshold = k_trail * avg_trail_pct
+                                if profit_thr_base > threshold:
+                                    excess_ratio = (profit_thr_base / max(threshold, 1e-8)) - 1.0
+                                    weight = float(config.get("trail_penalty_weight", 80.0))
+                                    trail_geom_penalty = max(0.0, excess_ratio) * weight
+                except Exception:
+                    trail_geom_penalty = 0.0
+
+                # Diagnostic penalties: when aggressive filtering or ultra-easy
+                # problems are detected (only computed when compute_diagnostics
+                # is True to keep HPO runtime manageable).
+                diagnostics_penalty = 0.0
+                if compute_diagnostics:
+                    try:
+                        econ_floor_local = econ_min_mult * effective_tx_cost
+                        y_full_local = pd.Series(np.nan, index=realized_returns.index)
+                        full_mask_local = ~realized_returns.isna() & (realized_returns.abs() >= econ_floor_local)
+                        y_full_local[full_mask_local & (realized_returns > 0)] = 1.0
+                        y_full_local[full_mask_local & (realized_returns <= 0)] = 0.0
+
+                        filtering_diag_local = compute_filtering_inflation_diagnostics(
+                            X=meta_features_model_processed,
+                            y_full=y_full_local,
+                            y_filtered=binary_labels,
+                            realized_returns=realized_returns,
+                            volatility=volatility_1d,
+                            probabilities=calibrated_probs,
+                            cv_splits=3,
+                            time_aware_cv=True,
+                        )
+
+                        easy_problem_flag = False
+                        try:
+                            overlap_diag_local = compute_class_overlap_features(
+                                X=meta_features_model_processed,
+                                retained_mask=labeled_mask,
+                                top_k_features=5,
+                            )
+                            easy_problem_flag = bool(overlap_diag_local.get("easy_problem_detected", False))
+                        except Exception:
+                            overlap_diag_local = {}
+                            easy_problem_flag = False
+
+                        if (
+                            filtering_diag_local.get("filtering_is_major_contributor")
+                            or filtering_diag_local.get("precision_collapse_detected")
+                            or easy_problem_flag
+                        ):
+                            diagnostics_penalty = float(config.get("diagnostic_penalty_weight", 150.0))
+                    except Exception:
+                        diagnostics_penalty = 0.0
                 
                 # ===== SIMPLIFIED COMBINED OBJECTIVE =====
                 # Primary components:
                 # 1. edge_scaled: Captures profitability AND learnability (via capture ratio)
                 # 2. auc_retention_adjusted: AUC adjusted for retention penalty & range
                 # 3. trades_bonus: Reward healthy trade density
-                # 4. Penalties for extreme density and slow exits
+                # 4. Penalties for extreme density, slow exits, over-aggressive filtering,
+                #    and unrealistic TPSL geometry relative to ATR-based trailing.
                 combined_score = (
                     edge_scaled * edge_weight
                     + (auc_retention_adjusted * 100.0)  # Unified AUC signal
                     + (trades_bonus * density_weight)
                     - (penalty_density * 0.1)
                     - (tto_penalty * 0.1)
+                    - trail_geom_penalty
+                    - diagnostics_penalty
+                    - robustness_penalty
                 )
 
                 # Store candidate configuration for later persistence
@@ -2926,6 +3185,9 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     'effect_size_pre': float(d_pre) if np.isfinite(d_pre) else 0.0,
                     'effect_size_post': float(d_post) if np.isfinite(d_post) else 0.0,
                     'n_required_80pct_power': float(n_required_80),
+                    # CV-based robustness proxy from learnability probe
+                    'learnability_worst_fold_auc': float(worst_fold_auc_cv) if worst_fold_auc_cv is not None else None,
+                    'learnability_auc_cv_std': float(auc_cv_std) if auc_cv_std is not None else None,
                     'model_complexity': model_complexity,
                     # NEW: Track trade count control parameters
                     'cusum_threshold': float(cusum_threshold),
@@ -3026,29 +3288,37 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 except Exception:
                     per_regime_metrics = {}
 
+                # Attach per-regime metrics and optional regression diagnostics
                 if per_regime_metrics:
                     candidate_config['per_regime_metrics'] = per_regime_metrics
-
-                # NOTE: Comprehensive diagnostics are computed post-HPO for best config only.
-                # See compute_best_config_diagnostics() call after HPO loop.
-
-                # Attach regression target diagnostics, if available, so that
-                # downstream analysis can assess how well continuous payoffs
-                # behaved for this labeling configuration.
                 if reg_target_stats is not None:
                     candidate_config['regression_target_stats'] = reg_target_stats
 
+                # Append to candidate pool and log a concise summary for debugging
                 candidate_pool.append(candidate_config)
+                try:
+                    pool_size_after = len(candidate_pool)
+                    tprint_info(
+                        f"[CANDIDATE_APPEND] complexity={model_complexity} "
+                        f"edge={edge_score:.6f} combined={combined_score:.6f} "
+                        f"mean_auc={mean_auc:.6f} n_events={n_events} "
+                        f"pool_size={pool_size_after}"
+                    )
+                except Exception:
+                    # Logging must not interfere with HPO; ignore any formatting errors
+                    pass
 
                 return {
                     'learnability': float(learnability_score),
                     'profitability': float(profitability_score),
                     'edge': float(edge_score),
-                    'combined': float(combined_score)
+                    'combined': float(combined_score),
                 }
 
             except Exception as exc:  # Defensive: never crash HPO on one config
-                tprint_warning(f"⚠️ Labeling objective failed: {exc}")
+                tprint_warning(f"[EARLY_EXIT_EXCEPTION] Labeling objective failed: {exc}")
+                gate_stats["exception"] = gate_stats.get("exception", 0) + 1
+                gate_stats["last_exception"] = str(exc)
                 import traceback
                 traceback.print_exc()
                 return {'learnability': 0.0, 'profitability': -1e9, 'edge': -1e9, 'combined': -1e9}
@@ -3112,6 +3382,8 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     "target_signal_density",
                     "r_multiple_pos_threshold",
                     "transaction_cost_mult",
+                    "kalman_Q",
+                    "kalman_R",
                 ]
                 for p in shrinkable_params:
                     if p not in initial_search_space:
@@ -3263,10 +3535,13 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 compute_diagnostics: bool,
                 fixed_params: Dict[str, Any],
                 use_stage1_subsample: bool,
+                stage_name: str,
             ) -> callable:
                 """Create a wrapper that injects fixed params from previous stages."""
                 def wrapper(params: Dict[str, Any]) -> float:
                     nonlocal market_data, primary_signals, volatility_1d, days_span, atr_series
+                    # Track candidate_pool length before/after to detect append vs skip
+                    pool_size_before = len(candidate_pool)
                     if use_stage1_subsample and model_complexity == "fast" and stage1_enable_subsample:
                         md_backup = market_data
                         ps_backup = primary_signals
@@ -3300,9 +3575,36 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                             use_ensemble=use_ensemble,
                             compute_diagnostics=compute_diagnostics,
                         )
+
+                    # Derive scalar objective value (edge-first, fallback to combined)
                     if isinstance(result, dict):
-                        return float(result.get('edge', result.get('combined', 0.0)))
-                    return float(result)
+                        edge_val = float(result.get('edge', result.get('combined', 0.0)))
+                        combined_val = float(result.get('combined', edge_val))
+                    else:
+                        edge_val = float(result)
+                        combined_val = float('nan')
+
+                    # Inspect candidate_pool to see if this trial produced a candidate
+                    pool_size_after = len(candidate_pool)
+                    if pool_size_after > pool_size_before:
+                        # Last entry should correspond to this trial
+                        last_cand = candidate_pool[-1]
+                        mean_auc_cand = last_cand.get('mean_auc')
+                        n_events_cand = last_cand.get('n_events')
+                        tprint_info(
+                            f"[HPO_TRIAL] stage={stage_name} complexity={model_complexity} "
+                            f"decision=APPEND edge={edge_val:.6f} combined={combined_val:.6f} "
+                            f"mean_auc={mean_auc_cand:.6f} n_events={n_events_cand} "
+                            f"pool_size={pool_size_after}"
+                        )
+                    else:
+                        tprint_info(
+                            f"[HPO_TRIAL] stage={stage_name} complexity={model_complexity} "
+                            f"decision=SKIP edge={edge_val:.6f} combined={combined_val:.6f} "
+                            f"pool_size={pool_size_after}"
+                        )
+
+                    return edge_val
                 return wrapper
 
             if stage_idx in (0, 1):
@@ -3357,6 +3659,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                         compute_diagnostics=(stage_idx == len(stages) - 1 and group_idx == len(stage_param_groups) - 1),
                         fixed_params=group_fixed_params,
                         use_stage1_subsample=(stage_idx == 0),
+                        stage_name=stage["name"],
                     )
 
                     group_n_trials = max(5, stage["n_trials"] // n_groups)
@@ -3433,6 +3736,26 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     'trials': stage_trials_total,
                 })
 
+                # For Stage 1 (index 0), shrink Stage 2 search space using fast-model candidates
+                if stage_idx == 0:
+                    stage_candidates_fast = [
+                        c for c in candidate_pool
+                        if c.get('model_complexity') == stage['complexity']
+                    ]
+                    if stage_candidates_fast:
+                        try:
+                            initial_search_space = shrink_search_space(
+                                original_space=initial_search_space,
+                                previous_results=stage_candidates_fast,
+                                top_k=stage['top_k_to_pass'],
+                            )
+                            tprint_info(
+                                f"   📉 Narrowed Stage 2 search space based on "
+                                f"Top {min(len(stage_candidates_fast), stage['top_k_to_pass'])} candidates"
+                            )
+                        except Exception:
+                            pass
+
                 # For Stage 2 (index 1), shrink Stage 3 search space using medium-model candidates
                 if stage_idx == 1:
                     stage_candidates = [
@@ -3467,15 +3790,16 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 if k not in current_search_space
             }
 
+            # Create stage-level objective for non-grouped stages
             stage_objective = create_stage_objective_wrapper(
                 model_complexity=stage["complexity"],
                 use_ensemble=(stage["complexity"] == "strong"),
                 compute_diagnostics=(stage_idx == len(stages) - 1),
                 fixed_params=fixed_params,
-                use_stage1_subsample=(stage_idx == 0),
+                use_stage1_subsample=False,
+                stage_name=stage["name"],
             )
 
-            # Configure Bayesian optimizer for this stage
             bayesian_config = OptimizationConfig(
                 n_trials=stage["n_trials"],
                 execution_mode=config.get("execution_mode", "full"),
@@ -3552,9 +3876,24 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     )
 
                 # For 4-stage setup:
+                # - After Stage 1 (index 0): Shrink space for Stage 2 using fast-model candidates.
                 # - After Stage 2 (index 1): Shrink space for Stage 3 (handled above in group block or here if not group)
                 # - After Stage 3 (index 2): No shrinking needed for Stage 4 because Stage 4 uses a specific subset
                 #   of parameters (labeling only), and structural params are fixed via accumulated_best_params.
+                if stage_idx == 0 and stage_candidates:
+                    try:
+                        initial_search_space = shrink_search_space(
+                            original_space=initial_search_space,
+                            previous_results=stage_candidates,
+                            top_k=stage['top_k_to_pass'],
+                        )
+                        tprint_info(
+                            f"   📉 Narrowed Stage 2 search space based on "
+                            f"Top {min(len(stage_candidates), stage['top_k_to_pass'])} candidates"
+                        )
+                    except Exception:
+                        pass
+
                 if stage_idx == 1 and stage_candidates:
                     try:
                         initial_search_space = shrink_search_space(
@@ -3729,7 +4068,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
             )
             
             # Compute calibrated probabilities
-            _, mean_auc_diag, calibrated_probs_diag, _ = compute_learnability_with_calibration(
+            _, mean_auc_diag, calibrated_probs_diag, _, _ = compute_learnability_with_calibration(
                 X=meta_features_processed,
                 y=quantile_labels_diag,
                 realized_returns=realized_returns_diag,
@@ -3738,7 +4077,17 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 time_aware_cv=True,
                 use_ensemble=False,
             )
-            
+
+            # Align calibrated probabilities to labeled events (non-NaN labels)
+            try:
+                valid_mask_probs = ~quantile_labels_diag.isna()
+                if isinstance(calibrated_probs_diag, np.ndarray) and len(calibrated_probs_diag) == int(valid_mask_probs.sum()):
+                    probs_series_diag = pd.Series(calibrated_probs_diag, index=quantile_labels_diag.index[valid_mask_probs])
+                else:
+                    probs_series_diag = None
+            except Exception:
+                probs_series_diag = None
+
             # Create "full" labels (before quantile filtering)
             econ_floor = econ_min_mult * effective_tx_cost
             y_full_diag = pd.Series(np.nan, index=realized_returns_diag.index)
@@ -3746,16 +4095,35 @@ class MetaLabelingHPOExperimentStep(BaseStep):
             y_full_diag[full_mask & (realized_returns_diag > 0)] = 1.0
             y_full_diag[full_mask & (realized_returns_diag <= 0)] = 0.0
             
+            # Attach signal funnel statistics from the primary signal generator,
+            # if available, so that HPO diagnostics can inspect raw vs final
+            # signal counts.
+            try:
+                signal_funnel_diag = primary_signals.attrs.get('signal_funnel', {})  # type: ignore[attr-defined]
+            except Exception:
+                signal_funnel_diag = {}
+            if signal_funnel_diag:
+                best_config_diagnostics['signal_funnel'] = signal_funnel_diag
+
             # 1. Filtering inflation diagnostics
             tprint_info("  → Computing filtering inflation diagnostics...")
             try:
+                probabilities_for_filter = None
+                if probs_series_diag is not None:
+                    try:
+                        probs_full_aligned = pd.Series(np.nan, index=quantile_labels_diag.index, dtype=float)
+                        probs_full_aligned.loc[probs_series_diag.index] = probs_series_diag
+                        probabilities_for_filter = probs_full_aligned.to_numpy(dtype=float)
+                    except Exception:
+                        probabilities_for_filter = None
+
                 filtering_diag = compute_filtering_inflation_diagnostics(
                     X=meta_features_processed,
                     y_full=y_full_diag,
                     y_filtered=quantile_labels_diag,
                     realized_returns=realized_returns_diag,
                     volatility=volatility_1d,
-                    probabilities=calibrated_probs_diag,
+                    probabilities=probabilities_for_filter,
                     cv_splits=5,
                     time_aware_cv=True,
                 )
@@ -3770,12 +4138,19 @@ class MetaLabelingHPOExperimentStep(BaseStep):
             except Exception as e:
                 tprint_warning(f"  ⚠️ Filtering diagnostics failed: {e}")
             
-            # 2. Calibration diagnostics
+            # 2. Calibration diagnostics + Mutual Information diagnostics
             tprint_info("  → Computing calibration diagnostics...")
             try:
-                y_calib = quantile_labels_diag[labeled_mask_diag].values
-                probs_calib = calibrated_probs_diag[labeled_mask_diag.values] if len(calibrated_probs_diag) == len(quantile_labels_diag) else calibrated_probs_diag
-                returns_calib = realized_returns_diag[labeled_mask_diag].values
+                idx_labeled = quantile_labels_diag.index[labeled_mask_diag]
+                y_calib = quantile_labels_diag.loc[idx_labeled].values
+
+                if probs_series_diag is not None:
+                    probs_calib_series = probs_series_diag.reindex(idx_labeled)
+                    probs_calib = probs_calib_series.to_numpy(dtype=float)
+                else:
+                    probs_calib = calibrated_probs_diag if len(calibrated_probs_diag) == len(y_calib) else calibrated_probs_diag[: len(y_calib)]
+
+                returns_calib = realized_returns_diag.loc[idx_labeled].values
                 
                 calib_diag = compute_calibration_diagnostics(
                     y_true=y_calib,
@@ -3792,6 +4167,50 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     tprint_info(f"  → ECE: {calib_diag['ece']:.4f}")
                 if not calib_diag.get('is_well_calibrated', True):
                     tprint_warning("  ⚠️ WARNING: Model is miscalibrated (ECE > 0.05)")
+
+                # 2b. Mutual information diagnostics (probability deciles vs label and return sign)
+                tprint_info("  → Computing mutual information diagnostics...")
+                mi_diag: Dict[str, Any] = {}
+                try:
+                    if len(probs_calib) >= 50:
+                        probs_series = pd.Series(probs_calib, index=idx_labeled).clip(0.0, 1.0)
+                        try:
+                            prob_decile = pd.qcut(
+                                probs_series,
+                                q=10,
+                                labels=False,
+                                duplicates="drop",
+                            )
+                        except Exception:
+                            prob_decile = None
+
+                        if prob_decile is not None:
+                            y_series = pd.Series(y_calib, index=idx_labeled)
+                            mi_nats_label = _discrete_mi(prob_decile, y_series)
+                            mi_bits_label = (
+                                mi_nats_label / np.log(2.0) if np.isfinite(mi_nats_label) else float("nan")
+                            )
+                            mi_diag["mi_prob_label_nats"] = mi_nats_label
+                            mi_diag["mi_prob_label_bits"] = mi_bits_label
+
+                            dir_series = np.sign(pd.Series(returns_calib, index=idx_labeled)).astype(int)
+                            mi_nats_dir = _discrete_mi(prob_decile, dir_series)
+                            mi_bits_dir = (
+                                mi_nats_dir / np.log(2.0) if np.isfinite(mi_nats_dir) else float("nan")
+                            )
+                            mi_diag["mi_prob_return_sign_nats"] = mi_nats_dir
+                            mi_diag["mi_prob_return_sign_bits"] = mi_bits_dir
+
+                    if mi_diag:
+                        best_config_diagnostics["mi_diagnostics"] = mi_diag
+                        if "mi_prob_label_bits" in mi_diag and "mi_prob_return_sign_bits" in mi_diag:
+                            tprint_info(
+                                f"  → MI(bits): prob→label={mi_diag['mi_prob_label_bits']:.4f}, "
+                                f"prob→ret_sign={mi_diag['mi_prob_return_sign_bits']:.4f}"
+                            )
+                except Exception as mi_exc:
+                    tprint_warning(f"  ⚠️ MI diagnostics failed: {mi_exc}")
+
             except Exception as e:
                 tprint_warning(f"  ⚠️ Calibration diagnostics failed: {e}")
             
@@ -3832,6 +4251,340 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     tprint_warning("  ⚠️ WARNING: Easy problem detected (retained events form tight cluster)")
             except Exception as e:
                 tprint_warning(f"  ⚠️ Class overlap diagnostics failed: {e}")
+            
+            xgb_hpo_results: Dict[str, Any] = {}
+            enable_xgb_model_hpo = bool(config.get("enable_xgb_model_hpo", False))
+            if enable_xgb_model_hpo:
+                if not XGBOOST_AVAILABLE:
+                    tprint_warning("  ⚠️ XGBoost not available; skipping sr_labeling_xgb trainer")
+                    xgb_hpo_results = {
+                        "xgb_available": False,
+                        "skipped": True,
+                        "reason": "xgboost_not_installed",
+                    }
+                else:
+                    try:
+                        from sklearn.metrics import roc_auc_score as _roc_auc_score_xgb
+
+                        tprint_info("  → Running StandardizedXGBTrainer for sr_labeling_xgb on best labeling config...")
+
+                        valid_mask_xgb = ~quantile_labels_diag.isna()
+                        X_xgb_all = meta_features_processed.select_dtypes(include=[np.number])
+                        if isinstance(X_xgb_all, pd.DataFrame):
+                            X_xgb = X_xgb_all[valid_mask_xgb].fillna(0)
+                        else:
+                            X_xgb = meta_features_processed[valid_mask_xgb]
+                        y_xgb = quantile_labels_diag[valid_mask_xgb]
+                        returns_xgb = realized_returns_diag[valid_mask_xgb].fillna(0.0)
+
+                        n_samples = int(len(y_xgb))
+                        if n_samples < 200 or len(y_xgb.unique()) < 2:
+                            tprint_warning(
+                                f"  ⚠️ Not enough labeled events for sr_labeling_xgb training (n={n_samples}); skipping."
+                            )
+                            xgb_hpo_results = {
+                                "xgb_available": True,
+                                "skipped": True,
+                                "reason": "insufficient_labels",
+                                "n_samples": n_samples,
+                            }
+                        else:
+                            returns_array = returns_xgb.to_numpy(dtype=float)
+                            y_array = y_xgb.to_numpy(dtype=float)
+
+                            sample_weights = np.ones_like(returns_array, dtype=float)
+                            pos_mask = y_array == 1.0
+                            sample_weights[pos_mask] *= 1.2
+
+                            try:
+                                finite_returns = returns_xgb.replace([np.inf, -np.inf], np.nan).dropna().values
+                                if finite_returns.size >= 50:
+                                    ret_clip = float(np.nanpercentile(np.abs(finite_returns), 95))
+                                    ret_clip = max(ret_clip, 1e-4)
+                                else:
+                                    ret_clip = 0.02
+                            except Exception:
+                                ret_clip = 0.02
+
+                            if ret_clip > 0:
+                                ret_for_weight = np.clip(np.maximum(returns_array, 0.0), 0.0, ret_clip)
+                                weight_factor = 1.0 + (ret_for_weight / ret_clip)
+                                sample_weights[pos_mask] *= weight_factor[pos_mask]
+
+                            mean_w = float(sample_weights.mean()) if sample_weights.size > 0 else 1.0
+                            if mean_w > 0:
+                                sample_weights = sample_weights / mean_w
+
+                            def _compute_auc_from_results(results, y_true: pd.Series) -> Optional[float]:
+                                try:
+                                    preds = getattr(results, "oof_predictions", None)
+                                    if preds is None or preds.empty:
+                                        return None
+                                    if "probability" in preds.columns:
+                                        proba = preds["probability"]
+                                    else:
+                                        col_candidates = [c for c in preds.columns if c.startswith("prob")]
+                                        if not col_candidates:
+                                            return None
+                                        proba = preds[col_candidates[0]]
+                                    y_aligned = y_true.reindex(proba.index).astype(float)
+                                    mask = ~y_aligned.isna()
+                                    if int(mask.sum()) < 50 or y_aligned[mask].nunique() < 2:
+                                        return None
+                                    return float(_roc_auc_score_xgb(y_aligned[mask], proba[mask]))
+                                except Exception:
+                                    return None
+
+                            data_start = X_xgb.index.min()
+                            data_end = X_xgb.index.max()
+
+                            min_samples_cfg = config.get("sr_labeling_xgb_min_samples_for_training", 300)
+                            try:
+                                min_samples_int = int(min_samples_cfg)
+                            except Exception:
+                                min_samples_int = 300
+                            min_samples_int = max(100, min(min_samples_int, n_samples))
+
+                            base_model_id = f"{symbol}_{exchange}_{timeframe}_sr_labeling_xgb"
+
+                            baseline_config = XGBTrainingConfig(
+                                model_id=f"{base_model_id}_baseline",
+                                task_type="classification",
+                                objective="binary:logistic",
+                                retrain_interval_days=9999,
+                                hpo_interval_days=999999,
+                                burnin_pct=0.0,
+                                min_samples_for_training=min_samples_int,
+                                tree_method="hist",
+                                n_estimators=int(config.get("sr_labeling_xgb_n_estimators", 300)),
+                                learning_rate=float(config.get("sr_labeling_xgb_learning_rate", 0.05)),
+                                max_depth=int(config.get("sr_labeling_xgb_max_depth", 6)),
+                                min_child_weight=float(config.get("sr_labeling_xgb_min_child_weight", 20.0)),
+                                subsample=float(config.get("sr_labeling_xgb_subsample", 0.8)),
+                                colsample_bytree=float(config.get("sr_labeling_xgb_colsample_bytree", 0.8)),
+                                gamma=float(config.get("sr_labeling_xgb_gamma", 1.0)),
+                                reg_lambda=float(config.get("sr_labeling_xgb_reg_lambda", 3.0)),
+                                reg_alpha=float(config.get("sr_labeling_xgb_reg_alpha", 0.5)),
+                                early_stopping_rounds=20,
+                                hpo_n_estimators=300,
+                                hpo_n_trials=int(config.get("sr_labeling_xgb_hpo_n_trials", 40)),
+                                enable_warm_start=False,
+                                enable_oof_training=False,
+                                enable_hpo=False,
+                                enable_sparse_matrices=True,
+                            )
+
+                            baseline_trainer = StandardizedXGBTrainer(
+                                model_id=baseline_config.model_id,
+                                config=baseline_config,
+                            )
+
+                            baseline_results = baseline_trainer.train_and_predict(
+                                X=X_xgb,
+                                y=y_xgb,
+                                data_start=data_start,
+                                data_end=data_end,
+                                sample_weight=sample_weights,
+                                eval_metric="auc",
+                                verbose=False,
+                            )
+
+                            baseline_auc = _compute_auc_from_results(baseline_results, y_xgb)
+
+                            tuned_config = XGBTrainingConfig(
+                                model_id=f"{base_model_id}_hpo",
+                                task_type="classification",
+                                objective="binary:logistic",
+                                retrain_interval_days=9999,
+                                hpo_interval_days=999999,
+                                burnin_pct=0.0,
+                                min_samples_for_training=min_samples_int,
+                                tree_method="hist",
+                                n_estimators=int(config.get("sr_labeling_xgb_n_estimators", 300)),
+                                learning_rate=float(config.get("sr_labeling_xgb_learning_rate", 0.05)),
+                                max_depth=int(config.get("sr_labeling_xgb_max_depth", 6)),
+                                min_child_weight=float(config.get("sr_labeling_xgb_min_child_weight", 20.0)),
+                                subsample=float(config.get("sr_labeling_xgb_subsample", 0.8)),
+                                colsample_bytree=float(config.get("sr_labeling_xgb_colsample_bytree", 0.8)),
+                                gamma=float(config.get("sr_labeling_xgb_gamma", 1.0)),
+                                reg_lambda=float(config.get("sr_labeling_xgb_reg_lambda", 3.0)),
+                                reg_alpha=float(config.get("sr_labeling_xgb_reg_alpha", 0.5)),
+                                early_stopping_rounds=20,
+                                hpo_n_estimators=baseline_config.hpo_n_estimators,
+                                hpo_n_trials=baseline_config.hpo_n_trials,
+                                enable_warm_start=True,
+                                enable_oof_training=False,
+                                enable_hpo=True,
+                                enable_sparse_matrices=True,
+                            )
+
+                            tuned_trainer = StandardizedXGBTrainer(
+                                model_id=tuned_config.model_id,
+                                config=tuned_config,
+                            )
+
+                            tuned_results = tuned_trainer.train_and_predict(
+                                X=X_xgb,
+                                y=y_xgb,
+                                data_start=data_start,
+                                data_end=data_end,
+                                sample_weight=sample_weights,
+                                eval_metric="auc",
+                                verbose=False,
+                            )
+
+                            best_auc_xgb = _compute_auc_from_results(tuned_results, y_xgb)
+
+                            try:
+                                best_params_xgb = tuned_trainer._load_warm_start_params()  # type: ignore[attr-defined]
+                            except Exception:
+                                best_params_xgb = None
+
+                            if best_params_xgb is None:
+                                best_params_xgb = {
+                                    "max_depth": tuned_config.max_depth,
+                                    "learning_rate": tuned_config.learning_rate,
+                                    "min_child_weight": tuned_config.min_child_weight,
+                                    "subsample": tuned_config.subsample,
+                                    "colsample_bytree": tuned_config.colsample_bytree,
+                                    "gamma": tuned_config.gamma,
+                                    "reg_lambda": tuned_config.reg_lambda,
+                                    "reg_alpha": tuned_config.reg_alpha,
+                                }
+
+                            baseline_params = {
+                                "n_estimators": baseline_config.n_estimators,
+                                "max_depth": baseline_config.max_depth,
+                                "learning_rate": baseline_config.learning_rate,
+                                "min_child_weight": baseline_config.min_child_weight,
+                                "subsample": baseline_config.subsample,
+                                "colsample_bytree": baseline_config.colsample_bytree,
+                                "gamma": baseline_config.gamma,
+                                "reg_lambda": baseline_config.reg_lambda,
+                                "reg_alpha": baseline_config.reg_alpha,
+                            }
+
+                            auc_improvement = None
+                            if baseline_auc is not None and best_auc_xgb is not None:
+                                auc_improvement = float(best_auc_xgb - baseline_auc)
+
+                            tprint_info(
+                                f"  → sr_labeling_xgb results: baseline_auc={baseline_auc if baseline_auc is not None else float('nan'):.4f}, "
+                                f"best_auc={best_auc_xgb if best_auc_xgb is not None else float('nan'):.4f}, "
+                                f"improvement={(auc_improvement if auc_improvement is not None else float('nan')):.4f}"
+                            )
+
+                            xgb_timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+                            xgb_json_name = (
+                                f"sr_labeling_xgb_best_params_{symbol}_{timeframe}_{xgb_timestamp}.json"
+                            )
+                            xgb_json_path = outcomes_dir / xgb_json_name
+
+                            xgb_payload = {
+                                "symbol": symbol,
+                                "exchange": exchange,
+                                "timeframe": timeframe,
+                                "n_samples": n_samples,
+                                "baseline_params": baseline_params,
+                                "baseline_auc": baseline_auc,
+                                "best_params": best_params_xgb,
+                                "best_auc": best_auc_xgb,
+                                "auc_improvement": auc_improvement,
+                                "baseline_model_id": baseline_config.model_id,
+                                "tuned_model_id": tuned_config.model_id,
+                            }
+
+                            best_params_json_str: Optional[str]
+                            try:
+                                with open(xgb_json_path, "w") as f:
+                                    json.dump(xgb_payload, f, indent=2, default=str)
+                                tprint_success(f"  → Saved sr_labeling_xgb best params JSON to {xgb_json_path}")
+                                best_params_json_str = str(xgb_json_path)
+                            except Exception:
+                                tprint_warning("  → Failed to save sr_labeling_xgb best params JSON; continuing without file path")
+                                best_params_json_str = None
+
+                            csv_path: Optional[Path] = None
+                            md_path: Optional[Path] = None
+
+                            try:
+                                rows = []
+                                rows.append({
+                                    "variant": "baseline",
+                                    "n_samples": n_samples,
+                                    "auc": baseline_auc,
+                                    **baseline_params,
+                                })
+                                rows.append({
+                                    "variant": "tuned",
+                                    "n_samples": n_samples,
+                                    "auc": best_auc_xgb,
+                                    **best_params_xgb,
+                                })
+
+                                df_xgb = pd.DataFrame(rows)
+                                csv_name = f"sr_labeling_xgb_results_{symbol}_{timeframe}_{xgb_timestamp}.csv"
+                                csv_path = outcomes_dir / csv_name
+                                df_xgb.to_csv(csv_path, index=False, float_format="%.6f")
+                                tprint_success(f"  → Saved sr_labeling_xgb CSV report to {csv_path}")
+                            except Exception:
+                                tprint_warning("  → Failed to save sr_labeling_xgb CSV report")
+                                csv_path = None
+
+                            try:
+                                md_name = f"sr_labeling_xgb_report_{symbol}_{timeframe}_{xgb_timestamp}.md"
+                                md_path = outcomes_dir / md_name
+                                with open(md_path, "w") as f_md:
+                                    f_md.write(f"# sr_labeling_xgb XGBoost Report\n\n")
+                                    f_md.write(f"**Symbol:** {symbol} | **Exchange:** {exchange} | **Timeframe:** {timeframe}\n\n")
+                                    f_md.write(f"**Samples:** {n_samples}\n\n")
+
+                                    f_md.write("## Performance\n\n")
+                                    f_md.write("| Variant | AUC |\n")
+                                    f_md.write("|---------|-----|\n")
+                                    f_md.write(f"| Baseline | {baseline_auc if baseline_auc is not None else float('nan'):.4f} |\n")
+                                    f_md.write(f"| Tuned | {best_auc_xgb if best_auc_xgb is not None else float('nan'):.4f} |\n")
+                                    if auc_improvement is not None:
+                                        f_md.write(f"\n**AUC Improvement:** {auc_improvement:.4f}\n\n")
+
+                                    f_md.write("## Baseline Parameters\n\n")
+                                    f_md.write("```json\n")
+                                    f_md.write(json.dumps(baseline_params, indent=2))
+                                    f_md.write("\n```\n\n")
+
+                                    f_md.write("## Tuned Parameters (sr_labeling_xgb)\n\n")
+                                    f_md.write("```json\n")
+                                    f_md.write(json.dumps(best_params_xgb, indent=2))
+                                    f_md.write("\n```\n\n")
+
+                                tprint_success(f"  → Saved sr_labeling_xgb Markdown report to {md_path}")
+                            except Exception:
+                                tprint_warning("  → Failed to save sr_labeling_xgb Markdown report")
+                                md_path = None
+
+                            xgb_hpo_results = {
+                                "xgb_available": True,
+                                "n_samples": n_samples,
+                                "baseline_auc": baseline_auc,
+                                "best_auc": best_auc_xgb,
+                                "auc_improvement": auc_improvement,
+                                "baseline_params": baseline_params,
+                                "best_params": best_params_xgb,
+                                "best_params_json": best_params_json_str,
+                                "results_csv": str(csv_path) if csv_path is not None else None,
+                                "results_markdown": str(md_path) if md_path is not None else None,
+                            }
+                    except Exception as xgb_exc:
+                        tprint_warning(f"  → sr_labeling_xgb training failed: {xgb_exc}")
+                        xgb_hpo_results = {
+                            "xgb_available": XGBOOST_AVAILABLE,
+                            "skipped": True,
+                            "reason": "exception",
+                            "error": str(xgb_exc),
+                        }
+
+            if xgb_hpo_results:
+                best_config_diagnostics["sr_labeling_xgb"] = xgb_hpo_results
             
             tprint_success("✅ Comprehensive diagnostics completed for best configuration")
             
@@ -3953,8 +4706,8 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 stop_mult_min = float(diag_params.get("stop_mult_min", 0.5))
                 stop_mult_max = float(diag_params.get("stop_mult_max", 2.0))
 
-                # Apply same constraints as HPO objective
-                horizon = max(8, min(28, horizon))
+                # Apply same constraints as HPO objective (short intraday horizons)
+                horizon = max(8, min(32, horizon))
                 if horizon % 2 != 0:
                     horizon = (horizon // 2) * 2
                 min_spacing = max(1, min(16, min_spacing))
@@ -4229,30 +4982,53 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     }
                     for sr in stage_results
                 ],
+                # Gate usage statistics across all evaluated configs
+                "gate_stats": gate_stats,
             }
-            
+
             # Add comprehensive diagnostics for best config
             if best_config_diagnostics:
                 output_dict["best_config_diagnostics"] = best_config_diagnostics
-                
+
                 # Add summary warnings as top-level fields
-                filtering_diag = best_config_diagnostics.get('filtering_diagnostics', {})
-                calib_diag = best_config_diagnostics.get('calibration_diagnostics', {})
-                robust_diag = best_config_diagnostics.get('robustness_diagnostics', {})
-                overlap_diag = best_config_diagnostics.get('class_overlap_diagnostics', {})
-                
+                filtering_diag = best_config_diagnostics.get("filtering_diagnostics", {})
+                calib_diag = best_config_diagnostics.get("calibration_diagnostics", {})
+                robust_diag = best_config_diagnostics.get("robustness_diagnostics", {})
+                overlap_diag = best_config_diagnostics.get("class_overlap_diagnostics", {})
+                xgb_diag = best_config_diagnostics.get("sr_labeling_xgb", {})
+                mi_diag = best_config_diagnostics.get("mi_diagnostics", {})
+
                 output_dict["diagnostics_summary"] = {
-                    "filtering_is_major_contributor": filtering_diag.get('filtering_is_major_contributor', False),
-                    "auc_dominated_by_large_moves": filtering_diag.get('auc_dominated_by_large_moves', False),
-                    "precision_collapse_detected": filtering_diag.get('precision_collapse_detected', False),
-                    "is_well_calibrated": calib_diag.get('is_well_calibrated', True),
-                    "brier_score": calib_diag.get('brier_score'),
-                    "ece": calib_diag.get('ece'),
-                    "mce": calib_diag.get('mce'),
-                    "is_robust": robust_diag.get('is_robust', True),
-                    "worst_fold_auc": robust_diag.get('worst_fold_auc'),
-                    "auc_cv_std": robust_diag.get('auc_cv_std'),
-                    "easy_problem_detected": overlap_diag.get('easy_problem_detected', False),
+                    # Filtering / label inflation
+                    "filtering_is_major_contributor": filtering_diag.get(
+                        "filtering_is_major_contributor", False
+                    ),
+                    "auc_dominated_by_large_moves": filtering_diag.get(
+                        "auc_dominated_by_large_moves", False
+                    ),
+                    "precision_collapse_detected": filtering_diag.get(
+                        "precision_collapse_detected", False
+                    ),
+                    "auc_full": filtering_diag.get("auc_full"),
+                    "auc_filtered": filtering_diag.get("auc_filtered"),
+                    "auc_inflation": filtering_diag.get("auc_inflation"),
+                    # Calibration metrics
+                    "is_well_calibrated": calib_diag.get("is_well_calibrated", True),
+                    "brier_score": calib_diag.get("brier_score"),
+                    "ece": calib_diag.get("ece"),
+                    "mce": calib_diag.get("mce"),
+                    # Robustness
+                    "is_robust": robust_diag.get("is_robust", True),
+                    "worst_fold_auc": robust_diag.get("worst_fold_auc"),
+                    "auc_cv_std": robust_diag.get("auc_cv_std"),
+                    # Class overlap / problem difficulty
+                    "easy_problem_detected": overlap_diag.get("easy_problem_detected", False),
+                    # Mutual information (bits)
+                    "mi_prob_label_bits": mi_diag.get("mi_prob_label_bits"),
+                    "mi_prob_return_sign_bits": mi_diag.get("mi_prob_return_sign_bits"),
+                    # sr_labeling_xgb meta-model diagnostics
+                    "sr_labeling_xgb_best_auc": xgb_diag.get("best_auc"),
+                    "sr_labeling_xgb_auc_improvement": xgb_diag.get("auc_improvement"),
                 }
             
             with open(json_path, "w") as f:
@@ -4390,6 +5166,93 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     f.write(json.dumps(knee_params, indent=2))
                     f.write(f"\n```\n\n")
 
+                # Diagnostics Summary for Best Configuration
+                if best_config_diagnostics:
+                    f.write(f"## Diagnostics Summary (Best Configuration)\n\n")
+
+                    filtering_diag = best_config_diagnostics.get("filtering_diagnostics", {})
+                    calib_diag = best_config_diagnostics.get("calibration_diagnostics", {})
+                    robust_diag = best_config_diagnostics.get("robustness_diagnostics", {})
+                    overlap_diag = best_config_diagnostics.get("class_overlap_diagnostics", {})
+                    mi_diag = best_config_diagnostics.get("mi_diagnostics", {})
+                    xgb_diag = best_config_diagnostics.get("sr_labeling_xgb", {})
+
+                    # Helper formatting
+                    def _fmt_val(val: Any, digits: int = 4) -> str:
+                        try:
+                            return f"{float(val):.{digits}f}"
+                        except Exception:
+                            return "nan"
+
+                    # Filtering diagnostics
+                    f.write("### Filtering & AUC Inflation\n\n")
+                    f.write("| Metric | Value |\n")
+                    f.write("|--------|-------|\n")
+                    f.write(f"| AUC (full labels) | {_fmt_val(filtering_diag.get('auc_full'))} |\n")
+                    f.write(f"| AUC (filtered labels) | {_fmt_val(filtering_diag.get('auc_filtered'))} |\n")
+                    f.write(f"| AUC inflation (filtered - full) | {_fmt_val(filtering_diag.get('auc_inflation'))} |\n")
+                    f.write(f"| Filtering is major contributor | {bool(filtering_diag.get('filtering_is_major_contributor', False))} |\n")
+                    f.write(f"| AUC dominated by large moves | {bool(filtering_diag.get('auc_dominated_by_large_moves', False))} |\n")
+                    f.write(f"| Precision collapse detected | {bool(filtering_diag.get('precision_collapse_detected', False))} |\n\n")
+
+                    # Calibration diagnostics
+                    f.write("### Calibration Diagnostics\n\n")
+                    f.write("| Metric | Value |\n")
+                    f.write("|--------|-------|\n")
+                    f.write(f"| Well calibrated | {bool(calib_diag.get('is_well_calibrated', True))} |\n")
+                    f.write(f"| Brier score | {_fmt_val(calib_diag.get('brier_score'))} |\n")
+                    f.write(f"| Expected Calibration Error (ECE) | {_fmt_val(calib_diag.get('ece'))} |\n")
+                    f.write(f"| Maximum Calibration Error (MCE) | {_fmt_val(calib_diag.get('mce'))} |\n\n")
+
+                    # Mutual information
+                    if mi_diag:
+                        f.write("### Mutual Information (Meta-Score vs Targets)\n\n")
+                        f.write("| Relationship | MI (bits) |\n")
+                        f.write("|--------------|-----------|\n")
+                        f.write(
+                            f"| Probabilities → Label | {_fmt_val(mi_diag.get('mi_prob_label_bits'))} |\n"
+                        )
+                        f.write(
+                            f"| Probabilities → Return sign | {_fmt_val(mi_diag.get('mi_prob_return_sign_bits'))} |\n\n"
+                        )
+
+                    # Robustness and class overlap
+                    f.write("### Robustness & Class Overlap\n\n")
+                    f.write("| Metric | Value |\n")
+                    f.write("|--------|-------|\n")
+                    f.write(f"| Robust across folds | {bool(robust_diag.get('is_robust', True))} |\n")
+                    f.write(f"| Worst fold AUC | {_fmt_val(robust_diag.get('worst_fold_auc'))} |\n")
+                    f.write(f"| AUC CV std | {_fmt_val(robust_diag.get('auc_cv_std'))} |\n")
+                    f.write(f"| Easy problem detected | {bool(overlap_diag.get('easy_problem_detected', False))} |\n\n")
+
+                    # sr_labeling_xgb diagnostics
+                    if xgb_diag:
+                        f.write("### sr_labeling_xgb (Meta-Model XGB)\n\n")
+                        f.write("| Metric | Value |\n")
+                        f.write("|--------|-------|\n")
+                        f.write(
+                            f"| Baseline AUC | {_fmt_val(xgb_diag.get('baseline_auc'))} |\n"
+                        )
+                        f.write(
+                            f"| Best AUC (tuned) | {_fmt_val(xgb_diag.get('best_auc'))} |\n"
+                        )
+                        f.write(
+                            f"| AUC improvement | {_fmt_val(xgb_diag.get('auc_improvement'))} |\n\n"
+                        )
+
+                        if xgb_diag.get('best_params_json'):
+                            f.write(
+                                f"Best params JSON: `{Path(str(xgb_diag['best_params_json'])).name}`\n\n"
+                            )
+                        if xgb_diag.get('results_csv'):
+                            f.write(
+                                f"Results CSV: `{Path(str(xgb_diag['results_csv'])).name}`\n\n"
+                            )
+                        if xgb_diag.get('results_markdown'):
+                            f.write(
+                                f"XGB report: `{Path(str(xgb_diag['results_markdown'])).name}`\n\n"
+                            )
+
                 # Underfit Diagnostics (if available)
                 final_stage_candidates = [
                     c for c in candidate_pool
@@ -4474,7 +5337,26 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 f.write(f"5. **Label Balance:** Entropy-based balance scoring\n")
                 f.write(f"6. **Early Stopping:** Per-trial and global early stopping to prevent overfitting\n\n")
 
-                # Artifacts
+                # Gate usage and artifacts
+                if gate_stats:
+                    f.write(f"## Gate Usage & Early-Exit Statistics\n\n")
+                    f.write("| Gate | Count |\n")
+                    f.write("|------|-------|\n")
+                    for k, v in sorted(gate_stats.items()):
+                        if k == "last_exception":
+                            continue
+                        try:
+                            count_val = int(v)
+                        except Exception:
+                            continue
+                        f.write(f"| {k} | {count_val} |\n")
+                    f.write("\n")
+
+                    if gate_stats.get("last_exception"):
+                        f.write(
+                            f"**Last exception (if any):** `{gate_stats['last_exception']}`\n\n"
+                        )
+
                 f.write(f"## Artifacts\n\n")
                 f.write(f"- **Best Params JSON:** `{json_path.name if json_path else 'N/A'}`\n")
                 f.write(f"- **Candidate Pool CSV:** `{csv_path.name if csv_path else 'N/A'}`\n")
@@ -4555,9 +5437,14 @@ def register_meta_labeling_hpo_experiment_step() -> None:
     """Register the meta-labeling HPO experiment step in the registry."""
     from src.training.steps.base_step import step_registry
 
+    # Legacy name used by existing tooling and configs.
     step_registry.register("meta_labeling_hpo_experiment", MetaLabelingHPOExperimentStep)
-    tprint("✅ Meta-labeling HPO experiment step registered", "SUCCESS")
+    # New, user-facing name emphasizing that this step runs the
+    # sr_labeling_xgb meta-model HPO over labeling configurations.
+    step_registry.register("sr_labeling_xgb", MetaLabelingHPOExperimentStep)
+    tprint("✅ Meta-labeling HPO experiment step registered (aliases: meta_labeling_hpo_experiment, sr_labeling_xgb)", "SUCCESS")
 
 
 # Auto-register when module is imported
 register_meta_labeling_hpo_experiment_step()
+8

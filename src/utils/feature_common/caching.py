@@ -27,7 +27,12 @@ import threading
 import asyncio
 from enum import Enum
 import pickle
-import lz4.frame
+try:
+    import lz4.frame
+    LZ4_AVAILABLE = True
+except Exception:
+    lz4 = None
+    LZ4_AVAILABLE = False
 import zlib
 from contextlib import contextmanager
 
@@ -261,10 +266,12 @@ class HardwareAwareCache:
         try:
             serialized = pickle.dumps(value)
             
-            if self.config.compression_type == CompressionType.LZ4:
+            if self.config.compression_type == CompressionType.LZ4 and LZ4_AVAILABLE:
                 compressed = lz4.frame.compress(serialized)
                 return compressed, CompressionType.LZ4
-            elif self.config.compression_type == CompressionType.ZLIB:
+            elif self.config.compression_type == CompressionType.ZLIB or (
+                self.config.compression_type == CompressionType.LZ4 and not LZ4_AVAILABLE
+            ):
                 compressed = zlib.compress(serialized)
                 return compressed, CompressionType.ZLIB
             else:
@@ -277,9 +284,11 @@ class HardwareAwareCache:
     def _decompress_value(self, compressed_data: bytes, compression_type: CompressionType) -> Any:
         """Decompress value using the specified compression algorithm."""
         try:
-            if compression_type == CompressionType.LZ4:
+            if compression_type == CompressionType.LZ4 and LZ4_AVAILABLE:
                 decompressed = lz4.frame.decompress(compressed_data)
-            elif compression_type == CompressionType.ZLIB:
+            elif compression_type == CompressionType.ZLIB or (
+                compression_type == CompressionType.LZ4 and not LZ4_AVAILABLE
+            ):
                 decompressed = zlib.decompress(compressed_data)
             else:
                 decompressed = compressed_data

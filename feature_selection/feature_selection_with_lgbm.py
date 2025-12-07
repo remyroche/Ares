@@ -41,6 +41,11 @@ class FeatureSelector:
         self.ic_stats: Optional[Dict[str, Any]] = None
         self.original_columns: Optional[pd.Index] = None
         self.selection_report: Optional[Dict[str, Any]] = None
+        self.cluster_assignments: Optional[Dict[str, int]] = None
+        self.cluster_histogram: Optional[Dict[int, int]] = None
+        self.cluster_assignments_csv_path: Optional[str] = None
+        # Default maximum allowed absolute correlation for cluster caps
+        self.cluster_rho_max: float = 0.3
         
     def _log(self, message: str, level: str = "info") -> None:
         """Log a message if verbose mode is enabled."""
@@ -109,12 +114,13 @@ class FeatureSelector:
             y = y.astype(np.float32)
         except Exception as e:
             self._log(f"Error converting to float32: {e}", "warning")
-            # Try to select only numeric columns
             numeric_cols = X.select_dtypes(include=[np.number]).columns
             if len(numeric_cols) == 0:
                 self._log("No numeric columns found", "error")
                 return []
             X = X[numeric_cols].astype(np.float32)
+
+        prefilter_input_count = len(X.columns)
     
         # Pre-filter: keep only last 6 months of data if longer
         bars_per_day = 24 * 4  # 15-min bars
@@ -134,7 +140,13 @@ class FeatureSelector:
             self._log("No features passed pre-filters, returning all original features", "warning")
             return list(self.original_columns[:self.target_n_features])
             
-        self._log(f"Stage 1 complete: {len(X_filtered.columns)} features passed pre-filters")
+        stage1_count = len(X_filtered.columns)
+        dropped_stage1 = prefilter_input_count - stage1_count
+        self._log(
+            f"Stage 1 summary: kept {stage1_count} / {prefilter_input_count} features "
+            f"(dropped {dropped_stage1})"
+        )
+        self._log(f"Stage 1 complete: {stage1_count} features passed pre-filters")
     
         # Stage 2: Hierarchical Clustering
         self._log("Stage 2: Running hierarchical clustering to remove redundancy...")
@@ -144,7 +156,13 @@ class FeatureSelector:
             self._log("Clustering failed, using filtered features", "warning")
             X_clustered = X_filtered
             
-        self._log(f"Stage 2 complete: {len(X_clustered.columns)} features after clustering")
+        stage2_count = len(X_clustered.columns)
+        dropped_stage2 = stage1_count - stage2_count
+        self._log(
+            f"Stage 2 summary: kept {stage2_count} / {stage1_count} features "
+            f"(dropped {dropped_stage2})"
+        )
+        self._log(f"Stage 2 complete: {stage2_count} features after clustering")
     
         # Stage 3: LGBM-Based RFE
         self._log("Stage 3: Running LGBM RFE...")
@@ -153,12 +171,34 @@ class FeatureSelector:
         if not selected_features:
             self._log("LGBM RFE returned no features, using clustered features", "warning")
             selected_features = list(X_clustered.columns[:self.target_n_features])
-    
-        self._log(f"Stage 3 complete: {len(selected_features)} features selected", "success")
-    
+            
+        final_count = len(selected_features)
+        dropped_stage3 = stage2_count - final_count
+        self._log(
+            f"Stage 3 summary: kept {final_count} / {stage2_count} features "
+            f"(dropped {dropped_stage3})"
+        )
+        self._log(f"Stage 3 complete: {final_count} features selected", "success")
+
+        # Optional: build cluster histogram for the final selection
+        cluster_histogram: Dict[int, int] = {}
+        cluster_assignments_selected: Dict[str, int] = {}
+        cluster_csv_path: Optional[str] = None
+        try:
+            full_assignments = getattr(self, "cluster_assignments", None)
+            cluster_csv_path = getattr(self, "cluster_assignments_csv_path", None)
+            if isinstance(full_assignments, dict):
+                for f in selected_features:
+                    cid = full_assignments.get(f)
+                    if isinstance(cid, int):
+                        cluster_assignments_selected[f] = cid
+                        cluster_histogram[cid] = cluster_histogram.get(cid, 0) + 1
+        except Exception as e:
+            self._log(f"Error building cluster histogram: {e}", "warning")
+
         # Generate report
         self._generate_report(X_filtered)
-        
+
         # Store selection report for later inspection
         self.selection_report = {
             'total_input_features': len(self.original_columns),
@@ -167,8 +207,20 @@ class FeatureSelector:
             'final_selected': len(selected_features),
             'selected_features': selected_features,
             'target_name': target_name,
+            # Stage-wise drop counts for reporting
+            'prefilter_input': prefilter_input_count,
+            'stage1_kept': stage1_count,
+            'stage1_dropped': dropped_stage1,
+            'stage2_kept': stage2_count,
+            'stage2_dropped': dropped_stage2,
+            'stage3_kept': final_count,
+            'stage3_dropped': dropped_stage3,
+            # Correlation-cluster diagnostics
+            'cluster_assignments_selected': cluster_assignments_selected,
+            'cluster_histogram': cluster_histogram,
+            'cluster_assignments_csv_path': cluster_csv_path,
         }
-    
+
         return selected_features
 
     def run_pre_filters(self, X: pd.DataFrame, y: pd.Series) -> pd.DataFrame:
@@ -293,7 +345,7 @@ class FeatureSelector:
         }
     
         # --- 4. Percentile + hard cap ---
-        percentile_cut = 0.3  # keep top 70%
+        percentile_cut = 0.2  # keep top 80%
         candidate_features = combined_score[combined_score.rank(pct=True) > percentile_cut]
         
         # Fallback if percentile cut yields too few candidates
@@ -426,6 +478,224 @@ class FeatureSelector:
         self._log(f"Selected {len(representative_features)} cluster representatives")
         return X[representative_features]
 
+    def _cluster_cap_by_correlation(
+        self,
+        X: pd.DataFrame,
+        features: List[str],
+        max_per_cluster: int = 2,
+        rho_max: Optional[float] = None,
+    ) -> List[str]:
+        """Limit how many features are kept per correlation cluster.
+
+        This operates purely on the correlation structure between features,
+        independent of naming. We cluster the selected features using a
+        distance of ``1 - |Spearman(·,·)|`` and then walk the importance
+        ranking, allowing at most ``max_per_cluster`` features from each
+        cluster.
+        """
+        if not features:
+            return features
+
+        try:
+            X_sub = X[features].copy()
+            if X_sub.shape[1] <= max_per_cluster:
+                return features
+
+            # Rank-transform to compute Spearman correlations
+            ranked_X = rankdata(X_sub.values, axis=0)
+            corr = np.corrcoef(ranked_X.T)
+            corr = np.nan_to_num(corr, nan=0.0, posinf=1.0, neginf=-1.0)
+
+            # Distance matrix and condensed form
+            dist = 1 - np.abs(corr)
+            np.fill_diagonal(dist, 0)
+            condensed = dist[np.triu_indices(dist.shape[0], k=1)]
+
+            # Hierarchical clustering on the selected features only
+            Z = fastcluster.linkage(condensed, method="average")
+
+            # Orthogonality-first clustering: use a fixed distance threshold.
+            # dist = 1 - |rho|, so a maximum allowed correlation rho_max corresponds
+            # to t = 1 - rho_max. If no rho_max is provided, fall back to the
+            # instance-level default (self.cluster_rho_max) or 0.3.
+            if rho_max is None:
+                rho_max = getattr(self, "cluster_rho_max", 0.3)
+            try:
+                rho_max = float(rho_max)
+            except Exception:
+                rho_max = 0.3
+            # Clamp to a reasonable range
+            if rho_max <= 0.0 or rho_max >= 1.0:
+                rho_max = 0.3
+            t = 1.0 - rho_max
+
+            clusters = fcluster(Z, t, criterion="distance")
+            n_clusters = len(np.unique(clusters))
+            self._log(
+                f"Cluster-based cap: formed {n_clusters} correlation clusters "
+                f"with rho_max={rho_max:.2f}"
+            )
+
+            # Map feature -> cluster id
+            cluster_map = {
+                feat: int(clusters[i]) for i, feat in enumerate(X_sub.columns)
+            }
+
+            # Persist cluster assignments for diagnostics
+            try:
+                self.cluster_assignments = dict(cluster_map)
+
+                # Build histogram over all features considered in this cap
+                cluster_histogram: Dict[int, int] = {}
+                for cid in cluster_map.values():
+                    cluster_histogram[cid] = cluster_histogram.get(cid, 0) + 1
+                self.cluster_histogram = cluster_histogram
+
+                # Optionally persist assignments to CSV for offline analysis
+                try:
+                    os.makedirs("outcomes", exist_ok=True)
+                    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    csv_path = os.path.join(
+                        "outcomes", f"feature_cluster_assignments_{ts}.csv"
+                    )
+                    pd.DataFrame(
+                        {
+                            "feature": list(cluster_map.keys()),
+                            "cluster_id": list(cluster_map.values()),
+                        }
+                    ).to_csv(csv_path, index=False)
+                    self.cluster_assignments_csv_path = csv_path
+                    self._log(f"Cluster assignments saved to {csv_path}")
+                except Exception as e_csv:
+                    self._log(f"Error saving cluster assignments CSV: {e_csv}", "warning")
+            except Exception as e_assign:
+                self._log(f"Error recording cluster assignments: {e_assign}", "warning")
+
+            # Walk features in ranked order, allowing at most max_per_cluster
+            # from each correlation cluster.
+            cluster_counts: Dict[int, int] = {}
+            selected: List[str] = []
+
+            for f in features:
+                cid = cluster_map.get(f)
+                if cid is None:
+                    selected.append(f)
+                    continue
+                count = cluster_counts.get(cid, 0)
+                if count < max_per_cluster:
+                    selected.append(f)
+                    cluster_counts[cid] = count + 1
+
+            # Never exceed the global target
+            target = int(self.target_n_features)
+            if len(selected) > target:
+                selected = selected[:target]
+
+            return selected
+
+        except Exception as e:
+            self._log(f"Error in cluster-based cap: {e}", "warning")
+            # Fallback: simple top-N truncation
+            return features[: int(self.target_n_features)]
+
+    def _apply_semantic_diversity_cap(
+        self,
+        features: List[str],
+        max_per_family: int = 2,
+    ) -> List[str]:
+        """Limit features from the same semantic family to enforce conceptual diversity.
+        
+        Features are grouped into "families" based on their name patterns. For example:
+        - simple_returns_3, simple_returns_7, simple_returns_10 → family "simple_returns"
+        - vectorbt_trend_strength_5, vectorbt_trend_strength_10 → family "vectorbt_trend_strength"
+        
+        This ensures we don't have too many variations of the same concept even if
+        they are statistically uncorrelated (different lookback windows).
+        
+        Args:
+            features: List of feature names (already ranked by importance)
+            max_per_family: Maximum features to keep per semantic family
+            
+        Returns:
+            Filtered list of features with semantic diversity enforced
+        """
+        if not features or max_per_family <= 0:
+            return features
+            
+        import re
+        
+        def _extract_family(name: str) -> str:
+            """Extract the semantic family from a feature name.
+            
+            Strategy:
+            1. Remove trailing numeric suffixes (lookback windows, thresholds)
+            2. Remove common variant suffixes (_base, _vwap, _trend_adj, etc.)
+            3. Keep the core concept name
+            """
+            # Normalize to lowercase for matching
+            name_lower = name.lower()
+            
+            # Pattern 1: Features ending with _N or _N_suffix (e.g., simple_returns_10_price_returns)
+            # Extract base name before the first numeric parameter
+            match = re.match(r'^([a-z_]+?)_(\d+(?:\.\d+)?)', name_lower)
+            if match:
+                base = match.group(1)
+                # Clean up trailing underscores
+                base = base.rstrip('_')
+                return base
+            
+            # Pattern 2: Features with numeric parameters in the middle
+            # e.g., vectorbt_acceleration_trend_strength_5_10_price_returns
+            # → vectorbt_acceleration_trend_strength
+            parts = name_lower.split('_')
+            non_numeric_parts = []
+            for part in parts:
+                # Stop at first numeric part
+                if re.match(r'^\d+(?:\.\d+)?$', part):
+                    break
+                non_numeric_parts.append(part)
+            
+            if non_numeric_parts:
+                return '_'.join(non_numeric_parts)
+            
+            # Fallback: use the full name as its own family
+            return name_lower
+        
+        # Group features by family
+        family_counts: Dict[str, int] = {}
+        selected: List[str] = []
+        skipped_by_family: Dict[str, List[str]] = {}
+        
+        for f in features:
+            family = _extract_family(f)
+            count = family_counts.get(family, 0)
+            
+            if count < max_per_family:
+                selected.append(f)
+                family_counts[family] = count + 1
+            else:
+                # Track skipped features for logging
+                if family not in skipped_by_family:
+                    skipped_by_family[family] = []
+                skipped_by_family[family].append(f)
+        
+        # Log what was filtered
+        if skipped_by_family:
+            total_skipped = sum(len(v) for v in skipped_by_family.values())
+            self._log(
+                f"Semantic diversity filter: removed {total_skipped} features "
+                f"from {len(skipped_by_family)} over-represented families"
+            )
+            # Log top families that had features removed
+            for family, skipped in sorted(
+                skipped_by_family.items(), 
+                key=lambda x: len(x[1]), 
+                reverse=True
+            )[:5]:
+                self._log(f"  - {family}: kept {max_per_family}, skipped {len(skipped)}")
+        
+        return selected
+
     def _calculate_spearman_correlation(self, X: pd.DataFrame, y: pd.Series) -> np.ndarray:
         """Calculate Spearman correlation between each feature and target."""
         try:
@@ -487,6 +757,9 @@ class FeatureSelector:
         # Handle case where we have fewer features than target
         if len(features) <= self.target_n_features:
             self._log(f"Already at or below target ({len(features)} <= {self.target_n_features})")
+            # Still apply correlation-cluster caps so that no single correlation
+            # cluster dominates the final set.
+            features = self._cluster_cap_by_correlation(X, features)
             return features
             
         try:
@@ -646,4 +919,9 @@ class FeatureSelector:
                 self._log(f"Error in thorough RFE: {e}", "warning")
                 features = features[:self.target_n_features]
 
+        # Apply correlation-cluster cap to encourage diversity across groups of
+        # highly correlated features in the final selection while preserving the
+        # learned ranking as much as possible.
+        features = self._cluster_cap_by_correlation(X, features)
+        
         return features

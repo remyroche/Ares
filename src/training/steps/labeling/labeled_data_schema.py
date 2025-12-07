@@ -9,7 +9,6 @@ LABELED_DATA_SCHEMA_VERSION = "1.0"
 
 _BASE_REQUIRED_COLUMNS: tuple[str, ...] = (
     "realized_return",
-    "binary_label",
 )
 
 

@@ -19,6 +19,7 @@ import warnings
 import re
 import pandas as pd
 import numpy as np
+import lightgbm as lgb
 
 from src.utils.tprint import (
     tprint,
@@ -220,6 +221,200 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             self.analyst_handler = None
             tprint_warning("⚠️ CMI complementarity components not available")
 
+    def _create_selection_subsample(
+        self,
+        features: pd.DataFrame,
+        targets: pd.DataFrame,
+        config: Dict[str, Any],
+    ) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        """Create a subsampled dataset for feature selection/discovery phases.
+
+        Logic:
+        1. Identify the selection window (default: last 6 months).
+        2. Divide this window into N segments (default: 4).
+        3. From each segment, take the last M days (default: 30 days).
+        4. Concatenate these chunks.
+
+        If the total dataset is smaller than the selection window, the entire
+        dataset is used (with potential further subsampling if it's still huge).
+
+        Args:
+            features: Full feature DataFrame.
+            targets: Full target DataFrame (aligned with features).
+            config: Step configuration.
+
+        Returns:
+            Tuple of (subsampled_features, subsampled_targets).
+        """
+        # Determine whether targets are row-aligned with features. If not,
+        # we will subsample only the feature matrix and keep targets
+        # unchanged (e.g. when targets is labeling_metadata with 1 row).
+        align_targets = False
+        try:
+            if isinstance(targets, (pd.DataFrame, pd.Series)):
+                if len(targets) == len(features) and targets.index.equals(features.index):
+                    align_targets = True
+        except Exception:
+            align_targets = False
+        # Default config: Selection window = 180 days (6 months)
+        selection_window_days = int(config.get("selection_window_days", 180))
+        # Default config: 4 segments
+        subsample_count = int(config.get("subsample_count", 4))
+        # Default config: 30 days per segment
+        subsample_days = int(config.get("subsample_period_days", 30))
+        # Minimum total rows required to trigger subsampling (e.g. < 6 months data -> no subsampling)
+        min_rows_threshold = 20000
+
+        if len(features) < min_rows_threshold:
+            tprint_info(
+                f"📊 Dataset size ({len(features)}) < threshold ({min_rows_threshold}); "
+                "skipping subsampling for final selection"
+            )
+            return features, targets
+
+        try:
+            # Prefer time-based subsampling when index is a DatetimeIndex
+            if not isinstance(features.index, pd.DatetimeIndex):
+                # Fallback to row-based slicing if no datetime index
+                tprint_warning(
+                    "⚠️ Features index is not DatetimeIndex; "
+                    "falling back to row-based subsampling for final selection"
+                )
+                total_rows = len(features)
+                rows_per_day = 96  # approx 15m bars
+                selection_window_rows = selection_window_days * rows_per_day
+                start_idx = max(0, total_rows - selection_window_rows)
+
+                # Slice to selection window
+                features_window = features.iloc[start_idx:]
+                if align_targets:
+                    targets_window = targets.iloc[start_idx:]
+                else:
+                    targets_window = targets
+
+                # Split into segments
+                segment_size = max(1, len(features_window) // subsample_count)
+                subsample_size = subsample_days * rows_per_day
+
+                indices_to_keep: List[int] = []
+                for i in range(subsample_count):
+                    seg_start = i * segment_size
+                    seg_end = min(len(features_window), (i + 1) * segment_size)
+                    if seg_start >= seg_end:
+                        continue
+                    # Take last chunk of segment
+                    chunk_start = max(seg_start, seg_end - subsample_size)
+                    indices_to_keep.extend(
+                        range(start_idx + chunk_start, start_idx + seg_end)
+                    )
+
+                # Ensure unique and sorted
+                indices_to_keep = sorted(set(indices_to_keep))
+                if not indices_to_keep:
+                    return features, targets
+
+                sub_feats = features.iloc[indices_to_keep]
+                if align_targets:
+                    sub_targs = targets.iloc[indices_to_keep]
+                else:
+                    sub_targs = targets
+
+                tprint_info(
+                    "📊 Row-based subsampling (final FS): "
+                    f"{len(features)} -> {len(sub_feats)} rows "
+                    f"({len(indices_to_keep)/len(features):.1%})"
+                )
+                return sub_feats, sub_targs
+
+            # Time-based slicing
+            end_ts = features.index.max()
+            start_ts = end_ts - pd.Timedelta(days=selection_window_days)
+
+            # Slice to selection window
+            mask_window = (features.index >= start_ts) & (features.index <= end_ts)
+            features_window = features.loc[mask_window]
+            if align_targets:
+                targets_window = targets.loc[mask_window]
+            else:
+                targets_window = targets
+
+            if features_window.empty:
+                tprint_warning(
+                    "⚠️ Selection window for final FS empty; using full dataset"
+                )
+                return features, targets
+
+            window_duration = (
+                features_window.index.max() - features_window.index.min()
+            )
+            if subsample_count <= 0 or window_duration <= pd.Timedelta(0):
+                return features_window, targets_window
+
+            segment_duration = window_duration / subsample_count
+            subsample_duration = pd.Timedelta(days=subsample_days)
+
+            chunks_features: List[pd.DataFrame] = []
+            chunks_targets: List[pd.DataFrame] = []
+
+            tprint_info(
+                "📊 Subsampling for final FS from last "
+                f"{selection_window_days} days (window: {start_ts} to {end_ts})"
+            )
+
+            for i in range(subsample_count):
+                seg_start_ts = features_window.index.min() + i * segment_duration
+                seg_end_ts = seg_start_ts + segment_duration
+
+                # Define subsample range: [segment_end - subsample_days, segment_end]
+                sub_end_ts = seg_end_ts
+                sub_start_ts = max(seg_start_ts, sub_end_ts - subsample_duration)
+
+                mask_sub = (features.index >= sub_start_ts) & (
+                    features.index < sub_end_ts
+                )
+                chunk_f = features.loc[mask_sub]
+
+                if not chunk_f.empty:
+                    chunks_features.append(chunk_f)
+                    if align_targets:
+                        chunk_t = targets.loc[mask_sub]
+                        if not chunk_t.empty:
+                            chunks_targets.append(chunk_t)
+
+            if not chunks_features:
+                tprint_warning(
+                    "⚠️ No chunks generated for final FS subsampling; using full dataset"
+                )
+                return features, targets
+
+            sub_feats = pd.concat(chunks_features).sort_index()
+            if align_targets and chunks_targets:
+                sub_targs = pd.concat(chunks_targets).sort_index()
+            else:
+                # Targets are metadata or otherwise not row-aligned; keep
+                # them unchanged while using a subsampled feature matrix.
+                sub_targs = targets
+
+            tprint_info(
+                "📊 Time-based subsampling (final FS): "
+                f"{len(features)} -> {len(sub_feats)} rows "
+                f"({len(sub_feats)/len(features):.1%})"
+            )
+            tprint_info(
+                f"   Using {subsample_count} chunks of ~{subsample_days} days "
+                f"from the last {selection_window_days} days"
+            )
+
+            return sub_feats, sub_targs
+
+        except Exception as e:
+            tprint_error(
+                f"Error in final FS subsampling: {e}; using full dataset"
+            )
+            return features, targets
+
+
+
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
         Execute final feature selection.
@@ -340,17 +535,27 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                     except Exception as e:
                         tprint_error(f"❌ CRITICAL: Failed to access UNKNOWN store: {e}")
                 
-                # STEP 2: Load generated_features_15m (large feature set) - the 170K+ rows we need
+                # STEP 2: Load generated_features_15m (large feature set) - use the latest version
                 feature_versions = [v for v in store.list_versions() if 'generated_features_15m' in v.lower()]
                 tprint_info(f"🔍 DEBUG: Found generated_features versions: {feature_versions}")
-                
+
                 if feature_versions:
-                    # Use the largest dataset (should be 173,434 rows)
+                    # Heuristic: version names contain timestamps, so lexical sort gives latest
                     latest_features = sorted(feature_versions)[-1]
-                    tprint_info(f"📂 Loading LARGE generated_features from: {latest_features}")
-                    large_features_df = store.get_view(latest_features).materialize()
-                    tprint_success(f"✅ Loaded LARGE feature dataset: {large_features_df.shape}")
-                    data_source = f"versioned_store:labeled={latest_labeled if labeled_df is not None else 'none'},features={latest_features}"
+                    tprint_info(f"📂 Loading latest generated_features from: {latest_features}")
+                    try:
+                        large_features_df = store.get_view(latest_features).materialize()
+                        tprint_success(f"✅ Loaded feature dataset: {large_features_df.shape}")
+                        data_source = (
+                            f"versioned_store:labeled="
+                            f"{latest_labeled if labeled_df is not None else 'none'},"
+                            f"features={latest_features}"
+                        )
+                    except Exception as e:
+                        tprint_error(
+                            f"❌ Failed to load generated_features_15m version '{latest_features}': {e}"
+                        )
+                        large_features_df = None
                 
                 # STEP 3: CRITICAL FIX - Align features and targets with proper time period handling
                 # Priority: Use the intersection of time periods to ensure valid targets for all rows
@@ -649,42 +854,30 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             # Combine all features
             t0 = time.time()
             tprint_info("⏱️ [3/10] Combining features...")
-            combined_features_df = self._combine_features(features_data, labeled_df)
+            combined_features_df = self._combine_features(features_data, labeled_df, config)
             tprint_info(f"✅ Combined {combined_features_df.shape} in {time.time()-t0:.2f}s")
-
-            # Cap data to most recent 6 months (approx 180 days) for ALL modes - REMOVED for unified pipeline
-            # Data limiting is now handled via subsampling in selection phases, while artifacts retain full history.
-            # MAX_BARS_6_MONTHS = 17280  # 180 days * 96 15-min bars
-            # if len(combined_features_df) > MAX_BARS_6_MONTHS:
-            #     tprint_info(f"📅 Capping combined features to most recent 6 months ({MAX_BARS_6_MONTHS} rows)")
-            #     combined_features_df = combined_features_df.iloc[-MAX_BARS_6_MONTHS:]
-
-            # In blank mode, restrict to a contiguous recent window (default 180 days to match 6-month cap)
-            execution_mode_local = str(config.get('execution_mode', 'blank')).lower()
-            model_name_local = str(config.get('model', '') or config.get('model_name', '')).lower()
-            is_blank_mode = execution_mode_local == 'blank' or model_name_local == 'blank'
-            if is_blank_mode:
-                try:
-                    if isinstance(combined_features_df.index, pd.DatetimeIndex) and not combined_features_df.empty:
-                        target_days = int(config.get('blank_window_days', 180))
-                        end_ts = combined_features_df.index.max()
-                        start_ts = end_ts - pd.Timedelta(days=target_days)
-                        pre_rows = len(combined_features_df)
-                        combined_features_df = combined_features_df.loc[combined_features_df.index >= start_ts].copy()
-                        tprint_info(
-                            f"📅 [BLANK] Truncated feature window to last {target_days} days: "
-                            f"{pre_rows} → {len(combined_features_df)} rows "
-                        )
-                except Exception as e:
-                    tprint_warning(
-                        f"⚠️ [BLANK] Failed to truncate feature window based on blank_window_days: {e}; "
-                        "continuing without temporal truncation"
-                    )
 
             combined_features_df = self._apply_blank_mode_shaping(combined_features_df, config)
 
             # Sanitize leakage and near-constant features before final selection
             combined_features_df = self._sanitize_features_for_final_selection(combined_features_df, config)
+            try:
+                # Track total available candidate features (excluding targets/timestamp)
+                pre_fs_counts = config.get("pre_feature_selector_stage_counts", {}) or {}
+                combined_candidate_cols = [
+                    c
+                    for c in combined_features_df.columns
+                    if c not in TARGET_COLUMN_NAMES + ["timestamp"]
+                ]
+                pre_fs_counts["combined_available_features"] = len(combined_candidate_cols)
+                config["pre_feature_selector_stage_counts"] = pre_fs_counts
+                tprint_info(
+                    f"📊 Pre-FS: {len(combined_candidate_cols)} candidate feature columns after "
+                    f"combine/shaping/sanitization (excluding targets/timestamp)"
+                )
+            except Exception:
+                # Never break selection due to diagnostics bookkeeping
+                pass
             
             # Log final combined feature matrix characteristics for all execution modes
             execution_mode_local = str(config.get('execution_mode', 'blank')).lower()
@@ -901,7 +1094,7 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 if drop_candidates:
                     df = df.drop(columns=drop_candidates, errors="ignore")
 
-                max_nan_pct = float(config.get("blank_mode_max_nan_pct", 99.0))
+                max_nan_pct = float(config.get("blank_mode_max_nan_pct", 90.0))
                 candidate_numeric = [
                     c
                     for c in df.columns
@@ -917,6 +1110,19 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                             high_nan_cols.append(c)
                 if high_nan_cols:
                     df = df.drop(columns=high_nan_cols, errors="ignore")
+
+                # Record detailed diagnostics for blank-mode shaping
+                try:
+                    pre_fs_detailed = config.get("pre_feature_selector_stage_counts_detailed", {}) or {}
+                    shaping_detail = pre_fs_detailed.get("blank_mode_shaping", {})
+                    shaping_detail["raw_meta_leakage_dropped"] = len(drop_candidates)
+                    shaping_detail["candidate_numeric_before_high_nan"] = len(candidate_numeric)
+                    shaping_detail["high_nan_dropped"] = len(high_nan_cols)
+                    shaping_detail["candidate_numeric_after_high_nan"] = max(0, len(candidate_numeric) - len(high_nan_cols))
+                    pre_fs_detailed["blank_mode_shaping"] = shaping_detail
+                    config["pre_feature_selector_stage_counts_detailed"] = pre_fs_detailed
+                except Exception:
+                    pass
 
             feature_cols: List[str] = [
                 col
@@ -1058,6 +1264,25 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 )
                 df = df.drop(columns=near_constant_cols, errors="ignore")
 
+            # Record detailed diagnostics for sanitization
+            try:
+                pre_fs_detailed = config.get("pre_feature_selector_stage_counts_detailed", {}) or {}
+                sanitize_detail = pre_fs_detailed.get("sanitize", {})
+                sanitize_detail["leakage_dropped"] = len(leakage_cols)
+                sanitize_detail["near_constant_dropped"] = len(near_constant_cols)
+                sanitize_detail["candidate_before"] = len(candidate_cols)
+                candidate_after = len([
+                    c
+                    for c in df.columns
+                    if c not in TARGET_COLUMN_NAMES + ["timestamp"]
+                    and pd.api.types.is_numeric_dtype(df[c])
+                ])
+                sanitize_detail["candidate_after"] = candidate_after
+                pre_fs_detailed["sanitize"] = sanitize_detail
+                config["pre_feature_selector_stage_counts_detailed"] = pre_fs_detailed
+            except Exception:
+                pass
+
             tprint_info(
                 f"📊 Feature sanitization complete: {combined_features_df.shape[1]} → {df.shape[1]} columns "
                 f"({n_rows} rows)"
@@ -1146,8 +1371,11 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
 
         return features_data
 
-    def _combine_features(self, features_data: Dict[str, Any], labeled_df: pd.DataFrame) -> pd.DataFrame:
-        """Combine features from different sources into a single DataFrame with VectorBT optimizations."""
+    def _combine_features(self, features_data: Dict[str, Any], labeled_df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
+        """Combine features from different sources into a single DataFrame with VectorBT optimizations.
+
+        The config argument is used for mode-aware target selection (e.g. direction/model_type).
+        """
         tprint_error("🔄 CRITICAL DEBUG: Starting _combine_features method")
         
         # Polars compatibility: normalize any Polars DataFrames to pandas before combining.
@@ -1180,6 +1408,33 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                     tprint_error(f"   {key} time range: {data.index.min()} to {data.index.max()}")
             else:
                 tprint_error(f"   {key}: {type(data)} (None or no shape)")
+
+        # Detailed pre-FeatureSelector diagnostics: per-source feature counts
+        try:
+            pre_fs_detailed = config.get("pre_feature_selector_stage_counts_detailed", {}) or {}
+            sources_detail = pre_fs_detailed.get("sources", {})
+
+            def _count_numeric_features(df: pd.DataFrame) -> int:
+                return len([
+                    c
+                    for c in df.columns
+                    if c not in TARGET_COLUMN_NAMES + ["timestamp"]
+                    and pd.api.types.is_numeric_dtype(df[c])
+                ])
+
+            if isinstance(labeled_df, pd.DataFrame):
+                sources_detail["labeled_df_non_target"] = _count_numeric_features(labeled_df)
+
+            for key, data in features_data.items():
+                if isinstance(data, pd.DataFrame):
+                    # Count numeric, non-target features contributed by each source
+                    sources_detail[key] = _count_numeric_features(data)
+
+            pre_fs_detailed["sources"] = sources_detail
+            config["pre_feature_selector_stage_counts_detailed"] = pre_fs_detailed
+        except Exception:
+            # Never break feature combination due to diagnostics bookkeeping
+            pass
         
         tprint_info("🔄 Combining features with VectorBT optimizations...")
         
@@ -1508,10 +1763,14 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 tprint_error(f"   Sample interaction cols: {interaction_cols_in_df[:3]}")
             
             if name in ('feature_dataframe', 'generated_features'):
-                # Exclude OHLCV, basic time, and target columns
+                # Exclude OHLCV, basic time, target columns, AND columns already in base_features
+                # This prevents double-counting when labeled_df already contains generated_features
                 feature_cols = [col for col in df.columns
-                              if col not in ohlcv_cols and col not in basic_time_cols and col not in TARGET_COLUMN_NAMES]
-                tprint_error(f"   {name}: Filtered to {len(feature_cols)} columns (excluded OHLCV/time/targets)")
+                              if col not in ohlcv_cols 
+                              and col not in basic_time_cols 
+                              and col not in TARGET_COLUMN_NAMES
+                              and col not in base_features.columns]
+                tprint_error(f"   {name}: Filtered to {len(feature_cols)} columns (excluded OHLCV/time/targets/duplicates)")
             else:
                 # For interactions, exclude columns already in base_features
                 before_filter = len(df.columns)
@@ -1594,6 +1853,18 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 tprint_error(f"      {col}: dtype={base_features[col].dtype}")
         
         tprint_error("=" * 80)
+
+        # Record detailed diagnostics for numeric filtering
+        try:
+            pre_fs_detailed = config.get("pre_feature_selector_stage_counts_detailed", {}) or {}
+            combine_detail = pre_fs_detailed.get("combine", {})
+            combine_detail["total_before_numeric_filter"] = len(base_features.columns)
+            combine_detail["non_numeric_dropped"] = len(non_numeric_cols)
+            combine_detail["total_after_numeric_filter"] = len(numeric_cols)
+            pre_fs_detailed["combine"] = combine_detail
+            config["pre_feature_selector_stage_counts_detailed"] = pre_fs_detailed
+        except Exception:
+            pass
 
         result_df = base_features[numeric_cols].copy()
         
@@ -1995,6 +2266,8 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             full_features_df = features_df
 
         min_samples = int(config.get("lgbm_fs_min_target_samples", 200))
+        # Master ranking from FeatureSelector (used to define the 60-feature set)
+        fs_master_rank: List[str] = []
 
         def _is_usable_target(series: pd.Series, label: str) -> bool:
             try:
@@ -2259,6 +2532,32 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         # features so that we preserve a large candidate pool (>> 2 features).
         feature_cols = sophisticated_features + basic_engineered_features
 
+        # Track pre-FeatureSelector stage counts for exclusions
+        try:
+            pre_fs_counts = config.get("pre_feature_selector_stage_counts", {}) or {}
+            combined_available = pre_fs_counts.get("combined_available_features")
+            pre_fs_counts["candidate_after_exclusions"] = len(feature_cols)
+            if isinstance(combined_available, int):
+                pre_fs_counts["excluded_dropped"] = max(0, combined_available - len(feature_cols))
+            config["pre_feature_selector_stage_counts"] = pre_fs_counts
+
+            if isinstance(combined_available, int):
+                dropped_excl = pre_fs_counts.get("excluded_dropped", 0)
+                tprint_info(
+                    "📊 Pre-FS: "
+                    f"{len(feature_cols)} candidate features after exclusions "
+                    f"(dropped {dropped_excl} from {combined_available} combined features)"
+                )
+            else:
+                tprint_info(
+                    "📊 Pre-FS: "
+                    f"{len(feature_cols)} candidate features after exclusions "
+                    "(targets/raw/time/perf/meta removed)"
+                )
+        except Exception:
+            # Diagnostics should not interfere with selection
+            pass
+
         # Prefer meta-label outputs from feature_generation_meta_labeling_step.
         # We no longer fall back to fused/simplified price-based targets here;
         # if meta-label outputs are missing or empty, this step should fail
@@ -2309,9 +2608,11 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         nan_count_before = y.isna().sum()
         total_samples = len(y)
         
-        # Store the full features_df for later use in creating output dataframes
-        # This ensures we can apply selected features to ALL rows, not just valid-target rows
-        full_features_df = features_df.copy()
+        # NOTE: full_features_df already represents the full combined feature
+        # history passed into this function (e.g. multi-year grid). Do NOT
+        # overwrite it with the (possibly subsampled) features_df here – we
+        # only subselect rows for selection, while artifacts are always built
+        # on the full history.
         
         if nan_count_before > 0:
             pct_nan = 100 * nan_count_before / total_samples
@@ -2427,6 +2728,22 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         tprint_info(f"  Features kept (≥{MIN_COVERAGE_PCT}% coverage): {len(features_to_keep)}")
         tprint_info(f"  Features removed (<{MIN_COVERAGE_PCT}% coverage): {len(features_to_remove)}")
 
+        # Track coverage-based reduction for pre-FeatureSelector diagnostics
+        try:
+            pre_fs_counts = config.get("pre_feature_selector_stage_counts", {}) or {}
+            pre_fs_counts["coverage_kept"] = len(features_to_keep)
+            pre_fs_counts["coverage_dropped"] = len(features_to_remove)
+            config["pre_feature_selector_stage_counts"] = pre_fs_counts
+
+            tprint_info(
+                "📊 Pre-FS coverage filter: "
+                f"kept {pre_fs_counts['coverage_kept']} features, "
+                f"dropped {pre_fs_counts['coverage_dropped']} "
+                f"(from {len(features_to_keep) + len(features_to_remove)})"
+            )
+        except Exception:
+            pass
+
         if features_to_remove:
             tprint_warning(f"⚠️ Removed {len(features_to_remove)} sparse features:")
             for feat in features_to_remove[:10]:  # Show first 10
@@ -2479,45 +2796,76 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         else:
             tprint_success(f"✅ No NaN values in kept features")
 
-        # Use FeatureSelector to pre-select top 80 features
+        # Use a correlation-based clustering preselector to build an orthogonal
+        # master pool of features before running the main 3-stage LGBM pipeline.
+        # Grid-search has been disabled; we fix the configuration to the
+        # empirically best-performing setup: target_n ≈ 120, rho_max ≈ 0.3.
         if FEATURE_SELECTOR_AVAILABLE:
-            tprint_info("🚀 Running FeatureSelector to pre-select top 80 features...")
+            # Determine the maximum requested set size (e.g. 60) and expand to a
+            # larger, more diverse pool (default 120) before permutation-based RFE.
+            fs_target_n = int(max(config.get('feature_set_sizes', [60, 50, 40, 30])))
+            preselector_target_n = int(
+                config.get('preselector_target_n_features', max(fs_target_n * 2, fs_target_n))
+            )
+            # Allow a light override of rho_max via config; default to 0.3.
+            preselector_rho_max = float(config.get('preselector_rho_max', 0.3))
+
+            tprint_info(
+                "🚀 Running fixed correlation-based preselector (orthogonality-first) "
+                f"with target_n={preselector_target_n}, rho_max={preselector_rho_max:.3f}..."
+            )
+
             try:
-                # Initialize FeatureSelector
-                # Note: FeatureSelector signature is (target_n_features)
-                # We want 80 features.
-                fs = FeatureSelector(target_n_features=80)
-
-                # Select features
-                # FeatureSelector.select_features(X, y, feature_names=None, target_name='target')
-
                 # Ensure y is a Series
                 if isinstance(y, pd.DataFrame):
                     y_series = y.iloc[:, 0]
                 else:
                     y_series = y
 
-                # Run selection
-                top_80_features = fs.select_features(X, y_series, feature_names=list(X.columns), target_name=y_series.name)
+                # Rank features by simple Spearman correlation strength vs target
+                # (absolute value).
+                spearman_scores: Dict[str, float] = {}
+                for col in X.columns:
+                    try:
+                        corr_val = X[col].corr(y_series, method="spearman")
+                    except Exception:
+                        corr_val = np.nan
+                    spearman_scores[col] = corr_val
 
-                if top_80_features:
-                    tprint_success(f"✅ FeatureSelector selected {len(top_80_features)} features (target 80)")
+                spearman_series = pd.Series(spearman_scores).fillna(0.0)
+                ranked_features = list(
+                    spearman_series.abs().sort_values(ascending=False).index
+                )
 
-                    # Update X and feature_cols
-                    valid_top_80 = [f for f in top_80_features if f in X.columns]
-                    if len(valid_top_80) < len(top_80_features):
-                        tprint_warning(f"⚠️ Some selected features missing from columns: {set(top_80_features) - set(valid_top_80)}")
+                # Orthogonality-first cluster cap: reuse FeatureSelector's
+                # _cluster_cap_by_correlation with fixed rho_max and
+                # max_per_cluster=1 to form an orthogonal pool up to the
+                # requested preselector_target_n.
+                fs = FeatureSelector(target_n_features=preselector_target_n, verbose=False)
+                fs_master_rank = fs._cluster_cap_by_correlation(
+                    X, ranked_features, max_per_cluster=1, rho_max=preselector_rho_max
+                )
 
-                    X = X[valid_top_80]
-                    feature_cols = valid_top_80
-                    tprint_info(f"📊 Reduced feature set to {len(feature_cols)} features for final refinement")
+                if fs_master_rank:
+                    if len(fs_master_rank) > preselector_target_n:
+                        fs_master_rank = fs_master_rank[:preselector_target_n]
+
+                    X = X[fs_master_rank]
+                    feature_cols = fs_master_rank
+                    tprint_success(
+                        f"✅ Correlation-based preselector produced master pool with "
+                        f"{len(fs_master_rank)} features (target {preselector_target_n}, "
+                        f"rho_max={preselector_rho_max:.3f})"
+                    )
                 else:
-                    tprint_warning("⚠️ FeatureSelector returned no features, proceeding with all features")
+                    tprint_warning(
+                        "⚠️ Correlation-based preselector returned no features, proceeding with all features"
+                    )
             except Exception as e:
-                tprint_error(f"❌ FeatureSelector failed: {e}")
+                tprint_error(f"❌ Correlation-based preselector failed: {e}")
                 tprint_warning("⚠️ Proceeding with all features")
         else:
-             tprint_warning("⚠️ FeatureSelector not available, skipping pre-selection")
+            tprint_warning("⚠️ FeatureSelector not available, skipping pre-selection")
 
         tprint_info(f"🔍 Performing final feature selection on {len(feature_cols)} features using 3-stage LGBM pipeline...")
         tprint_info(f"📊 Final dataset: {len(X)} samples, {len(X.columns)} features")
@@ -2566,9 +2914,15 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             except Exception as e:
                 tprint_warning(f"⚠️ Batch processing failed, falling back to sequential: {e}")
 
-        # OPTIMIZED: Run the 3-stage LGBM pipeline ONCE for the maximum size,
-        # then slice the ranked list to create 50/40 subsets (no redundant work).
-        tprint_info("🔄 Using optimized 3-stage LGBM selection (single run, multiple set sizes)...")
+        # OPTIMIZED: Run the 3-stage LGBM pipeline ONCE, but:
+        #   - the 60-feature set is defined directly by FeatureSelector's master
+        #     ranking (fs_master_rank),
+        #   - FinalFeatureSelectionComponent is only used to refine 50/40/30
+        #     subsets **within** that 60-feature pool (no new features).
+        tprint_info(
+            "🔄 Using 3-stage LGBM selection only to refine subsets below the "
+            "master 60-feature set from FeatureSelector..."
+        )
 
         # Get the maximum size we need to select (typically 60)
         max_size = max(feature_set_sizes)
@@ -2588,8 +2942,25 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             # will fall back to its existing configuration.
             tprint_warning("⚠️ Failed to update selection component config; using existing max_features")
 
-        tprint_info(f"🎯 Selecting top {max_size} features via 3-stage LGBM (will slice for smaller sets) using target '{target_cols[0]}'...")
-        all_selected_features = self.selection_component.select_features(X, y, feature_cols, target_name=target_cols[0])
+        tprint_info(
+            f"🎯 Running 3-stage LGBM selection on FeatureSelector pool to refine subsets "
+            f"(max_size={max_size}) using target '{target_cols[0]}'..."
+        )
+
+        leaky_zigzag_features = {
+            "vectorbt_zigzag_10.0_5",
+            "vectorbt_zigzag_5.0_2",
+            "vectorbt_zigzag_7.0_3",
+        }
+        feature_cols = [f for f in feature_cols if f not in leaky_zigzag_features]
+        if isinstance(X, pd.DataFrame):
+            cols_in_X = [f for f in feature_cols if f in X.columns]
+            X = X[cols_in_X]
+            feature_cols = cols_in_X
+
+        all_selected_features = self.selection_component.select_features(
+            X, y, feature_cols, target_name=target_cols[0]
+        )
 
         # CRITICAL DEBUG: Check what was selected
         tprint_error(f"🔍 CRITICAL DEBUG for max size {max_size}:")
@@ -2763,30 +3134,41 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             tprint_error("❌ No features available after building full ranked feature list")
             return feature_sets
 
-        # Now create feature sets by slicing the ranked list (no redundant computation!)
+        # Now create feature sets by slicing the ranked list:
+        # - size == max_size (e.g. 60): use FeatureSelector master ranking directly
+        # - smaller sizes: use LGBM/Econ-ranked list within the same pool, with
+        #   lightweight correlation pruning that never introduces new features.
         for size in sorted(feature_set_sizes, reverse=True):  # Process from largest to smallest
             target_size = min(size, len(full_ranked_features))
             tprint_info(
                 f"📊 Creating feature set for requested size {size} "
                 f"(using {target_size} features from pool of {len(full_ranked_features)})..."
             )
-            
-            # Slice the top N features from the full ranked list
-            selected_features = full_ranked_features[:target_size]
-            pruned_features = _apply_correlation_pruning(selected_features)
-            
-            # If correlation pruning removed too many features, refill from remaining pool
-            if len(pruned_features) < target_size:
-                remaining_pool = [
-                    f for f in full_ranked_features
-                    if f not in pruned_features
-                ]
-                for f in remaining_pool:
-                    pruned_features.append(f)
-                    if len(pruned_features) >= target_size:
-                        break
-            
-            selected_features = pruned_features
+
+            if size == max_size and fs_master_rank:
+                # 60-feature set = pure FeatureSelector master ranking (no extra pruning)
+                selected_features = fs_master_rank[:target_size]
+                tprint_info(
+                    f"📊 Using FeatureSelector master ranking for size {size}: "
+                    f"{len(selected_features)} features"
+                )
+            else:
+                # Slice the top N features from the full ranked list
+                selected_features = full_ranked_features[:target_size]
+                pruned_features = _apply_correlation_pruning(selected_features)
+
+                # If correlation pruning removed too many features, refill from remaining pool
+                if len(pruned_features) < target_size:
+                    remaining_pool = [
+                        f for f in full_ranked_features
+                        if f not in pruned_features
+                    ]
+                    for f in remaining_pool:
+                        pruned_features.append(f)
+                        if len(pruned_features) >= target_size:
+                            break
+
+                selected_features = pruned_features
             
             tprint_error(f"🔍 DEBUG for size {size}:")
             tprint_error(f"   Selected features count: {len(selected_features)}")
@@ -3716,6 +4098,37 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             if set_name.startswith('selected_features_'):
                 size = set_name.split('_')[-1]
                 metrics[f'features_{size}'] = len(feature_list)
+
+        # FeatureSelector stage-wise counts and cluster diagnostics (if available)
+        fs_report = config.get('feature_selector_selection_report')
+        if isinstance(fs_report, dict):
+            stage_keys = [
+                'prefilter_input',
+                'stage1_kept', 'stage1_dropped',
+                'stage2_kept', 'stage2_dropped',
+                'stage3_kept', 'stage3_dropped',
+            ]
+            metrics['feature_selector_stage_counts'] = {
+                k: fs_report.get(k) for k in stage_keys
+            }
+
+            cluster_hist = fs_report.get('cluster_histogram')
+            if isinstance(cluster_hist, dict):
+                metrics['feature_selector_cluster_histogram'] = cluster_hist
+
+            cluster_csv = fs_report.get('cluster_assignments_csv_path')
+            if isinstance(cluster_csv, str) and cluster_csv:
+                metrics['feature_selector_cluster_csv'] = cluster_csv
+
+        # Pre-FeatureSelector pipeline stage counts (if available)
+        pre_fs_report = config.get('pre_feature_selector_stage_counts')
+        if isinstance(pre_fs_report, dict):
+            metrics['pre_feature_selector_stage_counts'] = pre_fs_report
+
+        # Detailed Pre-FeatureSelector diagnostics (if available)
+        pre_fs_detailed = config.get('pre_feature_selector_stage_counts_detailed')
+        if isinstance(pre_fs_detailed, dict):
+            metrics['pre_feature_selector_stage_counts_detailed'] = pre_fs_detailed
 
         return metrics
 
@@ -4765,8 +5178,125 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 "- More reliable than standard Gini importance for complex trading strategies\n"
                 "- Measures true impact on model predictions\n"
                 "- Better for identifying genuinely predictive features\n\n"
-                "## Feature Selection Results\n\n"
             )
+
+            # Pre-FeatureSelector pipeline summary (if available)
+            pre_fs = config.get('pre_feature_selector_stage_counts')
+            if isinstance(pre_fs, dict) and pre_fs:
+                report += "## Pre-FeatureSelector Pipeline Stage Summary\n\n"
+                report += "| Stage | Kept | Dropped |\n"
+                report += "|-------|------|---------|\n"
+
+                combined = pre_fs.get('combined_available_features')
+                candidate = pre_fs.get('candidate_after_exclusions')
+                cov_kept = pre_fs.get('coverage_kept')
+                cov_dropped = pre_fs.get('coverage_dropped')
+
+                if isinstance(combined, int):
+                    report += f"| Combined (after shaping/sanitization) | {combined} | - |\n"
+
+                if isinstance(candidate, int):
+                    if isinstance(combined, int):
+                        excl_drop = max(0, combined - candidate)
+                        report += (
+                            "| After exclusions (no targets/raw/time/perf/meta) | "
+                            f"{candidate} | {excl_drop} |\n"
+                        )
+                    else:
+                        report += (
+                            "| After exclusions (no targets/raw/time/perf/meta) | "
+                            f"{candidate} | - |\n"
+                        )
+
+                if isinstance(cov_kept, int):
+                    if isinstance(candidate, int):
+                        cov_drop = max(0, candidate - cov_kept)
+                    elif isinstance(cov_dropped, int):
+                        cov_drop = cov_dropped
+                    else:
+                        cov_drop = "-"
+                    report += (
+                        "| After coverage filter (FS input) | "
+                        f"{cov_kept} | {cov_drop} |\n\n"
+                    )
+
+            # Detailed Pre-FeatureSelector diagnostics (if available)
+            pre_fs_detailed = config.get('pre_feature_selector_stage_counts_detailed')
+            if isinstance(pre_fs_detailed, dict) and pre_fs_detailed:
+                report += "### Pre-FeatureSelector Detailed Diagnostics\n\n"
+
+                # Per-source feature counts
+                sources = pre_fs_detailed.get('sources') or {}
+                if isinstance(sources, dict) and sources:
+                    report += "**Per-Source Numeric Feature Counts (pre-combine):**\n\n"
+                    report += "| Source | Numeric Features (non-target) |\n"
+                    report += "|--------|-------------------------------|\n"
+                    for src_name, cnt in sorted(sources.items()):
+                        report += f"| {src_name} | {cnt} |\n"
+                    report += "\n"
+
+                # Blank-mode shaping diagnostics
+                shaping = pre_fs_detailed.get('blank_mode_shaping') or {}
+                if isinstance(shaping, dict) and shaping:
+                    report += "**Blank-Mode Shaping (raw/meta/leakage + high-NaN) :**\n\n"
+                    report += "| Metric | Value |\n"
+                    report += "|--------|-------|\n"
+                    report += f"| Raw/meta/leakage dropped | {shaping.get('raw_meta_leakage_dropped', 'N/A')} |\n"
+                    report += f"| Candidate numeric before high-NaN | {shaping.get('candidate_numeric_before_high_nan', 'N/A')} |\n"
+                    report += f"| High-NaN features dropped | {shaping.get('high_nan_dropped', 'N/A')} |\n"
+                    report += f"| Candidate numeric after high-NaN | {shaping.get('candidate_numeric_after_high_nan', 'N/A')} |\n\n"
+
+                # Sanitization diagnostics
+                sanitize = pre_fs_detailed.get('sanitize') or {}
+                if isinstance(sanitize, dict) and sanitize:
+                    report += "**Sanitization (leakage + near-constant):**\n\n"
+                    report += "| Metric | Value |\n"
+                    report += "|--------|-------|\n"
+                    report += f"| Known leakage dropped | {sanitize.get('leakage_dropped', 'N/A')} |\n"
+                    report += f"| Near-constant features dropped | {sanitize.get('near_constant_dropped', 'N/A')} |\n"
+                    report += f"| Candidate features before sanitization | {sanitize.get('candidate_before', 'N/A')} |\n"
+                    report += f"| Candidate features after sanitization | {sanitize.get('candidate_after', 'N/A')} |\n\n"
+
+                # Combine-level numeric filtering diagnostics
+                combine_detail = pre_fs_detailed.get('combine') or {}
+                if isinstance(combine_detail, dict) and combine_detail:
+                    report += "**Combine Stage (numeric filtering after concatenation):**\n\n"
+                    report += "| Metric | Value |\n"
+                    report += "|--------|-------|\n"
+                    report += f"| Columns before numeric filter | {combine_detail.get('total_before_numeric_filter', 'N/A')} |\n"
+                    report += f"| Non-numeric columns dropped | {combine_detail.get('non_numeric_dropped', 'N/A')} |\n"
+                    report += f"| Columns after numeric filter | {combine_detail.get('total_after_numeric_filter', 'N/A')} |\n\n"
+
+            # FeatureSelector stage-wise summary and cluster diagnostics (if available)
+            fs_report = config.get('feature_selector_selection_report')
+            if isinstance(fs_report, dict) and fs_report:
+                report += "## FeatureSelector Stage Summary (Master 60-Set)\n\n"
+                report += "| Stage | Kept | Dropped |\n"
+                report += "|-------|------|---------|\n"
+                pre_input = fs_report.get('prefilter_input', 'N/A')
+                report += f"| Input | {pre_input} | - |\n"
+                s1k = fs_report.get('stage1_kept', 'N/A')
+                s1d = fs_report.get('stage1_dropped', 'N/A')
+                s2k = fs_report.get('stage2_kept', 'N/A')
+                s2d = fs_report.get('stage2_dropped', 'N/A')
+                s3k = fs_report.get('stage3_kept', 'N/A')
+                s3d = fs_report.get('stage3_dropped', 'N/A')
+                report += f"| Stage 1 (Pre-filters) | {s1k} | {s1d} |\n"
+                report += f"| Stage 2 (Clustering) | {s2k} | {s2d} |\n"
+                report += f"| Stage 3 (LGBM RFE + cluster cap) | {s3k} | {s3d} |\n\n"
+
+                cluster_hist = fs_report.get('cluster_histogram')
+                if isinstance(cluster_hist, dict) and cluster_hist:
+                    report += "### Correlation-Cluster Histogram (Final 60-Set)\n\n"
+                    report += "| Cluster ID | Feature Count |\n"
+                    report += "|------------|---------------|\n"
+                    for cid in sorted(cluster_hist.keys()):
+                        report += f"| {cid} | {cluster_hist.get(cid, 0)} |\n"
+                    csv_path = fs_report.get('cluster_assignments_csv_path')
+                    if isinstance(csv_path, str) and csv_path:
+                        report += f"\nCluster assignments CSV: `{csv_path}`\n\n"
+
+            report += "## Feature Selection Results\n\n"
             
             # Add feature set summaries
             for set_name, features in feature_sets.items():

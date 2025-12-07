@@ -165,11 +165,17 @@ def run_simple_long_grid_backtest(
     confidence: pd.Series,
     ml_df: pd.DataFrame,
     timeframe: str,
-    fee_rate: float = 0.0015,
+    fee_rate: float = 0.003,
     regime_col: Optional[str] = None,
     max_holding_bars: int = 6,
     tp_values: Optional[List[float]] = None,
     sl_values: Optional[List[float]] = None,
+    trail_distance_atr_mult: Optional[float] = None,
+    trail_atr_lookback: int = 14,
+    gate_mask: Optional[pd.Series] = None,
+    gate_prob: Optional[pd.Series] = None,
+    gate_prob_threshold: float = 0.5,
+    trail_distance_atr_mult_values: Optional[List[float]] = None,
 ) -> pd.DataFrame:
     index = close.index
     close = close.reindex(index).astype(float)
@@ -179,6 +185,40 @@ def run_simple_long_grid_backtest(
     predictions = predictions.reindex(index).astype(float)
     confidence = confidence.reindex(index).fillna(0.0).astype(float)
     ml_df = ml_df.reindex(index)
+
+    # Align optional gating series
+    if gate_mask is not None:
+        gate_mask = gate_mask.reindex(index).fillna(0.0).astype(float)
+    if gate_prob is not None:
+        gate_prob = gate_prob.reindex(index).fillna(0.0).astype(float)
+
+    # Determine trailing distance grid (in ATR multiples). When no explicit grid
+    # is provided, fall back to a single value from trail_distance_atr_mult (or
+    # 0.0 meaning no trailing).
+    if trail_distance_atr_mult_values is not None:
+        trail_grid = [float(v) for v in trail_distance_atr_mult_values] if len(trail_distance_atr_mult_values) > 0 else [0.0]
+    else:
+        if trail_distance_atr_mult is not None:
+            trail_grid = [float(trail_distance_atr_mult)]
+        else:
+            # Default trailing grid aligned with meta_labeling_hpo_experiment search
+            # space for trail_distance ~0.6–1.2x ATR, plus an explicit no-trailing
+            # configuration.
+            trail_grid = [0.0, 0.6, 0.9, 1.2]
+
+    use_trailing_global = False
+    atr_series = None
+    if any((v is not None) and (v > 0.0) for v in trail_grid):
+        tr1 = high - low
+        tr2 = (high - close.shift(1)).abs()
+        tr3 = (low - close.shift(1)).abs()
+        true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        lookback = int(trail_atr_lookback) if trail_atr_lookback is not None else 14
+        if lookback < 2:
+            lookback = 2
+        atr_series = true_range.rolling(window=lookback, min_periods=1).mean()
+        atr_series = atr_series.reindex(index).astype(float)
+        use_trailing_global = True
 
     regimes = None
     unique_regimes: Optional[List[Any]] = None
@@ -222,74 +262,177 @@ def run_simple_long_grid_backtest(
             # TP < SL (reward smaller than risk).
             if tp < sl:
                 continue
-            for q in quantile_levels:
-                th_value = conf_quantiles[q]
-                top_share = (1.0 - q) * 100.0
-                # ------------------------------------------------------------------
-                # Entry logic: go long when analyst confidence is above the
-                # quantile-based threshold (top X% of confidence values) AND the
-                # Analyst prediction is bullish (prediction > 0). Do not open a
-                # new position if already in one.
-                # ------------------------------------------------------------------
-                long_signal = (confidence >= th_value) & (predictions > 0.0)
+            for trail_mult in trail_grid:
+                for q in quantile_levels:
+                    th_value = conf_quantiles[q]
+                    top_share = (1.0 - q) * 100.0
+                    # ------------------------------------------------------------------
+                    # Entry logic: go long when analyst confidence is above the
+                    # quantile-based threshold (top X% of confidence values) AND the
+                    # Analyst prediction is bullish (prediction > 0). Optionally
+                    # require gate_mask/gate_prob to allow entries. Gating only
+                    # affects new trade openings.
+                    # ------------------------------------------------------------------
+                    long_signal = (confidence >= th_value) & (predictions > 0.0)
+                    if gate_mask is not None:
+                        long_signal = long_signal & (gate_mask > 0.0)
+                    if gate_prob is not None:
+                        try:
+                            prob_th = float(gate_prob_threshold)
+                        except Exception:
+                            prob_th = 0.5
+                        long_signal = long_signal & (gate_prob >= prob_th)
 
-                n = len(index)
-                position = pd.Series(0.0, index=index, dtype=float)
-                strategy_returns_wo_fees = pd.Series(0.0, index=index, dtype=float)
+                    n = len(index)
+                    position = pd.Series(0.0, index=index, dtype=float)
+                    strategy_returns_wo_fees = pd.Series(0.0, index=index, dtype=float)
 
-                in_position = False
-                cum_factor = 1.0  # cumulative (1+return) from current trade entry
-                entry_price = 0.0
-                bars_in_trade = 0  # number of bars spent in the current trade (including entry bar)
+                    in_position = False
+                    cum_factor = 1.0  # cumulative (1+return) from current trade entry
+                    entry_price = 0.0
+                    bars_in_trade = 0  # number of bars spent in the current trade (including entry bar)
+                    trailing_active = False
+                    event_use_trailing = False
+                    event_trail_dist = 0.0
+                    peak_price = 0.0
 
-                # We use t-1's signal to decide entry at bar t to avoid lookahead.
-                for i in range(1, n):
-                    if (not in_position) and bool(long_signal.iloc[i - 1]):
-                        # Check previous bar's signal for entry
-                        in_position = True
-                        cum_factor = 1.0
-                        # Use the previous close as the effective entry price so that
-                        # PnL starts from the entry bar using raw_returns[i].
-                        entry_price = float(close.iloc[i - 1])
-                        bars_in_trade = 0
+                    # Exit-reason counters (per completed trade)
+                    exit_profit = 0
+                    exit_stop = 0
+                    exit_trailing = 0
+                    exit_max_hold = 0
+                    exit_conflict = 0
+                    exit_end_of_series = 0
 
-                    if in_position:
-                        # We start this bar in a long position
-                        position.iloc[i] = 1.0
-                        bars_in_trade += 1
-                        bar_ret = float(raw_returns.iloc[i])
+                    # We use t-1's signal to decide entry at bar t to avoid lookahead.
+                    for i in range(1, n):
+                        if (not in_position) and bool(long_signal.iloc[i - 1]):
+                            # Check previous bar's signal for entry
+                            in_position = True
+                            cum_factor = 1.0
+                            # Use the previous close as the effective entry price so that
+                            # PnL starts from the entry bar using raw_returns[i].
+                            entry_price = float(close.iloc[i - 1])
+                            bars_in_trade = 0
+                            trailing_active = False
+                            event_use_trailing = False
+                            event_trail_dist = 0.0
+                            peak_price = entry_price
+                            if use_trailing_global and atr_series is not None and trail_mult is not None and trail_mult > 0.0:
+                                atr_value = float(atr_series.iloc[i - 1])
+                                if np.isfinite(atr_value) and atr_value > 0.0:
+                                    event_trail_dist = atr_value * float(trail_mult)
+                                    event_use_trailing = True
 
-                        # Proposed cumulative factor using close-to-close returns
-                        proposed_factor = cum_factor * (1.0 + bar_ret)
+                        if in_position:
+                            # We start this bar in a long position
+                            position.iloc[i] = 1.0
+                            bars_in_trade += 1
+                            bar_ret = float(raw_returns.iloc[i])
 
-                        # TP/SL detection based on high/low relative to entry close
-                        if entry_price != 0.0:
-                            high_ret = float(high.iloc[i] / entry_price - 1.0)
-                            low_ret = float(low.iloc[i] / entry_price - 1.0)
-                        else:
-                            high_ret = 0.0
-                            low_ret = 0.0
+                            # Proposed cumulative factor using close-to-close returns
+                            proposed_factor = cum_factor * (1.0 + bar_ret)
 
-                        exit_now = False
-                        target_ret = 0.0
+                            if entry_price != 0.0:
+                                high_price = float(high.iloc[i])
+                                low_price = float(low.iloc[i])
+                                high_ret = float(high_price / entry_price - 1.0)
+                                low_ret = float(low_price / entry_price - 1.0)
+                            else:
+                                high_price = float(high.iloc[i])
+                                low_price = float(low.iloc[i])
+                                high_ret = 0.0
+                                low_ret = 0.0
 
-                        # If both TP and SL are hit in the same bar, treat it as a
-                        # neutral outcome (flat PnL) rather than forcing SL or TP.
-                        if low_ret <= -sl and high_ret >= tp:
-                            exit_now = True
+                            exit_now = False
                             target_ret = 0.0
-                        elif high_ret >= tp:
-                            exit_now = True
-                            target_ret = tp
-                        elif low_ret <= -sl:
-                            exit_now = True
-                            target_ret = -sl
+                            exit_reason = ""
+
+                            if event_use_trailing:
+                                fixed_stop_price = entry_price * (1.0 - sl)
+                                effective_stop = fixed_stop_price
+                                if trailing_active:
+                                    if high_price > peak_price:
+                                        peak_price = high_price
+                                    current_trailing_stop = peak_price - event_trail_dist
+                                    if current_trailing_stop > effective_stop:
+                                        effective_stop = current_trailing_stop
+                                    min_profit_price_long = entry_price * (1.0 + tp)
+                                    if min_profit_price_long > effective_stop:
+                                        effective_stop = min_profit_price_long
+
+                                if trailing_active and low_price <= effective_stop:
+                                    exit_now = True
+                                    if entry_price > 0.0:
+                                        target_ret = float(effective_stop / entry_price - 1.0)
+                                    else:
+                                        target_ret = 0.0
+                                    if effective_stop > fixed_stop_price + 1e-8:
+                                        exit_reason = "trailing"
+                                    else:
+                                        exit_reason = "stop"
+
+                                if (not trailing_active) and (not exit_now):
+                                    activation_price = entry_price * (1.0 + tp)
+                                    if high_price >= activation_price:
+                                        peak_price = high_price
+                                        intra_bar_stop = peak_price - event_trail_dist
+                                        eff_intra_stop = fixed_stop_price
+                                        if intra_bar_stop > eff_intra_stop:
+                                            eff_intra_stop = intra_bar_stop
+                                        if low_price <= eff_intra_stop:
+                                            raw_exit_price = 0.5 * (high_price + low_price)
+                                            min_profit_price_long = entry_price * (1.0 + tp)
+                                            exit_price = raw_exit_price
+                                            if exit_price < min_profit_price_long:
+                                                exit_price = min_profit_price_long
+                                            exit_now = True
+                                            if entry_price > 0.0:
+                                                target_ret = float(exit_price / entry_price - 1.0)
+                                            else:
+                                                target_ret = 0.0
+                                            exit_reason = "trailing"
+                                        else:
+                                            trailing_active = True
+                            else:
+                                # TP/SL detection based on high/low relative to entry close
+                                # If both TP and SL are hit in the same bar, treat it as a
+                                # neutral outcome (flat PnL) rather than forcing SL or TP.
+                                if low_ret <= -sl and high_ret >= tp:
+                                    exit_now = True
+                                    target_ret = 0.0
+                                    exit_reason = "conflict"
+                                elif high_ret >= tp:
+                                    exit_now = True
+                                    target_ret = tp
+                                    exit_reason = "profit"
+                                elif low_ret <= -sl:
+                                    exit_now = True
+                                    target_ret = -sl
+                                    exit_reason = "stop"
 
                         # Enforce a maximum holding period measured in bars.
                         if (not exit_now) and max_holding_bars > 0 and bars_in_trade >= max_holding_bars:
                             exit_now = True
-                            # Realize the trade at the current close-to-close return.
-                            target_ret = proposed_factor - 1.0
+
+                            # Horizon exit semantics: close at this bar's close, but if the
+                            # close has moved beyond the fixed stop level, use the midpoint
+                            # between the close and the stop. This mirrors the labeling
+                            # logic which avoids synthetic losses far beyond the nominal
+                            # stop level when trades dwell until the horizon.
+                            if entry_price > 0.0:
+                                final_close = float(close.iloc[i])
+                                fixed_stop_price = entry_price * (1.0 - sl)
+                                if final_close < fixed_stop_price:
+                                    exit_price = 0.5 * (final_close + fixed_stop_price)
+                                else:
+                                    exit_price = final_close
+                                target_ret = float(exit_price / entry_price - 1.0)
+                            else:
+                                # Fallback: preserve legacy behavior when entry_price is invalid.
+                                target_ret = proposed_factor - 1.0
+
+                            exit_reason = "max_hold"
 
                         if exit_now:
                             # Adjust this bar's return so that the cumulative
@@ -305,11 +448,27 @@ def run_simple_long_grid_backtest(
                             # position series reflects the actual exit.
                             position.iloc[i] = 0.0
 
+                            # Update exit-reason counters at trade close.
+                            if exit_reason == "profit":
+                                exit_profit += 1
+                            elif exit_reason == "stop":
+                                exit_stop += 1
+                            elif exit_reason == "trailing":
+                                exit_trailing += 1
+                            elif exit_reason == "max_hold":
+                                exit_max_hold += 1
+                            elif exit_reason == "conflict":
+                                exit_conflict += 1
+
                             # Close the position; do not re-open on the same bar.
                             in_position = False
                             cum_factor = 1.0
                             entry_price = 0.0
                             bars_in_trade = 0
+                            trailing_active = False
+                            event_use_trailing = False
+                            event_trail_dist = 0.0
+                            peak_price = 0.0
                         else:
                             # Continue the trade with the raw close-to-close return
                             strategy_returns_wo_fees.iloc[i] = bar_ret
@@ -403,6 +562,7 @@ def run_simple_long_grid_backtest(
                     trade_durations.append(len(in_position) - entry_idx)
                     trade_returns_wo.append(tr_wo)
                     trade_returns_with.append(tr_with)
+                    exit_end_of_series += 1
 
                 n_trades = len(trade_durations)
                 if n_trades > 0:
@@ -524,10 +684,23 @@ def run_simple_long_grid_backtest(
                     dir_acc_3 = 0.0
                     dir_acc_4 = 0.0
 
+                trail_label = "off"
+                trailing_enabled = bool(use_trailing_global and trail_mult is not None and trail_mult > 0.0)
+                if trailing_enabled:
+                    trail_label = f"{trail_mult:.2f}xATR"
+
                 row: Dict[str, Any] = {
-                    "grid_config": f"tp={tp * 100:.3f}%,sl={sl * 100:.3f}%,conf_top={top_share:.0f}%",
+                    "grid_config": f"tp={tp * 100:.3f}%,sl={sl * 100:.3f}%,conf_top={top_share:.0f}%,trail={trail_label}",
                     "take_profit_pct": tp,
                     "stop_loss_pct": sl,
+                    "trail_distance_atr_mult": float(trail_mult) if trail_mult is not None else 0.0,
+                    "trailing_enabled": trailing_enabled,
+                    "exit_trades_profit": exit_profit,
+                    "exit_trades_stop": exit_stop,
+                    "exit_trades_trailing": exit_trailing,
+                    "exit_trades_max_hold": exit_max_hold,
+                    "exit_trades_conflict": exit_conflict,
+                    "exit_trades_end_of_series": exit_end_of_series,
                     "confidence_threshold": th_value,
                     "confidence_quantile": q,
                     "bars": metrics_wo["bars"],
@@ -605,6 +778,11 @@ def run_simple_short_grid_backtest(
     max_holding_bars: int = 6,
     tp_values: Optional[List[float]] = None,
     sl_values: Optional[List[float]] = None,
+    trail_distance_atr_mult: Optional[float] = None,
+    trail_atr_lookback: int = 14,
+    gate_mask: Optional[pd.Series] = None,
+    gate_prob: Optional[pd.Series] = None,
+    gate_prob_threshold: float = 0.5,
 ) -> pd.DataFrame:
     index = close.index
     close = close.reindex(index).astype(float)
@@ -641,4 +819,9 @@ def run_simple_short_grid_backtest(
         max_holding_bars=max_holding_bars,
         tp_values=tp_values,
         sl_values=sl_values,
+        trail_distance_atr_mult=trail_distance_atr_mult,
+        trail_atr_lookback=trail_atr_lookback,
+        gate_mask=gate_mask,
+        gate_prob=gate_prob,
+        gate_prob_threshold=gate_prob_threshold,
     )

@@ -713,6 +713,8 @@ async def main():
     # Hard-cap feature selection at ~200 features for full and blank modes
     if args.execution_mode in ("full", "blank"):
         config.setdefault('target_n_features_selector', 200)
+        # Disable LGBM gating to allow more features through to final selection
+        config.setdefault('enable_lgbm_feature_gating', False)
 
     # Optional interaction-generation configuration
     if getattr(args, 'min_interaction_mi_lift', None) is not None:

@@ -1,8 +1,8 @@
 {
   "versions": {
-    "ml_liquidity_regime_probs_15m_20251203_081024_348": {
-      "created_at": "2025-12-03T08:10:24.349004",
-      "num_rows": 34135,
+    "ml_liquidity_regime_probs_15m_20251207_131527_253": {
+      "created_at": "2025-12-07T13:15:27.253488",
+      "num_rows": 140354,
       "num_columns": 9,
       "columns": [
         "timestamp",
@@ -24,10 +24,10 @@
       "step_name": "ml_liquidity_regime_step",
       "source_regime_timeframe": "15m"
     },
-    "ml_liquidity_training_data_15m_20251203_081025_352": {
-      "created_at": "2025-12-03T08:10:25.352697",
-      "num_rows": 34135,
-      "num_columns": 134,
+    "ml_liquidity_training_data_15m_20251207_131530_081": {
+      "created_at": "2025-12-07T13:15:30.081523",
+      "num_rows": 140354,
+      "num_columns": 133,
       "columns": [
         "timestamp",
         "open",
@@ -38,8 +38,7 @@
         "symbol",
         "interval",
         "exchange",
-        "year",
-        "month",
+        "day",
         "range",
         "return_1h",
         "abs_return_1h",
@@ -182,9 +181,9 @@
       "burnin_start": "2021-10-30 22:00:00",
       "burnin_end": "2022-03-02 22:00:00"
     },
-    "ml_liquidity_regime_probs_15m_20251205_183554_960": {
-      "created_at": "2025-12-05T18:35:54.960518",
-      "num_rows": 34135,
+    "ml_liquidity_regime_probs_15m_20251207_134129_025": {
+      "created_at": "2025-12-07T13:41:29.025862",
+      "num_rows": 140354,
       "num_columns": 9,
       "columns": [
         "timestamp",
@@ -206,10 +205,10 @@
       "step_name": "ml_liquidity_regime_step",
       "source_regime_timeframe": "15m"
     },
-    "ml_liquidity_training_data_15m_20251205_183558_226": {
-      "created_at": "2025-12-05T18:35:58.226435",
-      "num_rows": 34135,
-      "num_columns": 134,
+    "ml_liquidity_training_data_15m_20251207_134131_909": {
+      "created_at": "2025-12-07T13:41:31.909752",
+      "num_rows": 140354,
+      "num_columns": 133,
       "columns": [
         "timestamp",
         "open",
@@ -220,8 +219,7 @@
         "symbol",
         "interval",
         "exchange",
-        "year",
-        "month",
+        "day",
         "range",
         "return_1h",
         "abs_return_1h",
@@ -364,9 +362,9 @@
       "burnin_start": "2021-10-30 22:00:00",
       "burnin_end": "2022-03-02 22:00:00"
     },
-    "ml_liquidity_regime_probs_15m_20251205_191721_790": {
-      "created_at": "2025-12-05T19:17:21.790046",
-      "num_rows": 34135,
+    "ml_liquidity_regime_probs_15m_20251207_135701_271": {
+      "created_at": "2025-12-07T13:57:01.271268",
+      "num_rows": 140354,
       "num_columns": 9,
       "columns": [
         "timestamp",
@@ -388,10 +386,10 @@
       "step_name": "ml_liquidity_regime_step",
       "source_regime_timeframe": "15m"
     },
-    "ml_liquidity_training_data_15m_20251205_191723_618": {
-      "created_at": "2025-12-05T19:17:23.618572",
-      "num_rows": 34135,
-      "num_columns": 134,
+    "ml_liquidity_training_data_15m_20251207_135704_022": {
+      "created_at": "2025-12-07T13:57:04.022622",
+      "num_rows": 140354,
+      "num_columns": 133,
       "columns": [
         "timestamp",
         "open",
@@ -402,8 +400,7 @@
         "symbol",
         "interval",
         "exchange",
-        "year",
-        "month",
+        "day",
         "range",
         "return_1h",
         "abs_return_1h",
@@ -546,9 +543,9 @@
       "burnin_start": "2021-10-30 22:00:00",
       "burnin_end": "2022-03-02 22:00:00"
     },
-    "ml_liquidity_regime_probs_15m_20251205_221535_890": {
-      "created_at": "2025-12-05T22:15:35.890569",
-      "num_rows": 8564,
+    "ml_liquidity_regime_probs_15m_20251207_143726_918": {
+      "created_at": "2025-12-07T14:37:26.918864",
+      "num_rows": 140354,
       "num_columns": 9,
       "columns": [
         "timestamp",
@@ -568,12 +565,12 @@
       "direction": "long",
       "model": "liquidity_regime",
       "step_name": "ml_liquidity_regime_step",
-      "source_regime_timeframe": "1h"
+      "source_regime_timeframe": "15m"
     },
-    "ml_liquidity_training_data_15m_20251205_221537_285": {
-      "created_at": "2025-12-05T22:15:37.285857",
-      "num_rows": 8564,
-      "num_columns": 134,
+    "ml_liquidity_training_data_15m_20251207_143729_871": {
+      "created_at": "2025-12-07T14:37:29.871368",
+      "num_rows": 140354,
+      "num_columns": 133,
       "columns": [
         "timestamp",
         "open",
@@ -584,8 +581,7 @@
         "symbol",
         "interval",
         "exchange",
-        "year",
-        "month",
+        "day",
         "range",
         "return_1h",
         "abs_return_1h",
@@ -713,24 +709,24 @@
       "artifact_name": "ml_liquidity_training_data_15m",
       "symbol": "ETHUSDT",
       "exchange": "binance",
-      "timeframe": "1h",
+      "timeframe": "15m",
       "direction": "long",
       "model": "liquidity_regime",
       "step_name": "ml_liquidity_regime_step",
       "source_market_data": "artifacts",
       "version": "v2_with_burnin",
-      "training_start": "2022-03-01 22:00:00",
-      "training_end": "2024-05-12 22:00:00",
-      "validation_start": "2024-05-14 22:00:00",
-      "validation_end": "2025-02-05 22:00:00",
-      "test_start": "2025-02-07 22:00:00",
-      "test_end": "2025-10-31 23:00:00",
+      "training_start": "2022-03-04 22:00:00",
+      "training_end": "2024-05-30 22:00:00",
+      "validation_start": "2024-06-01 22:00:00",
+      "validation_end": "2025-02-28 22:00:00",
+      "test_start": "2025-03-02 22:00:00",
+      "test_end": "2025-11-29 22:00:00",
       "burnin_start": "2021-10-30 22:00:00",
-      "burnin_end": "2022-02-27 22:00:00"
+      "burnin_end": "2022-03-02 22:00:00"
     },
-    "ml_liquidity_regime_probs_15m_20251205_223100_752": {
-      "created_at": "2025-12-05T22:31:00.752244",
-      "num_rows": 34135,
+    "ml_liquidity_regime_probs_15m_20251207_155354_237": {
+      "created_at": "2025-12-07T15:53:54.237039",
+      "num_rows": 140354,
       "num_columns": 9,
       "columns": [
         "timestamp",
@@ -752,10 +748,10 @@
       "step_name": "ml_liquidity_regime_step",
       "source_regime_timeframe": "15m"
     },
-    "ml_liquidity_training_data_15m_20251205_223103_610": {
-      "created_at": "2025-12-05T22:31:03.610317",
-      "num_rows": 34135,
-      "num_columns": 134,
+    "ml_liquidity_training_data_15m_20251207_155357_842": {
+      "created_at": "2025-12-07T15:53:57.842069",
+      "num_rows": 140354,
+      "num_columns": 133,
       "columns": [
         "timestamp",
         "open",
@@ -766,8 +762,7 @@
         "symbol",
         "interval",
         "exchange",
-        "year",
-        "month",
+        "day",
         "range",
         "return_1h",
         "abs_return_1h",
@@ -911,8 +906,8 @@
       "burnin_end": "2022-03-02 22:00:00"
     }
   },
-  "current_version": "ml_liquidity_training_data_15m_20251205_223103_610",
+  "current_version": "ml_liquidity_training_data_15m_20251207_155357_842",
   "created_at": "2025-12-02T22:43:39.517721",
   "load_error": "Expecting value: line 1 column 1 (char 0)",
-  "updated_at": "2025-12-06T01:55:56.081394"
+  "updated_at": "2025-12-07T22:24:04.400960"
 }

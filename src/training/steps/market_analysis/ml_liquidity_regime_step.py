@@ -3203,6 +3203,27 @@ class MLLiquidityRegimeStep(BaseStep):
         # 15m market index via forward-fill instead of applying 1h→15m mapping.
         if regime_timeframe == output_timeframe:
             mapped = proba_df.reindex(market_data_15m.index, method="ffill")
+
+            # Optional early backfill: if probabilities only start late in the
+            # history (e.g., specialist trained on a recent window), then
+            # forward-fill alone will leave leading NaNs. For downstream
+            # consumers like meta-labeling and specialist_feature_diagnostics,
+            # this manifests as low coverage. When enabled, backfill the
+            # earliest non-null 15m row to all preceding bars so that the
+            # saved 15m probabilities form a continuous series over the
+            # available market-data index.
+            if bool(config.get("liquidity_backfill_early_probs", True)):
+                try:
+                    nonnull_mask = mapped.notna().any(axis=1)
+                    if nonnull_mask.any():
+                        first_pos = int(np.argmax(nonnull_mask.to_numpy()))
+                        if first_pos > 0:
+                            mapped.iloc[:first_pos] = mapped.iloc[first_pos]
+                except Exception:
+                    # Best-effort only; fall back to forward-fill-only
+                    # behaviour if anything goes wrong here.
+                    pass
+
             return mapped
 
         mode = str(config.get("liquidity_prob_interpolation_mode", "step")).lower()

@@ -673,10 +673,51 @@ class UnifiedModelsTrainingStep(BaseStep):
             else:
                 tprint_info("Hyperparameter optimization disabled or no training data available")
             
+            # ========================================================================
+            # FEATURE SET B: Replace training_data with meta-gated feature set
+            # ========================================================================
+            feature_set_mode = str(
+                (yaml_config.get('analyst_config', {}) or {}).get('feature_set', 'A')
+            ).upper()
+            if training_type == 'analyst_base' and feature_set_mode == 'B':
+                tprint_info("=" * 80)
+                tprint_info("🔄 FEATURE SET B: Building meta-gated feature set")
+                tprint_info("=" * 80)
+                meta_features = self._build_meta_gated_feature_set(training_data.index, config)
+                if meta_features is not None and not meta_features.empty:
+                    tprint_success(
+                        f"✅ Replacing analyst_base features with meta-gated Feature Set B: "
+                        f"{meta_features.shape[0]} samples × {meta_features.shape[1]} features"
+                    )
+                    training_data = meta_features
+                else:
+                    tprint_warning(
+                        "⚠️ Requested Feature Set B (meta-gated), but failed to build a valid "
+                        "meta-gated feature frame; falling back to default analyst_base features."
+                    )
+
             # Execute training based on type
             result = await self._execute_training_by_type(
                 training_type, training_data, analyst_targets, tactician_targets, yaml_config, config
             )
+            
+            # DEBUG: Log training result structure for artifact saving diagnostics
+            tprint_info("=" * 80)
+            tprint_info(f"🔍 [DEBUG] TRAINING RESULT STRUCTURE for {training_type}")
+            tprint_info("=" * 80)
+            tprint_info(f"🔍 [DEBUG] Result keys: {list(result.keys())}")
+            tprint_info(f"🔍 [DEBUG] result['success']: {result.get('success', 'NOT SET')}")
+            if 'models' in result:
+                tprint_info(f"🔍 [DEBUG] result['models'] keys: {list(result['models'].keys()) if result['models'] else 'None/Empty'}")
+            if 'predictions' in result:
+                pred = result['predictions']
+                tprint_info(f"🔍 [DEBUG] result['predictions'] type: {type(pred).__name__}, shape: {getattr(pred, 'shape', 'N/A')}")
+            if 'oof_predictions' in result:
+                oof = result['oof_predictions']
+                tprint_info(f"🔍 [DEBUG] result['oof_predictions'] type: {type(oof).__name__}, shape: {getattr(oof, 'shape', 'N/A')}")
+            if 'error_message' in result:
+                tprint_warning(f"🔍 [DEBUG] result['error_message']: {result['error_message']}")
+            tprint_info("=" * 80)
             
             if result.get('success', False):
                 tprint_success(f"✅ Unified {training_type} training completed successfully")
@@ -885,14 +926,15 @@ class UnifiedModelsTrainingStep(BaseStep):
                                 ml_scored_data = ml_scored_data[~ml_scored_data.index.duplicated(keep="last")]
 
                             artifact_name = f"ml_scored_historical_data_{model_type}_{direction}_oos"
-                            self._save_artifact(
+                            ml_scored_path = self._save_artifact(
                                 ml_scored_data,
                                 artifact_name,
                                 artifact_type='data',
                                 data_category='predictions'
                             )
-                            artifacts['ml_scored_historical_data_oos'] = artifact_name
+                            artifacts['ml_scored_historical_data_oos'] = ml_scored_path
                             tprint_success(f"✅ ML-scored OOS data saved: {artifact_name}")
+                            tprint_info(f"   Path: {ml_scored_path} | shape={ml_scored_data.shape}")
                         else:
                             tprint_info("ℹ️ Skipping ML-scored historical data save: OOS predictions not available for this training run")
                     except Exception as e:
@@ -1999,1151 +2041,45 @@ class UnifiedModelsTrainingStep(BaseStep):
             training_type = config.get('training_type', 'analyst_base')
             prefer_meta_label_targets = 'analyst_base' in str(training_type).lower()
 
-            # Try to get analyst targets (long-only for long/both directions) from
-            # legacy labeling artifacts. For analyst_base training we now prefer
-            # fused meta-label targets from labeled_data instead (loaded below),
-            # so we skip this block entirely in that case.
+            # Legacy label-loading path for non-analyst_base training types can be
+            # reintroduced if needed. For analyst_base we always prefer the
+            # meta-labeling labeled_data targets loaded below.
             if not prefer_meta_label_targets:
-                if direction in ('long', 'both'):
-                    analyst_artifact_names = [
-                        'analyst_targets_long',      # Direction-specific (preferred)
-                        'long_analyst_targets',      # Alternative naming
-                        'long_targets'               # Generic direction-specific
-                    ]
-                elif direction == 'short':
-                    analyst_artifact_names = [
-                        'analyst_targets_short',
-                        'short_analyst_targets',
-                        'short_targets'
-                    ]
-                else:
-                    # Default to long-only policy for unknown direction strings
-                    analyst_artifact_names = [
-                        'analyst_targets_long',
-                        'long_analyst_targets',
-                        'long_targets'
-                    ]
+                pass
 
-                for artifact_name in analyst_artifact_names:
+            # ========================================================================
+            # META-LABELING TARGETS (analyst_base preferred path)
+            # ========================================================================
+            if prefer_meta_label_targets and analyst_targets is None:
+                symbol_cfg = config.get('symbol', 'ETHUSDT')
+                timeframe_cfg = config.get('timeframe', '15m')
+                for artifact_name_candidate in [
+                    f"labeled_data_{symbol_cfg}_{timeframe_cfg}",
+                    'labeled_data',
+                ]:
                     try:
-                        analyst_targets = self._get_artifact(artifact_name, 'data')
-                        if analyst_targets is not None:
-                            tprint_success(f"✅ Retrieved analyst targets from '{artifact_name}': {len(analyst_targets)} samples")
-                            break
-                    except Exception as e:
-                        self.logger.debug(f"Artifact '{artifact_name}' not found: {e}")
-                        continue
-
-            # Try to get tactician targets ONLY if training tactician models
-            if 'tactician' in training_type.lower():
-                tactician_artifact_names = [
-                    f'tactician_targets_{direction}',  # Direction-specific
-                    f'{direction}_tactician_targets',  # Alternative naming
-                    f'{direction}_targets',             # Generic direction-specific
-                    'tactician_targets',                # Generic tactician targets
-                    'targets'                           # Fallback to generic targets
-                ]
-
-                for artifact_name in tactician_artifact_names:
-                    try:
-                        tactician_targets = self._get_artifact(artifact_name, 'data')
-                        if tactician_targets is not None:
-                            tprint_success(f"✅ Retrieved tactician targets from '{artifact_name}': {len(tactician_targets)} samples")
-                            break
-                    except Exception as e:
-                        self.logger.debug(f"Artifact '{artifact_name}' not found: {e}")
-                        continue
-            else:
-                tprint_info("ℹ️ Skipping tactician targets (analyst mode)")
-            
-            # FALLBACK: Try to extract targets from labeled_data if separate targets are
-            # missing OR degenerate (e.g. constant targets from legacy steps). This
-            # ensures we prefer the richer fused targets produced by the
-            # feature_generation_meta_labeling_step when they are available.
-
-            analyst_targets_is_constant = False
-            try:
-                if analyst_targets is not None and isinstance(analyst_targets, pd.Series):
-                    non_na = analyst_targets.dropna()
-                    if len(non_na) > 0 and non_na.nunique() <= 1:
-                        analyst_targets_is_constant = True
-                        tprint_warning(
-                            "⚠️ Analyst targets loaded from separate artifacts are constant; "
-                            "attempting fallback to fused meta-label targets from labeled_data..."
-                        )
-            except Exception:
-                analyst_targets_is_constant = False
-
-            if (analyst_targets is None or analyst_targets_is_constant) and tactician_targets is None:
-                # For blank-mode analyst_base, prefer to load fused targets directly from the
-                # analyst VersionedArtifactStore and align them to the feature index, to
-                # avoid index-type mismatches (e.g., datetime-like bytes vs RangeIndex).
-                training_type_local = str(config.get('training_type', 'analyst_base')).lower()
-                execution_mode_local = str(config.get('execution_mode', 'full')).lower()
-                is_analyst_base = 'analyst_base' in training_type_local
-                mode_label = execution_mode_local.upper()
-                if is_analyst_base:
-                    try:
-                        symbol_cfg = config.get('symbol', 'ETHUSDT')
-                        exchange_cfg = config.get('exchange', 'binance')
-                        timeframe_cfg = config.get('timeframe', '15m')
-                        direction_cfg = config.get('direction', 'long')
-                        analyst_store_path = f"versioned_artifacts/{symbol_cfg}_{exchange_cfg}_{timeframe_cfg}_{direction_cfg}_analyst"
-                        tprint_info(f"🔍 {mode_label} analyst_base: loading targets from VersionedArtifactStore at {analyst_store_path}")
-                        store = VersionedArtifactStore(analyst_store_path)
-                        versions = store.list_versions()
-                        labeled_versions = sorted(
-                            v for v in versions
-                            if ('labeled_data' in v.lower() or 'labeled_dataframe' in v.lower())
-                        )
-                        if labeled_versions:
-                            latest_labeled = labeled_versions[-1]
-                            tprint_info(f"   ↪ Using labeled_data version '{latest_labeled}'")
-                            labeled_data = store.get_view(latest_labeled).materialize()
-                            if not isinstance(labeled_data, pd.DataFrame):
-                                labeled_data = pd.DataFrame(labeled_data)
-
-                            # Normalize labeled_data index using the shared helper so
-                            # we exactly mirror specialist_feature_diagnostics._prepare_labels.
-                            labeled_data = self._normalize_labeled_data_index(labeled_data)
-
-                            tprint_info(
-                                f"✅ Loaded labeled_data from VersionedArtifactStore: {labeled_data.shape} "
-                                f"(index range: {labeled_data.index.min()} → {labeled_data.index.max()})"
-                            )
-                            # Choose direction-specific analyst_base targets based on model_type:
-                            # - classifier: Uses binary_label_long/short (directional classification)
-                            # - regressor: Uses target_long/short (expected returns, default)
-                            direction_lower = str(direction).lower()
-                            model_type = str(config.get("model_type", "regressor")).lower()
-                            target_col = None
-                            
-                            if model_type == "classifier":
-                                # For classifiers, use directional binary labels (no fallback to unified binary_label)
-                                tprint_info(f"🔧 Model type: classifier (using binary classification targets)")
-                                if direction_lower in ("long", "both"):
-                                    if 'binary_label_long' in labeled_data.columns:
-                                        target_col = 'binary_label_long'
-                                        tprint_success(f"✅ {mode_label} analyst_base: using binary_label_long for long classifier")
-                                    # NOTE: Removed fallback to unified 'binary_label' - use directional labels only
-                                elif direction_lower == "short":
-                                    if 'binary_label_short' in labeled_data.columns:
-                                        target_col = 'binary_label_short'
-                                        tprint_success(f"✅ {mode_label} analyst_base: using binary_label_short for short classifier")
-                                    # NOTE: Removed fallback to unified 'binary_label' - use directional labels only
-                            else:
-                                # For regressors, use continuous target values (current behavior)
-                                tprint_info(f"🔧 Model type: regressor (using continuous regression targets)")
-                                if direction_lower in ("long", "both"):
-                                    if 'target_long' in labeled_data.columns:
-                                        target_col = 'target_long'
-                                        tprint_success(f"✅ {mode_label} analyst_base: using primary non-fused target_long for long direction")
-                                    elif 'target_long_fused' in labeled_data.columns:
-                                        target_col = 'target_long_fused'
-                                        tprint_success(f"✅ {mode_label} analyst_base: using fallback fused target_long_fused for long direction")
-                                elif direction_lower == "short":
-                                    if 'target_short' in labeled_data.columns:
-                                        target_col = 'target_short'
-                                        tprint_success(f"✅ {mode_label} analyst_base: using primary non-fused target_short for short direction")
-                                    elif 'target_short_fused' in labeled_data.columns:
-                                        target_col = 'target_short_fused'
-                                        tprint_success(f"✅ {mode_label} analyst_base: using fallback fused target_short_fused for short direction")
-                            
-                            # As a final fallback, use generic 'target' if present
-                            if target_col is None and 'target' in labeled_data.columns:
-                                target_col = 'target'
-                                tprint_warning(f"⚠️ {mode_label} analyst_base: falling back to generic 'target' column as training target")
-                            if target_col is None:
-                                raise ValueError(
-                                    "❌ CRITICAL: No suitable analyst_base training target found in labeled_data. "
-                                    "Expected one of: binary_label_long/binary_label_short (classifier) or "
-                                    "target_long/target_short/target_long_fused/target_short_fused/target (regressor)."
-                                )
-                            # Log fused target statistics when available (for diagnostics only)
-                            if 'target_long_fused' in labeled_data.columns and 'target_short_fused' in labeled_data.columns:
-                                long_signals = (labeled_data['target_long_fused'] > 0).sum()
-                                short_signals = (labeled_data['target_short_fused'] > 0).sum()
-                                total_signals = long_signals + short_signals
-                                tprint_info("📊 Fused target statistics:")
-                                tprint_info(f"   • Long fused signals: {long_signals} ({long_signals/len(labeled_data)*100:.1f}%)")
-                                tprint_info(f"   • Short fused signals: {short_signals} ({short_signals/len(labeled_data)*100:.1f}%)")
-                                tprint_info(f"   • Total fused signals: {total_signals} ({total_signals/len(labeled_data)*100:.1f}%)")
-
-                            # Start from the chosen analyst target series. For blank
-                            # analyst_base we now rely on the global CRITICAL DATA
-                            # ALIGNMENT section below to intersect feature and target
-                            # DatetimeIndices, instead of performing a separate
-                            # positional tail-alignment here that shortens the window.
-                            analyst_targets = labeled_data[target_col]
-                        else:
-                            tprint_warning(
-                                f"⚠️ {mode_label} analyst_base: no labeled_data versions found in VersionedArtifactStore; "
-                                "falling back to generic labeled_data artifact path."
-                            )
-                    except Exception as e:
-                        tprint_warning(
-                            f"⚠️ {mode_label} analyst_base: VersionedArtifactStore-based target loading failed; "
-                            f"falling back to generic labeled_data artifact path: {e}"
-                        )
-                        analyst_targets = None
-                
-                # Generic labeled_data fallback (all modes except when the above
-                # specialized path has already succeeded).
-                if analyst_targets is None and tactician_targets is None:
-                    tprint_warning("⚠️ No usable separate analyst/tactician target artifacts found, trying to extract from labeled_data...")
-                    
-                    # Try to get labeled_data artifact (prefer fully-qualified meta-labeling artifact name)
-                    symbol_cfg = config.get('symbol', 'ETHUSDT')
-                    timeframe_cfg = config.get('timeframe', '15m')
-                    for artifact_name in [
-                        f"labeled_data_{symbol_cfg}_{timeframe_cfg}",
-                        'labeled_data',
-                        'labeled_features',
-                    ]:
-                        try:
-                            labeled_data = self._get_artifact(artifact_name, 'data')
-                            if labeled_data is not None and isinstance(labeled_data, pd.DataFrame):
-                                tprint_info(f"✅ Found labeled_data artifact: {labeled_data.shape}")
-
-                                # Normalize labeled_data index to a canonical
-                                # DatetimeIndex, mirroring diagnostics. This
-                                # avoids RangeIndex vs DatetimeIndex
-                                # mismatches that produce zero-overlap
-                                # intersections.
-                                if "timestamp" in labeled_data.columns:
-                                    ts = pd.to_datetime(labeled_data["timestamp"], utc=True, errors="coerce")
-                                    try:
-                                        ts = ts.dt.tz_convert("UTC").dt.tz_localize(None)
-                                    except Exception:
-                                        ts = ts.dt.tz_localize(None)
-                                    valid_mask = ~ts.isna()
-                                    labeled_data = labeled_data.loc[valid_mask].copy()
-                                    ts = ts[valid_mask]
-                                    labeled_data.index = ts
-                                elif "close_time" in labeled_data.columns:
-                                    close_col = labeled_data["close_time"]
-                                    try:
-                                        if pd.api.types.is_datetime64_any_dtype(close_col):
-                                            ts = pd.to_datetime(close_col, utc=True, errors="coerce")
-                                        else:
-                                            close_numeric = pd.to_numeric(close_col, errors="coerce")
-                                            ts = pd.to_datetime(close_numeric, unit="ms", utc=True, errors="coerce")
-                                    except Exception:
-                                        ts = pd.to_datetime(close_col, utc=True, errors="coerce")
-                                    try:
-                                        ts = ts.dt.tz_convert("UTC").dt.tz_localize(None)
-                                    except Exception:
-                                        ts = ts.dt.tz_localize(None)
-                                    valid_mask = ~ts.isna()
-                                    labeled_data = labeled_data.loc[valid_mask].copy()
-                                    ts = ts[valid_mask]
-                                    labeled_data.index = ts
-                                elif isinstance(labeled_data.index, pd.DatetimeIndex):
-                                    idx = labeled_data.index
-                                    if idx.tz is not None:
-                                        try:
-                                            idx = idx.tz_convert("UTC").tz_localize(None)
-                                        except Exception:
-                                            idx = idx.tz_localize(None)
-                                    labeled_data = labeled_data.copy()
-                                    labeled_data.index = idx
-                                else:
-                                    raise ValueError(
-                                        "labeled_data has neither 'timestamp'/'close_time' column nor DatetimeIndex"
-                                    )
-
-                                # Extract target columns (direction-aware)
-                                target_cols = [col for col in labeled_data.columns if 'target' in col.lower()]
-                                if target_cols:
-                                    tprint_info(f"📋 Available target columns: {target_cols}")
-
-                                    # Enforce fused targets ONLY for analyst fallback
-                                    if 'target_long_fused' in labeled_data.columns and 'target_short_fused' in labeled_data.columns:
-                                        # Fused target structure from labeling integration step
-                                        if direction == 'long':
-                                            target_col = 'target_long_fused'
-                                            tprint_success("✅ Using fused target structure: target_long_fused for long direction")
-                                        elif direction == 'short':
-                                            target_col = 'target_short_fused'
-                                            tprint_success("✅ Using fused target structure: target_short_fused for short direction")
-                                        else:
-                                            # For 'both' direction, use target_long_fused as default for analyst
-                                            target_col = 'target_long_fused'
-                                            tprint_success("✅ Using fused target structure: target_long_fused (default for analyst)")
-
-                                        # Log target statistics for fused structure
-                                        long_signals = (labeled_data['target_long_fused'] > 0).sum()
-                                        short_signals = (labeled_data['target_short_fused'] > 0).sum()
-                                        total_signals = long_signals + short_signals
-                                        tprint_info("📊 Fused target statistics:")
-                                        tprint_info(f"   • Long fused signals: {long_signals} ({long_signals/len(labeled_data)*100:.1f}%)")
-                                        tprint_info(f"   • Short fused signals: {short_signals} ({short_signals/len(labeled_data)*100:.1f}%)")
-                                        tprint_info(f"   • Total fused signals: {total_signals} ({total_signals/len(labeled_data)*100:.1f}%)")
-                                    else:
-                                        error_msg = (
-                                            "❌ CRITICAL: Fused targets required in labeled_data fallback but not found.\n"
-                                            "   Expected columns: 'target_long_fused' and 'target_short_fused'.\n"
-                                            "   Found only non-fused target columns.\n"
-                                            "   Please re-run labeling integration to produce fused targets."
-                                        )
-                                        tprint_error(error_msg)
-                                        raise ValueError(error_msg)
-
-                                    analyst_series = labeled_data[target_col]
-
-                                    training_type_fallback = str(config.get('training_type', 'analyst_base')).lower()
-                                    is_analyst_base_fallback = 'analyst_base' in training_type_fallback
-
-                                    # For analyst_base we now defer all index alignment to the global
-                                    # CRITICAL DATA ALIGNMENT section to avoid silently shrinking the
-                                    # effective history (e.g. to a tiny 1204-sample window). For all
-                                    # other training types we retain the legacy in-place alignment.
-                                    if not is_analyst_base_fallback:
-                                        # Align features/targets on datetime for non-analyst_base modes
-                                        if training_data is not None and hasattr(training_data, 'index') and hasattr(labeled_data, 'index'):
-                                            common_idx = training_data.index.intersection(labeled_data.index)
-                                            if len(common_idx) > 0:
-                                                tprint_info(f"✅ Found {len(common_idx)} common samples, aligning by index...")
-                                                training_data = training_data.loc[common_idx]
-                                                analyst_series = analyst_series.loc[common_idx]
-                                                tprint_success(
-                                                    f"✅ Aligned by index - Features: {training_data.shape}, Targets: {len(analyst_series)} samples"
-                                                )
-                                            else:
-                                                raise ValueError(
-                                                    "Data alignment failed: no common indices between features and labeled_data. "
-                                                    "Ensure indices are datetime-aligned and originate from the same pipeline."
-                                                )
-                                    else:
-                                        tprint_info(
-                                            "ℹ️ analyst_base: deferring alignment of labeled_data fallback to CRITICAL DATA "
-                                            "ALIGNMENT stage to preserve the full available history."
-                                        )
-
-                                    analyst_targets = analyst_series
+                        ld = self._get_artifact(artifact_name_candidate, 'data')
+                        if ld is not None and isinstance(ld, pd.DataFrame):
+                            tprint_info(f"✅ Found labeled_data artifact '{artifact_name_candidate}': {ld.shape}")
+                            # Prefer fused_target_long for analyst_base
+                            for target_col in ['fused_target_long', 'target_long', 'smoothed_label']:
+                                if target_col in ld.columns:
+                                    analyst_targets = ld[target_col]
+                                    tprint_success(f"✅ Using '{target_col}' from labeled_data as analyst_targets")
                                     break
-                        except Exception as e:
-                            self.logger.debug(f"Could not extract targets from '{artifact_name}': {e}")
-                            continue
-            
-            # Also extract tactician targets from same labeled_data if not found separately
-            if tactician_targets is None and 'labeled_data' in locals():
-                try:
-                    labeled_data = locals()['labeled_data']
-                    if isinstance(labeled_data, pd.DataFrame):
-                        # For tactician, REQUIRE fused targets when using labeled_data fallback
-                        if 'target_long_fused' in labeled_data.columns and 'target_short_fused' in labeled_data.columns:
-                            # Fused target structure for tactician exit signals
-                            if direction == 'long':
-                                # For long direction tactician, use short fused target as exit signal
-                                tactician_targets = labeled_data['target_short_fused']
-                                tprint_success(f"✅ Using target_short_fused for tactician {direction} direction (exit signals)")
-                            elif direction == 'short':
-                                # For short direction tactician, use long fused target as exit signal
-                                tactician_targets = labeled_data['target_long_fused']
-                                tprint_success(f"✅ Using target_long_fused for tactician {direction} direction (exit signals)")
-                            else:
-                                # Default: use long fused target for tactician (both directions)
-                                tactician_targets = labeled_data['target_long_fused']
-                                tprint_success("✅ Using target_long_fused for tactician (default for both directions)")
-                        else:
-                            error_msg = (
-                                "❌ CRITICAL: Fused targets required in labeled_data fallback for tactician but not found.\n"
-                                "   Expected columns: 'target_long_fused' and 'target_short_fused'.\n"
-                                "   Please re-run labeling integration to produce fused targets."
-                            )
-                            tprint_error(error_msg)
-                            raise ValueError(error_msg)
-                except Exception as e:
-                    self.logger.warning(f"Failed to extract tactician targets: {e}")
-            
-            # FAIL FAST: If still no targets found, raise error
-            if analyst_targets is None and tactician_targets is None:
-                error_msg = (
-                    "❌ CRITICAL: No training targets found in artifacts!\n"
-                    f"   Expected artifacts from labeling steps:\n"
-                    f"   - analyst_targets\n"
-                    f"   - tactician_targets\n"
-                    f"   - targets (generic)\n"
-                    f"   - labeled_data (with target columns)\n"
-                    f"   \n"
-                    f"   Please ensure labeling integration steps have run successfully."
-                )
-                tprint_error(error_msg)
-                raise ValueError(error_msg)
-
-            # ========================================================================
-            # CRITICAL: ALIGN FEATURES AND TARGETS IMMEDIATELY
-            # ========================================================================
-            # This must happen BEFORE any further processing to ensure consistency
-            tprint_info("=" * 80)
-            tprint_info("🔄 CRITICAL DATA ALIGNMENT CHECK")
-            tprint_info("=" * 80)
-            
-            if training_data is not None and analyst_targets is not None:
-                tprint_info(f"📊 Initial shapes:")
-                tprint_info(f"   Features: {training_data.shape}")
-                tprint_info(f"   Targets: {analyst_targets.shape if hasattr(analyst_targets, 'shape') else len(analyst_targets)}")
-                
-                # Check if indices match (both values AND length)
-                if hasattr(training_data, 'index') and hasattr(analyst_targets, 'index'):
-                    training_type_local = str(config.get('training_type', 'analyst_base')).lower()
-
-                    # Special relaxed alignment for analyst_base: if the
-                    # HDF5-loaded feature frame carries an opaque or non-datetime
-                    # index that does not naturally intersect with the normalized
-                    # label index, align by position first and assign the
-                    # analyst_targets index to the features. This preserves the
-                    # intended temporal window while avoiding a hard failure on
-                    # zero-overlap indices.
-                    execution_mode_local = str(config.get('execution_mode', 'full')).lower()
-                    is_analyst_base_local = 'analyst_base' in training_type_local
-                    if is_analyst_base_local:
-                        try:
-                            feat_len = len(training_data)
-                            tgt_len = len(analyst_targets)
-                            if feat_len > 0 and tgt_len > 0:
-                                if feat_len == tgt_len:
-                                    tprint_info(
-                                        f"ℹ️ analyst_base ({execution_mode_local}): aligning features to analyst "
-                                        "targets index by position (equal lengths)."
-                                    )
-                                    training_data = training_data.copy()
-                                    training_data.index = analyst_targets.index
-                                else:
-                                    # Use the most recent overlapping window based on
-                                    # the shorter length and align by position.
-                                    n = min(feat_len, tgt_len)
-                                    tprint_info(
-                                        f"ℹ️ analyst_base ({execution_mode_local}): aligning last {n} samples of "
-                                        "features and targets by position."
-                                    )
-                                    training_data = training_data.iloc[-n:].copy()
-                                    analyst_targets = analyst_targets.iloc[-n:]
-                                    training_data.index = analyst_targets.index
-                        except Exception as e_relax:
-                            tprint_warning(
-                                f"⚠️ analyst_base ({execution_mode_local}) relaxed alignment failed; "
-                                f"falling back to strict checks: {e_relax}"
-                            )
-
-                    features_idx = training_data.index
-                    targets_idx = analyst_targets.index
-
-                    # If targets already use a DatetimeIndex but features do not,
-                    # attempt to coerce the features index (often byte/string
-                    # timestamps from HDF5) to a DatetimeIndex so that we can
-                    # compute a meaningful intersection. For analyst_base we
-                    # instead rely on the relaxed position-based alignment above
-                    # and skip this coercion to avoid fabricating timestamps
-                    # from a RangeIndex.
-                    if isinstance(targets_idx, pd.DatetimeIndex) and not isinstance(features_idx, pd.DatetimeIndex):
-                        if 'analyst_base' in training_type_local:
-                            tprint_info(
-                                "ℹ️ analyst_base: skipping features index coercion; features will be aligned "
-                                "to analyst targets' DatetimeIndex by position."
-                            )
-                        else:
-                            tprint_warning(
-                                "⚠️ Features index is not DatetimeIndex while targets index is; "
-                                "attempting to coerce features index to DatetimeIndex for alignment."
-                            )
-                            try:
-                                idx_series = pd.Series(features_idx)
-                                ts = pd.to_datetime(idx_series.astype(str), utc=True, errors="coerce")
-                                try:
-                                    ts = ts.dt.tz_convert("UTC").dt.tz_localize(None)
-                                except Exception:
-                                    ts = ts.dt.tz_localize(None)
-                                valid_mask = ~ts.isna()
-                                if not valid_mask.all():
-                                    dropped = int((~valid_mask).sum())
-                                    tprint_warning(
-                                        f"⚠️ Dropping {dropped} feature rows with invalid timestamps during index coercion"
-                                    )
-                                ts_valid = ts[valid_mask]
-                                training_data = training_data.iloc[valid_mask.values].copy()
-                                training_data.index = ts_valid.values
-                                features_idx = training_data.index
-                            except Exception as e:
-                                tprint_warning(
-                                    f"⚠️ Failed to coerce features index to DatetimeIndex; proceeding with original index types: {e}"
-                                )
-
-                    # When lengths match, prefer to PRESERVE a real DatetimeIndex
-                    # whenever possible, instead of blindly resetting to RangeIndex.
-                    if len(training_data) == len(analyst_targets):
-                        if isinstance(features_idx, pd.DatetimeIndex) and isinstance(targets_idx, pd.DatetimeIndex):
-                            tprint_info(
-                                f"✅ {training_type_local}: equal-length features and targets with DatetimeIndex; "
-                                "preserving temporal alignment."
-                            )
-                        elif isinstance(features_idx, pd.DatetimeIndex) and not isinstance(targets_idx, pd.DatetimeIndex):
-                            tprint_warning(
-                                f"⚠️ {training_type_local}: equal-length features/targets with mixed index types; "
-                                "aligning analyst targets to features' DatetimeIndex by position."
-                            )
-                            analyst_targets = pd.Series(analyst_targets.values, index=features_idx)
-                            targets_idx = analyst_targets.index
-                        elif not isinstance(features_idx, pd.DatetimeIndex) and isinstance(targets_idx, pd.DatetimeIndex):
-                            tprint_warning(
-                                f"⚠️ {training_type_local}: equal-length features/targets with mixed index types; "
-                                "aligning features to analyst targets' DatetimeIndex by position."
-                            )
-                            training_data = training_data.copy()
-                            training_data.index = targets_idx
-                            features_idx = training_data.index
-                        else:
-                            # Both indices lack datetime semantics; fall back to
-                            # position-based RangeIndex alignment as a last resort.
-                            tprint_warning(
-                                f"⚠️ {training_type_local} detected with equal-length features and targets "
-                                "but non-datetime indices; resetting indices and aligning by position."
-                            )
-                            training_data = training_data.reset_index(drop=True)
-                            analyst_targets = pd.Series(analyst_targets.values, index=training_data.index)
-                            features_idx = training_data.index
-                            targets_idx = analyst_targets.index
-
-                    # Check both set equality AND length equality using the (possibly
-                    # updated) indices.
-                    features_len = len(training_data)
-                    targets_len = len(analyst_targets)
-                    features_idx_set = set(features_idx)
-                    targets_idx_set = set(targets_idx)
-                    
-                    # Mismatch if either sets differ OR lengths differ (duplicates/missing)
-                    if features_idx_set != targets_idx_set or features_len != targets_len:
-                        tprint_warning("⚠️ INDEX/LENGTH MISMATCH DETECTED - Aligning now...")
-                        
-                        # Find common indices
-                        common_idx = training_data.index.intersection(analyst_targets.index)
-                        features_only = len(features_idx_set - targets_idx_set)
-                        targets_only = len(targets_idx_set - features_idx_set)
-                        
-                        tprint_info(f"   Features length: {features_len:,}")
-                        tprint_info(f"   Targets length: {targets_len:,}")
-                        tprint_info(f"   Common indices: {len(common_idx):,}")
-                        tprint_info(f"   Features-only: {features_only:,}")
-                        tprint_info(f"   Targets-only: {targets_only:,}")
-                        
-                        if len(common_idx) == 0:
-                            raise ValueError(
-                                "❌ CRITICAL: No common indices between features and targets!\n"
-                                f"   Features index range: {training_data.index.min()} to {training_data.index.max()}\n"
-                                f"   Targets index range: {analyst_targets.index.min()} to {analyst_targets.index.max()}\n"
-                                "   This indicates features and targets are from different time periods."
-                            )
-                        
-                        # Align to common indices
-                        # Use the features index as the master (it's already filtered/cleaned)
-                        master_idx = training_data.index
-                        
-                        # Check if targets have duplicate indices
-                        if analyst_targets.index.duplicated().any():
-                            dup_count = analyst_targets.index.duplicated().sum()
-                            tprint_warning(f"⚠️ Targets have {dup_count} duplicate indices - removing duplicates")
-                            # Keep first occurrence of each duplicate
-                            analyst_targets = analyst_targets[~analyst_targets.index.duplicated(keep='first')]
-                        
-                        # Check if targets have all the indices we need
-                        missing_in_targets = set(master_idx) - set(analyst_targets.index)
-                        if missing_in_targets:
-                            tprint_warning(f"⚠️ {len(missing_in_targets)} indices in features but not in targets")
-                        
-                        # Align targets to features index (this will drop extra target rows)
-                        analyst_targets = analyst_targets.reindex(master_idx)
-                        
-                        # Check for NaN in targets after reindex
-                        nan_count = analyst_targets.isna().sum()
-                        if nan_count > 0:
-                            tprint_warning(f"⚠️ {nan_count} NaN values in targets after alignment - dropping those rows")
-                            valid_mask = analyst_targets.notna()
-                            training_data = training_data[valid_mask]
-                            analyst_targets = analyst_targets[valid_mask]
-                        
-                        tprint_success(f"✅ Aligned to {len(training_data):,} common samples")
-                        tprint_info(f"   New features shape: {training_data.shape}")
-                        tprint_info(f"   New targets shape: {len(analyst_targets)}")
-                    else:
-                        tprint_success("✅ Indices and lengths already match perfectly")
-                else:
-                    # Strict mode: require proper indices; do not truncate by length
-                    raise ValueError(
-                        "Features and targets must have matching DatetimeIndex for alignment; length-only alignment is disallowed."
-                    )
-                
-                # Verify alignment
-                final_len = len(training_data)
-                target_len = len(analyst_targets)
-                if final_len != target_len:
-                    raise ValueError(
-                        f"❌ ALIGNMENT FAILED: Features ({final_len}) and targets ({target_len}) still mismatched!"
-                    )
-                
-                tprint_success(f"✅ ALIGNMENT VERIFIED: {final_len:,} samples")
-
-                training_type_for_window = str(config.get('training_type', 'analyst_base')).lower()
-                if 'analyst_base' in training_type_for_window and isinstance(training_data.index, pd.DatetimeIndex):
-                    execution_mode_for_window = str(config.get('execution_mode', 'full')).lower()
-                    idx = training_data.index
-                    total_days = (idx.max() - idx.min()).days
-                    if execution_mode_for_window == 'blank':
-                        target_days = 365
-                    else:
-                        target_days = 3 * 365
-                    tolerance = 0.10
-                    min_days = target_days * (1.0 - tolerance)
-                    max_days = target_days * (1.0 + tolerance)
-                    tprint_info(
-                        f"⏱ analyst_base {execution_mode_for_window} mode: observed window {total_days} days, "
-                        f"target {target_days} days ± {int(tolerance * 100)}%"
-                    )
-                    if total_days > max_days:
-                        cutoff_start = idx.max() - pd.Timedelta(days=target_days * (1.0 + tolerance))
-                        mask = idx >= cutoff_start
-                        prev_len = len(training_data)
-                        training_data = training_data.loc[mask]
-                        analyst_targets = analyst_targets.loc[mask]
-                        new_idx = training_data.index
-                        new_days = (new_idx.max() - new_idx.min()).days
-                        tprint_info(
-                            f"⏱ Trimmed analyst_base training window from {total_days} to {new_days} days "
-                            f"({prev_len}→{len(training_data)} samples) to respect target lookback window."
-                        )
-                    elif total_days < min_days:
-                        error_msg = (
-                            f"❌ CRITICAL: analyst_base {execution_mode_for_window} mode has insufficient history "
-                            f"({total_days} days) for required window ({target_days} days ± {int(tolerance * 100)}%). "
-                            "This usually indicates that features or targets were truncated to a short slice "
-                            "(e.g., a few days / ~1200 samples). Please ensure blank/full feature generation "
-                            "and analyst labeled_data cover the full desired lookback window."
-                        )
-                        tprint_error(error_msg)
-                        raise ValueError(error_msg)
-                elif 'analyst_base' in training_type_for_window:
-                    tprint_warning(
-                        "⚠️ analyst_base training data index is not a DatetimeIndex; "
-                        "skipping explicit window-length enforcement."
-                    )
-
-                # Attempt to load and align external sample weights for training
-                try:
-                    weight_series = None
-
-                    # Prefer meta-labeling probabilities as sample weights for analyst_ensemble
-                    training_type_local = str(config.get('training_type', 'analyst_base')).lower()
-                    if training_type_local == 'analyst_ensemble':
-                        symbol_cfg = config.get('symbol', 'ETHUSDT')
-                        timeframe_cfg = config.get('timeframe', '15m')
-                        meta_ld = None
-                        meta_source_name = None
-
-                        # First try the meta-labeling artifact name pattern, then generic labeled_data
-                        for artifact_name_candidate in [
-                            f"labeled_data_{symbol_cfg}_{timeframe_cfg}",
-                            'labeled_data',
-                        ]:
-                            try:
-                                candidate_ld = self._get_artifact(artifact_name_candidate, 'data')
-                            except Exception:
-                                candidate_ld = None
-
-                            if isinstance(candidate_ld, pd.DataFrame) and 'meta_probability' in candidate_ld.columns:
-                                meta_ld = candidate_ld
-                                meta_source_name = artifact_name_candidate
+                            if analyst_targets is not None:
                                 break
-
-                        if isinstance(meta_ld, pd.DataFrame) and 'meta_probability' in meta_ld.columns:
-                            # Use meta_probability directly as a soft importance weight, clipped to avoid zeros
-                            mp = pd.to_numeric(meta_ld['meta_probability'], errors='coerce')
-                            weight_series = mp.clip(lower=0.01, upper=1.0)
-                            src_name = meta_source_name or 'labeled_data(meta)'
-                            tprint_info(
-                                f"⚖️ Using meta_probability from '{src_name}' as sample weights for analyst_ensemble"
-                            )
-
-                    # Generic path or fallback when meta_probabilities are not available
-                    if weight_series is None:
-                        # Reuse labeled_data if available in locals(); else fetch from artifacts
-                        ld = None
-                        try:
-                            if 'labeled_data' in locals():
-                                ld = locals()['labeled_data']
-                        except Exception:
-                            ld = None
-                        if ld is None or not isinstance(ld, pd.DataFrame):
-                            symbol_cfg = config.get('symbol', 'ETHUSDT')
-                            timeframe_cfg = config.get('timeframe', '15m')
-                            for artifact_name_candidate in [
-                                f"labeled_data_{symbol_cfg}_{timeframe_cfg}",
-                                'labeled_data',
-                            ]:
-                                try:
-                                    ld_candidate = self._get_artifact(artifact_name_candidate, 'data')
-                                except Exception:
-                                    ld_candidate = None
-                                if isinstance(ld_candidate, pd.DataFrame):
-                                    ld = ld_candidate
-                                    break
-                        if isinstance(ld, pd.DataFrame):
-                            # Prefer explicit weight column name
-                            for cname in ['target_sample_weight', 'sample_weight', 'label_sample_weight']:
-                                if cname in ld.columns:
-                                    weight_series = ld[cname]
-                                    break
-                            # If not found, try to derive a weight from fused targets (fallback: average)
-                            if weight_series is None:
-                                candidates = [c for c in ld.columns if c in ['target_long_fused','target_short_fused']]
-                                if candidates:
-                                    weight_series = ld[candidates].mean(axis=1)
-
-                    if weight_series is not None:
-                        # Align to training_data index and fill missing with 1.0
-                        aligned_weights = weight_series.reindex(training_data.index).fillna(1.0).astype(float)
-                        # Store into yaml_config for downstream trainers
-                        try:
-                            yaml_config['target_sample_weight_full'] = aligned_weights.tolist()
-                            tprint_info(f"⚖️ Injected target_sample_weight_full into config (len={len(aligned_weights)})")
-                        except Exception as e_cfg:
-                            tprint_warning(f"⚠️ Failed to inject sample weights into config: {e_cfg}")
-                    else:
-                        tprint_info("ℹ️ No target_sample_weight column found; proceeding without external weights")
-                except Exception as e_sw:
-                    tprint_warning(f"⚠️ Sample weight extraction failed: {e_sw}")
-            
-            tprint_info("=" * 80)
-            tprint_info("Aligning features and targets...")
-            if training_data is not None and analyst_targets is not None:
-                # DEBUG: Log detailed information about data alignment
-                tprint_info(f"🔍 [DEBUG] BEFORE ALIGNMENT:")
-                tprint_info(f"   Features shape: {training_data.shape}")
-                tprint_info(f"   Features index range: {training_data.index.min()} to {training_data.index.max()}")
-                tprint_info(f"   Targets shape: {len(analyst_targets)}")
-                tprint_info(f"   Targets index range: {analyst_targets.index.min()} to {analyst_targets.index.max()}")
-                
-                common_index = training_data.index.intersection(analyst_targets.index)
-                tprint_info(f"🔍 [DEBUG] Common index length: {len(common_index)}")
-                
-                if len(common_index) == 0:
-                    raise ValueError("Data alignment failed: No common index between features and analyst targets.")
-                if len(common_index) < len(training_data) or len(common_index) < len(analyst_targets):
-                    tprint_warning(f"⚠️ Index mismatch: Aligning {len(training_data)} features and {len(analyst_targets)} analyst targets to {len(common_index)} common rows.")
-                    
-                    # DEBUG: Show what's missing
-                    features_only = training_data.index.difference(analyst_targets.index)
-                    targets_only = analyst_targets.index.difference(training_data.index)
-                    tprint_info(f"🔍 [DEBUG] Features-only indices: {len(features_only)} (sample: {features_only[:5].tolist() if len(features_only) > 0 else 'none'})")
-                    tprint_info(f"🔍 [DEBUG] Targets-only indices: {len(targets_only)} (sample: {targets_only[:5].tolist() if len(targets_only) > 0 else 'none'})")
-
-                training_data = training_data.loc[common_index]
-                analyst_targets = analyst_targets.loc[common_index]
-                tprint_success(f"✅ Aligned features and analyst targets. New shape: {training_data.shape}")
-                
-                # CRITICAL: Check if we have too few samples for reliable training
-                min_samples_required = 234  # As mentioned in the error
-                if len(training_data) < min_samples_required:
-                    tprint_error(f"❌ CRITICAL: Dataset too small for reliable training!")
-                    tprint_error(f"   Current: {len(training_data)} samples")
-                    tprint_error(f"   Absolute minimum: {min_samples_required} samples")
-                    tprint_error(f"   Recommended: 780+ samples")
-                    tprint_error(f"   This will likely result in severe overfitting and poor generalization.")
-                    
-                    # For blank mode with 180 days of 15m data, we should have ~17,280 samples
-                    expected_samples = 180 * 24 * 4  # 180 days * 24 hours * 4 samples per hour (15m)
-                    tprint_error(f"   Expected for 180 days of 15m data: ~{expected_samples} samples")
-                    tprint_error(f"   Actual: {len(training_data)} samples ({len(training_data)/expected_samples*100:.2f}% of expected)")
-                    
-                    # Continue with warning but don't fail
-                    tprint_warning("⚠️ Continuing with small dataset - results may be unreliable")
-
-                # Log label addition with comprehensive preview
-                tprint_info("=" * 80)
-                tprint_info("🎯 LABEL ADDITION: Analyst Targets Loaded and Aligned")
-                tprint_info("=" * 80)
-                tprint_data_preview(
-                    analyst_targets.to_frame() if isinstance(analyst_targets, pd.Series) else analyst_targets,
-                    name="Analyst Targets",
-                    max_rows=5,
-                    max_cols=10,
-                    show_dtypes=True,
-                    show_shape=True
-                )
-                # Log target distribution
-                if isinstance(analyst_targets, pd.Series):
-                    unique_values = analyst_targets.unique()
-                    value_counts = analyst_targets.value_counts()
-                    tprint_info(f"📊 Target Distribution:")
-                    tprint_info(f"   Unique values: {len(unique_values)}")
-                    for value, count in value_counts.head(10).items():
-                        pct = (count / len(analyst_targets)) * 100
-                        tprint_info(f"      {value}: {count} ({pct:.2f}%)")
-                tprint_info("=" * 80)
-
-            if training_data is not None and tactician_targets is not None:
-                training_type_local = str(config.get('training_type', 'analyst_base')).lower()
-
-                # Only enforce tactician alignment when training tactician models
-                if 'tactician' not in training_type_local:
-                    tprint_info(
-                        "ℹ️ Skipping tactician target alignment because training_type does not "
-                        "include tactician models."
-                    )
-                else:
-                    common_index = training_data.index.intersection(tactician_targets.index)
-                    if len(common_index) == 0:
-                        raise ValueError("Data alignment failed: No common index between features and tactician targets.")
-                    if len(common_index) < len(training_data) or len(common_index) < len(tactician_targets):
-                        tprint_warning(f"Index mismatch: Aligning {len(training_data)} features and {len(tactician_targets)} tactician targets to {len(common_index)} common rows.")
-                    
-                    training_data = training_data.loc[common_index]
-                    tactician_targets = tactician_targets.loc[common_index]
-                    if analyst_targets is not None: # Re-align analyst targets if tactician targets caused a change
-                        analyst_targets = analyst_targets.loc[common_index]
-                    tprint_success(f"✅ Aligned features and tactician targets. New shape: {training_data.shape}")
-                
-            # Exclude raw OHLCV features from training data as requested
-            if training_data is not None:
-                excluded_ohlcv_features = []
-                
-                # Get OHLCV exclusion configuration from YAML config
-                ohlcv_config = yaml_config.get('feature_engineering', {}).get('exclude_raw_ohlcv', {})
-                if ohlcv_config.get('enabled', True):
-                    ohlcv_patterns = ohlcv_config.get('excluded_patterns', ['volume', 'close', 'high', 'open', 'low'])
-                    technical_terms = ohlcv_config.get('technical_indicators', ['rsi', 'sma', 'ema', 'bb_', 'macd', 'atr', 'roc', 'mom', 
-                                                                             'return', 'pct', 'ratio', 'std', 'volatility', 'trend',
-                                                                             'momentum', 'oscillator', 'signal', 'cross', 'divergence'])
-                else:
-                    # Fallback to hardcoded values if config is disabled
-                    ohlcv_patterns = ['volume', 'close', 'high', 'open', 'low']
-                    technical_terms = ['rsi', 'sma', 'ema', 'bb_', 'macd', 'atr', 'roc', 'mom', 
-                                     'return', 'pct', 'ratio', 'std', 'volatility', 'trend',
-                                     'momentum', 'oscillator', 'signal', 'cross', 'divergence']
-                
-                for col in training_data.columns:
-                    col_lower = col.lower()
-                    if any(pattern in col_lower for pattern in ohlcv_patterns):
-                        # Only exclude if it's a raw OHLCV column, not derived features
-                        # Raw OHLCV columns are typically named exactly with these patterns
-                        # and don't contain additional technical indicator terms
-                        is_raw_ohlcv = not any(term in col_lower for term in technical_terms)
-                        
-                        if is_raw_ohlcv:
-                            excluded_ohlcv_features.append(col)
-                
-                if excluded_ohlcv_features:
-                    tprint_warning(f"🚨 Excluding raw OHLCV features from training: {excluded_ohlcv_features}")
-                    training_data = training_data.drop(columns=excluded_ohlcv_features)
-                    tprint_success(f"✅ Removed {len(excluded_ohlcv_features)} raw OHLCV features. New shape: {training_data.shape}")
-            
-            # ========================================================================
-            # CRITICAL: RESTORE PROPER DATETIMEINDEX FOR SPECIALIST ALIGNMENT
-            # ========================================================================
-            # The training_data loaded from HDF5 artifacts may have an integer-based
-            # index (epoch microseconds from 1970) instead of a proper DatetimeIndex.
-            # This causes specialist features to become all-NaN after alignment.
-            # Fix: Assign the DatetimeIndex from labeled_data to training_data.
-            tprint_info("=" * 80)
-            tprint_info("🕐 RESTORING PROPER DATETIMEINDEX FOR SPECIALIST ALIGNMENT")
-            tprint_info("=" * 80)
-
-            # Check current index type
-            tprint_info(f"📋 Current training_data index type: {type(training_data.index).__name__}")
-            tprint_info(f"   Index range: {training_data.index.min()} → {training_data.index.max()}")
-
-            # Load labeled_data to get the canonical DatetimeIndex
-            labeled_data_for_index = None
-            symbol_cfg = config.get('symbol', 'ETHUSDT')
-            timeframe_cfg = config.get('timeframe', '15m')
-
-            for artifact_name in [
-                f"labeled_data_{symbol_cfg}_{timeframe_cfg}",
-                'labeled_data',
-            ]:
-                try:
-                    labeled_data_for_index = self._get_artifact(artifact_name, 'data')
-                    if labeled_data_for_index is not None and isinstance(labeled_data_for_index, pd.DataFrame):
-                        tprint_info(f"✅ Loaded labeled_data from '{artifact_name}' for index remapping")
-                        break
-                except Exception as e:
-                    self.logger.debug(f"Could not load '{artifact_name}': {e}")
-                    continue
-
-            # Attempt to remap index if labeled_data is available
-            if labeled_data_for_index is not None and isinstance(labeled_data_for_index, pd.DataFrame):
-                try:
-                    labeled_data_for_index = self._normalize_labeled_data_index(labeled_data_for_index)
-                except Exception as e:
-                    tprint_warning(
-                        f"⚠️ Failed to normalize labeled_data index for remapping: {e}\n"
-                        "   Specialist alignment may fail."
-                    )
-                    labeled_data_for_index = None
-
-            if labeled_data_for_index is not None and isinstance(labeled_data_for_index, pd.DataFrame):
-                labeled_idx = labeled_data_for_index.index
-
-                tprint_info(f"📋 labeled_data index type: {type(labeled_idx).__name__}")
-                tprint_info(f"   Index length: {len(labeled_idx)}")
-                tprint_info(f"   Index range: {labeled_idx.min()} → {labeled_idx.max()}")
-
-                # Check if labeled_data has a proper DatetimeIndex
-                if isinstance(labeled_idx, pd.DatetimeIndex):
-                    # Check if lengths match (same number of samples)
-                    if len(training_data) == len(labeled_idx):
-                        tprint_info("✅ Length match detected - assigning DatetimeIndex to training_data")
-
-                        # Assign the DatetimeIndex from labeled_data to training_data
-                        training_data.index = labeled_idx
-
-                        # Also update target indices if they exist
-                        if analyst_targets is not None:
-                            analyst_targets.index = labeled_idx
-                            tprint_info("✅ Updated analyst_targets index")
-                        if tactician_targets is not None:
-                            tactician_targets.index = labeled_idx
-                            tprint_info("✅ Updated tactician_targets index")
-
-                        tprint_success(f"✅ Successfully remapped training_data index to DatetimeIndex")
-                        tprint_info(f"   New index type: {type(training_data.index).__name__}")
-                        tprint_info(f"   New index range: {training_data.index.min()} → {training_data.index.max()}")
-                        tprint_info(f"   🎯 Training index will now align properly with specialist blocks!")
-                    else:
-                        tprint_warning(
-                            f"⚠️ Length mismatch: training_data={len(training_data)}, labeled_data={len(labeled_idx)}\n"
-                            f"   Cannot safely remap index by position. Specialist alignment may fail."
-                        )
-                else:
-                    tprint_warning(
-                        f"⚠️ labeled_data index is not DatetimeIndex (type={type(labeled_idx).__name__})\n"
-                        f"   Cannot remap training_data index. Specialist alignment may fail."
-                    )
-            else:
-                tprint_warning(
-                    "⚠️ Could not load labeled_data for index remapping.\n"
-                    "   Specialist alignment may fail if training_data index is not a DatetimeIndex."
-                )
-
-            tprint_info("=" * 80)
-
-            # Log summary
-            tprint_info("📊 Training Data Summary:")
-            tprint_info(f"   Features: {training_data.shape[0]} samples × {training_data.shape[1]} features")
-            tprint_info(f"   Index type: {type(training_data.index).__name__}")
-            tprint_info(f"   Index range: {training_data.index.min()} → {training_data.index.max()}")
-            if analyst_targets is not None:
-                tprint_info(f"   Analyst Targets: {len(analyst_targets)} samples")
-            if tactician_targets is not None:
-                tprint_info(f"   Tactician Targets: {len(tactician_targets)} samples")
+                    except Exception as e:
+                        self.logger.debug(f"Artifact '{artifact_name_candidate}' not found: {e}")
+                        continue
 
             return training_data, analyst_targets, tactician_targets
-            
-        except Exception as e:
-            self.logger.error(f"Failed to retrieve training data: {e}")
-            raise
 
-    def _prepare_analyst_base_features(self, training_data: pd.DataFrame, regime_features: Optional[pd.DataFrame] = None) -> pd.DataFrame:
-        """
-        Prepare consistent feature set for Analyst base training and prediction.
-        
-        This creates the EXACT feature set that models will be trained on:
-        - Final selected features (~60 from feature_generation_final_feature_selection_step)
-        - Regime probabilities (3-7 features, typically 4)
-        
-        This same feature set MUST be used for both training and prediction.
-        
-        Args:
-            training_data: Base features from feature selection (~60 features)
-            regime_features: Regime probability features (optional, 3-7 columns)
-            
-        Returns:
-            Combined feature DataFrame ready for training/prediction
-        """
-        try:
-            tprint_info("=" * 80)
-            tprint_info("🔧 PREPARING ANALYST BASE FEATURE SET")
-            tprint_info("=" * 80)
-            tprint_info(f"📊 Input base features: {training_data.shape}")
-            tprint_info(f"   Base feature columns (first 10): {list(training_data.columns[:10])}")
-            
-            # Start with the base selected features
-            analyst_features = training_data.copy()
-            
-            # Add regime probabilities if available
-            if regime_features is not None and not regime_features.empty:
-                tprint_info(f"📊 Regime probabilities provided: {regime_features.shape}")
-                tprint_info(f"   Regime columns: {list(regime_features.columns)}")
-                
-                # Align regime features to training data index
-                common_index = analyst_features.index.intersection(regime_features.index)
-                try:
-                    base_len = len(analyst_features)
-                    spec_len = len(regime_features)
-                    common_len = len(common_index)
-                    tprint_info(
-                        "📏 Analyst base vs specialist index intersection:"
-                    )
-                    tprint_info(
-                        f"   Base rows={base_len}, specialist_rows={spec_len}, common_rows={common_len}"
-                    )
-                    if base_len > 0 and common_len < base_len:
-                        dropped = base_len - common_len
-                        ratio = dropped / float(base_len) * 100.0
-                        tprint_warning(
-                            f"   ⚠️ Dropping {dropped} base rows due to specialist alignment "
-                            f"({ratio:.2f}% of base history)"
-                        )
-                        try:
-                            base_start, base_end = analyst_features.index.min(), analyst_features.index.max()
-                            spec_start, spec_end = regime_features.index.min(), regime_features.index.max()
-                            common_start, common_end = common_index.min(), common_index.max()
-                            tprint_info(
-                                f"   Base index range: {base_start} → {base_end}"
-                            )
-                            tprint_info(
-                                f"   Specialist index range: {spec_start} → {spec_end}"
-                            )
-                            tprint_info(
-                                f"   Common index range: {common_start} → {common_end}"
-                            )
-                        except Exception as range_exc:
-                            tprint_warning(
-                                f"   ⚠️ Failed to compute index range diagnostics: {range_exc}"
-                            )
-                except Exception as diag_exc:
-                    self.logger.debug(f"Failed to log analyst/specialist intersection diagnostics: {diag_exc}")
-                if len(common_index) > 0:
-                    regime_aligned = regime_features.loc[common_index]
-                    analyst_features = analyst_features.loc[common_index]
-                    
-                    # Concatenate features
-                    analyst_features = pd.concat([analyst_features, regime_aligned], axis=1)
-                    tprint_success(f"✅ Added {regime_aligned.shape[1]} regime probability features")
-                    tprint_info(f"   Regime features: {list(regime_aligned.columns)}")
-                else:
-                    tprint_warning("⚠️ No common indices with regime features, skipping")
-            else:
-                tprint_warning("⚠️ No regime features available - models will use uniform distribution")
-            
-            tprint_success(f"✅ Final analyst base feature set: {analyst_features.shape}")
-            tprint_info(f"   Total features: {analyst_features.shape[1]} = {training_data.shape[1]} base + {analyst_features.shape[1] - training_data.shape[1]} regime")
-            tprint_info(f"   Feature columns (last 10): {list(analyst_features.columns[-10:])}")
-            tprint_info("=" * 80)
-            
-            return analyst_features
-            
         except Exception as e:
-            self.logger.error(f"Error preparing analyst base features: {e}")
+            self.logger.error(f"Error retrieving training data: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
             raise
-
-    def _prepare_tactician_base_features(
-        self, 
-        training_data: pd.DataFrame, 
-        regime_features: Optional[pd.DataFrame] = None,
-        analyst_predictions: Optional[pd.DataFrame] = None
-    ) -> pd.DataFrame:
-        """
-        Prepare consistent feature set for Tactician base training and prediction.
-        
-        This creates the EXACT feature set that Tactician models will be trained on:
-        - Final selected features (60 from feature_generation_final_feature_selection_step)
-        - Regime probabilities (if available)
-        - Analyst ensemble predictions (REQUIRED for Tactician)
-        
-        This same feature set MUST be used for both training and prediction.
-        
-        Args:
-            training_data: Base features from feature selection (60 features)
-            regime_features: Regime probability features (optional)
-            analyst_predictions: Analyst ensemble model predictions (required for Tactician)
-            
-        Returns:
-            Combined feature DataFrame ready for training/prediction
-        """
-        try:
-            tprint_info("=" * 80)
-            tprint_info("🔧 PREPARING TACTICIAN BASE FEATURE SET")
-            tprint_info("=" * 80)
-            tprint_info(f"📊 Input features: {training_data.shape}")
-            
-            # Start with the base selected features
-            tactician_features = training_data.copy()
-            
-            # Add regime probabilities if available
-            if regime_features is not None and not regime_features.empty:
-                tprint_info(f"📊 Adding regime probabilities: {regime_features.shape}")
-                
-                # Align regime features to training data index
-                common_index = tactician_features.index.intersection(regime_features.index)
-                if len(common_index) > 0:
-                    regime_aligned = regime_features.loc[common_index]
-                    tactician_features = tactician_features.loc[common_index]
-                    
-                    # Concatenate features
-                    tactician_features = pd.concat([tactician_features, regime_aligned], axis=1)
-                    tprint_success(f"✅ Added {regime_aligned.shape[1]} regime features")
-                else:
-                    tprint_warning("⚠️ No common indices with regime features, skipping")
-            else:
-                tprint_warning("⚠️ No regime features available")
-            
-            # Add analyst ensemble predictions (CRITICAL for Tactician)
-            if analyst_predictions is not None and not analyst_predictions.empty:
-                tprint_info(f"📊 Adding analyst ensemble predictions: {analyst_predictions.shape}")
-                
-                # Align analyst predictions to training data index
-                common_index = tactician_features.index.intersection(analyst_predictions.index)
-                if len(common_index) > 0:
-                    analyst_aligned = analyst_predictions.loc[common_index]
-                    tactician_features = tactician_features.loc[common_index]
-                    
-                    # Rename columns to avoid conflicts
-                    analyst_aligned = analyst_aligned.add_prefix('analyst_')
-                    
-                    # Concatenate features
-                    tactician_features = pd.concat([tactician_features, analyst_aligned], axis=1)
-                    tprint_success(f"✅ Added {analyst_aligned.shape[1]} analyst prediction features")
-                else:
-                    tprint_warning("⚠️ No common indices with analyst predictions, skipping")
-            else:
-                tprint_error("❌ CRITICAL: No analyst ensemble predictions provided for Tactician!")
-                tprint_error("   Tactician models REQUIRE analyst predictions as input features")
-                raise ValueError("Analyst ensemble predictions are required for Tactician training")
-            
-            tprint_success(f"✅ Final tactician base feature set: {tactician_features.shape}")
-            tprint_info(f"   Features: {list(tactician_features.columns[:20])}{'...' if len(tactician_features.columns) > 20 else ''}")
-            tprint_info("=" * 80)
-            
-            return tactician_features
-            
-        except Exception as e:
-            self.logger.error(f"Error preparing tactician base features: {e}")
-            raise
-
-    async def _get_primary_features(self, config: Dict[str, Any]) -> Optional[pd.DataFrame]:
-        """Get primary features from feature generation step."""
-        try:
-            # Determine artifact name based on training type and config
-            training_type = config.get('training_type', 'analyst_base')
-            direction = config.get('direction', 'long')
-            exchange = config.get('exchange', 'binance')
-            symbol = config.get('symbol', 'ETHUSDT')
-            
-            if training_type.startswith('analyst'):
-                artifact_name = f"analyst_features_{direction}_{exchange}_{symbol}"
-            else:
-                artifact_name = f"tactician_features_{direction}_{exchange}_{symbol}"
-            
-            features = await self._get_artifact(artifact_name, config)
-            if features is None:
-                # Fallback to generic artifact name
-                features = await self._get_artifact('selected_features', config)
-            
-            return features
-            
-        except Exception as e:
-            self.logger.error(f"Error retrieving primary features: {e}")
-            return None
 
     async def _get_regime_features(self, config: Dict[str, Any]) -> Optional[pd.DataFrame]:
         """
@@ -3743,6 +2679,171 @@ class UnifiedModelsTrainingStep(BaseStep):
         except Exception as exc:
             self.logger.debug(f"Failed to log feature snapshot for {source_name}: {exc}")
 
+    def _build_meta_gated_feature_set(self, base_index: pd.Index, config: Dict[str, Any]) -> Optional[pd.DataFrame]:
+        """Build a faithful meta-gated feature set (Feature Set B) on the 15m grid.
+
+        This mirrors the information used by MetaGatedBacktestStep while avoiding
+        explicit label/realized-return leakage. Includes:
+        - Whitelisted columns from labeled_data (meta_probability, volatility_1d, etc.)
+        - Canonical specialist scalar features (risk, liquidity, SMC, MR, etc.)
+        """
+        try:
+            symbol = config.get('symbol', 'ETHUSDT')
+            exchange = config.get('exchange', 'binance')
+            timeframe = config.get('timeframe', '15m')
+
+            artifact_name = f"labeled_data_{symbol}_{timeframe}"
+            tprint_info(f"  Building meta-gated feature set from '{artifact_name}' for {symbol}/{exchange} [{timeframe}]")
+
+            labeled = self._get_artifact(artifact_name, 'data')
+            if labeled is None or not isinstance(labeled, pd.DataFrame) or labeled.empty:
+                tprint_warning(
+                    f"  Meta-gated Feature Set B: labeled data artifact '{artifact_name}' "
+                    "not found or empty; cannot construct meta-gated features."
+                )
+                return None
+
+            df = labeled.copy()
+
+            # Ensure DatetimeIndex for alignment
+            if not isinstance(df.index, pd.DatetimeIndex):
+                try:
+                    idx = pd.to_datetime(df.index, errors="coerce")
+                    valid_mask = ~idx.isna()
+                    if not bool(valid_mask.any()):
+                        tprint_warning(
+                            "  Meta-gated Feature Set B: labeled_data index could not be "
+                            "coerced to DatetimeIndex; skipping meta-gated features."
+                        )
+                        return None
+                    if not bool(valid_mask.all()):
+                        df = df.loc[valid_mask].copy()
+                        idx = idx[valid_mask]
+                    df.index = idx
+                except Exception as idx_exc:
+                    tprint_warning(
+                        f"  Meta-gated Feature Set B: failed to normalize labeled_data index "
+                        f"to DatetimeIndex ({idx_exc}); skipping."
+                    )
+                    return None
+
+            df = df.sort_index()
+
+            # Align to the training 15m grid
+            df = df.reindex(base_index)
+
+            # Whitelist meta-gated, non-leaky columns from labeled_data.
+            # This list is aligned with the features actually used by
+            # MetaGatedBacktestStep: meta probabilities + thresholds,
+            # event/volatility context, regime labels, and specialist scalars.
+            candidate_cols = [
+                # Core meta-probability outputs
+                "volatility_1d",
+                "meta_probability",
+                "meta_probability_ensemble",
+                "adaptive_profit_threshold",
+                "adaptive_stop_threshold",
+                # Event-level context + regime labels
+                "event_duration_bars",
+                "hmm_regime_label_1h",
+                # Specialist scalars that may be pre-merged into labeled_data
+                "risk_score",
+                "path_risk_score",
+                "macro_trend_score_continuous",
+                "mr_probability_dense",
+                "mr_probability",
+                "mr_raw_score",
+                "mr_trend_state",
+                "mr_trend_is_mr",
+                "sr_labeling_xgb_prob",
+                "vol_force_scalar",
+                "smc_predicted",
+            ]
+            # Also include any liquidity regime probability columns that
+            # MetaGatedBacktestStep injects with a "liquidity_" prefix.
+            liquidity_cols = [
+                c for c in df.columns
+                if c.startswith("liquidity_")
+                and "liquidity_regime_" in c
+                and "prob" in c
+            ]
+            candidate_cols.extend(liquidity_cols)
+            
+            safe_cols = [c for c in candidate_cols if c in df.columns]
+            
+            tprint_info(f"  Meta-gated Feature Set B: candidate columns checked: {len(candidate_cols)}")
+            tprint_info(f"  Meta-gated Feature Set B: available in labeled_data: {safe_cols}")
+
+            if not safe_cols:
+                tprint_warning(
+                    "  Meta-gated Feature Set B: no whitelisted meta-gated columns "
+                    "available in labeled_data; skipping."
+                )
+                return None
+
+            features = df[safe_cols].copy()
+            tprint_info(f"  Meta-gated Feature Set B: {len(safe_cols)} columns from labeled_data")
+
+            # ------------------------------------------------------------------
+            # Add canonical specialist scalar features (same utility as
+            # MetaGatedBacktestStep), aligned to the 15m grid. These are
+            # regime/risk/liquidity/SMC/MR scalars and do not expose
+            # realized-return labels.
+            # ------------------------------------------------------------------
+            try:
+                specialist_config = dict(config)
+                specialist_config.setdefault("use_canonical_specialist_scalars", True)
+                specialist_config.setdefault("enable_risk_hmm_specialist", False)
+
+                from src.utils.ml_common.get_specialist_models_outputs import (
+                    get_specialist_models_outputs,
+                )
+
+                specialist_df = get_specialist_models_outputs(
+                    artifact_router=self.artifact_router,
+                    training_index=base_index,
+                    config=specialist_config,
+                    logger=self.logger,
+                    strict=False,
+                )
+
+                if specialist_df is not None and not specialist_df.empty:
+                    # Drop all-NaN columns
+                    non_null_counts = specialist_df.notna().sum()
+                    active_cols = non_null_counts[non_null_counts > 0].index.tolist()
+                    if active_cols:
+                        specialist_df = specialist_df[active_cols]
+                        # Align to base_index and forward-fill
+                        specialist_df = specialist_df.reindex(base_index).ffill()
+                        # Avoid duplicate columns
+                        new_cols = [c for c in specialist_df.columns if c not in features.columns]
+                        if new_cols:
+                            features = pd.concat([features, specialist_df[new_cols]], axis=1)
+                            tprint_info(
+                                f"  Meta-gated Feature Set B: added {len(new_cols)} specialist scalar features"
+                            )
+                    else:
+                        tprint_warning(
+                            "  Meta-gated Feature Set B: all specialist columns are NaN after alignment; "
+                            "skipping specialist features."
+                        )
+                else:
+                    tprint_info(
+                        "  Meta-gated Feature Set B: no specialist outputs available; using labeled_data-only features."
+                    )
+            except Exception as spec_exc:
+                self.logger.warning(f"Meta-gated Feature Set B: specialist feature integration failed: {spec_exc}")
+
+            tprint_success(
+                f"✅ Meta-gated Feature Set B constructed: {features.shape[0]} samples × "
+                f"{features.shape[1]} features"
+            )
+            return features
+
+        except Exception as e:
+            self.logger.warning(f"Meta-gated Feature Set B construction failed: {e}")
+            return None
+
     async def _execute_training_by_type(
         self, 
         training_type: str, 
@@ -3960,6 +3061,9 @@ class UnifiedModelsTrainingStep(BaseStep):
                         metadata=model_metadata,
                     )
                     artifacts[f"{training_type}_{model_name}"] = artifact_path
+                    tprint_info(
+                        f"💾 Saved model artifact '{training_type}_{model_name}' to {artifact_path}"
+                    )
             
             # Save predictions for ensemble training (analyst_base only)
             # CRITICAL: Accumulate predictions from ALL base models into a single DataFrame
@@ -4069,6 +3173,7 @@ class UnifiedModelsTrainingStep(BaseStep):
                         artifacts['analyst_base_predictions'] = predictions_path
                         tprint_success(f"✅ Saved analyst_base_predictions: {predictions_df.shape} ({len(all_predictions)} models)")
                         tprint_info(f"   Models: {list(all_predictions.keys())}")
+                        tprint_info(f"   Path: {predictions_path}")
                         if disagreement_features is not None:
                             tprint_info(f"   Disagreement features: {list(disagreement_features.columns)}")
 
@@ -4216,6 +3321,7 @@ class UnifiedModelsTrainingStep(BaseStep):
                                     tprint_success(f"✅ Saved calibrated analyst_base_predictions_oof: {oof_df.shape}")
                                 else:
                                     tprint_success(f"✅ Saved analyst_base_predictions_oof: {oof_df.shape}")
+                                tprint_info(f"   Path: {oof_path}")
 
                                 try:
                                     y_true_series = getattr(self, '_full_analyst_targets', None)
@@ -4262,6 +3368,48 @@ class UnifiedModelsTrainingStep(BaseStep):
                                                 )
                                                 artifacts['analyst_base_oof_metrics'] = oof_metrics_path
                                                 tprint_success(f"✅ Saved analyst_base_oof_metrics: {metrics_df.shape}")
+                                                tprint_info(f"   Path: {oof_metrics_path}")
+
+                                                # Additionally, export a user-facing CSV comparing all base models
+                                                # for this analyst_base run so that a single training invocation
+                                                # produces a ready-to-inspect model comparison table.
+                                                try:
+                                                    ts_str = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+                                                    symbol = str(config.get('symbol', 'UNKNOWN'))
+                                                    exchange = str(config.get('exchange', 'binance'))
+                                                    timeframe = str(config.get('timeframe', '15m'))
+                                                    direction = str(config.get('direction', 'long'))
+
+                                                    comparison_df = metrics_df.reset_index().rename(columns={'model': 'model_name'})
+                                                    comparison_df.insert(0, 'symbol', symbol)
+                                                    comparison_df.insert(1, 'exchange', exchange)
+                                                    comparison_df.insert(2, 'timeframe', timeframe)
+                                                    comparison_df.insert(3, 'direction', direction)
+
+                                                    output_dir = Path('outcomes')
+                                                    try:
+                                                        output_dir.mkdir(parents=True, exist_ok=True)
+                                                    except Exception:
+                                                        pass
+
+                                                    csv_name = (
+                                                        f"analyst_base_model_comparison_"
+                                                        f"{symbol}_{exchange}_{timeframe}_{direction}_{ts_str}.csv"
+                                                    )
+                                                    csv_path = output_dir / csv_name
+                                                    comparison_df.to_csv(csv_path, index=False)
+                                                    tprint_success(
+                                                        f"✅ Exported analyst base model comparison CSV to {csv_path}"
+                                                    )
+                                                except Exception as comp_exc:
+                                                    tprint_warning(
+                                                        f"⚠️ Failed to export analyst base model comparison CSV: {comp_exc}"
+                                                    )
+                                        else:
+                                            tprint_warning(
+                                                "⚠️ Not enough samples with valid targets for OOF metrics; "
+                                                "skipping OOF metrics computation"
+                                            )
                                 except Exception as metrics_exc:
                                     tprint_warning(f"⚠️ Failed to compute/save OOF metrics: {metrics_exc}")
                         except Exception as e:
@@ -4404,6 +3552,7 @@ class UnifiedModelsTrainingStep(BaseStep):
                         tprint_success(
                             f"✅ Saved analyst_base_confidence: {confidence_df.shape} ({len(all_confidence)} models)"
                         )
+                        tprint_info(f"   Path: {confidence_path}")
                         # Log summary statistics so calibration effects can be inspected
                         try:
                             flat = confidence_df.to_numpy().ravel()
@@ -4464,6 +3613,7 @@ class UnifiedModelsTrainingStep(BaseStep):
                         )
                         artifacts[oof_artifact_name] = predictions_path
                         tprint_success(f"✅ Saved {oof_artifact_name}: {predictions_df.shape}")
+                        tprint_info(f"   Path: {predictions_path}")
 
                         # Backwards-compatible alias for downstream consumers
                         alias_path = self._save_artifact(
@@ -4473,6 +3623,7 @@ class UnifiedModelsTrainingStep(BaseStep):
                             data_category='predictions'
                         )
                         artifacts['analyst_ensemble_outputs'] = alias_path
+                        tprint_info(f"   Alias path: {alias_path}")
                         tprint_info("ℹ️ Also saved legacy analyst_ensemble_outputs alias for compatibility")
 
                 except Exception as e:
@@ -4509,6 +3660,7 @@ class UnifiedModelsTrainingStep(BaseStep):
                     }
                 )
                 artifacts[f"{training_type}_metrics"] = metrics_path
+                tprint_success(f"✅ Saved {training_type}_metrics JSON: {metrics_path}")
 
                 # Save as Markdown report
                 try:
@@ -4537,6 +3689,7 @@ class UnifiedModelsTrainingStep(BaseStep):
                 }
             )
             artifacts[f"{training_type}_config"] = config_path
+            tprint_success(f"✅ Saved {training_type}_config: {config_path}")
 
             return artifacts
 

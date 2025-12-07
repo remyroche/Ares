@@ -37,6 +37,7 @@ from src.training.steps.labeling.labeled_data_schema import (
     get_required_labeled_data_columns,
     validate_labeled_data_schema,
 )
+from src.utils.ml_common.get_specialist_models_outputs import get_specialist_models_outputs
 
 
 logger = logging.getLogger(__name__)
@@ -119,6 +120,72 @@ class MetaGatedBacktestStep(BaseStep):
                 ),
                 context="MetaGatedBacktestStep",
             )
+
+            try:
+                specialist_config = dict(config)
+                specialist_config.setdefault("use_canonical_specialist_scalars", True)
+                specialist_config.setdefault("enable_risk_hmm_specialist", False)
+
+                specialist_df = get_specialist_models_outputs(
+                    artifact_router=self.artifact_router,
+                    training_index=df.index,
+                    config=specialist_config,
+                    logger=self.logger,
+                    strict=False,
+                )
+
+                if specialist_df is not None and not specialist_df.empty:
+                    prob_cols = [
+                        c
+                        for c in specialist_df.columns
+                        if c.startswith("liquidity_regime_") and "prob_" in c
+                    ]
+                    if prob_cols:
+                        liquidity_features = specialist_df[prob_cols].reindex(
+                            df.index, method="ffill"
+                        )
+                        for col in liquidity_features.columns:
+                            out_col = f"liquidity_{col}"
+                            if out_col not in df.columns:
+                                df[out_col] = liquidity_features[col]
+
+                    scalar_cols = []
+                    for col in [
+                        "risk_score",
+                        "path_risk_score",
+                        "macro_trend_score_continuous",
+                        "mr_probability_dense",
+                        "mr_probability",
+                        "mr_raw_score",
+                        "mr_trend_state",
+                        "mr_trend_is_mr",
+                        "sr_labeling_xgb_prob",
+                        "vol_force_scalar",
+                        "smc_predicted",
+                    ]:
+                        if col in specialist_df.columns:
+                            scalar_cols.append(col)
+
+                    scalar_cols.extend(
+                        [
+                            c
+                            for c in specialist_df.columns
+                            if c.startswith("mr_") or c.startswith("smc_")
+                        ]
+                    )
+
+                    seen = set()
+                    scalar_cols_unique = []
+                    for c in scalar_cols:
+                        if c not in seen:
+                            seen.add(c)
+                            scalar_cols_unique.append(c)
+
+                    for col in scalar_cols_unique:
+                        if col not in df.columns:
+                            df[col] = specialist_df[col]
+            except Exception:
+                pass
 
             realized_returns = df["realized_return"].astype(float)
             meta_prob = df["meta_probability"].astype(float)

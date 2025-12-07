@@ -45,7 +45,7 @@ import numpy as np
 import pandas as pd
 
 # Ensure project root is on sys.path
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parents[4]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
@@ -2332,6 +2332,7 @@ def run_trading_simulation(
     timeframe: str,
     direction: str = "long",
     model: str = "analyst",
+    prob_column: str = "meta_probability",
     prob_thresholds: Optional[List[float]] = None,
     cv_splits: int = 5,
 ) -> None:
@@ -2347,13 +2348,13 @@ def run_trading_simulation(
       - Win-rate stability
     """
     if prob_thresholds is None:
-        prob_thresholds = [0.55, 0.60, 0.65]
+        prob_thresholds = [0.50, 0.55, 0.60, 0.65]
 
     df = _load_labeled_data(symbol, exchange, timeframe, direction=direction, model=model)
     X, y = _build_feature_matrix_from_labeled(df, direction=direction)
 
-    if "meta_probability" not in df.columns:
-        raise ValueError("labeled_data must contain 'meta_probability' column for trading simulation")
+    if prob_column not in df.columns:
+        raise ValueError(f"labeled_data must contain '{prob_column}' column for trading simulation")
     if "realized_return" not in df.columns:
         raise ValueError("labeled_data must contain 'realized_return' column for trading simulation")
 
@@ -2367,7 +2368,7 @@ def run_trading_simulation(
     if date_range_days <= 0:
         date_range_days = 1
 
-    meta_prob = df["meta_probability"].astype(float)
+    meta_prob = df[prob_column].astype(float)
     realized_returns = df["realized_return"].astype(float)
     
     # Prefer directional binary labels
@@ -2506,6 +2507,9 @@ def run_trading_simulation(
     # -------------------------------------------------------------------------
 
     threshold_results = {}
+    best_gate_info: Optional[dict] = None
+    regime_threshold_results: dict = {}
+    regime_gating_cfg: dict = {}
 
     for threshold in prob_thresholds:
         # Filter events passing the threshold
@@ -2623,6 +2627,303 @@ def run_trading_simulation(
             "insufficient_data": False,
         }
 
+    regime_masks: dict = {}
+    try:
+        if "hmm_regime_label_1h" in df.columns:
+            regimes_series = df.loc[valid_mask, "hmm_regime_label_1h"]
+            unique_regs = regimes_series.dropna().unique()
+            for reg_val in unique_regs:
+                mask_reg = (regimes_series == reg_val).to_numpy()
+                if mask_reg.sum() >= 20:
+                    regime_masks[f"hmm_{reg_val}"] = mask_reg
+        elif "volatility_1d" in df.columns:
+            vol_series = df.loc[valid_mask, "volatility_1d"].astype(float)
+            vol_clean = vol_series.dropna()
+            if len(vol_clean) >= 60:
+                low_thr = float(vol_clean.quantile(1.0 / 3.0))
+                high_thr = float(vol_clean.quantile(2.0 / 3.0))
+                vol_arr = vol_series.to_numpy()
+                low_mask = vol_arr < low_thr
+                mid_mask = (vol_arr >= low_thr) & (vol_arr < high_thr)
+                high_mask = vol_arr >= high_thr
+                if low_mask.sum() >= 20:
+                    regime_masks["vol_low"] = low_mask
+                if mid_mask.sum() >= 20:
+                    regime_masks["vol_mid"] = mid_mask
+                if high_mask.sum() >= 20:
+                    regime_masks["vol_high"] = high_mask
+    except Exception:
+        regime_masks = {}
+
+    if regime_masks:
+        dates_valid = dates[valid_mask.values]
+        for regime_name, regime_mask in regime_masks.items():
+            try:
+                regime_results: dict = {}
+                regime_dates = dates_valid[regime_mask]
+                if regime_dates.size > 0:
+                    regime_days = (regime_dates.max() - regime_dates.min()).days
+                    if regime_days <= 0:
+                        regime_days = 1
+                else:
+                    regime_days = date_range_days
+
+                best_reg_score = float("-inf")
+
+                for threshold in prob_thresholds:
+                    key = f"threshold_{threshold:.2f}"
+                    trade_mask_reg = (prob_valid >= threshold) & regime_mask
+                    n_trades_reg = int(trade_mask_reg.sum())
+
+                    if n_trades_reg < 10:
+                        regime_results[key] = {
+                            "threshold": float(threshold),
+                            "n_trades": n_trades_reg,
+                            "trades_per_day": 0.0,
+                            "mean_return_per_trade": float("nan"),
+                            "std_return_per_trade": float("nan"),
+                            "pnl_per_day_pct": float("nan"),
+                            "win_rate": float("nan"),
+                            "sharpe_ratio": float("nan"),
+                            "max_drawdown": float("nan"),
+                            "final_equity": float("nan"),
+                            "max_consecutive_losses": 0,
+                            "avg_consecutive_losses": float("nan"),
+                            "win_rate_stability": float("nan"),
+                            "insufficient_data": True,
+                        }
+                        continue
+
+                    trade_returns_reg = returns_valid[trade_mask_reg]
+                    if labels_valid is not None:
+                        trade_labels_reg = labels_valid[trade_mask_reg]
+                    else:
+                        trade_labels_reg = None
+
+                    trades_per_day_reg = n_trades_reg / max(regime_days, 1)
+                    mean_return_reg = float(np.mean(trade_returns_reg))
+                    std_return_reg = float(np.std(trade_returns_reg)) if n_trades_reg > 1 else 0.0
+                    total_pnl_reg = float(np.sum(trade_returns_reg))
+                    pnl_per_day_reg = total_pnl_reg / max(regime_days, 1)
+
+                    if trade_labels_reg is not None:
+                        win_rate_reg = float(np.mean(trade_labels_reg == 1.0))
+                    else:
+                        win_rate_reg = float(np.mean(trade_returns_reg > 0))
+
+                    if std_return_reg > 0:
+                        sharpe_reg = mean_return_reg / std_return_reg * np.sqrt(n_trades_reg)
+                    else:
+                        sharpe_reg = float("nan")
+
+                    equity_reg = np.cumprod(1 + trade_returns_reg)
+                    final_equity_reg = float(equity_reg[-1]) if len(equity_reg) > 0 else 1.0
+                    running_max_reg = np.maximum.accumulate(equity_reg)
+                    drawdowns_reg = (equity_reg - running_max_reg) / running_max_reg
+                    max_drawdown_reg = float(np.min(drawdowns_reg)) if len(drawdowns_reg) > 0 else 0.0
+
+                    if trade_labels_reg is not None:
+                        losses_reg = (trade_labels_reg == 0.0).astype(int)
+                    else:
+                        losses_reg = (trade_returns_reg <= 0).astype(int)
+
+                    consecutive_losses_reg = []
+                    current_streak_reg = 0
+                    for loss in losses_reg:
+                        if loss:
+                            current_streak_reg += 1
+                        else:
+                            if current_streak_reg > 0:
+                                consecutive_losses_reg.append(current_streak_reg)
+                            current_streak_reg = 0
+                    if current_streak_reg > 0:
+                        consecutive_losses_reg.append(current_streak_reg)
+
+                    max_consecutive_losses_reg = max(consecutive_losses_reg) if consecutive_losses_reg else 0
+                    avg_consecutive_losses_reg = float(np.mean(consecutive_losses_reg)) if consecutive_losses_reg else 0.0
+
+                    if n_trades_reg >= 20:
+                        window_size_reg = min(50, n_trades_reg // 4)
+                        if trade_labels_reg is not None:
+                            wins_reg = (trade_labels_reg == 1.0).astype(float)
+                        else:
+                            wins_reg = (trade_returns_reg > 0).astype(float)
+                        rolling_win_rates_reg = []
+                        for i in range(0, n_trades_reg - window_size_reg + 1, max(1, window_size_reg // 2)):
+                            window_wins_reg = wins_reg[i:i + window_size_reg]
+                            rolling_win_rates_reg.append(float(np.mean(window_wins_reg)))
+                        if len(rolling_win_rates_reg) > 1:
+                            win_rate_stability_reg = 1.0 - float(np.std(rolling_win_rates_reg))
+                        else:
+                            win_rate_stability_reg = float("nan")
+                    else:
+                        win_rate_stability_reg = float("nan")
+
+                    regime_results[key] = {
+                        "threshold": float(threshold),
+                        "n_trades": n_trades_reg,
+                        "trades_per_day": float(trades_per_day_reg),
+                        "mean_return_per_trade": float(mean_return_reg),
+                        "std_return_per_trade": float(std_return_reg),
+                        "pnl_per_day_pct": float(pnl_per_day_reg * 100),
+                        "win_rate": float(win_rate_reg),
+                        "sharpe_ratio": float(sharpe_reg) if np.isfinite(sharpe_reg) else float("nan"),
+                        "max_drawdown": float(max_drawdown_reg * 100),
+                        "final_equity": float(final_equity_reg),
+                        "max_consecutive_losses": int(max_consecutive_losses_reg),
+                        "avg_consecutive_losses": float(avg_consecutive_losses_reg),
+                        "win_rate_stability": float(win_rate_stability_reg) if np.isfinite(win_rate_stability_reg) else float("nan"),
+                        "insufficient_data": False,
+                    }
+
+                    score_reg = 0.0
+                    if np.isfinite(sharpe_reg):
+                        score_reg = float(sharpe_reg * np.sqrt(max(n_trades_reg, 1)))
+
+                    if score_reg > best_reg_score and pnl_per_day_reg > 0.0:
+                        best_reg_score = score_reg
+                        regime_gating_cfg[regime_name] = {
+                            "prob_threshold": float(threshold),
+                            "expected_return_threshold": 0.0,
+                            "mean_return": float(mean_return_reg),
+                            "sharpe": float(sharpe_reg) if np.isfinite(sharpe_reg) else 0.0,
+                            "n_trades": int(n_trades_reg),
+                            "trades_per_day": float(trades_per_day_reg),
+                            "score": float(score_reg),
+                        }
+
+                if regime_results:
+                    regime_threshold_results[regime_name] = regime_results
+            except Exception:
+                continue
+
+    # -------------------------------------------------------------------------
+    # 2B. Select best gate by PnL/day and update meta_gating_config
+    # -------------------------------------------------------------------------
+
+    # Select the threshold with the highest positive PnL per day.
+    best_key: Optional[str] = None
+    best_score: float = float("-inf")
+    for key, res in threshold_results.items():
+        if res.get("insufficient_data", False):
+            continue
+        score = res.get("pnl_per_day_pct", float("nan"))
+        if not np.isfinite(score):
+            continue
+        if score > best_score:
+            best_score = float(score)
+            best_key = key
+
+    if best_key is not None and best_score > 0.0:
+        res = threshold_results[best_key]
+        try:
+            best_gate_info = {
+                "threshold": float(res["threshold"]),
+                "n_trades": int(res["n_trades"]),
+                "trades_per_day": float(res["trades_per_day"]),
+                "mean_return_per_trade": float(res["mean_return_per_trade"]),
+                "pnl_per_day_pct": float(res["pnl_per_day_pct"]),
+                "win_rate": float(res["win_rate"]),
+                "sharpe_ratio": float(res["sharpe_ratio"]),
+                "max_drawdown": float(res["max_drawdown"]),
+                "final_equity": float(res["final_equity"]),
+            }
+
+            va_dir = Path("versioned_artifacts") / f"{symbol}_{exchange}_{timeframe}_{direction}_analyst"
+            gating_path = va_dir / "meta_gating_config.json"
+            try:
+                va_dir.mkdir(parents=True, exist_ok=True)
+            except Exception:
+                pass
+
+            if gating_path.exists():
+                try:
+                    with open(gating_path, "r") as f:
+                        meta_gating_config = json.load(f)
+                except Exception:
+                    meta_gating_config = {}
+            else:
+                meta_gating_config = {}
+
+            if not isinstance(meta_gating_config, dict):
+                meta_gating_config = {}
+
+            meta_gating_config.setdefault("symbol", symbol)
+            meta_gating_config.setdefault("exchange", exchange)
+            meta_gating_config.setdefault("timeframe", timeframe)
+            meta_gating_config.setdefault("direction", direction)
+            meta_gating_config.setdefault("model_family", f"{model}_meta")
+
+            mg = meta_gating_config.get("meta_gating")
+            if not isinstance(mg, dict):
+                mg = {}
+
+            mg["version"] = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S")
+
+            entry = mg.get("entry")
+            if not isinstance(entry, dict):
+                entry = {}
+            entry.update(
+                {
+                    "prob_threshold": float(best_gate_info["threshold"]),
+                    "use_expected_return": False,
+                    "expected_return_threshold": 0.0,
+                    "expected_return_unit": "fraction",
+                    "min_trades": int(best_gate_info["n_trades"]),
+                }
+            )
+            mg["entry"] = entry
+
+            existing_bt = mg.get("backtest_metrics")
+            if not isinstance(existing_bt, dict):
+                existing_bt = {}
+            backtest_metrics = {
+                "mean_return_gated": float(best_gate_info["mean_return_per_trade"]),
+                "sharpe_gated": float(best_gate_info["sharpe_ratio"]),
+                "trades_gated": int(best_gate_info["n_trades"]),
+                "trades_per_day_gated": float(best_gate_info["trades_per_day"]),
+                "pnl_per_day_pct": float(best_gate_info["pnl_per_day_pct"]),
+                "max_drawdown_pct": float(best_gate_info["max_drawdown"]),
+                "final_equity": float(best_gate_info["final_equity"]),
+            }
+            if "auc_oof" in existing_bt:
+                backtest_metrics["auc_oof"] = existing_bt["auc_oof"]
+            mg["backtest_metrics"] = backtest_metrics
+
+            mg.setdefault("calibration", {})
+            mg.setdefault("triple_barrier", {})
+            regime_specific = mg.get("regime_specific")
+            if not isinstance(regime_specific, dict):
+                regime_specific = {}
+            if regime_gating_cfg:
+                regime_specific.update(regime_gating_cfg)
+            mg["regime_specific"] = regime_specific
+
+            meta_gating_config["meta_gating"] = mg
+
+            try:
+                with open(gating_path, "w") as f:
+                    json.dump(meta_gating_config, f, indent=2)
+                logger.info(
+                    "Updated meta_gating_config at %s using SNR trading-simulation best threshold %.2f "
+                    "(PnL/day=%.4f%%, trades/day=%.3f)",
+                    gating_path,
+                    best_gate_info["threshold"],
+                    best_gate_info["pnl_per_day_pct"],
+                    best_gate_info["trades_per_day"],
+                )
+            except Exception as e:
+                logger.warning(
+                    "Failed to write meta_gating_config at %s from trading-simulation: %s",
+                    gating_path,
+                    e,
+                )
+        except Exception as e:
+            logger.warning(
+                "Failed to derive meta-gating configuration from trading-simulation results: %s",
+                e,
+            )
+
     # -------------------------------------------------------------------------
     # Interpretation helpers
     # -------------------------------------------------------------------------
@@ -2704,6 +3005,12 @@ def run_trading_simulation(
         "calibration_curve": calibration_curve_data,
         "threshold_results": threshold_results,
     }
+    if regime_threshold_results:
+        payload["regime_threshold_results"] = regime_threshold_results
+    if regime_gating_cfg:
+        payload["regime_best_gates"] = regime_gating_cfg
+    if best_gate_info is not None:
+        payload["best_gate"] = best_gate_info
 
     md_lines = [
         "# Trading Simulation Diagnostics",
@@ -2774,6 +3081,40 @@ def run_trading_simulation(
             f"{result['max_drawdown']:.1f}% | {result['max_consecutive_losses']} |"
         )
 
+    if best_gate_info is not None:
+        md_lines.extend(
+            [
+                "",
+                "## Recommended Gating Threshold (from Trading Simulation)",
+                "",
+                f"- **Probability threshold**: {best_gate_info['threshold']:.2f}",
+                f"- **Trades**: {best_gate_info['n_trades']} ({best_gate_info['trades_per_day']:.3f}/day)",
+                f"- **Mean return/trade**: {best_gate_info['mean_return_per_trade']*100:.4f}%",
+                f"- **PnL/day**: {best_gate_info['pnl_per_day_pct']:.4f}%",
+                f"- **Sharpe (trades)**: {best_gate_info['sharpe_ratio']:.3f}",
+                f"- **Max drawdown**: {best_gate_info['max_drawdown']:.2f}%",
+                f"- **Final equity**: {best_gate_info['final_equity']:.4f}",
+            ]
+        )
+
+    if regime_gating_cfg:
+        md_lines.extend([
+            "",
+            "## Regime-Specific Recommended Thresholds",
+            "",
+        ])
+        for regime_name, cfg in sorted(regime_gating_cfg.items()):
+            md_lines.extend(
+                [
+                    f"- **Regime** `{regime_name}`:",
+                    f"  - prob_threshold = {cfg.get('prob_threshold', float('nan')):.2f}",
+                    f"  - trades/day ≈ {cfg.get('trades_per_day', float('nan')):.3f}",
+                    f"  - mean_return ≈ {cfg.get('mean_return', float('nan'))*100:.4f}%",
+                    f"  - Sharpe ≈ {cfg.get('sharpe', float('nan')):.3f}",
+                    f"  - n_trades = {cfg.get('n_trades', 0)}",
+                ]
+            )
+
     json_path, md_path = _export_report(
         prefix="snr_trading_simulation",
         symbol=symbol,
@@ -2796,6 +3137,7 @@ def run_full(
     model: str = "analyst",
     cv_splits_learn: int = 3,
     cv_splits_robust: int = 5,
+    prob_column: str = "meta_probability",
     prob_thresholds: Optional[List[float]] = None,
 ) -> None:
     _LAST_EXPORTS.clear()
@@ -2832,6 +3174,7 @@ def run_full(
         timeframe=timeframe,
         direction=direction,
         model=model,
+        prob_column=prob_column,
         prob_thresholds=prob_thresholds,
         cv_splits=cv_splits_robust,
     )
@@ -3095,6 +3438,8 @@ def main() -> None:
     p_trading = subparsers.add_parser("trading-simulation", help="Trading simulation with calibration and threshold analysis")
     _add_common_args(p_trading)
     p_trading.add_argument("--cv-splits", type=int, default=5)
+    p_trading.add_argument("--prob-column", type=str, default="meta_probability",
+                           help="Name of probability column to use (default: meta_probability)")
     p_trading.add_argument("--prob-thresholds", type=float, nargs="+", default=[0.55, 0.60, 0.65, 0.70, 0.75, 0.80],
                           help="Probability thresholds to analyze (default: 0.55 0.60 0.65 0.70 0.75 0.80)")
 
@@ -3103,6 +3448,8 @@ def main() -> None:
     _add_common_args(p_full)
     p_full.add_argument("--cv-splits-learn", type=int, default=3)
     p_full.add_argument("--cv-splits-robust", type=int, default=5)
+    p_full.add_argument("--prob-column", type=str, default="meta_probability",
+                        help="Name of probability column to use for trading simulation (default: meta_probability)")
     p_full.add_argument("--prob-thresholds", type=float, nargs="+", default=[0.55, 0.60, 0.65, 0.70, 0.75, 0.80],
                         help="Probability thresholds to analyze (default: 0.55 0.60 0.65 0.70 0.75 0.80)")
 
@@ -3146,6 +3493,7 @@ def main() -> None:
             timeframe=args.timeframe,
             direction=args.direction,
             model=args.model,
+            prob_column=args.prob_column,
             prob_thresholds=args.prob_thresholds,
             cv_splits=args.cv_splits,
         )
@@ -3159,6 +3507,7 @@ def main() -> None:
             model=args.model,
             cv_splits_learn=args.cv_splits_learn,
             cv_splits_robust=args.cv_splits_robust,
+            prob_column=args.prob_column,
             prob_thresholds=args.prob_thresholds,
         )
 

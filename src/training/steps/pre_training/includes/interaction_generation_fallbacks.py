@@ -498,43 +498,16 @@ async def _phase3_lgbm_shap_pipeline_fallback(
         }
 
     # Optional: LightGBM gain + permutation-based feature selection
-    lgbm_fs_stats: Dict[str, Any] = {}
-    try:
-        if hasattr(step, "_select_features_with_lgbm_gain_and_permutation"):
-            combined_for_fs = pd.concat([final_features, interactions], axis=1)
-            if not combined_for_fs.empty and not targets.empty:
-                primary_target = targets.iloc[:, 0]
+    #
+    # Disabled for this fallback: we keep all features returned by the
+    # interaction discovery helper and delegate any pruning/selection to
+    # downstream FeatureSelection components.
+    lgbm_fs_stats: Dict[str, Any] = {
+        "method": "disabled",
+        "reason": "Interaction generation step no longer performs LGBM-based pruning",
+    }
 
-                gain_top, perm_top, gain_importances, perm_importances = (
-                    step._select_features_with_lgbm_gain_and_permutation(  # type: ignore[call-arg]
-                        combined_for_fs,
-                        primary_target,
-                        config,
-                    )
-                )
-
-                selected_set = set(perm_top) if perm_top else set()
-                if selected_set:
-                    base_cols = [c for c in final_features.columns if c in selected_set]
-                    interaction_cols = [c for c in interactions.columns if c in selected_set]
-
-                    if base_cols:
-                        final_features = final_features[base_cols]
-                    if interaction_cols:
-                        interactions = interactions[interaction_cols]
-
-                lgbm_fs_stats = {
-                    "method": "lgbm_gain_then_permutation",
-                    "gain_top_k": len(gain_top),
-                    "perm_top_k": len(perm_top),
-                    "gain_top200": gain_importances,
-                    "perm_top100": perm_importances,
-                }
-    except Exception as exc:
-        # Keep base/interactions as-is but surface the error for diagnostics
-        lgbm_fs_stats = {"error": str(exc)}
-
-    # Attach LGBM FS stats to shap_metadata, preserving any existing keys
+    # Attach minimal LGBM FS metadata to shap_metadata, preserving any existing keys
     try:
         if isinstance(shap_metadata, dict):
             shap_metadata["lgbm_feature_selection"] = lgbm_fs_stats

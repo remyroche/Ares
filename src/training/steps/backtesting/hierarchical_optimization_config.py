@@ -119,6 +119,14 @@ STAGE_2_GROUPS = [
             'trending_max_position_multiplier': {'type': 'float', 'min': 1.0, 'max': 1.3},
             'ranging_max_position_multiplier': {'type': 'float', 'min': 0.7, 'max': 1.0},
             'high_vol_max_position_multiplier': {'type': 'float', 'min': 0.5, 'max': 0.9},
+
+            # === Gate-aware probability weighting (GateModel overlay) ===
+            # These parameters modulate how gate_score (calibrated success probability)
+            # scales position sizing in the hierarchical backtest integration.
+            # They mirror the ranges used in FinalParametersOptimizer.position_sizing.
+            'gate_prob_floor': {'type': 'float', 'min': 0.0, 'max': 0.7},
+            'gate_prob_exponent': {'type': 'float', 'min': 0.5, 'max': 3.0},
+            'gate_prob_weight': {'type': 'float', 'min': 0.0, 'max': 1.0},
         },
         priority=3,
         depends_on=["core_confidence"],

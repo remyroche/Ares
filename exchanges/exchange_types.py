@@ -6,6 +6,15 @@ Common enumerations used across exchange modules to avoid circular imports.
 
 from enum import Enum
 
+class TradingMode(Enum):
+    """Trading modes."""
+    TRADE = "trade"
+    SPOT = "spot"
+    FUTURES = "futures"
+    MARGIN = "margin"
+    PAPER = "paper"
+    SIMULATION = "simulation"
+
 class ExchangeType(Enum):
     """Exchange types."""
     BINANCE = "binance"

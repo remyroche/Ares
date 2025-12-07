@@ -212,6 +212,10 @@ class ExchangeInterface:
         self.api_secret = config.get('api_secret')
         self.testnet = config.get('testnet', True)
         self.rate_limits = config.get('rate_limits', {})
+        # When True, skip full live-connection initialization and rely on
+        # stubs/offline data paths. This is useful for data-processing or
+        # research flows where we don't want to hit live exchanges.
+        self.lazy_init = bool(config.get('lazy_init', False))
 
         # Exchange dispatcher
         self.dispatcher: Optional[ExchangeDispatcher] = None
@@ -340,6 +344,17 @@ class ExchangeInterface:
                 self.connection_status = ConnectionStatus.CONNECTED
                 tprint("✅ ExchangeInterface.connect: Connected to simulated exchange", "SUCCESS")
                 tprint_success("✅ Connected to simulated exchange")
+                return True
+
+            # In lazy-init mode we do not perform any live exchange initialization
+            # or network operations. This allows offline/public-only flows to
+            # construct an ExchangeInterface without triggering connections.
+            if self.lazy_init:
+                tprint_info(
+                    f"🛑 ExchangeInterface.connect: lazy_init=True for {self.exchange_type}; "
+                    "skipping live connection and using offline stubs only."
+                )
+                self.connection_status = ConnectionStatus.CONNECTED
                 return True
 
             # Retry logic with exponential backoff
@@ -505,7 +520,7 @@ class ExchangeInterface:
     def _setup_rate_limiting(self) -> None:
         """Set up rate limiting for different endpoints."""
         try:
-            from exchanges.shared.reliability.rate_limit_manager import RateLimit
+            from exchanges.shared.reliability import RateLimit
 
             # General API rate limits
             general_limit = RateLimit(
@@ -1018,41 +1033,159 @@ class ExchangeInterface:
                     "INFO",
                 )
                 print(f"✅ RECEIVED: {len(ohlcv_data)} candles from {symbol}")
-            else:
+
+                klines: List[KlineData] = []
+                for candle in ohlcv_data:
+                    klines.append(
+                        KlineData(
+                            symbol=candle.symbol,
+                            interval=interval,
+                            timestamp=candle.timestamp,
+                            open_price=candle.open,
+                            high_price=candle.high,
+                            low_price=candle.low,
+                            close_price=candle.close,
+                            volume=candle.volume,
+                            close_time=candle.timestamp,
+                            quote_asset_volume=candle.volume * candle.close,
+                            number_of_trades=0,
+                            taker_buy_base_asset_volume=candle.volume * 0.5,
+                            taker_buy_quote_asset_volume=candle.volume * candle.close * 0.5,
+                        )
+                    )
+
                 tprint(
-                    f"⚠️ ExchangeInterface.get_klines: No data received for {symbol}",
+                    f"✅ ExchangeInterface.get_klines: Returning {len(klines)} klines for {symbol}",
+                    "DEBUG",
+                )
+                return klines
+
+            # If dispatcher is present but returned no data (e.g. not initialized),
+            # log and fall through to the public-data fallback logic below.
+            tprint(
+                f"⚠️ ExchangeInterface.get_klines: Dispatcher returned no data for {symbol}; attempting public-data fallback when available",
+                "WARNING",
+            )
+            print(f"⚠️ NO DATA received for {symbol} from dispatcher; will try fallback if supported")
+
+        # Fallback path when dispatcher is unavailable: try Binance public klines
+        if str(self.exchange_type).lower() == "binance":
+            tprint(
+                "⚠️ ExchangeInterface.get_klines: No dispatcher available; attempting Binance public klines fallback",
+                "WARNING",
+            )
+            try:
+                from exchanges.binance.klines_adapter import create_binance_klines_adapter
+            except Exception as e:
+                tprint(
+                    f"⚠️ ExchangeInterface.get_klines: Binance klines adapter import failed; skipping fallback: {e}",
                     "WARNING",
                 )
-                print(f"⚠️ NO DATA received for {symbol}")
+            else:
+                try:
+                    # Determine a reasonable time window if not fully specified
+                    end_dt = end_time or datetime.utcnow()
+                    if start_time is None:
+                        # Approximate lookback from limit and interval
+                        interval_map = {
+                            "1m": 1,
+                            "3m": 3,
+                            "5m": 5,
+                            "15m": 15,
+                            "30m": 30,
+                            "1h": 60,
+                            "2h": 120,
+                            "4h": 240,
+                            "6h": 360,
+                            "8h": 480,
+                            "12h": 720,
+                            "1d": 1440,
+                            "3d": 4320,
+                        }
+                        minutes = interval_map.get(interval, 1)
+                        start_dt = end_dt - timedelta(minutes=minutes * limit)
+                    else:
+                        start_dt = start_time
 
-            klines: List[KlineData] = []
-            for candle in ohlcv_data:
-                klines.append(
-                    KlineData(
-                        symbol=candle.symbol,
-                        interval=interval,
-                        timestamp=candle.timestamp,
-                        open_price=candle.open,
-                        high_price=candle.high,
-                        low_price=candle.low,
-                        close_price=candle.close,
-                        volume=candle.volume,
-                        close_time=candle.timestamp,
-                        quote_asset_volume=candle.volume * candle.close,
-                        number_of_trades=0,
-                        taker_buy_base_asset_volume=candle.volume * 0.5,
-                        taker_buy_quote_asset_volume=candle.volume * candle.close * 0.5,
+                    adapter = create_binance_klines_adapter(
+                        api_key=None,
+                        secret_key=None,
+                        data_dir="historical_data",
                     )
-                )
 
-            tprint(
-                f"✅ ExchangeInterface.get_klines: Returning {len(klines)} klines for {symbol}",
-                "DEBUG",
-            )
-            return klines
+                    df = await adapter.get_klines_data(
+                        symbol=symbol,
+                        interval=interval,
+                        start_time=start_dt,
+                        end_time=end_dt,
+                        limit=limit,
+                    )
 
+                    if df is not None and not df.empty:
+                        # Use open_time as primary timestamp when available
+                        if "open_time" in df.columns:
+                            ts_series = pd.to_datetime(df["open_time"], unit="ms", utc=True).dt.tz_localize(None)
+                        else:
+                            ts_series = pd.to_datetime(df.index, utc=True, errors="coerce").tz_localize(None)
+
+                        df_local = df.copy()
+                        df_local["__ts__"] = ts_series
+                        df_local = df_local.loc[df_local["__ts__"].notna()]
+
+                        klines: List[KlineData] = []
+                        for _, row in df_local.iterrows():
+                            ts = row["__ts__"]
+                            close_time_val = row.get("close_time", None)
+                            if pd.notna(close_time_val):
+                                try:
+                                    close_dt = pd.to_datetime(int(close_time_val), unit="ms", utc=True).to_pydatetime().replace(tzinfo=None)
+                                except Exception:
+                                    close_dt = ts
+                            else:
+                                close_dt = ts
+
+                            quote_vol = row.get("quote_volume", None)
+                            if quote_vol is None and "close" in row and "volume" in row:
+                                quote_vol = float(row["close"]) * float(row["volume"])
+
+                            klines.append(
+                                KlineData(
+                                    symbol=symbol,
+                                    interval=interval,
+                                    timestamp=ts,
+                                    open_price=float(row.get("open", 0.0)),
+                                    high_price=float(row.get("high", 0.0)),
+                                    low_price=float(row.get("low", 0.0)),
+                                    close_price=float(row.get("close", 0.0)),
+                                    volume=float(row.get("volume", 0.0)),
+                                    close_time=close_dt,
+                                    quote_asset_volume=float(quote_vol) if quote_vol is not None else 0.0,
+                                    number_of_trades=int(row.get("trades", 0)),
+                                    taker_buy_base_asset_volume=float(row.get("taker_buy_base", 0.0)),
+                                    taker_buy_quote_asset_volume=float(row.get("taker_buy_quote", 0.0)),
+                                )
+                            )
+
+                        tprint(
+                            f"✅ ExchangeInterface.get_klines: Binance public fallback returned {len(klines)} klines for {symbol}",
+                            "INFO",
+                        )
+                        return klines
+                    else:
+                        tprint(
+                            f"⚠️ ExchangeInterface.get_klines: Binance public fallback returned no data for {symbol}",
+                            "WARNING",
+                        )
+
+                except Exception as e:
+                    tprint(
+                        f"⚠️ ExchangeInterface.get_klines: Binance public fallback failed: {e}",
+                        "WARNING",
+                    )
+
+        # Final fallback: no dispatcher and no public-data adapter
         tprint(
-            "⚠️ ExchangeInterface.get_klines: No dispatcher available, returning empty list",
+            "⚠️ ExchangeInterface.get_klines: No dispatcher or public-data fallback available, returning empty list",
             "WARNING",
         )
         return []

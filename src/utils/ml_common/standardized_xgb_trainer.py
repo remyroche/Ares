@@ -115,6 +115,35 @@ from .optimization.ic_snr_objective import (
 logger = logging.getLogger(__name__)
 
 
+def smoothed_brier_objective(preds: np.ndarray, dtrain) -> Tuple[np.ndarray, np.ndarray]:
+    """Custom Objective: Smoothed Brier score for binary classification.
+
+    Applies sigmoid to raw logits, smooths labels away from {0,1}, then computes
+    gradient and hessian of (p - y_smooth)**2 with respect to the logits.
+    """
+    labels = dtrain.get_label()
+
+    # Convert logits to probabilities
+    preds = 1.0 / (1.0 + np.exp(-preds))
+
+    # Label smoothing: 0 -> eps/2, 1 -> 1 - eps/2
+    smoothing_factor = 0.1
+    y_smooth = labels * (1.0 - smoothing_factor) + (smoothing_factor / 2.0)
+
+    # Gradient of squared error w.r.t logits: 2 * p * (1-p) * (p - y_smooth)
+    grad = 2.0 * preds * (1.0 - preds) * (preds - y_smooth)
+
+    # Approximate hessian (second derivative w.r.t logits)
+    hess = 2.0 * preds * (1.0 - preds) * (
+        preds * (1.0 - preds) + (1.0 - 2.0 * preds) * (preds - y_smooth)
+    )
+
+    # Ensure strictly positive hessian for numerical stability
+    hess = np.maximum(hess, 1e-6)
+
+    return grad, hess
+
+
 @dataclass
 class XGBTrainingConfig:
     """Configuration for standardized XGBoost training.
@@ -153,6 +182,7 @@ class XGBTrainingConfig:
     # Task type and objective
     task_type: str = "classification"  # "classification" or "regression"
     objective: str = "binary:logistic"  # "binary:logistic", "multi:softprob", or "reg:squarederror"
+    use_smoothed_brier_objective: bool = False
     num_class: Optional[int] = None  # Required for multi:softprob, ignored for binary/regression
 
     # HPO configuration
@@ -659,14 +689,22 @@ class StandardizedXGBTrainer:
 
         evals = [(dtrain, 'train'), (dval, 'val')]
 
-        model = xgb.train(
+        train_kwargs = dict(
             params=params,
             dtrain=dtrain,
             num_boost_round=self.config.n_estimators,
             evals=evals,
             early_stopping_rounds=self.config.early_stopping_rounds,
-            verbose_eval=False
+            verbose_eval=False,
         )
+        if (
+            self.config.task_type == "classification"
+            and str(self.config.objective).startswith("binary")
+            and getattr(self.config, "use_smoothed_brier_objective", False)
+        ):
+            train_kwargs["obj"] = smoothed_brier_objective
+
+        model = xgb.train(**train_kwargs)
 
         return model
 
@@ -756,14 +794,22 @@ class StandardizedXGBTrainer:
                 xgb_params['num_class'] = self.config.num_class
 
             try:
-                model = xgb.train(
+                train_kwargs = dict(
                     params=xgb_params,
                     dtrain=dtrain_hpo,
                     num_boost_round=self.config.hpo_n_estimators,
                     evals=[(dval_hpo, 'val')],
                     early_stopping_rounds=self.config.early_stopping_rounds,
-                    verbose_eval=False
+                    verbose_eval=False,
                 )
+                if (
+                    self.config.task_type == "classification"
+                    and str(self.config.objective).startswith("binary")
+                    and getattr(self.config, "use_smoothed_brier_objective", False)
+                ):
+                    train_kwargs["obj"] = smoothed_brier_objective
+
+                model = xgb.train(**train_kwargs)
                 # Return negative loss for maximization
                 return -model.best_score
             except Exception as e:
@@ -934,14 +980,22 @@ class StandardizedXGBTrainer:
 
         evals = [(dtrain, 'train'), (dval, 'val')]
 
-        model = xgb.train(
+        train_kwargs = dict(
             params=final_params,
             dtrain=dtrain,
             num_boost_round=self.config.n_estimators,
             evals=evals,
             early_stopping_rounds=self.config.early_stopping_rounds,
-            verbose_eval=False
+            verbose_eval=False,
         )
+        if (
+            self.config.task_type == "classification"
+            and str(self.config.objective).startswith("binary")
+            and getattr(self.config, "use_smoothed_brier_objective", False)
+        ):
+            train_kwargs["obj"] = smoothed_brier_objective
+
+        model = xgb.train(**train_kwargs)
 
         if verbose:
             logger.info(f"      ✅ HPO complete! Best params: {best_params}")
@@ -1062,14 +1116,22 @@ class StandardizedXGBTrainer:
             
             try:
                 # Train model
-                model = xgb.train(
+                train_kwargs = dict(
                     params=xgb_params,
                     dtrain=dtrain,
                     num_boost_round=self.config.hpo_n_estimators,
                     evals=[(dval, 'val')],
                     early_stopping_rounds=self.config.early_stopping_rounds,
-                    verbose_eval=False
+                    verbose_eval=False,
                 )
+                if (
+                    self.config.task_type == "classification"
+                    and str(self.config.objective).startswith("binary")
+                    and getattr(self.config, "use_smoothed_brier_objective", False)
+                ):
+                    train_kwargs["obj"] = smoothed_brier_objective
+
+                model = xgb.train(**train_kwargs)
                 
                 # Get predictions
                 y_pred = model.predict(dval)

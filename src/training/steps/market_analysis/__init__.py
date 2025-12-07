@@ -38,19 +38,49 @@ except Exception:  # pragma: no cover - optional dependency (e.g. torch)
 # Disabled here to avoid hard dependency on hmmlearn when importing MARKET_ANALYSIS.
 RollingHMMRegimeDiscoveryStep = None
 
-# Import HMM ML alpha step (derives alpha labels and regimes from 1h HMM outputs)
-from .xgb_meso_regime_step import XGBMesoTrendStep
-from .hmm_ml_alpha_step import HMMMLMesoTrendStep
-from .xgb_macro_regime_step import XGBMacroTrendStep
-from .xgb_mr_trend_step import XGBMrTrendStep
+try:
+    # Import HMM ML alpha and related XGB regime steps (these may depend on heavy
+    # optional libraries like numba or custom HMM modules)
+    from .xgb_meso_regime_step import XGBMesoTrendStep
+except Exception:  # pragma: no cover - optional heavy dependency
+    XGBMesoTrendStep = None
+
+try:
+    from .hmm_ml_alpha_step import HMMMLMesoTrendStep
+except Exception:  # pragma: no cover - optional heavy dependency
+    HMMMLMesoTrendStep = None
+
+try:
+    from .xgb_macro_regime_step import XGBMacroTrendStep
+except Exception:  # pragma: no cover - optional heavy dependency
+    XGBMacroTrendStep = None
+
+try:
+    from .xgb_mr_trend_step import XGBMrTrendStep
+except Exception:  # pragma: no cover - optional heavy dependency
+    XGBMrTrendStep = None
 
 # Import ML Risk Regime HMM step (risk-based regime classification)
-from .ml_risk_regime_step import MLRiskRegimeStepHMM
-from .ml_smc_regime_step import MLSMCRegimeStep
+try:
+    from .ml_risk_regime_step import MLRiskRegimeStepHMM
+except Exception:  # pragma: no cover - optional heavy dependency
+    MLRiskRegimeStepHMM = None
+
+try:
+    from .ml_smc_regime_step import MLSMCRegimeStep
+except Exception:  # pragma: no cover - optional heavy dependency
+    MLSMCRegimeStep = None
 
 # Import ML Path Regime step (efficiency/entropy-based path analysis)
-from .ml_path_regime_step import MLPathRegimeStep
-from .ml_reversion_regime_step import MLMeanReversionRegimeStep
+try:
+    from .ml_path_regime_step import MLPathRegimeStep
+except Exception:  # pragma: no cover - optional heavy dependency
+    MLPathRegimeStep = None
+
+try:
+    from .ml_reversion_regime_step import MLMeanReversionRegimeStep
+except Exception:  # pragma: no cover - optional heavy dependency
+    MLMeanReversionRegimeStep = None
 
 # Import ML Breakout/Bounce Regime step (Relative-State breakout/bounce classifier)
 try:
@@ -59,18 +89,34 @@ except Exception:  # pragma: no cover - defensive import guard
     MLBreakoutBounceRegimeStep = None
 
 # Import ML Liquidity Regime step (liquidity-based regime classification)
-from .ml_liquidity_regime_step import MLLiquidityRegimeStep
-from .ml_map_regime_step import MLMapRegimeStep
+try:
+    from .ml_liquidity_regime_step import MLLiquidityRegimeStep
+except Exception:  # pragma: no cover - optional heavy dependency
+    MLLiquidityRegimeStep = None
+
+try:
+    from .ml_map_regime_step import MLMapRegimeStep
+except Exception:  # pragma: no cover - optional heavy dependency
+    MLMapRegimeStep = None
 
 # Import ML Volume Force Step (Volume Force/Impulse prediction)
-from .ml_volume_force_step import MLVolumeForceStep
+try:
+    from .ml_volume_force_step import MLVolumeForceStep
+except Exception:  # pragma: no cover - optional heavy dependency
+    MLVolumeForceStep = None
+
+# Import SR labeling XGB specialist step (S/R-based meta signal)
+try:
+    from .sr_labeling_xgb_step import SRLabelingXGBStep
+except Exception:  # pragma: no cover - optional heavy dependency
+    SRLabelingXGBStep = None
 
 # Import Feature Generation Meta-Labeling Step (now in labeling module)
 from src.training.steps.labeling import FeatureGenerationMetaLabelingStep
 
 # Import Meta-Labeling HPO Experiment Step (offline, optional) (now in labeling
-# module). Register it under the user-facing step name 'sr_labeling_xgb' while
-# keeping 'meta_labeling_hpo_experiment' as a backward-compatible alias.
+# module). This remains the dedicated HPO step registered under
+# 'meta_labeling_hpo_experiment'.
 from src.training.steps.labeling import MetaLabelingHPOExperimentStep
 
 # Note: EconomicRegimeFeatureSelector removed - it had circular dependency issues
@@ -92,23 +138,34 @@ if StickyFiniteHMMRegimeDiscoveryStep is not None:
     step_registry.register("sticky_finite_hmm_regime_discovery", StickyFiniteHMMRegimeDiscoveryStep)
 if RollingHMMRegimeDiscoveryStep is not None:
     step_registry.register("rolling_hmm_regime_discovery", RollingHMMRegimeDiscoveryStep)
-step_registry.register("xgb_meso_regime", XGBMesoTrendStep)
-step_registry.register("xgb_mr_trend_step", XGBMrTrendStep)
-step_registry.register("hmm_ml_alpha_step", HMMMLMesoTrendStep)
-step_registry.register("xgb_macro_regime", XGBMacroTrendStep)
-step_registry.register("ml_risk_regime_step", MLRiskRegimeStepHMM)
-step_registry.register("ml_smc_regime_step", MLSMCRegimeStep)
-step_registry.register("ml_path_regime_step", MLPathRegimeStep)
-step_registry.register("ml_mean_reversion_step", MLMeanReversionRegimeStep)
+if XGBMesoTrendStep is not None:
+    step_registry.register("xgb_meso_regime", XGBMesoTrendStep)
+if XGBMrTrendStep is not None:
+    step_registry.register("xgb_mr_trend_step", XGBMrTrendStep)
+if HMMMLMesoTrendStep is not None:
+    step_registry.register("hmm_ml_alpha_step", HMMMLMesoTrendStep)
+if XGBMacroTrendStep is not None:
+    step_registry.register("xgb_macro_regime", XGBMacroTrendStep)
+if MLRiskRegimeStepHMM is not None:
+    step_registry.register("ml_risk_regime_step", MLRiskRegimeStepHMM)
+if MLSMCRegimeStep is not None:
+    step_registry.register("ml_smc_regime_step", MLSMCRegimeStep)
+if MLPathRegimeStep is not None:
+    step_registry.register("ml_path_regime_step", MLPathRegimeStep)
+if MLMeanReversionRegimeStep is not None:
+    step_registry.register("ml_mean_reversion_step", MLMeanReversionRegimeStep)
 if MLBreakoutBounceRegimeStep is not None:
     step_registry.register("ml_breakout_bounce_regime_step", MLBreakoutBounceRegimeStep)
-step_registry.register("ml_map_regime_step", MLMapRegimeStep)
-step_registry.register("ml_liquidity_regime_step", MLLiquidityRegimeStep)
-step_registry.register("ml_volume_force_step", MLVolumeForceStep)
+if MLMapRegimeStep is not None:
+    step_registry.register("ml_map_regime_step", MLMapRegimeStep)
+if MLLiquidityRegimeStep is not None:
+    step_registry.register("ml_liquidity_regime_step", MLLiquidityRegimeStep)
+if MLVolumeForceStep is not None:
+    step_registry.register("ml_volume_force_step", MLVolumeForceStep)
 step_registry.register("feature_generation_meta_labeling_step", FeatureGenerationMetaLabelingStep)
+if SRLabelingXGBStep is not None:
+    # S/R-based specialist step producing sr_labeling_xgb_predictions_{timeframe}
+    step_registry.register("sr_labeling_xgb", SRLabelingXGBStep)
 if MetaLabelingHPOExperimentStep is not None:
-    # New user-facing name for the meta-labeling HPO / sr_labeling_xgb step.
-    step_registry.register("sr_labeling_xgb", MetaLabelingHPOExperimentStep)
-    # Backward-compatible alias so existing tooling using the old name keeps
-    # working without modification.
+    # Keep a dedicated alias for the meta-labeling HPO experiment.
     step_registry.register("meta_labeling_hpo_experiment", MetaLabelingHPOExperimentStep)

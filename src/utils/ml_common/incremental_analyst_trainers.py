@@ -95,6 +95,8 @@ except ImportError:
 
 try:
     import optuna
+    # Suppress verbose Optuna trial logs (INFO level) to reduce log pollution
+    optuna.logging.set_verbosity(optuna.logging.WARNING)
     OPTUNA_AVAILABLE = True
 except ImportError:
     OPTUNA_AVAILABLE = False
@@ -714,7 +716,11 @@ class IncrementalLGBMTrainer(BaseIncrementalTrainer):
             dtrain = lgb.Dataset(X_train, label=y_train)
             dval = lgb.Dataset(X_val, label=y_val, reference=dtrain)
             try:
-                model = lgb.train(params, dtrain, num_boost_round=200, valid_sets=[dval], callbacks=[lgb.early_stopping(20)])
+                # Suppress LightGBM verbose output during HPO
+                model = lgb.train(
+                    params, dtrain, num_boost_round=200, valid_sets=[dval],
+                    callbacks=[lgb.early_stopping(20, verbose=False), lgb.log_evaluation(0)]
+                )
                 preds = model.predict(X_val)
                 if self.config.task_type == 'regression':
                     return -((y_val - preds)**2).mean()
@@ -725,7 +731,308 @@ class IncrementalLGBMTrainer(BaseIncrementalTrainer):
                 return float('-inf')
 
         study = optuna.create_study(direction='maximize')
-        study.optimize(objective, n_trials=self.config.hpo_n_trials_per_round, timeout=self.config.hpo_timeout_per_round)
+        study.optimize(objective, n_trials=self.config.hpo_n_trials_per_round, timeout=self.config.hpo_timeout_per_round, show_progress_bar=False)
+        if study.best_trial:
+            self._best_params.update(study.best_params)
+        return {'best_params': study.best_params, 'best_value': study.best_value}
+
+
+# ============================================================================
+# Incremental Bagged LGBM Trainer (Bag-Lower)
+# ============================================================================
+
+class BaggedLGBMRegressor:
+    """Simple bagged LGBM regressor that supports mean/std/lower predictions."""
+
+    def __init__(self, models: List[Any], feature_indices: List[np.ndarray], n_features: int):
+        self.models = models
+        self.feature_indices = feature_indices
+        self.n_features = n_features
+
+    def predict_components(self, X: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Return (mean, std, lower=mean-std) across bags for each sample."""
+        if X.ndim != 2 or X.shape[1] != self.n_features:
+            # Best-effort fallback: clip to common number of features
+            n_common = min(self.n_features, X.shape[1])
+            X = X[:, :n_common]
+        if not self.models:
+            n_samples = X.shape[0]
+            zeros = np.zeros(n_samples, dtype=float)
+            return zeros, zeros, zeros
+
+        bag_preds = []
+        for model, idx in zip(self.models, self.feature_indices):
+            try:
+                X_sub = X[:, idx]
+                bag_preds.append(model.predict(X_sub))
+            except Exception:
+                continue
+
+        if not bag_preds:
+            n_samples = X.shape[0]
+            zeros = np.zeros(n_samples, dtype=float)
+            return zeros, zeros, zeros
+
+        preds_mat = np.vstack(bag_preds).T  # (n_samples, n_bags)
+        mean = preds_mat.mean(axis=1)
+        std = preds_mat.std(axis=1)
+        lower = mean - std
+        return mean, std, lower
+
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        """Return bag-lower raw prediction (mean - std)."""
+        _, _, lower = self.predict_components(X)
+        return lower
+
+
+class IncrementalLGBMBaggedTrainer(BaseIncrementalTrainer):
+    """Incremental bagged LightGBM trainer producing bag-lower predictions with calibration."""
+
+    def __init__(self, model_id: str, config=None, model_config=None):
+        super().__init__(model_id, config, model_config)
+        self._feature_cols: List[str] = []
+        self._n_bags = int((model_config or {}).get('n_bags', 10))
+        self._feature_fraction = float((model_config or {}).get('bagging_feature_fraction', 0.7))
+        self._sample_fraction = float((model_config or {}).get('bagging_sample_fraction', 0.7))
+
+    def _get_default_params(self) -> Dict[str, Any]:
+        params = {
+            'objective': 'regression' if self.config.task_type == 'regression' else 'binary',
+            'metric': 'rmse' if self.config.task_type == 'regression' else 'binary_logloss',
+            'boosting_type': 'gbdt',
+            'verbosity': -1,
+            'n_jobs': -1,
+            'learning_rate': 0.05,
+            'num_leaves': 31,
+            'max_depth': 6,
+            'reg_alpha': 0.1,
+            'reg_lambda': 0.1,
+        }
+        if self.model_config and 'params' in self.model_config:
+            params.update(self.model_config['params'])
+        return params
+
+    def _train_bagged_model(self, X: np.ndarray, y: np.ndarray, sample_weight: Optional[np.ndarray], verbose: bool) -> BaggedLGBMRegressor:
+        n_samples, n_features = X.shape
+        if n_samples == 0 or n_features == 0:
+            return BaggedLGBMRegressor([], [], n_features)
+
+        base_params = self._get_default_params()
+        base_params.update(self._best_params)
+
+        # Drop early-stopping parameters that are only valid for the low-level
+        # lgb.train API. Passing early_stopping_rounds into the scikit-learn
+        # LGBMRegressor constructor without an eval_set causes LightGBM to
+        # raise "For early stopping, at least one dataset and eval metric is
+        # required for evaluation". Bag-level models are trained on simple
+        # bootstrap subsets, so we disable built-in early stopping here and
+        # rely on global incremental training/HPO instead.
+        base_params.pop("early_stopping_rounds", None)
+
+        n_bags = max(1, int(self._n_bags))
+        feat_frac = min(max(self._feature_fraction, 0.1), 1.0)
+        sample_frac = min(max(self._sample_fraction, 0.1), 1.0)
+
+        rng = np.random.RandomState(42)
+        models: List[Any] = []
+        feature_indices: List[np.ndarray] = []
+
+        for bag_idx in range(n_bags):
+            params = dict(base_params)
+            params['random_state'] = int(params.get('random_state', 42)) + bag_idx
+
+            n_feat_sub = max(1, int(round(feat_frac * n_features)))
+            feat_idx = np.sort(rng.choice(n_features, size=n_feat_sub, replace=False))
+
+            n_rows_sub = max(10, int(round(sample_frac * n_samples)))
+            n_rows_sub = min(n_rows_sub, n_samples)
+            row_idx = np.sort(rng.choice(n_samples, size=n_rows_sub, replace=False))
+
+            X_bag = X[row_idx][:, feat_idx]
+            y_bag = y[row_idx]
+            if sample_weight is not None:
+                sw_bag = sample_weight[row_idx]
+            else:
+                sw_bag = None
+
+            try:
+                model = lgb.LGBMRegressor(**params)
+                if sw_bag is not None:
+                    model.fit(X_bag, y_bag, sample_weight=sw_bag)
+                else:
+                    model.fit(X_bag, y_bag)
+                models.append(model)
+                feature_indices.append(feat_idx)
+            except Exception as e:
+                logger.warning(f"Bag {bag_idx} failed during training: {e}")
+                continue
+
+        return BaggedLGBMRegressor(models, feature_indices, n_features)
+
+    def _train_initial(self, train_data: pd.DataFrame, window: IncrementalTrainingWindow, verbose: bool) -> CalibratedModel:
+        self._feature_cols = self._get_feature_cols(train_data)
+        if not self._feature_cols:
+            logger.warning(
+                "IncrementalLGBMBaggedTrainer: no specialist features found; "
+                "using dummy feature to prevent crash."
+            )
+            train_data = train_data.copy()
+            train_data['__dummy_const__'] = 0.0
+            self._feature_cols = ['__dummy_const__']
+
+        X = train_data[self._feature_cols].values.astype(np.float32)
+        y = train_data['__target__'].values
+        X = np.nan_to_num(X, nan=0.0)
+
+        sample_weight = None
+        if '__weight__' in train_data.columns:
+            sw = train_data['__weight__'].values
+            sample_weight = np.nan_to_num(sw, nan=1.0).astype(np.float32)
+
+        X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, shuffle=False)
+        sw_train = None
+        if sample_weight is not None:
+            sw_train = sample_weight[: len(X_train)]
+
+        bagged_model = self._train_bagged_model(X_train, y_train, sw_train, verbose)
+        calibrated_model = CalibratedModel(bagged_model, self.config.task_type)
+        calibrated_model.fit_calibration(X_val, y_val)
+
+        if verbose:
+            logger.info(
+                f"   Initial Bagged LGBM: {len(bagged_model.models)} bags, "
+                f"calibrated={calibrated_model.is_calibrated}"
+            )
+
+        return calibrated_model
+
+    def _train_incremental(self, new_data: pd.DataFrame, full_train_data: pd.DataFrame, window: IncrementalTrainingWindow, verbose: bool) -> CalibratedModel:
+        if not self._feature_cols:
+            self._feature_cols = self._get_feature_cols(full_train_data)
+            if not self._feature_cols:
+                full_train_data = full_train_data.copy()
+                full_train_data['__dummy_const__'] = 0.0
+                self._feature_cols = ['__dummy_const__']
+
+        X = full_train_data[self._feature_cols].values.astype(np.float32)
+        y = full_train_data['__target__'].values
+        X = np.nan_to_num(X, nan=0.0)
+
+        sample_weight = None
+        if '__weight__' in full_train_data.columns:
+            sw = full_train_data['__weight__'].values
+            sample_weight = np.nan_to_num(sw, nan=1.0).astype(np.float32)
+
+        X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, shuffle=False)
+        sw_train = None
+        if sample_weight is not None:
+            sw_train = sample_weight[: len(X_train)]
+
+        bagged_model = self._train_bagged_model(X_train, y_train, sw_train, verbose)
+        calibrated_model = CalibratedModel(bagged_model, self.config.task_type)
+        calibrated_model.fit_calibration(X_val, y_val)
+
+        return calibrated_model
+
+    def _predict(self, pred_data: pd.DataFrame) -> pd.DataFrame:
+        if not self._feature_cols:
+            return pd.DataFrame({'prediction': 0.0}, index=pred_data.index)
+
+        if '__dummy_const__' in self._feature_cols and '__dummy_const__' not in pred_data:
+            pred_data = pred_data.copy()
+            pred_data['__dummy_const__'] = 0.0
+
+        X = pred_data[self._feature_cols].values.astype(np.float32)
+        X = np.nan_to_num(X, nan=0.0)
+
+        preds = self._current_model.predict(X)
+        return pd.DataFrame({'prediction': preds}, index=pred_data.index)
+
+    def _run_incremental_hpo(self, train_data, window, verbose):
+        # Reuse single-model LGBM HPO to tune base learner hyperparameters.
+        if not OPTUNA_AVAILABLE:
+            return None
+
+        if not self._feature_cols:
+            self._feature_cols = self._get_feature_cols(train_data)
+            if not self._feature_cols:
+                train_data = train_data.copy()
+                train_data['__dummy_const__'] = 0.0
+                self._feature_cols = ['__dummy_const__']
+
+        if '__dummy_const__' in self._feature_cols and '__dummy_const__' not in train_data:
+            train_data = train_data.copy()
+            train_data['__dummy_const__'] = 0.0
+
+        X = train_data[self._feature_cols].values.astype(np.float32)
+        y = train_data['__target__'].values
+        X = np.nan_to_num(X, nan=0.0)
+        X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, shuffle=False)
+
+        current_best = self._best_params.copy()
+        radius = self.config.hpo_neighborhood_radius
+
+        def objective(trial):
+            params = self._get_default_params()
+            for param_name in self.config.sensitive_params_lgbm:
+                current_val = current_best.get(param_name)
+                if param_name == 'learning_rate':
+                    base = current_val or 0.05
+                    params['learning_rate'] = trial.suggest_float(
+                        'learning_rate',
+                        max(0.001, base * (1 - radius)),
+                        min(0.3, base * (1 + radius)),
+                        log=True,
+                    )
+                elif param_name == 'num_leaves':
+                    base = current_val or 31
+                    params['num_leaves'] = trial.suggest_int(
+                        'num_leaves',
+                        max(8, int(base * (1 - radius))),
+                        min(128, int(base * (1 + radius))),
+                    )
+                elif param_name == 'max_depth':
+                    base = current_val or 6
+                    params['max_depth'] = trial.suggest_int(
+                        'max_depth',
+                        max(3, int(base * (1 - radius))),
+                        min(12, int(base * (1 + radius))),
+                    )
+                elif param_name in ['reg_alpha', 'reg_lambda']:
+                    base = current_val or 0.1
+                    params[param_name] = trial.suggest_float(
+                        param_name,
+                        max(0.0, base * (1 - radius)),
+                        min(5.0, base * (1 + radius)),
+                    )
+
+            dtrain = lgb.Dataset(X_train, label=y_train)
+            dval = lgb.Dataset(X_val, label=y_val, reference=dtrain)
+            try:
+                # Suppress LightGBM verbose output during HPO
+                model = lgb.train(
+                    params,
+                    dtrain,
+                    num_boost_round=200,
+                    valid_sets=[dval],
+                    callbacks=[lgb.early_stopping(20, verbose=False), lgb.log_evaluation(0)],
+                )
+                preds = model.predict(X_val)
+                if self.config.task_type == 'regression':
+                    return -((y_val - preds) ** 2).mean()
+                else:
+                    from sklearn.metrics import log_loss
+                    return -log_loss(y_val, preds)
+            except Exception:
+                return float('-inf')
+
+        study = optuna.create_study(direction='maximize')
+        study.optimize(
+            objective,
+            n_trials=self.config.hpo_n_trials_per_round,
+            timeout=self.config.hpo_timeout_per_round,
+            show_progress_bar=False,
+        )
         if study.best_trial:
             self._best_params.update(study.best_params)
         return {'best_params': study.best_params, 'best_value': study.best_value}
@@ -886,7 +1193,7 @@ class IncrementalNGBoostTrainer(BaseIncrementalTrainer):
                 return float('-inf')
 
         study = optuna.create_study(direction='maximize')
-        study.optimize(objective, n_trials=self.config.hpo_n_trials_per_round, timeout=self.config.hpo_timeout_per_round)
+        study.optimize(objective, n_trials=self.config.hpo_n_trials_per_round, timeout=self.config.hpo_timeout_per_round, show_progress_bar=False)
         if study.best_trial:
             self._best_params.update(study.best_params)
         return {'best_params': study.best_params, 'best_value': study.best_value}
@@ -1004,7 +1311,7 @@ class IncrementalKNNTrainer(BaseIncrementalTrainer):
                 return float('-inf')
 
         study = optuna.create_study(direction='maximize')
-        study.optimize(objective, n_trials=self.config.hpo_n_trials_per_round, timeout=self.config.hpo_timeout_per_round)
+        study.optimize(objective, n_trials=self.config.hpo_n_trials_per_round, timeout=self.config.hpo_timeout_per_round, show_progress_bar=False)
         if study.best_trial:
             self._best_params.update(study.best_params)
         return {'best_params': study.best_params, 'best_value': study.best_value}
@@ -1184,7 +1491,7 @@ class IncrementalBayesianRidgeTrainer(BaseIncrementalTrainer):
                 return float('-inf')
 
         study = optuna.create_study(direction='maximize')
-        study.optimize(objective, n_trials=self.config.hpo_n_trials_per_round, timeout=self.config.hpo_timeout_per_round)
+        study.optimize(objective, n_trials=self.config.hpo_n_trials_per_round, timeout=self.config.hpo_timeout_per_round, show_progress_bar=False)
         if study.best_trial:
             self._best_params.update(study.best_params)
         return {'best_params': study.best_params, 'best_value': study.best_value}
@@ -1209,7 +1516,16 @@ class IncrementalAnalystTrainer:
         
         self.trainers = {}
         if LIGHTGBM_AVAILABLE:
-            self.trainers['lgbm'] = IncrementalLGBMTrainer(model_id, self.config, self.model_configs.get('lgbm'))
+            # Standard LGBM base model
+            lgbm_cfg = self.model_configs.get('lgbm') or {}
+            if lgbm_cfg.get('enabled', True):
+                self.trainers['lgbm'] = IncrementalLGBMTrainer(model_id, self.config, lgbm_cfg)
+
+            # Bagged LGBM (bag-lower) base model
+            bag_cfg = self.model_configs.get('lgbm_bag_lower') or {}
+            if bag_cfg.get('enabled', False):
+                self.trainers['lgbm_bag_lower'] = IncrementalLGBMBaggedTrainer(model_id, self.config, bag_cfg)
+
         if NGBOOST_AVAILABLE:
             self.trainers['ngboost'] = IncrementalNGBoostTrainer(model_id, self.config, self.model_configs.get('ngboost'))
         if SKLEARN_AVAILABLE:

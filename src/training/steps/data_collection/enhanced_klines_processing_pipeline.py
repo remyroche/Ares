@@ -338,6 +338,7 @@ except Exception:
             return df
 
 from src.utils.data.klines_parquet import KlinesParquetManager
+from src.training.steps.data_collection.klines_gap_filler_1m import fill_1m_gaps_and_resample_for_symbol
 
 class StorageConfig:
     """Simple storage config."""
@@ -396,7 +397,7 @@ class GapInfo:
 @dataclass
 class ResamplingConfig:
     """Configuration for data resampling."""
-    target_intervals: List[str] = field(default_factory=lambda: ["1m", "5m", "15m", "30m", "1h"])
+    target_intervals: List[str] = field(default_factory=lambda: ["5m", "15m", "1h"])
     method: str = "ohlc"  # ohlc, vwap, etc.
     preserve_volume: bool = True
     validate_continuity: bool = True
@@ -1107,6 +1108,7 @@ class EnhancedKlinesProcessingPipeline:
                     filled_ranges = gap_result.metadata.get("filled_ranges") if self.config.enable_gap_filling else None
                 except Exception:
                     filled_ranges = None
+
                 resample_result = await self._resample_data_with_age_check(
                     current_data, symbol, resampling_config, batch_id, filled_ranges=filled_ranges
                 )
@@ -1116,6 +1118,47 @@ class EnhancedKlinesProcessingPipeline:
                     results["steps_completed"].append(ProcessingStep.RESAMPLING.value)
                     results["resampled_intervals"] = resample_result.metadata.get("resampled_intervals", [])
                     results["stored_files"].extend(resample_result.metadata.get("stored_files", []))
+
+                    # After resampling, automatically check stored processed 15m data for gaps
+                    try:
+                        processed_15m_gaps = self._detect_missing_in_processed_15m(symbol, years)
+                        results["metadata"]["processed_15m_missing_gaps"] = len(processed_15m_gaps)
+
+                        # If gaps remain and we have a live exchange interface and 1m base data,
+                        # backfill the missing 15m ranges by downloading base-interval candles.
+                        if processed_15m_gaps and exchange_interface is not None and interval == "1m":
+                            backfill_stats = await self._download_missing_ranges(
+                                processed_15m_gaps,
+                                symbol,
+                                base_interval=interval,
+                                exchange_interface=exchange_interface,
+                                resampling_config=resampling_config,
+                            )
+                            results["metadata"]["processed_15m_missing_gaps_filled"] = backfill_stats.get("gaps_filled", 0)
+                            results["metadata"]["processed_15m_backfill_stats"] = backfill_stats
+
+                            # Detect any remaining 15m gaps after backfill and, if present,
+                            # apply synthetic 1m gap filling as a last-resort patch.
+                            remaining_15m_gaps = self._detect_missing_in_processed_15m(symbol, years)
+                            results["metadata"]["processed_15m_missing_gaps_after_backfill"] = len(remaining_15m_gaps)
+
+                            if remaining_15m_gaps:
+                                try:
+                                    synthetic_stats = fill_1m_gaps_and_resample_for_symbol(
+                                        exchange=self.exchange,
+                                        symbol=symbol,
+                                        data_dir=self.config.data_dir,
+                                        target_intervals=resampling_config.target_intervals if resampling_config else None,
+                                        max_gap_bars=30,
+                                        dry_run=False,
+                                    )
+                                    results["metadata"]["synthetic_gap_fill_stats"] = synthetic_stats
+                                except Exception as synthetic_exc:
+                                    if self.enable_logging:
+                                        tprint_warning(f"⚠️ Synthetic 1m gap filler failed: {synthetic_exc}")
+                    except Exception as e:
+                        if self.enable_logging:
+                            tprint_warning(f"⚠️ Processed 15m gap analysis/backfill failed: {e}")
                 else:
                     results["warnings"].extend(resample_result.warnings)
 
@@ -1127,7 +1170,6 @@ class EnhancedKlinesProcessingPipeline:
 
             if not final_quality_result.success:
                 raise RuntimeError(f"Final quality check failed: {final_quality_result.errors}")
-
             results["steps_completed"].append(ProcessingStep.QUALITY_CHECK.value)
             results["data_quality"] = final_quality_result.quality_level
 
@@ -1357,11 +1399,13 @@ class EnhancedKlinesProcessingPipeline:
 
                 if combined_df_list:
                     klines_data = pd.concat(combined_df_list).sort_index().drop_duplicates()
+                    # Normalize index to timezone-naive UTC to avoid naive/aware comparison issues
+                    klines_data = self._ensure_naive_datetime_index(klines_data)
 
-                    earliest_data_time = klines_data.index.min()
                     latest_data_time = klines_data.index.max()
-                    desired_start = datetime.now() - timedelta(days=365 * years)
+                    earliest_data_time = klines_data.index.min()
                     desired_end = datetime.now()
+                    desired_start = desired_end - timedelta(days=365 * years)
 
                     gaps_to_fill: List[Tuple[str, datetime, datetime]] = []
                     gap_dfs: List[pd.DataFrame] = []
@@ -1387,32 +1431,67 @@ class EnhancedKlinesProcessingPipeline:
                     if gaps_to_fill and exchange_interface is not None:
                         if self.enable_logging:
                             tprint_info(f"📥 Filling {len(gaps_to_fill)} gap(s); download only missing ranges")
+
+                        # Use the unified ExchangeInterface.get_klines API for gap fills so we
+                        # benefit from dispatcher wiring and the Binance public klines fallback.
+                        interval_minutes = self._interval_to_minutes(interval) or 1
+                        interval_delta = timedelta(minutes=interval_minutes)
+                        batch_size = 1000
+                        batch_duration = timedelta(minutes=batch_size * interval_minutes)
+
                         for gap_type, gap_start, gap_end in gaps_to_fill:
                             if gap_end <= gap_start:
                                 continue
-                            batch_size = 1000
+
                             current_start = gap_start
-                            gap_klines = []
+                            gap_klines: List[Any] = []
+
                             for _ in range(10000):
-                                current_end = min(gap_end, current_start + timedelta(minutes=batch_size * self._interval_to_minutes(interval)))
+                                current_end = min(gap_end, current_start + batch_duration)
                                 try:
-                                    batch = await exchange_interface.fetch_ohlcv(
+                                    batch = await exchange_interface.get_klines(
                                         symbol=symbol,
-                                        timeframe=interval,
-                                        since=int(current_start.timestamp() * 1000),
+                                        interval=interval,
+                                        start_time=current_start,
+                                        end_time=current_end,
                                         limit=batch_size,
                                     )
                                 except Exception as e:
                                     if self.enable_logging:
                                         tprint_warning(f"⚠️ Gap download failed ({gap_type}): {e}")
                                     break
+
                                 if not batch:
                                     break
+
                                 gap_klines.extend(batch)
-                                last_ts = datetime.fromtimestamp(batch[-1][0] / 1000)
-                                current_start = last_ts + expected_frequency
+
+                                # Derive the timestamp of the last candle in the batch to
+                                # advance the window. Support both KlineData objects and
+                                # raw list/tuple formats for robustness.
+                                last_ts = None
+                                try:
+                                    last_kline = batch[-1]
+                                    if hasattr(last_kline, "timestamp"):
+                                        last_ts = getattr(last_kline, "timestamp")
+                                    else:
+                                        raw_ts = last_kline[0]
+                                        if isinstance(raw_ts, (int, float)):
+                                            # Assume milliseconds when values are large
+                                            unit = "ms" if raw_ts > 1e12 else "s"
+                                            last_ts = pd.to_datetime(raw_ts, unit=unit).to_pydatetime()
+                                        else:
+                                            last_ts = pd.to_datetime(raw_ts).to_pydatetime()
+                                except Exception:
+                                    last_ts = None
+
+                                if last_ts is None:
+                                    break
+
+                                current_start = last_ts + interval_delta
                                 if current_start >= gap_end:
                                     break
+
                             if gap_klines:
                                 gap_df = self._klines_to_dataframe(gap_klines, symbol, interval)
                                 gap_dfs.append(gap_df)
@@ -1732,12 +1811,105 @@ class EnhancedKlinesProcessingPipeline:
 
         except Exception as e:
             error_msg = f"Data download failed: {str(e)}"
+
+            # Public Binance adapter fallback when primary fails
+            if (
+                self.exchange.lower() == "binance"
+                and "No data received from exchange" in str(e)
+            ):
+                try:
+                    from exchanges.binance.klines_adapter import create_binance_klines_adapter
+                    if self.enable_logging:
+                        tprint_warning("⚠️ Primary exchange download failed; attempting BinanceKlinesAdapter fallback")
+                    fallback_df = await self._download_with_binance_adapter(
+                        symbol=symbol,
+                        interval=interval,
+                        years=years
+                    )
+                    if fallback_df is not None and not fallback_df.empty:
+                        result.success = True
+                        result.data = fallback_df
+                        result.metadata = {
+                            "records_downloaded": len(fallback_df),
+                            "date_range": {
+                                "start": fallback_df.index.min().isoformat() if len(fallback_df) else None,
+                                "end": fallback_df.index.max().isoformat() if len(fallback_df) else None,
+                            },
+                            "fallback": "binance_klines_adapter",
+                        }
+                        if self.enable_logging:
+                            tprint_success(
+                                f"✅ BinanceKlinesAdapter fallback succeeded with {len(fallback_df)} records"
+                            )
+                        result.processing_time = (datetime.now() - start_time).total_seconds()
+                        return result
+                except Exception as fallback_err:
+                    if self.enable_logging:
+                        tprint_error(f"❌ BinanceKlinesAdapter fallback failed: {fallback_err}")
+
             result.errors.append(error_msg)
             if self.enable_logging:
                 tprint_error(f"❌ {error_msg}")
 
         result.processing_time = (datetime.now() - start_time).total_seconds()
         return result
+
+    async def _download_with_binance_adapter(
+        self,
+        symbol: str,
+        interval: str,
+        years: int,
+    ) -> Optional[pd.DataFrame]:
+        """Fallback download using BinanceKlinesAdapter with public REST klines."""
+        try:
+            from exchanges.binance.klines_adapter import create_binance_klines_adapter
+        except Exception as e:
+            if self.enable_logging:
+                tprint_warning(f"⚠️ Binance klines adapter import failed; skipping fallback: {e}")
+            return None
+
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=years * 365)
+
+        adapter = create_binance_klines_adapter(
+            api_key=None,
+            secret_key=None,
+            data_dir=self.config.data_dir,
+        )
+
+        try:
+            df = await adapter.download_and_process_klines(
+                symbol=symbol,
+                interval=interval,
+                start_time=start_date,
+                end_time=end_date,
+                save_data=True,
+            )
+        except Exception as e:
+            if self.enable_logging:
+                tprint_error(f"❌ BinanceKlinesAdapter download failed: {e}")
+            return None
+
+        if df is None or df.empty:
+            return None
+
+        # Ensure we have a datetime index and basic OHLCV columns
+        if 'timestamp' in df.columns and not isinstance(df.index, pd.DatetimeIndex):
+            df = df.set_index('timestamp')
+
+        if not isinstance(df.index, pd.DatetimeIndex):
+            df.index = pd.to_datetime(df.index, errors="coerce")
+
+        df = self._ensure_naive_datetime_index(df)
+
+        for col in ['open', 'high', 'low', 'close', 'volume']:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+
+        df = df.dropna(subset=['open', 'high', 'low', 'close', 'volume'])
+        df = df.drop_duplicates().sort_index()
+
+        return df
 
     def _klines_to_dataframe(
         self,
@@ -2196,13 +2368,219 @@ class EnhancedKlinesProcessingPipeline:
                         duration_minutes=segment_duration_minutes,
                         symbol=df_sorted.iloc[i].get('symbol', ''),
                         interval=interval,
-                        priority=1 if segment_duration_minutes > interval_minutes * 10 else 2
+                        # Treat all gaps at least one base interval long as priority 1 so that
+                        # even short multi-minute holes (e.g. 2–10 minutes at 1m) are filled.
+                        # For higher intervals (e.g. 15m), this still requires at least one
+                        # full interval of missing data to be considered high priority.
+                        priority=1 if segment_duration_minutes >= interval_minutes else 2
                     )
                     gaps.append(gap)
 
                     remaining_start = segment_end
 
         return gaps
+
+    def _detect_missing_in_processed_15m(
+        self,
+        symbol: str,
+        years: int
+    ) -> List[GapInfo]:
+        gaps: List[GapInfo] = []
+
+        try:
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=years * 365)
+
+            df_15m = self.klines_manager.read_data(
+                symbol=symbol,
+                interval="15m",
+                start_date=start_date,
+                end_date=end_date,
+                data_type="processed",
+            )
+
+            if df_15m is None or df_15m.empty:
+                return gaps
+
+            if not isinstance(df_15m.index, pd.DatetimeIndex):
+                df_15m.index = pd.to_datetime(df_15m.index, errors="coerce")
+                df_15m = df_15m.loc[df_15m.index.notna()]
+
+            if df_15m.empty:
+                return gaps
+
+            gaps = self._detect_gaps(df_15m, "15m", self.config.max_gap_minutes)
+
+            if self.enable_logging:
+                if gaps:
+                    tprint_warning(
+                        f"⚠️ Detected {len(gaps)} missing ranges in processed 15m data for {symbol}"
+                    )
+                else:
+                    tprint_info(
+                        f"✅ No missing ranges detected in processed 15m data for {symbol}"
+                    )
+
+        except Exception as e:
+            if self.enable_logging:
+                tprint_warning(
+                    f"⚠️ Failed to analyze processed 15m gaps for {symbol}: {e}"
+                )
+
+        return gaps
+
+    async def _download_missing_ranges(
+        self,
+        gaps_15m: List[GapInfo],
+        symbol: str,
+        base_interval: str,
+        exchange_interface: "ExchangeInterface",
+        resampling_config: Optional[ResamplingConfig] = None
+    ) -> Dict[str, Any]:
+        """Backfill processed 15m gaps by downloading corresponding base-interval data.
+
+        This helper:
+        - Downloads base_interval klines (typically 1m) for each 15m gap window
+        - Standardizes the new data to the unified OHLCV schema
+        - Resamples the new data to 15m using the existing resampling logic
+        - Updates the processed 15m parquet storage via KlinesParquetManager.update_data
+        """
+
+        stats: Dict[str, Any] = {
+            "gaps_attempted": 0,
+            "gaps_skipped": 0,
+            "gaps_filled": 0,
+            "base_candles_downloaded": 0,
+            "resampled_15m_records": 0,
+        }
+
+        if not gaps_15m or exchange_interface is None:
+            return stats
+
+        if resampling_config is None:
+            resampling_config = self.default_resampling_config
+
+        interval_minutes = self._interval_to_minutes(base_interval) or 1
+        batch_size = 1000
+        batch_duration = timedelta(minutes=batch_size * interval_minutes)
+        interval_delta = timedelta(minutes=interval_minutes)
+
+        all_base_klines: List[Any] = []
+
+        for gap in gaps_15m:
+            if gap.priority > 1:
+                stats["gaps_skipped"] += 1
+                continue
+
+            stats["gaps_attempted"] += 1
+
+            gap_start = self._to_naive_timestamp(gap.start_time)
+            gap_end = self._to_naive_timestamp(gap.end_time)
+            if gap_start is None or gap_end is None or gap_start >= gap_end:
+                stats["gaps_skipped"] += 1
+                continue
+
+            if self.enable_logging:
+                tprint_info(
+                    f"📥 Backfilling processed 15m gap: {gap_start} → {gap_end} "
+                    f"({gap.duration_minutes} minutes)"
+                )
+
+            current_start = gap_start
+            safety_counter = 0
+            gap_base_klines: List[Any] = []
+
+            while current_start < gap_end:
+                safety_counter += 1
+                if safety_counter > 10000:
+                    if self.enable_logging:
+                        tprint_warning("⚠️ Safety break while downloading missing ranges for 15m gaps")
+                    break
+
+                batch_end = min(current_start + batch_duration, gap_end)
+
+                try:
+                    batch_klines = await exchange_interface.get_klines(
+                        symbol=symbol,
+                        interval=base_interval,
+                        start_time=current_start,
+                        end_time=batch_end,
+                        limit=batch_size,
+                    )
+                except Exception as e:  # pragma: no cover - network dependent
+                    if self.enable_logging:
+                        tprint_warning(f"⚠️ Missing-range batch download failed: {e}")
+                    break
+
+                if not batch_klines:
+                    break
+
+                gap_base_klines.extend(batch_klines)
+
+                extracted_ts = self._extract_timestamps_from_klines(batch_klines)
+                if not extracted_ts:
+                    break
+
+                last_ts = max(extracted_ts)
+                last_naive = self._to_naive_timestamp(last_ts)
+                if last_naive is None:
+                    break
+
+                current_start = last_naive + interval_delta
+
+                await asyncio.sleep(0.05)
+
+            if gap_base_klines:
+                stats["gaps_filled"] += 1
+                all_base_klines.extend(gap_base_klines)
+
+        if not all_base_klines:
+            return stats
+
+        base_df = self._klines_to_dataframe(all_base_klines, symbol, base_interval)
+        if base_df.empty:
+            return stats
+
+        # Standardize base data to match the rest of the pipeline
+        standardized_df = self.data_standardizer.standardize(base_df, exchange=self.exchange)
+        standardized_df = self._ensure_naive_datetime_index(standardized_df)
+        if 'timestamp' not in standardized_df.columns:
+            standardized_df['timestamp'] = standardized_df.index
+        if 'symbol' not in standardized_df.columns:
+            standardized_df['symbol'] = symbol
+        if 'interval' not in standardized_df.columns:
+            standardized_df['interval'] = base_interval
+        if 'exchange' not in standardized_df.columns:
+            standardized_df['exchange'] = self.exchange
+
+        stats["base_candles_downloaded"] = len(standardized_df)
+
+        # Resample the new base data to 15m
+        resampled_15m = self._perform_resampling(standardized_df, "15m", resampling_config)
+        if resampled_15m.empty:
+            return stats
+
+        normalized_15m = self._normalize_calendar_columns(resampled_15m)
+        if normalized_15m is not None:
+            resampled_15m = normalized_15m
+
+        stats["resampled_15m_records"] = len(resampled_15m)
+
+        # Update processed 15m storage
+        try:
+            updated = self.klines_manager.update_data(
+                resampled_15m,
+                symbol,
+                "15m",
+                data_type="processed",
+            )
+            if not updated and self.enable_logging:
+                tprint_warning("⚠️ Failed to update processed 15m data with missing ranges")
+        except Exception as e:
+            if self.enable_logging:
+                tprint_warning(f"⚠️ Exception while updating processed 15m data: {e}")
+
+        return stats
 
     def _interval_to_minutes(self, interval: str) -> Optional[int]:
         """Convert interval string to minutes."""
@@ -2282,16 +2660,31 @@ class EnhancedKlinesProcessingPipeline:
         exchange_type_value = getattr(exchange_interface, "exchange_type", "").lower()
 
         if exchange_type_value == "simulated":
-            raise RuntimeError("Gap filling requires a real exchange interface, but a simulated exchange was provided.")
+            # In simulated mode we don't have a live exchange; skip gap filling gracefully.
+            if self.enable_logging:
+                tprint_warning(
+                    "⚠️ Simulated exchange interface provided; skipping live gap filling and returning original data"
+                )
+            return self._ensure_naive_datetime_index(filled_data)
 
         if dispatcher is None:
             if self.enable_logging:
-                tprint_info("🔄 Exchange dispatcher not initialized; connecting before gap download")
-            await exchange_interface.connect()
+                tprint_info("🔄 Exchange dispatcher not initialized; attempting connect before gap download")
+            try:
+                await exchange_interface.connect()
+            except Exception as e:  # pragma: no cover - network dependent
+                if self.enable_logging:
+                    tprint_warning(f"⚠️ Exchange connect failed before gap fill: {e}")
             dispatcher = getattr(exchange_interface, "dispatcher", None)
 
         if dispatcher is None:
-            raise RuntimeError("Exchange dispatcher unavailable; cannot fill gaps without a real exchange connection.")
+            # In public/offline mode we may not have a fully initialized dispatcher; do not
+            # fail the entire pipeline, just keep the existing data and report remaining gaps
+            if self.enable_logging:
+                tprint_warning(
+                    "⚠️ Exchange dispatcher unavailable; skipping gap filling and returning original data"
+                )
+            return self._ensure_naive_datetime_index(filled_data)
 
         if self.exchange.lower() == "binance":
             dispatcher_config = getattr(dispatcher, "config", None)

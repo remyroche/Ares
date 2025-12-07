@@ -274,6 +274,7 @@ ECON_MIN_RETURN_MULTIPLE = 2.0
 TARGET_POWER = 1.5
 # Hard floor for profit targets to ensure viability after transaction costs
 PROFIT_TARGET_FLOOR_BPS = 50  # 0.5% = 50 basis points (must exceed slippage + fees)
+PROFITABLE_TIMEOUT_RETURN_THRESHOLD = 0.005
 # Default probability threshold for meta-gating (lowered from 0.65 for more trades)
 DEFAULT_PROBABILITY_THRESHOLD = 0.55
 # Default expected return threshold (lowered from 0.45% to 0.30%)
@@ -1140,6 +1141,9 @@ def compute_realized_returns(
                     peak_price = max(peak_price, high_price)
                     current_trailing_stop = peak_price - event_trail_dist
                     effective_stop = max(fixed_stop_price, current_trailing_stop)
+                    # With trailing enabled, never realize less than the base profit
+                    min_profit_price_long = entry_price * (1 + profit_thr)
+                    effective_stop = max(effective_stop, min_profit_price_long)
 
                 # 1. Check Stop Hit (Highest priority exit)
                 if low_price <= effective_stop:
@@ -1163,8 +1167,10 @@ def compute_realized_returns(
 
                         if low_price <= eff_intra_stop:
                             # Activated and stopped out in same bar
-                            # Assume mid-point exit as requested
-                            exit_price = (high_price + low_price) / 2
+                            # Assume mid-point exit, but never below base profit
+                            raw_exit_price = (high_price + low_price) / 2
+                            min_profit_price_long = entry_price * (1 + profit_thr)
+                            exit_price = max(raw_exit_price, min_profit_price_long)
                             exit_reason = 'trailing'
                             event_end_idx = idx
                             break
@@ -1198,6 +1204,9 @@ def compute_realized_returns(
                     peak_price = min(peak_price, low_price) # "peak" variable reused for trough
                     current_trailing_stop = peak_price + event_trail_dist
                     effective_stop = min(fixed_stop_price, current_trailing_stop)
+                    # With trailing enabled, never realize less than the base profit
+                    min_profit_price_short = entry_price * (1 - profit_thr)
+                    effective_stop = min(effective_stop, min_profit_price_short)
 
                 # 1. Check Stop Hit (Highest priority exit)
                 if high_price >= effective_stop:
@@ -1218,7 +1227,9 @@ def compute_realized_returns(
 
                         if high_price >= eff_intra_stop:
                             # Intra-bar conflict
-                            exit_price = (high_price + low_price) / 2
+                            raw_exit_price = (high_price + low_price) / 2
+                            min_profit_price_short = entry_price * (1 - profit_thr)
+                            exit_price = min(raw_exit_price, min_profit_price_short)
                             exit_reason = 'trailing'
                             event_end_idx = idx
                             break
@@ -1233,10 +1244,23 @@ def compute_realized_returns(
                         event_end_idx = idx
                         break
 
-        # If no exit, use end-of-horizon price (timeout)
+        # If no exit, use end-of-horizon price (timeout), but clamp to avoid
+        # synthetic losses beyond the nominal stop level.
         if exit_price is None:
             event_end_idx = min(i + event_horizon, n - 1)
-            exit_price = close_prices[event_end_idx]
+            final_close = close_prices[event_end_idx]
+            if signal > 0:
+                fixed_stop_price = entry_price * (1 - stop_thr)
+                if final_close < fixed_stop_price:
+                    exit_price = 0.5 * (final_close + fixed_stop_price)
+                else:
+                    exit_price = final_close
+            else:
+                fixed_stop_price = entry_price * (1 + stop_thr)
+                if final_close > fixed_stop_price:
+                    exit_price = 0.5 * (final_close + fixed_stop_price)
+                else:
+                    exit_price = final_close
             exit_reason = 'timeout'
 
         # Compute realized return accounting for transaction costs
@@ -1306,6 +1330,9 @@ def compute_realized_returns(
                 else:
                     # Profitable but too slow = noise/drift, soft-label as class 0
                     unified_label = 0.0
+
+            if exit_reason == 'timeout' and net_return > PROFITABLE_TIMEOUT_RETURN_THRESHOLD:
+                unified_label = 1.0
 
         # Assign the unified label (backward compatible)
         binary_labels.iloc[i] = unified_label
@@ -1646,35 +1673,80 @@ def create_meta_features(
     # market_data frame (e.g., via rolling_hmm_regime_* artifacts), expose them
     # as meta-features so that downstream meta-models and HPO can use them.
     try:
-        if 'hmm_regime_label_1h' in df.columns:
-            features['hmm_regime_label_1h'] = df['hmm_regime_label_1h']
-
-        # Raw per-regime probabilities (regime_0_prob, regime_1_prob, ...)
-        regime_prob_cols = [
-            c for c in df.columns
-            if c.startswith('regime_') and c.endswith('_prob')
-        ]
-        for col in regime_prob_cols:
-            features[col] = df[col]
-
-        # HMM Alpha expectation features (1h) attached upstream
-        if 'hmm_alpha_expectation_raw_1h' in df.columns:
-            features['hmm_alpha_expectation_raw_1h'] = df['hmm_alpha_expectation_raw_1h']
-        if 'hmm_alpha_expectation_ema_1h' in df.columns:
-            features['hmm_alpha_expectation_ema_1h'] = df['hmm_alpha_expectation_ema_1h']
-
-        if 'hmm_alpha_score_continuous_1h' in df.columns:
-            features['hmm_alpha_score_continuous_1h'] = df['hmm_alpha_score_continuous_1h']
-
-        alpha_ewm_cols = [
-            c
-            for c in df.columns
-            if c.startswith('hmm_alpha_score_continuous_ewm_') and c.endswith('_1h')
-        ]
-        for col in alpha_ewm_cols:
-            features[col] = df[col]
+        # External regime features are no longer attached directly to the
+        # meta-feature matrix; they remain available on market_data for
+        # diagnostics and specialized consumers.
+        pass
     except Exception as e_reg:
         tprint(f"⚠️ Warning: Could not attach external regime features: {e_reg}", "WARNING")
+
+    try:
+        banned_cols = []
+        if "hmm_regime_label_1h" in features.columns:
+            banned_cols.append("hmm_regime_label_1h")
+        banned_cols.extend(
+            [c for c in features.columns if c.startswith("regime_") and c.endswith("_prob")]
+        )
+        banned_cols.extend(
+            [c for c in features.columns if c.startswith("hmm_alpha_")]
+        )
+        if banned_cols:
+            features = features.drop(columns=list(set(banned_cols)), errors="ignore")
+    except Exception:
+        pass
+
+    # ===== SPECIALIST SCALAR FEATURES (canonical per-specialist signals) =====
+
+    # When get_specialist_models_outputs(..., use_canonical_specialist_scalars=True)
+    # is used upstream, several canonical scalar columns become available on the
+    # market_data frame (df). Here we expose them directly as meta-features so
+    # that the meta-model can leverage specialist risk/liquidity/MR/path/macro
+    # context without relying on raw multi-column regime blocks.
+    try:
+        specialist_cols: List[str] = []
+
+        # Explicit canonical scalar names used across the unified training
+        # pipelines. Only attach those that are actually present on df.
+        for col in [
+            "risk_score",
+            "path_risk_score",
+            "macro_trend_score_continuous",
+            "mr_probability_dense",
+            "mr_probability",
+            "mr_raw_score",
+            "mr_trend_state",
+            "mr_trend_is_mr",
+            "sr_labeling_xgb_prob",
+            "vol_force_scalar",
+            "smc_predicted",
+        ]:
+            if col in df.columns:
+                specialist_cols.append(col)
+
+        # Include any remaining scalar MR/SMC-style columns if they follow the
+        # standard prefixes. This keeps the feature surface aligned with
+        # specialist diagnostics without hard-coding every variant.
+        specialist_cols.extend(
+            [c for c in df.columns if c.startswith("mr_") or c.startswith("smc_")]
+        )
+
+        # De-duplicate while preserving order, then attach as-is. At this
+        # point df and features share the same index, so direct assignment is
+        # safe and avoids additional alignment work.
+        seen: set[str] = set()
+        specialist_cols_unique: List[str] = []
+        for c in specialist_cols:
+            if c not in seen:
+                seen.add(c)
+                specialist_cols_unique.append(c)
+
+        for col in specialist_cols_unique:
+            if col not in features.columns:
+                features[col] = df[col]
+    except Exception:
+        # Specialist features are optional; never let failures here break the
+        # core meta-feature pipeline.
+        pass
 
     # ===== KALMAN-FILTERED TECHNICAL INDICATORS =====
 
@@ -1726,9 +1798,6 @@ def create_meta_features(
         features['momentum_kalman'] = kalman_momentum_values
 
         # Keep raw for reference (diagnostic purposes)
-        features['rsi_raw'] = _align_to_features(df_local['rsi'], n_features)
-        features['ma_distance_raw'] = _align_to_features(ma_distance, n_features)
-        features['momentum_raw'] = _align_to_features(df_local['momentum'], n_features)
     else:
         # Use raw indicators
         features['rsi'] = df_local['rsi']
@@ -1840,7 +1909,6 @@ def create_meta_features(
             features['vol_price_corr'] = _align_to_features(vol_price_corr_series, n_features)
             features['volume_zscore'] = _align_to_features(volume_zscore_series, n_features)
             features['volume_spike'] = _align_to_features(volume_spike_series, n_features)
-            features['volume_spike_ema'] = _align_to_features(volume_spike_ema_series, n_features)
             features['signed_volume_ema'] = _align_to_features(signed_volume_ema_series, n_features)
         else:
             features['volume_ratio'] = volume_ratio_series.to_numpy()
@@ -1848,7 +1916,6 @@ def create_meta_features(
             features['vol_price_corr'] = vol_price_corr_series.to_numpy()
             features['volume_zscore'] = volume_zscore_series.to_numpy()
             features['volume_spike'] = volume_spike_series.to_numpy()
-            features['volume_spike_ema'] = volume_spike_ema_series.to_numpy()
             features['signed_volume_ema'] = signed_volume_ema_series.to_numpy()
     else:
         features['volume_ratio'] = 1.0
@@ -1856,7 +1923,6 @@ def create_meta_features(
         features['vol_price_corr'] = 0.0
         features['volume_zscore'] = 0.0
         features['volume_spike'] = 1.0
-        features['volume_spike_ema'] = 1.0
         features['signed_volume_ema'] = 0.0
 
     # ===== MARKET MOMENTUM =====
@@ -1898,6 +1964,20 @@ def create_meta_features(
         features['range_position'] = _align_to_features(range_position_series, n_features)
     else:
         features['range_position'] = range_position_series.to_numpy()
+
+    # VWAP-based mean-reversion distance
+    if 'close' in df.columns and 'volume' in df.columns:
+        try:
+            dollar_volume = df['close'] * df['volume']
+            cum_volume = df['volume'].cumsum()
+            vwap_series = dollar_volume.cumsum() / (cum_volume + 1e-8)
+            vwap_diff_series = df['close'] - vwap_series
+            if use_kalman:
+                features['close_minus_vwap'] = _align_to_features(vwap_diff_series, n_features)
+            else:
+                features['close_minus_vwap'] = vwap_diff_series.to_numpy()
+        except Exception:
+            pass
 
     # ===== ENTROPY (SIMPLE MEASURE) =====
 
@@ -2011,10 +2091,28 @@ def create_meta_features(
         total_volume = volume.rolling(20).sum()
         absorption_ratio = extreme_volume / (total_volume + 1e-8)
 
+        # 6. Trade Aggressor Ratio (proxy): smoothed share of "buy-side" volume
+        trade_aggressor_ratio_series = close_in_range.ewm(span=20).mean()
+
+        # 7. Liquidity Gaps: open vs previous close, normalized
+        prev_close = close.shift(1)
+        gap_raw = open_price - prev_close
+        liquidity_gap_up_series = np.maximum(gap_raw, 0) / (prev_close + 1e-8)
+        liquidity_gap_down_series = np.maximum(-gap_raw, 0) / (prev_close + 1e-8)
+        liquidity_gap_abs_series = gap_raw.abs() / (atr_14_series + 1e-8)
+
         if use_kalman:
             features['absorption_ratio'] = _align_to_features(absorption_ratio, n_features)
+            features['trade_aggressor_ratio'] = _align_to_features(trade_aggressor_ratio_series, n_features)
+            features['liquidity_gap_up'] = _align_to_features(liquidity_gap_up_series, n_features)
+            features['liquidity_gap_down'] = _align_to_features(liquidity_gap_down_series, n_features)
+            features['liquidity_gap_abs'] = _align_to_features(liquidity_gap_abs_series, n_features)
         else:
             features['absorption_ratio'] = absorption_ratio.to_numpy()
+            features['trade_aggressor_ratio'] = trade_aggressor_ratio_series.to_numpy()
+            features['liquidity_gap_up'] = liquidity_gap_up_series.to_numpy()
+            features['liquidity_gap_down'] = liquidity_gap_down_series.to_numpy()
+            features['liquidity_gap_abs'] = liquidity_gap_abs_series.to_numpy()
 
     else:
         # No volume data - set defaults
@@ -2023,6 +2121,10 @@ def create_meta_features(
         features['ofi_proxy'] = 0.0
         features['volume_imbalance'] = 0.0
         features['absorption_ratio'] = 0.0
+        features['trade_aggressor_ratio'] = 0.5
+        features['liquidity_gap_up'] = 0.0
+        features['liquidity_gap_down'] = 0.0
+        features['liquidity_gap_abs'] = 0.0
 
     # Volatility / trend interaction features
     if 'kalman_trend' in features.columns and 'vol_ratio' in features.columns:
@@ -2238,6 +2340,14 @@ def create_meta_features(
     # Volatility × Momentum interactions
     if 'volatility_1d' in features.columns and 'momentum_20' in features.columns:
         features['vol_momentum_interaction'] = features['volatility_1d'] * features['momentum_20']
+
+    # Sharpe-like momentum/volatility ratios
+    if 'volatility_1d' in features.columns and 'momentum_10' in features.columns:
+        denom_10 = features['volatility_1d'].replace(0.0, np.nan)
+        features['momentum_10_div_volatility_1d'] = features['momentum_10'] / (denom_10 + 1e-8)
+    if 'volatility_1d' in features.columns and 'momentum_5' in features.columns:
+        denom_5 = features['volatility_1d'].replace(0.0, np.nan)
+        features['momentum_5_div_volatility_1d'] = features['momentum_5'] / (denom_5 + 1e-8)
 
     if 'volatility_regime' in features.columns:
         # Regime-conditional momentum
@@ -2551,9 +2661,12 @@ def build_meta_features_for_model(
         event_mae = mae_series[event_mask]
         mfe_mae_ratio_series = (event_mfe / (event_mae + 1e-6)).replace([np.inf, -np.inf], np.nan)
 
-        # Rolling histories over past events only
+        # Rolling histories over past events only. For TTO, we shift the rolling
+        # window by one event so that the feature at event k depends only on
+        # events strictly before k (no self-outcome leakage).
         rolling_r_multiple_50 = event_r_multiple.rolling(window=50, min_periods=1).mean()
         rolling_tto_50 = event_tto.rolling(window=50, min_periods=1).mean()
+        rolling_tto_50_past = rolling_tto_50.shift(1)
         rolling_mfe_mae_ratio_50 = mfe_mae_ratio_series.rolling(window=50, min_periods=1).mean()
 
         r_mult_50_full = pd.Series(np.nan, index=market_data.index)
@@ -2562,7 +2675,10 @@ def build_meta_features_for_model(
 
         if len(event_positions) == len(rolling_r_multiple_50):
             r_mult_50_full.iloc[event_positions] = rolling_r_multiple_50.to_numpy()
-            tto_50_full.iloc[event_positions] = rolling_tto_50.to_numpy()
+            # Use the past-only rolling TTO (shifted by one event) so that the
+            # TTO feature at event k cannot incorporate the outcome of event k
+            # itself.
+            tto_50_full.iloc[event_positions] = rolling_tto_50_past.to_numpy()
             mfe_mae_ratio_50_full.iloc[event_positions] = rolling_mfe_mae_ratio_50.to_numpy()
     except Exception:
         r_mult_50_full = pd.Series(np.nan, index=market_data.index)
@@ -2589,11 +2705,7 @@ def build_meta_features_for_model(
     event_meta_features['dist_from_recent_high_50'] = dist_from_recent_high_50
     event_meta_features['dist_from_recent_low_50'] = dist_from_recent_low_50
     event_meta_features['drawdown_100'] = drawdown_100
-    event_meta_features['event_win_rate_last_50'] = win_rate_50_full
-    event_meta_features['event_mean_return_last_50'] = mean_ret_50_full
-    event_meta_features['event_r_multiple_mean_last_50'] = r_mult_50_full
     event_meta_features['event_tto_mean_last_50'] = tto_50_full
-    event_meta_features['event_mfe_mae_ratio_mean_last_50'] = mfe_mae_ratio_50_full
 
     # Attach/overwrite event-centric features without triggering index-based
     # reindexing (which is sensitive to duplicate datetime labels). Reset to a
@@ -2625,17 +2737,78 @@ def build_meta_features_for_model(
         pass
 
     meta_features_model = prepare_feature_matrix(meta_features)
+    n_features_before_forbidden = int(meta_features_model.shape[1])
+
+    # Drop high-leakage structural features from the meta-model feature matrix.
+    # These include ZigZag / Renko / Swing High-Low derivatives and raw
+    # volatility level features that can create tautological relationships
+    # with fixed or poorly normalised labels.
+    forbidden_exact = {
+        "vol_ratio",
+        "vol_expansion",
+        "returns_std_50",
+        "volume_spike_ema",
+        "event_r_multiple_mean_last_50",
+    }
+    forbidden_prefixes = ("zigzag_",)
+    # Case-insensitive substrings for structural / memory / proxy features.
+    forbidden_substrings = (
+        # ZigZag / pivot / swing / Renko structure
+        "zigzag",
+        "pivot",
+        "swing",
+        "renko",
+        # Memory-style rolling P&L features
+        "last_50",
+        "last_100",
+        "cumulative",
+        "streak",
+        # Volatility ratio, signal density proxies
+        "vol_expansion",
+        "signal_density",
+    )
+
+    cols_to_drop: List[str] = []
+    for col in list(meta_features_model.columns):
+        col_str = str(col)
+        col_lower = col_str.lower()
+        if col_str in forbidden_exact:
+            cols_to_drop.append(col_str)
+            continue
+        if any(col_str.startswith(pref) for pref in forbidden_prefixes):
+            cols_to_drop.append(col_str)
+            continue
+        if any(sub in col_lower for sub in forbidden_substrings):
+            cols_to_drop.append(col_str)
+
+    if cols_to_drop:
+        meta_features_model = meta_features_model.drop(columns=list(set(cols_to_drop)), errors="ignore")
+
+    n_features_after_forbidden = int(meta_features_model.shape[1])
 
     meta_features_model_processed = meta_features_model
     if not isinstance(meta_feature_cfg, dict):
         meta_feature_cfg = {}
+
+    # Default meta-feature engineering behaviour: enable robust scaling,
+    # winsorisation, feature selection, and sample weighting unless explicitly
+    # disabled via the config. This keeps the feature matrix numerically
+    # stable for tree-based models and consistent with unified training.
+    if 'enable_winsorisation' not in meta_feature_cfg:
+        meta_feature_cfg['enable_winsorisation'] = True
+    if 'enable_feature_selection' not in meta_feature_cfg:
+        meta_feature_cfg['enable_feature_selection'] = True
+    if 'enable_sample_weighting' not in meta_feature_cfg:
+        meta_feature_cfg['enable_sample_weighting'] = True
 
     if meta_feature_cfg.get('enable_winsorisation', False):
         try:
             lower_q = float(meta_feature_cfg.get('winsor_lower_q', 0.01))
             upper_q = float(meta_feature_cfg.get('winsor_upper_q', 0.99))
             robust_window = int(meta_feature_cfg.get('robust_window', 256))
-            robust_min_periods = int(meta_feature_cfg.get('robust_min_periods', max(1, robust_window // 4)))
+            robust_min_periods = int(
+                meta_feature_cfg.get('robust_min_periods', max(1, robust_window // 4))
+            )
 
             meta_features_model_processed = rolling_robust_scale_features(
                 meta_features_model_processed,
@@ -2675,6 +2848,25 @@ def build_meta_features_for_model(
         except Exception as e_fs:
             tprint(f"⚠️ Feature selection failed, using all features: {e_fs}", "WARNING")
             selected_feature_names = list(meta_features_model_processed.columns)
+
+    # Compact diagnostics: feature counts before/after structural drops and processing.
+    try:
+        n_features_final = int(meta_features_model_processed.shape[1])
+        tprint(
+            f"[META_FEATURES_DIAG] n_raw={n_features_before_forbidden}, "
+            f"after_forbidden={n_features_after_forbidden}, final={n_features_final}",
+            "INFO",
+        )
+        if selected_feature_names:
+            n_sel = len(selected_feature_names)
+            sample_names = selected_feature_names[: min(10, n_sel)]
+            tprint(
+                f"[META_FEATURES_DIAG] selected_features_count={n_sel}, sample={sample_names}",
+                "INFO",
+            )
+    except Exception:
+        # Never let diagnostics break the main feature pipeline.
+        pass
 
     # Ensure the event-history TTO diagnostic remains available as a model feature
     critical_tto_feature = 'event_tto_mean_last_50'
@@ -3225,7 +3417,8 @@ def generate_diagnostics_report(
     mfe_series: Optional[pd.Series] = None,
     mae_series: Optional[pd.Series] = None,
     target_long: Optional[pd.Series] = None,
-    target_short: Optional[pd.Series] = None
+    target_short: Optional[pd.Series] = None,
+    selected_feature_names: Optional[List[str]] = None,
 ) -> str:
     """
     Generate comprehensive diagnostics report for meta-labeling.
@@ -3253,6 +3446,7 @@ def generate_diagnostics_report(
         mae_series: Maximum Adverse Excursion for each event
         target_long: Continuous target values for long positions
         target_short: Continuous target values for short positions
+        selected_feature_names: Optional list of final selected feature names
         final_model: Trained meta-model
         config: Configuration dictionary
         output_dir: Directory to save report
@@ -3279,13 +3473,31 @@ def generate_diagnostics_report(
     report_lines.append(f"**Horizon:** {config.get('horizon', 'N/A')} bars")
     if config.get('trail_distance'):
         report_lines.append(f"**Trailing Distance:** {config.get('trail_distance')} ATR")
+    # Compact summary of final feature set if available. Surface the full list
+    # of selected feature names so that diagnostics consumers can inspect the
+    # exact meta-feature surface used by the model.
+    if isinstance(selected_feature_names, (list, tuple)) and selected_feature_names:
+        try:
+            n_feats = len(selected_feature_names)
+            report_lines.append("\n**Final selected features (count):** ")
+            report_lines.append(f"{n_feats} features\n")
+
+            report_lines.append("\n**Final selected features (full list):**\n")
+            for feat in selected_feature_names:
+                report_lines.append(f"- {feat}")
+        except Exception:
+            # Never let diagnostics metadata break the main report
+            pass
+
     report_lines.append("\n---\n")
 
     # ===== 0. SIGNAL FUNNEL (if available) =====
     signal_funnel = config.get('signal_funnel') or {}
     if isinstance(signal_funnel, dict) and signal_funnel:
         report_lines.append("\n## 0. Signal Funnel (Primary Signals)\n")
-        total_bars_sf = int(signal_funnel.get('total_bars', n_samples))
+        # Use total_bars from signal_funnel when available; otherwise fall back to
+        # the length of labeled_data to avoid referencing n_samples before it is defined.
+        total_bars_sf = int(signal_funnel.get('total_bars', len(labeled_data)))
         raw_sf = int(signal_funnel.get('raw_signals', 0))
         final_sf = int(signal_funnel.get('final_signals', 0))
         ratio_sf = float(signal_funnel.get('raw_to_final_ratio', (final_sf / max(raw_sf, 1)) if raw_sf else 0.0))
@@ -4774,24 +4986,6 @@ def create_base_models(config: Dict[str, Any], use_focal_loss: bool = True) -> D
         random_state=42
     )
 
-    # CatBoost: Handles categorical features and ordinal encoding well (NEW 2025-12-04)
-    if CATBOOST_AVAILABLE:
-        models['catboost'] = CatBoostClassifier(
-            iterations=800,
-            depth=6,
-            learning_rate=0.01,
-            l2_leaf_reg=3.0,
-            border_count=128,
-            bagging_temperature=0.5,
-            random_strength=1.0,
-            auto_class_weights='Balanced',
-            eval_metric='AUC',
-            random_seed=42,
-            verbose=False,
-            allow_writing_files=False,
-            thread_count=-1
-        )
-
     models['logreg'] = LogisticRegression(
         max_iter=1000,
         class_weight='balanced',
@@ -4978,13 +5172,170 @@ def compute_sample_weights_with_uniqueness(
     return final_weights
 
 
+def tune_lgbm_hyperparameters_meta(
+    X: pd.DataFrame,
+    y: pd.Series,
+    sample_weights: Optional[np.ndarray],
+    horizon: int,
+    n_splits: int = 4,
+    max_trials: int = 20,
+) -> Dict[str, Any]:
+    """Time-aware hyperparameter tuning for the meta-model LGBM.
+
+    Uses purged TimeSeriesSplit CV over a small random search grid focusing on
+    max_depth, min_child_samples and learning_rate, with early stopping.
+    """
+
+    if not isinstance(X, pd.DataFrame):
+        X = pd.DataFrame(X)
+
+    if not isinstance(y, pd.Series):
+        y = pd.Series(y, index=X.index)
+
+    # Use only numeric features and drop NaN labels
+    X_num = X.select_dtypes(include=[np.number])
+    valid_mask = ~y.isna()
+    X_clean = X_num[valid_mask].fillna(0)
+    y_clean = y[valid_mask]
+
+    if len(y_clean) < 100 or len(X_clean.columns) == 0 or len(y_clean.unique()) < 2:
+        return {}
+
+    sw_clean: Optional[np.ndarray] = None
+    if sample_weights is not None:
+        try:
+            sw = np.asarray(sample_weights, dtype=float)
+            if sw.shape[0] != len(X):
+                if sw.shape[0] > len(X):
+                    sw = sw[-len(X):]
+                else:
+                    pad = np.ones(len(X) - sw.shape[0], dtype=float)
+                    sw = np.concatenate([pad, sw])
+            sw_clean = sw[valid_mask.to_numpy()]
+        except Exception:
+            sw_clean = None
+
+    tscv = TimeSeriesSplit(n_splits=n_splits)
+    rng = np.random.RandomState(42)
+
+    best_score = float("-inf")
+    best_params: Dict[str, Any] = {}
+
+    for trial in range(int(max_trials)):
+        max_depth = int(rng.choice([4, 5, 6, 8]))
+        min_child_samples = int(rng.choice([20, 50]))
+        learning_rate = float(rng.choice([0.01, 0.03, 0.05]))
+        feature_fraction = float(rng.choice([0.6, 0.7, 0.8]))
+        bagging_fraction = float(rng.choice([0.7, 0.8, 0.9]))
+        reg_alpha = float(rng.choice([0.0, 0.1, 0.3]))
+        reg_lambda = float(rng.choice([0.0, 0.2, 0.7, 1.0]))
+
+        num_leaves = int(min(255, 2 ** (max_depth + 1)))
+
+        params: Dict[str, Any] = {
+            "max_depth": max_depth,
+            "min_child_samples": min_child_samples,
+            "learning_rate": learning_rate,
+            "feature_fraction": feature_fraction,
+            "bagging_fraction": bagging_fraction,
+            "reg_alpha": reg_alpha,
+            "reg_lambda": reg_lambda,
+            "num_leaves": num_leaves,
+            "n_estimators": 1000,
+        }
+
+        fold_aucs: List[float] = []
+
+        for fold_idx, (train_idx, test_idx) in enumerate(tscv.split(X_clean)):
+            train_idx_purged = purge_training_idxs(
+                train_idx,
+                test_idx[0],
+                test_idx[-1] + 1,
+                horizon=horizon,
+            )
+            if len(train_idx_purged) < 50 or len(test_idx) < 20:
+                continue
+
+            X_train_cv = X_clean.iloc[train_idx_purged]
+            y_train_cv = y_clean.iloc[train_idx_purged]
+            X_val_cv = X_clean.iloc[test_idx]
+            y_val_cv = y_clean.iloc[test_idx]
+
+            if sw_clean is not None:
+                w_train_cv = sw_clean[train_idx_purged]
+            else:
+                w_train_cv = None
+
+            model = lgb.LGBMClassifier(
+                boosting_type="gbdt",
+                objective="binary",
+                n_estimators=params["n_estimators"],
+                max_depth=params["max_depth"],
+                num_leaves=params["num_leaves"],
+                learning_rate=params["learning_rate"],
+                min_child_samples=params["min_child_samples"],
+                feature_fraction=params["feature_fraction"],
+                bagging_fraction=params["bagging_fraction"],
+                bagging_freq=1,
+                reg_alpha=params["reg_alpha"],
+                reg_lambda=params["reg_lambda"],
+                n_jobs=-1,
+                verbose=-1,
+                random_state=int(rng.randint(0, 1_000_000)),
+            )
+
+            fit_kwargs: Dict[str, Any] = {}
+            if w_train_cv is not None:
+                fit_kwargs["sample_weight"] = w_train_cv
+
+            try:
+                model.fit(
+                    X_train_cv,
+                    y_train_cv,
+                    eval_set=[(X_val_cv, y_val_cv)],
+                    eval_metric="auc",
+                    callbacks=[lgb.early_stopping(stopping_rounds=50, verbose=False)],
+                    **fit_kwargs,
+                )
+                y_pred = model.predict_proba(X_val_cv)[:, 1]
+                auc = roc_auc_score(y_val_cv, y_pred)
+                fold_aucs.append(float(auc))
+            except Exception as e:
+                tprint(
+                    f"[META_LGBM_HPO] Trial {trial + 1}, fold {fold_idx + 1} failed: {str(e)[:120]}...",
+                    "WARNING",
+                )
+                continue
+
+        if not fold_aucs:
+            continue
+
+        mean_auc = float(np.mean(fold_aucs))
+        std_auc = float(np.std(fold_aucs))
+        score = mean_auc - 0.2 * std_auc
+
+        if score > best_score:
+            best_score = score
+            best_params = params
+
+    if best_params:
+        tprint(
+            f"[META_LGBM_HPO] Best params: {best_params}, score={best_score:.4f}",
+            "INFO",
+        )
+
+    return best_params
+
+
 def train_ensemble_with_kfold(
     X: pd.DataFrame,
     y: pd.Series,
     horizon: int,
     n_splits: int = 5,
     sample_weights: Optional[np.ndarray] = None,
-    verbose: bool = True
+    verbose: bool = True,
+    lgbm_params_override: Optional[Dict[str, Any]] = None,
+    model_names: Optional[List[str]] = None,
 ) -> Tuple[Dict[str, Any], pd.Series]:
     """
     Train ensemble models with K-fold cross-fitting to prevent leakage.
@@ -5045,17 +5396,14 @@ def train_ensemble_with_kfold(
             sample_weights = None
 
     # Initialize storage
-    trained_models = {'lgbm': [], 'xgb': [], 'rf': []}
+    if model_names is None:
+        model_names = ['lgbm', 'xgb', 'rf']
+
+    trained_models = {name: [] for name in model_names}
     oof_predictions = {
-        'lgbm': pd.Series(np.nan, index=X.index),
-        'xgb': pd.Series(np.nan, index=X.index),
-        'rf': pd.Series(np.nan, index=X.index),
+        name: pd.Series(np.nan, index=X.index) for name in model_names
     }
-    oof_aucs = {
-        'lgbm': [],
-        'xgb': [],
-        'rf': [],
-    }
+    oof_aucs = {name: [] for name in model_names}
 
     # Time-series CV
     tscv = TimeSeriesSplit(n_splits=n_splits)
@@ -5154,9 +5502,16 @@ def train_ensemble_with_kfold(
         # NOTE: use_focal_loss=False for now (standard objectives work better with predict_proba)
         # Set to True to enable focal loss (focuses on hard examples, good for noise)
         base_models = create_base_models({}, use_focal_loss=False)
-        cv_model_names = ['lgbm', 'xgb', 'rf']
 
-        for model_name in cv_model_names:
+        # Optionally override LGBM hyperparameters from meta-model HPO
+        if lgbm_params_override is not None and 'lgbm' in base_models:
+            try:
+                base_models['lgbm'].set_params(**lgbm_params_override)
+            except ValueError:
+                # If any params are incompatible, ignore override gracefully
+                tprint("⚠️ LGBM param override incompatible; using default base LGBM params", "WARNING")
+
+        for model_name in model_names:
             model = base_models[model_name]
             try:
                 # Train with sample weights
@@ -5204,6 +5559,199 @@ def train_ensemble_with_kfold(
     oof_df = pd.DataFrame(oof_predictions, index=X.index)
 
     return trained_models, oof_df
+
+
+def train_bagged_lgbm_with_kfold(
+    X: pd.DataFrame,
+    y: pd.Series,
+    horizon: int,
+    n_splits: int = 5,
+    sample_weights: Optional[np.ndarray] = None,
+    n_bags: int = 10,
+    lgbm_base_params: Optional[Dict[str, Any]] = None,
+    verbose: bool = True,
+) -> pd.DataFrame:
+    """Train a 10x bagged LGBM meta-model with time-series CV.
+
+    Returns a DataFrame with two columns:
+        - 'lgbm_bag_mean': mean probability across bags
+        - 'lgbm_bag_lower': mean - 1 * std, clipped to [0, 1]
+    """
+
+    if not isinstance(X, pd.DataFrame):
+        X = pd.DataFrame(X)
+
+    n_samples = len(X)
+
+    if not isinstance(y, pd.Series):
+        y = pd.Series(y, index=X.index)
+    else:
+        if len(y) != n_samples or not y.index.equals(X.index):
+            try:
+                y = y.reindex(X.index)
+            except ValueError:
+                y_arr = y.to_numpy()
+                if len(y_arr) > n_samples:
+                    y_arr = y_arr[-n_samples:]
+                elif len(y_arr) < n_samples:
+                    pad = np.full(n_samples - len(y_arr), np.nan, dtype=float)
+                    y_arr = np.concatenate([pad, y_arr])
+                y = pd.Series(y_arr, index=X.index, name=y.name)
+
+    if sample_weights is not None:
+        try:
+            sw = np.asarray(sample_weights, dtype=float)
+            if sw.shape[0] != n_samples:
+                if sw.shape[0] > n_samples:
+                    sw = sw[-n_samples:]
+                else:
+                    pad = np.ones(n_samples - sw.shape[0], dtype=float)
+                    sw = np.concatenate([pad, sw])
+            sample_weights = sw
+        except Exception:
+            sample_weights = None
+
+    # Base LGBM parameters from create_base_models (no focal loss)
+    base_models = create_base_models({}, use_focal_loss=False)
+    base_lgbm = base_models['lgbm']
+    base_params = base_lgbm.get_params()
+
+    if lgbm_base_params is not None:
+        try:
+            base_params.update(lgbm_base_params)
+        except Exception:
+            pass
+
+    # Force bagging-related parameters
+    base_params.setdefault('n_estimators', 1000)
+    if 'feature_fraction' not in base_params:
+        base_params['feature_fraction'] = 1.0
+    base_params['colsample_bytree'] = base_params.get('colsample_bytree', base_params['feature_fraction'])
+    if 'subsample' not in base_params:
+        base_params['subsample'] = 1.0
+    if 'bagging_fraction' not in base_params:
+        base_params['bagging_fraction'] = 1.0
+    base_params['bagging_freq'] = base_params.get('bagging_freq', 0)
+
+    external_feature_fraction = 0.7
+    external_sample_fraction = 0.7
+    rng = np.random.RandomState(42)
+
+    oof_mean = pd.Series(np.nan, index=X.index)
+    oof_lower = pd.Series(np.nan, index=X.index)
+
+    tscv = TimeSeriesSplit(n_splits=n_splits)
+
+    for fold_idx, (train_idx, test_idx) in enumerate(tscv.split(X)):
+        if verbose:
+            tprint(f"  [BAGGED_LGBM] Fold {fold_idx + 1}/{n_splits}...", "INFO")
+
+        train_idx_purged = purge_training_idxs(
+            train_idx,
+            test_idx[0],
+            test_idx[-1] + 1,
+            horizon=horizon,
+        )
+
+        if len(train_idx_purged) == 0:
+            if verbose:
+                tprint("    ⚠️ All training samples purged, skipping fold", "WARNING")
+            continue
+
+        X_train = X.iloc[train_idx_purged]
+        y_train = y.iloc[train_idx_purged]
+        X_test = X.iloc[test_idx]
+        y_test = y.iloc[test_idx]
+
+        train_mask = ~y_train.isna()
+        test_mask = ~y_test.isna()
+
+        if train_mask.sum() < 10 or test_mask.sum() < 5:
+            if verbose:
+                tprint("    ⚠️ Too few samples, skipping fold", "WARNING")
+            continue
+
+        train_mask_arr = train_mask.to_numpy(dtype=bool, copy=False)
+        test_mask_arr = test_mask.to_numpy(dtype=bool, copy=False)
+
+        X_train_clean = X_train.iloc[train_mask_arr].fillna(0)
+        y_train_clean = y_train.iloc[train_mask_arr]
+        X_test_clean = X_test.iloc[test_mask_arr].fillna(0)
+
+        if sample_weights is not None:
+            weights_train_clean = sample_weights[train_idx_purged][train_mask]
+        else:
+            weights_train_clean = None
+
+        if len(y_train_clean.unique()) < 2:
+            if verbose:
+                tprint("    ⚠️ Degenerate labels in fold, skipping", "WARNING")
+            continue
+
+        test_indices_with_labels = test_idx[test_mask]
+
+        fold_preds = []
+        for bag_idx in range(int(max(1, n_bags))):
+            params = dict(base_params)
+            params['random_state'] = int(params.get('random_state', 42)) + bag_idx
+
+            model = lgb.LGBMClassifier(**params)
+
+            n_features = X_train_clean.shape[1]
+            n_feat_sub = max(1, int(round(external_feature_fraction * n_features)))
+            feat_indices = rng.choice(n_features, size=n_feat_sub, replace=False)
+            feat_indices.sort()
+            cols_sub = X_train_clean.columns[feat_indices]
+
+            X_train_bag = X_train_clean[cols_sub]
+            X_test_bag = X_test_clean[cols_sub]
+
+            n_rows = X_train_bag.shape[0]
+            n_rows_sub = max(10, int(round(external_sample_fraction * n_rows)))
+            n_rows_sub = min(n_rows_sub, n_rows)
+            row_indices = rng.choice(n_rows, size=n_rows_sub, replace=False)
+            row_indices.sort()
+
+            X_train_bag_sub = X_train_bag.iloc[row_indices]
+            y_train_bag_sub = y_train_clean.iloc[row_indices]
+            if weights_train_clean is not None:
+                weights_bag_sub = weights_train_clean[row_indices]
+            else:
+                weights_bag_sub = None
+
+            try:
+                if weights_bag_sub is not None:
+                    model.fit(X_train_bag_sub, y_train_bag_sub, sample_weight=weights_bag_sub)
+                else:
+                    model.fit(X_train_bag_sub, y_train_bag_sub)
+                y_pred_proba = model.predict_proba(X_test_bag)[:, 1]
+                fold_preds.append(y_pred_proba)
+            except Exception as e:
+                if verbose:
+                    tprint(f"    ❌ Bag {bag_idx + 1} failed: {e}", "ERROR")
+                continue
+
+        if not fold_preds:
+            continue
+
+        preds_mat = np.vstack(fold_preds).T  # shape: (n_test_clean, n_bags_effective)
+        mu = np.mean(preds_mat, axis=1)
+        sigma = np.std(preds_mat, axis=1)
+
+        oof_mean.iloc[test_indices_with_labels] = mu
+        lower = np.clip(mu - 1.0 * sigma, 0.0, 1.0)
+        oof_lower.iloc[test_indices_with_labels] = lower
+
+    oof_mean = oof_mean.fillna(0.5)
+    oof_lower = oof_lower.fillna(0.5)
+
+    return pd.DataFrame(
+        {
+            'lgbm_bag_mean': oof_mean,
+            'lgbm_bag_lower': oof_lower,
+        },
+        index=X.index,
+    )
 
 
 def calibrate_ensemble(
@@ -5983,6 +6531,10 @@ def attach_rolling_hmm_regimes_to_market_data(
             "regime_timeframe": regime_timeframe,
             "direction": direction,
             "enable_risk_hmm_specialist": False,
+            # Use canonical per-specialist scalars so downstream consumers
+            # (including meta-labeling) see a compact, well-defined set of
+            # specialist features instead of raw multi-column blocks.
+            "use_canonical_specialist_scalars": True,
         }
 
         specialist_df = get_specialist_models_outputs(
@@ -6227,6 +6779,14 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             iso_min_prob_param = float(config.get('iso_min_prob', 0.0))
             target_clip_high_q_param = config.get('target_clip_high_q', None)
 
+            meta_model_family = str(config.get('meta_model_family', 'lgbm_bag_lower')).lower()
+            enable_meta_lgbm_hpo = bool(config.get('enable_meta_lgbm_hpo', True))
+            meta_lgbm_n_bags = int(config.get('meta_lgbm_n_bags', 10))
+            meta_prob_source = 'ensemble'
+            best_lgbm_params: Dict[str, Any] = {}
+            bagged_mean_series: Optional[pd.Series] = None
+            bagged_lower_series: Optional[pd.Series] = None
+
             used_hpo_params = False
 
             # Optionally override labeling parameters using latest HPO results
@@ -6392,10 +6952,12 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             except Exception as e_reg:
                 tprint(f"⚠️ Failed to attach rolling HMM regimes to market_data: {e_reg}", "WARNING")
 
-            # Attach specialist model outputs (liquidity regimes, etc.) aligned to train_index
+            # Attach specialist model outputs (liquidity regimes, canonical scalars, etc.)
+            # aligned to train_index
             try:
                 specialist_config = dict(config)
                 specialist_config.setdefault("enable_risk_hmm_specialist", False)
+                specialist_config.setdefault("use_canonical_specialist_scalars", True)
                 specialist_df = get_specialist_models_outputs(
                     artifact_router=self.artifact_router,
                     training_index=train_index,
@@ -6416,6 +6978,56 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                         tprint(
                             f"✅ Added {len(prob_cols)} liquidity regime probability features to market_data via specialist loader",
                             "SUCCESS",
+                        )
+
+                    # Canonical specialist scalar signals (risk, path, macro trend,
+                    # mean-reversion, SR labeling, volume force, SMC, etc.). These
+                    # are aligned to train_index inside get_specialist_models_outputs,
+                    # so we can attach them directly and let create_meta_features
+                    # pick them up as meta-features.
+                    try:
+                        scalar_cols: List[str] = []
+
+                        for col in [
+                            "risk_score",
+                            "path_risk_score",
+                            "macro_trend_score_continuous",
+                            "mr_probability_dense",
+                            "mr_probability",
+                            "mr_raw_score",
+                            "mr_trend_state",
+                            "mr_trend_is_mr",
+                            "sr_labeling_xgb_prob",
+                            "vol_force_scalar",
+                            "smc_predicted",
+                        ]:
+                            if col in specialist_df.columns:
+                                scalar_cols.append(col)
+
+                        # Include any remaining MR / SMC-prefixed scalars without
+                        # hard-coding every variant name.
+                        scalar_cols.extend(
+                            [
+                                c
+                                for c in specialist_df.columns
+                                if c.startswith("mr_") or c.startswith("smc_")
+                            ]
+                        )
+
+                        seen_scalars: set[str] = set()
+                        scalar_cols_unique: List[str] = []
+                        for c in scalar_cols:
+                            if c not in seen_scalars:
+                                seen_scalars.add(c)
+                                scalar_cols_unique.append(c)
+
+                        for col in scalar_cols_unique:
+                            if col not in market_data.columns:
+                                market_data[col] = specialist_df[col]
+                    except Exception as e_spec_scalars:
+                        tprint(
+                            f"⚠️ Failed to attach canonical specialist scalars to market_data: {e_spec_scalars}",
+                            "WARNING",
                         )
             except Exception as e_liquidity:
                 tprint(f"⚠️ Failed to attach specialist liquidity regime probabilities: {e_liquidity}", "WARNING")
@@ -6566,6 +7178,20 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                     high_q=quantile_high_q,
                 )
 
+            relabel_profitable_timeouts = bool(config.get("relabel_profitable_timeouts", True))
+            profitable_timeout_return_threshold = float(
+                config.get("profitable_timeout_return_threshold", PROFITABLE_TIMEOUT_RETURN_THRESHOLD)
+            )
+            if relabel_profitable_timeouts:
+                try:
+                    timeout_mask = (exit_reasons == 'timeout') & (realized_returns > profitable_timeout_return_threshold)
+                    if isinstance(quantile_labels, pd.Series):
+                        ql = quantile_labels.copy()
+                        ql.loc[timeout_mask] = 1.0
+                        quantile_labels = ql
+                except Exception:
+                    pass
+
             # Always use quantile-based labels for meta-labeling. If they are
             # very sparse, downstream diagnostics will reflect that directly.
             binary_labels = quantile_labels
@@ -6621,14 +7247,60 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             tprint("🎓 [6/13] Training ensemble meta-models (LGBM + LogReg + RF) with purged K-fold CV...", "INFO")
 
             # Train ensemble and get OOF predictions
+            lgbm_params_override: Optional[Dict[str, Any]] = None
+            if enable_meta_lgbm_hpo:
+                try:
+                    best_lgbm_params = tune_lgbm_hyperparameters_meta(
+                        X=meta_features_model_processed,
+                        y=binary_labels,
+                        sample_weights=sample_weights,
+                        horizon=horizon,
+                    )
+                    if best_lgbm_params:
+                        lgbm_params_override = best_lgbm_params
+                        used_hpo_params = True
+                        tprint(f"⚙️ Meta LGBM HPO applied with params: {best_lgbm_params}", "INFO")
+                except Exception as e_meta_hpo:
+                    tprint(f"⚠️ Meta LGBM HPO failed, using default LGBM params: {e_meta_hpo}", "WARNING")
+
+            ensemble_model_names = ['lgbm', 'xgb', 'rf']
+            try:
+                include_logreg = bool(config.get('include_logreg_in_meta_ensemble', True))
+            except Exception:
+                include_logreg = True
+            if include_logreg and 'logreg' not in ensemble_model_names:
+                ensemble_model_names.append('logreg')
+
             trained_models, oof_predictions_df = train_ensemble_with_kfold(
                 X=meta_features_model_processed,
                 y=binary_labels,
                 horizon=horizon,
                 n_splits=5,
                 sample_weights=sample_weights,
-                verbose=True
+                verbose=True,
+                lgbm_params_override=lgbm_params_override,
+                model_names=ensemble_model_names,
             )
+
+            if meta_model_family in ('all', 'lgbm_bag_mean', 'lgbm_bag_lower'):
+                try:
+                    bagged_oof_df = train_bagged_lgbm_with_kfold(
+                        X=meta_features_model_processed,
+                        y=binary_labels,
+                        horizon=horizon,
+                        n_splits=5,
+                        sample_weights=sample_weights,
+                        n_bags=meta_lgbm_n_bags,
+                        lgbm_base_params=best_lgbm_params if best_lgbm_params else None,
+                        verbose=True,
+                    )
+                    if isinstance(bagged_oof_df, pd.DataFrame):
+                        bagged_mean_series = bagged_oof_df.get('lgbm_bag_mean')
+                        bagged_lower_series = bagged_oof_df.get('lgbm_bag_lower')
+                except Exception as e_bagged:
+                    tprint(f"⚠️ Bagged LGBM training failed, skipping bagged variants: {e_bagged}", "WARNING")
+                    bagged_mean_series = None
+                    bagged_lower_series = None
 
             # STEP 7: Add signal disagreement feature
             tprint("🔧 [7/13] Adding signal disagreement feature...", "INFO")
@@ -6679,7 +7351,26 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                 ensemble_probs_series = oof_filled.mean(axis=1)
 
             ensemble_probs = ensemble_probs_series.values
-            probabilities = ensemble_probs
+
+            chosen_probs_series = ensemble_probs_series
+            if meta_model_family == 'lgbm_bag_mean' and bagged_mean_series is not None:
+                try:
+                    chosen_probs_series = bagged_mean_series.reindex(ensemble_probs_series.index).fillna(ensemble_probs_series)
+                    meta_prob_source = 'lgbm_bag_mean'
+                except Exception:
+                    meta_prob_source = 'ensemble'
+            elif meta_model_family == 'lgbm_bag_lower' and bagged_lower_series is not None:
+                try:
+                    chosen_probs_series = bagged_lower_series.reindex(ensemble_probs_series.index).fillna(ensemble_probs_series)
+                    meta_prob_source = 'lgbm_bag_lower'
+                except Exception:
+                    meta_prob_source = 'ensemble'
+            elif meta_model_family == 'all':
+                meta_prob_source = 'ensemble'
+            else:
+                meta_prob_source = 'ensemble'
+
+            probabilities = chosen_probs_series.values
 
             # Compute CV metrics for reporting
             cv_results = []
@@ -6716,6 +7407,304 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                             tprint(f"  📊 {model_name}: AUC={auc:.3f}, Prec={precision:.3f}, Rec={recall:.3f}, F1={f1:.3f}", "INFO")
                         except Exception as e:
                             tprint(f"  ⚠️ Could not compute metrics for {model_name}: {e}", "WARNING")
+
+            try:
+                try:
+                    enable_fs60_comparison = bool(config.get('enable_fs60_comparison', True))
+                except Exception:
+                    enable_fs60_comparison = True
+
+                date_range_days: Optional[float]
+                try:
+                    if isinstance(market_data.index, pd.DatetimeIndex) and len(market_data.index) > 1:
+                        delta = market_data.index[-1] - market_data.index[0]
+                        date_range_days = max(delta.total_seconds() / 86400.0, 1.0)
+                    else:
+                        date_range_days = None
+                except Exception:
+                    date_range_days = None
+
+                y_eval = binary_labels
+                ens_meta_series = None
+                if isinstance(oof_predictions_df, pd.DataFrame) and not oof_predictions_df.empty:
+                    try:
+                        ens_meta_series = oof_predictions_df.mean(axis=1)
+                    except Exception:
+                        ens_meta_series = None
+
+                comparison_rows: List[Dict[str, Any]] = []
+
+                def _align_arrays(y_series: pd.Series, prob_series: pd.Series) -> Tuple[np.ndarray, np.ndarray]:
+                    """Align label and probability series positionally and return numpy arrays."""
+                    y_local = y_series
+                    p_local = prob_series
+                    if len(y_local) != len(p_local):
+                        if len(y_local) > len(p_local):
+                            y_local = y_local.iloc[-len(p_local):]
+                        else:
+                            p_local = p_local.iloc[-len(y_local):]
+                    y_arr = y_local.to_numpy()
+                    p_arr = p_local.to_numpy()
+                    return y_arr, p_arr
+
+                def _compute_auc_series(y_series: pd.Series, prob_series: pd.Series) -> Optional[float]:
+                    if prob_series is None:
+                        return None
+                    try:
+                        y_arr, p_arr = _align_arrays(y_series, prob_series)
+                        mask_local = ~(np.isnan(y_arr) | np.isnan(p_arr))
+                        if mask_local.sum() < 10:
+                            return None
+                        y_clean = y_arr[mask_local]
+                        p_clean = p_arr[mask_local]
+                        if np.unique(y_clean).size < 2:
+                            return None
+                        return float(roc_auc_score(y_clean, p_clean))
+                    except Exception:
+                        return None
+
+                def _compute_metrics_row(
+                    feature_set: str,
+                    model_variant: str,
+                    y_series: pd.Series,
+                    prob_series: Optional[pd.Series],
+                ) -> Optional[Dict[str, Any]]:
+                    if prob_series is None:
+                        return None
+                    try:
+                        y_arr, p_arr = _align_arrays(y_series, prob_series)
+                        mask_local = ~(np.isnan(y_arr) | np.isnan(p_arr))
+                        n_eff = int(mask_local.sum())
+                        if n_eff < 10:
+                            return None
+                        y_clean = y_arr[mask_local]
+                        p_clean = p_arr[mask_local]
+                        if np.unique(y_clean).size < 2:
+                            return None
+
+                        auc_val = float(roc_auc_score(y_clean, p_clean))
+
+                        y_pred_05 = (p_clean >= 0.5).astype(int)
+                        precision_05 = float(precision_score(y_clean, y_pred_05, zero_division=0))
+                        recall_05 = float(recall_score(y_clean, y_pred_05, zero_division=0))
+                        f1_05 = float(f1_score(y_clean, y_pred_05, zero_division=0))
+
+                        y_pred_06 = (p_clean >= 0.6).astype(int)
+                        precision_06 = float(precision_score(y_clean, y_pred_06, zero_division=0))
+                        recall_06 = float(recall_score(y_clean, y_pred_06, zero_division=0))
+                        f1_06 = float(f1_score(y_clean, y_pred_06, zero_division=0))
+
+                        y_pred_07 = (p_clean >= 0.7).astype(int)
+                        precision_07 = float(precision_score(y_clean, y_pred_07, zero_division=0))
+                        recall_07 = float(recall_score(y_clean, y_pred_07, zero_division=0))
+                        f1_07 = float(f1_score(y_clean, y_pred_07, zero_division=0))
+                        try:
+                            brier_val = float(brier_score_loss(y_clean, p_clean))
+                        except Exception:
+                            brier_val = float('nan')
+                        try:
+                            logloss_val = float(log_loss(y_clean, p_clean, eps=1e-15))
+                        except Exception:
+                            logloss_val = float('nan')
+                        try:
+                            ap_val = float(average_precision_score(y_clean, p_clean))
+                        except Exception:
+                            ap_val = float('nan')
+
+                        pos_rate = float((y_clean == 1.0).mean())
+
+                        trades_per_day_05 = float(((p_clean >= 0.5).sum() / date_range_days)) if date_range_days is not None else float('nan')
+                        trades_per_day_06 = float(((p_clean >= 0.6).sum() / date_range_days)) if date_range_days is not None else float('nan')
+                        trades_per_day_07 = float(((p_clean >= 0.7).sum() / date_range_days)) if date_range_days is not None else float('nan')
+
+                        return {
+                            'feature_set': feature_set,
+                            'model_variant': model_variant,
+                            'n_samples': n_eff,
+                            'auc': auc_val,
+                            'brier': brier_val,
+                            'log_loss': logloss_val,
+                            'average_precision': ap_val,
+                            'precision_at_0_5': precision_05,
+                            'recall_at_0_5': recall_05,
+                            'f1_at_0_5': f1_05,
+                            'precision_at_0_6': precision_06,
+                            'recall_at_0_6': recall_06,
+                            'f1_at_0_6': f1_06,
+                            'precision_at_0_7': precision_07,
+                            'recall_at_0_7': recall_07,
+                            'f1_at_0_7': f1_07,
+                            'positive_rate': pos_rate,
+                            'trades_per_day_0_5': trades_per_day_05,
+                            'trades_per_day_0_6': trades_per_day_06,
+                            'trades_per_day_0_7': trades_per_day_07,
+                        }
+                    except Exception:
+                        return None
+
+                def _fmt_auc(v: Optional[float]) -> str:
+                    try:
+                        if v is None or not np.isfinite(v):
+                            return "nan"
+                        return f"{float(v):.4f}"
+                    except Exception:
+                        return "nan"
+
+                meta_ensemble_auc = _compute_auc_series(y_eval, ens_meta_series) if ens_meta_series is not None else None
+                meta_bag_mean_auc = _compute_auc_series(y_eval, bagged_mean_series) if isinstance(bagged_mean_series, pd.Series) else None
+                meta_bag_lower_auc = _compute_auc_series(y_eval, bagged_lower_series) if isinstance(bagged_lower_series, pd.Series) else None
+
+                row = _compute_metrics_row('meta_features', 'ensemble', y_eval, ens_meta_series) if ens_meta_series is not None else None
+                if row is not None:
+                    comparison_rows.append(row)
+                row = _compute_metrics_row('meta_features', 'lgbm_bag_mean', y_eval, bagged_mean_series) if isinstance(bagged_mean_series, pd.Series) else None
+                if row is not None:
+                    comparison_rows.append(row)
+                row = _compute_metrics_row('meta_features', 'lgbm_bag_lower', y_eval, bagged_lower_series) if isinstance(bagged_lower_series, pd.Series) else None
+                if row is not None:
+                    comparison_rows.append(row)
+
+                if meta_ensemble_auc is not None or meta_bag_mean_auc is not None or meta_bag_lower_auc is not None:
+                    tprint(
+                        f"[META_MODEL_COMPARISON] meta_features ensemble AUC={_fmt_auc(meta_ensemble_auc)} "
+                        f"lgbm_bag_mean AUC={_fmt_auc(meta_bag_mean_auc)} "
+                        f"lgbm_bag_lower AUC={_fmt_auc(meta_bag_lower_auc)}",
+                        "INFO",
+                    )
+
+                if enable_fs60_comparison:
+                    fs_candidates = [
+                        'selected_feature_dataframe_60',
+                        f"{config.get('execution_mode', 'analyst')}_selected_feature_dataframe_60",
+                        f"final_{config.get('execution_mode', 'analyst')}_dataset_60",
+                    ]
+                    fs_df = None
+                    for artifact_name in fs_candidates:
+                        try:
+                            candidate_df = self._get_artifact(artifact_name, artifact_type='data')
+                        except Exception:
+                            candidate_df = None
+                        if isinstance(candidate_df, pd.DataFrame) and not candidate_df.empty:
+                            fs_df = candidate_df
+                            break
+
+                    if fs_df is not None:
+                        feature_cols_60 = [
+                            c for c in fs_df.columns
+                            if c not in {'timestamp', 'target', 'label', 'target_long', 'target_short'}
+                            and not str(c).lower().endswith('_target')
+                            and not str(c).lower().endswith('_label')
+                        ]
+                        if feature_cols_60:
+                            fs_features = fs_df[feature_cols_60]
+                            base_index = meta_features_model_processed.index
+                            fs_aligned = fs_features
+                            try:
+                                if isinstance(fs_aligned.index, pd.DatetimeIndex) and isinstance(base_index, pd.DatetimeIndex):
+                                    fs_aligned = fs_aligned.reindex(base_index, method='ffill')
+                                else:
+                                    fs_arr = fs_aligned.reset_index(drop=True)
+                                    n_base = len(base_index)
+                                    if len(fs_arr) > n_base:
+                                        fs_arr = fs_arr.iloc[-n_base:, :].reset_index(drop=True)
+                                    elif len(fs_arr) < n_base:
+                                        pad_rows = n_base - len(fs_arr)
+                                        pad = pd.DataFrame(np.nan, index=range(pad_rows), columns=fs_arr.columns)
+                                        fs_arr = pd.concat([pad, fs_arr], axis=0, ignore_index=True)
+                                    fs_arr.index = base_index
+                                    fs_aligned = fs_arr
+                            except Exception:
+                                pass
+
+                            X_fs = prepare_feature_matrix(fs_aligned)
+                            if not X_fs.empty:
+                                fs_trained_models, fs_oof_df = train_ensemble_with_kfold(
+                                    X=X_fs,
+                                    y=binary_labels,
+                                    horizon=horizon,
+                                    n_splits=5,
+                                    sample_weights=sample_weights,
+                                    verbose=False,
+                                    lgbm_params_override=lgbm_params_override,
+                                    model_names=ensemble_model_names,
+                                )
+
+                                fs_ens_series = None
+                                if isinstance(fs_oof_df, pd.DataFrame) and not fs_oof_df.empty:
+                                    try:
+                                        fs_ens_series = fs_oof_df.mean(axis=1)
+                                    except Exception:
+                                        fs_ens_series = None
+
+                                fs_bagged_mean = None
+                                fs_bagged_lower = None
+                                if meta_model_family in ('all', 'lgbm_bag_mean', 'lgbm_bag_lower'):
+                                    try:
+                                        fs_bagged_df = train_bagged_lgbm_with_kfold(
+                                            X=X_fs,
+                                            y=binary_labels,
+                                            horizon=horizon,
+                                            n_splits=5,
+                                            sample_weights=sample_weights,
+                                            n_bags=meta_lgbm_n_bags,
+                                            lgbm_base_params=best_lgbm_params if best_lgbm_params else None,
+                                            verbose=False,
+                                        )
+                                        if isinstance(fs_bagged_df, pd.DataFrame):
+                                            fs_bagged_mean = fs_bagged_df.get('lgbm_bag_mean')
+                                            fs_bagged_lower = fs_bagged_df.get('lgbm_bag_lower')
+                                    except Exception:
+                                        fs_bagged_mean = None
+                                        fs_bagged_lower = None
+
+                                fs_ens_auc = _compute_auc_series(y_eval, fs_ens_series) if fs_ens_series is not None else None
+                                fs_bag_mean_auc = _compute_auc_series(y_eval, fs_bagged_mean) if isinstance(fs_bagged_mean, pd.Series) else None
+                                fs_bag_lower_auc = _compute_auc_series(y_eval, fs_bagged_lower) if isinstance(fs_bagged_lower, pd.Series) else None
+
+                                row = _compute_metrics_row('fs60', 'ensemble', y_eval, fs_ens_series) if fs_ens_series is not None else None
+                                if row is not None:
+                                    comparison_rows.append(row)
+                                row = _compute_metrics_row('fs60', 'lgbm_bag_mean', y_eval, fs_bagged_mean) if isinstance(fs_bagged_mean, pd.Series) else None
+                                if row is not None:
+                                    comparison_rows.append(row)
+                                row = _compute_metrics_row('fs60', 'lgbm_bag_lower', y_eval, fs_bagged_lower) if isinstance(fs_bagged_lower, pd.Series) else None
+                                if row is not None:
+                                    comparison_rows.append(row)
+
+                                tprint(
+                                    f"[META_MODEL_COMPARISON_FS60] fs60 ensemble AUC={_fmt_auc(fs_ens_auc)} "
+                                    f"lgbm_bag_mean AUC={_fmt_auc(fs_bag_mean_auc)} "
+                                    f"lgbm_bag_lower AUC={_fmt_auc(fs_bag_lower_auc)}",
+                                    "INFO",
+                                )
+
+                if comparison_rows:
+                    try:
+                        comparison_df = pd.DataFrame(comparison_rows)
+                        ts_str = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+                        symbol = str(config.get('symbol', 'UNKNOWN'))
+                        exchange = str(config.get('exchange', 'binance'))
+                        timeframe = str(config.get('timeframe', '15m'))
+                        direction = str(config.get('direction', 'long'))
+                        model = str(config.get('model', 'analyst'))
+
+                        filename = (
+                            f"meta_model_feature_set_comparison_"
+                            f"{symbol}_{exchange}_{timeframe}_{direction}_{model}_{ts_str}.csv"
+                        )
+                        output_dir = Path('outcomes')
+                        try:
+                            output_dir.mkdir(parents=True, exist_ok=True)
+                        except Exception:
+                            pass
+
+                        csv_path = output_dir / filename
+                        comparison_df.to_csv(csv_path, index=False)
+                        tprint(f"✅ Saved meta-model feature-set comparison CSV to {csv_path}", "SUCCESS")
+                    except Exception as csv_exc:
+                        tprint(f"⚠️ Failed to save meta-model feature-set comparison CSV: {csv_exc}", "WARNING")
+            except Exception as comp_exc:
+                tprint(f"⚠️ Meta-model feature-set comparison skipped due to error: {comp_exc}", "WARNING")
 
             # STEP 10: Train final models on full dataset (for deployment)
             tprint("🎓 [10/13] Training final ensemble models on full dataset...", "INFO")
@@ -6912,6 +7901,44 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             labeled_data['smoothed_label'] = smoothed_labels
             labeled_data['label_uncertainty'] = label_uncertainty
             labeled_data['meta_probability'] = probabilities
+
+            try:
+                if 'ensemble_probs_series' in locals():
+                    ens_series = pd.Series(np.nan, index=labeled_data.index)
+                    ens_src = ensemble_probs_series
+                    if len(ens_src) >= len(ens_series):
+                        ens_vals = ens_src.iloc[-len(ens_series):].astype(float).to_numpy()
+                        ens_series.iloc[:] = ens_vals
+                    else:
+                        ens_vals = ens_src.astype(float).to_numpy()
+                        ens_series.iloc[-len(ens_vals):] = ens_vals
+                    labeled_data['meta_probability_ensemble'] = ens_series.astype(np.float32)
+
+                if bagged_mean_series is not None:
+                    mean_series = pd.Series(np.nan, index=labeled_data.index)
+                    mean_src = bagged_mean_series
+                    if len(mean_src) >= len(mean_series):
+                        mean_vals = mean_src.iloc[-len(mean_series):].astype(float).to_numpy()
+                        mean_series.iloc[:] = mean_vals
+                    else:
+                        mean_vals = mean_src.astype(float).to_numpy()
+                        mean_series.iloc[-len(mean_vals):] = mean_vals
+                    labeled_data['meta_probability_lgbm_bag_mean'] = mean_series.astype(np.float32)
+
+                if bagged_lower_series is not None:
+                    lower_series = pd.Series(np.nan, index=labeled_data.index)
+                    lower_src = bagged_lower_series
+                    if len(lower_src) >= len(lower_series):
+                        lower_vals = lower_src.iloc[-len(lower_series):].astype(float).to_numpy()
+                        lower_series.iloc[:] = lower_vals
+                    else:
+                        lower_vals = lower_src.astype(float).to_numpy()
+                        lower_series.iloc[-len(lower_vals):] = lower_vals
+                    labeled_data['meta_probability_lgbm_bag_lower'] = lower_series.astype(np.float32)
+
+                labeled_data['meta_probability_source'] = str(meta_prob_source)
+            except Exception:
+                pass
             labeled_data['exit_reason'] = exit_reasons
             labeled_data['event_duration_bars'] = event_durations
 
@@ -7088,7 +8115,8 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                     mfe_series=mfe_series,
                     mae_series=mae_series,
                     target_long=target_long,
-                    target_short=target_short
+                    target_short=target_short,
+                    selected_feature_names=selected_feature_names,
                 )
                 tprint(f"✅ Diagnostics report saved: {diagnostics_path}", "SUCCESS")
             except Exception as e:
@@ -7175,10 +8203,33 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                             r_train = r_all[train_pos]
                             E_train = E_hat_all[train_pos] if E_hat_all is not None else None
 
-                            # Updated thresholds (2025-12-04): lower probability threshold for more trades
-                            # and lower expected return multipliers for 0.30% target
+                            train_days = 1.0
+                            try:
+                                train_dates = realized_returns.index[train_pos]
+                                if len(train_dates) >= 2:
+                                    delta = train_dates[-1] - train_dates[0]
+                                    train_days = max(
+                                        1.0,
+                                        delta.days + delta.seconds / 86400.0,
+                                    )
+                            except Exception:
+                                train_days = 1.0
+
+                            target_trades_per_day_min = float(
+                                config.get("meta_gating_target_trades_per_day_min", 1.0) or 1.0
+                            )
+                            target_trades_per_day_max = float(
+                                config.get("meta_gating_target_trades_per_day_max", 2.0) or 2.0
+                            )
+                            if target_trades_per_day_max < target_trades_per_day_min:
+                                target_trades_per_day_max = target_trades_per_day_min
+
+                            # Thresholds for meta-gating search: fairly loose probability thresholds
+                            # and reduced expected-return multipliers so that gates are easier to satisfy
                             prob_thresholds = [0.50, 0.55, 0.60, 0.65, 0.70]
-                            er_multipliers = [0.5, 1.0, 1.5, 2.0]  # Lower multipliers for 0.30% target with 0.30% tx_cost
+                            # With tx_cost ≈ 0.3%, these multipliers correspond to ≈0.075%–0.30%
+                            # expected-return thresholds, instead of the previous 0.15%–0.60% range.
+                            er_multipliers = [0.25, 0.5, 0.75, 1.0]
                             tx_cost = float(transaction_cost)
 
                             def _evaluate_gate_local(p_arr, r_arr, E_arr, p_thr_val, E_thr_val):
@@ -7202,11 +8253,23 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                                     n_trades, mean_r, sharpe = _evaluate_gate_local(
                                         p_train, r_train, E_train, float(p_thr), float(E_thr)
                                     )
-                                    if n_trades < 10:
+
+                                    if n_trades == 0:
+                                        continue
+                                    if mean_r <= 0.0:
                                         continue
 
-                                    # Score: prefer higher Sharpe and more trades
-                                    score = sharpe * np.sqrt(max(n_trades, 1))
+                                    trades_per_day = float(n_trades) / float(train_days)
+                                    freq_penalty = 1.0
+                                    if trades_per_day < target_trades_per_day_min:
+                                        freq_penalty = trades_per_day / target_trades_per_day_min
+                                    elif trades_per_day > target_trades_per_day_max:
+                                        freq_penalty = target_trades_per_day_max / trades_per_day
+
+                                    if freq_penalty <= 0.0:
+                                        continue
+
+                                    score = sharpe * np.sqrt(max(n_trades, 1)) * freq_penalty
 
                                     if (best_cfg is None) or (score > best_cfg["score"]):
                                         best_cfg = {
@@ -7217,6 +8280,47 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                                             "n_trades": n_trades,
                                             "score": float(score),
                                         }
+
+                            # Fallback: if expected-return gated search yields zero trades,
+                            # derive a gate using probability-only thresholds.
+                            if best_cfg is None or int(best_cfg.get("n_trades", 0)) == 0:
+                                fallback_cfg = None
+                                for p_thr in prob_thresholds:
+                                    n_fb, mean_fb, sharpe_fb = _evaluate_gate_local(
+                                        p_train,
+                                        r_train,
+                                        None,
+                                        float(p_thr),
+                                        0.0,
+                                    )
+                                    if n_fb == 0:
+                                        continue
+                                    if mean_fb <= 0.0:
+                                        continue
+
+                                    trades_per_day_fb = float(n_fb) / float(train_days)
+                                    freq_penalty_fb = 1.0
+                                    if trades_per_day_fb < target_trades_per_day_min:
+                                        freq_penalty_fb = trades_per_day_fb / target_trades_per_day_min
+                                    elif trades_per_day_fb > target_trades_per_day_max:
+                                        freq_penalty_fb = target_trades_per_day_max / trades_per_day_fb
+
+                                    if freq_penalty_fb <= 0.0:
+                                        continue
+
+                                    score_fb = sharpe_fb * np.sqrt(max(n_fb, 1)) * freq_penalty_fb
+                                    if (fallback_cfg is None) or (score_fb > fallback_cfg["score"]):
+                                        fallback_cfg = {
+                                            "prob_threshold": float(p_thr),
+                                            "expected_return_threshold": 0.0,
+                                            "mean_return": mean_fb,
+                                            "sharpe": sharpe_fb,
+                                            "n_trades": int(n_fb),
+                                            "score": float(score_fb),
+                                        }
+
+                                if fallback_cfg is not None:
+                                    best_cfg = fallback_cfg
 
                             # Compute simple internal holdout metrics for information only
                             if best_cfg is not None and holdout_pos.size > 0:
@@ -7247,18 +8351,6 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                                     "mean_return": float(mean_hold),
                                     "sharpe": float(sharpe_hold),
                                 }
-
-                        # Fallback if no valid configuration found
-                        # Updated defaults (2025-12-04): lower thresholds for more trades
-                        if best_cfg is None:
-                            best_cfg = {
-                                "prob_threshold": DEFAULT_PROBABILITY_THRESHOLD,  # 0.55
-                                "expected_return_threshold": DEFAULT_EXPECTED_RETURN_THRESHOLD,  # 0.30%
-                                "mean_return": 0.0,
-                                "sharpe": 0.0,
-                                "n_trades": 0,
-                                "score": 0.0,
-                            }
 
                         regime_gating = {}
                         try:
@@ -7305,49 +8397,58 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                             regime_gating = {}
 
                         # Build meta-gating configuration payload
-                        meta_gating_config = {
-                            "symbol": symbol,
-                            "exchange": exchange,
-                            "timeframe": timeframe,
-                            "direction": direction,
-                            "model_family": "analyst_meta",
-                            "meta_gating": {
-                                "version": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S"),
-                                "transaction_cost": float(transaction_cost),
-                                "entry": {
-                                    "prob_threshold": best_cfg["prob_threshold"],
-                                    "use_expected_return": bool(best_cfg["expected_return_threshold"] > 0),
-                                    "expected_return_threshold": best_cfg["expected_return_threshold"],
-                                    "expected_return_unit": "fraction",
-                                    "min_trades": int(best_cfg["n_trades"]),
+                        if best_cfg is None or int(best_cfg.get("n_trades", 0)) <= 0:
+                            tprint(
+                                "⚠️ Meta-gating config not created: no valid gate found; skipping save.",
+                                "WARNING",
+                            )
+                        else:
+                            meta_gating_config = {
+                                "symbol": symbol,
+                                "exchange": exchange,
+                                "timeframe": timeframe,
+                                "direction": direction,
+                                "model_family": "analyst_meta",
+                                "meta_gating": {
+                                    "version": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S"),
+                                    "transaction_cost": float(transaction_cost),
+                                    "entry": {
+                                        "prob_threshold": best_cfg["prob_threshold"],
+                                        "use_expected_return": bool(
+                                            best_cfg["expected_return_threshold"] > 0
+                                        ),
+                                        "expected_return_threshold": best_cfg["expected_return_threshold"],
+                                        "expected_return_unit": "fraction",
+                                        "min_trades": int(best_cfg["n_trades"]),
+                                    },
+                                    "calibration": {
+                                        "iso_regressor_artifact": iso_rel_path,
+                                        "fitted_on": "train_oof",
+                                    },
+                                    # Expose the triple-barrier configuration used during labeling
+                                    # so live trading can align TPSL/horizon with the same setup.
+                                    "triple_barrier": {
+                                        "profit_threshold": float(profit_threshold),
+                                        "stop_threshold": float(stop_threshold),
+                                        "horizon_bars": int(horizon),
+                                        "min_event_spacing": int(min_event_spacing),
+                                        "trail_distance_atr": float(trail_dist) if 'trail_dist' in locals() else 0.0,
+                                    },
+                                    "backtest_metrics": {
+                                        "auc_oof": float(avg_auc),
+                                        "mean_return_gated": float(best_cfg["mean_return"]),
+                                        "sharpe_gated": float(best_cfg["sharpe"]),
+                                        "trades_gated": int(best_cfg["n_trades"]),
+                                    },
+                                    "regime_specific": regime_gating,
                                 },
-                                "calibration": {
-                                    "iso_regressor_artifact": iso_rel_path,
-                                    "fitted_on": "train_oof",
-                                },
-                                # Expose the triple-barrier configuration used during labeling
-                                # so live trading can align TPSL/horizon with the same setup.
-                                "triple_barrier": {
-                                    "profit_threshold": float(profit_threshold),
-                                    "stop_threshold": float(stop_threshold),
-                                    "horizon_bars": int(horizon),
-                                    "min_event_spacing": int(min_event_spacing),
-                                },
-                                "backtest_metrics": {
-                                    "auc_oof": float(avg_auc),
-                                    "mean_return_gated": float(best_cfg["mean_return"]),
-                                    "sharpe_gated": float(best_cfg["sharpe"]),
-                                    "trades_gated": int(best_cfg["n_trades"]),
-                                },
-                                "regime_specific": regime_gating,
-                            },
-                        }
+                            }
 
-                        gating_path = va_dir / "meta_gating_config.json"
-                        with open(gating_path, "w") as f_gate:
-                            json.dump(meta_gating_config, f_gate, indent=2)
+                            gating_path = va_dir / "meta_gating_config.json"
+                            with open(gating_path, "w") as f_gate:
+                                json.dump(meta_gating_config, f_gate, indent=2)
 
-                        tprint(f"💾 Saved meta-gating config to {gating_path}", "INFO")
+                            tprint(f"💾 Saved meta-gating config to {gating_path}", "INFO")
                     except Exception as gate_exc:
                         tprint(f"⚠️ Could not compute/save meta-gating config: {gate_exc}", "WARNING")
 

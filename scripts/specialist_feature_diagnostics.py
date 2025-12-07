@@ -600,14 +600,12 @@ def _compute_feature_metrics(
                 y_tr = y_arr[train_idx]
                 x_tr = X.iloc[train_idx][col].to_numpy(dtype=float)
 
-                # Clean NaNs in y
                 mask_tr = ~np.isnan(y_tr)
                 if not np.any(mask_tr):
                     continue
                 y_tr_clean = y_tr[mask_tr]
                 x_tr_clean = x_tr[mask_tr]
 
-                # Require both classes and some variation in the feature
                 if len(np.unique(y_tr_clean)) < 2 or np.all(x_tr_clean == x_tr_clean[0]):
                     continue
 
@@ -626,7 +624,7 @@ def _compute_feature_metrics(
                 mi_cv[col] = float(s / max(abs(m), 1e-12))
             else:
                 mi_mean[col] = 0.0
-                mi_cv[col] = float("inf")
+                mi_cv[col] = float("nan")
     else:
         # Continuous/real-valued target: use event-aware MI proxy and stability utilities
         mi_full = component._event_aware_feature_scores(X, y).fillna(0.0)
@@ -681,6 +679,16 @@ def _infer_model_group(feature_name: str) -> str:
         return "path_risk"
     if name.startswith("risk_regime") or name.startswith("risk_pred") or name.startswith("risk_") or "risk_regime" in name:
         return "risk"
+    if name.startswith("vol_force_breakout"):
+        return "volume_force_breakout"
+    if name.startswith("vol_force_trend"):
+        return "volume_force_trend"
+    if name.startswith("vol_force_volatility"):
+        return "volume_force_volatility"
+    if name.startswith("vol_force") or "volume_force" in name:
+        return "volume_force"
+    if name.startswith("sr_labeling_xgb") or "sr_labeling_xgb" in name:
+        return "sr_labeling_xgb"
     if name.startswith("smc_"):
         return "smc"
     if name.startswith("macro_trend") or (name.startswith("macro_") and "alpha" in name):

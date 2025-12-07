@@ -19,6 +19,7 @@ import pandas as pd
 from typing import Dict, List, Tuple, Optional, Any, Set
 from dataclasses import dataclass
 import logging
+import re
 from sklearn.feature_selection import mutual_info_regression
 from sklearn.linear_model import Lasso, LassoCV
 from sklearn.metrics import r2_score
@@ -430,6 +431,68 @@ class LabelGuidedInteractionDiscovery:
 
         return features[selected_list]
 
+    def _parse_asset_and_timeframe(self, feature_name: str) -> Tuple[Optional[str], Optional[str]]:
+        """Best-effort parsing of asset and timeframe from a feature name.
+
+        This relies on simple naming heuristics only and is intentionally
+        permissive: we only enforce constraints when both parsed values are
+        explicitly present and clearly inconsistent.
+        """
+
+        name = str(feature_name)
+        asset: Optional[str] = None
+        timeframe: Optional[str] = None
+
+        # Heuristic asset detection: leading token like ETHUSDT, BTCUSDT, etc.
+        parts = name.split("_")
+        if parts:
+            prefix = parts[0]
+            if prefix.isupper() and any(suffix in prefix for suffix in ("USDT", "USD", "PERP", "EUR", "BTC")):
+                asset = prefix
+
+        # Heuristic timeframe detection: tokens like 15m, 1h, 4H, 1d embedded
+        # in the name (but not ratio markers like 3x_ratio).
+        m = re.search(r"(^|_)(\\d+)([mMhHdDwW])(\\b|_)", name)
+        if m:
+            timeframe = (m.group(2) + m.group(3)).lower()
+
+        return asset, timeframe
+
+    def _is_pair_timeframe_asset_compatible(self, f1: str, f2: str) -> bool:
+        """Check whether two feature names form a compatible pair.
+
+        Rules:
+        - If both assets are explicitly present and differ, reject the pair.
+        - If both timeframes are explicitly present and *differ*, allow the
+          pair **only** when we can confidently determine that both features
+          belong to the same asset. This encodes "cross timeframe for the
+          same asset" while preventing cross-asset, cross-timeframe
+          interactions.
+        - When timeframes cannot be parsed for one or both features, we do
+          not enforce any timeframe restriction and fall back to the
+          category-based logic.
+        """
+
+        a1, tf1 = self._parse_asset_and_timeframe(f1)
+        a2, tf2 = self._parse_asset_and_timeframe(f2)
+
+        # Enforce same-asset interactions when explicit tickers are present.
+        if a1 is not None and a2 is not None and a1 != a2:
+            return False
+
+        # Cross-timeframe handling: if both timeframes are parsed and differ,
+        # only allow when we can also confirm that both features clearly
+        # refer to the same asset. If asset cannot be established for either
+        # side, we take the conservative route and reject the pair to avoid
+        # unintended cross-asset, cross-timeframe interactions.
+        if tf1 is not None and tf2 is not None and tf1 != tf2:
+            if a1 is not None and a2 is not None and a1 == a2:
+                return True
+            return False
+
+        # Same timeframe (or no explicit timeframe information) passes.
+        return True
+
     def _generate_feature_pairs(
         self,
         features: pd.DataFrame,
@@ -453,6 +516,25 @@ class LabelGuidedInteractionDiscovery:
                 f1, f2 = feature_names[i], feature_names[j]
                 cat1 = feature_categories.get(f1, 'unknown')
                 cat2 = feature_categories.get(f2, 'unknown')
+
+                # Enforce basic asset/timeframe compatibility constraints.
+                if not self._is_pair_timeframe_asset_compatible(f1, f2):
+                    continue
+
+                # Skip any interactions that involve fragile pattern/level
+                # features such as candlestick patterns or pre-created
+                # support/resistance levels. These categories are inferred
+                # from feature names via CATEGORY_KEYWORDS in
+                # interaction_generation_fallbacks and are already
+                # high-level, nonlinear constructs. Building additional
+                # interactions on top of them tends to be brittle and
+                # overfit-prone.
+                banned_feature_categories = {
+                    'candlestick_pattern',
+                    'support_resistance',
+                }
+                if cat1 in banned_feature_categories or cat2 in banned_feature_categories:
+                    continue
 
                 # Skip banned category pairs
                 if (cat1, cat2) in self.config.banned_category_pairs:
@@ -485,6 +567,22 @@ class LabelGuidedInteractionDiscovery:
             if (cat1, cat2) in self.config.banned_category_pairs:
                 continue
             if (cat2, cat1) in self.config.banned_category_pairs:
+                continue
+
+            # Skip any interactions that involve fragile pattern/level
+            # features such as candlestick patterns or pre-created
+            # support/resistance levels, consistent with automatic pair
+            # generation.
+            banned_feature_categories = {
+                'candlestick_pattern',
+                'support_resistance',
+            }
+            if cat1 in banned_feature_categories or cat2 in banned_feature_categories:
+                continue
+
+            # Apply the same asset/timeframe compatibility rules used during
+            # automatic pair generation.
+            if not self._is_pair_timeframe_asset_compatible(f1, f2):
                 continue
 
             filtered_pairs.append((f1, f2))

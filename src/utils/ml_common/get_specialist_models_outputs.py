@@ -585,17 +585,39 @@ def get_specialist_models_outputs(
                             if not isinstance(full_probs, pd.DataFrame):
                                 full_probs = pd.DataFrame(full_probs)
                             full_probs = _standardize_index(full_probs)
-                            before_block = full_probs[prob_cols].copy()
-                            block = before_block.reindex(training_index, method="ffill")
-                            nnz_after = int(block.notna().sum().sum())
-                            rows_nonnull = int(block.notna().any(axis=1).sum())
-                            try:
-                                log_info(
-                                    "🔁 [LIQUIDITY] Coverage after reload: "
-                                    f"rows_nonnull={rows_nonnull}/{len(training_index)}"
+
+                            # Recompute probability columns from the reloaded
+                            # DataFrame to handle cases where the column set
+                            # differs from the original pickle (e.g., a
+                            # different number of liquidity_regime_*_prob
+                            # columns). This ensures we always use the
+                            # columns that actually exist in the dense,
+                            # long-window VersionedArtifactStore rather than
+                            # failing with a KeyError or keeping the
+                            # truncated block.
+                            prob_cols_full = [
+                                c
+                                for c in full_probs.columns
+                                if c.startswith("liquidity_regime_") and c.endswith("_prob")
+                            ]
+
+                            if prob_cols_full:
+                                before_block = full_probs[prob_cols_full].copy()
+                                block = before_block.reindex(training_index, method="ffill")
+                                nnz_after = int(block.notna().sum().sum())
+                                rows_nonnull = int(block.notna().any(axis=1).sum())
+                                try:
+                                    log_info(
+                                        "🔁 [LIQUIDITY] Coverage after reload (VersionedArtifactStore): "
+                                        f"rows_nonnull={rows_nonnull}/{len(training_index)}"
+                                    )
+                                except Exception:
+                                    pass
+                            else:
+                                log_warning(
+                                    "⚠️ [LIQUIDITY] Reloaded full_probs from VersionedArtifactStore "
+                                    "contains no liquidity_regime_*_prob columns; keeping original block."
                                 )
-                            except Exception:
-                                pass
                     except Exception as reload_exc:
                         log_warning(
                             f"⚠️ [LIQUIDITY] Coverage repair via VersionedArtifactStore "
@@ -994,6 +1016,87 @@ def get_specialist_models_outputs(
     except Exception as e:
         log_warning(f" Failed to load MR Trend specialist outputs: {e}")
 
+    # ------------------------------------------------------------------
+    # 9) SR labeling XGB specialist – S/R-based meta signal
+    # ------------------------------------------------------------------
+    try:
+        if config.get("enable_sr_labeling_specialist", True):
+            log_info("=" * 80)
+            log_info(" LOADING SPECIALIST: SR LABELING XGB OUTPUTS")
+            log_info("=" * 80)
+
+            sr_context = {
+                "symbol": symbol,
+                "exchange": exchange,
+                "timeframe": base_timeframe,
+                "direction": direction,
+                "model": "sr_labeling_xgb",
+                "step_name": "sr_labeling_xgb",
+            }
+
+            sr_artifact_name = f"sr_labeling_xgb_predictions_{base_timeframe}"
+            log_info(f"Attempting to load SR labeling predictions: {sr_artifact_name}")
+            sr_preds = artifact_router.load(
+                artifact_name=sr_artifact_name,
+                artifact_type="data",
+                data_category="predictions",
+                context=sr_context,
+            )
+
+            if sr_preds is not None and not getattr(sr_preds, "empty", True):
+                if not isinstance(sr_preds, pd.DataFrame):
+                    sr_preds = pd.DataFrame(sr_preds)
+                sr_preds = _standardize_index(sr_preds)
+
+                if isinstance(sr_preds.index, pd.DatetimeIndex) and len(sr_preds.index) > 0:
+                    log_info(
+                        " SR labeling (sr_labeling_xgb_predictions) index range: %s → %s (n=%d)"
+                        % (
+                            sr_preds.index.min(),
+                            sr_preds.index.max(),
+                            len(sr_preds.index),
+                        )
+                    )
+
+                # Prefer an explicit sr_labeling_xgb_prob column; fall back to
+                # generic probability-style names when necessary.
+                prob_col = None
+                for c in ("sr_labeling_xgb_prob", "predicted_prob", "predicted"):
+                    if c in sr_preds.columns:
+                        prob_col = c
+                        break
+
+                if prob_col is not None:
+                    before_block = sr_preds[[prob_col]].copy()
+                    before_block = before_block.rename(columns={prob_col: "sr_labeling_xgb_prob"})
+                    nnz_before = int(before_block.notna().sum().sum())
+
+                    # Align to training_index with a one-bar lag to avoid
+                    # look-ahead: use the SR meta-signal available at t-1.
+                    block = before_block.shift(1).fillna(method="ffill")
+                    block = block.reindex(training_index, method="ffill")
+                    nnz_after = int(block.notna().sum().sum())
+
+                    blocks.append(block)
+                    log_success(
+                        " Added SR labeling specialist block from '%s': shape=%s, non_null_before=%d, non_null_after=%d"
+                        % (sr_artifact_name, block.shape, nnz_before, nnz_after)
+                    )
+                    if nnz_after == 0:
+                        log_warning(
+                            " SR labeling block aligned to training_index is all-NaN. "
+                            "Check sr_labeling_xgb prediction timestamps and values."
+                        )
+                else:
+                    log_warning(
+                        "⚠️ SR labeling predictions loaded but no probability-like column "
+                        "found (expected one of: sr_labeling_xgb_prob, predicted_prob, predicted)."
+                    )
+        else:
+            log_info(" Skipping SR labeling specialist outputs (enable_sr_labeling_specialist=False)")
+    except Exception as e:
+        log_warning(f" Failed to load SR labeling specialist outputs: {e}")
+
     # 8) Volume Force specialist – scalar directional prediction
     # ------------------------------------------------------------------
     try:
@@ -1085,106 +1188,6 @@ def get_specialist_models_outputs(
                     )
     except Exception as e:
         log_warning(f" Failed to load Volume Force specialist outputs: {e}")
-
-    # ------------------------------------------------------------------
-    # 8) ML Risk HMM regimes – optional second risk flavor
-    # ------------------------------------------------------------------
-    if config.get("enable_risk_hmm_specialist", True):
-        try:
-            log_info("=" * 80)
-            log_info(" LOADING SPECIALIST: ML RISK HMM OUTPUTS")
-            log_info("=" * 80)
-
-            # Risk HMM training artifacts are produced on a higher timeframe
-            # (typically 1h) and stored under versioned_artifacts/
-            # ETHUSDT_binance_1h_long_regime_risk_hmm with
-            # artifact_name="ml_risk_hmm_training_data_1h" and
-            # step_name="ml_risk_regime_step". Use a dedicated
-            # `risk_hmm_timeframe` knob (default "1h") so we query the
-            # correct store regardless of the base/regime timeframe of the
-            # main training pipeline.
-            risk_hmm_timeframe = str(config.get("risk_hmm_timeframe") or "1h")
-
-            risk_hmm_context = {
-                "symbol": symbol,
-                "exchange": exchange,
-                "timeframe": risk_hmm_timeframe,
-                "direction": direction,
-                "model": "regime_risk_hmm",
-                # Match the step_name used when persisting the artifacts so
-                # VersionedArtifactStore can locate the correct store.
-                "step_name": "ml_risk_regime_step",
-            }
-
-            risk_hmm_name = f"ml_risk_hmm_training_data_{risk_hmm_timeframe}"
-            risk_hmm_training = artifact_router.load(
-                artifact_name=risk_hmm_name,
-                artifact_type="data",
-                data_category="features",
-                context=risk_hmm_context,
-            )
-
-            if risk_hmm_training is not None and not getattr(risk_hmm_training, "empty", True):
-                if not isinstance(risk_hmm_training, pd.DataFrame):
-                    risk_hmm_training = pd.DataFrame(risk_hmm_training)
-                risk_hmm_training = _standardize_index(risk_hmm_training)
-
-                if isinstance(risk_hmm_training.index, pd.DatetimeIndex) and len(risk_hmm_training.index) > 0:
-                    log_info(
-                        " ML Risk HMM (%s) index range: %s → %s (n=%d)"
-                        % (
-                            risk_hmm_name,
-                            risk_hmm_training.index.min(),
-                            risk_hmm_training.index.max(),
-                            len(risk_hmm_training.index),
-                        )
-                    )
-
-                # Extract HMM-based regimes / distances and give them distinct
-                # column names to avoid collisions with the primary ML Risk block.
-                # Also expose the normalized [0, 1] risk_score scalar directly for
-                # downstream consumers (preferred canonical risk feature).
-                risk_hmm_cols: List[str] = []
-                for c in risk_hmm_training.columns:
-                    if c in ("risk_regime", "mahal_distance_log", "risk_score") or c.startswith("risk_regime_"):
-                        risk_hmm_cols.append(c)
-
-                if risk_hmm_cols:
-                    before_block = risk_hmm_training[risk_hmm_cols].copy()
-                    rename_map: Dict[str, str] = {}
-                    for c in before_block.columns:
-                        if c == "risk_regime":
-                            rename_map[c] = "risk_regime_hmm"
-                        elif c == "mahal_distance_log":
-                            rename_map[c] = "risk_mahal_distance_log_hmm"
-                        elif c == "risk_score":
-                            # Keep canonical risk_score name for downstream scalar use
-                            rename_map[c] = "risk_score"
-                        else:
-                            rename_map[c] = f"{c}_hmm"
-
-                    before_block = before_block.rename(columns=rename_map)
-                    nnz_before = int(before_block.notna().sum().sum())
-                    block = before_block.shift(1).fillna(method="ffill")
-                    block = block.reindex(training_index, method="ffill")
-                    nnz_after = int(block.notna().sum().sum())
-
-                    if nnz_after == 0:
-                        log_warning(
-                            " ML Risk HMM block aligned to training_index is all-NaN. "
-                            "Dropping ML Risk HMM specialist features for this run; check timestamps and values."
-                        )
-                    else:
-                        blocks.append(block)
-                        log_success(
-                            f" Added ML Risk HMM specialist block from '{risk_hmm_name}': "
-                            f"shape={block.shape}, non_null_before={nnz_before}, "
-                            f"non_null_after={nnz_after}"
-                        )
-        except Exception as e:
-            log_warning(f" Failed to load ML Risk HMM specialist outputs: {e}")
-    else:
-        log_info(" Skipping ML Risk HMM specialist outputs (enable_risk_hmm_specialist=False)")
 
     # SMC specialist block: scalar regime predictions from MLSMCRegimeStep
     try:

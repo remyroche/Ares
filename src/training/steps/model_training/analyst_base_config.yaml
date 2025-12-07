@@ -5,6 +5,10 @@ analyst_config:
   base_timeframe: 5m
   execution_timeframe: 15m
   execution_frequency: 15m
+  # Feature set selector for analyst_base:
+  #   A = default selected_feature_dataframe_50 (+ specialists)
+  #   B = meta-gated feature set (labeled_data meta columns + specialist scalars)
+  feature_set: B
   base_models:
     lgbm:
       model_type: LGBMRegressor
@@ -87,6 +91,37 @@ analyst_config:
           total_trials: 350
           total_time_seconds: 0.45926570892333984
           n_rounds: 2
+    lgbm_bag_lower:
+      enabled: true
+      model_type: LGBMRegressor
+      use_float32: true
+      use_isotonic_calibration: true
+      # When true, restricts features to specialist scalars only. For meta-gated
+      # Feature Set B we keep this disabled so models see both meta-labeling
+      # features (meta_probability, volatility_1d, adaptive thresholds) and
+      # specialist scalars.
+      use_specialist_outputs_only: false
+      # Bagging configuration for IncrementalLGBMBaggedTrainer
+      n_bags: 10
+      bagging_feature_fraction: 0.7
+      bagging_sample_fraction: 0.7
+      params:
+        n_estimators: 200
+        learning_rate: 0.13125830316209655
+        max_depth: 5
+        num_leaves: 32
+        subsample: 0.9852142919229748
+        colsample_bytree: 0.9852142919229748
+        random_state: 42
+        verbosity: -1
+        n_jobs: -1
+        reg_lambda: 1.1236203565420875
+        sampling_rate: 0.9852142919229748
+        min_child_samples: 64
+        objective: regression
+        metric: rmse
+        early_stopping_rounds: 100
+        min_boost_rounds: 200
     knn:
       enabled: false
       model_type: KNeighborsRegressor
@@ -145,7 +180,8 @@ analyst_config:
       model_type: BayesianRidge
       use_float32: true
       use_isotonic_calibration: true
-      use_specialist_outputs_only: true
+      # For Feature Set B we want full meta-gated features, not specialists-only
+      use_specialist_outputs_only: false
       use_soft_clipping: true
       soft_clip_stretch: 2.0
       standardize_features: true

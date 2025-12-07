@@ -499,7 +499,11 @@ class FinalParametersOptimizer(BaseStep):
             },
             'position_sizing': {
                 'base_position_size': {'type': 'float', 'min': 0.01, 'max': 0.15},
-                'max_position_size': {'type': 'float', 'min': 0.1, 'max': 0.3}
+                'max_position_size': {'type': 'float', 'min': 0.1, 'max': 0.3},
+                # Gate-aware sizing (probability-weighted overlay)
+                'gate_prob_floor': {'type': 'float', 'min': 0.0, 'max': 0.7},
+                'gate_prob_exponent': {'type': 'float', 'min': 0.5, 'max': 3.0},
+                'gate_prob_weight': {'type': 'float', 'min': 0.0, 'max': 1.0},
             },
             'leverage': {
                 'safe_leverage_multiplier': {'type': 'float', 'min': 0.5, 'max': 1.0}
@@ -2083,9 +2087,9 @@ class FinalParametersOptimizer(BaseStep):
             calibration_results: Calibration data
             X_train, y_train: Training data
             X_val, y_val: Validation data (optional)
-            
-        Returns:
-            Dict with predictions, targets, returns, regime_labels
+            gate_probabilities: Gate probabilities (optional)
+            Returns:
+                Dict with predictions, targets, returns, regime_labels
         """
         try:
             # Extract confidence data - Updated to use only analyst_confidence
@@ -2164,6 +2168,42 @@ class FinalParametersOptimizer(BaseStep):
                     if trend is not None:
                         m = min(n_samples, len(trend))
                         weights[:m] *= 0.8 + 0.4 * np.clip(trend[:m], 0.0, 1.0)
+
+                    # Optional gate probability overlay from GateTrainingStep
+                    gate_probs = calibration_results.get('gate_probabilities')
+                    if gate_probs is not None:
+                        try:
+                            gate_arr = ensure_array(gate_probs)
+                            if len(gate_arr) > 0:
+                                m = min(n_samples, len(gate_arr))
+                                # Align to the most recent portion of calibration history
+                                gate_slice = np.clip(gate_arr[-m:], 0.0, 1.0)
+
+                                gate_floor = validate_probability(
+                                    params.get('gate_prob_floor', 0.0), default=0.0
+                                )
+                                gate_exponent = validate_positive(
+                                    params.get('gate_prob_exponent', 1.0), default=1.0
+                                )
+                                gate_weight = validate_range(
+                                    params.get('gate_prob_weight', 1.0), 0.0, 1.0, default=1.0
+                                )
+
+                                # Normalize gate probabilities above the floor and apply exponent
+                                denom = max(1e-6, 1.0 - gate_floor)
+                                normalized = np.clip((gate_slice - gate_floor) / denom, 0.0, 1.0)
+                                gated = np.power(normalized, gate_exponent)
+
+                                # Blend gate effect with a neutral baseline (no gating)
+                                gate_scaling = (1.0 - gate_weight) + gate_weight * gated
+
+                                # Apply only to the last m samples
+                                weights_tail = weights[-m:]
+                                weights_tail *= gate_scaling
+                                weights[-m:] = np.clip(weights_tail, 0.0, 1.0)
+                        except Exception as gate_exc:
+                            self.logger.debug(f"gate probability weighting failed: {gate_exc}")
+
                     weights = np.clip(weights, 0.0, 1.0)
                     simulated_returns = signals * returns * weights
                 except Exception as e:
@@ -5967,12 +6007,110 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
             tprint_success(f"✅ Calibration results loaded successfully")
             # Print summary of what was loaded
             tprint_info(f"📊 Loaded calibration data keys: {list(calibration_results.keys())}")
+
+            # Optionally augment calibration with gate probabilities from GateTrainingStep
+            try:
+                self._attach_gate_probabilities(calibration_results, config)
+            except Exception as gate_exc:
+                self.logger.warning(f"Failed to attach gate probabilities to calibration results: {gate_exc}")
+
             return calibration_results
             
         except Exception as e:
             self.logger.error(f"Failed to load calibration results: {e}")
             tprint_error(f"❌ Failed to load calibration results: {e}")
             return {}
+
+    def _attach_gate_probabilities(
+        self,
+        calibration_results: Dict[str, Any],
+        config: Dict[str, Any],
+    ) -> None:
+        """Attach gate probability array to calibration_results if Gate OOF artifact is available.
+
+        This uses the walk-forward gate_oof_predictions_{symbol} artifact produced by
+        GateTrainingStep, extracts the calibrated gate_score column, and aligns it
+        to the length of the calibration returns array.
+        """
+        try:
+            # Require returns to be present in calibration results
+            returns = calibration_results.get('returns')
+            if returns is None:
+                return
+
+            returns_arr = ensure_array(returns)
+            n = len(returns_arr)
+            if n == 0:
+                return
+
+            symbol = config.get('symbol', 'ETHUSDT')
+            exchange = config.get('exchange', 'binance')
+            timeframe = config.get('timeframe', '15m')
+            direction = config.get('direction', 'long')
+
+            artifact_name = f"gate_oof_predictions_{symbol}"
+            tprint_info(f"🔎 Attempting to load gate OOF predictions for calibration: {artifact_name}")
+
+            context = {
+                'symbol': symbol,
+                'exchange': exchange,
+                'timeframe': timeframe,
+                'direction': direction,
+                # GateTrainingStep runs under the analyst model
+                'model': 'analyst',
+                'step_name': 'gate_training_step',
+            }
+
+            try:
+                gate_oof = self.artifact_router.load(
+                    artifact_name=artifact_name,
+                    artifact_type='data',
+                    data_category='predictions',
+                    context=context,
+                )
+            except FileNotFoundError:
+                tprint_warning(
+                    f"⚠️ gate_oof_predictions artifact not found for {symbol}; skipping gate-aware calibration augmentation"
+                )
+                return
+            except Exception as e:
+                self.logger.warning(f"Gate OOF artifact load failed: {e}")
+                return
+
+            if gate_oof is None or not isinstance(gate_oof, pd.DataFrame):
+                return
+            if 'gate_score' not in gate_oof.columns:
+                tprint_warning("⚠️ gate_oof_predictions artifact missing 'gate_score' column; skipping gate augmentation")
+                return
+
+            # Extract calibrated probabilities and align to calibration returns length
+            gate_scores = (
+                gate_oof['gate_score']
+                .astype(float)
+                .replace([np.inf, -np.inf], np.nan)
+                .fillna(1.0)
+                .values
+            )
+
+            if len(gate_scores) == 0:
+                return
+
+            if len(gate_scores) >= n:
+                aligned = gate_scores[-n:]
+            else:
+                # Pad missing history with neutral (no gating) probability 1.0
+                aligned = np.ones(n, dtype=float)
+                aligned[-len(gate_scores):] = gate_scores
+
+            aligned = np.clip(aligned, 0.0, 1.0)
+            calibration_results['gate_probabilities'] = aligned
+
+            tprint_info(
+                f"✅ Attached gate_probabilities to calibration results (len={len(aligned)})"
+            )
+
+        except Exception as e:
+            self.logger.warning(f"Error attaching gate probabilities: {e}")
 
     async def _load_previous_results(self, symbol: str, exchange: str, config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """

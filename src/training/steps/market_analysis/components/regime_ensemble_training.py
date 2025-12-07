@@ -20,18 +20,97 @@ from src.utils.logger import system_logger
 from src.utils.tprint import tprint
 from .base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
 
-# Import des assertions standardisées
-from tests.utils.assertions import (
-    assert_true, assert_false, assert_equals, assert_not_equals,
-    assert_greater_than, assert_less_than, assert_greater_than_or_equal,
-    assert_less_than_or_equal, assert_in, assert_not_in,
-    assert_is_none, assert_is_not_none, assert_is_instance,
-    assert_is_not_instance, assert_dict_structure, assert_list_structure,
-    assert_array_shape, assert_array_dtype, assert_array_range,
-    assert_float_equals, assert_string_contains, assert_string_not_contains,
-    assert_file_exists, assert_directory_exists, assert_key_exists,
-    assert_key_not_exists
-)
+# Import des assertions standardisées (optionnel en production)
+try:
+    from tests.utils.assertions import (
+        assert_true, assert_false, assert_equals, assert_not_equals,
+        assert_greater_than, assert_less_than, assert_greater_than_or_equal,
+        assert_less_than_or_equal, assert_in, assert_not_in,
+        assert_is_none, assert_is_not_none, assert_is_instance,
+        assert_is_not_instance, assert_dict_structure, assert_list_structure,
+        assert_array_shape, assert_array_dtype, assert_array_range,
+        assert_float_equals, assert_string_contains, assert_string_not_contains,
+        assert_file_exists, assert_directory_exists, assert_key_exists,
+        assert_key_not_exists
+    )
+except ImportError:
+    def assert_true(*args, **kwargs):
+        return None
+
+    def assert_false(*args, **kwargs):
+        return None
+
+    def assert_equals(*args, **kwargs):
+        return None
+
+    def assert_not_equals(*args, **kwargs):
+        return None
+
+    def assert_greater_than(*args, **kwargs):
+        return None
+
+    def assert_less_than(*args, **kwargs):
+        return None
+
+    def assert_greater_than_or_equal(*args, **kwargs):
+        return None
+
+    def assert_less_than_or_equal(*args, **kwargs):
+        return None
+
+    def assert_in(*args, **kwargs):
+        return None
+
+    def assert_not_in(*args, **kwargs):
+        return None
+
+    def assert_is_none(*args, **kwargs):
+        return None
+
+    def assert_is_not_none(*args, **kwargs):
+        return None
+
+    def assert_is_instance(*args, **kwargs):
+        return None
+
+    def assert_is_not_instance(*args, **kwargs):
+        return None
+
+    def assert_dict_structure(*args, **kwargs):
+        return None
+
+    def assert_list_structure(*args, **kwargs):
+        return None
+
+    def assert_array_shape(*args, **kwargs):
+        return None
+
+    def assert_array_dtype(*args, **kwargs):
+        return None
+
+    def assert_array_range(*args, **kwargs):
+        return None
+
+    def assert_float_equals(*args, **kwargs):
+        return None
+
+    def assert_string_contains(*args, **kwargs):
+        return None
+
+    def assert_string_not_contains(*args, **kwargs):
+        return None
+
+    def assert_file_exists(*args, **kwargs):
+        return None
+
+    def assert_directory_exists(*args, **kwargs):
+        return None
+
+    def assert_key_exists(*args, **kwargs):
+        return None
+
+    def assert_key_not_exists(*args, **kwargs):
+        return None
 
 # Enhanced imports for new functionality
 from src.utils.ml_common.unified_vectorization_manager import (

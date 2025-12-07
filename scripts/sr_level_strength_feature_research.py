@@ -69,6 +69,22 @@ try:  # Optional dependency for explicit probability calibration
 except ImportError:  # pragma: no cover - optional at runtime
     IsotonicRegression = None  # type: ignore
 
+try:
+    from sklearn.linear_model import LogisticRegression  # type: ignore
+except ImportError:  # pragma: no cover - optional at runtime
+    LogisticRegression = None  # type: ignore
+
+try:
+    from sklearn.calibration import calibration_curve  # type: ignore
+except ImportError:  # pragma: no cover - optional at runtime
+    calibration_curve = None  # type: ignore
+
+try:
+    import matplotlib.pyplot as plt  # type: ignore
+except ImportError:  # pragma: no cover - optional at runtime
+    plt = None  # type: ignore
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Research S/R level strength and push features",
@@ -146,6 +162,30 @@ def parse_args() -> argparse.Namespace:
             "Relative move through the level required to count as a break "
             "in path-aware bounce/break labeling."
         ),
+    )
+
+    parser.add_argument(
+        "--calibration-plots",
+        action="store_true",
+        help="Generate calibration curve plots for strong/weak classifier (requires matplotlib & sklearn)",
+    )
+    parser.add_argument(
+        "--calibration-plot-dir",
+        type=str,
+        default="analysis_output/sr_level_strength_calibration",
+        help="Directory to save calibration plots when --calibration-plots is enabled",
+    )
+
+    parser.add_argument(
+        "--save-predictions",
+        action="store_true",
+        help="Save test-set prediction frame (df_bt) to CSV",
+    )
+    parser.add_argument(
+        "--predictions-dir",
+        type=str,
+        default="analysis_output/sr_level_strength_predictions",
+        help="Directory to save test-set predictions when --save-predictions is enabled",
     )
 
     return parser.parse_args()
@@ -1023,6 +1063,13 @@ def train_and_report(
     output_features_path: str,
     y_reg_1h: Optional[pd.Series] | None = None,
     y_bb: Optional[pd.Series] | None = None,
+    enable_calibration_plots: bool = False,
+    calibration_plot_dir: Optional[str] | None = None,
+    save_predictions: bool = False,
+    predictions_dir: Optional[str] | None = None,
+    symbol: Optional[str] | None = None,
+    exchange: Optional[str] | None = None,
+    timeframe: Optional[str] | None = None,
 ) -> None:
     """Train simple XGB models and print feature importances and bucketed PnL."""
 
@@ -1194,16 +1241,21 @@ def train_and_report(
     # Bucketed backtest by predicted strength (classifier probabilities)
     # ------------------------------------------------------------------
     tprint_info("Computing bucketed backtest by predicted strong-move probability...")
-    proba_test = clf.predict_proba(X_test.values)[:, 1]
+    proba_test_raw = clf.predict_proba(X_test.values)[:, 1]
+    # Working copy that may be replaced by a calibrated variant
+    proba_test = proba_test_raw.copy()
     # Also compute validation probabilities for calibration
     try:
         proba_val = clf.predict_proba(X_val.values)[:, 1]
     except Exception:  # pragma: no cover - defensive
         proba_val = None
 
+    cal_candidates: Dict[str, Dict[str, Any]] = {}
+    proba_variants: Dict[str, np.ndarray] = {}
+
     # Global calibration diagnostics (uncalibrated)
     try:
-        prob_matrix_raw = np.column_stack([1.0 - proba_test, proba_test])
+        prob_matrix_raw = np.column_stack([1.0 - proba_test_raw, proba_test_raw])
         cal_raw = calculate_calibration_metrics(y_cls_test.values, prob_matrix_raw)
         if cal_raw.get("brier_score") is not None:
             tprint_info(
@@ -1212,15 +1264,20 @@ def train_and_report(
                 f"ECE={cal_raw.get('expected_calibration_error', 0.0):.4f}, "
                 f"quality={cal_raw.get('calibration_quality', 'unknown')}"
             )
+        cal_candidates["raw"] = cal_raw
+        proba_variants["raw"] = proba_test_raw
     except Exception as exc:  # pragma: no cover - defensive
         tprint_warning(f"Failed to compute global calibration metrics: {exc}")
+
+    proba_test_iso: Optional[np.ndarray] | None = None
+    proba_test_platt: Optional[np.ndarray] | None = None
 
     # Optional isotonic regression calibration using validation set
     if IsotonicRegression is not None and proba_val is not None:
         try:
             iso = IsotonicRegression(out_of_bounds="clip", increasing=True)  # type: ignore[call-arg]
             iso.fit(proba_val, y_cls_val.values)
-            proba_test_iso = iso.predict(proba_test)
+            proba_test_iso = iso.predict(proba_test_raw)
             proba_test_iso = np.clip(proba_test_iso, 0.0, 1.0)
             prob_matrix_iso = np.column_stack([1.0 - proba_test_iso, proba_test_iso])
             cal_iso = calculate_calibration_metrics(y_cls_test.values, prob_matrix_iso)
@@ -1231,10 +1288,90 @@ def train_and_report(
                     f"ECE={cal_iso.get('expected_calibration_error', 0.0):.4f}, "
                     f"quality={cal_iso.get('calibration_quality', 'unknown')}"
                 )
+            cal_candidates["isotonic"] = cal_iso
+            proba_variants["isotonic"] = proba_test_iso
         except Exception as exc:  # pragma: no cover - defensive
             tprint_warning(f"Isotonic calibration failed: {exc}")
     elif IsotonicRegression is None:
         tprint_warning("sklearn.isotonic.IsotonicRegression not available; skipping isotonic calibration.")
+
+    # Optional Platt (logistic) calibration using validation set
+    if LogisticRegression is not None and proba_val is not None:
+        try:
+            lr = LogisticRegression(solver="lbfgs")  # type: ignore[call-arg]
+            lr.fit(proba_val.reshape(-1, 1), y_cls_val.values)
+            proba_test_platt = lr.predict_proba(proba_test_raw.reshape(-1, 1))[:, 1]
+            proba_test_platt = np.clip(proba_test_platt, 0.0, 1.0)
+            prob_matrix_platt = np.column_stack([1.0 - proba_test_platt, proba_test_platt])
+            cal_platt = calculate_calibration_metrics(y_cls_test.values, prob_matrix_platt)
+            if cal_platt.get("brier_score") is not None:
+                tprint_info(
+                    "Global classifier calibration (Platt/logistic): "
+                    f"Brier={cal_platt['brier_score']:.4f}, "
+                    f"ECE={cal_platt.get('expected_calibration_error', 0.0):.4f}, "
+                    f"quality={cal_platt.get('calibration_quality', 'unknown')}"
+                )
+            cal_candidates["platt"] = cal_platt
+            proba_variants["platt"] = proba_test_platt
+        except Exception as exc:  # pragma: no cover - defensive
+            tprint_warning(f"Platt calibration failed: {exc}")
+    elif LogisticRegression is None:
+        tprint_warning("sklearn.linear_model.LogisticRegression not available; skipping Platt calibration.")
+
+    # Select best calibration by Brier score
+    best_name = "raw"
+    best_brier = float("inf")
+    for name, metrics in cal_candidates.items():
+        brier = metrics.get("brier_score")
+        if brier is None or not np.isfinite(brier):
+            continue
+        if brier < best_brier:
+            best_brier = brier
+            best_name = name
+
+    proba_test = proba_variants.get(best_name, proba_test_raw)
+    best_metrics = cal_candidates.get(best_name, {})
+    if "brier_score" in best_metrics:
+        tprint_info(
+            f"Using '{best_name}' calibration for downstream analysis: "
+            f"Brier={best_metrics['brier_score']:.4f}, "
+            f"ECE={best_metrics.get('expected_calibration_error', 0.0):.4f}, "
+            f"quality={best_metrics.get('calibration_quality', 'unknown')}"
+        )
+
+    # Optional calibration curve plotting
+    if enable_calibration_plots:
+        if plt is not None and calibration_curve is not None:
+            try:
+                out_dir = Path(calibration_plot_dir or "analysis_output/sr_level_strength_calibration")
+                out_dir.mkdir(parents=True, exist_ok=True)
+                fig, ax = plt.subplots(figsize=(6, 6))
+                for name, probs in [
+                    ("raw", proba_test_raw),
+                    ("isotonic", proba_test_iso),
+                    ("platt", proba_test_platt),
+                ]:
+                    if probs is None:
+                        continue
+                    frac_pos, mean_pred = calibration_curve(
+                        y_cls_test.values, probs, n_bins=10, strategy="uniform"
+                    )
+                    ax.plot(mean_pred, frac_pos, marker="o", label=name)
+
+                ax.plot([0.0, 1.0], [0.0, 1.0], linestyle="--", color="gray", label="perfect")
+                ax.set_xlabel("Predicted probability")
+                ax.set_ylabel("Empirical frequency")
+                ax.set_title("Strong-move classifier calibration")
+                ax.legend()
+
+                plot_path = out_dir / "strong_move_calibration.png"
+                fig.savefig(plot_path, dpi=150, bbox_inches="tight")
+                plt.close(fig)
+                tprint_info(f"Saved calibration curve plot to {plot_path}")
+            except Exception as exc:  # pragma: no cover - defensive
+                tprint_warning(f"Failed to generate calibration plots: {exc}")
+        else:
+            tprint_warning("Calibration plotting requested but matplotlib or sklearn.calibration is not available; skipping plots.")
 
     # Backtest frame
     df_bt = pd.DataFrame(index=X_test.index)
@@ -1243,6 +1380,25 @@ def train_and_report(
     if y_reg_1h is not None:
         y_reg_1h_test = y_reg_1h.loc[X_test.index]
         df_bt["fwd_ret_1h"] = y_reg_1h_test
+
+    # Optional: save full test-set prediction frame
+    if save_predictions:
+        try:
+            out_dir = Path(predictions_dir or "analysis_output/sr_level_strength_predictions")
+            out_dir.mkdir(parents=True, exist_ok=True)
+            name_parts = ["sr_level_strength_predictions"]
+            if symbol:
+                name_parts.append(str(symbol))
+            if exchange:
+                name_parts.append(str(exchange))
+            if timeframe:
+                name_parts.append(str(timeframe))
+            file_name = "_".join(name_parts) + ".csv"
+            out_path = out_dir / file_name
+            df_bt.to_csv(out_path)
+            tprint_info(f"Saved test-set prediction frame to {out_path}")
+        except Exception as exc:  # pragma: no cover - defensive
+            tprint_warning(f"Failed to save predictions to CSV: {exc}")
 
     # Carry over side flags for side-specific analysis on the test set
     if "is_support" in X.columns:
@@ -2098,7 +2254,21 @@ def main() -> None:
         break_tolerance_pct=args.break_tolerance_pct,
     )
 
-    train_and_report(features, y_reg, y_cls, args.output_features, y_reg_1h=y_reg_1h, y_bb=y_bb)
+    train_and_report(
+        features,
+        y_reg,
+        y_cls,
+        args.output_features,
+        y_reg_1h=y_reg_1h,
+        y_bb=y_bb,
+        enable_calibration_plots=getattr(args, "calibration_plots", False),
+        calibration_plot_dir=getattr(args, "calibration_plot_dir", None),
+        save_predictions=getattr(args, "save_predictions", False),
+        predictions_dir=getattr(args, "predictions_dir", None),
+        symbol=args.symbol,
+        exchange=args.exchange,
+        timeframe=args.timeframe,
+    )
 
 
 if __name__ == "__main__":

@@ -10,11 +10,16 @@ import pandas as pd
 import joblib
 import os
 from typing import Dict, Any, Optional, Tuple, List
-from sklearn.linear_model import ElasticNetCV
+from sklearn.ensemble import ExtraTreesClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
-from sklearn.model_selection import TimeSeriesSplit
+from sklearn.isotonic import IsotonicRegression
+
+try:
+    import shap
+except ImportError:  # pragma: no cover - optional dependency
+    shap = None
 
 class GateModel:
     """
@@ -53,6 +58,26 @@ class GateModel:
         self.max_iter = self.config.get('max_iter', 5000)
         self.n_jobs = self.config.get('n_jobs', -1)
 
+        # ExtraTrees-based gate configuration ("Dumb Manager")
+        self.n_estimators = self.config.get('n_estimators', 500)
+        self.max_depth = self.config.get('max_depth', 3)
+        self.min_samples_leaf = self.config.get('min_samples_leaf', 0.05)
+        self.max_features = self.config.get('max_features', 'sqrt')
+        self.bootstrap = self.config.get('bootstrap', True)
+        self.class_weight = self.config.get('class_weight', 'balanced')
+        self.random_state = self.config.get('random_state', 42)
+
+        # Optional probability calibration
+        self.calibration_model = None
+        self.calibration_method = self.config.get('calibration_method', 'isotonic')
+
+        self.enable_shap = bool(self.config.get('enable_shap', True))
+        self.max_shap_samples = int(self.config.get('max_shap_samples', 5000))
+        self.shap_explainer = None
+        self.shap_values = None
+        self.shap_feature_importance_ = None
+        self.shap_feature_names_ = None
+
     def _compute_regime_features(self, ohlcv: pd.DataFrame) -> pd.DataFrame:
         """
         Compute self-contained OHLCV-based regime features.
@@ -81,16 +106,17 @@ class GateModel:
         # 1. Volatility Features
         # Realized Volatility (Short & Med)
         features['rv_short'] = log_ret.rolling(window=12).std() * np.sqrt(12)
-        features['rv_med'] = log_ret.rolling(window=48).std() * np.sqrt(48)
+        rv_med = log_ret.rolling(window=48).std() * np.sqrt(48)
+        features['rv_short_over_med'] = features['rv_short'] / (rv_med + 1e-8)
 
         # ATR Proxy (High-Low range / Close) - faster than full ATR
         tr = (high - low) / close
-        features['atr_short'] = tr.rolling(window=12).mean()
+        atr_short = tr.rolling(window=12).mean()
 
         # Bollinger Band Width
         rolling_mean = close.rolling(window=20).mean()
         rolling_std = close.rolling(window=20).std()
-        features['bb_width'] = (4 * rolling_std) / rolling_mean
+        bb_width = (4 * rolling_std) / rolling_mean
 
         # RV Z-Score (Short vs Long)
         rv_long = log_ret.rolling(window=200).std()
@@ -100,7 +126,7 @@ class GateModel:
         # 2. Trend Strength Features
         # Slope of log price (Short)
         log_price = np.log(close)
-        features['slope_short'] = log_price.diff(12) # Simple proxy for slope
+        features['slope_short'] = log_price.diff(12).abs() # Simple proxy for slope
 
         # Trend Strength (ADX-like proxy using High-Low expansion)
         # Proper ADX is complex, using a simplified directional movement proxy
@@ -117,7 +143,7 @@ class GateModel:
         features['adx_proxy'] = dx.rolling(window=14).mean()
 
         # 3. Momentum
-        features['momentum_short'] = close.diff(12) / close.shift(12)
+        features['momentum_short'] = (close.diff(12) / close.shift(12)).abs()
 
         # Signal-to-Noise Ratio (Momentum / Volatility)
         features['snr'] = features['momentum_short'].abs() / (features['rv_short'] + 1e-8)
@@ -161,7 +187,7 @@ class GateModel:
         # Large Candle (Range > 2.5 * ATR)
         candle_range = high - low
         # Use existing atr_short (12 period)
-        is_large_candle = (candle_range > 2.5 * features['atr_short']).astype(int)
+        is_large_candle = (candle_range > 2.5 * atr_short).astype(int)
 
         large_candle_int_idx = int_index.where(is_large_candle == 1).ffill()
         features['time_since_last_large_candle'] = int_index - large_candle_int_idx
@@ -218,9 +244,15 @@ class GateModel:
 
         # Rolling Winrate (last 20 trades)
         tl['rolling_winrate_20'] = tl['win'].rolling(20, min_periods=1).mean()
+        tl['rolling_winrate_5'] = tl['win'].rolling(5, min_periods=1).mean()
+        tl['rolling_winrate_10'] = tl['win'].rolling(10, min_periods=1).mean()
+        tl['rolling_winrate_15'] = tl['win'].rolling(15, min_periods=1).mean()
 
         # Rolling Avg PnL (last 20 trades)
         tl['rolling_avg_pl'] = tl['profit'].rolling(20, min_periods=1).mean()
+        tl['rolling_avg_pl_5'] = tl['profit'].rolling(5, min_periods=1).mean()
+        tl['rolling_avg_pl_10'] = tl['profit'].rolling(10, min_periods=1).mean()
+        tl['rolling_avg_pl_15'] = tl['profit'].rolling(15, min_periods=1).mean()
 
         # Consecutive Losses
         # Vectorized way to count consecutive groups
@@ -233,7 +265,20 @@ class GateModel:
         # A trade's outcome is known at 'exit_time'. So from 'exit_time' onwards, the history features update.
         # We index the trade log by 'exit_time'
 
-        state_df = tl[['exit_time', 'rolling_winrate_20', 'rolling_avg_pl', 'consecutive_losses']].set_index('exit_time')
+        state_df = tl[
+            [
+                'exit_time',
+                'rolling_winrate_20',
+                'rolling_winrate_5',
+                'rolling_winrate_10',
+                'rolling_winrate_15',
+                'rolling_avg_pl',
+                'rolling_avg_pl_5',
+                'rolling_avg_pl_10',
+                'rolling_avg_pl_15',
+                'consecutive_losses',
+            ]
+        ].set_index('exit_time')
 
         # Remove duplicate index (multiple trades exiting same time), keep last
         state_df = state_df[~state_df.index.duplicated(keep='last')]
@@ -244,11 +289,23 @@ class GateModel:
 
         # Fill NaNs (before first trade)
         aligned_state['rolling_winrate_20'] = aligned_state['rolling_winrate_20'].fillna(0.5)
+        aligned_state['rolling_winrate_5'] = aligned_state['rolling_winrate_5'].fillna(0.5)
+        aligned_state['rolling_winrate_10'] = aligned_state['rolling_winrate_10'].fillna(0.5)
+        aligned_state['rolling_winrate_15'] = aligned_state['rolling_winrate_15'].fillna(0.5)
         aligned_state['rolling_avg_pl'] = aligned_state['rolling_avg_pl'].fillna(0.0)
+        aligned_state['rolling_avg_pl_5'] = aligned_state['rolling_avg_pl_5'].fillna(0.0)
+        aligned_state['rolling_avg_pl_10'] = aligned_state['rolling_avg_pl_10'].fillna(0.0)
+        aligned_state['rolling_avg_pl_15'] = aligned_state['rolling_avg_pl_15'].fillna(0.0)
         aligned_state['consecutive_losses'] = aligned_state['consecutive_losses'].fillna(0)
 
         features['rolling_winrate_20'] = aligned_state['rolling_winrate_20']
+        features['rolling_winrate_5'] = aligned_state['rolling_winrate_5']
+        features['rolling_winrate_10'] = aligned_state['rolling_winrate_10']
+        features['rolling_winrate_15'] = aligned_state['rolling_winrate_15']
         features['rolling_avg_pl'] = aligned_state['rolling_avg_pl']
+        features['rolling_avg_pl_5'] = aligned_state['rolling_avg_pl_5']
+        features['rolling_avg_pl_10'] = aligned_state['rolling_avg_pl_10']
+        features['rolling_avg_pl_15'] = aligned_state['rolling_avg_pl_15']
         features['consecutive_losses'] = aligned_state['consecutive_losses']
 
         # 3. Time-based features (computed directly on timeline)
@@ -297,7 +354,7 @@ class GateModel:
 
         return features
 
-    def prepare_features(self, ohlcv: pd.DataFrame, trade_log: pd.DataFrame) -> pd.DataFrame:
+    def prepare_features(self, ohlcv: pd.DataFrame, trade_log: pd.DataFrame, preds: Optional[pd.Series] = None, base_model_preds: Optional[pd.DataFrame] = None) -> pd.DataFrame:
         """
         Compute and combine all features.
 
@@ -311,7 +368,37 @@ class GateModel:
         regime_feats = self._compute_regime_features(ohlcv)
         history_feats = self._compute_trade_history_features(ohlcv, trade_log)
 
-        X = pd.concat([regime_feats, history_feats], axis=1)
+        feature_blocks: List[pd.DataFrame] = [regime_feats, history_feats]
+
+        if preds is not None:
+            preds_series = preds
+            if isinstance(preds_series, pd.DataFrame):
+                preds_series = preds_series.iloc[:, 0]
+            preds_series = preds_series.astype(float)
+            preds_aligned = preds_series.reindex(ohlcv.index)
+
+            analyst_feats = pd.DataFrame(
+                {
+                    'analyst_prediction': preds_aligned,
+                },
+                index=ohlcv.index,
+            )
+            feature_blocks.append(analyst_feats)
+
+        if base_model_preds is not None:
+            try:
+                numeric_preds = base_model_preds.select_dtypes(include=[np.number])
+                if isinstance(numeric_preds, pd.DataFrame) and numeric_preds.shape[1] > 0:
+                    aligned_numeric = numeric_preds.reindex(ohlcv.index)
+                    disagreement_feats = pd.DataFrame(index=ohlcv.index)
+                    disagreement_feats['base_pred_mean'] = aligned_numeric.mean(axis=1)
+                    disagreement_feats['base_pred_std'] = aligned_numeric.std(axis=1)
+                    disagreement_feats['base_pred_range'] = aligned_numeric.max(axis=1) - aligned_numeric.min(axis=1)
+                    feature_blocks.append(disagreement_feats)
+            except Exception:
+                pass
+
+        X = pd.concat(feature_blocks, axis=1)
 
         # Save feature names
         self.feature_names = X.columns.tolist()
@@ -320,49 +407,144 @@ class GateModel:
 
     def train(self, X: pd.DataFrame, y: pd.Series, sample_weight: Optional[pd.Series] = None):
         """
-        Train the Gate Model (Regression).
+        Train the Gate Model.
 
         Args:
             X: Feature DataFrame.
-            y: Target Series (Continuous PnL/Return).
+            y: Target labels (e.g., binary trade outcomes).
             sample_weight: Optional sample weights.
         """
-        # Pipeline: Impute -> Scale -> ElasticNetCV
         self.pipeline = Pipeline([
-            ('imputer', SimpleImputer(strategy='median')), # Handle NaNs from rolling windows
-            ('scaler', StandardScaler()),                  # Essential for ElasticNet
-            ('reg', ElasticNetCV(
-                l1_ratio=self.l1_ratios,
-                cv=TimeSeriesSplit(n_splits=self.cv_splits),
-                max_iter=self.max_iter,
+            ('imputer', SimpleImputer(strategy='median')),
+            ('scaler', StandardScaler()),
+            ('model', ExtraTreesClassifier(
+                n_estimators=self.n_estimators,
+                max_depth=self.max_depth,
+                min_samples_leaf=self.min_samples_leaf,
+                max_features=self.max_features,
+                bootstrap=self.bootstrap,
+                class_weight=self.class_weight,
                 n_jobs=self.n_jobs,
-                random_state=42
-            ))
+                random_state=self.random_state,
+            )),
         ])
 
-        print(f"Training GateModel (Regression) with {X.shape[0]} samples and {X.shape[1]} features...")
-        self.pipeline.fit(X, y, reg__sample_weight=sample_weight)
+        print(f"Training GateModel (ExtraTreesClassifier) with {X.shape[0]} samples and {X.shape[1]} features...")
 
-        # Log coefficients
-        reg = self.pipeline.named_steps['reg']
-        best_l1 = reg.l1_ratio_
-        best_alpha = reg.alpha_
-        print(f"Best L1 Ratio: {best_l1}, Best Alpha: {best_alpha}")
+        fit_kwargs: Dict[str, Any] = {}
+        if sample_weight is not None:
+            fit_kwargs['model__sample_weight'] = sample_weight
 
-        # Check sparsity
-        coefs = reg.coef_.flatten()
-        n_zero = np.sum(coefs == 0)
-        print(f"Sparsity: {n_zero}/{len(coefs)} features set to zero")
+        self.pipeline.fit(X, y, **fit_kwargs)
+
+        model = self.pipeline.named_steps['model']
+        if hasattr(model, 'feature_importances_'):
+            importances = model.feature_importances_
+            n_nonzero = int(np.sum(importances > 0))
+            print(f"Trained ExtraTrees gate; non-zero feature importances: {n_nonzero}/{len(importances)}")
+
+        if self.enable_shap and shap is not None:
+            try:
+                imputer = self.pipeline.named_steps.get('imputer')
+                scaler = self.pipeline.named_steps.get('scaler')
+
+                if isinstance(X, pd.DataFrame):
+                    X_array = X.values
+                    feature_names = X.columns.tolist()
+                else:
+                    X_array = np.asarray(X)
+                    feature_names = [f"f{i}" for i in range(X_array.shape[1])]
+
+                self.shap_feature_names_ = feature_names
+
+                if imputer is not None:
+                    X_array = imputer.transform(X_array)
+                if scaler is not None:
+                    X_array = scaler.transform(X_array)
+
+                n_samples = X_array.shape[0]
+                max_samples = max(1, int(self.max_shap_samples))
+                if n_samples > max_samples:
+                    rng = np.random.RandomState(self.random_state)
+                    idx = rng.choice(n_samples, size=max_samples, replace=False)
+                    X_shap = X_array[idx]
+                else:
+                    X_shap = X_array
+
+                explainer = shap.TreeExplainer(model)
+                shap_values = explainer.shap_values(X_shap)
+
+                self.shap_explainer = explainer
+                self.shap_values = shap_values
+
+                if isinstance(shap_values, list) and len(shap_values) >= 2:
+                    sv = shap_values[1]
+                else:
+                    sv = shap_values
+
+                mean_abs_shap = np.mean(np.abs(sv), axis=0)
+                self.shap_feature_importance_ = mean_abs_shap
+
+                order = np.argsort(mean_abs_shap)[::-1]
+                top_k = min(10, len(order))
+                print("Top SHAP features (by mean |SHAP|):")
+                for i in order[:top_k]:
+                    print(f"  {feature_names[i]}: {mean_abs_shap[i]:.6f}")
+            except Exception as e:
+                print(f"SHAP computation failed: {e}")
+
+    def predict_raw_score(self, X: pd.DataFrame) -> np.ndarray:
+        """Predict uncalibrated gate score from the underlying classifier."""
+        if self.pipeline is None:
+            raise ValueError("Model not trained yet.")
+        if hasattr(self.pipeline, 'predict_proba'):
+            probs = self.pipeline.predict_proba(X)
+            if probs.ndim == 2 and probs.shape[1] >= 2:
+                return probs[:, 1]
+            return probs.ravel()
+        return self.pipeline.predict(X)
+
+    def fit_calibrator(self, X_val: pd.DataFrame, y_val: pd.Series) -> None:
+        """Fit optional probability calibration model on a validation window."""
+        if self.pipeline is None:
+            raise ValueError("Model not trained yet.")
+        if X_val is None or y_val is None or len(X_val) == 0:
+            return
+
+        y_array = np.asarray(y_val).ravel()
+        # Need at least two classes to calibrate
+        if np.unique(y_array).size < 2:
+            return
+
+        try:
+            raw_scores = self.predict_raw_score(X_val)
+        except Exception:
+            return
+
+        method = str(self.calibration_method).lower()
+        # For now, support isotonic regression; other values fall back to isotonic
+        if method not in ("isotonic", "isotonic_regression"):
+            method = "isotonic"
+
+        try:
+            calibrator = IsotonicRegression(out_of_bounds="clip")
+            calibrator.fit(raw_scores, y_array)
+            self.calibration_model = calibrator
+        except Exception:
+            # If calibration fails, fall back to raw scores
+            self.calibration_model = None
 
     def calibrate_threshold(self, X: pd.DataFrame, percentile: int = 25):
         """Calibrate the gating threshold based on predicted PnL distribution.
 
         Logic:
         1) If ``min_predicted_pnl`` is in config, use that (e.g., 0.0 for breakeven).
-        2) Else, if ``target_coverage`` is set (e.g. 0.75), we set threshold to the
+        2) Else, if ``min_win_probability`` is set (e.g. 0.5), we set threshold to this.
+        3) Else, if ``target_coverage`` is set (e.g. 0.75), we set threshold to the
            corresponding quantile (25th percentile) to block the bottom 25%.
-        3) Fallback to ``percentile`` arg (default 25).
+        4) Fallback to ``percentile`` arg (default 25).
         """
+
         if self.pipeline is None:
             raise ValueError("Model not trained yet.")
 
@@ -375,6 +557,16 @@ class GateModel:
             print(
                 f"Threshold set from min_predicted_pnl={self.threshold:.6f} "
                 "(blocking regions where predicted PnL < this)."
+            )
+            return
+
+        # 1b) Direct probability threshold on predicted win probability
+        min_win_prob = self.config.get('min_win_probability', None)
+        if isinstance(min_win_prob, (int, float)):
+            self.threshold = float(min_win_prob)
+            print(
+                f"Threshold set from min_win_probability={self.threshold:.6f} "
+                "(blocking trades with predicted win probability below this)."
             )
             return
 
@@ -400,10 +592,17 @@ class GateModel:
         print(f"Threshold calibrated at {calib_pct:.1f}th percentile: {self.threshold:.6f}")
 
     def predict_score(self, X: pd.DataFrame) -> np.ndarray:
-        """Predict expected PnL (continuous score)."""
-        if self.pipeline is None:
-            raise ValueError("Model not trained yet.")
-        return self.pipeline.predict(X)
+        """Predict continuous gate score (e.g., probability of accepting a trade)."""
+        raw_scores = self.predict_raw_score(X)
+
+        if self.calibration_model is not None:
+            try:
+                calibrated = self.calibration_model.predict(raw_scores)
+                return np.clip(calibrated, 0.0, 1.0)
+            except Exception:
+                return raw_scores
+
+        return raw_scores
 
     def predict(self, X: pd.DataFrame) -> np.ndarray:
         """Predict binary decision: 1 (Trade) if score >= threshold, else 0 (Block)."""

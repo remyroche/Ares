@@ -1099,14 +1099,20 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         min_rows_threshold = 20000
 
         if len(features) < min_rows_threshold:
-            tprint_info(f"📊 Dataset size ({len(features)}) < threshold ({min_rows_threshold}); skipping subsampling")
+            tprint_info(
+                f"📊 Dataset size ({len(features)}) < threshold ({min_rows_threshold}); "
+                "skipping subsampling for final selection"
+            )
             return features, targets
 
         try:
-            # Ensure index is datetime-like for time-based slicing
+            # Prefer time-based subsampling when index is a DatetimeIndex
             if not isinstance(features.index, pd.DatetimeIndex):
                 # Fallback to row-based slicing if no datetime index
-                tprint_warning("⚠️ Features index is not DatetimeIndex; falling back to row-based subsampling")
+                tprint_warning(
+                    "⚠️ Features index is not DatetimeIndex; "
+                    "falling back to row-based subsampling for final selection"
+                )
                 total_rows = len(features)
                 rows_per_day = 96  # approx 15m bars
                 selection_window_rows = selection_window_days * rows_per_day
@@ -1117,24 +1123,34 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
                 targets_window = targets.iloc[start_idx:]
 
                 # Split into segments
-                segment_size = len(features_window) // subsample_count
+                segment_size = max(1, len(features_window) // subsample_count)
                 subsample_size = subsample_days * rows_per_day
 
-                indices_to_keep = []
+                indices_to_keep: List[int] = []
                 for i in range(subsample_count):
                     seg_start = i * segment_size
-                    seg_end = (i + 1) * segment_size
+                    seg_end = min(len(features_window), (i + 1) * segment_size)
+                    if seg_start >= seg_end:
+                        continue
                     # Take last chunk of segment
                     chunk_start = max(seg_start, seg_end - subsample_size)
-                    indices_to_keep.extend(range(start_idx + chunk_start, start_idx + seg_end))
+                    indices_to_keep.extend(
+                        range(start_idx + chunk_start, start_idx + seg_end)
+                    )
 
                 # Ensure unique and sorted
-                indices_to_keep = sorted(list(set(indices_to_keep)))
+                indices_to_keep = sorted(set(indices_to_keep))
+                if not indices_to_keep:
+                    return features, targets
 
                 sub_feats = features.iloc[indices_to_keep]
                 sub_targs = targets.iloc[indices_to_keep]
 
-                tprint_info(f"📊 Row-based subsampling: {len(features)} -> {len(sub_feats)} rows ({len(indices_to_keep)/len(features):.1%})")
+                tprint_info(
+                    "📊 Row-based subsampling (final FS): "
+                    f"{len(features)} -> {len(sub_feats)} rows "
+                    f"({len(indices_to_keep)/len(features):.1%})"
+                )
                 return sub_feats, sub_targs
 
             # Time-based slicing
@@ -1144,56 +1160,74 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
             # Slice to selection window
             mask_window = (features.index >= start_ts) & (features.index <= end_ts)
             features_window = features.loc[mask_window]
+            targets_window = targets.loc[mask_window]
 
-            if len(features_window) == 0:
-                tprint_warning("⚠️ Selection window empty; using full dataset")
+            if features_window.empty:
+                tprint_warning(
+                    "⚠️ Selection window for final FS empty; using full dataset"
+                )
                 return features, targets
 
-            # Divide window into segments
-            window_duration = features_window.index.max() - features_window.index.min()
+            window_duration = (
+                features_window.index.max() - features_window.index.min()
+            )
+            if subsample_count <= 0 or window_duration <= pd.Timedelta(0):
+                return features_window, targets_window
+
             segment_duration = window_duration / subsample_count
             subsample_duration = pd.Timedelta(days=subsample_days)
 
-            chunks_features = []
-            chunks_targets = []
+            chunks_features: List[pd.DataFrame] = []
+            chunks_targets: List[pd.DataFrame] = []
 
-            tprint_info(f"📊 Subsampling from last {selection_window_days} days (window: {start_ts} to {end_ts})")
+            tprint_info(
+                "📊 Subsampling for final FS from last "
+                f"{selection_window_days} days (window: {start_ts} to {end_ts})"
+            )
 
             for i in range(subsample_count):
-                seg_start_ts = features_window.index.min() + (i * segment_duration)
+                seg_start_ts = features_window.index.min() + i * segment_duration
                 seg_end_ts = seg_start_ts + segment_duration
 
                 # Define subsample range: [segment_end - subsample_days, segment_end]
                 sub_end_ts = seg_end_ts
                 sub_start_ts = max(seg_start_ts, sub_end_ts - subsample_duration)
 
-                mask_sub = (features.index >= sub_start_ts) & (features.index < sub_end_ts)
-
+                mask_sub = (features.index >= sub_start_ts) & (
+                    features.index < sub_end_ts
+                )
                 chunk_f = features.loc[mask_sub]
                 chunk_t = targets.loc[mask_sub]
 
-                if len(chunk_f) > 0:
+                if not chunk_f.empty:
                     chunks_features.append(chunk_f)
                     chunks_targets.append(chunk_t)
 
             if not chunks_features:
-                tprint_warning("⚠️ No chunks generated; using full dataset")
+                tprint_warning(
+                    "⚠️ No chunks generated for final FS subsampling; using full dataset"
+                )
                 return features, targets
 
-            sub_feats = pd.concat(chunks_features)
-            sub_targs = pd.concat(chunks_targets)
+            sub_feats = pd.concat(chunks_features).sort_index()
+            sub_targs = pd.concat(chunks_targets).sort_index()
 
-            # Sort index to maintain temporal order
-            sub_feats = sub_feats.sort_index()
-            sub_targs = sub_targs.sort_index()
-
-            tprint_info(f"📊 Time-based subsampling: {len(features)} -> {len(sub_feats)} rows ({len(sub_feats)/len(features):.1%})")
-            tprint_info(f"   Using {subsample_count} chunks of ~{subsample_days} days from the last {selection_window_days} days")
+            tprint_info(
+                "📊 Time-based subsampling (final FS): "
+                f"{len(features)} -> {len(sub_feats)} rows "
+                f"({len(sub_feats)/len(features):.1%})"
+            )
+            tprint_info(
+                f"   Using {subsample_count} chunks of ~{subsample_days} days "
+                f"from the last {selection_window_days} days"
+            )
 
             return sub_feats, sub_targs
 
         except Exception as e:
-            tprint_error(f"❌ Error in subsampling: {e}; using full dataset")
+            tprint_error(
+                f"❌ Error in final FS subsampling: {e}; using full dataset"
+            )
             return features, targets
 
     def _get_primary_summary_targets(self, config: Dict[str, Any]) -> Optional[pd.DataFrame]:
@@ -2637,7 +2671,7 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         else:
             tprint_warning("⚠️ No cross-timeframe features generated")
             return pd.DataFrame()
-    
+
     async def _phase2_cheap_pruning(
         self,
         variant_features: pd.DataFrame,
@@ -2645,234 +2679,38 @@ class FeatureGenerationInteractionGenerationStep(BaseStep):
         lookback_optimization: pd.DataFrame,
         config: Dict[str, Any],
     ) -> Tuple[pd.DataFrame, Dict[str, Any], pd.DataFrame]:
-        """Phase 2: Feature pruning using 4-stage FeatureSelectionPipeline.
+        """Phase 2: no-op pruning.
 
-        This method replaces the old cheap pruning + MI selection + stability selection
-        with a unified 4-stage evaluation pipeline from FeatureSelectionPipeline.
-        
-        The pipeline performs:
-        - Stage 0: Subsampling (20% stratified by regime)
-        - Stage 1: Fast screening (variance, correlation filters)
-        - Stage 2: Predictive power (IC, MI proxy, IC autocorrelation)
-        - Stage 3: Robustness (walk-forward CV, regime stability)
-        - Stage 4: Final weighted scoring
-        
-        Returns (pruned_features, pruning_stats, targets_df).
+        This step now defers all feature pruning/selection to the dedicated
+        FeatureSelection steps. We keep the full set of columns and only
+        propagate a target DataFrame for downstream interaction discovery.
         """
 
-        # Select target(s) for pruning
-        targets_df = self._get_primary_summary_targets(config)
-        if targets_df is None or targets_df.empty:
-            tprint_error(
-                "❌ Phase 2: No valid meta-label primary training target found in labeled_data "
-                "(expected one of META_LABEL_PRIMARY_TRAINING_TARGETS). "
-                "Ensure feature_generation_meta_labeling_step has been run and its "
-                "labeled_data_{symbol}_{timeframe} artifact is available."
-            )
-            raise RuntimeError(
-                "No valid meta-label primary training target available for Phase 2 pruning"
-            )
-
-        # Infer feature categories
-        try:
-            feature_categories = self._get_feature_categories_from_bank(
-                list(variant_features.columns),
-                lookback_optimization,
-            )
-        except Exception as exc:
-            tprint_warning(
-                f"⚠️ Failed to obtain feature categories from bank: {exc}; "
-                f"falling back to local inference."
-            )
-            feature_categories = {
-                col: self._infer_feature_category(col) for col in variant_features.columns
-            }
+        # Prefer the labeled_data passed into this phase; fall back to the
+        # primary summary targets helper only when necessary.
+        if isinstance(labeled_data, pd.DataFrame) and not labeled_data.empty:
+            targets_df = labeled_data
+        else:
+            try:
+                targets_df = self._get_primary_summary_targets(config)
+            except Exception:
+                targets_df = pd.DataFrame(index=variant_features.index)
 
         initial_feature_count = len(variant_features.columns)
-        tprint_info(f"📊 Phase 2: Pruning {initial_feature_count} features using 4-stage FeatureSelectionPipeline...")
+        stats: Dict[str, Any] = {
+            "method": "no_pruning_pass_through",
+            "initial_features": initial_feature_count,
+            "final_features": initial_feature_count,
+            "reduction_rate": 0.0,
+            "skipped": True,
+            "reason": "Pruning disabled in interaction generation step",
+        }
 
-        # Use FeatureSelectionPipeline for feature pruning (replaces cheap pruning + MI + stability)
-        if FEATURE_SELECTION_PIPELINE_AVAILABLE and FeatureSelectionPipeline is not None:
-            try:
-                # Target ~40-50% reduction, aim for keeping best features
-                # Calculate target features: keep 50-60% for Phase 3 LGBM/SHAP
-                target_feature_count = max(50, int(initial_feature_count * 0.55))
-                
-                tprint_info(f"  📊 Target feature count after pruning: {target_feature_count}")
-                
-                # Configure pipeline for pruning (stricter & lighter for interactions)
-                pipeline_config = EvaluationConfig(
-                    subsample_ratio=0.15,  # 15% subsample for stages 1-2
-                    n_chunks=6,
-                    variance_quantile_threshold=0.25,  # Filter bottom 25% by variance
-                    # Stronger Stage 1 filters to drop more weak interactions early
-                    price_corr_quantile_threshold=0.40,
-                    future_corr_quantile_threshold=0.40,
-                    # Base thresholds (used if quantiles are not set)
-                    ic_tstat_threshold=1.5,
-                    ic_autocorr_threshold=0.0,
-                    mi_proxy_threshold=0.02,
-                    # Quantile-based Stage 2 filtering for interactions
-                    ic_tstat_quantile_threshold=0.60,  # Keep top 40% by IC t-stat
-                    mi_proxy_quantile_threshold=0.60,  # Keep top 40% by MI proxy
-                    # Downsample time for IC computation to reduce cost
-                    ic_downsample_factor=2,
-                    # Softer robustness for interactions: fewer CV splits
-                    n_cv_splits=3,
-                    embargo_bars=1,
-                    # Cheaper redundancy analysis: cap feature count and use simple clustering
-                    max_redundancy_features=200,
-                    use_simple_redundancy_clustering=True,
-                    top_k_per_feature=target_feature_count,  # Return top N features
-                    use_parallel=False,
-                    n_workers=1,
-                    weights={
-                        'ic_tstat': 0.30,
-                        'ic_autocorr': 0.20,
-                        'cv_score': 0.30,
-                        'regime_stability': 0.15,
-                        'mi_proxy': 0.05
-                    }
-                )
-                
-                pipeline = FeatureSelectionPipeline(pipeline_config)
-                
-                # Align features and target
-                target = targets_df[targets_df.columns[0]]
-                features_aligned, target_aligned = _align_for_label_guided_discovery_helper(
-                    variant_features,
-                    target,
-                )
-                
-                if features_aligned.empty or target_aligned.empty:
-                    tprint_warning("  ⚠️ No valid samples after alignment; skipping pipeline pruning")
-                    return variant_features.copy(), {"skipped": True, "reason": "alignment_failed"}, targets_df
-                
-                # Run the 4-stage pipeline with full scores for reporting
-                all_candidates = pipeline.evaluate_features(
-                    features=features_aligned,
-                    target=target_aligned,
-                    target_column_name='close' if 'close' in features_aligned.columns else targets_df.columns[0],
-                    return_all_scores=True  # Get all for CSV export
-                )
-                
-                # Export per-feature metrics to CSV
-                if all_candidates:
-                    try:
-                        csv_path = pipeline.export_feature_metrics_csv(
-                            candidates=all_candidates,
-                            output_dir="outcomes",
-                            prefix="phase2_feature_pruning"
-                        )
-                        tprint_info(f"  📊 Exported feature metrics to: {csv_path}")
-                    except Exception as csv_exc:
-                        tprint_warning(f"  ⚠️ Failed to export CSV: {csv_exc}")
-                
-                # Select top-k candidates
-                candidates = all_candidates[:target_feature_count] if all_candidates else []
-                
-                # Extract selected features
-                if candidates:
-                    selected_features = [c.feature_name for c in candidates]
-                    
-                    # Ensure category coverage: add back missing categories if needed
-                    categories_in_selection = {feature_categories.get(f, 'unknown') for f in selected_features}
-                    all_categories = set(feature_categories.values())
-                    missing_categories = all_categories - categories_in_selection
-                    
-                    if missing_categories:
-                        tprint_info(f"  📊 Adding features to cover missing categories: {missing_categories}")
-                        # Add top-scoring feature from each missing category
-                        all_candidates_scores = {c.feature_name: c.final_score for c in candidates}
-                        # Evaluate remaining features for missing categories
-                        remaining_features = [f for f in variant_features.columns if f not in selected_features]
-                        for cat in missing_categories:
-                            cat_features = [f for f in remaining_features if feature_categories.get(f) == cat]
-                            if cat_features:
-                                # Just add the first one (could improve by scoring)
-                                selected_features.append(cat_features[0])
-                    try:
-                        def _normalize_base_name(name: str) -> str:
-                            base = name
-                            ct_suffixes = [
-                                '_3x_ratio',
-                                '_6x_ratio',
-                                '_9x_ratio',
-                                '_15x_ratio',
-                            ]
-                            for sfx in ct_suffixes:
-                                if base.endswith(sfx):
-                                    base = base[:-len(sfx)]
-                                    break
-                            return self._extract_base_feature_name(base)
+        tprint_info(
+            f"📊 Phase 2: pruning disabled – passing through {initial_feature_count} features unchanged"
+        )
 
-                        selected_set = set(selected_features)
-                        base_to_selected: Dict[str, List[str]] = {}
-                        for f in selected_features:
-                            key = _normalize_base_name(f)
-                            base_to_selected.setdefault(key, []).append(f)
-
-                        max_extra_volnorm = int(config.get("phase2_max_extra_volnorm", 50))
-                        volnorm_added = 0
-                        for col in variant_features.columns:
-                            if "volnorm" not in col:
-                                continue
-                            if col in selected_set:
-                                continue
-                            base_key = _normalize_base_name(col)
-                            if base_key not in base_to_selected:
-                                continue
-                            selected_features.append(col)
-                            selected_set.add(col)
-                            volnorm_added += 1
-                            if volnorm_added >= max_extra_volnorm:
-                                break
-                        if volnorm_added > 0:
-                            tprint_info(f"  📊 Volnorm retention: added {volnorm_added} _volnorm variants to Phase 2 selection")
-                    except Exception as vol_exc:
-                        tprint_warning(f"  ⚠️ Volnorm retention post-processing failed: {vol_exc}")
-                    
-                    # Subset the features
-                    valid_selected = [f for f in selected_features if f in variant_features.columns]
-                    pruned_df = variant_features[valid_selected].copy()
-                    
-                    # Get performance summary
-                    perf_summary = pipeline.get_performance_summary()
-                    
-                    stats = {
-                        "method": "4_stage_feature_selection_pipeline",
-                        "initial_features": initial_feature_count,
-                        "final_features": len(valid_selected),
-                        "reduction_rate": 1.0 - len(valid_selected) / initial_feature_count if initial_feature_count > 0 else 0.0,
-                        "pipeline_time_seconds": perf_summary.get('total_time', 0),
-                        "candidates_per_stage": perf_summary.get('candidates_per_stage', {}),
-                        "stage_times": perf_summary.get('stage_times', {})
-                    }
-                    
-                    tprint_success(f"  ✅ 4-stage pipeline pruning completed: {initial_feature_count} → {len(valid_selected)} features")
-                    tprint_info(f"  📊 Reduction rate: {stats['reduction_rate']:.1%}")
-                    
-                else:
-                    tprint_warning("  ⚠️ No candidates from pipeline, falling back to legacy pruning")
-                    return await self._phase2_cheap_pruning_legacy(
-                        variant_features, labeled_data, lookback_optimization, config,
-                        targets_df, feature_categories
-                    )
-                
-            except Exception as exc:
-                tprint_warning(f"  ⚠️ FeatureSelectionPipeline failed: {exc}; falling back to legacy pruning")
-                return await self._phase2_cheap_pruning_legacy(
-                    variant_features, labeled_data, lookback_optimization, config,
-                    targets_df, feature_categories
-                )
-        else:
-            tprint_warning("  ⚠️ FeatureSelectionPipeline not available; using legacy pruning")
-            return await self._phase2_cheap_pruning_legacy(
-                variant_features, labeled_data, lookback_optimization, config,
-                targets_df, feature_categories
-            )
-
-        return pruned_df, stats, targets_df
+        return variant_features.copy(), stats, targets_df
     
     async def _phase2_cheap_pruning_legacy(
         self,

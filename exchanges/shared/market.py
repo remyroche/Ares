@@ -6,6 +6,12 @@ class MarketMetadataManager:
         # No-op stub for public-only flows
         return None
 
+    async def refresh_instruments(self, *args, **kwargs):
+        return []
+
+    def get_active_instruments(self, *args, **kwargs):
+        return []
+
 class InstrumentManager:
     def __init__(self, *args, **kwargs):
         pass

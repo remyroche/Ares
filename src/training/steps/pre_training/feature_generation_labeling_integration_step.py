@@ -2581,6 +2581,61 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
     def _create_target_dataframe_efficiently(self, market_data, labeling_result, vol_config):
         """Create simplified target DataFrame along with any aligned feature set."""
         features_data: Optional[pd.DataFrame] = None
+        # Nested helper: compute regime-conditional top-quantile labels from scores
+        def _compute_regime_quantile_labels(
+            scores: pd.Series,
+            regimes: pd.Series,
+            top_quantile: float,
+            min_samples_per_regime: int,
+        ) -> pd.Series:
+            labels = pd.Series(np.nan, index=scores.index)
+            try:
+                scores_num = pd.to_numeric(scores, errors="coerce")
+                regimes_series = pd.Series(regimes).astype("object")
+                valid_mask = scores_num.notna() & regimes_series.notna()
+                if not bool(valid_mask.any()):
+                    return labels
+
+                regimes_valid = regimes_series[valid_mask]
+                scores_valid = scores_num[valid_mask]
+                unique_regs = pd.unique(regimes_valid)
+
+                for reg_val in unique_regs:
+                    reg_mask = valid_mask & (regimes_series == reg_val)
+                    if not bool(reg_mask.any()):
+                        continue
+                    idx = scores_num.index[reg_mask]
+                    if len(idx) < int(min_samples_per_regime):
+                        continue
+                    s_reg = scores_num.loc[idx]
+                    if s_reg.empty:
+                        continue
+                    try:
+                        thr = float(s_reg.quantile(top_quantile))
+                    except Exception:
+                        continue
+                    if not np.isfinite(thr):
+                        continue
+                    # Initialize zeros for this regime, then set top-quantile to 1.0
+                    labels.loc[idx] = 0.0
+                    top_idx = s_reg.index[s_reg >= thr]
+                    if len(top_idx) > 0:
+                        labels.loc[top_idx] = 1.0
+                return labels
+            except Exception:
+                return labels
+
+        # Configuration for regime-conditional Teacher labels (optional override)
+        teacher_cfg = {}
+        try:
+            if hasattr(self, "_current_context"):
+                teacher_cfg = self._current_context.get("teacher_label_config", {}) or {}
+        except Exception:
+            teacher_cfg = {}
+        enable_teacher_rcql = bool(teacher_cfg.get("enable_regime_quantile_label", True))
+        teacher_top_q = float(teacher_cfg.get("regime_top_quantile", 0.80))
+        teacher_min_samples_reg = int(teacher_cfg.get("min_samples_per_regime", 200))
+        teacher_regime_col = str(teacher_cfg.get("regime_column", "volatility_regime"))
         try:
             tprint("🐛 DEBUG: _create_target_dataframe_efficiently START", "INFO")
             tprint(f"🐛 DEBUG: market_data shape={market_data.shape}, columns={list(market_data.columns)[:5]}", "INFO")
@@ -2958,6 +3013,87 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
                         target_df['r_multiple'] = pd.to_numeric(meta_aligned['r_multiple'], errors='coerce').astype(np.float32)
                     if 'target_sample_weight' in meta_aligned.columns:
                         target_df['target_sample_weight'] = pd.to_numeric(meta_aligned['target_sample_weight'], errors='coerce').astype(np.float32)
+                    # Directional binary labels from meta-labeling step (if available)
+                    if 'binary_label_long' in meta_aligned.columns:
+                        target_df['binary_label_long'] = meta_aligned['binary_label_long']
+                    if 'binary_label_short' in meta_aligned.columns:
+                        target_df['binary_label_short'] = meta_aligned['binary_label_short']
+
+                    # OPTIONAL: Override unified binary_label using regime-conditional
+                    # quantile labels on Teacher scores (meta_probability), while
+                    # leaving directional binary_label_long/short and regression
+                    # targets untouched.
+                    try:
+                        if enable_teacher_rcql and 'meta_probability' in target_df.columns:
+                            regime_series = None
+                            # Prefer regime labels from features_data if available
+                            if features_data is not None:
+                                if teacher_regime_col in features_data.columns:
+                                    regime_series = features_data[teacher_regime_col].reindex(target_df.index)
+                                elif 'hmm_regime_label_1h' in features_data.columns:
+                                    regime_series = features_data['hmm_regime_label_1h'].reindex(target_df.index)
+                            # Fallback to market_data-based regimes
+                            if regime_series is None:
+                                if teacher_regime_col in market_data.columns:
+                                    regime_series = market_data[teacher_regime_col].reindex(target_df.index)
+                                elif 'hmm_regime_label_1h' in market_data.columns:
+                                    regime_series = market_data['hmm_regime_label_1h'].reindex(target_df.index)
+
+                            if isinstance(regime_series, pd.Series):
+                                base_scores = target_df['meta_probability']
+
+                                # Unified RCQL (rarely used downstream but kept for completeness)
+                                rcql_labels = _compute_regime_quantile_labels(
+                                    scores=base_scores,
+                                    regimes=regime_series,
+                                    top_quantile=teacher_top_q,
+                                    min_samples_per_regime=teacher_min_samples_reg,
+                                )
+                                if isinstance(rcql_labels, pd.Series) and rcql_labels.notna().any():
+                                    target_df['binary_label'] = rcql_labels.astype(np.float32)
+                                    try:
+                                        n_pos = int((rcql_labels == 1.0).sum())
+                                        n_total = int(rcql_labels.notna().sum())
+                                        tprint(
+                                            f"✅ Applied regime-conditional quantile override to binary_label: "
+                                            f"top_q={teacher_top_q:.2f}, min_samples={teacher_min_samples_reg}, "
+                                            f"positives={n_pos}/{n_total}",
+                                            "INFO",
+                                        )
+                                    except Exception:
+                                        pass
+
+                                # Directional RCQL for long-only labels
+                                if 'binary_label_long' in target_df.columns:
+                                    try:
+                                        scores_long = base_scores.where(target_df['binary_label_long'].notna())
+                                        rcql_long = _compute_regime_quantile_labels(
+                                            scores=scores_long,
+                                            regimes=regime_series,
+                                            top_quantile=teacher_top_q,
+                                            min_samples_per_regime=teacher_min_samples_reg,
+                                        )
+                                        if isinstance(rcql_long, pd.Series) and rcql_long.notna().any():
+                                            target_df['binary_label_long'] = rcql_long.astype(np.float32)
+                                    except Exception:
+                                        pass
+
+                                # Directional RCQL for short-only labels
+                                if 'binary_label_short' in target_df.columns:
+                                    try:
+                                        scores_short = base_scores.where(target_df['binary_label_short'].notna())
+                                        rcql_short = _compute_regime_quantile_labels(
+                                            scores=scores_short,
+                                            regimes=regime_series,
+                                            top_quantile=teacher_top_q,
+                                            min_samples_per_regime=teacher_min_samples_reg,
+                                        )
+                                        if isinstance(rcql_short, pd.Series) and rcql_short.notna().any():
+                                            target_df['binary_label_short'] = rcql_short.astype(np.float32)
+                                    except Exception:
+                                        pass
+                    except Exception as rcql_exc:
+                        tprint(f"⚠️ Regime-conditional quantile labeling failed, keeping original binary_label: {rcql_exc}", "WARNING")
             except Exception as e:
                 tprint_warning(f"⚠️ Failed to augment targets with meta-labeling data: {e}")
 

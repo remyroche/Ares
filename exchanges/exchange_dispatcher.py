@@ -41,8 +41,8 @@ class TradingMode(Enum):
 class ExchangeConfig:
     """Exchange configuration."""
     exchange_type: ExchangeType
-    api_key: str
-    api_secret: str
+    api_key: str = ""
+    api_secret: str = ""
     password: Optional[str] = None
     subaccount_id: Optional[str] = None
     use_testnet: bool = True

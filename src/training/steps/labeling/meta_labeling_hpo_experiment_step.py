@@ -20,9 +20,12 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import RandomForestClassifier, BaggingClassifier
+from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.isotonic import IsotonicRegression
 from sklearn.model_selection import TimeSeriesSplit, cross_val_predict
+from sklearn.metrics import roc_auc_score
+from sklearn.inspection import permutation_importance
 import lightgbm as lgb
 
 try:
@@ -32,10 +35,176 @@ except ImportError:
     XGBOOST_AVAILABLE = False
     xgb = None
 
+def smoothed_brier_lgb_objective(y_pred, dtrain):
+    if hasattr(dtrain, "get_label"):
+        y_true = dtrain.get_label()
+    else:
+        y_true = dtrain
+    y_true = np.asarray(y_true, dtype=float).ravel()
+    y_pred = np.asarray(y_pred, dtype=float).ravel()
+    p = 1.0 / (1.0 + np.exp(-y_pred))
+    smoothing_factor = 0.1
+    y_smooth = y_true * (1.0 - smoothing_factor) + (smoothing_factor / 2.0)
+    grad = 2.0 * p * (1.0 - p) * (p - y_smooth)
+    hess = 2.0 * p * (1.0 - p) * (
+        p * (1.0 - p) + (1.0 - 2.0 * p) * (p - y_smooth)
+    )
+    hess = np.maximum(hess, 1e-6)
+    return grad, hess
+
+
+def compute_brier_and_ece(
+    y_true: np.ndarray,
+    p_pred: np.ndarray,
+    n_bins: int = 10,
+) -> Tuple[Optional[float], Optional[float]]:
+    """Compute Brier score and a simple Expected Calibration Error (ECE)."""
+    y = np.asarray(y_true, dtype=float).ravel()
+    p = np.asarray(p_pred, dtype=float).ravel()
+    mask = np.isfinite(y) & np.isfinite(p)
+    if not mask.any():
+        return None, None
+
+    y = y[mask]
+    p = p[mask]
+
+    brier = float(np.mean((p - y) ** 2))
+
+    # ECE via uniform probability bins
+    bin_edges = np.linspace(0.0, 1.0, n_bins + 1)
+    ece = 0.0
+    for i in range(n_bins):
+        lo, hi = bin_edges[i], bin_edges[i + 1]
+        if i == n_bins - 1:
+            idx = (p >= lo) & (p <= hi)
+        else:
+            idx = (p >= lo) & (p < hi)
+        if not idx.any():
+            continue
+        p_bin = p[idx]
+        y_bin = y[idx]
+        bin_frac = float(idx.mean())
+        ece += bin_frac * abs(float(p_bin.mean()) - float(y_bin.mean()))
+
+    return brier, float(ece)
+
 from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_success
 from src.utils.ml_common.get_specialist_models_outputs import get_specialist_models_outputs
+
+
+class TwoStageBaggedMetaModel(BaseEstimator, ClassifierMixin):
+    """Two-stage meta-model: activity gate + bagged directional predictor.
+
+    Stage 1: single LightGBM classifier predicts event activity (non-timeout).
+    Stage 2: bagged LightGBM ensemble predicts direction conditional on activity.
+
+    Labels convention for y:
+        1  -> profit event
+        -1 -> stop event
+        0  -> timeout / inactive
+    """
+
+    def __init__(
+        self,
+        base_params: Optional[Dict[str, Any]] = None,
+        n_bagging: int = 10,
+        bagging_fraction: float = 0.7,
+        random_state: int = 42,
+    ) -> None:
+        self.base_params = {} if base_params is None else dict(base_params)
+        self.n_bagging = int(n_bagging)
+        self.bagging_fraction = float(bagging_fraction)
+        self.random_state = int(random_state)
+
+        self.stage1_model: Optional[lgb.LGBMClassifier] = lgb.LGBMClassifier(**self.base_params)
+        self.stage2_ensemble: Optional[BaggingClassifier] = BaggingClassifier(
+            estimator=lgb.LGBMClassifier(**self.base_params),
+            n_estimators=self.n_bagging,
+            max_samples=self.bagging_fraction,
+            bootstrap=True,
+            n_jobs=-1,
+            random_state=self.random_state,
+        )
+
+    def fit(self, X: Any, y: Any) -> "TwoStageBaggedMetaModel":
+        y_arr = np.asarray(y)
+
+        # Stage 1: activity gate (non-timeout vs timeout)
+        y_activity = (y_arr != 0).astype(int)
+        self.stage1_model.fit(X, y_activity)
+
+        # Stage 2: direction among active events only
+        active_mask = (y_arr != 0)
+        if not np.any(active_mask):
+            self.stage2_ensemble = None
+            return self
+
+        X_dir = X[active_mask]
+        y_dir_raw = y_arr[active_mask]
+
+        # Map profit vs stop to {1, 0}
+        y_dir = (y_dir_raw == 1).astype(int)
+
+        if X_dir.shape[0] > 50 and np.unique(y_dir).size >= 2:
+            self.stage2_ensemble.fit(X_dir, y_dir)
+        else:
+            self.stage2_ensemble = None
+
+        return self
+
+    def predict_proba(self, X: Any) -> np.ndarray:
+        # P(active)
+        p_active = self.stage1_model.predict_proba(X)[:, 1]
+
+        # P(win | active)
+        if self.stage2_ensemble is not None:
+            p_win_conditional = self.stage2_ensemble.predict_proba(X)[:, 1]
+        else:
+            p_win_conditional = np.full(X.shape[0], 0.5, dtype=float)
+
+        final_score = p_active * p_win_conditional
+        proba_1 = final_score
+        proba_0 = 1.0 - proba_1
+        return np.vstack([proba_0, proba_1]).T
+
+def generate_trinary_labels(
+    events_df: pd.DataFrame,
+    outcomes_series: pd.Series,
+    vertical_barrier_col: str = "t1",
+) -> pd.Series:
+    """Map standard triple-barrier outcomes to {1, -1, 0} for two-stage modeling.
+
+    1  = Profit Target Hit
+    -1 = Stop Loss Hit
+    0  = Time Limit Exceeded (Vertical Barrier / timeout)
+
+    Args:
+        events_df: DataFrame with at least a 'ret' column containing realized returns per event.
+        outcomes_series: Binary outcomes (0/1) or similar event labels aligned to events_df.
+        vertical_barrier_col: Placeholder for future use when dynamic vertical barriers are explicit.
+    """
+    # Initialize all events as timeouts (0)
+    y_trinary = pd.Series(index=events_df.index, data=0)
+
+    # 1. Profits: outcome==1
+    mask_profit = (outcomes_series == 1)
+    y_trinary[mask_profit] = 1
+
+    # 2. Among non-profits (outcome==0), distinguish stop vs timeout using returns
+    mask_loss_or_timeout = (outcomes_series == 0)
+
+    if "ret" in events_df.columns:
+        epsilon = 0.0005  # 5 bps buffer for fees/slippage
+        mask_stop = mask_loss_or_timeout & (events_df["ret"] < -epsilon)
+        y_trinary[mask_stop] = -1
+        # Remaining loss/timeout events stay at 0 (timeouts / mild losses)
+    else:
+        raise ValueError("Need 'ret' column to distinguish Stop from Timeout.")
+
+    return y_trinary.astype(int)
+
 
 # Reuse core labeling utilities from the production meta-labeling step
 from src.training.steps.labeling.feature_generation_meta_labeling_step import (
@@ -90,7 +259,7 @@ GENERATE_RECOMMENDED_DIAGNOSTICS: bool = False
 ENABLE_UNDERFIT_DIAGNOSTICS: bool = True
 
 # Multi-stage HPO configuration defaults
-DEFAULT_STAGE_CONFIG = [
+STAGE_CONFIGS: List[OptimizationStage] = [
     {
         "name": "Stage 1 (Screening)",
         "complexity": "fast",
@@ -118,28 +287,151 @@ DEFAULT_STAGE_CONFIG = [
     {
         "name": "Stage 3 (Production Proxy)",
         "complexity": "strong",
-        "n_trials": 20,  # Fewer trials, expensive model
+        "n_trials": 35,  # Slightly more trials for better exploration near production regime
         "top_k_to_pass": 1,
         "model_params": {
             "n_estimators": 300,
             "max_depth": 8,
             "learning_rate": 0.01,
-            "cv_splits": 5,
+            "cv_splits": 4,
         },
     },
     {
         "name": "Stage 4 (Labeling Refinement)",
         "complexity": "strong",
-        "n_trials": 30,
+        "n_trials": 45,
         "top_k_to_pass": 1,
         "model_params": {
             "n_estimators": 300,
             "max_depth": 8,
             "learning_rate": 0.01,
-            "cv_splits": 5,
+            "cv_splits": 4,
         },
     },
 ]
+
+
+def _build_t1_aware_purged_splits_for_events(
+    y: pd.Series,
+    event_durations: Optional[pd.Series],
+    market_index: pd.DatetimeIndex,
+    cv_splits: int,
+    base_horizon_bars: Optional[int] = None,
+) -> List[Tuple[np.ndarray, np.ndarray]]:
+    """Build purged, embargoed K-fold splits using event [t0, t1] windows.
+
+    This helper operates in *event space* (one row per labeled event) and
+    removes from the training set any events whose [t0, t1] window overlaps
+    the validation window extended by +/- horizon.
+
+    Args:
+        y: Clean label series indexed by event timestamps (no NaNs).
+        event_durations: Per-event durations in bars (same index as
+            ``market_index``). When missing, ``base_horizon_bars`` is used.
+        market_index: Full market_data index used to map bar positions to
+            timestamps.
+        cv_splits: Number of folds.
+        base_horizon_bars: Fallback vertical barrier in bars when event
+            durations are missing.
+
+    Returns:
+        List of (train_idx, val_idx) index arrays in event space.
+    """
+
+    n_samples = len(y)
+    if cv_splits < 2 or n_samples < cv_splits * 2:
+        # Fallback: naive sequential splits without purging when data is
+        # too small to support robust purged CV.
+        fold_sizes = np.full(cv_splits, n_samples // cv_splits, dtype=int)
+        fold_sizes[: n_samples % cv_splits] += 1
+        splits: List[Tuple[np.ndarray, np.ndarray]] = []
+        current = 0
+        for fold_size in fold_sizes:
+            start, stop = current, current + fold_size
+            val_idx = np.arange(start, stop)
+            train_mask = np.ones(n_samples, dtype=bool)
+            train_mask[val_idx] = False
+            train_idx = np.nonzero(train_mask)[0]
+            splits.append((train_idx, val_idx))
+            current = stop
+        return splits
+
+    labels_index = y.index
+
+    # Map event timestamps to integer positions in the full market index.
+    pos = market_index.get_indexer(labels_index)
+    valid_pos_mask = pos >= 0
+    if not np.all(valid_pos_mask):
+        # Drop any events that cannot be mapped back to market_data.
+        labels_index = labels_index[valid_pos_mask]
+        y = y.iloc[valid_pos_mask]
+        pos = pos[valid_pos_mask]
+        n_samples = len(labels_index)
+        if cv_splits < 2 or n_samples < cv_splits * 2:
+            fold_sizes = np.full(cv_splits, n_samples // cv_splits, dtype=int)
+            fold_sizes[: n_samples % cv_splits] += 1
+            splits = []
+            current = 0
+            for fold_size in fold_sizes:
+                start, stop = current, current + fold_size
+                val_idx = np.arange(start, stop)
+                train_mask = np.ones(n_samples, dtype=bool)
+                train_mask[val_idx] = False
+                train_idx = np.nonzero(train_mask)[0]
+                splits.append((train_idx, val_idx))
+                current = stop
+            return splits
+
+    # Derive per-event durations in bars.
+    if event_durations is not None:
+        dur = event_durations.reindex(labels_index).fillna(base_horizon_bars or 1)
+    else:
+        dur = pd.Series(base_horizon_bars or 1, index=labels_index)
+    dur = dur.astype(int).clip(lower=1)
+
+    end_pos = pos + dur.to_numpy()
+    end_pos = np.clip(end_pos, 0, len(market_index) - 1)
+
+    t0_times = market_index[pos]
+    t1_times = market_index[end_pos]
+
+    # Approximate single-bar delta from market_index; fallback to 15m.
+    if len(market_index) >= 2:
+        bar_delta = market_index[1] - market_index[0]
+    else:
+        bar_delta = pd.Timedelta(minutes=15)
+
+    horizon_bars = max(int(base_horizon_bars or 1), 1)
+    horizon_delta = bar_delta * horizon_bars
+    purge_delta = horizon_delta
+    embargo_delta = horizon_delta
+
+    # Sequential folds in event order.
+    fold_sizes = np.full(cv_splits, n_samples // cv_splits, dtype=int)
+    fold_sizes[: n_samples % cv_splits] += 1
+
+    splits: List[Tuple[np.ndarray, np.ndarray]] = []
+    current = 0
+    for fold_size in fold_sizes:
+        start, stop = current, current + fold_size
+        val_idx = np.arange(start, stop)
+
+        val_start_time = t0_times[start]
+        val_end_time = t0_times[stop - 1]
+        window_start = val_start_time - purge_delta
+        window_end = val_end_time + embargo_delta
+
+        # Train events whose [t0, t1] overlaps the extended validation
+        # window are removed from training.
+        overlap = (t1_times >= window_start) & (t0_times <= window_end)
+        train_mask = ~overlap
+        train_mask[val_idx] = False
+        train_idx = np.nonzero(train_mask)[0]
+
+        splits.append((train_idx, val_idx))
+        current = stop
+
+    return splits
 
 
 def compute_learnability_with_calibration(
@@ -151,7 +443,11 @@ def compute_learnability_with_calibration(
     time_aware_cv: bool = True,
     use_ensemble: bool = False,
     signal_strength_scale_max: float = 1.5,
-) -> Tuple[float, float, np.ndarray, Optional[IsotonicRegression], np.ndarray]:
+    event_durations: Optional[pd.Series] = None,
+    market_index: Optional[pd.DatetimeIndex] = None,
+    base_horizon_bars: Optional[int] = None,
+    use_smoothed_brier_objective_lgbm: bool = False,
+) -> Tuple[float, float, np.ndarray, Optional[IsotonicRegression], np.ndarray, np.ndarray]:
     """Compute learnability score with isotonic calibration for accurate P&L estimation.
 
     Unlike the basic compute_learnability_score, this function:
@@ -169,57 +465,94 @@ def compute_learnability_with_calibration(
         use_ensemble: Whether to use ensemble of models (for strong complexity)
 
     Returns:
-        Tuple of (learnability_score, mean_auc, calibrated_probabilities, isotonic_regressor)
+        Tuple of (learnability_score, mean_auc, calibrated_probabilities, isotonic_regressor, fold_aucs_array, oof_probs_full)
     """
     from sklearn.model_selection import cross_val_score
     from sklearn.metrics import roc_auc_score
+    from sklearn.linear_model import LogisticRegression
 
     # Remove NaN labels
     valid_mask = ~y.isna()
     X_num = X.select_dtypes(include=[np.number]) if isinstance(X, pd.DataFrame) else X
     if isinstance(X_num, pd.DataFrame) and X_num.empty:
-        return 0.0, 0.5, np.array([]), None, np.array([])
+        return 0.0, 0.5, np.array([]), None, np.array([]), np.array([])
 
     X_clean = X_num[valid_mask].fillna(0)
+    if isinstance(X_clean, pd.DataFrame) and X_clean.shape[1] == 0:
+        return 0.0, 0.5, np.array([]), None, np.array([]), np.array([])
     y_clean = y[valid_mask]
     returns_clean = realized_returns[valid_mask]
 
+    try:
+        y_clean_counts = y_clean.value_counts(dropna=False).to_dict()
+    except Exception:
+        y_clean_counts = {}
+    tprint(
+        f"[LEARNABILITY_LABEL_STATS] n_clean={len(y_clean)}, value_counts={y_clean_counts}",
+        "INFO",
+    )
+
     if len(y_clean) < 50:
-        return 0.0, 0.5, np.array([]), None, np.array([])
+        return 0.0, 0.5, np.array([]), None, np.array([]), np.array([])
 
     if len(y_clean.unique()) < 2:
-        return 0.0, 0.5, np.array([]), None, np.array([])
+        return 0.0, 0.5, np.array([]), None, np.array([]), np.array([])
+
+    # Additional guard: if all numeric features are constant (or effectively
+    # collapsed to a single value) after cleaning, many tree learners will
+    # refuse to train and LightGBM can surface num_features()==0 errors.
+    # Detect and short-circuit early in that case.
+    if isinstance(X_clean, pd.DataFrame):
+        try:
+            nunique = X_clean.nunique(dropna=False)
+            non_constant_cols = nunique[nunique > 1].index
+            if len(non_constant_cols) == 0:
+                tprint(
+                    f"[LEARNABILITY_EMPTY_FEATURES] All features constant for learnability "
+                    f"(n_clean={len(y_clean)}, y_counts={y_clean_counts}); returning defaults",
+                    "WARNING",
+                )
+                return 0.0, 0.5, np.array([]), None, np.array([]), np.array([])
+            if len(non_constant_cols) < X_clean.shape[1]:
+                X_clean = X_clean.loc[:, non_constant_cols]
+        except Exception:
+            # If anything goes wrong during constant-feature detection, fall back
+            # to the original X_clean; downstream guards and the outer try/except
+            # will still prevent hard failures.
+            pass
 
     # Select model based on complexity
     if model_complexity == "fast":
         models = [lgb.LGBMClassifier(
             boosting_type='gbdt',
-            objective='binary',
+            objective=smoothed_brier_lgb_objective if use_smoothed_brier_objective_lgbm else 'binary',
+            n_estimators=50,
             max_depth=3,
-            n_estimators=40,
             learning_rate=0.1,
-            subsample=0.7,
-            colsample_bytree=0.7,
-            min_child_samples=20,
-            reg_alpha=0.1,  # L1 regularization
-            reg_lambda=0.1,  # L2 regularization
+            feature_fraction=0.8,
+            bagging_fraction=0.8,
+            bagging_freq=5,
             n_jobs=-1,
             verbose=-1,
-            random_state=42
+            random_state=42,
+            colsample_bytree=0.8,
+            min_child_samples=20,
+            reg_alpha=0.1,
+            reg_lambda=0.1,
         )]
 
     elif model_complexity == "medium":
         models = [lgb.LGBMClassifier(
             boosting_type='gbdt',
-            objective='binary',
-            max_depth=4,
-            n_estimators=120,
-            learning_rate=0.05,
+            objective=smoothed_brier_lgb_objective if use_smoothed_brier_objective_lgbm else 'binary',
+            max_depth=3,
+            n_estimators=150,
+            learning_rate=0.04,
             subsample=0.8,
             colsample_bytree=0.8,
-            min_child_samples=15,
-            reg_alpha=0.05,
-            reg_lambda=0.05,
+            min_child_samples=60,
+            reg_alpha=0.2,
+            reg_lambda=0.7,
             n_jobs=-1,
             verbose=-1,
             random_state=42
@@ -229,15 +562,15 @@ def compute_learnability_with_calibration(
         models = [
             lgb.LGBMClassifier(
                 boosting_type='gbdt',
-                objective='binary',
-                max_depth=5,
-                n_estimators=200,
+                objective=smoothed_brier_lgb_objective if use_smoothed_brier_objective_lgbm else 'binary',
+                max_depth=4,
+                n_estimators=220,
                 learning_rate=0.02,
                 subsample=0.8,
                 colsample_bytree=0.8,
-                min_child_samples=10,
-                reg_alpha=0.01,
-                reg_lambda=0.01,
+                min_child_samples=80,
+                reg_alpha=0.3,
+                reg_lambda=0.9,
                 n_jobs=-1,
                 verbose=-1,
                 random_state=42
@@ -248,13 +581,13 @@ def compute_learnability_with_calibration(
         if use_ensemble:
             if XGBOOST_AVAILABLE:
                 models.append(xgb.XGBClassifier(
-                    max_depth=5,
-                    n_estimators=300,
+                    max_depth=4,
+                    n_estimators=320,
                     learning_rate=0.02,
                     subsample=0.8,
                     colsample_bytree=0.8,
-                    reg_alpha=0.01,
-                    reg_lambda=0.01,
+                    reg_alpha=0.2,
+                    reg_lambda=0.8,
                     n_jobs=-1,
                     verbosity=0,
                     random_state=42
@@ -268,19 +601,28 @@ def compute_learnability_with_calibration(
                 random_state=42
             ))
 
-    # Time-aware CV: use purged K-fold splits with a small embargo to
-    # reduce leakage across folds. For non-time-aware CV, fall back to
-    # standard shuffled KFold.
+    # Time-aware CV: use t1-aware purged K-fold splits with an embargo
+    # proportional to the labeling horizon. For non-time-aware CV, fall
+    # back to standard shuffled KFold.
     if time_aware_cv:
-        from src.utils.ml_common.labeling.meta_labeling import purged_kfold_splits
+        if event_durations is not None and market_index is not None and base_horizon_bars is not None:
+            cv_splits_indices = _build_t1_aware_purged_splits_for_events(
+                y=y_clean,
+                event_durations=event_durations,
+                market_index=market_index,
+                cv_splits=cv_splits,
+                base_horizon_bars=base_horizon_bars,
+            )
+        else:
+            from src.utils.ml_common.labeling.meta_labeling import purged_kfold_splits
 
-        n_samples = len(X_clean)
-        embargo = 5  # small embargo in bars
-        cv_splits_indices = purged_kfold_splits(
-            n_samples=n_samples,
-            n_splits=cv_splits,
-            embargo=embargo,
-        )
+            n_samples = len(X_clean)
+            embargo = base_horizon_bars or 5
+            cv_splits_indices = purged_kfold_splits(
+                n_samples=n_samples,
+                n_splits=cv_splits,
+                embargo=int(embargo),
+            )
     else:
         from sklearn.model_selection import KFold
 
@@ -349,6 +691,8 @@ def compute_learnability_with_calibration(
     if mean_w > 0:
         sample_weights = sample_weights / mean_w
 
+    oof_probs_full = np.full(len(X_clean), np.nan, dtype=float)
+
     try:
         all_full_probs = []
         all_aucs = []
@@ -367,14 +711,150 @@ def compute_learnability_with_calibration(
                 X_test_cv = X_clean.iloc[test_idx]
                 y_test_cv = y_clean.iloc[test_idx]
 
+                # Per-fold constant-feature guard: if the training subset has
+                # no non-constant numeric columns, LightGBM will effectively
+                # see zero usable features and raise num_features()==0. Detect
+                # this early and skip the fold instead.
+                if isinstance(X_train_cv, pd.DataFrame):
+                    try:
+                        nunique_fold = X_train_cv.nunique(dropna=False)
+                        non_constant_cols_fold = nunique_fold[nunique_fold > 1].index
+                        if len(non_constant_cols_fold) == 0:
+                            try:
+                                y_train_counts = y_train_cv.value_counts(dropna=False).to_dict()
+                            except Exception:
+                                y_train_counts = {}
+                            tprint(
+                                "[LEARNABILITY_FOLD_EMPTY_FEATURES] Skipping CV fold with all-constant "
+                                f"features (n_train={len(y_train_cv)}, y_counts={y_train_counts})",
+                                "WARNING",
+                            )
+                            continue
+                        if len(non_constant_cols_fold) < X_train_cv.shape[1]:
+                            X_train_cv = X_train_cv.loc[:, non_constant_cols_fold]
+                            X_test_cv = X_test_cv.loc[:, non_constant_cols_fold]
+                    except Exception:
+                        # If anything goes wrong here, fall back to using the
+                        # original X_train_cv/X_test_cv; downstream guards and
+                        # the outer try/except will still prevent hard failure.
+                        pass
+
                 w_train_cv = sample_weights[train_idx]
 
-                try:
-                    model.fit(X_train_cv, y_train_cv, sample_weight=w_train_cv)
-                except TypeError:
-                    model.fit(X_train_cv, y_train_cv)
+                # Ensure LightGBM and other models always see a purely numeric
+                # matrix, independent of pandas dtypes.
+                if isinstance(X_train_cv, pd.DataFrame):
+                    X_train_mat = X_train_cv.to_numpy(dtype=float)
+                    X_test_mat = X_test_cv.to_numpy(dtype=float)
+                else:
+                    X_train_mat = np.asarray(X_train_cv, dtype=float)
+                    X_test_mat = np.asarray(X_test_cv, dtype=float)
 
-                y_proba_cv = model.predict_proba(X_test_cv)[:, 1]
+                # Drop zero-variance columns (LightGBM can strip them and end up with 0 features)
+                col_std = np.nanstd(X_train_mat, axis=0)
+                nonzero_mask = col_std > 0
+                if not np.any(nonzero_mask):
+                    tprint(
+                        f"[LEARNABILITY_FOLD_ZERO_VAR] All features zero-variance in fold; skipping (n_train={len(y_train_cv)})",
+                        "WARNING",
+                    )
+                    continue
+                if np.any(~nonzero_mask):
+                    X_train_mat = X_train_mat[:, nonzero_mask]
+                    X_test_mat = X_test_mat[:, nonzero_mask]
+
+                # Final guard: check if the numeric matrix is empty or constant
+                tprint(
+                    f"[LEARNABILITY_DEBUG] X_train_mat shape: {X_train_mat.shape}, "
+                    f"unique_vals_per_col: {[np.unique(X_train_mat[:, i]).size for i in range(min(3, X_train_mat.shape[1]))]}",
+                    "INFO",
+                )
+                
+                if X_train_mat.shape[1] == 0:
+                    tprint(
+                        f"[LEARNABILITY_EMPTY_MATRIX] X_train_mat has zero columns; skipping fold",
+                        "WARNING",
+                    )
+                    continue
+                
+                # Check for NaN or infinite values that can cause LightGBM to fail
+                if np.any(~np.isfinite(X_train_mat)):
+                    nan_count = np.sum(~np.isfinite(X_train_mat))
+                    tprint(
+                        f"[LEARNABILITY_INVALID_VALUES] Found {nan_count} NaN/inf values in X_train_mat; cleaning and skipping fold",
+                        "WARNING",
+                    )
+                    continue
+                
+                # Check if all features are constant in the training matrix
+                if np.all(X_train_mat == X_train_mat[0, :], axis=0).all():
+                    tprint(
+                        f"[LEARNABILITY_CONSTANT_MATRIX] All features constant in X_train_mat; skipping fold",
+                        "WARNING",
+                    )
+                    continue
+
+                # LightGBM probe: verify the matrix is acceptable before main fit (looser params)
+                try:
+                    probe = lgb.LGBMClassifier(
+                        boosting_type='gbdt',
+                        objective='binary',
+                        n_estimators=10,
+                        max_depth=-1,
+                        min_data_in_bin=1,
+                        min_data_in_leaf=1,
+                        learning_rate=0.2,
+                        n_jobs=-1,
+                        verbose=-1,
+                        random_state=42,
+                    )
+                    probe.fit(X_train_mat, y_train_cv)
+                except Exception as e_probe:
+                    tprint(
+                        f"[LEARNABILITY_LGB_PROBE_FAIL] LightGBM probe rejected fold: {str(e_probe)[:120]}...; skipping fold",
+                        "WARNING",
+                    )
+                    continue
+
+                try:
+                    model.fit(X_train_mat, y_train_cv, sample_weight=w_train_cv)
+                except TypeError:
+                    model.fit(X_train_mat, y_train_cv)
+                except Exception as e:
+                    # Catch LightGBM errors and provide graceful fallback
+                    if "num_features" in str(e) or "Check failed" in str(e):
+                        tprint(
+                            f"[LEARNABILITY_LIGHTGBM_ERROR] LightGBM feature error: {str(e)[:120]}...; trying logistic fallback",
+                            "WARNING",
+                        )
+                        try:
+                            fallback = LogisticRegression(
+                                max_iter=200,
+                                n_jobs=1,
+                                penalty="l2",
+                                solver="lbfgs",
+                            )
+                            fallback.fit(X_train_mat, y_train_cv)
+                            model = fallback
+                        except Exception as e_fallback:
+                            tprint(
+                                f"[LEARNABILITY_FALLBACK_FAIL] Logistic fallback also failed: {str(e_fallback)[:120]}...; skipping fold",
+                                "WARNING",
+                            )
+                            continue
+                    else:
+                        # Re-raise other unexpected errors
+                        raise
+
+                proba_cv = model.predict_proba(X_test_mat)
+                proba_cv = np.asarray(proba_cv)
+                if proba_cv.ndim == 2:
+                    if proba_cv.shape[1] >= 2:
+                        y_proba_cv = proba_cv[:, 1]
+                    else:
+                        y_proba_cv = proba_cv[:, 0]
+                else:
+                    y_proba_cv = proba_cv.ravel()
 
                 model_oof_parts.append(y_proba_cv)
                 if i == 0:
@@ -390,6 +870,11 @@ def compute_learnability_with_calibration(
                 mean_auc = float(np.mean(fold_aucs))
             else:
                 mean_auc = 0.5
+                tprint(
+                    f"[LEARNABILITY_FALLBACK] No valid CV folds for AUC; setting mean_auc=0.5 "
+                    f"(n_clean={len(y_clean)}, y_counts={y_clean_counts})",
+                    "WARNING",
+                )
 
             if model_oof_parts:
                 all_model_oof_preds.append(np.concatenate(model_oof_parts))
@@ -398,12 +883,105 @@ def compute_learnability_with_calibration(
                 oof_indices = np.concatenate(current_oof_indices)
                 reference_fold_aucs = list(fold_aucs)
 
-            try:
-                model.fit(X_clean, y_clean, sample_weight=sample_weights)
-            except TypeError:
-                model.fit(X_clean, y_clean)
+            # Global fit on full cleaned feature matrix. As above, always
+            # convert to a dense numeric NumPy array before passing to the
+            # underlying model to avoid any surprises with dtypes.
+            if isinstance(X_clean, pd.DataFrame):
+                X_full_mat = X_clean.to_numpy(dtype=float)
+            else:
+                X_full_mat = np.asarray(X_clean, dtype=float)
 
-            full_probs = model.predict_proba(X_clean)[:, 1]
+            # Final guard: check if the numeric matrix is empty or constant
+            if X_full_mat.shape[1] == 0:
+                tprint(
+                    f"[LEARNABILITY_EMPTY_GLOBAL_MATRIX] X_full_mat has zero columns; skipping global fit",
+                    "WARNING",
+                )
+                continue
+            
+            # Check if all features are constant in the full matrix
+            if np.all(X_full_mat == X_full_mat[0, :], axis=0).all():
+                tprint(
+                    f"[LEARNABILITY_CONSTANT_GLOBAL_MATRIX] All features constant in X_full_mat; skipping global fit",
+                    "WARNING",
+                )
+                continue
+
+            # Drop zero-variance columns at global level (LightGBM may strip them)
+            col_std_full = np.nanstd(X_full_mat, axis=0)
+            nonzero_mask_full = col_std_full > 0
+            if not np.any(nonzero_mask_full):
+                tprint(
+                    f"[LEARNABILITY_GLOBAL_ZERO_VAR] All features zero-variance in global matrix; skipping global fit",
+                    "WARNING",
+                )
+                # Fallback: use constant 0.5 probabilities and AUC=0.5
+                all_full_probs.append(np.full(len(y_clean), 0.5, dtype=float))
+                all_aucs.append(0.5)
+                continue
+            if np.any(~nonzero_mask_full):
+                X_full_mat = X_full_mat[:, nonzero_mask_full]
+
+            # Guard against NaN/inf in global matrix
+            if np.any(~np.isfinite(X_full_mat)):
+                nan_count_full = int(np.sum(~np.isfinite(X_full_mat)))
+                tprint(
+                    f"[LEARNABILITY_GLOBAL_INVALID_VALUES] Found {nan_count_full} NaN/inf values in X_full_mat; skipping global fit",
+                    "WARNING",
+                )
+                all_full_probs.append(np.full(len(y_clean), 0.5, dtype=float))
+                all_aucs.append(0.5)
+                continue
+
+            # LightGBM probe on full matrix before global fit
+            try:
+                probe_full = lgb.LGBMClassifier(
+                    boosting_type="gbdt",
+                    objective="binary",
+                    n_estimators=10,
+                    max_depth=-1,
+                    min_data_in_bin=1,
+                    min_data_in_leaf=1,
+                    learning_rate=0.2,
+                    n_jobs=-1,
+                    verbose=-1,
+                    random_state=42,
+                )
+                probe_full.fit(X_full_mat, y_clean)
+            except Exception as e_probe_full:
+                tprint(
+                    f"[LEARNABILITY_LGB_GLOBAL_PROBE_FAIL] LightGBM probe rejected global fit: {str(e_probe_full)[:120]}...; using constant probs",
+                    "WARNING",
+                )
+                all_full_probs.append(np.full(len(y_clean), 0.5, dtype=float))
+                all_aucs.append(0.5)
+                continue
+
+            try:
+                model.fit(X_full_mat, y_clean, sample_weight=sample_weights)
+            except TypeError:
+                model.fit(X_full_mat, y_clean)
+            except Exception as e_global:
+                if "num_features" in str(e_global) or "Check failed" in str(e_global):
+                    tprint(
+                        f"[LEARNABILITY_LIGHTGBM_GLOBAL_ERROR] LightGBM global fit error: {str(e_global)[:120]}...; using constant probs",
+                        "WARNING",
+                    )
+                    all_full_probs.append(np.full(len(y_clean), 0.5, dtype=float))
+                    all_aucs.append(0.5)
+                    continue
+                else:
+                    raise
+
+            full_proba = model.predict_proba(X_full_mat)
+            full_proba = np.asarray(full_proba)
+            if full_proba.ndim == 2:
+                if full_proba.shape[1] >= 2:
+                    full_probs = full_proba[:, 1]
+                else:
+                    full_probs = full_proba[:, 0]
+            else:
+                full_probs = full_proba.ravel()
 
             all_full_probs.append(full_probs)
             all_aucs.append(mean_auc)
@@ -472,21 +1050,291 @@ def compute_learnability_with_calibration(
                 except Exception:
                     pass
 
+        if all_model_oof_preds and oof_indices.size > 0:
+            try:
+                oof_probs_array = np.array(all_model_oof_preds)
+                if len(models) > 1:
+                    avg_oof_probs = np.mean(oof_probs_array, axis=0)
+                    disagreement_oof = np.std(oof_probs_array, axis=0)
+                    confidence_penalty_oof = 1.0 - (disagreement_oof * 0.5)
+                    final_oof_probs = avg_oof_probs * confidence_penalty_oof + (1 - confidence_penalty_oof) * 0.5
+                    final_oof_probs = np.clip(final_oof_probs, 0.0, 1.0)
+                else:
+                    final_oof_probs = oof_probs_array[0]
+                if final_oof_probs.shape[0] == oof_indices.shape[0]:
+                    oof_probs_full = np.full(len(X_clean), np.nan, dtype=float)
+                    oof_probs_full[oof_indices] = final_oof_probs
+            except Exception:
+                oof_probs_full = np.full(len(X_clean), np.nan, dtype=float)
+
         learnability = mean_auc - (0.5 * std_auc_cv)
 
-        return learnability, mean_auc, calibrated_probs, iso_reg, fold_aucs_array
+        return learnability, mean_auc, calibrated_probs, iso_reg, fold_aucs_array, oof_probs_full
 
     except Exception as e:
-        tprint(f"⚠️ Calibrated learnability scoring failed: {e}", "WARNING")
-        return 0.0, 0.5, np.array([]), None, np.array([])
+        tprint(f"[LEARNABILITY_EXCEPTION] Calibrated learnability scoring failed: {e}", "WARNING")
+        return 0.0, 0.5, np.array([]), None, np.array([]), np.array([])
+
+
+def run_leakage_sanity_check(
+    X: pd.DataFrame,
+    y: pd.Series,
+    random_state: int = 42,
+    top_k: int = 3,
+    n_repeats: int = 5,
+) -> Dict[str, Any]:
+    result: Dict[str, Any] = {
+        "baseline_auc": None,
+        "dropped_auc": None,
+        "delta_auc": None,
+        "top_features": [],
+        "top_importances": [],
+        "top_importance": None,
+        "second_importance": None,
+        "god_feature_suspected": False,
+    }
+    try:
+        if not isinstance(X, pd.DataFrame) or not isinstance(y, pd.Series):
+            return result
+        y_clean = y.dropna()
+        if len(y_clean) < 100 or len(y_clean.unique()) < 2:
+            return result
+        X_num = X.select_dtypes(include=[np.number])
+        if X_num.shape[1] == 0:
+            return result
+        X_aligned = X_num.reindex(y_clean.index).fillna(0.0)
+        if X_aligned.shape[1] == 0:
+            return result
+
+        base_model = lgb.LGBMClassifier(
+            boosting_type="gbdt",
+            objective="binary",
+            max_depth=3,
+            n_estimators=120,
+            learning_rate=0.05,
+            subsample=0.8,
+            colsample_bytree=0.8,
+            min_child_samples=60,
+            reg_alpha=0.3,
+            reg_lambda=0.9,
+            n_jobs=-1,
+            verbose=-1,
+            random_state=random_state,
+        )
+        base_model.fit(X_aligned, y_clean)
+        preds_base = base_model.predict_proba(X_aligned)[:, 1]
+        baseline_auc = float(roc_auc_score(y_clean, preds_base))
+
+        imp = permutation_importance(
+            base_model,
+            X_aligned,
+            y_clean,
+            scoring="roc_auc",
+            n_repeats=n_repeats,
+            random_state=random_state,
+        )
+        importances_mean = imp.importances_mean
+        if importances_mean is None or importances_mean.size == 0:
+            return result
+
+        indices = np.argsort(importances_mean)[::-1]
+        k = min(max(1, top_k), indices.size)
+        top_idx = indices[:k]
+        feature_names = X_aligned.columns.to_list()
+        top_features = [feature_names[i] for i in top_idx]
+        top_importances = [float(importances_mean[i]) for i in top_idx]
+
+        X_dropped = X_aligned.drop(columns=top_features, errors="ignore")
+        if X_dropped.shape[1] == 0:
+            return {
+                "baseline_auc": baseline_auc,
+                "dropped_auc": None,
+                "delta_auc": None,
+                "top_features": top_features,
+            }
+
+        drop_model = lgb.LGBMClassifier(
+            boosting_type="gbdt",
+            objective="binary",
+            max_depth=3,
+            n_estimators=120,
+            learning_rate=0.05,
+            subsample=0.8,
+            colsample_bytree=0.8,
+            min_child_samples=60,
+            reg_alpha=0.3,
+            reg_lambda=0.9,
+            n_jobs=-1,
+            verbose=-1,
+            random_state=random_state,
+        )
+        drop_model.fit(X_dropped, y_clean)
+        preds_drop = drop_model.predict_proba(X_dropped)[:, 1]
+        dropped_auc = float(roc_auc_score(y_clean, preds_drop))
+        delta_auc = baseline_auc - dropped_auc
+
+        result["baseline_auc"] = baseline_auc
+        result["dropped_auc"] = dropped_auc
+        result["delta_auc"] = delta_auc
+        result["top_features"] = top_features
+        result["top_importances"] = top_importances
+        if top_importances:
+            result["top_importance"] = float(top_importances[0])
+            if len(top_importances) > 1:
+                result["second_importance"] = float(top_importances[1])
+        top_imp_val = result["top_importance"]
+        second_imp_val = result["second_importance"]
+        if top_imp_val is not None:
+            god_by_level = top_imp_val >= 0.25
+            if second_imp_val is not None and second_imp_val > 0:
+                ratio = top_imp_val / second_imp_val
+            else:
+                ratio = float("inf")
+            god_by_ratio = ratio >= 3.0
+            result["god_feature_suspected"] = bool(god_by_level or god_by_ratio)
+        return result
+    except Exception:
+        return result
+
+
+def run_lag1_stress_test(
+    X: pd.DataFrame,
+    y: pd.Series,
+    random_state: int = 42,
+) -> Dict[str, Any]:
+    result: Dict[str, Any] = {
+        "auc_base": None,
+        "auc_lag1": None,
+        "auc_diff": None,
+        "lookahead_suspected": False,
+    }
+    try:
+        if not isinstance(X, pd.DataFrame) or not isinstance(y, pd.Series):
+            return result
+        y_clean = y.dropna()
+        if len(y_clean) < 100 or len(y_clean.unique()) < 2:
+            return result
+        X_num = X.select_dtypes(include=[np.number])
+        if X_num.shape[1] == 0:
+            return result
+        X_aligned = X_num.reindex(y_clean.index).fillna(0.0)
+        if X_aligned.shape[1] == 0:
+            return result
+
+        base_model = lgb.LGBMClassifier(
+            boosting_type="gbdt",
+            objective="binary",
+            max_depth=3,
+            n_estimators=120,
+            learning_rate=0.05,
+            subsample=0.8,
+            colsample_bytree=0.8,
+            min_child_samples=60,
+            reg_alpha=0.3,
+            reg_lambda=0.9,
+            n_jobs=-1,
+            verbose=-1,
+            random_state=random_state,
+        )
+        base_model.fit(X_aligned, y_clean)
+        base_probs = base_model.predict_proba(X_aligned)[:, 1]
+        auc_base = float(roc_auc_score(y_clean, base_probs))
+        X_lag = X_aligned.shift(1).dropna()
+        if X_lag.empty:
+            return result
+        y_lag = y_clean.reindex(X_lag.index).dropna()
+        X_lag = X_lag.reindex(y_lag.index)
+        if len(y_lag) < 100 or len(y_lag.unique()) < 2:
+            return result
+
+        lag_model = lgb.LGBMClassifier(
+            boosting_type="gbdt",
+            objective="binary",
+            max_depth=3,
+            n_estimators=120,
+            learning_rate=0.05,
+            subsample=0.8,
+            colsample_bytree=0.8,
+            min_child_samples=60,
+            reg_alpha=0.3,
+            reg_lambda=0.9,
+            n_jobs=-1,
+            verbose=-1,
+            random_state=random_state,
+        )
+        lag_model.fit(X_lag, y_lag)
+        lag_probs = lag_model.predict_proba(X_lag)[:, 1]
+        auc_lag1 = float(roc_auc_score(y_lag, lag_probs))
+        auc_diff = auc_base - auc_lag1
+        result["auc_base"] = auc_base
+        result["auc_lag1"] = auc_lag1
+        result["auc_diff"] = auc_diff
+        lookahead = bool(auc_base >= 0.7 and auc_diff >= 0.1)
+        result["lookahead_suspected"] = lookahead
+        return result
+    except Exception:
+        return result
+
+
+def compute_dummy_baseline_auc(
+    volatility: pd.Series,
+    y: pd.Series,
+    window: int = 64,
+) -> Dict[str, Any]:
+    result: Dict[str, Any] = {
+        "auc_dummy": None,
+        "auc_dummy_raw": None,
+        "n_samples": 0,
+    }
+    try:
+        if not isinstance(volatility, pd.Series) or not isinstance(y, pd.Series):
+            return result
+        y_clean = y.dropna()
+        if len(y_clean) < 50 or len(y_clean.unique()) < 2:
+            return result
+        vol_aligned = volatility.reindex(y_clean.index)
+        if vol_aligned.isna().all():
+            return result
+        vol_aligned = vol_aligned.astype(float)
+        vol_aligned = vol_aligned.fillna(method="ffill").fillna(method="bfill")
+        if vol_aligned.isna().all():
+            return result
+        min_periods = max(10, window // 4)
+        vol_ma = vol_aligned.rolling(window, min_periods=min_periods).mean()
+        score = (vol_aligned - vol_ma).fillna(0.0)
+        auc_raw = float(roc_auc_score(y_clean, score))
+        auc_abs = auc_raw
+        if auc_abs < 0.5:
+            auc_abs = 1.0 - auc_abs
+        result["auc_dummy_raw"] = auc_raw
+        result["auc_dummy"] = auc_abs
+        result["n_samples"] = int(len(y_clean))
+        return result
+    except Exception:
+        return result
+
 
 def _discrete_mi(x: pd.Series, y: pd.Series) -> float:
+    """Mutual information for discrete variables with robust guards.
+
+    Returns 0.0 (instead of NaN) for degenerate or empty cases so that
+    downstream diagnostics never propagate NaNs.
+    """
     valid = x.notna() & y.notna()
     if not valid.any():
-        return float("nan")
+        return 0.0
+
     xv = x.loc[valid]
     yv = y.loc[valid]
+
+    # If either side has fewer than 2 unique values, MI is zero by definition
+    if xv.nunique() < 2 or yv.nunique() < 2:
+        return 0.0
+
     joint = pd.crosstab(xv, yv, normalize=True)
+    if joint.empty:
+        return 0.0
+
     px = joint.sum(axis=1)
     py = joint.sum(axis=0)
     mi_val = 0.0
@@ -499,6 +1347,9 @@ def _discrete_mi(x: pd.Series, y: pd.Series) -> float:
             if denom <= 0.0:
                 continue
             mi_val += pxy * np.log(pxy / denom)
+
+    if not np.isfinite(mi_val):
+        return 0.0
     return float(mi_val)
 
 
@@ -507,6 +1358,10 @@ def compute_underfit_diagnostics(
     y: pd.Series,
     cv_splits: int = 3,
     time_aware_cv: bool = True,
+    use_purged_splits: bool = False,
+    event_durations: Optional[pd.Series] = None,
+    market_index: Optional[pd.DatetimeIndex] = None,
+    base_horizon_bars: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Compute underfit diagnostics to assess room for model improvement.
 
@@ -550,8 +1405,31 @@ def compute_underfit_diagnostics(
     if len(y_clean) < 100 or len(y_clean.unique()) < 2:
         return diagnostics
 
-    # Time-aware CV
-    if time_aware_cv:
+    # Optional: reuse t1-aware purged splits from HPO when event information is provided.
+    # Default to False to avoid NameError downstream; caller can opt-in.
+    if 'use_purged_splits' not in locals():
+        use_purged_splits = False
+
+    purged_splits = None
+    if (
+        use_purged_splits
+        and event_durations is not None
+        and market_index is not None
+        and base_horizon_bars is not None
+    ):
+        try:
+            purged_splits = _build_t1_aware_purged_splits_for_events(
+                y=y_clean,
+                event_durations=event_durations,
+                market_index=market_index,
+                cv_splits=cv_splits,
+                base_horizon_bars=base_horizon_bars,
+            )
+        except Exception:
+            purged_splits = None
+
+    # Time-aware CV (fallback when purged splits are not requested or unavailable)
+    if time_aware_cv and purged_splits is None:
         cv = TimeSeriesSplit(n_splits=cv_splits)
     else:
         from sklearn.model_selection import KFold
@@ -579,6 +1457,8 @@ def compute_underfit_diagnostics(
                 continue
 
             try:
+                # For fraction curves we keep simple CV; purged splits are defined on
+                # the full event set and are not trivially compatible with subsets.
                 scores = cross_val_score(
                     probe_model, X_frac, y_frac,
                     cv=min(cv_splits, len(y_frac) // 20),
@@ -607,7 +1487,8 @@ def compute_underfit_diagnostics(
             )
 
             try:
-                scores = cross_val_score(model, X_clean, y_clean, cv=cv, scoring='roc_auc', n_jobs=-1)
+                cv_arg = purged_splits if purged_splits is not None else cv
+                scores = cross_val_score(model, X_clean, y_clean, cv=cv_arg, scoring='roc_auc', n_jobs=-1)
                 auc = float(scores.mean())
                 diagnostics["learning_curve_depths"][depth] = auc
                 depth_aucs.append(auc)
@@ -688,6 +1569,9 @@ def compute_filtering_inflation_diagnostics(
     probabilities: np.ndarray,
     cv_splits: int = 3,
     time_aware_cv: bool = True,
+    event_durations: Optional[pd.Series] = None,
+    market_index: Optional[pd.DatetimeIndex] = None,
+    base_horizon_bars: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Compute diagnostics to detect AUC inflation from aggressive filtering.
 
@@ -767,24 +1651,60 @@ def compute_filtering_inflation_diagnostics(
                 X_num = X.select_dtypes(include=[np.number])
                 X_full = X_num[full_mask].fillna(0)
                 y_full_vals = y_full[full_mask]
-                
+
                 if len(y_full_vals) >= 50 and len(y_full_vals.unique()) >= 2:
-                    # Quick probe model for full-label AUC
                     probe = lgb.LGBMClassifier(
                         max_depth=3, n_estimators=50, learning_rate=0.1,
                         n_jobs=-1, verbose=-1, random_state=42
                     )
-                    
-                    if time_aware_cv:
-                        cv = TimeSeriesSplit(n_splits=min(cv_splits, len(y_full_vals) // 20))
-                    else:
-                        from sklearn.model_selection import KFold
-                        cv = KFold(n_splits=cv_splits, shuffle=True, random_state=42)
-                    
-                    probs_full = cross_val_predict(probe, X_full, y_full_vals, cv=cv, method='predict_proba')[:, 1]
-                    diagnostics["auc_full"] = float(roc_auc_score(y_full_vals, probs_full))
-            except Exception:
-                pass
+
+                    auc_full_local = None
+                    min_full_predictions = 20
+
+                    if time_aware_cv and event_durations is not None and market_index is not None and base_horizon_bars is not None:
+                        splits = _build_t1_aware_purged_splits_for_events(
+                            y=y_full_vals,
+                            event_durations=event_durations,
+                            market_index=market_index,
+                            cv_splits=cv_splits,
+                            base_horizon_bars=base_horizon_bars,
+                        )
+                        probs_full = np.full(len(y_full_vals), np.nan, dtype=float)
+                        for train_idx, test_idx in splits:
+                            X_train_cv = X_full.iloc[train_idx]
+                            y_train_cv = y_full_vals.iloc[train_idx]
+                            X_test_cv = X_full.iloc[test_idx]
+                            y_test_cv = y_full_vals.iloc[test_idx]
+                            if len(np.unique(y_train_cv)) < 2 or len(np.unique(y_test_cv)) < 2:
+                                continue
+                            probe.fit(X_train_cv, y_train_cv)
+                            probs_full[test_idx] = probe.predict_proba(X_test_cv)[:, 1]
+                        valid_mask_full = np.isfinite(probs_full)
+                        n_valid = int(valid_mask_full.sum())
+                        if n_valid >= min_full_predictions:
+                            auc_full_local = float(
+                                roc_auc_score(y_full_vals.iloc[valid_mask_full], probs_full[valid_mask_full])
+                            )
+                        else:
+                            tprint_info(
+                                f" Filtering diagnostics: insufficient t1-aware predictions for full-label AUC "
+                                f"(n_valid={n_valid}, min_required={min_full_predictions}); falling back to standard CV"
+                            )
+
+                    if auc_full_local is None:
+                        if time_aware_cv:
+                            cv = TimeSeriesSplit(n_splits=min(cv_splits, max(2, len(y_full_vals) // 20)))
+                        else:
+                            from sklearn.model_selection import KFold
+                            cv = KFold(n_splits=cv_splits, shuffle=True, random_state=42)
+                        probs_full = cross_val_predict(probe, X_full, y_full_vals, cv=cv, method='predict_proba')[:, 1]
+                        if len(np.unique(y_full_vals)) >= 2:
+                            auc_full_local = float(roc_auc_score(y_full_vals, probs_full))
+
+                    if auc_full_local is not None:
+                        diagnostics["auc_full"] = auc_full_local
+            except Exception as exc:
+                tprint_warning(f"6a0 Filtering inflation full-label AUC computation failed: {exc}")
 
         # Compute inflation
         if diagnostics["auc_filtered"] is not None and diagnostics["auc_full"] is not None:
@@ -914,17 +1834,53 @@ def compute_calibration_diagnostics(
         "fpr_per_bin": {},
         "expected_pnl_per_bin": {},
         "is_well_calibrated": False,
+        "prob_range_raw": None,
+        "prob_range_clamped": None,
     }
 
     try:
-        # Remove NaN
-        valid_mask = ~(np.isnan(y_true) | np.isnan(probabilities))
-        y = y_true[valid_mask]
-        probs = probabilities[valid_mask]
-        returns = realized_returns[valid_mask] if realized_returns is not None else None
-        
+        # Coerce inputs to float arrays and align lengths safely
+        if probabilities is None:
+            return diagnostics
+
+        y_arr = np.asarray(y_true, dtype=float).ravel()
+        probs_arr = np.asarray(probabilities, dtype=float).ravel()
+        returns_arr = None
+        if realized_returns is not None:
+            returns_arr = np.asarray(realized_returns, dtype=float).ravel()
+
+        n = min(len(y_arr), len(probs_arr))
+        if returns_arr is not None:
+            n = min(n, len(returns_arr))
+        if n < 50:
+            return diagnostics
+
+        y_arr = y_arr[:n]
+        probs_arr = probs_arr[:n]
+        if returns_arr is not None:
+            returns_arr = returns_arr[:n]
+
+        # Remove NaN/inf values
+        valid_mask = np.isfinite(y_arr) & np.isfinite(probs_arr)
+        y = y_arr[valid_mask]
+        probs = probs_arr[valid_mask]
+        returns = returns_arr[valid_mask] if returns_arr is not None else None
+
         if len(y) < 50:
             return diagnostics
+
+        # Track raw probability range before clamping
+        diagnostics["prob_range_raw"] = {
+            "min": float(np.nanmin(probs)) if probs.size > 0 else None,
+            "max": float(np.nanmax(probs)) if probs.size > 0 else None,
+        }
+
+        # Clamp probabilities to [0, 1] to avoid pathological Brier scores
+        probs = np.clip(probs, 0.0, 1.0)
+        diagnostics["prob_range_clamped"] = {
+            "min": float(np.nanmin(probs)) if probs.size > 0 else None,
+            "max": float(np.nanmax(probs)) if probs.size > 0 else None,
+        }
 
         # ===== Brier Score =====
         diagnostics["brier_score"] = float(np.mean((probs - y) ** 2))
@@ -958,10 +1914,19 @@ def compute_calibration_diagnostics(
                     "calibration_error": calibration_error,
                 })
 
-        diagnostics["ece"] = float(ece)
-        diagnostics["mce"] = float(mce)
-        diagnostics["reliability_diagram"] = reliability_data
-        diagnostics["is_well_calibrated"] = ece < 0.05
+        # If all mass collapsed into a single bin or no bins had samples,
+        # treat as uninformative but numerically safe: zero ECE/MCE and
+        # keep reliability_diagram as-is.
+        if len(reliability_data) == 0 or len(reliability_data) == 1:
+            diagnostics["ece"] = 0.0
+            diagnostics["mce"] = 0.0
+            diagnostics["reliability_diagram"] = reliability_data
+            diagnostics["is_well_calibrated"] = False
+        else:
+            diagnostics["ece"] = float(ece)
+            diagnostics["mce"] = float(mce)
+            diagnostics["reliability_diagram"] = reliability_data
+            diagnostics["is_well_calibrated"] = ece < 0.05
 
         # ===== Precision Per Bin (especially high-probability regions) =====
         thresholds = [0.5, 0.6, 0.7, 0.8, 0.9]
@@ -1015,6 +1980,10 @@ def compute_robustness_diagnostics(
     volatility: Optional[pd.Series] = None,
     n_folds: int = 5,
     transaction_cost: float = 0.003,
+    time_aware_cv: bool = True,
+    event_durations: Optional[pd.Series] = None,
+    market_index: Optional[pd.DatetimeIndex] = None,
+    base_horizon_bars: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Compute robustness diagnostics across time and regimes.
 
@@ -1050,19 +2019,47 @@ def compute_robustness_diagnostics(
         "is_robust": False,
     }
 
-    try:
-        # Clean data
-        valid_mask = ~y.isna()
-        X_num = X.select_dtypes(include=[np.number])
-        X_clean = X_num[valid_mask].fillna(0)
-        y_clean = y[valid_mask]
-        returns_clean = realized_returns[valid_mask] if realized_returns is not None else None
+    # Clean data
+    valid_mask = ~y.isna()
+    X_num = X.select_dtypes(include=[np.number])
+    X_clean = X_num[valid_mask].fillna(0)
+    y_clean = y[valid_mask]
+    returns_clean = realized_returns[valid_mask] if realized_returns is not None else None
 
-        if len(y_clean) < 100 or len(y_clean.unique()) < 2:
-            return diagnostics
+    if len(y_clean) < 100 or len(y_clean.unique()) < 2:
+        return diagnostics
 
-        # ===== Per-Fold Metrics =====
+    # Optional: reuse t1-aware purged splits from HPO when event information is provided.
+    if 'use_purged_splits' not in locals():
+        use_purged_splits = False
+
+    purged_splits = None
+    if (
+        use_purged_splits
+        and event_durations is not None
+        and market_index is not None
+        and base_horizon_bars is not None
+    ):
+        try:
+            purged_splits = _build_t1_aware_purged_splits_for_events(
+                y=y_clean,
+                event_durations=event_durations,
+                market_index=market_index,
+                cv_splits=n_folds,
+                base_horizon_bars=base_horizon_bars,
+            )
+        except Exception:
+            purged_splits = None
+
+    # Time-aware CV (fallback when purged splits are not requested or unavailable)
+    if time_aware_cv and purged_splits is None:
         cv = TimeSeriesSplit(n_splits=n_folds)
+    else:
+        from sklearn.model_selection import KFold
+        cv = KFold(n_splits=n_folds, shuffle=True, random_state=42)
+
+    try:
+        # 1. Per-Fold Metrics
         fold_aucs = []
         fold_metrics = []
 
@@ -1086,13 +2083,16 @@ def compute_robustness_diagnostics(
                 auc = float(roc_auc_score(y_test, probs))
                 fold_aucs.append(auc)
                 
-                # ECE
+                # ECE (Expected Calibration Error) using probability bins
                 ece = 0.0
                 bin_edges = np.linspace(0, 1, 11)
+                y_test_np = y_test.to_numpy(dtype=float)
                 for i in range(10):
                     mask = (probs >= bin_edges[i]) & (probs < bin_edges[i + 1])
                     if mask.sum() > 0:
-                        ece += (mask.sum() / len(probs)) * abs(probs[mask].mean() - y_test.iloc[mask.values].mean())
+                        mean_pred = float(probs[mask].mean())
+                        mean_actual = float(y_test_np[mask].mean())
+                        ece += (mask.sum() / len(probs)) * abs(mean_pred - mean_actual)
                 
                 # Precision at 0.6
                 precision_06 = float(y_test[probs >= 0.6].mean()) if (probs >= 0.6).sum() > 0 else None
@@ -1125,7 +2125,7 @@ def compute_robustness_diagnostics(
             diagnostics["auc_cv_std"] = float(np.std(fold_aucs))
             mean_auc = float(np.mean(fold_aucs))
             diagnostics["auc_cv_coefficient_of_variation"] = float(np.std(fold_aucs) / mean_auc) if mean_auc > 0 else None
-            
+
             # Robust if CV std < 0.05 and worst fold > 0.52
             diagnostics["is_robust"] = (diagnostics["auc_cv_std"] < 0.05 and diagnostics["worst_fold_auc"] > 0.52)
 
@@ -1417,7 +2417,13 @@ def compute_realistic_pnl_edge(
     """
     # Capture ratio: how much of theoretical profit we actually capture
     # Clamped to [0, 1] to prevent negative edge from AUC < 0.5
-    capture_ratio = max(0.0, (2 * mean_auc) - 1)
+    if mean_auc <= 0.5:
+        capture_ratio = 0.0
+    else:
+        delta_auc = float(mean_auc - 0.5)
+        tau = 0.10
+        capture_ratio = 1.0 - float(np.exp(-delta_auc / tau))
+        capture_ratio = float(np.clip(capture_ratio, 0.0, 1.0))
 
     # Net profitability after costs
     net_profit = mean_return_positive - transaction_cost
@@ -1483,6 +2489,173 @@ class MetaLabelingHPOExperimentStep(BaseStep):
         super().__init__(step_name, use_versioned_artifacts=False)
         self.logger = logger
 
+    def _create_selection_subsample(
+        self,
+        features: pd.DataFrame,
+        targets: pd.DataFrame,
+        config: Dict[str, Any],
+    ) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        """Create a subsampled dataset for feature selection/discovery phases.
+
+        Logic:
+        1. Identify the selection window (default: last 6 months).
+        2. Divide this window into N segments (default: 4).
+        3. From each segment, take the last M days (default: 30 days).
+        4. Concatenate these chunks.
+
+        If the total dataset is smaller than the selection window, the entire
+        dataset is used (with potential further subsampling if it's still huge).
+
+        Args:
+            features: Full feature DataFrame.
+            targets: Full target DataFrame (aligned with features).
+            config: Step configuration.
+
+        Returns:
+            Tuple of (subsampled_features, subsampled_targets).
+        """
+        # Default config: Selection window = 180 days (6 months)
+        selection_window_days = int(config.get("selection_window_days", 180))
+        # Default config: 4 segments
+        subsample_count = int(config.get("subsample_count", 4))
+        # Default config: 30 days per segment
+        subsample_days = int(config.get("subsample_period_days", 30))
+        # Minimum total rows required to trigger subsampling (e.g. < 6 months data -> no subsampling)
+        min_rows_threshold = 20000
+
+        if len(features) < min_rows_threshold:
+            tprint_info(
+                f"📊 Dataset size ({len(features)}) < threshold ({min_rows_threshold}); "
+                "skipping subsampling for final selection"
+            )
+            return features, targets
+
+        try:
+            # Prefer time-based subsampling when index is a DatetimeIndex
+            if not isinstance(features.index, pd.DatetimeIndex):
+                # Fallback to row-based slicing if no datetime index
+                tprint_warning(
+                    "⚠️ Features index is not DatetimeIndex; "
+                    "falling back to row-based subsampling for final selection"
+                )
+                total_rows = len(features)
+                rows_per_day = 96  # approx 15m bars
+                selection_window_rows = selection_window_days * rows_per_day
+                start_idx = max(0, total_rows - selection_window_rows)
+
+                # Slice to selection window
+                features_window = features.iloc[start_idx:]
+                targets_window = targets.iloc[start_idx:]
+
+                # Split into segments
+                segment_size = max(1, len(features_window) // subsample_count)
+                subsample_size = subsample_days * rows_per_day
+
+                indices_to_keep: List[int] = []
+                for i in range(subsample_count):
+                    seg_start = i * segment_size
+                    seg_end = min(len(features_window), (i + 1) * segment_size)
+                    if seg_start >= seg_end:
+                        continue
+                    # Take last chunk of segment
+                    chunk_start = max(seg_start, seg_end - subsample_size)
+                    indices_to_keep.extend(
+                        range(start_idx + chunk_start, start_idx + seg_end)
+                    )
+
+                # Ensure unique and sorted
+                indices_to_keep = sorted(set(indices_to_keep))
+                if not indices_to_keep:
+                    return features, targets
+
+                sub_feats = features.iloc[indices_to_keep]
+                sub_targs = targets.iloc[indices_to_keep]
+
+                tprint_info(
+                    "📊 Row-based subsampling (final FS): "
+                    f"{len(features)} → {len(sub_feats)} rows "
+                    f"({len(indices_to_keep)/len(features):.1%})"
+                )
+                return sub_feats, sub_targs
+
+            # Time-based slicing
+            end_ts = features.index.max()
+            start_ts = end_ts - pd.Timedelta(days=selection_window_days)
+
+            # Slice to selection window
+            mask_window = (features.index >= start_ts) & (features.index <= end_ts)
+            features_window = features.loc[mask_window]
+            targets_window = targets.loc[mask_window]
+
+            if features_window.empty:
+                tprint_warning(
+                    "⚠️ Selection window for final FS empty; using full dataset"
+                )
+                return features, targets
+
+            window_duration = (
+                features_window.index.max() - features_window.index.min()
+            )
+            if subsample_count <= 0 or window_duration <= pd.Timedelta(0):
+                return features_window, targets_window
+
+            segment_duration = window_duration / subsample_count
+            subsample_duration = pd.Timedelta(days=subsample_days)
+
+            chunks_features: List[pd.DataFrame] = []
+            chunks_targets: List[pd.DataFrame] = []
+
+            tprint_info(
+                "📊 Subsampling for final FS from last "
+                f"{selection_window_days} days (window: {start_ts} to {end_ts})"
+            )
+
+            for i in range(subsample_count):
+                seg_start_ts = features_window.index.min() + i * segment_duration
+                seg_end_ts = seg_start_ts + segment_duration
+
+                # Define subsample range: [segment_end - subsample_days, segment_end]
+                sub_end_ts = seg_end_ts
+                sub_start_ts = max(seg_start_ts, sub_end_ts - subsample_duration)
+
+                mask_sub = (features.index >= sub_start_ts) & (
+                    features.index < sub_end_ts
+                )
+                chunk_f = features.loc[mask_sub]
+                chunk_t = targets.loc[mask_sub]
+
+                if not chunk_f.empty:
+                    chunks_features.append(chunk_f)
+                    chunks_targets.append(chunk_t)
+
+            if not chunks_features:
+                tprint_warning(
+                    "⚠️ No chunks generated for final FS subsampling; using full dataset"
+                )
+                return features, targets
+
+            sub_feats = pd.concat(chunks_features).sort_index()
+            sub_targs = pd.concat(chunks_targets).sort_index()
+
+            tprint_info(
+                "📊 Time-based subsampling (final FS): "
+                f"{len(features)} → {len(sub_feats)} rows "
+                f"({len(sub_feats)/len(features):.1%})"
+            )
+            tprint_info(
+                f"   Using {subsample_count} chunks of ~{subsample_days} days "
+                f"from the last {selection_window_days} days"
+            )
+
+            return sub_feats, sub_targs
+
+        except Exception as e:
+            tprint_error(
+                f"❌ Error in final FS subsampling: {e}; using full dataset"
+            )
+            return features, targets
+
+
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Run hierarchical HPO over labeling parameters.
 
@@ -1501,6 +2674,10 @@ class MetaLabelingHPOExperimentStep(BaseStep):
 
         tprint_info(
             f"🚀 Starting Meta-Labeling HPO experiment for {symbol}/{exchange} [{timeframe}]"
+        )
+
+        use_smoothed_brier_objective_lgbm: bool = bool(
+            config.get("use_smoothed_brier_objective_lgbm", True)
         )
 
         # ------------------------------------------------------------------
@@ -1524,7 +2701,11 @@ class MetaLabelingHPOExperimentStep(BaseStep):
         # (shorter windows) is handled via BaseStep._apply_light_mode_filter.
         try:
             exec_mode = str(config.get("execution_mode", "full")).lower()
-            lookback_days = int(config.get("lookback_days", 0) or 0)
+            lookback_days_cfg = int(config.get("lookback_days", 0) or 0)
+            if exec_mode == "blank" and lookback_days_cfg > 0:
+                lookback_days = min(lookback_days_cfg, 160)
+            else:
+                lookback_days = lookback_days_cfg
             try:
                 md_start = market_data.index.min()
                 md_end = market_data.index.max()
@@ -1576,6 +2757,11 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 f"⚠️ Failed to apply lookback_days to HPO market_data; proceeding with raw window: {lb_exc}",
             )
 
+        # Snapshot full-span market data for final diagnostics (two-stage, etc.).
+        # This preserves the full lookback window (e.g. 3 years in FULL mode)
+        # even if HPO itself uses a shorter multi-slice subset.
+        market_data_full_for_diagnostics = market_data.copy()
+
         # Optional: restrict HPO evaluation to multiple non-consecutive slices
         # to better probe temporal robustness across distinct regimes without
         # requiring a single contiguous multi-year window.
@@ -1603,7 +2789,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
 
                     # Build deterministic, approximately evenly spaced slices.
                     masks: List[pd.Series] = []
-                    if full_span_days <= min_required_span:
+                    if full_span_days < min_required_span:
                         # Fallback: use the trailing min_required_span days as a
                         # single contiguous window (may be shorter than requested).
                         start_global = full_end - pd.Timedelta(days=min_required_span)
@@ -1833,8 +3019,8 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 params={
                     "horizon_bars": {
                         "type": "int",
-                        "low": 8,
-                        "high": 32,
+                        "low": 16,
+                        "high": 28,
                         "step": 2,
                     },
                     "profit_thr_base": {
@@ -1897,18 +3083,18 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 params={
                     "label_low_q": {
                         "type": "float",
-                        "low": 0.30,
-                        "high": 0.50,
+                        "low": 0.35,
+                        "high": 0.45,
                     },
                     "label_high_q": {
                         "type": "float",
-                        "low": 0.50,
-                        "high": 0.80,
+                        "low": 0.65,
+                        "high": 0.75,
                     },
                     "econ_min_return_multiple": {
                         "type": "float",
-                        "low": 1.0,
-                        "high": 2.5,
+                        "low": 1.2,
+                        "high": 1.6,
                     },
                 },
                 priority=4,
@@ -2141,7 +3327,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 Dict with keys: 'learnability', 'profitability', 'combined', 'edge'
             """
             # Determine CV splits based on model complexity
-            cv_splits_map = {"fast": 3, "medium": 4, "strong": 5}
+            cv_splits_map = {"fast": 3, "medium": 4, "strong": 4}
             cv_splits = cv_splits_map.get(model_complexity, 3)
 
             try:
@@ -2639,13 +3825,24 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 # match the production training path.
                 X_for_learnability = meta_features_model_processed
 
+                if debug_sample_count < debug_sample_limit:
+                    try:
+                        y_counts_raw = binary_labels.value_counts(dropna=False).to_dict()
+                    except Exception:
+                        y_counts_raw = {}
+                    tprint_info(
+                        f"[HPO_LEARNABILITY_INPUT] n_features={X_for_learnability.shape[1]}, "
+                        f"n_labels={int(binary_labels.notna().sum())}, y_counts={y_counts_raw}",
+                    )
+                    debug_sample_count += 1
+
                 # Compute learnability score with isotonic calibration. Allow HPO to
                 # tune the strength of signal-strength-based weighting.
                 signal_strength_scale_max = float(params.get("signal_strength_scale_max", 1.5))
                 if not np.isfinite(signal_strength_scale_max) or signal_strength_scale_max < 1.0:
                     signal_strength_scale_max = 1.5
 
-                learnability_score, mean_auc, calibrated_probs, iso_reg_probe, fold_aucs = compute_learnability_with_calibration(
+                learnability_score, mean_auc, calibrated_probs, iso_reg_probe, fold_aucs, oof_probs = compute_learnability_with_calibration(
                     X=X_for_learnability,
                     y=binary_labels,
                     realized_returns=realized_returns,
@@ -2654,6 +3851,10 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     time_aware_cv=True,
                     use_ensemble=use_ensemble,
                     signal_strength_scale_max=signal_strength_scale_max,
+                    event_durations=event_durations,
+                    market_index=market_data.index,
+                    base_horizon_bars=horizon,
+                    use_smoothed_brier_objective_lgbm=use_smoothed_brier_objective_lgbm,
                 )
 
                 # ===== AUC RANGE-BASED SCORING =====
@@ -2721,8 +3922,17 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 # Configurable thresholds: HPO-specific robustness gate (looser than
                 # final diagnostics). When violated, apply a large penalty instead
                 # of outright rejecting the configuration.
-                min_worst_fold_auc = float(config.get("hpo_min_worst_fold_auc", 0.45))
-                max_auc_cv_std = float(config.get("hpo_max_auc_cv_std", 0.12))
+                base_min_worst_fold_auc = 0.45
+                base_max_auc_cv_std = 0.12
+                if model_complexity == "medium":
+                    base_min_worst_fold_auc = 0.47
+                    base_max_auc_cv_std = 0.10
+                elif model_complexity == "strong":
+                    base_min_worst_fold_auc = 0.50
+                    base_max_auc_cv_std = 0.08
+
+                min_worst_fold_auc = float(config.get("hpo_min_worst_fold_auc", base_min_worst_fold_auc))
+                max_auc_cv_std = float(config.get("hpo_max_auc_cv_std", base_max_auc_cv_std))
 
                 if (worst_fold_auc_cv is not None) and (auc_cv_std is not None):
                     is_robust_cv = (auc_cv_std < max_auc_cv_std) and (worst_fold_auc_cv >= min_worst_fold_auc)
@@ -2736,7 +3946,13 @@ class MetaLabelingHPOExperimentStep(BaseStep):
 
                         shortfall_auc = max(0.0, min_worst_fold_auc - float(worst_fold_auc_cv))
                         excess_std = max(0.0, float(auc_cv_std) - max_auc_cv_std)
-                        penalty_weight = float(config.get("hpo_robustness_penalty_weight", 300.0))
+                        default_penalty_weight = 300.0
+                        if model_complexity == "medium":
+                            default_penalty_weight = 400.0
+                        elif model_complexity == "strong":
+                            default_penalty_weight = 500.0
+
+                        penalty_weight = float(config.get("hpo_robustness_penalty_weight", default_penalty_weight))
                         robustness_penalty = penalty_weight * (shortfall_auc + excess_std)
 
                 # Compute label entropy/balance score
@@ -2890,6 +4106,16 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     # Gentler penalty for active regimes (was 3.0 threshold, 5.0 weight)
                     penalty_density += (trades_per_day - 4.0) * 3.0
 
+                density_retention_penalty = 0.0
+                if trades_per_day > 4.0 and retention_total > 0.0:
+                    retention_target_local = float(config.get("retention_target", 0.30))
+                    retention_target_local = max(0.05, min(0.80, retention_target_local))
+                    retention_excess = max(0.0, float(retention_total) - retention_target_local)
+                    if retention_excess > 0.0:
+                        density_retention_penalty = (trades_per_day - 4.0) * retention_excess * 10.0
+
+                penalty_density += density_retention_penalty
+
                 penalty_noise = frac_small * 10.0
 
                 # Top-bucket economics (top 10% by smoothed probability) to capture
@@ -3017,11 +4243,11 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 # not rewarding sparse configs purely via 1/retention.
 
                 # Retention regularization parameter (configurable)
-                alpha_retention = float(config.get("retention_regularization_alpha", 0.03))
+                alpha_retention = float(config.get("retention_regularization_alpha", 0.05))
                 alpha_retention = max(0.01, min(0.10, alpha_retention))  # Clamp to [0.01, 0.10]
 
                 # Soft target for overall retention (fraction of pre-events kept)
-                retention_target = float(config.get("retention_target", 0.30))
+                retention_target = float(config.get("retention_target", 0.35))
                 retention_target = max(0.05, min(0.80, retention_target))
 
                 # Compute nonlinear shortfall penalty relative to the target
@@ -3058,7 +4284,9 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                         auc_range_adjustment = 0.02  # Small bonus for ideal range
                 
                 # Final retention-adjusted AUC (unified primary signal)
-                auc_retention_adjusted = mean_auc + auc_range_adjustment - retention_penalty
+                auc_ret_raw = mean_auc + auc_range_adjustment - retention_penalty
+                auc_cap = 0.65
+                auc_retention_adjusted = min(auc_ret_raw, auc_cap)
                 
                 # Trade density bonus: stronger when AUC is outside target range
                 # This gives edge/pnl/trades more influence when AUC is penalized
@@ -3137,7 +4365,140 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                             diagnostics_penalty = float(config.get("diagnostic_penalty_weight", 150.0))
                     except Exception:
                         diagnostics_penalty = 0.0
-                
+
+                # ===== COMBINED OBJECTIVE WITH RETENTION REGULARIZATION =====
+                # New formulation: objective adjusts the filtered AUC based on how far
+                # the retention rate falls below a soft target.
+                #
+                #   ret_target = 0.35  (35% of pre-events retained)
+                #   penalty    = alpha * (max(0, ret_target - retention_total))^2
+                #   objective  = AUC_filtered -  penalty
+                #
+                # This penalizes overly aggressive filtering (very low retention) while
+                # not rewarding sparse configs purely via 1/retention.
+
+                # Retention regularization parameter (configurable)
+
+                # Calibration-aware risk adjustment on top of retention-adjusted AUC.
+                weighted_brier = None
+                weighted_brier_norm = None
+                ece_norm = None
+                mid_brier = None
+                mid_brier_norm = None
+                calib_combo_value = None
+                rank_calib_score = auc_retention_adjusted
+
+                try:
+                    probs_array = np.asarray(calibrated_probs, dtype=float)
+                    y_calib_vals = np.asarray(binary_labels.values, dtype=float)
+                    mask_calib = np.isfinite(probs_array) & np.isfinite(y_calib_vals)
+                    probs_array = probs_array[mask_calib]
+                    y_calib_vals = y_calib_vals[mask_calib]
+                    n_calib = y_calib_vals.size
+
+                    min_calib_samples = int(config.get("calibration_min_samples", 200))
+                    if n_calib >= min_calib_samples:
+                        p_min = float(config.get("calibration_prob_min_clip", 0.05))
+                        p_max = float(config.get("calibration_prob_max_clip", 0.95))
+                        if p_max <= p_min:
+                            p_max = min(0.99, p_min + 0.05)
+                        probs_clipped = np.clip(probs_array, p_min, p_max)
+
+                        conf_power = float(config.get("calibration_confidence_power", 1.0))
+                        if conf_power != 1.0:
+                            confidence = np.abs(probs_clipped - 0.5) ** conf_power
+                            weights = 1.0 + confidence
+                        else:
+                            weights = np.ones_like(probs_clipped)
+
+                        errors = (y_calib_vals - probs_clipped) ** 2
+                        weighted_brier = float(np.average(errors, weights=weights))
+
+                        brier_target = float(config.get("calibration_brier_target", 0.18))
+                        brier_max = float(config.get("calibration_brier_max", 0.35))
+                        if brier_max <= brier_target:
+                            brier_max = brier_target + 1e-3
+                        excess = max(0.0, weighted_brier - brier_target)
+                        denom = max(brier_max - brier_target, 1e-6)
+                        weighted_brier_norm = min(1.0, excess / denom)
+
+                        n_bins_calib = int(config.get("calibration_bins", 10))
+                        if n_bins_calib <= 0:
+                            n_bins_calib = 10
+                        n_bins_calib = max(2, n_bins_calib)
+                        bin_edges = np.linspace(0.0, 1.0, n_bins_calib + 1)
+                        ece_val = 0.0
+                        for bi in range(n_bins_calib):
+                            mask_bin = (probs_clipped >= bin_edges[bi]) & (probs_clipped < bin_edges[bi + 1])
+                            idx_bin = np.nonzero(mask_bin)[0]
+                            n_bin = idx_bin.size
+                            if n_bin < 20:
+                                continue
+                            p_hat = float(np.mean(probs_clipped[idx_bin]))
+                            y_hat = float(np.mean(y_calib_vals[idx_bin]))
+                            ece_val += (n_bin / float(n_calib)) * abs(p_hat - y_hat)
+                        if ece_val > 0.0:
+                            ece_raw = float(ece_val)
+                            ece_max = float(config.get("calibration_ece_max", 0.25))
+                            if ece_max <= 0.0:
+                                ece_max = 0.25
+                            ece_norm = min(1.0, ece_raw / ece_max)
+
+                        mid_low = float(config.get("calibration_mid_prob_low", 0.3))
+                        mid_high = float(config.get("calibration_mid_prob_high", 0.7))
+                        if mid_high <= mid_low:
+                            mid_high = mid_low + 1e-3
+                        mid_mask = (probs_clipped >= mid_low) & (probs_clipped <= mid_high)
+                        if np.any(mid_mask):
+                            errors_mid = (y_calib_vals[mid_mask] - probs_clipped[mid_mask]) ** 2
+                            if errors_mid.size > 0:
+                                mid_brier = float(np.mean(errors_mid))
+                                mid_target = float(config.get("calibration_mid_brier_target", brier_target))
+                                mid_max = float(config.get("calibration_mid_brier_max", brier_max))
+                                if mid_max <= mid_target:
+                                    mid_max = mid_target + 1e-3
+                                mid_excess = max(0.0, mid_brier - mid_target)
+                                mid_denom = max(mid_max - mid_target, 1e-6)
+                                mid_brier_norm = min(1.0, mid_excess / mid_denom)
+
+                        alpha_calib = float(config.get("calibration_brier_weight", 0.7))
+                        beta_calib = float(config.get("calibration_ece_weight", 0.3))
+                        gamma_calib = float(config.get("calibration_mid_weight", 0.3))
+                        calib_combo = 0.0
+                        if weighted_brier_norm is not None:
+                            calib_combo += alpha_calib * weighted_brier_norm
+                        if ece_norm is not None:
+                            calib_combo += beta_calib * ece_norm
+                        if mid_brier_norm is not None:
+                            calib_combo += gamma_calib * mid_brier_norm
+                        if calib_combo < 0.0:
+                            calib_combo = 0.0
+                        calib_combo_value = float(calib_combo)
+
+                        lambda_calib = float(config.get("calibration_lambda", 0.95))
+                        if lambda_calib < 0.0:
+                            lambda_calib = 0.0
+                        factor = 1.0 - lambda_calib * calib_combo
+                        if factor < 0.0:
+                            factor = 0.0
+
+                        deflation = 0.0
+                        if auc_cv_std is not None and np.isfinite(auc_cv_std):
+                            try:
+                                deflation = 2.0 * float(auc_cv_std)
+                            except Exception:
+                                deflation = 0.0
+                        deflated_auc = max(0.0, float(auc_retention_adjusted) - deflation)
+                        rank_calib_score = deflated_auc * factor
+                except Exception:
+                    weighted_brier = None
+                    weighted_brier_norm = None
+                    ece_norm = None
+                    mid_brier = None
+                    mid_brier_norm = None
+                    calib_combo_value = None
+                    rank_calib_score = auc_retention_adjusted
+
                 # ===== SIMPLIFIED COMBINED OBJECTIVE =====
                 # Primary components:
                 # 1. edge_scaled: Captures profitability AND learnability (via capture ratio)
@@ -3147,7 +4508,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 #    and unrealistic TPSL geometry relative to ATR-based trailing.
                 combined_score = (
                     edge_scaled * edge_weight
-                    + (auc_retention_adjusted * 100.0)  # Unified AUC signal
+                    + (rank_calib_score * 100.0)
                     + (trades_bonus * density_weight)
                     - (penalty_density * 0.1)
                     - (tto_penalty * 0.1)
@@ -3200,6 +4561,8 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     'auc_in_target_range': bool(auc_in_target_range),
                     'auc_range_adjustment': float(auc_range_adjustment),
                     'auc_weight_multiplier': float(auc_weight_multiplier),
+                    # NEW: CV fold diagnostics from learnability probe
+                    'fold_aucs': fold_aucs.tolist() if isinstance(fold_aucs, np.ndarray) else list(fold_aucs) if fold_aucs is not None else [],
                     'auc_interpretation': (
                         'too_noisy' if mean_auc < 0.54 else
                         'good_edge' if mean_auc <= 0.62 else
@@ -3211,6 +4574,13 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     'retention_penalty': float(retention_penalty),
                     'auc_retention_adjusted': float(auc_retention_adjusted),
                     'alpha_retention': float(alpha_retention),
+                    'weighted_brier': float(weighted_brier) if weighted_brier is not None else None,
+                    'weighted_brier_norm': float(weighted_brier_norm) if weighted_brier_norm is not None else None,
+                    'ece_norm': float(ece_norm) if ece_norm is not None else None,
+                    'mid_brier': float(mid_brier) if mid_brier is not None else None,
+                    'mid_brier_norm': float(mid_brier_norm) if mid_brier_norm is not None else None,
+                    'calibration_combo': float(calib_combo_value) if calib_combo_value is not None else None,
+                    'rank_calib_score': float(rank_calib_score),
                 }
 
                 # Optional per-regime breakdown using attached HMM regimes, if available.
@@ -3490,7 +4860,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
 
         # Stage 3 uses all parameters (optionally treating horizon_bars as fixed when calibrated)
 
-        stages = DEFAULT_STAGE_CONFIG
+        stages = STAGE_CONFIGS
         stage_results: List[Dict[str, Any]] = []
         all_trials_count = 0
         best_overall_score = float('-inf')
@@ -3958,6 +5328,37 @@ class MetaLabelingHPOExperimentStep(BaseStep):
         try:
             # Re-run labeling with best params to get intermediate data
             diag_params = best_params.copy()
+
+            # For diagnostics (including two-stage bagged meta-model), prefer the
+            # full lookback window if available, even when HPO itself used a
+            # shorter multi-slice subset.
+            market_data_diag = None
+            try:
+                if "market_data_full_for_diagnostics" in locals() and isinstance(
+                    market_data_full_for_diagnostics, pd.DataFrame
+                ):
+                    market_data_diag = market_data_full_for_diagnostics.copy()
+            except Exception:
+                market_data_diag = None
+
+            if market_data_diag is None:
+                market_data_diag = market_data.copy()
+
+            try:
+                primary_signals_diag = generate_primary_signals(market_data_diag.copy())
+            except Exception:
+                try:
+                    primary_signals_diag = primary_signals.reindex(market_data_diag.index)
+                except Exception:
+                    primary_signals_diag = pd.Series(0, index=market_data_diag.index)
+
+            log_ret_diag = np.log(market_data_diag["close"]).diff()
+            volatility_1d = log_ret_diag.rolling(96).std()
+
+            # Override shared variables so that subsequent diagnostics operate
+            # on the full diagnostics window.
+            market_data = market_data_diag
+            primary_signals = primary_signals_diag
             
             # Extract parameters
             profit_thr_base = float(diag_params.get("profit_thr_base", 0.012))
@@ -4031,8 +5432,31 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 volatility=volatility_1d,
                 econ_min_return_multiple=econ_min_mult,
             )
-            
-            regimes_diag = market_data.get("hmm_regime_label_1h")
+
+            regimes_diag = None
+            try:
+                # Prefer causal volatility regimes over HMM regimes for diagnostics
+                if "volatility_regime" in market_data.columns:
+                    regimes_diag = market_data["volatility_regime"]
+                elif "vol_regime_high" in market_data.columns or "vol_regime_medium" in market_data.columns:
+                    # Derive simple categorical regimes from volatility dummies
+                    regime_labels: list[str] = []
+                    has_high = "vol_regime_high" in market_data.columns
+                    has_med = "vol_regime_medium" in market_data.columns
+                    for idx in market_data.index:
+                        if has_high and market_data.at[idx, "vol_regime_high"] == 1:
+                            regime_labels.append("high")
+                        elif has_med and market_data.at[idx, "vol_regime_medium"] == 1:
+                            regime_labels.append("medium")
+                        else:
+                            regime_labels.append("low")
+                    regimes_diag = pd.Series(regime_labels, index=market_data.index)
+                elif "hmm_regime_label_1h" in market_data.columns:
+                    # Fallback to HMM regimes only if volatility regimes are unavailable
+                    regimes_diag = market_data["hmm_regime_label_1h"]
+            except Exception:
+                regimes_diag = None
+
             if regimes_diag is not None:
                 quantile_labels_diag = create_regime_aware_quantile_labels_from_vol_scaled_returns(
                     vol_scaled=vol_scaled_diag,
@@ -4047,6 +5471,38 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     high_q=label_high_q,
                 )
             
+            # Tail exit-return diagnostics: mean net_return by exit_reason
+            # for positive (label=1) and negative (label=0) quantile tails.
+            try:
+                tail_exit_stats: Dict[str, Any] = {}
+                df_tail = pd.DataFrame(
+                    {
+                        "label": quantile_labels_diag,
+                        "ret": realized_returns_diag,
+                        "exit": exit_reasons_diag,
+                    }
+                )
+                df_tail = df_tail.dropna(subset=["label", "ret", "exit"])
+
+                for tail_label, tail_name in [(1.0, "positive"), (0.0, "negative")]:
+                    mask_tail = df_tail["label"] == tail_label
+                    if not mask_tail.any():
+                        continue
+                    grouped = df_tail.loc[mask_tail].groupby("exit")["ret"].agg(["mean", "count"])
+                    stats: Dict[str, Any] = {}
+                    for exit_reason, row in grouped.iterrows():
+                        stats[str(exit_reason)] = {
+                            "mean": float(row["mean"]),
+                            "n": int(row["count"]),
+                        }
+                    tail_exit_stats[tail_name] = stats
+
+                if tail_exit_stats:
+                    best_config_diagnostics["tail_exit_stats"] = tail_exit_stats
+            except Exception:
+                # Diagnostics are best-effort; ignore failures here.
+                pass
+
             labeled_mask_diag = ~quantile_labels_diag.isna()
             
             # Build meta-features
@@ -4067,8 +5523,8 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 meta_feature_cfg=meta_feature_cfg,
             )
             
-            # Compute calibrated probabilities
-            _, mean_auc_diag, calibrated_probs_diag, _, _ = compute_learnability_with_calibration(
+            # Compute calibrated probabilities with t1-aware CV
+            _, mean_auc_diag, calibrated_probs_diag, _, fold_aucs_diag, oof_probs_diag = compute_learnability_with_calibration(
                 X=meta_features_processed,
                 y=quantile_labels_diag,
                 realized_returns=realized_returns_diag,
@@ -4076,17 +5532,24 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 cv_splits=5,
                 time_aware_cv=True,
                 use_ensemble=False,
+                event_durations=event_durations_diag,
+                market_index=market_data.index,
+                base_horizon_bars=horizon,
+                use_smoothed_brier_objective_lgbm=use_smoothed_brier_objective_lgbm,
             )
 
-            # Align calibrated probabilities to labeled events (non-NaN labels)
+            # Align calibrated probabilities and out-of-fold probabilities to labeled events (non-NaN labels)
             try:
                 valid_mask_probs = ~quantile_labels_diag.isna()
+                probs_series_diag = None
+                oof_probs_series_diag = None
                 if isinstance(calibrated_probs_diag, np.ndarray) and len(calibrated_probs_diag) == int(valid_mask_probs.sum()):
                     probs_series_diag = pd.Series(calibrated_probs_diag, index=quantile_labels_diag.index[valid_mask_probs])
-                else:
-                    probs_series_diag = None
+                if isinstance(oof_probs_diag, np.ndarray) and len(oof_probs_diag) == int(valid_mask_probs.sum()):
+                    oof_probs_series_diag = pd.Series(oof_probs_diag, index=quantile_labels_diag.index[valid_mask_probs])
             except Exception:
                 probs_series_diag = None
+                oof_probs_series_diag = None
 
             # Create "full" labels (before quantile filtering)
             econ_floor = econ_min_mult * effective_tx_cost
@@ -4095,6 +5558,260 @@ class MetaLabelingHPOExperimentStep(BaseStep):
             y_full_diag[full_mask & (realized_returns_diag > 0)] = 1.0
             y_full_diag[full_mask & (realized_returns_diag <= 0)] = 0.0
             
+            # Two-stage bagged meta-model diagnostics (activity gate + direction)
+            tprint_info("  → Training two-stage bagged meta-model (activity + direction)...")
+            try:
+                # Build events DataFrame with realized returns for stop/timeout split
+                events_df_diag = pd.DataFrame(index=realized_returns_diag.index)
+                events_df_diag["ret"] = realized_returns_diag
+
+                # Use raw binary labels from compute_realized_returns (1=profit, 0=loss/timeout)
+                outcomes_binary_diag = binary_labels_raw
+
+                y_trinary_diag = generate_trinary_labels(events_df_diag, outcomes_binary_diag)
+
+                # Restrict to indices where we have both features and trinary labels
+                if isinstance(meta_features_processed, pd.DataFrame):
+                    X_two_stage = meta_features_processed
+                else:
+                    X_two_stage = pd.DataFrame(meta_features_processed, index=realized_returns_diag.index)
+
+                mask_two_stage = (
+                    ~y_trinary_diag.isna()
+                    & ~realized_returns_diag.isna()
+                )
+
+                n_two_stage_events = int(mask_two_stage.sum())
+                if n_two_stage_events >= 50:
+                    X_ts = X_two_stage.loc[mask_two_stage]
+                    y_ts = y_trinary_diag.loc[mask_two_stage]
+
+                    base_lgb_params = {
+                        "boosting_type": "gbdt",
+                        "objective": "binary",
+                        "max_depth": 4,
+                        "n_estimators": 220,
+                        "learning_rate": 0.02,
+                        "subsample": 0.8,
+                        "colsample_bytree": 0.8,
+                        "min_child_samples": 80,
+                        "reg_alpha": 0.3,
+                        "reg_lambda": 0.9,
+                        "n_jobs": -1,
+                        "verbose": -1,
+                        "random_state": 42,
+                    }
+
+                    two_stage_model = TwoStageBaggedMetaModel(
+                        base_params=base_lgb_params,
+                        n_bagging=10,
+                        bagging_fraction=0.7,
+                        random_state=42,
+                    )
+                    two_stage_model.fit(X_ts, y_ts.to_numpy())
+
+                    # Activity AUC: active (profit or stop) vs timeout
+                    y_activity_diag = (y_ts != 0).astype(int)
+                    p_active_diag = two_stage_model.stage1_model.predict_proba(X_ts)[:, 1]
+                    activity_auc = None
+                    activity_brier = None
+                    activity_ece = None
+                    try:
+                        activity_auc = roc_auc_score(y_activity_diag, p_active_diag)
+                        activity_brier, activity_ece = compute_brier_and_ece(y_activity_diag, p_active_diag)
+                    except Exception:
+                        activity_auc = None
+
+                    # Direction AUC: among active events only
+                    direction_auc = None
+                    direction_brier = None
+                    direction_ece = None
+                    mask_active = (y_ts != 0)
+                    if mask_active.sum() >= 10 and two_stage_model.stage2_ensemble is not None:
+                        y_dir_diag = (y_ts[mask_active] == 1).astype(int)
+                        p_win_conditional_diag = two_stage_model.stage2_ensemble.predict_proba(
+                            X_ts.loc[mask_active]
+                        )[:, 1]
+                        try:
+                            direction_auc = roc_auc_score(y_dir_diag, p_win_conditional_diag)
+                            direction_brier, direction_ece = compute_brier_and_ece(
+                                y_dir_diag, p_win_conditional_diag
+                            )
+                        except Exception:
+                            direction_auc = None
+
+                    # Combined AUC: profit vs others using final score
+                    combined_auc = None
+                    global_rank_auc = None
+                    regime_weighted_edge = None
+                    per_regime_edge: Dict[str, Any] = {}
+                    precision_top20 = None
+                    base_rate = None
+                    trades_per_day_two_stage = None
+                    mean_return_all = None
+                    mean_return_win = None
+                    mean_return_loss = None
+
+                    # Final score for two-stage model
+                    if two_stage_model.stage2_ensemble is not None:
+                        p_win_conditional_full = two_stage_model.stage2_ensemble.predict_proba(X_ts)[:, 1]
+                    else:
+                        p_win_conditional_full = np.full(X_ts.shape[0], 0.5, dtype=float)
+                    final_score_diag = p_active_diag * p_win_conditional_full
+                    y_final_diag = (y_ts == 1).astype(int)
+
+                    # Global combined AUC
+                    try:
+                        if np.unique(y_final_diag).size >= 2:
+                            combined_auc = roc_auc_score(y_final_diag, final_score_diag)
+                    except Exception:
+                        combined_auc = None
+
+                    # Global Rank AUC via regime-wise percentile ranks and regime-weighted edge
+                    regimes_events = None
+                    try:
+                        if "regimes_diag" in locals() and regimes_diag is not None:
+                            if isinstance(regimes_diag, pd.Series):
+                                regimes_events = regimes_diag.reindex(X_ts.index)
+                    except Exception:
+                        regimes_events = None
+
+                    if regimes_events is not None:
+                        try:
+                            # Build a regime-wise ranking DataFrame for robust computation
+                            df_rank = pd.DataFrame(
+                                {
+                                    "score": final_score_diag,
+                                    "y": y_final_diag,
+                                    "regime": regimes_events,
+                                },
+                                index=X_ts.index,
+                            ).dropna(subset=["score", "y", "regime"])
+
+                            if not df_rank.empty and df_rank["y"].nunique() >= 2:
+                                # Rank scores within each regime
+                                df_rank["regime_rank"] = df_rank.groupby("regime")["score"].rank(
+                                    pct=True,
+                                    method="average",
+                                )
+
+                                try:
+                                    global_rank_auc = float(
+                                        roc_auc_score(df_rank["y"].values, df_rank["regime_rank"].values)
+                                    )
+                                except Exception:
+                                    global_rank_auc = None
+
+                                # Regime-weighted edge for top 10% per regime using realized returns
+                                total_top = 0
+                                weighted_edge_sum = 0.0
+                                per_regime_edge = {}
+
+                                returns_aligned = realized_returns_diag.reindex(df_rank.index)
+                                for reg_val, g in df_rank.groupby("regime"):
+                                    g_top = g[g["regime_rank"] >= 0.9]
+                                    n_top_reg = int(len(g_top))
+                                    if n_top_reg < 10:
+                                        continue
+
+                                    ret_top = returns_aligned.reindex(g_top.index)
+                                    if ret_top is not None and not ret_top.dropna().empty:
+                                        edge_reg = float(ret_top.mean())
+                                    else:
+                                        edge_reg = 0.0
+
+                                    key = str(reg_val)
+                                    per_regime_edge[key] = {
+                                        "edge_top10": edge_reg,
+                                        "n_top": n_top_reg,
+                                    }
+                                    total_top += n_top_reg
+                                    weighted_edge_sum += edge_reg * n_top_reg
+
+                                if total_top > 0:
+                                    regime_weighted_edge = float(weighted_edge_sum / total_top)
+
+                                # Precision@Top20% and base rate (student quality)
+                                top20_mask = df_rank["regime_rank"] >= 0.8
+                                n_top20 = int(top20_mask.sum())
+                                if n_top20 > 0:
+                                    winners_top20 = int((df_rank.loc[top20_mask, "y"] == 1).sum())
+                                    precision_top20 = float(winners_top20 / n_top20)
+                                base_rate = float((df_rank["y"] == 1).mean())
+                        except Exception:
+                            # Leave global_rank_auc and per_regime_edge as-is on failure
+                            pass
+
+                    # Trades/day and mean returns per trade (for diagnostics context)
+                    try:
+                        # Use ACTIVE events (profit/stop) over the actual event span
+                        if isinstance(realized_returns_diag.index, pd.DatetimeIndex) and n_two_stage_events > 0:
+                            event_idx = realized_returns_diag.index[mask_two_stage]
+                            if len(event_idx) >= 2:
+                                days_span_events = (
+                                    event_idx.max() - event_idx.min()
+                                ).total_seconds() / 86400.0
+                                if days_span_events > 0:
+                                    n_active_events = int((y_ts != 0).sum())
+                                    if n_active_events > 0:
+                                        trades_per_day_two_stage = float(n_active_events / days_span_events)
+                                    else:
+                                        trades_per_day_two_stage = float(n_two_stage_events / days_span_events)
+                    except Exception:
+                        trades_per_day_two_stage = None
+
+                    try:
+                        ret_all = realized_returns_diag.loc[mask_two_stage]
+                        if not ret_all.empty:
+                            mean_return_all = float(ret_all.mean())
+                        ret_win = realized_returns_diag.loc[mask_two_stage & (y_ts == 1)]
+                        if not ret_win.empty:
+                            mean_return_win = float(ret_win.mean())
+                        ret_loss = realized_returns_diag.loc[mask_two_stage & (y_ts != 1)]
+                        if not ret_loss.empty:
+                            mean_return_loss = float(ret_loss.mean())
+                    except Exception:
+                        mean_return_all = mean_return_all
+
+                    two_stage_diag = {
+                        "n_events": n_two_stage_events,
+                        "activity_auc": float(activity_auc) if activity_auc is not None else None,
+                        "direction_auc": float(direction_auc) if direction_auc is not None else None,
+                        "combined_auc": float(combined_auc) if combined_auc is not None else None,
+                        "global_rank_auc": float(global_rank_auc) if global_rank_auc is not None else None,
+                        "regime_weighted_edge": float(regime_weighted_edge) if regime_weighted_edge is not None else None,
+                        "per_regime_edge": per_regime_edge,
+                        "precision_top20": float(precision_top20) if precision_top20 is not None else None,
+                        "base_rate": float(base_rate) if base_rate is not None else None,
+                        "activity_brier": float(activity_brier) if activity_brier is not None else None,
+                        "activity_ece": float(activity_ece) if activity_ece is not None else None,
+                        "direction_brier": float(direction_brier) if direction_brier is not None else None,
+                        "direction_ece": float(direction_ece) if direction_ece is not None else None,
+                        "trades_per_day": float(trades_per_day_two_stage) if trades_per_day_two_stage is not None else None,
+                        "mean_return_all": float(mean_return_all) if mean_return_all is not None else None,
+                        "mean_return_win": float(mean_return_win) if mean_return_win is not None else None,
+                        "mean_return_loss": float(mean_return_loss) if mean_return_loss is not None else None,
+                    }
+                    best_config_diagnostics["two_stage_meta_model"] = two_stage_diag
+
+                    msg_parts: List[str] = []
+                    if activity_auc is not None:
+                        msg_parts.append(f"activity={activity_auc:.3f}")
+                    if direction_auc is not None:
+                        msg_parts.append(f"direction={direction_auc:.3f}")
+                    if combined_auc is not None:
+                        msg_parts.append(f"combined={combined_auc:.3f}")
+                    if global_rank_auc is not None:
+                        msg_parts.append(f"rank={global_rank_auc:.3f}")
+                    if msg_parts:
+                        tprint_info("  → Two-stage meta-model AUCs: " + ", ".join(msg_parts))
+                else:
+                    tprint_warning(
+                        f"  ⚠️ Two-stage meta-model skipped: insufficient events (n={n_two_stage_events})"
+                    )
+            except Exception as e_two_stage:
+                tprint_warning(f"  ⚠️ Two-stage meta-model diagnostics failed: {e_two_stage}")
+
             # Attach signal funnel statistics from the primary signal generator,
             # if available, so that HPO diagnostics can inspect raw vs final
             # signal counts.
@@ -4104,15 +5821,16 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 signal_funnel_diag = {}
             if signal_funnel_diag:
                 best_config_diagnostics['signal_funnel'] = signal_funnel_diag
-
             # 1. Filtering inflation diagnostics
             tprint_info("  → Computing filtering inflation diagnostics...")
             try:
                 probabilities_for_filter = None
-                if probs_series_diag is not None:
+                # Prefer out-of-fold probabilities when available to avoid in-sample optimism
+                source_series_for_filter = oof_probs_series_diag if "oof_probs_series_diag" in locals() and oof_probs_series_diag is not None else probs_series_diag
+                if source_series_for_filter is not None:
+                    probs_full_aligned = pd.Series(np.nan, index=quantile_labels_diag.index, dtype=float)
                     try:
-                        probs_full_aligned = pd.Series(np.nan, index=quantile_labels_diag.index, dtype=float)
-                        probs_full_aligned.loc[probs_series_diag.index] = probs_series_diag
+                        probs_full_aligned.loc[source_series_for_filter.index] = source_series_for_filter
                         probabilities_for_filter = probs_full_aligned.to_numpy(dtype=float)
                     except Exception:
                         probabilities_for_filter = None
@@ -4126,6 +5844,9 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     probabilities=probabilities_for_filter,
                     cv_splits=5,
                     time_aware_cv=True,
+                    event_durations=event_durations_diag,
+                    market_index=market_data.index,
+                    base_horizon_bars=horizon,
                 )
                 best_config_diagnostics['filtering_diagnostics'] = filtering_diag
                 
@@ -4137,21 +5858,34 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     tprint_warning("  ⚠️ WARNING: Precision collapse detected (model only good on easy cases)")
             except Exception as e:
                 tprint_warning(f"  ⚠️ Filtering diagnostics failed: {e}")
-            
+
             # 2. Calibration diagnostics + Mutual Information diagnostics
             tprint_info("  → Computing calibration diagnostics...")
             try:
                 idx_labeled = quantile_labels_diag.index[labeled_mask_diag]
                 y_calib = quantile_labels_diag.loc[idx_labeled].values
 
-                if probs_series_diag is not None:
-                    probs_calib_series = probs_series_diag.reindex(idx_labeled)
-                    probs_calib = probs_calib_series.to_numpy(dtype=float)
-                else:
+                # Prefer out-of-fold probabilities when available; fall back to full-sample calibrated
+                probs_calib = None
+                if "oof_probs_series_diag" in locals() and oof_probs_series_diag is not None:
+                    try:
+                        probs_calib_series = oof_probs_series_diag.reindex(idx_labeled)
+                        probs_calib = probs_calib_series.to_numpy(dtype=float)
+                    except Exception:
+                        probs_calib = None
+
+                if probs_calib is None and probs_series_diag is not None:
+                    try:
+                        probs_calib_series = probs_series_diag.reindex(idx_labeled)
+                        probs_calib = probs_calib_series.to_numpy(dtype=float)
+                    except Exception:
+                        probs_calib = None
+
+                if probs_calib is None and isinstance(calibrated_probs_diag, np.ndarray) and calibrated_probs_diag.size > 0:
                     probs_calib = calibrated_probs_diag if len(calibrated_probs_diag) == len(y_calib) else calibrated_probs_diag[: len(y_calib)]
 
                 returns_calib = realized_returns_diag.loc[idx_labeled].values
-                
+
                 calib_diag = compute_calibration_diagnostics(
                     y_true=y_calib,
                     probabilities=probs_calib,
@@ -4159,20 +5893,20 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     transaction_cost=effective_tx_cost,
                     n_bins=10,
                 )
-                best_config_diagnostics['calibration_diagnostics'] = calib_diag
-                
-                if calib_diag.get('brier_score') is not None:
+                best_config_diagnostics["calibration_diagnostics"] = calib_diag
+
+                if calib_diag.get("brier_score") is not None:
                     tprint_info(f"  → Brier Score: {calib_diag['brier_score']:.4f}")
-                if calib_diag.get('ece') is not None:
+                if calib_diag.get("ece") is not None:
                     tprint_info(f"  → ECE: {calib_diag['ece']:.4f}")
-                if not calib_diag.get('is_well_calibrated', True):
+                if not calib_diag.get("is_well_calibrated", True):
                     tprint_warning("  ⚠️ WARNING: Model is miscalibrated (ECE > 0.05)")
 
                 # 2b. Mutual information diagnostics (probability deciles vs label and return sign)
                 tprint_info("  → Computing mutual information diagnostics...")
                 mi_diag: Dict[str, Any] = {}
                 try:
-                    if len(probs_calib) >= 50:
+                    if probs_calib is not None and len(probs_calib) >= 50:
                         probs_series = pd.Series(probs_calib, index=idx_labeled).clip(0.0, 1.0)
                         try:
                             prob_decile = pd.qcut(
@@ -4188,7 +5922,9 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                             y_series = pd.Series(y_calib, index=idx_labeled)
                             mi_nats_label = _discrete_mi(prob_decile, y_series)
                             mi_bits_label = (
-                                mi_nats_label / np.log(2.0) if np.isfinite(mi_nats_label) else float("nan")
+                                mi_nats_label / np.log(2.0)
+                                if np.isfinite(mi_nats_label)
+                                else float("nan")
                             )
                             mi_diag["mi_prob_label_nats"] = mi_nats_label
                             mi_diag["mi_prob_label_bits"] = mi_bits_label
@@ -4196,7 +5932,9 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                             dir_series = np.sign(pd.Series(returns_calib, index=idx_labeled)).astype(int)
                             mi_nats_dir = _discrete_mi(prob_decile, dir_series)
                             mi_bits_dir = (
-                                mi_nats_dir / np.log(2.0) if np.isfinite(mi_nats_dir) else float("nan")
+                                mi_nats_dir / np.log(2.0)
+                                if np.isfinite(mi_nats_dir)
+                                else float("nan")
                             )
                             mi_diag["mi_prob_return_sign_nats"] = mi_nats_dir
                             mi_diag["mi_prob_return_sign_bits"] = mi_bits_dir
@@ -4210,6 +5948,78 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                             )
                 except Exception as mi_exc:
                     tprint_warning(f"  ⚠️ MI diagnostics failed: {mi_exc}")
+
+                regime_rank_diag: Dict[str, Any] = {}
+                try:
+                    if regimes_diag is not None and probs_calib is not None and len(probs_calib) == len(y_calib):
+                        regimes_for_calib = regimes_diag.reindex(idx_labeled)
+                        if isinstance(regimes_for_calib, pd.Series):
+                            valid_reg_mask = ~regimes_for_calib.isna()
+                            valid_reg_mask = valid_reg_mask.to_numpy()
+                            if isinstance(probs_calib, np.ndarray):
+                                valid_reg_mask = valid_reg_mask & np.isfinite(probs_calib)
+
+                            if valid_reg_mask.any():
+                                y_rr = y_calib[valid_reg_mask]
+                                if len(y_rr) >= 50 and np.unique(y_rr).size >= 2:
+                                    probs_rr = probs_calib[valid_reg_mask]
+                                    regs_rr = regimes_for_calib.iloc[valid_reg_mask]
+
+                                    df_rr = pd.DataFrame(
+                                        {"prob": probs_rr, "regime": regs_rr.values, "y": y_rr},
+                                        index=regs_rr.index,
+                                    )
+                                    df_rr = df_rr.dropna(subset=["prob", "regime", "y"])
+
+                                    if not df_rr.empty and df_rr["y"].nunique() >= 2:
+                                        df_rr["regime_rank"] = df_rr.groupby("regime")["prob"].rank(
+                                            pct=True,
+                                            method="average",
+                                        )
+
+                                        try:
+                                            global_auc_raw = float(
+                                                roc_auc_score(df_rr["y"].values, df_rr["prob"].values)
+                                            )
+                                        except Exception:
+                                            global_auc_raw = None
+
+                                        try:
+                                            global_auc_rank = float(
+                                                roc_auc_score(df_rr["y"].values, df_rr["regime_rank"].values)
+                                            )
+                                        except Exception:
+                                            global_auc_rank = None
+
+                                        per_regime_auc_rank: Dict[str, Any] = {}
+                                        for reg_val, g in df_rr.groupby("regime"):
+                                            y_g = g["y"].values
+                                            r_g = g["regime_rank"].values
+                                            auc_g = None
+                                            if len(y_g) >= 30 and np.unique(y_g).size >= 2:
+                                                try:
+                                                    auc_g = float(roc_auc_score(y_g, r_g))
+                                                except Exception:
+                                                    auc_g = None
+                                            per_regime_auc_rank[str(reg_val)] = {
+                                                "auc": auc_g,
+                                                "n_events": int(len(g)),
+                                            }
+
+                                        regime_rank_diag = {
+                                            "global_auc_raw": global_auc_raw,
+                                            "global_auc_regime_rank": global_auc_rank,
+                                            "per_regime_auc_rank": per_regime_auc_rank,
+                                        }
+                                        best_config_diagnostics["regime_rank_diagnostics"] = regime_rank_diag
+
+                                        if global_auc_raw is not None and global_auc_rank is not None:
+                                            tprint_info(
+                                                f"  → Regime-rank AUC: raw={global_auc_raw:.3f}, "
+                                                f"regime_rank={global_auc_rank:.3f}"
+                                            )
+                except Exception as rr_exc:
+                    tprint_warning(f"  ⚠️ Regime-rank diagnostics failed: {rr_exc}")
 
             except Exception as e:
                 tprint_warning(f"  ⚠️ Calibration diagnostics failed: {e}")
@@ -4225,6 +6035,10 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     volatility=volatility_1d,
                     n_folds=5,
                     transaction_cost=effective_tx_cost,
+                    time_aware_cv=True,
+                    event_durations=event_durations_diag,
+                    market_index=market_data.index,
+                    base_horizon_bars=horizon,
                 )
                 best_config_diagnostics['robustness_diagnostics'] = robust_diag
                 
@@ -4246,11 +6060,118 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     top_k_features=10,
                 )
                 best_config_diagnostics['class_overlap_diagnostics'] = overlap_diag
-                
                 if overlap_diag.get('easy_problem_detected'):
                     tprint_warning("  ⚠️ WARNING: Easy problem detected (retained events form tight cluster)")
             except Exception as e:
                 tprint_warning(f"  ⚠️ Class overlap diagnostics failed: {e}")
+
+            # 5. Permutation-importance leakage diagnostics (god feature detection)
+            tprint_info("  → Computing permutation-importance leakage diagnostics...")
+            try:
+                leakage_diag = run_leakage_sanity_check(
+                    X=meta_features_processed,
+                    y=quantile_labels_diag,
+                    random_state=42,
+                    top_k=5,
+                    n_repeats=5,
+                )
+                if leakage_diag:
+                    best_config_diagnostics["leakage_diagnostics"] = leakage_diag
+                    if leakage_diag.get("god_feature_suspected"):
+                        tprint_warning(
+                            "  ⚠️ WARNING: Permutation-importance suggests a god feature (possible leakage)"
+                        )
+            except Exception as e:
+                tprint_warning(f"  ⚠️ Leakage diagnostics failed: {e}")
+
+            # 6. Lag-1 stress test for look-ahead bias
+            tprint_info("  → Computing lag-1 stress test diagnostics...")
+            try:
+                lag_diag = run_lag1_stress_test(
+                    X=meta_features_processed,
+                    y=quantile_labels_diag,
+                    random_state=42,
+                )
+                if lag_diag:
+                    best_config_diagnostics["lag1_stress_test"] = lag_diag
+                    if lag_diag.get("lookahead_suspected"):
+                        tprint_warning(
+                            "  ⚠️ WARNING: Lag-1 stress test suggests look-ahead bias (AUC drops sharply when lagged)"
+                        )
+            except Exception as e:
+                tprint_warning(f"  ⚠️ Lag-1 stress test diagnostics failed: {e}")
+
+            # 7. Dummy-rule volatility baseline AUC
+            tprint_info("  → Computing dummy-rule volatility baseline AUC...")
+            try:
+                dummy_diag = compute_dummy_baseline_auc(
+                    volatility=volatility_1d,
+                    y=quantile_labels_diag,
+                    window=64,
+                )
+                if dummy_diag:
+                    best_config_diagnostics["dummy_baseline_diagnostics"] = dummy_diag
+            except Exception as e:
+                tprint_warning(f"  ⚠️ Dummy baseline diagnostics failed: {e}")
+
+            # 8. Y-shuffle sanity test (labels shuffled, features intact)
+            tprint_info("  → Running Y-shuffle sanity test on meta-features...")
+            try:
+                if isinstance(quantile_labels_diag, pd.Series):
+                    y_vals = quantile_labels_diag.to_numpy(dtype=float)
+                    rng = np.random.RandomState(42)
+                    rng.shuffle(y_vals)
+                    y_shuffled = pd.Series(y_vals, index=quantile_labels_diag.index)
+
+                    _, auc_y_shuffle, _, _, _, _ = compute_learnability_with_calibration(
+                        X=meta_features_processed,
+                        y=y_shuffled,
+                        realized_returns=realized_returns_diag,
+                        model_complexity="strong",
+                        cv_splits=5,
+                        time_aware_cv=True,
+                        use_ensemble=False,
+                        event_durations=event_durations_diag,
+                        market_index=market_data.index,
+                        base_horizon_bars=horizon,
+                        use_smoothed_brier_objective_lgbm=use_smoothed_brier_objective_lgbm,
+                    )
+
+                    best_config_diagnostics["y_shuffle_test"] = {
+                        "auc": float(auc_y_shuffle),
+                    }
+            except Exception as e:
+                tprint_warning(f"  ⚠️ Y-shuffle test failed: {e}")
+
+            # 9. Single-feature baseline: momentum_10_x_regime_high
+            tprint_info("  → Running single-feature baseline with momentum_10_x_regime_high...")
+            try:
+                single_name = "momentum_10_x_regime_high"
+                if isinstance(meta_features_processed, pd.DataFrame) and single_name in meta_features_processed.columns:
+                    X_single = meta_features_processed[[single_name]]
+
+                    _, auc_single, _, _, _, _ = compute_learnability_with_calibration(
+                        X=X_single,
+                        y=quantile_labels_diag,
+                        realized_returns=realized_returns_diag,
+                        model_complexity="strong",
+                        cv_splits=5,
+                        time_aware_cv=True,
+                        use_ensemble=False,
+                        event_durations=event_durations_diag,
+                        market_index=market_data.index,
+                        base_horizon_bars=horizon,
+                        use_smoothed_brier_objective_lgbm=use_smoothed_brier_objective_lgbm,
+                    )
+
+                    best_config_diagnostics["single_feature_momentum_test"] = {
+                        "feature": single_name,
+                        "auc": float(auc_single),
+                    }
+                else:
+                    tprint_warning("  ⚠️ Single-feature test skipped: momentum_10_x_regime_high not in feature set")
+            except Exception as e:
+                tprint_warning(f"  ⚠️ Single-feature momentum test failed: {e}")
             
             xgb_hpo_results: Dict[str, Any] = {}
             enable_xgb_model_hpo = bool(config.get("enable_xgb_model_hpo", False))
@@ -4263,325 +6184,15 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                         "reason": "xgboost_not_installed",
                     }
                 else:
-                    try:
-                        from sklearn.metrics import roc_auc_score as _roc_auc_score_xgb
-
-                        tprint_info("  → Running StandardizedXGBTrainer for sr_labeling_xgb on best labeling config...")
-
-                        valid_mask_xgb = ~quantile_labels_diag.isna()
-                        X_xgb_all = meta_features_processed.select_dtypes(include=[np.number])
-                        if isinstance(X_xgb_all, pd.DataFrame):
-                            X_xgb = X_xgb_all[valid_mask_xgb].fillna(0)
-                        else:
-                            X_xgb = meta_features_processed[valid_mask_xgb]
-                        y_xgb = quantile_labels_diag[valid_mask_xgb]
-                        returns_xgb = realized_returns_diag[valid_mask_xgb].fillna(0.0)
-
-                        n_samples = int(len(y_xgb))
-                        if n_samples < 200 or len(y_xgb.unique()) < 2:
-                            tprint_warning(
-                                f"  ⚠️ Not enough labeled events for sr_labeling_xgb training (n={n_samples}); skipping."
-                            )
-                            xgb_hpo_results = {
-                                "xgb_available": True,
-                                "skipped": True,
-                                "reason": "insufficient_labels",
-                                "n_samples": n_samples,
-                            }
-                        else:
-                            returns_array = returns_xgb.to_numpy(dtype=float)
-                            y_array = y_xgb.to_numpy(dtype=float)
-
-                            sample_weights = np.ones_like(returns_array, dtype=float)
-                            pos_mask = y_array == 1.0
-                            sample_weights[pos_mask] *= 1.2
-
-                            try:
-                                finite_returns = returns_xgb.replace([np.inf, -np.inf], np.nan).dropna().values
-                                if finite_returns.size >= 50:
-                                    ret_clip = float(np.nanpercentile(np.abs(finite_returns), 95))
-                                    ret_clip = max(ret_clip, 1e-4)
-                                else:
-                                    ret_clip = 0.02
-                            except Exception:
-                                ret_clip = 0.02
-
-                            if ret_clip > 0:
-                                ret_for_weight = np.clip(np.maximum(returns_array, 0.0), 0.0, ret_clip)
-                                weight_factor = 1.0 + (ret_for_weight / ret_clip)
-                                sample_weights[pos_mask] *= weight_factor[pos_mask]
-
-                            mean_w = float(sample_weights.mean()) if sample_weights.size > 0 else 1.0
-                            if mean_w > 0:
-                                sample_weights = sample_weights / mean_w
-
-                            def _compute_auc_from_results(results, y_true: pd.Series) -> Optional[float]:
-                                try:
-                                    preds = getattr(results, "oof_predictions", None)
-                                    if preds is None or preds.empty:
-                                        return None
-                                    if "probability" in preds.columns:
-                                        proba = preds["probability"]
-                                    else:
-                                        col_candidates = [c for c in preds.columns if c.startswith("prob")]
-                                        if not col_candidates:
-                                            return None
-                                        proba = preds[col_candidates[0]]
-                                    y_aligned = y_true.reindex(proba.index).astype(float)
-                                    mask = ~y_aligned.isna()
-                                    if int(mask.sum()) < 50 or y_aligned[mask].nunique() < 2:
-                                        return None
-                                    return float(_roc_auc_score_xgb(y_aligned[mask], proba[mask]))
-                                except Exception:
-                                    return None
-
-                            data_start = X_xgb.index.min()
-                            data_end = X_xgb.index.max()
-
-                            min_samples_cfg = config.get("sr_labeling_xgb_min_samples_for_training", 300)
-                            try:
-                                min_samples_int = int(min_samples_cfg)
-                            except Exception:
-                                min_samples_int = 300
-                            min_samples_int = max(100, min(min_samples_int, n_samples))
-
-                            base_model_id = f"{symbol}_{exchange}_{timeframe}_sr_labeling_xgb"
-
-                            baseline_config = XGBTrainingConfig(
-                                model_id=f"{base_model_id}_baseline",
-                                task_type="classification",
-                                objective="binary:logistic",
-                                retrain_interval_days=9999,
-                                hpo_interval_days=999999,
-                                burnin_pct=0.0,
-                                min_samples_for_training=min_samples_int,
-                                tree_method="hist",
-                                n_estimators=int(config.get("sr_labeling_xgb_n_estimators", 300)),
-                                learning_rate=float(config.get("sr_labeling_xgb_learning_rate", 0.05)),
-                                max_depth=int(config.get("sr_labeling_xgb_max_depth", 6)),
-                                min_child_weight=float(config.get("sr_labeling_xgb_min_child_weight", 20.0)),
-                                subsample=float(config.get("sr_labeling_xgb_subsample", 0.8)),
-                                colsample_bytree=float(config.get("sr_labeling_xgb_colsample_bytree", 0.8)),
-                                gamma=float(config.get("sr_labeling_xgb_gamma", 1.0)),
-                                reg_lambda=float(config.get("sr_labeling_xgb_reg_lambda", 3.0)),
-                                reg_alpha=float(config.get("sr_labeling_xgb_reg_alpha", 0.5)),
-                                early_stopping_rounds=20,
-                                hpo_n_estimators=300,
-                                hpo_n_trials=int(config.get("sr_labeling_xgb_hpo_n_trials", 40)),
-                                enable_warm_start=False,
-                                enable_oof_training=False,
-                                enable_hpo=False,
-                                enable_sparse_matrices=True,
-                            )
-
-                            baseline_trainer = StandardizedXGBTrainer(
-                                model_id=baseline_config.model_id,
-                                config=baseline_config,
-                            )
-
-                            baseline_results = baseline_trainer.train_and_predict(
-                                X=X_xgb,
-                                y=y_xgb,
-                                data_start=data_start,
-                                data_end=data_end,
-                                sample_weight=sample_weights,
-                                eval_metric="auc",
-                                verbose=False,
-                            )
-
-                            baseline_auc = _compute_auc_from_results(baseline_results, y_xgb)
-
-                            tuned_config = XGBTrainingConfig(
-                                model_id=f"{base_model_id}_hpo",
-                                task_type="classification",
-                                objective="binary:logistic",
-                                retrain_interval_days=9999,
-                                hpo_interval_days=999999,
-                                burnin_pct=0.0,
-                                min_samples_for_training=min_samples_int,
-                                tree_method="hist",
-                                n_estimators=int(config.get("sr_labeling_xgb_n_estimators", 300)),
-                                learning_rate=float(config.get("sr_labeling_xgb_learning_rate", 0.05)),
-                                max_depth=int(config.get("sr_labeling_xgb_max_depth", 6)),
-                                min_child_weight=float(config.get("sr_labeling_xgb_min_child_weight", 20.0)),
-                                subsample=float(config.get("sr_labeling_xgb_subsample", 0.8)),
-                                colsample_bytree=float(config.get("sr_labeling_xgb_colsample_bytree", 0.8)),
-                                gamma=float(config.get("sr_labeling_xgb_gamma", 1.0)),
-                                reg_lambda=float(config.get("sr_labeling_xgb_reg_lambda", 3.0)),
-                                reg_alpha=float(config.get("sr_labeling_xgb_reg_alpha", 0.5)),
-                                early_stopping_rounds=20,
-                                hpo_n_estimators=baseline_config.hpo_n_estimators,
-                                hpo_n_trials=baseline_config.hpo_n_trials,
-                                enable_warm_start=True,
-                                enable_oof_training=False,
-                                enable_hpo=True,
-                                enable_sparse_matrices=True,
-                            )
-
-                            tuned_trainer = StandardizedXGBTrainer(
-                                model_id=tuned_config.model_id,
-                                config=tuned_config,
-                            )
-
-                            tuned_results = tuned_trainer.train_and_predict(
-                                X=X_xgb,
-                                y=y_xgb,
-                                data_start=data_start,
-                                data_end=data_end,
-                                sample_weight=sample_weights,
-                                eval_metric="auc",
-                                verbose=False,
-                            )
-
-                            best_auc_xgb = _compute_auc_from_results(tuned_results, y_xgb)
-
-                            try:
-                                best_params_xgb = tuned_trainer._load_warm_start_params()  # type: ignore[attr-defined]
-                            except Exception:
-                                best_params_xgb = None
-
-                            if best_params_xgb is None:
-                                best_params_xgb = {
-                                    "max_depth": tuned_config.max_depth,
-                                    "learning_rate": tuned_config.learning_rate,
-                                    "min_child_weight": tuned_config.min_child_weight,
-                                    "subsample": tuned_config.subsample,
-                                    "colsample_bytree": tuned_config.colsample_bytree,
-                                    "gamma": tuned_config.gamma,
-                                    "reg_lambda": tuned_config.reg_lambda,
-                                    "reg_alpha": tuned_config.reg_alpha,
-                                }
-
-                            baseline_params = {
-                                "n_estimators": baseline_config.n_estimators,
-                                "max_depth": baseline_config.max_depth,
-                                "learning_rate": baseline_config.learning_rate,
-                                "min_child_weight": baseline_config.min_child_weight,
-                                "subsample": baseline_config.subsample,
-                                "colsample_bytree": baseline_config.colsample_bytree,
-                                "gamma": baseline_config.gamma,
-                                "reg_lambda": baseline_config.reg_lambda,
-                                "reg_alpha": baseline_config.reg_alpha,
-                            }
-
-                            auc_improvement = None
-                            if baseline_auc is not None and best_auc_xgb is not None:
-                                auc_improvement = float(best_auc_xgb - baseline_auc)
-
-                            tprint_info(
-                                f"  → sr_labeling_xgb results: baseline_auc={baseline_auc if baseline_auc is not None else float('nan'):.4f}, "
-                                f"best_auc={best_auc_xgb if best_auc_xgb is not None else float('nan'):.4f}, "
-                                f"improvement={(auc_improvement if auc_improvement is not None else float('nan')):.4f}"
-                            )
-
-                            xgb_timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-                            xgb_json_name = (
-                                f"sr_labeling_xgb_best_params_{symbol}_{timeframe}_{xgb_timestamp}.json"
-                            )
-                            xgb_json_path = outcomes_dir / xgb_json_name
-
-                            xgb_payload = {
-                                "symbol": symbol,
-                                "exchange": exchange,
-                                "timeframe": timeframe,
-                                "n_samples": n_samples,
-                                "baseline_params": baseline_params,
-                                "baseline_auc": baseline_auc,
-                                "best_params": best_params_xgb,
-                                "best_auc": best_auc_xgb,
-                                "auc_improvement": auc_improvement,
-                                "baseline_model_id": baseline_config.model_id,
-                                "tuned_model_id": tuned_config.model_id,
-                            }
-
-                            best_params_json_str: Optional[str]
-                            try:
-                                with open(xgb_json_path, "w") as f:
-                                    json.dump(xgb_payload, f, indent=2, default=str)
-                                tprint_success(f"  → Saved sr_labeling_xgb best params JSON to {xgb_json_path}")
-                                best_params_json_str = str(xgb_json_path)
-                            except Exception:
-                                tprint_warning("  → Failed to save sr_labeling_xgb best params JSON; continuing without file path")
-                                best_params_json_str = None
-
-                            csv_path: Optional[Path] = None
-                            md_path: Optional[Path] = None
-
-                            try:
-                                rows = []
-                                rows.append({
-                                    "variant": "baseline",
-                                    "n_samples": n_samples,
-                                    "auc": baseline_auc,
-                                    **baseline_params,
-                                })
-                                rows.append({
-                                    "variant": "tuned",
-                                    "n_samples": n_samples,
-                                    "auc": best_auc_xgb,
-                                    **best_params_xgb,
-                                })
-
-                                df_xgb = pd.DataFrame(rows)
-                                csv_name = f"sr_labeling_xgb_results_{symbol}_{timeframe}_{xgb_timestamp}.csv"
-                                csv_path = outcomes_dir / csv_name
-                                df_xgb.to_csv(csv_path, index=False, float_format="%.6f")
-                                tprint_success(f"  → Saved sr_labeling_xgb CSV report to {csv_path}")
-                            except Exception:
-                                tprint_warning("  → Failed to save sr_labeling_xgb CSV report")
-                                csv_path = None
-
-                            try:
-                                md_name = f"sr_labeling_xgb_report_{symbol}_{timeframe}_{xgb_timestamp}.md"
-                                md_path = outcomes_dir / md_name
-                                with open(md_path, "w") as f_md:
-                                    f_md.write(f"# sr_labeling_xgb XGBoost Report\n\n")
-                                    f_md.write(f"**Symbol:** {symbol} | **Exchange:** {exchange} | **Timeframe:** {timeframe}\n\n")
-                                    f_md.write(f"**Samples:** {n_samples}\n\n")
-
-                                    f_md.write("## Performance\n\n")
-                                    f_md.write("| Variant | AUC |\n")
-                                    f_md.write("|---------|-----|\n")
-                                    f_md.write(f"| Baseline | {baseline_auc if baseline_auc is not None else float('nan'):.4f} |\n")
-                                    f_md.write(f"| Tuned | {best_auc_xgb if best_auc_xgb is not None else float('nan'):.4f} |\n")
-                                    if auc_improvement is not None:
-                                        f_md.write(f"\n**AUC Improvement:** {auc_improvement:.4f}\n\n")
-
-                                    f_md.write("## Baseline Parameters\n\n")
-                                    f_md.write("```json\n")
-                                    f_md.write(json.dumps(baseline_params, indent=2))
-                                    f_md.write("\n```\n\n")
-
-                                    f_md.write("## Tuned Parameters (sr_labeling_xgb)\n\n")
-                                    f_md.write("```json\n")
-                                    f_md.write(json.dumps(best_params_xgb, indent=2))
-                                    f_md.write("\n```\n\n")
-
-                                tprint_success(f"  → Saved sr_labeling_xgb Markdown report to {md_path}")
-                            except Exception:
-                                tprint_warning("  → Failed to save sr_labeling_xgb Markdown report")
-                                md_path = None
-
-                            xgb_hpo_results = {
-                                "xgb_available": True,
-                                "n_samples": n_samples,
-                                "baseline_auc": baseline_auc,
-                                "best_auc": best_auc_xgb,
-                                "auc_improvement": auc_improvement,
-                                "baseline_params": baseline_params,
-                                "best_params": best_params_xgb,
-                                "best_params_json": best_params_json_str,
-                                "results_csv": str(csv_path) if csv_path is not None else None,
-                                "results_markdown": str(md_path) if md_path is not None else None,
-                            }
-                    except Exception as xgb_exc:
-                        tprint_warning(f"  → sr_labeling_xgb training failed: {xgb_exc}")
-                        xgb_hpo_results = {
-                            "xgb_available": XGBOOST_AVAILABLE,
-                            "skipped": True,
-                            "reason": "exception",
-                            "error": str(xgb_exc),
-                        }
+                    tprint_warning(
+                        "  ⚠️ sr_labeling_xgb diagnostics disabled in this build; "
+                        "set enable_xgb_model_hpo=False if you want to silence this."
+                    )
+                    xgb_hpo_results = {
+                        "xgb_available": True,
+                        "skipped": True,
+                        "reason": "disabled_for_simplicity",
+                    }
 
             if xgb_hpo_results:
                 best_config_diagnostics["sr_labeling_xgb"] = xgb_hpo_results
@@ -4941,6 +6552,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                         mae_series=mae_series_diag,
                         target_long=target_long,
                         target_short=target_short,
+                        selected_feature_names=selected_feature_names,
                     )
                     diagnostics_path = str(diagnostics_path_obj)
 
@@ -4997,6 +6609,9 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 overlap_diag = best_config_diagnostics.get("class_overlap_diagnostics", {})
                 xgb_diag = best_config_diagnostics.get("sr_labeling_xgb", {})
                 mi_diag = best_config_diagnostics.get("mi_diagnostics", {})
+                leakage_diag = best_config_diagnostics.get("leakage_diagnostics", {})
+                lag_diag = best_config_diagnostics.get("lag1_stress_test", {})
+                dummy_diag = best_config_diagnostics.get("dummy_baseline_diagnostics", {})
 
                 output_dict["diagnostics_summary"] = {
                     # Filtering / label inflation
@@ -5026,6 +6641,19 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     # Mutual information (bits)
                     "mi_prob_label_bits": mi_diag.get("mi_prob_label_bits"),
                     "mi_prob_return_sign_bits": mi_diag.get("mi_prob_return_sign_bits"),
+                    # Permutation-importance leakage diagnostics
+                    "god_feature_suspected": leakage_diag.get("god_feature_suspected", False),
+                    "leakage_baseline_auc": leakage_diag.get("baseline_auc"),
+                    "leakage_delta_auc": leakage_diag.get("delta_auc"),
+                    "leakage_top_feature": (leakage_diag.get("top_features") or [None])[0],
+                    # Lag-1 stress test
+                    "lag1_auc_base": lag_diag.get("auc_base"),
+                    "lag1_auc_lag1": lag_diag.get("auc_lag1"),
+                    "lag1_auc_diff": lag_diag.get("auc_diff"),
+                    "lookahead_suspected": lag_diag.get("lookahead_suspected", False),
+                    # Dummy-rule baseline
+                    "auc_dummy": dummy_diag.get("auc_dummy"),
+                    "auc_dummy_raw": dummy_diag.get("auc_dummy_raw"),
                     # sr_labeling_xgb meta-model diagnostics
                     "sr_labeling_xgb_best_auc": xgb_diag.get("best_auc"),
                     "sr_labeling_xgb_auc_improvement": xgb_diag.get("auc_improvement"),
@@ -5176,6 +6804,10 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     overlap_diag = best_config_diagnostics.get("class_overlap_diagnostics", {})
                     mi_diag = best_config_diagnostics.get("mi_diagnostics", {})
                     xgb_diag = best_config_diagnostics.get("sr_labeling_xgb", {})
+                    leakage_diag = best_config_diagnostics.get("leakage_diagnostics", {})
+                    lag_diag = best_config_diagnostics.get("lag1_stress_test", {})
+                    dummy_diag = best_config_diagnostics.get("dummy_baseline_diagnostics", {})
+                    y_shuffle_diag = best_config_diagnostics.get("y_shuffle_test", {})
 
                     # Helper formatting
                     def _fmt_val(val: Any, digits: int = 4) -> str:
@@ -5194,6 +6826,30 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     f.write(f"| Filtering is major contributor | {bool(filtering_diag.get('filtering_is_major_contributor', False))} |\n")
                     f.write(f"| AUC dominated by large moves | {bool(filtering_diag.get('auc_dominated_by_large_moves', False))} |\n")
                     f.write(f"| Precision collapse detected | {bool(filtering_diag.get('precision_collapse_detected', False))} |\n\n")
+
+                    # Leakage diagnostics
+                    if leakage_diag:
+                        f.write("### Permutation-Importance Leakage Diagnostics\n\n")
+                        f.write("| Metric | Value |\n")
+                        f.write("|--------|-------|\n")
+                        f.write(
+                            f"| Baseline AUC (probe) | {_fmt_val(leakage_diag.get('baseline_auc'))} |\n"
+                        )
+                        f.write(
+                            f"| AUC after dropping top-k features | {_fmt_val(leakage_diag.get('dropped_auc'))} |\n"
+                        )
+                        f.write(
+                            f"| Delta AUC (baseline - dropped) | {_fmt_val(leakage_diag.get('delta_auc'))} |\n"
+                        )
+                        f.write(
+                            f"| God feature suspected | {bool(leakage_diag.get('god_feature_suspected', False))} |\n"
+                        )
+                        top_feats = leakage_diag.get('top_features') or []
+                        if top_feats:
+                            f.write(
+                                f"| Top features | {', '.join(map(str, top_feats))} |\n"
+                            )
+                        f.write("\n")
 
                     # Calibration diagnostics
                     f.write("### Calibration Diagnostics\n\n")
@@ -5224,6 +6880,105 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     f.write(f"| Worst fold AUC | {_fmt_val(robust_diag.get('worst_fold_auc'))} |\n")
                     f.write(f"| AUC CV std | {_fmt_val(robust_diag.get('auc_cv_std'))} |\n")
                     f.write(f"| Easy problem detected | {bool(overlap_diag.get('easy_problem_detected', False))} |\n\n")
+
+                    # Per-fold AUC summary (if available)
+                    per_fold = robust_diag.get("per_fold_metrics") or []
+                    if per_fold:
+                        try:
+                            f.write("#### Per-Fold AUC Summary\n\n")
+                            f.write("| Fold | AUC | n_test | ECE | Net P&L per trade |\n")
+                            f.write("|------|-----|--------|-----|-------------------|\n")
+                            for fm in per_fold:
+                                try:
+                                    f.write(
+                                        f"| {int(fm.get('fold', 0))} | "
+                                        f"{_fmt_val(fm.get('auc'))} | "
+                                        f"{int(fm.get('n_test', 0))} | "
+                                        f"{_fmt_val(fm.get('ece'))} | "
+                                        f"{_fmt_val(fm.get('net_pnl_per_trade'))} |\n"
+                                    )
+                                except Exception:
+                                    continue
+                            f.write("\n")
+                        except Exception:
+                            pass
+
+                    # Volatility and regime-wise robustness
+                    per_vol = robust_diag.get("per_volatility_regime") or {}
+                    if per_vol:
+                        f.write("#### AUC by Volatility Regime\n\n")
+                        f.write("| Regime | AUC | n_events |\n")
+                        f.write("|--------|-----|----------|\n")
+                        for rname, rm in per_vol.items():
+                            try:
+                                f.write(
+                                    f"| {rname} | {_fmt_val(rm.get('auc'))} | {int(rm.get('n_events', 0))} |\n"
+                                )
+                            except Exception:
+                                continue
+                        f.write("\n")
+
+                    per_reg = robust_diag.get("per_regime_metrics") or {}
+                    if per_reg:
+                        f.write("#### AUC by Regime Label\n\n")
+                        f.write("| Regime | AUC | n_events | Net P&L per trade |\n")
+                        f.write("|--------|-----|----------|-------------------|\n")
+                        for rname, rm in per_reg.items():
+                            try:
+                                f.write(
+                                    f"| {rname} | {_fmt_val(rm.get('auc'))} | "
+                                    f"{int(rm.get('n_events', 0))} | "
+                                    f"{_fmt_val(rm.get('net_pnl_per_trade'))} |\n"
+                                )
+                            except Exception:
+                                continue
+                        f.write("\n")
+
+                    # Y-shuffle sanity check
+                    if y_shuffle_diag:
+                        f.write("### Y-Shuffle Sanity Test\n\n")
+                        f.write("| Metric | Value |\n")
+                        f.write("|--------|-------|\n")
+                        f.write(
+                            f"| AUC with shuffled labels | {_fmt_val(y_shuffle_diag.get('auc'))} |\n"
+                        )
+                        f.write(
+                            "\nA well-behaved model should have AUC≈0.5 under label shuffling; "
+                            "any materially higher value would indicate leakage or mis-specification.\n\n"
+                        )
+
+                    # Lag-1 stress test
+                    if lag_diag:
+                        f.write("### Lag-1 Stress Test (Look-Ahead Bias)\n\n")
+                        f.write("| Metric | Value |\n")
+                        f.write("|--------|-------|\n")
+                        f.write(
+                            f"| AUC (base, t features) | {_fmt_val(lag_diag.get('auc_base'))} |\n"
+                        )
+                        f.write(
+                            f"| AUC (lag-1 features) | {_fmt_val(lag_diag.get('auc_lag1'))} |\n"
+                        )
+                        f.write(
+                            f"| AUC difference (base - lag1) | {_fmt_val(lag_diag.get('auc_diff'))} |\n"
+                        )
+                        f.write(
+                            f"| Look-ahead suspected | {bool(lag_diag.get('lookahead_suspected', False))} |\n\n"
+                        )
+
+                    # Dummy-rule baseline
+                    if dummy_diag:
+                        f.write("### Dummy-Rule Volatility Baseline\n\n")
+                        f.write("| Metric | Value |\n")
+                        f.write("|--------|-------|\n")
+                        f.write(
+                            f"| AUC (raw, signed) | {_fmt_val(dummy_diag.get('auc_dummy_raw'))} |\n"
+                        )
+                        f.write(
+                            f"| AUC (absolute, best side) | {_fmt_val(dummy_diag.get('auc_dummy'))} |\n"
+                        )
+                        f.write(
+                            f"| Samples used | {int(dummy_diag.get('n_samples', 0))} |\n\n"
+                        )
 
                     # sr_labeling_xgb diagnostics
                     if xgb_diag:
@@ -5359,9 +7114,29 @@ class MetaLabelingHPOExperimentStep(BaseStep):
 
                 f.write(f"## Artifacts\n\n")
                 f.write(f"- **Best Params JSON:** `{json_path.name if json_path else 'N/A'}`\n")
-                f.write(f"- **Candidate Pool CSV:** `{csv_path.name if csv_path else 'N/A'}`\n")
-                f.write(f"- **Pareto Frontier CSV:** `{pareto_csv_path.name if pareto_csv_path else 'N/A'}`\n")
-                f.write(f"- **This Report:** `{md_name}`\n\n")
+                f.write(f"- Y-shuffle sanity tests to ensure no trivial leakage\n")
+                f.write(f"- Robustness diagnostics across CV folds and volatility regimes\n")
+                f.write(f"- Dummy volatility baseline AUC to benchmark meta-model value-add\n")
+
+                # Recommended next-step validation: meta-gated backtest
+                f.write("\n## Recommended Next Step: Meta-Gated Backtest\n\n")
+                f.write(
+                    "To validate that the meta-labeling AUC and edge translate into tradable "
+                    "performance, run the meta-gated backtest using the meta_gating_config "
+                    "produced by feature_generation_meta_labeling_step. For example:\n\n"
+                )
+                f.write(
+                    "```bash\n"
+                    "python3 src/launcher/ares_launcher.py \\\n"
+                    "  --step meta_gated_backtest \\\n"
+                    f"  --symbol {symbol} --exchange {exchange} --timeframe {timeframe} --direction long --execution-mode full\n"
+                    "```\n\n"
+                )
+                f.write(
+                    "The meta-gated backtest report (meta_gated_backtest_report_*.md) provides "
+                    "event-level P&L, trades-per-day, drawdowns, and cost stress tests for the "
+                    "diagnostic gate implied by the best HPO configuration.\n"
+                )
 
             tprint_success(f"📄 Saved comprehensive report to {md_path}")
         except Exception as md_exc:
@@ -5447,4 +7222,3 @@ def register_meta_labeling_hpo_experiment_step() -> None:
 
 # Auto-register when module is imported
 register_meta_labeling_hpo_experiment_step()
-8

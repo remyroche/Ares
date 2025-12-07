@@ -18,6 +18,8 @@ from src.training.steps.base_step import BaseStep
 from src.training.steps.model_training.gate_model import GateModel
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint, tprint_success, tprint_warning, tprint_error
+from src.utils.versioned_artifacts.temporal_splits import TemporalSplitConfig
+from src.utils.ml_common.confidence_metrics import calculate_calibration_metrics
 
 class GateTrainingStep(BaseStep):
     """
@@ -105,6 +107,24 @@ class GateTrainingStep(BaseStep):
                 )
 
             tprint_success(f"Loaded prediction artifact for gating: {getattr(oof_preds, 'shape', 'N/A')}")
+
+            if isinstance(oof_preds, np.ndarray):
+                arr = np.asarray(oof_preds).reshape(-1)
+                n_ohlcv = len(ohlcv_data.index)
+                if n_ohlcv == 0:
+                    raise ValueError("OHLCV data is empty when aligning ndarray predictions for gate training")
+                if arr.shape[0] != n_ohlcv:
+                    n = min(arr.shape[0], n_ohlcv)
+                    tprint_warning(
+                        f"[GateTrainingStep] ndarray predictions length {arr.shape[0]} != OHLCV length {n_ohlcv}; "
+                        f"aligning using last {n} samples."
+                    )
+                    arr = arr[-n:]
+                    idx = ohlcv_data.index[-n:]
+                else:
+                    idx = ohlcv_data.index
+                oof_preds = pd.DataFrame({'prediction': arr.astype(float)}, index=idx)
+
             if isinstance(oof_preds, (pd.Series, pd.DataFrame)) and len(oof_preds) > 0:
                 oof_idx = pd.to_datetime(oof_preds.index)
                 tprint(
@@ -154,8 +174,17 @@ class GateTrainingStep(BaseStep):
 
             # Extract single prediction column (assuming 'prediction' or first column)
             if isinstance(oof_preds, pd.DataFrame):
-                # Prefer 'prediction' col if exists, else first col
-                if 'prediction' in oof_preds.columns:
+                gate_cfg = config.get('gate_config', {})
+                main_model_col = None
+                if isinstance(gate_cfg, dict):
+                    main_model_col = gate_cfg.get('main_model_column')
+
+                # Prefer explicitly configured main_model_column when available,
+                # then fall back to 'prediction', then 'lightgbm', then first numeric/any column.
+                pred_col = None
+                if isinstance(main_model_col, str) and main_model_col in oof_preds.columns:
+                    pred_col = main_model_col
+                elif 'prediction' in oof_preds.columns:
                     pred_col = 'prediction'
                 elif 'lightgbm' in oof_preds.columns:
                     pred_col = 'lightgbm'
@@ -183,7 +212,8 @@ class GateTrainingStep(BaseStep):
 
             # 2. Simulate Ungated Trades (Baseline)
             # Define Signal Logic with auto-relaxation if no candidates
-            signal_threshold = config.get('gate_config', {}).get('signal_threshold', 0.05)  # default
+            gate_config = config.setdefault('gate_config', {})
+            signal_threshold = gate_config.get('signal_threshold', 0.6)  # default
 
             thresholds_to_try = [signal_threshold]
             if signal_threshold != 0.0:
@@ -285,17 +315,26 @@ class GateTrainingStep(BaseStep):
             })
 
             # Generate Labels (Regression Target)
-            y = net_returns
+            y = (net_returns > 0).astype(int)
 
-            tprint_success(f"Generated {len(y)} regression targets. Mean PnL: {y.mean():.4f}")
+            tprint_success(f"Generated {len(y)} regression targets. Mean PnL: {net_returns.mean():.4f}")
 
             # 3. Initialize and Train GateModel
             gate_config = config.get('gate_config', {})
+            # If the user has not provided an explicit calibration target, default
+            # to blocking trades whose predicted win probability is below 0.5.
+            if (
+                'min_predicted_pnl' not in gate_config
+                and 'calibration_percentile' not in gate_config
+                and 'target_coverage' not in gate_config
+                and 'min_win_probability' not in gate_config
+            ):
+                gate_config['min_win_probability'] = 0.4
             model = GateModel(config=gate_config)
 
             # Prepare Features
             tprint("Generating features...", "INFO")
-            X_full = model.prepare_features(ohlcv_data, trade_log)
+            X_full = model.prepare_features(ohlcv_data, trade_log, preds=preds)
 
             # Basic diagnostics on NaNs at the feature level
             tprint(
@@ -346,13 +385,107 @@ class GateTrainingStep(BaseStep):
                 )
                 return {'success': False, 'error': 'Insufficient samples'}
 
-            # Train (Regression)
-            model.train(X_train, y_train)
+            # Temporal train/validation/test split (purged, chronological)
+            idx = pd.to_datetime(X_train.index)
+            train_mask = np.ones(len(X_train), dtype=bool)
+            val_mask = np.zeros(len(X_train), dtype=bool)
+            test_mask = np.zeros(len(X_train), dtype=bool)
 
-            # Calibrate Threshold (default 25th percentile -> block bottom 25%)
-            model.calibrate_threshold(X_train, percentile=25)
+            temporal_config = None
+            try:
+                temporal_config = TemporalSplitConfig.create_from_data(
+                    data_start=idx.min().to_pydatetime(),
+                    data_end=idx.max().to_pydatetime(),
+                    train_pct=gate_config.get('train_pct', 0.6),
+                    val_pct=gate_config.get('val_pct', 0.2),
+                    test_pct=gate_config.get('test_pct', 0.2),
+                    embargo_days=gate_config.get('embargo_days', 1),
+                    burnin_pct=0.0,
+                )
+            except Exception as e:
+                tprint_warning(
+                    f"[GateTrainingStep] Failed to create TemporalSplitConfig: {e}. Falling back to simple chronological split."
+                )
 
-            # 4. Evaluate (Regression metrics + Strategy lift)
+            if temporal_config is not None:
+                train_mask = (idx >= temporal_config.training.start) & (idx <= temporal_config.training.effective_end)
+                val_mask = (idx >= temporal_config.validation.start) & (idx <= temporal_config.validation.effective_end)
+                test_mask = (idx >= temporal_config.test.start) & (idx <= temporal_config.test.effective_end)
+
+                # Fallback if validation or training is too small
+                if train_mask.sum() < 30 or val_mask.sum() < 20:
+                    tprint_warning(
+                        f"[GateTrainingStep] Temporal split produced small folds (train={train_mask.sum()}, val={val_mask.sum()}); using simple chronological split instead."
+                    )
+                    order = np.argsort(idx.values)
+                    n_total = len(X_train)
+                    train_end = int(n_total * 0.6)
+                    val_end = int(n_total * 0.8)
+                    train_mask = np.zeros(n_total, dtype=bool)
+                    val_mask = np.zeros(n_total, dtype=bool)
+                    test_mask = np.zeros(n_total, dtype=bool)
+                    train_mask[order[:train_end]] = True
+                    val_mask[order[train_end:val_end]] = True
+                    test_mask[order[val_end:]] = True
+
+            X_train_fit = X_train[train_mask]
+            y_train_fit = y_train[train_mask]
+            X_val = X_train[val_mask]
+            y_val = y_train[val_mask]
+            X_test = X_train[test_mask]
+            y_test = y_train[test_mask]
+
+            tprint(
+                f"[GateTrainingStep] Temporal split sizes - train={len(X_train_fit)}, val={len(X_val)}, test={len(X_test)}",
+                "INFO",
+            )
+
+            if len(X_train_fit) < min_samples:
+                tprint_warning(
+                    f"Insufficient training samples after temporal split (n={len(X_train_fit)} < {min_samples}). Skipping training."
+                )
+                return {'success': False, 'error': 'Insufficient samples after temporal split'}
+
+            # Train on training window only
+            model.train(X_train_fit, y_train_fit)
+
+            # Probability calibration on validation window (isotonic)
+            val_brier_raw = None
+            val_brier_cal = None
+            val_ece_raw = None
+            val_ece_cal = None
+
+            if isinstance(X_val, pd.DataFrame) and len(X_val) >= 20 and y_val.nunique() >= 2:
+                try:
+                    raw_scores_val = model.predict_raw_score(X_val)
+                    prob_raw = np.column_stack([1.0 - raw_scores_val, raw_scores_val])
+                    calib_raw = calculate_calibration_metrics(y_val.values, prob_raw)
+                    val_brier_raw = calib_raw.get('brier_score')
+                    val_ece_raw = calib_raw.get('expected_calibration_error')
+
+                    # Fit calibrator and re-evaluate
+                    model.fit_calibrator(X_val, y_val)
+                    cal_scores_val = model.predict_score(X_val)
+                    prob_cal = np.column_stack([1.0 - cal_scores_val, cal_scores_val])
+                    calib_cal = calculate_calibration_metrics(y_val.values, prob_cal)
+                    val_brier_cal = calib_cal.get('brier_score')
+                    val_ece_cal = calib_cal.get('expected_calibration_error')
+
+                    if val_brier_raw is not None and val_brier_cal is not None:
+                        raw_ece_str = f"{val_ece_raw:.4f}" if val_ece_raw is not None else "nan"
+                        cal_ece_str = f"{val_ece_cal:.4f}" if val_ece_cal is not None else "nan"
+                        tprint(
+                            f"[GateTrainingStep] Validation calibration - Brier raw={val_brier_raw:.4f}, cal={val_brier_cal:.4f}; "
+                            f"ECE raw={raw_ece_str}, cal={cal_ece_str}",
+                            "INFO",
+                        )
+                except Exception as e:
+                    tprint_warning(f"[GateTrainingStep] Calibration step failed: {e}")
+
+            # Calibrate Threshold (default 25th percentile -> block bottom 25%) using training window
+            model.calibrate_threshold(X_train_fit, percentile=25)
+
+            # 4. Evaluate (Regression metrics + Strategy lift) on full candidate universe
             scores = model.predict_score(X_train)
             preds_bin = model.predict(X_train) # 1 = Trade, 0 = Block
 
@@ -413,7 +546,81 @@ class GateTrainingStep(BaseStep):
                 'post_total_return': post_stats['total_return'],
                 'coverage_rate': coverage,
                 'avg_return_lift': avg_lift,
+                # Calibration metrics on validation window
+                'brier_val_raw': float(val_brier_raw) if val_brier_raw is not None else None,
+                'brier_val_cal': float(val_brier_cal) if val_brier_cal is not None else None,
+                'ece_val_raw': float(val_ece_raw) if val_ece_raw is not None else None,
+                'ece_val_cal': float(val_ece_cal) if val_ece_cal is not None else None,
             }
+
+            # Volatility-regime stability metrics (p_success vs realized winrate across rv_short buckets)
+            volatility_stability = {}
+            try:
+                if 'rv_short' in X_train.columns:
+                    rv_all = X_train['rv_short'].astype(float).replace([np.inf, -np.inf], np.nan)
+                    rv_clean = rv_all.dropna()
+                    if len(rv_clean) >= 50:
+                        low_q = float(rv_clean.quantile(1.0 / 3.0))
+                        high_q = float(rv_clean.quantile(2.0 / 3.0))
+
+                        def _collect_stability(mask: np.ndarray, period_name: str) -> None:
+                            period_indices = X_train.index[mask]
+                            if len(period_indices) == 0:
+                                return
+
+                            X_p = X_train.loc[period_indices]
+                            rv_p = X_p['rv_short'].astype(float)
+                            scores_p = pd.Series(model.predict_score(X_p), index=period_indices)
+                            returns_p = baseline_returns.reindex(period_indices)
+
+                            period_stats: Dict[str, Dict[str, float]] = {}
+                            for bucket_name, bucket_mask in [
+                                ('low', rv_p <= low_q),
+                                ('mid', (rv_p > low_q) & (rv_p < high_q)),
+                                ('high', rv_p >= high_q),
+                            ]:
+                                idx_bucket = rv_p.index[bucket_mask]
+                                if len(idx_bucket) == 0:
+                                    continue
+                                bucket_scores = scores_p.reindex(idx_bucket).dropna()
+                                bucket_returns = returns_p.reindex(idx_bucket).dropna()
+                                if len(bucket_scores) == 0 or len(bucket_returns) == 0:
+                                    continue
+                                period_stats[bucket_name] = {
+                                    'count': int(len(idx_bucket)),
+                                    'mean_score': float(bucket_scores.mean()),
+                                    'realized_win_rate': float((bucket_returns > 0).mean()),
+                                }
+
+                            if period_stats:
+                                volatility_stability[period_name] = period_stats
+
+                        _collect_stability(train_mask, 'train')
+                        _collect_stability(val_mask, 'validation')
+                        _collect_stability(test_mask, 'test')
+            except Exception:
+                volatility_stability = {}
+
+            if volatility_stability:
+                metrics['volatility_stability'] = volatility_stability
+
+            shap_df = None
+            shap_importance = getattr(model, 'shap_feature_importance_', None)
+            shap_names = getattr(model, 'shap_feature_names_', None)
+            if shap_importance is not None and shap_names is not None:
+                try:
+                    shap_df = pd.DataFrame(
+                        {
+                            'feature': list(shap_names),
+                            'mean_abs_shap': [float(v) for v in shap_importance],
+                        }
+                    )
+                    shap_df = shap_df.sort_values('mean_abs_shap', ascending=False)
+                    metrics['shap_feature_importance'] = dict(
+                        zip(shap_df['feature'], shap_df['mean_abs_shap'])
+                    )
+                except Exception:
+                    shap_df = None
 
             tprint_success(
                 f"Gate Training Metrics: RMSE={metrics['rmse']:.6f}, R2={metrics['r2']:.4f}, "
@@ -425,32 +632,170 @@ class GateTrainingStep(BaseStep):
             # 5. Save Artifacts
             timestamp_str = datetime.now().strftime('%Y%m%d_%H%M%S')
 
-            # Save Model
+            # Save Model (globally trained gate with calibration / metrics above)
             model_filename = f"gate_model_{symbol}_{timeframe}_{timestamp_str}.joblib"
             temp_path = os.path.join("artifacts", model_filename)
             os.makedirs("artifacts", exist_ok=True)
             model.save(temp_path)
 
-            # Save OOF Predictions (Gate scores on candidates)
-            oof_df = pd.DataFrame({
-                'gate_score': scores,
-                'gate_decision': preds_bin,
-                'target': y_train
-            }, index=X_train.index)
+            # Walk-forward OOF predictions only (expanding window with periodic retraining)
+            burnin_days = int(gate_config.get('burnin_days', 60))
+            retrain_days = int(gate_config.get('retrain_interval_days', 14))
+
+            idx_dt = pd.to_datetime(X_train.index)
+            if len(idx_dt) == 0:
+                oof_df = pd.DataFrame(columns=['gate_score', 'gate_decision', 'target'])
+            else:
+                idx_sorted = idx_dt.sort_values()
+                first_ts = idx_sorted.min()
+                last_ts = idx_sorted.max()
+
+                burnin_end = first_ts + pd.Timedelta(days=burnin_days)
+
+                # Require at least min_samples for initial training and some horizon beyond burn-in
+                if burnin_end >= last_ts or (idx_dt < burnin_end).sum() < min_samples:
+                    tprint_warning(
+                        f"[GateTrainingStep] Insufficient horizon for burn-in ({burnin_days}d) and walk-forward OOF; "
+                        f"skipping OOF generation and saving empty gate_oof_predictions."
+                    )
+                    oof_df = pd.DataFrame(columns=['gate_score', 'gate_decision', 'target'])
+                else:
+                    oof_scores = pd.Series(index=X_train.index, dtype=float)
+                    oof_decisions = pd.Series(index=X_train.index, dtype=float)
+
+                    current_start = burnin_end
+                    while current_start < last_ts:
+                        window_end = min(current_start + pd.Timedelta(days=retrain_days), last_ts)
+
+                        train_mask_wf = idx_dt < current_start
+                        pred_mask_wf = (idx_dt >= current_start) & (idx_dt <= window_end)
+
+                        n_train_wf = int(train_mask_wf.sum())
+                        n_pred_wf = int(pred_mask_wf.sum())
+                        if n_train_wf < min_samples or n_pred_wf == 0:
+                            current_start = window_end
+                            continue
+
+                        X_train_wf = X_train[train_mask_wf]
+                        y_train_wf = y_train[train_mask_wf]
+
+                        # Train a fresh GateModel on all past data up to the segment start
+                        wf_model = GateModel(config=gate_config)
+                        wf_model.train(X_train_wf, y_train_wf)
+                        wf_model.calibrate_threshold(X_train_wf, percentile=25)
+
+                        X_pred_wf = X_train[pred_mask_wf]
+                        scores_wf = wf_model.predict_score(X_pred_wf)
+                        decisions_wf = wf_model.predict(X_pred_wf)
+
+                        oof_scores.loc[X_pred_wf.index] = scores_wf
+                        oof_decisions.loc[X_pred_wf.index] = decisions_wf
+
+                        current_start = window_end
+
+                    oof_scores = oof_scores.dropna()
+                    oof_decisions = oof_decisions.dropna()
+
+                    common_oof_index = (
+                        oof_scores.index
+                        .intersection(oof_decisions.index)
+                        .intersection(y_train.index)
+                    )
+
+                    if len(common_oof_index) == 0:
+                        oof_df = pd.DataFrame(columns=['gate_score', 'gate_decision', 'target'])
+                    else:
+                        oof_df = pd.DataFrame(
+                            {
+                                'gate_score': oof_scores.loc[common_oof_index],
+                                'gate_decision': oof_decisions.loc[common_oof_index].astype(int),
+                                'target': y_train.loc[common_oof_index],
+                            },
+                            index=common_oof_index,
+                        )
 
             oof_path = self._save_artifact(oof_df, f"gate_oof_predictions_{symbol}", "data")
 
-            # Save Metrics
             metrics_path = self._save_artifact(metrics, f"gate_metrics_{symbol}", "metadata")
+
+            shap_path = None
+            if shap_df is not None:
+                shap_path = self._save_artifact(shap_df, f"gate_shap_importance_{symbol}", "data")
+
+            report_path = None
+            try:
+                timestamp_report = datetime.now().strftime('%Y%m%d_%H%M%S')
+                base_name = f"gate_training_report_{symbol}_{timeframe}_{direction}_{timestamp_report}"
+                outcomes_dir = "outcomes"
+                os.makedirs(outcomes_dir, exist_ok=True)
+                md_path = os.path.join(outcomes_dir, f"{base_name}.md")
+                lines = []
+                lines.append("# Gate Training Report\n\n")
+                lines.append(f"**Symbol**: {symbol}\n")
+                lines.append(f"**Exchange**: {exchange}\n")
+                lines.append(f"**Timeframe**: {timeframe}\n")
+                lines.append(f"**Direction**: {direction}\n")
+                lines.append(f"**Timestamp**: {datetime.now().isoformat()}\n\n")
+                lines.append("## Performance and Financial Metrics\n\n")
+                for key in [
+                    "candidate_count",
+                    "accepted_count",
+                    "acceptance_rate",
+                    "coverage_rate",
+                    "pre_trade_count",
+                    "pre_win_rate",
+                    "pre_avg_return",
+                    "pre_median_return",
+                    "pre_total_return",
+                    "post_trade_count",
+                    "post_win_rate",
+                    "post_avg_return",
+                    "post_median_return",
+                    "post_total_return",
+                    "avg_return_lift",
+                    "rmse",
+                    "r2",
+                    "brier_val_raw",
+                    "brier_val_cal",
+                    "ece_val_raw",
+                    "ece_val_cal",
+                ]:
+                    if key in metrics:
+                        value = metrics.get(key)
+                        if isinstance(value, float):
+                            lines.append(f"- **{key}**: {value:.6f}\n")
+                        else:
+                            lines.append(f"- **{key}**: {value}\n")
+                if shap_df is not None and not shap_df.empty:
+                    lines.append("\n## SHAP Feature Importance (Top 30)\n\n")
+                    lines.append("| Rank | Feature | Mean |SHAP| |\n")
+                    lines.append("|------|---------|-------------|\n")
+                    for idx_row, row in enumerate(shap_df.itertuples(index=False), start=1):
+                        if idx_row > 30:
+                            break
+                        lines.append(f"| {idx_row} | {row.feature} | {row.mean_abs_shap:.6f} |\n")
+                lines.append("\n## Artifacts\n\n")
+                lines.append(f"- **Gate model**: `{temp_path}`\n")
+                lines.append(f"- **Gate metrics**: `{metrics_path}`\n")
+                lines.append(f"- **Gate OOF predictions**: `{oof_path}`\n")
+                if shap_path is not None:
+                    lines.append(f"- **Gate SHAP importance**: `{shap_path}`\n")
+                with open(md_path, "w", encoding="utf-8") as f:
+                    f.writelines(lines)
+                report_path = md_path
+            except Exception:
+                report_path = None
 
             return {
                 'success': True,
                 'artifacts': {
                     'gate_model': temp_path,
                     'gate_oof_predictions': oof_path,
-                    'gate_metrics': metrics_path
+                    'gate_metrics': metrics_path,
+                    'gate_shap_importance': shap_path
                 },
-                'metrics': metrics
+                'metrics': metrics,
+                'outcome_report_path': report_path
             }
 
         except Exception as e:

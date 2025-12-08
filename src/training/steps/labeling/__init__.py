@@ -71,6 +71,14 @@ from .lgbm_feature_selection import (
     DEFAULT_LGBM_PARAMS,
 )
 
+# Winning Feature Set Selection (2025-12-08)
+from .winning_feature_set_selector import (
+    determine_winning_feature_set,
+    compute_composite_score,
+    run_winning_feature_set_selection,
+    METRIC_WEIGHTS,
+)
+
 __all__ = [
     "RegimeAwareLabeling",
     "FeatureGenerationMetaLabelingStep",
@@ -104,4 +112,9 @@ __all__ = [
     "correlation_pruning",
     "FEATURE_SELECTION_CONFIG",
     "DEFAULT_LGBM_PARAMS",
+    # Winning Feature Set Selection (2025-12-08)
+    "determine_winning_feature_set",
+    "compute_composite_score",
+    "run_winning_feature_set_selection",
+    "METRIC_WEIGHTS",
 ]

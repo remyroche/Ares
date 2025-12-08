@@ -40,7 +40,6 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
-import concurrent.futures
 
 import numpy as np
 import pandas as pd
@@ -1577,28 +1576,9 @@ class IncrementalAnalystTrainer:
             
     def train_all_models(self, X, y, data_start, data_end, sample_weight=None, verbose=True, specialist_feature_names=None):
         results = {}
-
-        # Parallel execution using ThreadPoolExecutor (safer than ProcessPoolExecutor for pickling)
-        # Most underlying libraries (LGBM, Sklearn) release GIL for heavy ops.
-        with concurrent.futures.ThreadPoolExecutor(max_workers=len(self.trainers)) as executor:
-            future_to_name = {
-                executor.submit(
-                    trainer.train_and_predict,
-                    X, y, data_start, data_end, sample_weight, verbose, specialist_feature_names
-                ): name
-                for name, trainer in self.trainers.items()
-            }
-
-            for future in concurrent.futures.as_completed(future_to_name):
-                name = future_to_name[future]
-                try:
-                    results[name] = future.result()
-                    if verbose: logger.info(f"✅ {name} finished training")
-                except Exception as e:
-                    logger.error(f"❌ {name} failed: {e}")
-                    import traceback
-                    logger.error(traceback.format_exc())
-
+        for name, trainer in self.trainers.items():
+            if verbose: logger.info(f"Training {name}")
+            results[name] = trainer.train_and_predict(X, y, data_start, data_end, sample_weight, verbose, specialist_feature_names)
         return results
 
     def get_combined_oof_predictions(self, results):

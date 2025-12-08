@@ -137,13 +137,14 @@ class IncrementalTrainingConfig:
     # Task type
     task_type: str = "regression"  # "classification" or "regression"
     
-    # HPO configuration (incremental)
-    enable_incremental_hpo: bool = True
-    hpo_n_trials_per_round: int = 10  # Small number for incremental search
-    hpo_timeout_per_round: int = 300  # 5 minutes max per round
+    # HPO configuration - runs ONCE at burn-in only (NOT during incremental windows)
+    # This finds good hyperparameters on the initial data, then warm-starts from there
+    enable_burnin_hpo: bool = True  # Run HPO once at burn-in
+    hpo_n_trials: int = 10  # Number of trials for burn-in HPO
+    hpo_timeout: int = 300  # 5 minutes max for burn-in HPO
     early_stopping_rounds: int = 35
     
-    # Sensitive hyperparameters to tune incrementally
+    # Hyperparameters to tune during burn-in HPO
     sensitive_params_lgbm: List[str] = field(default_factory=lambda: [
         'learning_rate', 'num_leaves', 'max_depth', 'reg_alpha', 'reg_lambda'
     ])
@@ -157,8 +158,24 @@ class IncrementalTrainingConfig:
         'alpha_1', 'alpha_2', 'lambda_1', 'lambda_2'
     ])
     
-    # Neighborhood search radius (percentage of current value)
-    hpo_neighborhood_radius: float = 0.3  # 30% around current best
+    # Neighborhood search radius for HPO (percentage of default value)
+    hpo_neighborhood_radius: float = 0.3  # 30% around default
+    
+    # Backward compatibility aliases
+    @property
+    def enable_incremental_hpo(self) -> bool:
+        """Deprecated: Use enable_burnin_hpo instead."""
+        return self.enable_burnin_hpo
+    
+    @property
+    def hpo_n_trials_per_round(self) -> int:
+        """Deprecated: Use hpo_n_trials instead."""
+        return self.hpo_n_trials
+    
+    @property
+    def hpo_timeout_per_round(self) -> int:
+        """Deprecated: Use hpo_timeout instead."""
+        return self.hpo_timeout
     
     # Paths
     cache_dir: Path = field(default_factory=lambda: Path("cache/incremental_models"))
@@ -464,12 +481,13 @@ class BaseIncrementalTrainer(ABC):
                 previous_training_end = window.training_end
                 continue
             
-            # Initial HPO if burn-in and enabled
-            if window.is_burn_in and self.config.enable_incremental_hpo:
-                if verbose: logger.info("   Running initial HPO on burn-in data...")
-                hpo_result = self._run_incremental_hpo(train_data, window, verbose)
+            # HPO runs ONCE at burn-in only - finds good hyperparameters on initial data
+            # Subsequent incremental windows use warm-start with these params (no re-tuning)
+            if window.is_burn_in and self.config.enable_burnin_hpo:
+                if verbose: logger.info("   Running burn-in HPO (one-time optimization)...")
+                hpo_result = self._run_burnin_hpo(train_data, window, verbose)
                 if hpo_result:
-                    hpo_history[f"window_{window.window_id}_pre"] = hpo_result
+                    hpo_history[f"burnin_hpo"] = hpo_result
 
             # Train/Update model
             if window.is_burn_in or self._current_model is None:
@@ -533,7 +551,8 @@ class BaseIncrementalTrainer(ABC):
         pass
     
     @abstractmethod
-    def _run_incremental_hpo(self, train_data: pd.DataFrame, window: IncrementalTrainingWindow, verbose: bool) -> Optional[Dict[str, Any]]:
+    def _run_burnin_hpo(self, train_data: pd.DataFrame, window: IncrementalTrainingWindow, verbose: bool) -> Optional[Dict[str, Any]]:
+        """Run HPO once at burn-in to find good hyperparameters. NOT called during incremental windows."""
         pass
     
     def _get_feature_cols(self, data: pd.DataFrame) -> List[str]:
@@ -668,7 +687,8 @@ class IncrementalLGBMTrainer(BaseIncrementalTrainer):
         else:
             return pd.DataFrame({'prediction': preds}, index=pred_data.index)
 
-    def _run_incremental_hpo(self, train_data, window, verbose):
+    def _run_burnin_hpo(self, train_data, window, verbose):
+        """Run HPO once at burn-in to find good hyperparameters."""
         if not OPTUNA_AVAILABLE: return None
 
         if not self._feature_cols:
@@ -1294,8 +1314,8 @@ class IncrementalLGBMBaggedTrainer(BaseIncrementalTrainer):
         preds = self._current_model.predict(X)
         return pd.DataFrame({'prediction': preds}, index=pred_data.index)
 
-    def _run_incremental_hpo(self, train_data, window, verbose):
-        # Reuse single-model LGBM HPO to tune base learner hyperparameters.
+    def _run_burnin_hpo(self, train_data, window, verbose):
+        """Run HPO once at burn-in to tune base learner hyperparameters."""
         if not OPTUNA_AVAILABLE:
             return None
 
@@ -1503,7 +1523,8 @@ class IncrementalNGBoostTrainer(BaseIncrementalTrainer):
                 std = np.zeros_like(preds)
             return pd.DataFrame({'prediction': preds, 'std': std}, index=pred_data.index)
 
-    def _run_incremental_hpo(self, train_data, window, verbose):
+    def _run_burnin_hpo(self, train_data, window, verbose):
+        """Run HPO once at burn-in to find good hyperparameters."""
         if not OPTUNA_AVAILABLE:
             return None
 
@@ -1641,7 +1662,8 @@ class IncrementalKNNTrainer(BaseIncrementalTrainer):
         else:
             return pd.DataFrame({'prediction': preds}, index=pred_data.index)
 
-    def _run_incremental_hpo(self, train_data, window, verbose):
+    def _run_burnin_hpo(self, train_data, window, verbose):
+        """Run HPO once at burn-in to find good hyperparameters."""
         if not OPTUNA_AVAILABLE: return None
         X = train_data[self._feature_cols].values.astype(np.float32)
         y = train_data['__target__'].values
@@ -1816,7 +1838,8 @@ class IncrementalBayesianRidgeTrainer(BaseIncrementalTrainer):
 
         return pd.DataFrame({'prediction': preds, 'std': std}, index=pred_data.index)
 
-    def _run_incremental_hpo(self, train_data, window, verbose):
+    def _run_burnin_hpo(self, train_data, window, verbose):
+        """Run HPO once at burn-in to find good hyperparameters."""
         if not OPTUNA_AVAILABLE:
             return None
 
@@ -1870,7 +1893,17 @@ class IncrementalBayesianRidgeTrainer(BaseIncrementalTrainer):
 class IncrementalAnalystTrainer:
     """Unified incremental trainer that trains all analyst base models."""
     
-    def __init__(self, model_id: str, execution_mode="blank", task_type="regression", enable_incremental_hpo=True, model_configs=None):
+    def __init__(self, model_id: str, execution_mode="blank", task_type="regression", enable_burnin_hpo=True, model_configs=None):
+        """
+        Initialize the unified incremental trainer.
+        
+        Args:
+            model_id: Unique identifier for the model
+            execution_mode: "blank", "full", etc.
+            task_type: "regression" or "classification"
+            enable_burnin_hpo: If True, runs HPO ONCE at burn-in. No HPO during incremental windows.
+            model_configs: Dict of model-specific configurations
+        """
         self.model_id = model_id
         # Use 4 weeks (28 days) for full mode, 2 weeks (14 days) otherwise
         oof_batch_days = 28 if execution_mode == "full" else 14
@@ -1879,7 +1912,7 @@ class IncrementalAnalystTrainer:
             execution_mode,
             oof_batch_days=oof_batch_days,
             task_type=task_type,
-            enable_incremental_hpo=enable_incremental_hpo,
+            enable_burnin_hpo=enable_burnin_hpo,
         )
         self.model_configs = model_configs or {}
         

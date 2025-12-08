@@ -176,8 +176,9 @@ class IncrementalTrainingConfig:
     
     @property
     def burn_in_days(self) -> int:
-        """Calculate burn-in period as full_period - 4 months."""
-        return max(30, self.full_period_days - BURN_IN_BUFFER_DAYS)
+        """Calculate burn-in period as full_period - 4 months (or 8 months for full mode)."""
+        buffer_days = 240 if self.execution_mode == "full" else BURN_IN_BUFFER_DAYS
+        return max(30, self.full_period_days - buffer_days)
 
 
 @dataclass
@@ -1009,6 +1010,12 @@ class IncrementalLGBMBaggedTrainer(BaseIncrementalTrainer):
             dtrain = lgb.Dataset(X_train, label=y_train)
             dval = lgb.Dataset(X_val, label=y_val, reference=dtrain)
             try:
+                # Handle GOSS compatibility
+                if params.get('boosting_type') == 'goss':
+                    params['bagging_fraction'] = 1.0
+                    params['subsample'] = 1.0
+                    params['bagging_freq'] = 0
+
                 # Suppress LightGBM verbose output during HPO
                 model = lgb.train(
                     params,
@@ -1505,10 +1512,12 @@ class IncrementalAnalystTrainer:
     
     def __init__(self, model_id: str, execution_mode="blank", task_type="regression", enable_incremental_hpo=True, model_configs=None):
         self.model_id = model_id
+        # Use 4 weeks (28 days) for full mode, 2 weeks (14 days) otherwise
+        oof_batch_days = 28 if execution_mode == "full" else 14
         self.config = IncrementalTrainingConfig(
             model_id,
             execution_mode,
-            oof_batch_days=14,
+            oof_batch_days=oof_batch_days,
             task_type=task_type,
             enable_incremental_hpo=enable_incremental_hpo,
         )

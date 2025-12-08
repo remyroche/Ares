@@ -41,6 +41,12 @@ class GateModel:
         """
         self.config = config or {}
 
+        # Metadata defaults
+        self.exchange = self.config.get('exchange', 'unknown')
+        self.symbol = self.config.get('symbol', 'unknown')
+        self.timeframe = self.config.get('timeframe', 'unknown')
+        self.direction = self.config.get('direction', 'long')
+
         # Default behavior: if no explicit calibration settings are provided,
         # we aim to block the worst trades (e.g. bottom 25%).
         # target_coverage=0.75 means we keep the top 75% of trades.

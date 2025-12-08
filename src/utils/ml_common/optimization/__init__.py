@@ -44,6 +44,15 @@ from .ic_snr_objective import (
     DEFAULT_REGULARIZATION_RANGES,
     is_regularization_param,
 )
+from .diversity_defense_objectives import (
+    SpecialistType,
+    SpecialistConfig,
+    DiversityDefenseConfig,
+    DiversityDefenseObjectives,
+    DiversityDefenseAggregator,
+    DiversityDefenseHPO,
+    create_diversity_defense_ensemble,
+)
 
 # Backward compatibility alias
 HyperparameterOptimizer = HyperparameterOptimization
@@ -94,4 +103,13 @@ __all__ = [
     'create_ic_snr_objective_for_xgb',
     'DEFAULT_REGULARIZATION_RANGES',
     'is_regularization_param',
+    
+    # Diversity Defense Objectives for Bagged LGBM Ensemble
+    'SpecialistType',
+    'SpecialistConfig',
+    'DiversityDefenseConfig',
+    'DiversityDefenseObjectives',
+    'DiversityDefenseAggregator',
+    'DiversityDefenseHPO',
+    'create_diversity_defense_ensemble',
 ]

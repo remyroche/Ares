@@ -1,0 +1,220 @@
+# Diversity Defense Configuration for Bagged LGBM Ensemble
+# =============================================================================
+#
+# This configuration defines the "Diversity Defense" approach where 10 specialist
+# models are trained with different objectives to increase orthogonality and
+# reduce overfitting through disagreement filtering.
+#
+# Philosophy:
+# - Specialization: Different models focus on direction, magnitude, or risk
+# - Consensus: Only trade when the committee agrees
+# - Filters: Use disagreement (MAD) to filter out noisy signals
+#
+# The 3 "Specialist" Layers (10 models total):
+# 1. "Smart Money" (3x): Vol-Normalized Sharpe - Maximizes PnL consistency
+# 2. "Trend Follower" (3x): Robust Tanh Loss - Maximizes directional accuracy
+# 3. "Reality Check" (4x): Huber / Asymmetric Huber - Anchors to realistic values
+#
+# =============================================================================
+
+# Enable/disable diversity defense
+enabled: true
+
+# =============================================================================
+# Specialist Layer Configuration (10 models total)
+# =============================================================================
+specialist_layers:
+  # "Smart Money" layer - Risk-adjusted PnL maximization
+  sharpe:
+    count: 3
+    role: "Risk Manager"
+    description: "Maximizes PnL consistency, penalizes volatile wins"
+    # Risk aversion parameters (increasing values)
+    # Higher lambda = more conservative, more variance penalty
+    lambdas: [0.5, 2.0, 8.0]
+    learning_rate: 0.02
+  
+  # "Trend Follower" layer - Directional accuracy
+  tanh:
+    count: 3
+    role: "Aggressive Trader"
+    description: "Maximizes directional accuracy (hit rate), ignores magnitude"
+    learning_rate: 0.02
+  
+  # "Reality Check" layer - Regression accuracy
+  huber:
+    # Standard Huber (2 models)
+    standard_count: 2
+    # Asymmetric Huber with wrong-direction penalty (2 models)
+    asymmetric_count: 2
+    role: "Analyst"
+    description: "Anchors predictions to realistic values, robust to outliers"
+    # Outlier threshold for Huber loss
+    delta: 0.01
+    # Penalty factor for wrong-direction errors (2-5x typical)
+    asymmetric_penalty: 3.0
+    learning_rate: 0.02
+
+# =============================================================================
+# Feature and Sample Bagging
+# =============================================================================
+bagging:
+  # Fraction of features used per model (60%)
+  feature_fraction: 0.6
+  # Fraction of samples used per model (60%)
+  sample_fraction: 0.6
+  # Random seed for reproducibility
+  random_seed: 42
+
+# =============================================================================
+# LGBM Base Parameters
+# =============================================================================
+lgbm_params:
+  n_estimators: 400
+  num_leaves: 50
+  max_depth: 6
+  subsample: 0.8
+  colsample_bytree: 0.8
+  min_child_samples: 20
+  reg_alpha: 0.1
+  reg_lambda: 0.1
+  verbosity: -1
+  n_jobs: -1
+
+# =============================================================================
+# Aggregation Pipeline Configuration
+# =============================================================================
+aggregation:
+  # Z-Score Normalization
+  z_score:
+    # Rolling window for computing Z-scores
+    window: 1000
+    # Minimum periods before computing valid Z-score
+    min_periods: 100
+  
+  # Consensus Mechanism (MAD-based veto)
+  consensus:
+    # Soft floor for MAD to prevent division by zero
+    mad_floor: 0.25
+    # Signal formula: median_z / (1 + max(mad, mad_floor))
+    # High disagreement (large MAD) shrinks signal toward zero
+  
+  # Bucketed Position Sizing
+  bucketing:
+    # Below this threshold, position = 0 (noise filter)
+    noise_threshold: 0.3
+    # Above this threshold, position is capped (prevents overconfidence)
+    cap_threshold: 0.7
+    # Linear scaling between thresholds
+
+# =============================================================================
+# Orthogonality Penalty (for HPO)
+# =============================================================================
+orthogonality:
+  # Only penalize if average correlation > threshold
+  correlation_threshold: 0.5
+  # Penalty strength multiplier
+  penalty_strength: 2.0
+  # Penalty = max(0, avg_corr - threshold) * strength
+
+# =============================================================================
+# HPO Configuration (Meta-Model Optimization)
+# =============================================================================
+hpo:
+  # Optimization target: Sharpe Ratio after fees
+  objective: "sharpe_after_fees"
+  
+  # Transaction fee rate (5 bps default)
+  fee_rate: 0.0005
+  
+  # Annualization factor for Sharpe calculation
+  annualization_factor: 93.91  # sqrt(24 * 365) for hourly returns
+  
+  # Number of CV folds
+  n_splits: 3
+  
+  # Optuna settings
+  n_trials: 100
+  timeout_seconds: 3600  # 1 hour max
+  n_jobs: 1  # Parallel jobs
+  
+  # Parameter search ranges
+  search_ranges:
+    # Learning rates (log scale)
+    lr_sharpe: [0.001, 0.05]
+    lr_tanh: [0.001, 0.05]
+    lr_huber: [0.001, 0.05]
+    
+    # Sharpe lambdas (risk aversion)
+    lmbda_1: [0.01, 1.0]
+    lmbda_2: [1.0, 5.0]
+    lmbda_3: [5.0, 15.0]
+    
+    # Huber parameters
+    huber_delta: [0.001, 0.02]
+    asymmetric_penalty: [2.0, 5.0]
+    
+    # Aggregation parameters
+    mad_floor: [0.1, 0.5]
+    noise_threshold: [0.2, 0.4]
+    
+    # Model complexity
+    n_estimators: [200, 600]
+    num_leaves: [30, 80]
+    max_depth: [4, 8]
+
+# =============================================================================
+# Live Trading Signal Generation
+# =============================================================================
+live_trading:
+  # Whether to use diversity defense in live trading
+  enabled: true
+  
+  # Signal interpretation
+  signal_interpretation:
+    # Raw signal thresholds
+    strong_long: 0.5     # signal > 0.5 = strong long
+    weak_long: 0.3       # 0.3 < signal <= 0.5 = weak long
+    neutral: 0.0         # -0.3 < signal < 0.3 = neutral (no trade)
+    weak_short: -0.3     # -0.5 < signal <= -0.3 = weak short
+    strong_short: -0.5   # signal <= -0.5 = strong short
+  
+  # Position sizing from signal
+  max_position_size: 1.0   # Maximum position (100%)
+  min_position_size: 0.0   # Minimum non-zero position
+  
+  # MAD-based confidence
+  mad_confidence:
+    low_mad: 0.2      # MAD < 0.2 = high confidence
+    medium_mad: 0.4   # 0.2 <= MAD < 0.4 = medium confidence
+    high_mad: 0.6     # MAD >= 0.6 = low confidence, reduce size
+
+# =============================================================================
+# Logging and Monitoring
+# =============================================================================
+logging:
+  # Log level for diversity defense module
+  level: "INFO"
+  
+  # Log individual specialist predictions
+  log_specialist_predictions: false
+  
+  # Log aggregation details
+  log_aggregation_details: true
+  
+  # Log MAD values
+  log_mad_values: true
+
+# =============================================================================
+# Integration Settings
+# =============================================================================
+integration:
+  # Files that use diversity defense
+  feature_generation_meta_labeling_step:
+    enabled: true
+    function: "train_bagged_lgbm_with_kfold"
+  
+  incremental_analyst_trainers:
+    enabled: true
+    class: "BaggedLGBMRegressor"
+    class: "IncrementalLGBMBaggedTrainer"

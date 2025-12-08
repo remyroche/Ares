@@ -737,12 +737,45 @@ class IncrementalLGBMTrainer(BaseIncrementalTrainer):
 # ============================================================================
 
 class BaggedLGBMRegressor:
-    """Simple bagged LGBM regressor that supports mean/std/lower predictions."""
+    """
+    Bagged LGBM regressor with Diversity Defense support.
+    
+    Supports mean/std/lower predictions, and when diversity defense is enabled,
+    also provides MAD-based consensus predictions using specialist models with
+    different objectives (Sharpe, Tanh, Huber).
+    """
 
-    def __init__(self, models: List[Any], feature_indices: List[np.ndarray], n_features: int):
+    def __init__(
+        self, 
+        models: List[Any], 
+        feature_indices: List[np.ndarray], 
+        n_features: int,
+        specialist_types: Optional[List[Any]] = None,
+        use_diversity_defense: bool = False,
+        diversity_defense_config: Optional[Any] = None,
+    ):
         self.models = models
         self.feature_indices = feature_indices
         self.n_features = n_features
+        self.specialist_types = specialist_types or []
+        self.use_diversity_defense = use_diversity_defense
+        self.diversity_defense_config = diversity_defense_config
+        
+        # Initialize aggregator for diversity defense
+        self._aggregator = None
+        if use_diversity_defense:
+            try:
+                from src.utils.ml_common.optimization.diversity_defense_objectives import (
+                    DiversityDefenseAggregator,
+                    DiversityDefenseConfig,
+                )
+                if diversity_defense_config is not None:
+                    self._aggregator = DiversityDefenseAggregator(diversity_defense_config)
+                else:
+                    self._aggregator = DiversityDefenseAggregator()
+            except ImportError:
+                logger.warning("Diversity Defense not available, falling back to standard aggregation")
+                self.use_diversity_defense = False
 
     def predict_components(self, X: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Return (mean, std, lower=mean-std) across bags for each sample."""
@@ -773,23 +806,139 @@ class BaggedLGBMRegressor:
         std = preds_mat.std(axis=1)
         lower = mean - std
         return mean, std, lower
+    
+    def predict_diversity_defense(self, X: np.ndarray) -> Dict[str, np.ndarray]:
+        """
+        Return diversity defense predictions with MAD-based consensus.
+        
+        Returns:
+            Dict with keys:
+                - 'mean': Mean prediction
+                - 'std': Standard deviation
+                - 'lower': Mean - std
+                - 'median': Median prediction (more robust)
+                - 'mad': Median Absolute Deviation (disagreement measure)
+                - 'consensus': MAD-weighted consensus signal
+                - 'raw_preds': Raw predictions from all specialists
+        """
+        if X.ndim != 2 or X.shape[1] != self.n_features:
+            n_common = min(self.n_features, X.shape[1])
+            X = X[:, :n_common]
+        
+        if not self.models:
+            n_samples = X.shape[0]
+            zeros = np.zeros(n_samples, dtype=float)
+            return {
+                'mean': zeros, 'std': zeros, 'lower': zeros,
+                'median': zeros, 'mad': zeros, 'consensus': zeros,
+                'raw_preds': np.zeros((n_samples, 1))
+            }
+
+        bag_preds = []
+        for model, idx in zip(self.models, self.feature_indices):
+            try:
+                X_sub = X[:, idx]
+                bag_preds.append(model.predict(X_sub))
+            except Exception:
+                continue
+
+        if not bag_preds:
+            n_samples = X.shape[0]
+            zeros = np.zeros(n_samples, dtype=float)
+            return {
+                'mean': zeros, 'std': zeros, 'lower': zeros,
+                'median': zeros, 'mad': zeros, 'consensus': zeros,
+                'raw_preds': np.zeros((n_samples, 1))
+            }
+
+        preds_mat = np.vstack(bag_preds).T  # (n_samples, n_bags)
+        
+        # Standard statistics
+        mean = preds_mat.mean(axis=1)
+        std = preds_mat.std(axis=1)
+        lower = mean - std
+        
+        # Robust statistics
+        median = np.median(preds_mat, axis=1)
+        mad = np.median(np.abs(preds_mat - median[:, np.newaxis]), axis=1)
+        
+        # Consensus signal: median / (1 + mad)
+        # High disagreement (large MAD) shrinks signal toward zero
+        mad_floor = 0.25
+        if self.diversity_defense_config is not None:
+            mad_floor = getattr(self.diversity_defense_config, 'mad_floor', 0.25)
+        mad_eff = np.maximum(mad, mad_floor)
+        consensus = median / (1.0 + mad_eff)
+        
+        return {
+            'mean': mean,
+            'std': std,
+            'lower': lower,
+            'median': median,
+            'mad': mad,
+            'consensus': consensus,
+            'raw_preds': preds_mat
+        }
 
     def predict(self, X: np.ndarray) -> np.ndarray:
         """Return bag-lower raw prediction (mean - std)."""
+        if self.use_diversity_defense:
+            result = self.predict_diversity_defense(X)
+            return result['consensus']
         _, _, lower = self.predict_components(X)
         return lower
 
 
 class IncrementalLGBMBaggedTrainer(BaseIncrementalTrainer):
-    """Incremental bagged LightGBM trainer producing bag-lower predictions with calibration."""
+    """
+    Incremental bagged LightGBM trainer with Diversity Defense support.
+    
+    Produces bag-lower predictions with calibration. When diversity defense
+    is enabled, trains specialist models with different objectives:
+    - 3x Sharpe models (vol-normalized, risk-adjusted)
+    - 3x Tanh models (directional accuracy)
+    - 4x Huber models (2 standard + 2 asymmetric)
+    """
 
     def __init__(self, model_id: str, config=None, model_config=None):
         super().__init__(model_id, config, model_config)
         self._feature_cols: List[str] = []
         self._n_bags = int((model_config or {}).get('n_bags', 10))
-        self._feature_fraction = float((model_config or {}).get('bagging_feature_fraction', 0.7))
-        self._sample_fraction = float((model_config or {}).get('bagging_sample_fraction', 0.7))
+        self._feature_fraction = float((model_config or {}).get('bagging_feature_fraction', 0.6))
+        self._sample_fraction = float((model_config or {}).get('bagging_sample_fraction', 0.6))
         self._bagged_boosters = []  # Store boosters for warm start
+        
+        # Diversity Defense configuration
+        self._use_diversity_defense = bool((model_config or {}).get('use_diversity_defense', True))
+        self._dd_config = None
+        self._dd_objectives = None
+        
+        if self._use_diversity_defense:
+            try:
+                from src.utils.ml_common.optimization.diversity_defense_objectives import (
+                    DiversityDefenseConfig,
+                    DiversityDefenseObjectives,
+                )
+                dd_config_dict = (model_config or {}).get('diversity_defense_config', {})
+                self._dd_config = DiversityDefenseConfig(
+                    sharpe_count=dd_config_dict.get('sharpe_count', 3),
+                    tanh_count=dd_config_dict.get('tanh_count', 3),
+                    huber_standard_count=dd_config_dict.get('huber_standard_count', 2),
+                    huber_asymmetric_count=dd_config_dict.get('huber_asymmetric_count', 2),
+                    sharpe_lambdas=dd_config_dict.get('sharpe_lambdas', [0.5, 2.0, 8.0]),
+                    huber_delta=dd_config_dict.get('huber_delta', 0.01),
+                    asymmetric_penalty=dd_config_dict.get('asymmetric_penalty', 3.0),
+                    lr_sharpe=dd_config_dict.get('lr_sharpe', 0.02),
+                    lr_tanh=dd_config_dict.get('lr_tanh', 0.02),
+                    lr_huber=dd_config_dict.get('lr_huber', 0.02),
+                    feature_fraction=self._feature_fraction,
+                    sample_fraction=self._sample_fraction,
+                )
+                self._dd_objectives = DiversityDefenseObjectives(self._dd_config)
+                logger.info(f"Diversity Defense enabled for {model_id}")
+            except ImportError as e:
+                logger.warning(f"Diversity Defense not available: {e}, using standard bagging")
+                self._use_diversity_defense = False
 
     def _get_default_params(self) -> Dict[str, Any]:
         params = {
@@ -825,64 +974,143 @@ class IncrementalLGBMBaggedTrainer(BaseIncrementalTrainer):
         # rely on global incremental training/HPO instead.
         base_params.pop("early_stopping_rounds", None)
 
-        n_bags = max(1, int(self._n_bags))
         feat_frac = min(max(self._feature_fraction, 0.1), 1.0)
         sample_frac = min(max(self._sample_fraction, 0.1), 1.0)
 
         rng = np.random.RandomState(42)
         models: List[Any] = []
         feature_indices: List[np.ndarray] = []
+        specialist_types: List[Any] = []
         new_boosters = []
+        
+        # Compute volatility for Sharpe objectives
+        y_vol = pd.Series(y).rolling(window=100, min_periods=10).std().bfill().values
+        
+        if self._use_diversity_defense and self._dd_config is not None and self._dd_objectives is not None:
+            # ============================================================
+            # DIVERSITY DEFENSE: Train specialist models with different objectives
+            # ============================================================
+            specialist_configs = self._dd_config.get_specialist_configs()
+            n_bags = len(specialist_configs)
+            
+            # Check if we have previous boosters for warm start
+            has_warm_start = len(self._bagged_boosters) == n_bags
+            
+            for spec_idx, spec_config in enumerate(specialist_configs):
+                params = dict(base_params)
+                params['random_state'] = int(params.get('random_state', 42)) + spec_idx
+                
+                # Get specialist-specific learning rate
+                lr = getattr(self._dd_config, spec_config.learning_rate_key, 0.02)
+                params['learning_rate'] = lr
 
-        # Check if we have previous boosters for warm start
-        has_warm_start = len(self._bagged_boosters) == n_bags
+                n_feat_sub = max(1, int(round(feat_frac * n_features)))
+                feat_idx = np.sort(rng.choice(n_features, size=n_feat_sub, replace=False))
 
-        for bag_idx in range(n_bags):
-            params = dict(base_params)
-            params['random_state'] = int(params.get('random_state', 42)) + bag_idx
+                n_rows_sub = max(10, int(round(sample_frac * n_samples)))
+                n_rows_sub = min(n_rows_sub, n_samples)
+                row_idx = np.sort(rng.choice(n_samples, size=n_rows_sub, replace=False))
 
-            n_feat_sub = max(1, int(round(feat_frac * n_features)))
-            feat_idx = np.sort(rng.choice(n_features, size=n_feat_sub, replace=False))
-
-            n_rows_sub = max(10, int(round(sample_frac * n_samples)))
-            n_rows_sub = min(n_rows_sub, n_samples)
-            row_idx = np.sort(rng.choice(n_samples, size=n_rows_sub, replace=False))
-
-            X_bag = X[row_idx][:, feat_idx]
-            y_bag = y[row_idx]
-            if sample_weight is not None:
-                sw_bag = sample_weight[row_idx]
-            else:
-                sw_bag = None
-
-            try:
-                model = lgb.LGBMRegressor(**params)
-
-                # Use warm start if available
-                init_model = self._bagged_boosters[bag_idx] if has_warm_start else None
-
-                if sw_bag is not None:
-                    model.fit(X_bag, y_bag, sample_weight=sw_bag, init_model=init_model)
+                X_bag = X[row_idx][:, feat_idx]
+                y_bag = y[row_idx]
+                vol_bag = y_vol[row_idx]
+                
+                if sample_weight is not None:
+                    sw_bag = sample_weight[row_idx]
                 else:
-                    model.fit(X_bag, y_bag, init_model=init_model)
+                    sw_bag = None
 
-                models.append(model)
-                feature_indices.append(feat_idx)
+                try:
+                    # Get specialist objective
+                    fobj = self._dd_objectives.get_objective_for_specialist(spec_config, vol_bag)
+                    
+                    if fobj is not None:
+                        # Remove standard objective since we're using custom
+                        params_custom = {k: v for k, v in params.items() if k != 'objective'}
+                        model = lgb.LGBMRegressor(objective=fobj, **params_custom)
+                    else:
+                        model = lgb.LGBMRegressor(**params)
 
-                # Store booster for next round
-                # For LGBMRegressor, the booster is in booster_ attribute after fit
-                if hasattr(model, 'booster_'):
-                    new_boosters.append(model.booster_)
+                    # Use warm start if available
+                    init_model = self._bagged_boosters[spec_idx] if has_warm_start else None
 
-            except Exception as e:
-                logger.warning(f"Bag {bag_idx} failed during training: {e}")
-                continue
+                    if sw_bag is not None:
+                        model.fit(X_bag, y_bag, sample_weight=sw_bag, init_model=init_model)
+                    else:
+                        model.fit(X_bag, y_bag, init_model=init_model)
+
+                    models.append(model)
+                    feature_indices.append(feat_idx)
+                    specialist_types.append(spec_config.specialist_type)
+
+                    # Store booster for next round
+                    if hasattr(model, 'booster_'):
+                        new_boosters.append(model.booster_)
+
+                except Exception as e:
+                    logger.warning(f"Specialist {spec_idx} ({spec_config.role_description}) failed: {e}")
+                    continue
+        else:
+            # ============================================================
+            # STANDARD MODE: Train identical models with different seeds
+            # ============================================================
+            n_bags = max(1, int(self._n_bags))
+            
+            # Check if we have previous boosters for warm start
+            has_warm_start = len(self._bagged_boosters) == n_bags
+
+            for bag_idx in range(n_bags):
+                params = dict(base_params)
+                params['random_state'] = int(params.get('random_state', 42)) + bag_idx
+
+                n_feat_sub = max(1, int(round(feat_frac * n_features)))
+                feat_idx = np.sort(rng.choice(n_features, size=n_feat_sub, replace=False))
+
+                n_rows_sub = max(10, int(round(sample_frac * n_samples)))
+                n_rows_sub = min(n_rows_sub, n_samples)
+                row_idx = np.sort(rng.choice(n_samples, size=n_rows_sub, replace=False))
+
+                X_bag = X[row_idx][:, feat_idx]
+                y_bag = y[row_idx]
+                if sample_weight is not None:
+                    sw_bag = sample_weight[row_idx]
+                else:
+                    sw_bag = None
+
+                try:
+                    model = lgb.LGBMRegressor(**params)
+
+                    # Use warm start if available
+                    init_model = self._bagged_boosters[bag_idx] if has_warm_start else None
+
+                    if sw_bag is not None:
+                        model.fit(X_bag, y_bag, sample_weight=sw_bag, init_model=init_model)
+                    else:
+                        model.fit(X_bag, y_bag, init_model=init_model)
+
+                    models.append(model)
+                    feature_indices.append(feat_idx)
+
+                    # Store booster for next round
+                    if hasattr(model, 'booster_'):
+                        new_boosters.append(model.booster_)
+
+                except Exception as e:
+                    logger.warning(f"Bag {bag_idx} failed during training: {e}")
+                    continue
 
         # Update stored boosters if we successfully trained
         if len(new_boosters) == len(models):
             self._bagged_boosters = new_boosters
 
-        return BaggedLGBMRegressor(models, feature_indices, n_features)
+        return BaggedLGBMRegressor(
+            models, 
+            feature_indices, 
+            n_features,
+            specialist_types=specialist_types if self._use_diversity_defense else None,
+            use_diversity_defense=self._use_diversity_defense,
+            diversity_defense_config=self._dd_config,
+        )
 
     def _train_initial(self, train_data: pd.DataFrame, window: IncrementalTrainingWindow, verbose: bool) -> CalibratedModel:
         self._feature_cols = self._get_feature_cols(train_data)

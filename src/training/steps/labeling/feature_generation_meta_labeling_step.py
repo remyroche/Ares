@@ -5527,15 +5527,63 @@ def train_bagged_lgbm_with_kfold(
     dd_objectives = None
     dd_aggregator = None
     dd_config = None
+    optimal_colsample_bytree = 0.5  # Default
+    
     if use_diversity_defense:
         try:
             from src.utils.ml_common.optimization.diversity_defense_objectives import (
                 DiversityDefenseConfig,
                 DiversityDefenseObjectives,
                 DiversityDefenseAggregator,
+                DiversitySweep,
                 SpecialistType,
             )
-            # Parse config if provided
+            
+            # ============================================================
+            # STEP 1: Run DiversitySweep to find optimal colsample_bytree
+            # ============================================================
+            run_diversity_sweep = diversity_defense_config.get('run_diversity_sweep', True) if diversity_defense_config else True
+            
+            if run_diversity_sweep and len(X) >= 500:  # Need enough data for meaningful sweep
+                if verbose:
+                    tprint("  [DIVERSITY_SWEEP] Finding optimal colsample_bytree...", "INFO")
+                
+                # Use a sample for faster sweep if dataset is large
+                sweep_sample_size = min(5000, len(X))
+                if len(X) > sweep_sample_size:
+                    sweep_indices = np.random.choice(len(X), size=sweep_sample_size, replace=False)
+                    sweep_indices.sort()
+                    X_sweep = X.iloc[sweep_indices]
+                    y_sweep = y.iloc[sweep_indices].values
+                else:
+                    X_sweep = X
+                    y_sweep = y.values
+                
+                sweep = DiversitySweep(
+                    X=X_sweep,
+                    y=y_sweep,
+                    colsample_settings=diversity_defense_config.get('colsample_settings', [0.7, 0.6, 0.5, 0.4, 0.3]) if diversity_defense_config else [0.7, 0.6, 0.5, 0.4, 0.3],
+                    n_splits=2,  # Fast sweep
+                    n_models=5,  # Mini-ensemble for speed
+                )
+                
+                try:
+                    df_sweep = sweep.run(verbose=verbose)
+                    optimal_colsample_bytree = sweep.get_optimal_fraction()
+                    if verbose:
+                        tprint(f"  [DIVERSITY_SWEEP] ✅ Optimal colsample_bytree: {optimal_colsample_bytree:.2f}", "SUCCESS")
+                except Exception as e:
+                    if verbose:
+                        tprint(f"  [DIVERSITY_SWEEP] ⚠️ Sweep failed: {e}, using default 0.5", "WARNING")
+                    optimal_colsample_bytree = 0.5
+            else:
+                optimal_colsample_bytree = diversity_defense_config.get('colsample_bytree', 0.5) if diversity_defense_config else 0.5
+                if verbose:
+                    tprint(f"  [DIVERSITY_DEFENSE] Using configured colsample_bytree: {optimal_colsample_bytree}", "INFO")
+            
+            # ============================================================
+            # STEP 2: Create config with optimized colsample_bytree
+            # ============================================================
             if diversity_defense_config is not None:
                 dd_config = DiversityDefenseConfig(
                     sharpe_count=diversity_defense_config.get('sharpe_count', 3),
@@ -5545,24 +5593,25 @@ def train_bagged_lgbm_with_kfold(
                     sharpe_lambdas=diversity_defense_config.get('sharpe_lambdas', [0.5, 2.0, 8.0]),
                     huber_delta=diversity_defense_config.get('huber_delta', 0.01),
                     asymmetric_penalty=diversity_defense_config.get('asymmetric_penalty', 3.0),
-                    lr_sharpe=diversity_defense_config.get('lr_sharpe', 0.02),
-                    lr_tanh=diversity_defense_config.get('lr_tanh', 0.02),
-                    lr_huber=diversity_defense_config.get('lr_huber', 0.02),
-                    feature_fraction=diversity_defense_config.get('feature_fraction', 0.6),
-                    sample_fraction=diversity_defense_config.get('sample_fraction', 0.6),
+                    lr_sharpe=diversity_defense_config.get('lr_sharpe', 0.03),
+                    lr_tanh=diversity_defense_config.get('lr_tanh', 0.03),
+                    lr_huber=diversity_defense_config.get('lr_huber', 0.03),
+                    sample_fraction=diversity_defense_config.get('sample_fraction', 0.7),
+                    colsample_bytree=optimal_colsample_bytree,  # Use optimized value
                     z_score_window=diversity_defense_config.get('z_score_window', 1000),
                     mad_floor=diversity_defense_config.get('mad_floor', 0.25),
                     noise_threshold=diversity_defense_config.get('noise_threshold', 0.3),
                     cap_threshold=diversity_defense_config.get('cap_threshold', 0.7),
                 )
             else:
-                dd_config = DiversityDefenseConfig()
+                dd_config = DiversityDefenseConfig(colsample_bytree=optimal_colsample_bytree)
             
             dd_objectives = DiversityDefenseObjectives(dd_config)
             dd_aggregator = DiversityDefenseAggregator(dd_config)
             
             if verbose:
                 tprint("  [DIVERSITY_DEFENSE] Enabled - training specialist ensemble", "INFO")
+                tprint(f"    colsample_bytree: {dd_config.colsample_bytree} (optimized)", "INFO")
                 tprint(f"    Sharpe models: {dd_config.sharpe_count} (λ={dd_config.sharpe_lambdas})", "INFO")
                 tprint(f"    Tanh models: {dd_config.tanh_count}", "INFO")
                 tprint(f"    Huber models: {dd_config.huber_standard_count} standard + {dd_config.huber_asymmetric_count} asymmetric", "INFO")

@@ -150,9 +150,18 @@ das_scoring:
 # - Sharpe: Did performance hold up?
 # - Correlation: Did models become distinct?
 #
+# IMPORTANT: Set run_diversity_sweep to true to automatically optimize
+# colsample_bytree at the start of training. This adds ~30s overhead but
+# ensures optimal diversity vs. performance trade-off.
+#
 diversity_sweep:
+  # Whether to run diversity sweep at start of training
+  # When true: Automatically finds optimal colsample_bytree
+  # When false: Uses the value from lgbm_params.colsample_bytree
+  run_diversity_sweep: true
+  
   # colsample_bytree values to test
-  settings: [0.8, 0.6, 0.5, 0.4, 0.3]
+  settings: [0.7, 0.6, 0.5, 0.4, 0.3]
   # Number of CV folds (use 2 for speed)
   n_splits: 2
   # Number of models in mini-ensemble (5 recommended for speed)

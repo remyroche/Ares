@@ -182,6 +182,7 @@ class DiversityDefenseConfig:
     # Orthogonality penalty parameters (for DAS scoring)
     correlation_threshold: float = 0.5   # Safe floor - correlations below this are free
     das_penalty_weight: float = 4.0      # Quadratic penalty weight for DAS formula
+    orthogonality_penalty_strength: float = 0.1  # Linear penalty weight for HPO
     
     # Sample bagging fraction (row sampling via external loop)
     sample_fraction: float = 0.7     # 70% of samples per bag

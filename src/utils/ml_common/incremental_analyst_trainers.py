@@ -899,18 +899,23 @@ class IncrementalLGBMBaggedTrainer(BaseIncrementalTrainer):
     - 3x Sharpe models (vol-normalized, risk-adjusted)
     - 3x Tanh models (directional accuracy)
     - 4x Huber models (2 standard + 2 asymmetric)
+    
+    Feature diversity is controlled via colsample_bytree (NOT external loops).
+    The optimal value is determined via DiversitySweep at the start of training.
     """
 
     def __init__(self, model_id: str, config=None, model_config=None):
         super().__init__(model_id, config, model_config)
         self._feature_cols: List[str] = []
         self._n_bags = int((model_config or {}).get('n_bags', 10))
-        self._feature_fraction = float((model_config or {}).get('bagging_feature_fraction', 0.6))
-        self._sample_fraction = float((model_config or {}).get('bagging_sample_fraction', 0.6))
+        self._sample_fraction = float((model_config or {}).get('bagging_sample_fraction', 0.7))
         self._bagged_boosters = []  # Store boosters for warm start
         
         # Diversity Defense configuration
         self._use_diversity_defense = bool((model_config or {}).get('use_diversity_defense', True))
+        self._run_diversity_sweep = bool((model_config or {}).get('run_diversity_sweep', True))
+        self._optimal_colsample_bytree = float((model_config or {}).get('colsample_bytree', 0.5))
+        self._diversity_sweep_done = False
         self._dd_config = None
         self._dd_objectives = None
         
@@ -921,6 +926,7 @@ class IncrementalLGBMBaggedTrainer(BaseIncrementalTrainer):
                     DiversityDefenseObjectives,
                 )
                 dd_config_dict = (model_config or {}).get('diversity_defense_config', {})
+                # Initial config - colsample_bytree will be updated after sweep
                 self._dd_config = DiversityDefenseConfig(
                     sharpe_count=dd_config_dict.get('sharpe_count', 3),
                     tanh_count=dd_config_dict.get('tanh_count', 3),
@@ -929,17 +935,80 @@ class IncrementalLGBMBaggedTrainer(BaseIncrementalTrainer):
                     sharpe_lambdas=dd_config_dict.get('sharpe_lambdas', [0.5, 2.0, 8.0]),
                     huber_delta=dd_config_dict.get('huber_delta', 0.01),
                     asymmetric_penalty=dd_config_dict.get('asymmetric_penalty', 3.0),
-                    lr_sharpe=dd_config_dict.get('lr_sharpe', 0.02),
-                    lr_tanh=dd_config_dict.get('lr_tanh', 0.02),
-                    lr_huber=dd_config_dict.get('lr_huber', 0.02),
-                    feature_fraction=self._feature_fraction,
+                    lr_sharpe=dd_config_dict.get('lr_sharpe', 0.03),
+                    lr_tanh=dd_config_dict.get('lr_tanh', 0.03),
+                    lr_huber=dd_config_dict.get('lr_huber', 0.03),
                     sample_fraction=self._sample_fraction,
+                    colsample_bytree=self._optimal_colsample_bytree,
                 )
                 self._dd_objectives = DiversityDefenseObjectives(self._dd_config)
                 logger.info(f"Diversity Defense enabled for {model_id}")
             except ImportError as e:
                 logger.warning(f"Diversity Defense not available: {e}, using standard bagging")
                 self._use_diversity_defense = False
+    
+    def _run_colsample_optimization(self, X: np.ndarray, y: np.ndarray, verbose: bool = True) -> float:
+        """
+        Run DiversitySweep to find optimal colsample_bytree.
+        
+        Args:
+            X: Feature matrix (numpy array)
+            y: Target array
+            verbose: Print progress
+            
+        Returns:
+            Optimal colsample_bytree value
+        """
+        if self._diversity_sweep_done:
+            return self._optimal_colsample_bytree
+        
+        try:
+            from src.utils.ml_common.optimization.diversity_defense_objectives import DiversitySweep
+            
+            # Need minimum samples for meaningful sweep
+            if len(X) < 500:
+                logger.info(f"Insufficient data for DiversitySweep ({len(X)} samples), using default colsample_bytree=0.5")
+                self._diversity_sweep_done = True
+                return 0.5
+            
+            if verbose:
+                logger.info("[DIVERSITY_SWEEP] Finding optimal colsample_bytree...")
+            
+            # Use a sample for faster sweep if dataset is large
+            sweep_sample_size = min(5000, len(X))
+            if len(X) > sweep_sample_size:
+                rng = np.random.RandomState(42)
+                sweep_indices = rng.choice(len(X), size=sweep_sample_size, replace=False)
+                sweep_indices.sort()
+                X_sweep = pd.DataFrame(X[sweep_indices])
+                y_sweep = y[sweep_indices]
+            else:
+                X_sweep = pd.DataFrame(X)
+                y_sweep = y
+            
+            sweep = DiversitySweep(
+                X=X_sweep,
+                y=y_sweep,
+                colsample_settings=[0.7, 0.6, 0.5, 0.4, 0.3],
+                n_splits=2,  # Fast sweep
+                n_models=5,  # Mini-ensemble for speed
+            )
+            
+            df_sweep = sweep.run(verbose=verbose)
+            optimal = sweep.get_optimal_fraction()
+            
+            if verbose:
+                logger.info(f"[DIVERSITY_SWEEP] ✅ Optimal colsample_bytree: {optimal:.2f}")
+            
+            self._diversity_sweep_done = True
+            self._optimal_colsample_bytree = optimal  # Cache the result
+            return optimal
+            
+        except Exception as e:
+            logger.warning(f"[DIVERSITY_SWEEP] Failed: {e}, using default colsample_bytree=0.5")
+            self._diversity_sweep_done = True
+            self._optimal_colsample_bytree = 0.5  # Cache the default
+            return 0.5
 
     def _get_default_params(self) -> Dict[str, Any]:
         params = {
@@ -975,12 +1044,43 @@ class IncrementalLGBMBaggedTrainer(BaseIncrementalTrainer):
         # rely on global incremental training/HPO instead.
         base_params.pop("early_stopping_rounds", None)
 
+        # ============================================================
+        # STEP 0: Run DiversitySweep to optimize colsample_bytree
+        # This is run ONCE at the start of training (first call only)
+        # ============================================================
+        if self._run_diversity_sweep and not self._diversity_sweep_done:
+            self._optimal_colsample_bytree = self._run_colsample_optimization(X, y, verbose=verbose)
+            
+            # Update DD config with optimized value
+            if self._use_diversity_defense and self._dd_config is not None:
+                # Create new config with optimized colsample_bytree
+                from src.utils.ml_common.optimization.diversity_defense_objectives import DiversityDefenseConfig
+                self._dd_config = DiversityDefenseConfig(
+                    sharpe_count=self._dd_config.sharpe_count,
+                    tanh_count=self._dd_config.tanh_count,
+                    huber_standard_count=self._dd_config.huber_standard_count,
+                    huber_asymmetric_count=self._dd_config.huber_asymmetric_count,
+                    sharpe_lambdas=self._dd_config.sharpe_lambdas,
+                    huber_delta=self._dd_config.huber_delta,
+                    asymmetric_penalty=self._dd_config.asymmetric_penalty,
+                    lr_sharpe=self._dd_config.lr_sharpe,
+                    lr_tanh=self._dd_config.lr_tanh,
+                    lr_huber=self._dd_config.lr_huber,
+                    sample_fraction=self._dd_config.sample_fraction,
+                    colsample_bytree=self._optimal_colsample_bytree,
+                    z_score_window=self._dd_config.z_score_window,
+                    mad_floor=self._dd_config.mad_floor,
+                    noise_threshold=self._dd_config.noise_threshold,
+                    cap_threshold=self._dd_config.cap_threshold,
+                )
+                logger.info(f"[DIVERSITY_DEFENSE] Updated colsample_bytree to {self._optimal_colsample_bytree:.2f}")
+
         # Feature diversity via colsample_bytree (NOT external loop)
-        # Optimal range is 0.5-0.6 based on Diversity-Adjusted Sharpe analysis
+        # Optimal value from DiversitySweep, or default 0.5
         if self._use_diversity_defense and self._dd_config is not None:
             base_params['colsample_bytree'] = self._dd_config.colsample_bytree
         else:
-            base_params['colsample_bytree'] = 0.5  # Default for diversity
+            base_params['colsample_bytree'] = self._optimal_colsample_bytree
         
         sample_frac = min(max(self._sample_fraction, 0.1), 1.0)
 

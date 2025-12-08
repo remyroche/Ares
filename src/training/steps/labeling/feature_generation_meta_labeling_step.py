@@ -1602,35 +1602,31 @@ def create_meta_features(
     # Volatility of volatility (regime instability)
     features['vol_of_vol'] = features['volatility_1h'].rolling(window=20).std()
 
-    # ===== VOLATILITY REGIME LABELING =====
+    # ===== VOLATILITY REGIME LABELING (Z-SCORE) =====
 
-    # Compute rolling volatility for regime detection
-    vol_for_regime = log_ret.rolling(96).std()
+    # Robust Volatility Regime using Relative Z-Score (Stationary)
+    # Using 20-period short volatility vs 200-period baseline, consistent with GateModel philosophy
 
-    # Create regime labels using quantiles estimated on early history to reduce lookahead
-    try:
-        vol_non_null = vol_for_regime.dropna()
-        if len(vol_non_null) >= 10:
-            split_idx = max(1, int(len(vol_non_null) * 0.7))
-            vol_train = vol_non_null.iloc[:split_idx]
-        else:
-            vol_train = vol_non_null
+    # Short-term volatility (approx 5 hours on 15m)
+    vol_short_20 = log_ret.rolling(window=20).std()
 
-        if len(vol_train) >= 3:
-            q1, q2 = vol_train.quantile([1 / 3, 2 / 3])
-            bins = [-np.inf, q1, q2, np.inf]
-            labels = ['low', 'medium', 'high']
-            regime_full = pd.cut(vol_for_regime, bins=bins, labels=labels)
-            features['volatility_regime'] = regime_full
+    # Long-term baseline statistics (approx 2 days on 15m)
+    # Using a 200-period window for baseline mean and std
+    vol_long_mean = vol_short_20.rolling(window=200, min_periods=50).mean()
+    vol_long_std = vol_short_20.rolling(window=200, min_periods=50).std()
 
-            regime_dummies = pd.get_dummies(features['volatility_regime'], prefix='vol_regime', drop_first=True)
-            features = features.join(regime_dummies)
-        else:
-            raise ValueError("Not enough non-null volatility samples for regime estimation")
-    except Exception as e:
-        tprint(f"⚠️ Warning: Could not create volatility regimes: {e}", "WARNING")
-        features['vol_regime_medium'] = 0
-        features['vol_regime_high'] = 0
+    # Calculate Z-score: (Current - Baseline) / Baseline_Std
+    # High Z-score = Volatility Spike relative to recent history
+    rv_z_short = (vol_short_20 - vol_long_mean) / (vol_long_std + 1e-8)
+
+    # Add to features (replacing old categorical volatility_regime)
+    features['rv_z_short'] = rv_z_short.fillna(0.0)
+
+    # Also add the raw ratio for robustness (Short / Long Mean)
+    features['vol_ratio_20_200'] = vol_short_20 / (vol_long_mean + 1e-8)
+
+    # Explicitly calculate volatility_20 here for reuse
+    features['volatility_20'] = vol_short_20
 
     # ===== EXTERNAL REGIME FEATURES (e.g., HMM regimes) =====
 
@@ -2326,15 +2322,14 @@ def create_meta_features(
         denom_5 = features['volatility_1d'].replace(0.0, np.nan)
         features['momentum_5_div_volatility_1d'] = features['momentum_5'] / (denom_5 + 1e-8)
 
-    if 'volatility_regime' in features.columns:
-        # Regime-conditional momentum
+    # Regime-conditional momentum (using continuous Z-score interaction)
+    # Replaces categorical interactions with continuous ones
+    if 'rv_z_short' in features.columns:
         for col in ['momentum_5', 'momentum_10', 'momentum_20']:
             if col in features.columns:
-                # Create dummy variables for regime if they don't exist
-                if 'vol_regime_high' in features.columns:
-                    features[f'{col}_x_regime_high'] = features[col] * features['vol_regime_high']
-                if 'vol_regime_medium' in features.columns:
-                    features[f'{col}_x_regime_medium'] = features[col] * features['vol_regime_medium']
+                # Interaction: Momentum * Volatility Z-Score
+                # Captures "Momentum in High Relative Vol" vs "Momentum in Low Relative Vol"
+                features[f'{col}_x_rv_z'] = features[col] * features['rv_z_short']
 
     # ATR × Momentum
     if 'atr_ratio' in features.columns and 'momentum_20' in features.columns:
@@ -4216,6 +4211,13 @@ def generate_diagnostics_report(
         regime_series = None
         if 'volatility_regime' in meta_features.columns:
             regime_series = meta_features['volatility_regime']
+        elif 'rv_z_short' in meta_features.columns:
+            # Derive from Z-score dynamically
+            z_vals = meta_features['rv_z_short']
+            reg_labels = np.full(len(z_vals), 'medium', dtype=object)
+            reg_labels[z_vals > 1.0] = 'high'
+            reg_labels[z_vals < -1.0] = 'low'
+            regime_series = pd.Series(reg_labels, index=meta_features.index)
         elif 'vol_regime_high' in meta_features.columns or 'vol_regime_medium' in meta_features.columns:
             # Derive simple labels from dummies
             regime_labels = []
@@ -5968,11 +5970,17 @@ def compute_regime_wise_metrics(
     rr_tail = realized_returns.iloc[-n_common:] if realized_returns is not None else None
     y_pred_tail = np.asarray(y_pred, dtype=float)[-n_common:] if y_pred is not None else None
 
-    # Volatility regime must be present to compute metrics
-    if 'volatility_regime' not in X_tail.columns:
+    # Determine volatility regime (use 'volatility_regime' if present, else derive from 'rv_z_short')
+    if 'volatility_regime' in X_tail.columns:
+        vol_regime = X_tail['volatility_regime']
+    elif 'rv_z_short' in X_tail.columns:
+        # Dynamic regime definition from Z-score
+        z_scores = X_tail['rv_z_short']
+        vol_regime = pd.Series('medium', index=X_tail.index)
+        vol_regime.loc[z_scores > 1.0] = 'high'
+        vol_regime.loc[z_scores < -1.0] = 'low'
+    else:
         return metrics
-
-    vol_regime = X_tail['volatility_regime']
 
     # Convert labels and optional returns to numpy for robust masking
     y_arr = y_tail.to_numpy(dtype=float, copy=False)

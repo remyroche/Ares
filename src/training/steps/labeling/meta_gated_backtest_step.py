@@ -864,6 +864,140 @@ class MetaGatedBacktestStep(BaseStep):
         return await self.execute(config)
 
 
+def load_feature_set_comparison_results(
+    symbol: str,
+    exchange: str,
+    timeframe: str,
+) -> Optional[Dict[str, Any]]:
+    """
+    Load feature set comparison results from snr_diagnostics.
+    
+    Args:
+        symbol: Trading symbol
+        exchange: Exchange name
+        timeframe: Timeframe string
+        
+    Returns:
+        Dictionary with comparison results or None
+    """
+    import glob
+    
+    outcomes_dir = Path("outcomes")
+    pattern = f"feature_set_comparison_{symbol}_{timeframe}_*.json"
+    
+    files = sorted(glob.glob(str(outcomes_dir / pattern)), reverse=True)
+    if not files:
+        return None
+    
+    try:
+        with open(files[0], 'r') as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def generate_feature_set_comparison_report(
+    comparison_results: Dict[str, Any],
+    output_dir: Path,
+    symbol: str,
+    timeframe: str,
+    direction: str,
+) -> Optional[Path]:
+    """
+    Generate a combined comparison report for feature sets across all metrics.
+    
+    This combines:
+    - Learnability (from feature_generation_meta_labeling_step)
+    - Generalization gap (from snr_diagnostics)
+    - Risk-adjusted returns / Gated Sharpe (from meta_gated_backtest)
+    
+    Args:
+        comparison_results: Dictionary with results for each feature set
+        output_dir: Output directory
+        symbol: Trading symbol
+        timeframe: Timeframe string
+        direction: Trading direction
+        
+    Returns:
+        Path to the generated report
+    """
+    from datetime import datetime
+    
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    md_lines = [
+        "# Feature Set Comparison - Combined Metrics Report",
+        "",
+        f"**Symbol**: {symbol}",
+        f"**Timeframe**: {timeframe}",
+        f"**Direction**: {direction}",
+        f"**Generated**: {timestamp}",
+        "",
+        "## Winning Metrics Criteria",
+        "",
+        "1. **Learnability** (compute_learnability_with_calibration): Higher is better",
+        "2. **Generalization Gap** (snr_diagnostics): Lower is better (avoiding overfitting)",
+        "3. **Risk-Adjusted Returns** (meta_gated_backtest): Gated Sharpe Ratio - Higher is better",
+        "",
+        "## Comparison Table",
+        "",
+        "| Feature Set | Learnability | Gen. Gap | Gated Sharpe | Mean Return | Hit Rate | Score |",
+        "|-------------|--------------|----------|--------------|-------------|----------|-------|",
+    ]
+    
+    scores = {}
+    for size_str, data in comparison_results.items():
+        try:
+            size = int(size_str)
+            learnability = data.get("learnability", 0.0)
+            gen_gap = data.get("generalization_gap", 0.0)
+            gated_sharpe = data.get("sharpe_trade", 0.0)
+            mean_return = data.get("mean_return_gated", 0.0)
+            hit_rate = data.get("hit_rate_gated", 0.0)
+            
+            # Compute composite score
+            # Weight: Sharpe (40%), Learnability (30%), -Gap (30%)
+            score = (
+                0.4 * gated_sharpe +
+                0.3 * learnability -
+                0.3 * abs(gen_gap) * 10  # Penalize gap
+            )
+            scores[size] = score
+            
+            md_lines.append(
+                f"| {size} | {learnability:.4f} | {gen_gap:.4f} | {gated_sharpe:.3f} | "
+                f"{mean_return:.4%} | {hit_rate:.2%} | {score:.3f} |"
+            )
+        except Exception:
+            continue
+    
+    md_lines.extend([
+        "",
+        "## Recommendation",
+        "",
+    ])
+    
+    if scores:
+        best_size = max(scores, key=scores.get)
+        md_lines.append(f"**Recommended Feature Set**: {best_size} features")
+        md_lines.append(f"")
+        md_lines.append(f"This feature set achieves the best balance of:")
+        md_lines.append(f"- Risk-adjusted returns (Sharpe ratio)")
+        md_lines.append(f"- Learnability (model can learn the patterns)")
+        md_lines.append(f"- Generalization (low overfitting risk)")
+    else:
+        md_lines.append("Unable to determine recommendation due to missing data.")
+    
+    # Save report
+    output_path = output_dir / f"feature_set_combined_comparison_{symbol}_{timeframe}_{timestamp}.md"
+    try:
+        with open(output_path, 'w') as f:
+            f.write('\n'.join(md_lines))
+        return output_path
+    except Exception:
+        return None
+
+
 def register_meta_gated_backtest_step() -> None:
     """Register the meta-gated backtest step in the global registry."""
     from src.training.steps.base_step import step_registry

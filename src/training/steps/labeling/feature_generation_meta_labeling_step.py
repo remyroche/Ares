@@ -94,6 +94,13 @@ from .label_config import (
     build_label_config,
     compute_label_config_id,
 )
+from .lgbm_feature_selection import (
+    lgbm_feature_selection_pipeline,
+    select_features_lgbm_for_meta_labeling,
+    select_features_by_importance_lgbm,
+    FeatureSetPersistence,
+    FEATURE_SELECTION_CONFIG,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -2448,17 +2455,27 @@ def select_features_by_importance(
 
     NEW (2025-11-18): Proper feature selection to prevent overfitting with
     increased signal count and feature complexity.
+    
+    UPDATED (2025-12-08): Added 'lgbm' method for LGBM-based feature importance.
 
     Args:
         X: Feature matrix
         y: Binary labels
         max_features: Maximum number of features to keep (None = no limit)
         correlation_threshold: Remove features with correlation > this value
-        method: 'tree' for tree-based importance, 'mutual_info' for MI
+        method: 'tree' for tree-based (RF), 'mutual_info' for MI, 'lgbm' for LGBM
 
     Returns:
         List of selected feature names
     """
+    # Use LGBM method if specified
+    if method == 'lgbm':
+        return select_features_by_importance_lgbm(
+            X, y,
+            max_features=max_features if max_features else 60,
+            correlation_threshold=correlation_threshold,
+        )
+    
     # Remove features with NaN/Inf
     clean_mask = ~y.isna()
     X_clean = X[clean_mask].fillna(0)
@@ -2703,7 +2720,8 @@ def build_meta_features_for_model(
     selected_feature_names = list(meta_features_model_processed.columns)
     if meta_feature_cfg.get('enable_feature_selection', False):
         try:
-            max_feats = meta_feature_cfg.get('max_features', None)
+            # Default max_features changed from None to 60 (2025-12-08)
+            max_feats = meta_feature_cfg.get('max_features', 60)
             if max_feats is not None:
                 max_feats = int(max_feats)
             corr_threshold = float(meta_feature_cfg.get('correlation_threshold', 0.95))
@@ -6589,6 +6607,121 @@ class HPOCache:
             tprint(f"⚠️ Cache save failed: {e}", "WARNING")
 
 
+def run_lgbm_feature_selection_multi_set(
+    meta_features_model: pd.DataFrame,
+    binary_labels: pd.Series,
+    exchange: str,
+    asset: str,
+    correlation_threshold: float = 0.95,
+    force_reselection: bool = False,
+    log_dir: Optional[Path] = None,
+) -> Tuple[Dict[int, List[str]], Dict[str, Any]]:
+    """
+    Run LGBM-based feature selection to generate multiple feature sets (50/60/70/80).
+    
+    This function:
+    1. Checks if feature sets already exist for the exchange/asset
+    2. If not (or force=True), runs the LGBM feature selection pipeline
+    3. Returns feature sets and selection log
+    
+    Args:
+        meta_features_model: Feature matrix after basic processing
+        binary_labels: Binary target labels
+        exchange: Exchange name (e.g., 'binance')
+        asset: Asset symbol (e.g., 'ETHUSDT')
+        correlation_threshold: Threshold for correlation pruning
+        force_reselection: Force re-run feature selection
+        log_dir: Directory to save selection logs
+        
+    Returns:
+        Tuple of (feature_sets_dict, selection_log)
+        feature_sets_dict: {80: [...], 70: [...], 60: [...], 50: [...]}
+    """
+    tprint_info(f"🔬 Running LGBM feature selection for {asset} on {exchange}")
+    
+    try:
+        feature_sets, selection_log = select_features_lgbm_for_meta_labeling(
+            X=meta_features_model,
+            y=binary_labels,
+            exchange=exchange,
+            asset=asset,
+            correlation_threshold=correlation_threshold,
+            force_reselection=force_reselection,
+            log_dir=log_dir,
+            persist=True,
+        )
+        
+        tprint_success(f"✅ Generated {len(feature_sets)} feature sets: {list(feature_sets.keys())}")
+        return feature_sets, selection_log
+        
+    except Exception as e:
+        tprint_error(f"❌ LGBM feature selection failed: {e}")
+        # Fallback to returning empty dict
+        return {}, {"error": str(e)}
+
+
+def save_multi_feature_set_results(
+    results: Dict[int, Dict[str, Any]],
+    exchange: str,
+    asset: str,
+    timeframe: str,
+    output_dir: Optional[Path] = None,
+) -> Path:
+    """
+    Save results from running meta-labeling with multiple feature sets.
+    
+    Args:
+        results: Dictionary mapping feature set size to results
+        exchange: Exchange name
+        asset: Asset symbol
+        timeframe: Timeframe string
+        output_dir: Output directory (default: outcomes/)
+        
+    Returns:
+        Path to saved results file
+    """
+    output_dir = Path(output_dir) if output_dir else Path("outcomes")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"multi_feature_set_results_{asset}_{timeframe}_{timestamp}.json"
+    output_path = output_dir / filename
+    
+    save_data = {
+        "metadata": {
+            "exchange": exchange,
+            "asset": asset,
+            "timeframe": timeframe,
+            "timestamp": timestamp,
+            "datetime_iso": datetime.now().isoformat(),
+        },
+        "results": results,
+    }
+    
+    # Serialize complex objects
+    def serialize(obj):
+        if isinstance(obj, (np.floating, np.integer)):
+            return float(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        if isinstance(obj, pd.Series):
+            return obj.tolist()
+        if isinstance(obj, pd.DataFrame):
+            return obj.to_dict()
+        if hasattr(obj, '__dict__'):
+            return str(obj)
+        return str(obj)
+    
+    try:
+        with open(output_path, "w") as f:
+            json.dump(save_data, f, indent=2, default=serialize)
+        tprint_success(f"💾 Saved multi-feature-set results to {output_path}")
+    except Exception as e:
+        tprint_error(f"❌ Failed to save results: {e}")
+    
+    return output_path
+
+
 class FeatureGenerationMetaLabelingStep(BaseStep):
     """
     Feature Generation Meta-Labeling Step (Enhanced).
@@ -6600,12 +6733,20 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
     - Handles overlapping events and edge windows
     - Includes transaction costs
     - Uses economic metrics
+    
+    NEW (2025-12-08): Multi-feature-set support
+    - When use_lgbm_feature_selection=True, generates 4 feature sets (50/60/70/80)
+    - Runs meta-labeling with each feature set
+    - Persists feature sets with exchange/asset/datetime metadata
+    - Results are saved for comparison in snr_diagnostics and meta_gated_backtest
     """
 
     def __init__(self, step_name: str = "feature_generation_meta_labeling_step"):
         """Initialize the meta-labeling step."""
         super().__init__(step_name)
         self.logger = system_logger.getChild('FeatureGenerationMetaLabeling')
+        self._feature_sets_cache: Dict[int, List[str]] = {}
+        self._feature_selection_log: Dict[str, Any] = {}
 
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -7105,7 +7246,18 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             meta_feature_cfg_raw = config.get('meta_feature_engineering', {})
             meta_feature_cfg = dict(meta_feature_cfg_raw) if isinstance(meta_feature_cfg_raw, dict) else {}
             meta_feature_cfg["_label_uncertainty"] = label_uncertainty
-
+            
+            # LGBM Feature Selection Configuration (2025-12-08)
+            use_lgbm_feature_selection = bool(config.get('use_lgbm_feature_selection', False))
+            force_feature_reselection = bool(config.get('force_feature_reselection', False))
+            
+            if use_lgbm_feature_selection:
+                tprint_info(f"🔬 LGBM multi-feature-set selection enabled")
+                # Temporarily disable feature selection in meta_feature_cfg
+                # We'll handle it separately with LGBM pipeline
+                meta_feature_cfg['enable_feature_selection'] = False
+                meta_feature_cfg['selection_method'] = 'lgbm'
+            
             meta_features, meta_features_model_processed, selected_feature_names, sample_weights = build_meta_features_for_model(
                 market_data=market_data,
                 primary_signals=primary_signals,
@@ -7119,6 +7271,47 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                 volume_available=volume_available,
                 meta_feature_cfg=meta_feature_cfg,
             )
+            
+            # Run LGBM multi-feature-set selection if enabled
+            multi_feature_sets: Dict[int, List[str]] = {}
+            feature_selection_log: Dict[str, Any] = {}
+            
+            if use_lgbm_feature_selection:
+                try:
+                    exchange = config.get('exchange', 'binance')
+                    symbol = config.get('symbol', 'UNKNOWN')
+                    log_dir = Path("outcomes") / "feature_selection_logs"
+                    log_dir.mkdir(parents=True, exist_ok=True)
+                    
+                    multi_feature_sets, feature_selection_log = run_lgbm_feature_selection_multi_set(
+                        meta_features_model=meta_features_model_processed,
+                        binary_labels=binary_labels,
+                        exchange=exchange,
+                        asset=symbol,
+                        correlation_threshold=float(meta_feature_cfg.get('correlation_threshold', 0.95)),
+                        force_reselection=force_feature_reselection,
+                        log_dir=log_dir,
+                    )
+                    
+                    # Store for later use
+                    self._feature_sets_cache = multi_feature_sets
+                    self._feature_selection_log = feature_selection_log
+                    
+                    # Use the 60-feature set as the default (new default as of 2025-12-08)
+                    if 60 in multi_feature_sets and multi_feature_sets[60]:
+                        selected_feature_names = multi_feature_sets[60]
+                        meta_features_model_processed = meta_features_model_processed[selected_feature_names]
+                        tprint_info(f"   ↪ Using 60-feature set as primary: {len(selected_feature_names)} features")
+                    elif multi_feature_sets:
+                        # Fallback to largest available set
+                        largest = max(multi_feature_sets.keys())
+                        selected_feature_names = multi_feature_sets[largest]
+                        meta_features_model_processed = meta_features_model_processed[selected_feature_names]
+                        tprint_info(f"   ↪ Using {largest}-feature set as primary: {len(selected_feature_names)} features")
+                        
+                except Exception as e_lgbm:
+                    tprint_warning(f"⚠️ LGBM feature selection failed, using default: {e_lgbm}")
+                    multi_feature_sets = {}
 
             # STEP 6: Train ensemble meta-models with K-fold cross-fitting
             tprint("🎓 [6/13] Training ensemble meta-models (LGBM + LogReg + RF) with purged K-fold CV...", "INFO")
@@ -8333,6 +8526,33 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                 tprint(f"⚠️ Meta-gating artifact saving failed: {e}", "WARNING")
 
             elapsed_time = (datetime.now() - start_time).total_seconds()
+            
+            # Add multi-feature-set information if LGBM feature selection was used
+            multi_feature_set_info = {}
+            if multi_feature_sets:
+                multi_feature_set_info = {
+                    'enabled': True,
+                    'feature_sets': {k: len(v) for k, v in multi_feature_sets.items()},
+                    'primary_set_size': len(selected_feature_names),
+                    'selection_log_summary': {
+                        'initial_features': feature_selection_log.get('initial_features', 0),
+                        'n_iterations': len(feature_selection_log.get('iterations', [])),
+                    } if feature_selection_log else {},
+                }
+                
+                # Save multi-feature-set results for later comparison
+                try:
+                    save_multi_feature_set_results(
+                        results={
+                            k: {'feature_count': len(v), 'features': v}
+                            for k, v in multi_feature_sets.items()
+                        },
+                        exchange=config.get('exchange', 'binance'),
+                        asset=config.get('symbol', 'UNKNOWN'),
+                        timeframe=config.get('timeframe', '15m'),
+                    )
+                except Exception as e_save:
+                    tprint_warning(f"⚠️ Failed to save multi-feature-set results: {e_save}")
 
             result = {
                 'success': True,
@@ -8353,6 +8573,9 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                     'n_cv_folds': len(cv_results),
                     'elapsed_seconds': elapsed_time,
                     'top_features': dict(top_features),
+                    'selected_features': selected_feature_names,
+                    'n_selected_features': len(selected_feature_names),
+                    'multi_feature_sets': multi_feature_set_info,
                     'config': {
                         'profit_threshold': profit_threshold,
                         'stop_threshold': stop_threshold,
@@ -8367,7 +8590,8 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                         'ensemble_models': ['lgbm', 'xgb', 'rf'],
                         'use_platt_calibration': True,
                         'use_isotonic_calibration': True,
-                        'include_signal_disagreement': True
+                        'include_signal_disagreement': True,
+                        'use_lgbm_feature_selection': use_lgbm_feature_selection,
                     },
                     'enhancements': {
                         'kalman_filtering': True,
@@ -8378,14 +8602,18 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                         'platt_calibration': True,
                         'isotonic_calibration': True,
                         'signal_disagreement': True,
-                        'kfold_cross_fitting': True
+                        'kfold_cross_fitting': True,
+                        'lgbm_feature_selection': use_lgbm_feature_selection,
                     }
                 },
-                'cv_results': cv_results
+                'cv_results': cv_results,
+                'feature_sets': multi_feature_sets if multi_feature_sets else None,
             }
 
             tprint(f"✅ [done] Enhanced meta-labeling completed in {elapsed_time:.1f}s", "SUCCESS")
             tprint(f"📊 Performance: AUC={avg_auc:.3f}, Win Rate={win_rate:.1%}, Mean Return={mean_return:.2%}", "SUCCESS")
+            if multi_feature_sets:
+                tprint(f"📊 Feature sets generated: {list(multi_feature_sets.keys())}", "SUCCESS")
 
             return result
 

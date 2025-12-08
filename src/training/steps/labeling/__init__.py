@@ -74,7 +74,8 @@ from .lgbm_feature_selection import (
 # Winning Feature Set Selection (2025-12-08)
 from .winning_feature_set_selector import (
     determine_winning_feature_set,
-    compute_composite_score,
+    compute_winning_score,
+    compute_composite_score,  # Backward compat wrapper
     run_winning_feature_set_selection,
     METRIC_WEIGHTS,
 )
@@ -114,6 +115,7 @@ __all__ = [
     "DEFAULT_LGBM_PARAMS",
     # Winning Feature Set Selection (2025-12-08)
     "determine_winning_feature_set",
+    "compute_winning_score",
     "compute_composite_score",
     "run_winning_feature_set_selection",
     "METRIC_WEIGHTS",

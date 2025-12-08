@@ -27,8 +27,8 @@ analyst_config:
         reg_lambda: 1.1236203565420875
         sampling_rate: 0.9852142919229748
         min_child_samples: 64
-        objective: regression
-        metric: rmse
+        objective: regression_l1
+        metric: mae
         early_stopping_rounds: 100
         min_boost_rounds: 200
       hpo:
@@ -118,8 +118,8 @@ analyst_config:
         reg_lambda: 1.1236203565420875
         sampling_rate: 0.9852142919229748
         min_child_samples: 64
-        objective: regression
-        metric: rmse
+        objective: regression_l1
+        metric: mae
         early_stopping_rounds: 100
         min_boost_rounds: 200
     knn:

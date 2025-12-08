@@ -15,6 +15,9 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 from sklearn.isotonic import IsotonicRegression
+import math
+import itertools
+from scipy.stats import entropy
 
 try:
     import shap
@@ -192,6 +195,78 @@ class GateModel:
         large_candle_int_idx = int_index.where(is_large_candle == 1).ffill()
         features['time_since_last_large_candle'] = int_index - large_candle_int_idx
         features['time_since_last_large_candle'] = features['time_since_last_large_candle'].fillna(1000)
+
+        # 5. Advanced Regime Features (Choppiness, Variance Ratio, Permutation Entropy)
+
+        # Choppiness Index (Bill Dreiss)
+        # 100 * LOG10( SUM(ATR(1), n) / ( MaxHi(n) - MinLo(n) ) ) / LOG10(n)
+        chop_window = 20
+        # True Range
+        tr1 = high - low
+        tr2 = (high - close.shift(1)).abs()
+        tr3 = (low - close.shift(1)).abs()
+        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+
+        sum_tr = tr.rolling(chop_window).sum()
+        max_hi = high.rolling(chop_window).max()
+        min_lo = low.rolling(chop_window).min()
+        range_hl = max_hi - min_lo
+
+        features['choppiness_index'] = 100 * np.log10(sum_tr / (range_hl + 1e-8)) / np.log10(chop_window)
+
+        # Variance Ratio Test (Lo & MacKinlay)
+        # Var(20-period log returns) / (2 * Var(10-period log returns))
+        # Note: 20/10 = 2, so we divide by 2 to normalize to 1.0
+        vr_window = 50
+        r_20 = log_ret.rolling(20).sum()
+        r_10 = log_ret.rolling(10).sum()
+        var_20 = r_20.rolling(vr_window).var()
+        var_10 = r_10.rolling(vr_window).var()
+        features['variance_ratio'] = var_20 / (2 * var_10 + 1e-8)
+
+        # Permutation Entropy (Efficient Implementation)
+        pe_window = 50
+        pe_dim = 3
+        pe_values = close.values
+        pe_n = len(pe_values)
+
+        if pe_n >= pe_window + pe_dim:
+            # Generate all patterns for the entire series using stride tricks
+            # Requires careful handling to avoid heavy dependencies if possible,
+            # but standard numpy stride tricks are efficient.
+            try:
+                from numpy.lib.stride_tricks import sliding_window_view
+                windows = sliding_window_view(pe_values, window_shape=pe_dim)
+            except ImportError:
+                # Fallback for older numpy
+                shape = (pe_n - pe_dim + 1, pe_dim)
+                strides = (pe_values.strides[0], pe_values.strides[0])
+                windows = np.lib.stride_tricks.as_strided(pe_values, shape=shape, strides=strides)
+
+            # Convert to pattern codes (rank order)
+            patterns = np.argsort(windows, axis=1)
+            # Map permutations to unique integers 0..dim!-1
+            perms = list(itertools.permutations(range(pe_dim)))
+            perm_to_code = {p: i for i, p in enumerate(perms)}
+            codes = np.apply_along_axis(lambda x: perm_to_code[tuple(x)], 1, patterns)
+
+            # Rolling entropy on codes
+            code_series = pd.Series(codes, index=df.index[pe_dim - 1:])
+
+            def calc_ent(x):
+                # x is array of codes
+                counts = np.unique(x, return_counts=True)[1]
+                probs = counts / counts.sum()
+                # Normalize by log2(factorial(dim))
+                max_ent = np.log2(math.factorial(pe_dim))
+                ent = entropy(probs, base=2)
+                return ent / max_ent
+
+            # Use pandas rolling apply
+            rolling_ent = code_series.rolling(pe_window).apply(calc_ent, raw=True)
+            features['permutation_entropy'] = rolling_ent.reindex(df.index)
+        else:
+            features['permutation_entropy'] = np.nan
 
         # Time Features (Cyclical)
         if isinstance(df.index, pd.DatetimeIndex):

@@ -94,10 +94,6 @@ from .label_config import (
     build_label_config,
     compute_label_config_id,
 )
-from src.feature_generation.utils.step06_labeling_components.trend_aware_meta_labeling import (
-    TrendAwareMetaLabeler,
-    MultiTimeframeConfig,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -1556,16 +1552,6 @@ def create_meta_features(
     Returns:
         DataFrame of features for meta-model
     """
-    zigzag_features = None
-    try:
-        labeler = TrendAwareMetaLabeler()
-        zigzag_single = labeler.detect_zigzag_trend(df)
-        mtf_config = MultiTimeframeConfig()
-        zigzag_mtf = labeler.detect_zigzag_multi_timeframe(df, mtf_config=mtf_config, base_zigzag=zigzag_single)
-        zigzag_features = zigzag_single.join(zigzag_mtf, how="outer", rsuffix="_mtf")
-    except Exception:
-        zigzag_features = None
-
     # Hard-align df and signals to a shared tail window to avoid any
     # length mismatch when assigning signal-based features. We align
     # positionally (most recent data) and then construct features on
@@ -1598,26 +1584,9 @@ def create_meta_features(
     if (not df.index.equals(signals.index)) or df.index.has_duplicates or signals.index.has_duplicates:
         df = df.reset_index(drop=True)
         signals = signals.reset_index(drop=True)
-        if zigzag_features is not None:
-            if len(zigzag_features) > len(df):
-                zigzag_features = zigzag_features.iloc[-len(df):, :]
-            zigzag_features = zigzag_features.reset_index(drop=True)
 
     features = pd.DataFrame(index=df.index)
     n_features = len(features)
-    if zigzag_features is not None:
-        if len(zigzag_features) > n_features:
-            zigzag_features = zigzag_features.iloc[-n_features:, :]
-        elif len(zigzag_features) < n_features:
-            pad = pd.DataFrame(
-                np.nan,
-                index=range(n_features - len(zigzag_features)),
-                columns=zigzag_features.columns,
-            )
-            zigzag_features = pd.concat([pad, zigzag_features], axis=0, ignore_index=True)
-        for col in zigzag_features.columns:
-            if col not in features.columns:
-                features[col] = zigzag_features[col].to_numpy()
 
     # ===== VOLATILITY FEATURES (ENHANCED) =====
 
@@ -1632,10 +1601,6 @@ def create_meta_features(
 
     # Volatility of volatility (regime instability)
     features['vol_of_vol'] = features['volatility_1h'].rolling(window=20).std()
-
-    # Volatility ratio (current vs baseline)
-    vol_baseline = features['volatility_1d'].rolling(96).mean()
-    features['vol_ratio'] = features['volatility_1d'] / (vol_baseline + 1e-8)
 
     # ===== VOLATILITY REGIME LABELING =====
 
@@ -2126,16 +2091,6 @@ def create_meta_features(
         features['liquidity_gap_down'] = 0.0
         features['liquidity_gap_abs'] = 0.0
 
-    # Volatility / trend interaction features
-    if 'kalman_trend' in features.columns and 'vol_ratio' in features.columns:
-        features['kalman_trend_x_vol_ratio'] = features['kalman_trend'] * features['vol_ratio']
-    if 'sma_slope' in features.columns and 'vol_ratio' in features.columns:
-        features['sma_slope_x_vol_ratio'] = features['sma_slope'] * features['vol_ratio']
-    if 'price_vs_sma20' in features.columns and 'vol_ratio' in features.columns:
-        features['price_vs_sma20_x_vol_ratio'] = features['price_vs_sma20'] * features['vol_ratio']
-    if 'range_position' in features.columns and 'vol_ratio' in features.columns:
-        features['range_position_x_vol_ratio'] = features['range_position'] * features['vol_ratio']
-
     if 'consensus' in signals.columns:
         signal_consensus = signals['consensus']
         signal_active = (signal_consensus != 0).astype(int)
@@ -2144,27 +2099,8 @@ def create_meta_features(
             features['signal_active'] = _align_to_features(signal_active, n_features)
         else:
             features['signal_active'] = signal_active.to_numpy()
-
-        idx = np.arange(len(df))
-        last_signal_idx = np.where(signal_active.to_numpy() == 1, idx, np.nan)
-        last_signal_idx_series = pd.Series(last_signal_idx, index=df.index).ffill()
-
-        signal_age = idx - last_signal_idx_series.values
-        signal_age[last_signal_idx_series.isna().values] = np.nan
-        if use_kalman:
-            features['bars_since_last_signal'] = _align_to_features(signal_age, n_features)
-        else:
-            features['bars_since_last_signal'] = signal_age
-
-        density_50 = signal_consensus.abs().rolling(50).sum()
-        if use_kalman:
-            features['signal_density_50'] = _align_to_features(density_50, n_features)
-        else:
-            features['signal_density_50'] = density_50.to_numpy()
     else:
         features['signal_active'] = 0
-        features['bars_since_last_signal'] = np.nan
-        features['signal_density_50'] = 0.0
 
     base_signal_cols = [
         col for col in ['rsi', 'rsi_long', 'macd', 'macd_long', 'ma', 'mom']
@@ -2363,41 +2299,10 @@ def create_meta_features(
     if 'atr_ratio' in features.columns and 'momentum_20' in features.columns:
         features['atr_momentum'] = features['atr_ratio'] * features['momentum_20']
 
-    # Volatility × Range Position
-    if 'vol_ratio' in features.columns and 'range_position' in features.columns:
-        features['vol_range_interaction'] = features['vol_ratio'] * features['range_position']
-
     # Distance features × Volatility
     if 'dist_from_recent_high_50' in features.columns and 'volatility_1d' in features.columns:
         features['high_dist_x_vol'] = features['dist_from_recent_high_50'] * features['volatility_1d']
         features['low_dist_x_vol'] = features['dist_from_recent_low_50'] * features['volatility_1d']
-
-    # ===== EVENT HISTORY FEATURES (FOR PRE-FILTERING) =====
-    # Track historical event performance to filter low-quality signals
-    # NOTE: These will only be populated after first run; use with caution to avoid leakage
-
-    # Placeholder for event history features (to be populated from previous runs)
-    # These should be computed from historical realized returns, NOT current data
-    features['event_win_rate_last_50'] = 0.0  # Will be updated externally
-    features['event_mean_return_last_50'] = 0.0  # Will be updated externally
-    features['bars_since_last_event'] = np.nan  # Will be computed from signals
-
-    # Compute bars since last event (non-leaking, based on past signals only)
-    if 'consensus' in signals.columns:
-        signal_active = (signals['consensus'] != 0).astype(int)
-        idx_array = np.arange(len(df))
-        last_event_idx = np.where(signal_active == 1, idx_array, np.nan)
-        last_event_idx_series = pd.Series(last_event_idx, index=df.index).ffill()
-
-        bars_since_event = idx_array - last_event_idx_series.values
-        bars_since_event[last_event_idx_series.isna().values] = np.nan
-
-        if use_kalman:
-            # Align to feature index length to avoid length mismatches in
-            # scenarios where df/signals underwent tail alignment.
-            features['bars_since_last_event'] = _align_to_features(bars_since_event, len(features))
-        else:
-            features['bars_since_last_event'] = bars_since_event
 
     # ===== RAW SIGNALS (OPTIONAL, FOR DIAGNOSTICS) =====
 
@@ -2608,17 +2513,6 @@ def build_meta_features_for_model(
     if isinstance(meta_feature_cfg, dict):
         label_uncertainty = meta_feature_cfg.get('_label_uncertainty')
 
-    # Event-centric and label-history features (event-only where applicable)
-    event_mask = ~binary_labels.isna()
-
-    # Bars since last labeled event
-    idx = np.arange(len(market_data))
-    last_event_idx = np.where(event_mask.to_numpy(), idx, np.nan)
-    last_event_idx_series = pd.Series(last_event_idx, index=market_data.index).ffill()
-
-    bars_since_last_event = idx - last_event_idx_series.values
-    bars_since_last_event[last_event_idx_series.isna().values] = np.nan
-
     # Distance to recent highs/lows and recent drawdown
     recent_high_50 = market_data['high'].rolling(50).max()
     recent_low_50 = market_data['low'].rolling(50).min()
@@ -2627,63 +2521,6 @@ def build_meta_features_for_model(
 
     rolling_max_100 = market_data['close'].rolling(100).max()
     drawdown_100 = (market_data['close'] - rolling_max_100) / (rolling_max_100 + 1e-8)
-
-    # Label-history (rolling over past events only)
-    event_returns = realized_returns[event_mask]
-    event_labels = binary_labels[event_mask]
-    event_positions = np.flatnonzero(event_mask.to_numpy())
-
-    rolling_win_rate_50 = event_labels.rolling(window=50, min_periods=1).mean()
-    rolling_mean_ret_50 = event_returns.rolling(window=50, min_periods=1).mean()
-
-    win_rate_50_full = pd.Series(np.nan, index=market_data.index)
-    mean_ret_50_full = pd.Series(np.nan, index=market_data.index)
-
-    if len(event_positions) == len(rolling_win_rate_50):
-        win_rate_50_full.iloc[event_positions] = rolling_win_rate_50.to_numpy()
-        mean_ret_50_full.iloc[event_positions] = rolling_mean_ret_50.to_numpy()
-
-    # Event-mechanics history (R-multiple, TTO, MFE/MAE) based only on past events
-    try:
-        # Per-event R-multiple using adaptive stop as risk unit
-        r_unit_series = adaptive_stop_threshold.abs().replace(0.0, np.nan)
-        r_multiple_series = (realized_returns / (r_unit_series + 1e-8)).replace([np.inf, -np.inf], np.nan)
-        event_r_multiple = r_multiple_series[event_mask]
-
-        # Time-to-outcome ratio (TTO): duration normalized by horizon
-        if horizon > 0:
-            event_tto = (event_durations[event_mask] / float(horizon)).replace([np.inf, -np.inf], np.nan)
-        else:
-            event_tto = pd.Series(index=event_returns.index, dtype=float)
-
-        # MFE/MAE ratio
-        event_mfe = mfe_series[event_mask]
-        event_mae = mae_series[event_mask]
-        mfe_mae_ratio_series = (event_mfe / (event_mae + 1e-6)).replace([np.inf, -np.inf], np.nan)
-
-        # Rolling histories over past events only. For TTO, we shift the rolling
-        # window by one event so that the feature at event k depends only on
-        # events strictly before k (no self-outcome leakage).
-        rolling_r_multiple_50 = event_r_multiple.rolling(window=50, min_periods=1).mean()
-        rolling_tto_50 = event_tto.rolling(window=50, min_periods=1).mean()
-        rolling_tto_50_past = rolling_tto_50.shift(1)
-        rolling_mfe_mae_ratio_50 = mfe_mae_ratio_series.rolling(window=50, min_periods=1).mean()
-
-        r_mult_50_full = pd.Series(np.nan, index=market_data.index)
-        tto_50_full = pd.Series(np.nan, index=market_data.index)
-        mfe_mae_ratio_50_full = pd.Series(np.nan, index=market_data.index)
-
-        if len(event_positions) == len(rolling_r_multiple_50):
-            r_mult_50_full.iloc[event_positions] = rolling_r_multiple_50.to_numpy()
-            # Use the past-only rolling TTO (shifted by one event) so that the
-            # TTO feature at event k cannot incorporate the outcome of event k
-            # itself.
-            tto_50_full.iloc[event_positions] = rolling_tto_50_past.to_numpy()
-            mfe_mae_ratio_50_full.iloc[event_positions] = rolling_mfe_mae_ratio_50.to_numpy()
-    except Exception:
-        r_mult_50_full = pd.Series(np.nan, index=market_data.index)
-        tto_50_full = pd.Series(np.nan, index=market_data.index)
-        mfe_mae_ratio_50_full = pd.Series(np.nan, index=market_data.index)
 
     # STEP 5: Create meta-features with Kalman filtering
     tprint("🔧 [5/13] Creating meta-features with Kalman filtering...", "INFO")
@@ -2701,11 +2538,9 @@ def build_meta_features_for_model(
 
     # Attach event-centric and label-history features
     event_meta_features = pd.DataFrame(index=market_data.index)
-    event_meta_features['bars_since_last_event'] = bars_since_last_event
     event_meta_features['dist_from_recent_high_50'] = dist_from_recent_high_50
     event_meta_features['dist_from_recent_low_50'] = dist_from_recent_low_50
     event_meta_features['drawdown_100'] = drawdown_100
-    event_meta_features['event_tto_mean_last_50'] = tto_50_full
 
     # Attach/overwrite event-centric features without triggering index-based
     # reindexing (which is sensitive to duplicate datetime labels). Reset to a
@@ -2748,7 +2583,6 @@ def build_meta_features_for_model(
         "vol_expansion",
         "returns_std_50",
         "volume_spike_ema",
-        "event_r_multiple_mean_last_50",
     }
     forbidden_prefixes = ("zigzag_",)
     # Case-insensitive substrings for structural / memory / proxy features.
@@ -2758,7 +2592,8 @@ def build_meta_features_for_model(
         "pivot",
         "swing",
         "renko",
-        # Memory-style rolling P&L features
+        # Memory-style rolling P&L features and last-event counters
+        "last_",
         "last_50",
         "last_100",
         "cumulative",
@@ -2867,13 +2702,6 @@ def build_meta_features_for_model(
     except Exception:
         # Never let diagnostics break the main feature pipeline.
         pass
-
-    # Ensure the event-history TTO diagnostic remains available as a model feature
-    critical_tto_feature = 'event_tto_mean_last_50'
-    if critical_tto_feature in meta_features_model.columns and critical_tto_feature not in meta_features_model_processed.columns:
-        meta_features_model_processed[critical_tto_feature] = meta_features_model[critical_tto_feature]
-    if critical_tto_feature in meta_features_model_processed.columns and critical_tto_feature not in selected_feature_names:
-        selected_feature_names.append(critical_tto_feature)
 
     sample_weights: Optional[np.ndarray] = None
     if meta_feature_cfg.get('enable_sample_weighting', False):

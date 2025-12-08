@@ -2671,9 +2671,10 @@ class MetaLabelingHPOExperimentStep(BaseStep):
         symbol = config.get("symbol", "ETHUSDT")
         exchange = config.get("exchange", "binance")
         timeframe = config.get("timeframe", "15m")
+        direction = config.get("direction", "long")
 
         tprint_info(
-            f"🚀 Starting Meta-Labeling HPO experiment for {symbol}/{exchange} [{timeframe}]"
+            f"🚀 Starting Meta-Labeling HPO experiment for {symbol}/{exchange} [{timeframe}] ({direction})"
         )
 
         use_smoothed_brier_objective_lgbm: bool = bool(
@@ -2904,6 +2905,15 @@ class MetaLabelingHPOExperimentStep(BaseStep):
         # Generate primary consensus signals using the production helper
         tprint_info("⚙️ Generating primary signals for HPO labeling runs…")
         primary_signals = generate_primary_signals(market_data.copy())
+
+        # Filter primary signals based on direction if requested
+        if "consensus" in primary_signals.columns:
+            if direction == "long":
+                primary_signals.loc[primary_signals["consensus"] <= 0, "consensus"] = 0
+                tprint_info("   → Filtered primary signals for LONG direction (kept > 0)")
+            elif direction == "short":
+                primary_signals.loc[primary_signals["consensus"] >= 0, "consensus"] = 0
+                tprint_info("   → Filtered primary signals for SHORT direction (kept < 0)")
 
         # Precompute volatility for Kalman smoothing and label normalization
         # IMPORTANT: NO FUTURE LEAKAGE - using backward-looking rolling window only
@@ -3162,7 +3172,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
         warm_start_candidates_df: Optional[pd.DataFrame] = None
         outcomes_dir = Path("outcomes")
         try:
-            json_pattern = f"meta_labeling_hpo_best_params_{symbol}_{timeframe}_*.json"
+            json_pattern = f"meta_labeling_hpo_best_params_{symbol}_{timeframe}_{direction}_*.json"
             json_paths = sorted(outcomes_dir.glob(json_pattern))
             if json_paths:
                 latest_json = json_paths[-1]
@@ -3175,7 +3185,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
         except Exception:
             warm_start_best_params = {}
         try:
-            csv_pattern = f"meta_labeling_hpo_candidate_pool_{symbol}_{timeframe}_*.csv"
+            csv_pattern = f"meta_labeling_hpo_candidate_pool_{symbol}_{timeframe}_{direction}_*.csv"
             csv_paths = sorted(outcomes_dir.glob(csv_pattern))
             if csv_paths:
                 latest_csv = csv_paths[-1]
@@ -6563,7 +6573,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
             tprint_warning(f"⚠️ Failed to generate diagnostics for recommended configuration: {diag_exc}")
 
         # ===== SAVE BEST PARAMS JSON =====
-        json_name = f"meta_labeling_hpo_best_params_{symbol}_{timeframe}_{timestamp}.json"
+        json_name = f"meta_labeling_hpo_best_params_{symbol}_{timeframe}_{direction}_{timestamp}.json"
         json_path = outcomes_dir / json_name
 
         try:
@@ -6667,7 +6677,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
             json_path = None
 
         # ===== SAVE CANDIDATE POOL CSV =====
-        csv_name = f"meta_labeling_hpo_candidate_pool_{symbol}_{timeframe}_{timestamp}.csv"
+        csv_name = f"meta_labeling_hpo_candidate_pool_{symbol}_{timeframe}_{direction}_{timestamp}.csv"
         csv_path = outcomes_dir / csv_name
 
         try:
@@ -6694,7 +6704,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
             csv_path = None
 
         # ===== SAVE PARETO FRONTIER CSV =====
-        pareto_csv_name = f"meta_labeling_hpo_pareto_front_{symbol}_{timeframe}_{timestamp}.csv"
+        pareto_csv_name = f"meta_labeling_hpo_pareto_front_{symbol}_{timeframe}_{direction}_{timestamp}.csv"
         pareto_csv_path = outcomes_dir / pareto_csv_name
 
         try:
@@ -6721,14 +6731,14 @@ class MetaLabelingHPOExperimentStep(BaseStep):
             pareto_csv_path = None
 
         # ===== SAVE COMPREHENSIVE MARKDOWN REPORT =====
-        md_name = f"meta_labeling_hpo_report_{symbol}_{timeframe}_{timestamp}.md"
+        md_name = f"meta_labeling_hpo_report_{symbol}_{timeframe}_{direction}_{timestamp}.md"
         md_path = outcomes_dir / md_name
 
         try:
             with open(md_path, "w") as f:
                 f.write(f"# Meta-Labeling HPO Report\n\n")
                 f.write(f"**Generated:** {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC\n\n")
-                f.write(f"**Symbol:** {symbol} | **Exchange:** {exchange} | **Timeframe:** {timeframe}\n\n")
+                f.write(f"**Symbol:** {symbol} | **Exchange:** {exchange} | **Timeframe:** {timeframe} | **Direction:** {direction}\n\n")
                 f.write(f"---\n\n")
 
                 # Summary
@@ -7162,7 +7172,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
 
                 df_rounds = pd.DataFrame(rows)
                 csv_name = (
-                    f"meta_labeling_hpo_round_metrics_{symbol}_{timeframe}_{timestamp}.csv"
+                    f"meta_labeling_hpo_round_metrics_{symbol}_{timeframe}_{direction}_{timestamp}.csv"
                 )
                 csv_path = outcomes_dir / csv_name
                 df_rounds.to_csv(csv_path, index=False)

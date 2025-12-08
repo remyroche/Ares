@@ -710,6 +710,13 @@ class IncrementalLGBMTrainer(BaseIncrementalTrainer):
             
             dtrain = lgb.Dataset(X_train, label=y_train)
             dval = lgb.Dataset(X_val, label=y_val, reference=dtrain)
+
+            # Force disable subsampling if GOSS is used (incompatible with bagging)
+            if params.get('boosting_type') == 'goss':
+                params['subsample'] = 1.0
+                params['bagging_fraction'] = 1.0
+                params['bagging_freq'] = 0
+
             try:
                 # Suppress LightGBM verbose output during HPO
                 model = lgb.train(
@@ -795,7 +802,7 @@ class IncrementalLGBMBaggedTrainer(BaseIncrementalTrainer):
         params = {
             'objective': 'regression' if self.config.task_type == 'regression' else 'binary',
             'metric': 'rmse' if self.config.task_type == 'regression' else 'binary_logloss',
-            'boosting_type': 'gbdt',
+            'boosting_type': 'goss',
             'verbosity': -1,
             'n_jobs': -1,
             'learning_rate': 0.05,
@@ -840,6 +847,12 @@ class IncrementalLGBMBaggedTrainer(BaseIncrementalTrainer):
         for bag_idx in range(n_bags):
             params = dict(base_params)
             params['random_state'] = int(params.get('random_state', 42)) + bag_idx
+
+            # Force disable subsampling if GOSS is used (incompatible with bagging)
+            if params.get('boosting_type') == 'goss':
+                params['subsample'] = 1.0
+                params['bagging_fraction'] = 1.0
+                params['bagging_freq'] = 0
 
             n_feat_sub = max(1, int(round(feat_frac * n_features)))
             feat_idx = np.sort(rng.choice(n_features, size=n_feat_sub, replace=False))

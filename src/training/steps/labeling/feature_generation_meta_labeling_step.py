@@ -5459,12 +5459,35 @@ def train_bagged_lgbm_with_kfold(
     n_bags: int = 10,
     lgbm_base_params: Optional[Dict[str, Any]] = None,
     verbose: bool = True,
+    use_diversity_defense: bool = True,
+    diversity_defense_config: Optional[Dict[str, Any]] = None,
 ) -> pd.DataFrame:
     """Train a 10x bagged LGBM meta-model with time-series CV.
+    
+    Supports "Diversity Defense" mode where specialists have different objectives:
+    - 3x Sharpe models (vol-normalized, risk-adjusted)
+    - 3x Tanh models (directional accuracy)
+    - 4x Huber models (2 standard + 2 asymmetric)
 
-    Returns a DataFrame with two columns:
+    Returns a DataFrame with columns:
         - 'lgbm_bag_mean': mean probability across bags
         - 'lgbm_bag_lower': mean - 1 * std, clipped to [0, 1]
+        
+    When use_diversity_defense=True, additional columns are returned:
+        - 'lgbm_bag_mad': MAD (median absolute deviation) of Z-scores
+        - 'lgbm_bag_consensus': MAD-weighted consensus signal
+    
+    Args:
+        X: Feature matrix
+        y: Target labels (binary)
+        horizon: Prediction horizon for purging
+        n_splits: Number of CV folds
+        sample_weights: Optional sample weights
+        n_bags: Number of bags (default 10 for diversity defense)
+        lgbm_base_params: Additional LGBM parameters
+        verbose: Print progress
+        use_diversity_defense: Enable diversity defense objectives (default True)
+        diversity_defense_config: Optional config dict for diversity defense
     """
 
     if not isinstance(X, pd.DataFrame):
@@ -5500,6 +5523,106 @@ def train_bagged_lgbm_with_kfold(
         except Exception:
             sample_weights = None
 
+    # Import Diversity Defense components if enabled
+    dd_objectives = None
+    dd_aggregator = None
+    dd_config = None
+    optimal_colsample_bytree = 0.5  # Default
+    
+    if use_diversity_defense:
+        try:
+            from src.utils.ml_common.optimization.diversity_defense_objectives import (
+                DiversityDefenseConfig,
+                DiversityDefenseObjectives,
+                DiversityDefenseAggregator,
+                DiversitySweep,
+                SpecialistType,
+            )
+            
+            # ============================================================
+            # STEP 1: Run DiversitySweep to find optimal colsample_bytree
+            # ============================================================
+            run_diversity_sweep = diversity_defense_config.get('run_diversity_sweep', True) if diversity_defense_config else True
+            
+            if run_diversity_sweep and len(X) >= 500:  # Need enough data for meaningful sweep
+                if verbose:
+                    tprint("  [DIVERSITY_SWEEP] Finding optimal colsample_bytree...", "INFO")
+                
+                # Use a sample for faster sweep if dataset is large
+                sweep_sample_size = min(5000, len(X))
+                if len(X) > sweep_sample_size:
+                    sweep_indices = np.random.choice(len(X), size=sweep_sample_size, replace=False)
+                    sweep_indices.sort()
+                    X_sweep = X.iloc[sweep_indices]
+                    y_sweep = y.iloc[sweep_indices].values
+                else:
+                    X_sweep = X
+                    y_sweep = y.values
+                
+                sweep = DiversitySweep(
+                    X=X_sweep,
+                    y=y_sweep,
+                    colsample_settings=diversity_defense_config.get('colsample_settings', [0.7, 0.6, 0.5, 0.4, 0.3]) if diversity_defense_config else [0.7, 0.6, 0.5, 0.4, 0.3],
+                    n_splits=2,  # Fast sweep
+                    n_models=5,  # Mini-ensemble for speed
+                )
+                
+                try:
+                    df_sweep = sweep.run(verbose=verbose)
+                    optimal_colsample_bytree = sweep.get_optimal_fraction()
+                    if verbose:
+                        tprint(f"  [DIVERSITY_SWEEP] ✅ Optimal colsample_bytree: {optimal_colsample_bytree:.2f}", "SUCCESS")
+                except Exception as e:
+                    if verbose:
+                        tprint(f"  [DIVERSITY_SWEEP] ⚠️ Sweep failed: {e}, using default 0.5", "WARNING")
+                    optimal_colsample_bytree = 0.5
+            else:
+                optimal_colsample_bytree = diversity_defense_config.get('colsample_bytree', 0.5) if diversity_defense_config else 0.5
+                if verbose:
+                    tprint(f"  [DIVERSITY_DEFENSE] Using configured colsample_bytree: {optimal_colsample_bytree}", "INFO")
+            
+            # ============================================================
+            # STEP 2: Create config with optimized colsample_bytree
+            # ============================================================
+            if diversity_defense_config is not None:
+                dd_config = DiversityDefenseConfig(
+                    sharpe_count=diversity_defense_config.get('sharpe_count', 3),
+                    tanh_count=diversity_defense_config.get('tanh_count', 3),
+                    huber_standard_count=diversity_defense_config.get('huber_standard_count', 2),
+                    huber_asymmetric_count=diversity_defense_config.get('huber_asymmetric_count', 2),
+                    sharpe_lambdas=diversity_defense_config.get('sharpe_lambdas', [0.5, 2.0, 8.0]),
+                    huber_delta=diversity_defense_config.get('huber_delta', 0.01),
+                    asymmetric_penalty=diversity_defense_config.get('asymmetric_penalty', 3.0),
+                    lr_sharpe=diversity_defense_config.get('lr_sharpe', 0.03),
+                    lr_tanh=diversity_defense_config.get('lr_tanh', 0.03),
+                    lr_huber=diversity_defense_config.get('lr_huber', 0.03),
+                    sample_fraction=diversity_defense_config.get('sample_fraction', 0.7),
+                    colsample_bytree=optimal_colsample_bytree,  # Use optimized value
+                    z_score_window=diversity_defense_config.get('z_score_window', 1000),
+                    mad_floor=diversity_defense_config.get('mad_floor', 0.25),
+                    noise_threshold=diversity_defense_config.get('noise_threshold', 0.3),
+                    cap_threshold=diversity_defense_config.get('cap_threshold', 0.7),
+                )
+            else:
+                dd_config = DiversityDefenseConfig(colsample_bytree=optimal_colsample_bytree)
+            
+            dd_objectives = DiversityDefenseObjectives(dd_config)
+            dd_aggregator = DiversityDefenseAggregator(dd_config)
+            
+            if verbose:
+                tprint("  [DIVERSITY_DEFENSE] Enabled - training specialist ensemble", "INFO")
+                tprint(f"    colsample_bytree: {dd_config.colsample_bytree} (optimized)", "INFO")
+                tprint(f"    Sharpe models: {dd_config.sharpe_count} (λ={dd_config.sharpe_lambdas})", "INFO")
+                tprint(f"    Tanh models: {dd_config.tanh_count}", "INFO")
+                tprint(f"    Huber models: {dd_config.huber_standard_count} standard + {dd_config.huber_asymmetric_count} asymmetric", "INFO")
+        except ImportError as e:
+            if verbose:
+                tprint(f"  ⚠️ Diversity Defense not available: {e}, falling back to standard", "WARNING")
+            use_diversity_defense = False
+            dd_objectives = None
+            dd_aggregator = None
+            dd_config = None
+
     # Base LGBM parameters from create_base_models (no focal loss)
     base_models = create_base_models({}, use_focal_loss=False)
     base_lgbm = base_models['lgbm']
@@ -5512,22 +5635,28 @@ def train_bagged_lgbm_with_kfold(
             pass
 
     # Force bagging-related parameters
-    base_params.setdefault('n_estimators', 1000)
-    if 'feature_fraction' not in base_params:
-        base_params['feature_fraction'] = 1.0
-    base_params['colsample_bytree'] = base_params.get('colsample_bytree', base_params['feature_fraction'])
-    if 'subsample' not in base_params:
-        base_params['subsample'] = 1.0
-    if 'bagging_fraction' not in base_params:
-        base_params['bagging_fraction'] = 1.0
-    base_params['bagging_freq'] = base_params.get('bagging_freq', 0)
-
-    external_feature_fraction = 0.7
-    external_sample_fraction = 0.7
+    base_params.setdefault('n_estimators', 300)  # Conservative for ensemble
+    
+    # Feature diversity is controlled via colsample_bytree (NOT external loop)
+    # Optimal range is 0.5-0.6 based on Diversity-Adjusted Sharpe analysis
+    if use_diversity_defense and dd_config is not None:
+        base_params['colsample_bytree'] = dd_config.colsample_bytree
+        external_sample_fraction = dd_config.sample_fraction
+    else:
+        base_params['colsample_bytree'] = 0.5  # Default for diversity
+        external_sample_fraction = 0.7
+    
+    base_params['subsample'] = base_params.get('subsample', 0.7)
+    base_params['feature_fraction'] = base_params.get('colsample_bytree', 0.5)
+    base_params['bagging_fraction'] = base_params.get('bagging_fraction', 0.7)
+    base_params['bagging_freq'] = base_params.get('bagging_freq', 1)
+    
     rng = np.random.RandomState(42)
 
     oof_mean = pd.Series(np.nan, index=X.index)
     oof_lower = pd.Series(np.nan, index=X.index)
+    oof_mad = pd.Series(np.nan, index=X.index)
+    oof_consensus = pd.Series(np.nan, index=X.index)
 
     tscv = TimeSeriesSplit(n_splits=n_splits)
 
@@ -5580,67 +5709,177 @@ def train_bagged_lgbm_with_kfold(
         test_indices_with_labels = test_idx[test_mask]
 
         fold_preds = []
-        for bag_idx in range(int(max(1, n_bags))):
-            params = dict(base_params)
-            params['random_state'] = int(params.get('random_state', 42)) + bag_idx
+        specialist_types = []
+        
+        # Compute volatility for Sharpe objectives (for regression-like treatment)
+        y_train_numeric = y_train_clean.astype(float).values
+        vol_train = pd.Series(y_train_numeric).rolling(window=100, min_periods=10).std().bfill().values
+        
+        if use_diversity_defense and dd_objectives is not None and dd_config is not None:
+            # ============================================================
+            # DIVERSITY DEFENSE: Train specialist models with different objectives
+            # Feature diversity is controlled via colsample_bytree (NOT external loop)
+            # ============================================================
+            specialist_configs = dd_config.get_specialist_configs()
+            actual_n_bags = len(specialist_configs)
+            
+            for spec_idx, spec_config in enumerate(specialist_configs):
+                params = dict(base_params)
+                params['random_state'] = int(params.get('random_state', 42)) + spec_idx
+                
+                # Get specialist-specific learning rate
+                lr = getattr(dd_config, spec_config.learning_rate_key, 0.03)
+                params['learning_rate'] = lr
+                
+                # colsample_bytree handles feature diversity internally
+                # Only do external row sampling for bootstrap diversity
+                n_rows = X_train_clean.shape[0]
+                n_rows_sub = max(10, int(round(external_sample_fraction * n_rows)))
+                n_rows_sub = min(n_rows_sub, n_rows)
+                row_indices = rng.choice(n_rows, size=n_rows_sub, replace=False)
+                row_indices.sort()
 
-            model = lgb.LGBMClassifier(**params)
-
-            n_features = X_train_clean.shape[1]
-            n_feat_sub = max(1, int(round(external_feature_fraction * n_features)))
-            feat_indices = rng.choice(n_features, size=n_feat_sub, replace=False)
-            feat_indices.sort()
-            cols_sub = X_train_clean.columns[feat_indices]
-
-            X_train_bag = X_train_clean[cols_sub]
-            X_test_bag = X_test_clean[cols_sub]
-
-            n_rows = X_train_bag.shape[0]
-            n_rows_sub = max(10, int(round(external_sample_fraction * n_rows)))
-            n_rows_sub = min(n_rows_sub, n_rows)
-            row_indices = rng.choice(n_rows, size=n_rows_sub, replace=False)
-            row_indices.sort()
-
-            X_train_bag_sub = X_train_bag.iloc[row_indices]
-            y_train_bag_sub = y_train_clean.iloc[row_indices]
-            if weights_train_clean is not None:
-                weights_bag_sub = weights_train_clean[row_indices]
-            else:
-                weights_bag_sub = None
-
-            try:
-                if weights_bag_sub is not None:
-                    model.fit(X_train_bag_sub, y_train_bag_sub, sample_weight=weights_bag_sub)
+                # Use ALL features - colsample_bytree handles diversity
+                X_train_bag_sub = X_train_clean.iloc[row_indices]
+                y_train_bag_sub = y_train_clean.iloc[row_indices]
+                vol_train_sub = vol_train[row_indices]
+                
+                if weights_train_clean is not None:
+                    weights_bag_sub = weights_train_clean[row_indices]
                 else:
-                    model.fit(X_train_bag_sub, y_train_bag_sub)
-                y_pred_proba = model.predict_proba(X_test_bag)[:, 1]
-                fold_preds.append(y_pred_proba)
-            except Exception as e:
-                if verbose:
-                    tprint(f"    ❌ Bag {bag_idx + 1} failed: {e}", "ERROR")
-                continue
+                    weights_bag_sub = None
+
+                try:
+                    # Get specialist objective
+                    fobj = dd_objectives.get_objective_for_specialist(spec_config, vol_train_sub)
+                    
+                    if fobj is not None:
+                        # Use LGBMRegressor with custom objective
+                        model = lgb.LGBMRegressor(objective=fobj, **params)
+                        if weights_bag_sub is not None:
+                            model.fit(X_train_bag_sub, y_train_bag_sub.astype(float), sample_weight=weights_bag_sub)
+                        else:
+                            model.fit(X_train_bag_sub, y_train_bag_sub.astype(float))
+                        # Get predictions (regression output) on FULL feature set
+                        y_pred = model.predict(X_test_clean)
+                        # Convert to probability-like output using sigmoid
+                        y_pred_proba = 1.0 / (1.0 + np.exp(-y_pred))
+                    else:
+                        # Fallback to classifier
+                        model = lgb.LGBMClassifier(**params)
+                        if weights_bag_sub is not None:
+                            model.fit(X_train_bag_sub, y_train_bag_sub, sample_weight=weights_bag_sub)
+                        else:
+                            model.fit(X_train_bag_sub, y_train_bag_sub)
+                        y_pred_proba = model.predict_proba(X_test_clean)[:, 1]
+                    
+                    fold_preds.append(y_pred_proba)
+                    specialist_types.append(spec_config.specialist_type)
+                    
+                except Exception as e:
+                    if verbose:
+                        tprint(f"    ❌ Specialist {spec_idx + 1} ({spec_config.role_description}) failed: {e}", "ERROR")
+                    continue
+        else:
+            # ============================================================
+            # STANDARD MODE: Train identical classifiers with different seeds
+            # Feature diversity is controlled via colsample_bytree
+            # ============================================================
+            for bag_idx in range(int(max(1, n_bags))):
+                params = dict(base_params)
+                params['random_state'] = int(params.get('random_state', 42)) + bag_idx
+
+                model = lgb.LGBMClassifier(**params)
+
+                # Row sampling only - colsample_bytree handles feature diversity
+                n_rows = X_train_clean.shape[0]
+                n_rows_sub = max(10, int(round(external_sample_fraction * n_rows)))
+                n_rows_sub = min(n_rows_sub, n_rows)
+                row_indices = rng.choice(n_rows, size=n_rows_sub, replace=False)
+                row_indices.sort()
+
+                X_train_bag_sub = X_train_clean.iloc[row_indices]
+                y_train_bag_sub = y_train_clean.iloc[row_indices]
+                if weights_train_clean is not None:
+                    weights_bag_sub = weights_train_clean[row_indices]
+                else:
+                    weights_bag_sub = None
+
+                try:
+                    if weights_bag_sub is not None:
+                        model.fit(X_train_bag_sub, y_train_bag_sub, sample_weight=weights_bag_sub)
+                    else:
+                        model.fit(X_train_bag_sub, y_train_bag_sub)
+                    # Predict on full feature set - colsample_bytree handles diversity
+                    y_pred_proba = model.predict_proba(X_test_clean)[:, 1]
+                    fold_preds.append(y_pred_proba)
+                except Exception as e:
+                    if verbose:
+                        tprint(f"    ❌ Bag {bag_idx + 1} failed: {e}", "ERROR")
+                    continue
 
         if not fold_preds:
             continue
 
         preds_mat = np.vstack(fold_preds).T  # shape: (n_test_clean, n_bags_effective)
-        mu = np.mean(preds_mat, axis=1)
-        sigma = np.std(preds_mat, axis=1)
+        
+        if use_diversity_defense and dd_aggregator is not None:
+            # ============================================================
+            # DIVERSITY DEFENSE AGGREGATION: MAD-based consensus
+            # ============================================================
+            # Transpose for aggregator: (n_models, n_samples)
+            preds_matrix_t = preds_mat.T
+            agg_result = dd_aggregator.aggregate(preds_matrix_t, compute_penalty=False)
+            
+            # Extract aggregation results
+            mu = np.median(preds_mat, axis=1)  # Median for robustness
+            sigma = np.std(preds_mat, axis=1)
+            
+            # Use MAD from aggregator
+            mad_values = agg_result['mad_z']
+            # Ensure mad_values has correct length (may need adjustment for window effects)
+            if len(mad_values) != len(mu):
+                # Fallback to simple MAD calculation
+                mad_values = np.median(np.abs(preds_mat - mu[:, np.newaxis]), axis=1)
+            
+            # Consensus signal: probability weighted by confidence
+            raw_signal = agg_result.get('raw_signal', mu)
+            if len(raw_signal) != len(mu):
+                raw_signal = mu
+            
+            oof_mean.iloc[test_indices_with_labels] = mu
+            lower = np.clip(mu - 1.0 * sigma, 0.0, 1.0)
+            oof_lower.iloc[test_indices_with_labels] = lower
+            oof_mad.iloc[test_indices_with_labels] = mad_values
+            oof_consensus.iloc[test_indices_with_labels] = raw_signal
+        else:
+            # Standard aggregation
+            mu = np.mean(preds_mat, axis=1)
+            sigma = np.std(preds_mat, axis=1)
 
-        oof_mean.iloc[test_indices_with_labels] = mu
-        lower = np.clip(mu - 1.0 * sigma, 0.0, 1.0)
-        oof_lower.iloc[test_indices_with_labels] = lower
+            oof_mean.iloc[test_indices_with_labels] = mu
+            lower = np.clip(mu - 1.0 * sigma, 0.0, 1.0)
+            oof_lower.iloc[test_indices_with_labels] = lower
 
     oof_mean = oof_mean.fillna(0.5)
     oof_lower = oof_lower.fillna(0.5)
-
-    return pd.DataFrame(
+    
+    result_df = pd.DataFrame(
         {
             'lgbm_bag_mean': oof_mean,
             'lgbm_bag_lower': oof_lower,
         },
         index=X.index,
     )
+    
+    # Add diversity defense columns if enabled
+    if use_diversity_defense:
+        oof_mad = oof_mad.fillna(0.25)  # Default to MAD floor
+        oof_consensus = oof_consensus.fillna(0.5)
+        result_df['lgbm_bag_mad'] = oof_mad
+        result_df['lgbm_bag_consensus'] = oof_consensus
+    
+    return result_df
 
 
 def calibrate_ensemble(

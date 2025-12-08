@@ -137,13 +137,14 @@ class IncrementalTrainingConfig:
     # Task type
     task_type: str = "regression"  # "classification" or "regression"
     
-    # HPO configuration (incremental)
-    enable_incremental_hpo: bool = True
-    hpo_n_trials_per_round: int = 10  # Small number for incremental search
-    hpo_timeout_per_round: int = 300  # 5 minutes max per round
+    # HPO configuration - runs ONCE at burn-in only (NOT during incremental windows)
+    # This finds good hyperparameters on the initial data, then warm-starts from there
+    enable_burnin_hpo: bool = True  # Run HPO once at burn-in
+    hpo_n_trials: int = 10  # Number of trials for burn-in HPO
+    hpo_timeout: int = 300  # 5 minutes max for burn-in HPO
     early_stopping_rounds: int = 35
     
-    # Sensitive hyperparameters to tune incrementally
+    # Hyperparameters to tune during burn-in HPO
     sensitive_params_lgbm: List[str] = field(default_factory=lambda: [
         'learning_rate', 'num_leaves', 'max_depth', 'reg_alpha', 'reg_lambda'
     ])
@@ -157,8 +158,24 @@ class IncrementalTrainingConfig:
         'alpha_1', 'alpha_2', 'lambda_1', 'lambda_2'
     ])
     
-    # Neighborhood search radius (percentage of current value)
-    hpo_neighborhood_radius: float = 0.3  # 30% around current best
+    # Neighborhood search radius for HPO (percentage of default value)
+    hpo_neighborhood_radius: float = 0.3  # 30% around default
+    
+    # Backward compatibility aliases
+    @property
+    def enable_incremental_hpo(self) -> bool:
+        """Deprecated: Use enable_burnin_hpo instead."""
+        return self.enable_burnin_hpo
+    
+    @property
+    def hpo_n_trials_per_round(self) -> int:
+        """Deprecated: Use hpo_n_trials instead."""
+        return self.hpo_n_trials
+    
+    @property
+    def hpo_timeout_per_round(self) -> int:
+        """Deprecated: Use hpo_timeout instead."""
+        return self.hpo_timeout
     
     # Paths
     cache_dir: Path = field(default_factory=lambda: Path("cache/incremental_models"))
@@ -464,12 +481,13 @@ class BaseIncrementalTrainer(ABC):
                 previous_training_end = window.training_end
                 continue
             
-            # Initial HPO if burn-in and enabled
-            if window.is_burn_in and self.config.enable_incremental_hpo:
-                if verbose: logger.info("   Running initial HPO on burn-in data...")
-                hpo_result = self._run_incremental_hpo(train_data, window, verbose)
+            # HPO runs ONCE at burn-in only - finds good hyperparameters on initial data
+            # Subsequent incremental windows use warm-start with these params (no re-tuning)
+            if window.is_burn_in and self.config.enable_burnin_hpo:
+                if verbose: logger.info("   Running burn-in HPO (one-time optimization)...")
+                hpo_result = self._run_burnin_hpo(train_data, window, verbose)
                 if hpo_result:
-                    hpo_history[f"window_{window.window_id}_pre"] = hpo_result
+                    hpo_history[f"burnin_hpo"] = hpo_result
 
             # Train/Update model
             if window.is_burn_in or self._current_model is None:
@@ -533,7 +551,8 @@ class BaseIncrementalTrainer(ABC):
         pass
     
     @abstractmethod
-    def _run_incremental_hpo(self, train_data: pd.DataFrame, window: IncrementalTrainingWindow, verbose: bool) -> Optional[Dict[str, Any]]:
+    def _run_burnin_hpo(self, train_data: pd.DataFrame, window: IncrementalTrainingWindow, verbose: bool) -> Optional[Dict[str, Any]]:
+        """Run HPO once at burn-in to find good hyperparameters. NOT called during incremental windows."""
         pass
     
     def _get_feature_cols(self, data: pd.DataFrame) -> List[str]:
@@ -668,7 +687,8 @@ class IncrementalLGBMTrainer(BaseIncrementalTrainer):
         else:
             return pd.DataFrame({'prediction': preds}, index=pred_data.index)
 
-    def _run_incremental_hpo(self, train_data, window, verbose):
+    def _run_burnin_hpo(self, train_data, window, verbose):
+        """Run HPO once at burn-in to find good hyperparameters."""
         if not OPTUNA_AVAILABLE: return None
 
         if not self._feature_cols:
@@ -737,12 +757,46 @@ class IncrementalLGBMTrainer(BaseIncrementalTrainer):
 # ============================================================================
 
 class BaggedLGBMRegressor:
-    """Simple bagged LGBM regressor that supports mean/std/lower predictions."""
+    """
+    Bagged LGBM regressor with Diversity Defense support.
+    
+    Supports mean/std/lower predictions, and when diversity defense is enabled,
+    also provides MAD-based consensus predictions using specialist models with
+    different objectives (Sharpe, Tanh, Huber).
+    
+    Feature diversity is controlled via colsample_bytree (NOT external feature loops).
+    All models use the full feature set, with LightGBM internally selecting subsets.
+    """
 
-    def __init__(self, models: List[Any], feature_indices: List[np.ndarray], n_features: int):
+    def __init__(
+        self, 
+        models: List[Any], 
+        n_features: int,
+        specialist_types: Optional[List[Any]] = None,
+        use_diversity_defense: bool = False,
+        diversity_defense_config: Optional[Any] = None,
+    ):
         self.models = models
-        self.feature_indices = feature_indices
         self.n_features = n_features
+        self.specialist_types = specialist_types or []
+        self.use_diversity_defense = use_diversity_defense
+        self.diversity_defense_config = diversity_defense_config
+        
+        # Initialize aggregator for diversity defense
+        self._aggregator = None
+        if use_diversity_defense:
+            try:
+                from src.utils.ml_common.optimization.diversity_defense_objectives import (
+                    DiversityDefenseAggregator,
+                    DiversityDefenseConfig,
+                )
+                if diversity_defense_config is not None:
+                    self._aggregator = DiversityDefenseAggregator(diversity_defense_config)
+                else:
+                    self._aggregator = DiversityDefenseAggregator()
+            except ImportError:
+                logger.warning("Diversity Defense not available, falling back to standard aggregation")
+                self.use_diversity_defense = False
 
     def predict_components(self, X: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Return (mean, std, lower=mean-std) across bags for each sample."""
@@ -756,10 +810,10 @@ class BaggedLGBMRegressor:
             return zeros, zeros, zeros
 
         bag_preds = []
-        for model, idx in zip(self.models, self.feature_indices):
+        for model in self.models:
             try:
-                X_sub = X[:, idx]
-                bag_preds.append(model.predict(X_sub))
+                # All models use full feature set - colsample_bytree handles diversity
+                bag_preds.append(model.predict(X))
             except Exception:
                 continue
 
@@ -773,23 +827,208 @@ class BaggedLGBMRegressor:
         std = preds_mat.std(axis=1)
         lower = mean - std
         return mean, std, lower
+    
+    def predict_diversity_defense(self, X: np.ndarray) -> Dict[str, np.ndarray]:
+        """
+        Return diversity defense predictions with MAD-based consensus.
+        
+        Returns:
+            Dict with keys:
+                - 'mean': Mean prediction
+                - 'std': Standard deviation
+                - 'lower': Mean - std
+                - 'median': Median prediction (more robust)
+                - 'mad': Median Absolute Deviation (disagreement measure)
+                - 'consensus': MAD-weighted consensus signal
+                - 'raw_preds': Raw predictions from all specialists
+        """
+        if X.ndim != 2 or X.shape[1] != self.n_features:
+            n_common = min(self.n_features, X.shape[1])
+            X = X[:, :n_common]
+        
+        if not self.models:
+            n_samples = X.shape[0]
+            zeros = np.zeros(n_samples, dtype=float)
+            return {
+                'mean': zeros, 'std': zeros, 'lower': zeros,
+                'median': zeros, 'mad': zeros, 'consensus': zeros,
+                'raw_preds': np.zeros((n_samples, 1))
+            }
+
+        bag_preds = []
+        for model in self.models:
+            try:
+                # All models use full feature set - colsample_bytree handles diversity
+                bag_preds.append(model.predict(X))
+            except Exception:
+                continue
+
+        if not bag_preds:
+            n_samples = X.shape[0]
+            zeros = np.zeros(n_samples, dtype=float)
+            return {
+                'mean': zeros, 'std': zeros, 'lower': zeros,
+                'median': zeros, 'mad': zeros, 'consensus': zeros,
+                'raw_preds': np.zeros((n_samples, 1))
+            }
+
+        preds_mat = np.vstack(bag_preds).T  # (n_samples, n_bags)
+        
+        # Standard statistics
+        mean = preds_mat.mean(axis=1)
+        std = preds_mat.std(axis=1)
+        lower = mean - std
+        
+        # Robust statistics
+        median = np.median(preds_mat, axis=1)
+        mad = np.median(np.abs(preds_mat - median[:, np.newaxis]), axis=1)
+        
+        # Consensus signal: median / (1 + mad)
+        # High disagreement (large MAD) shrinks signal toward zero
+        mad_floor = 0.25
+        if self.diversity_defense_config is not None:
+            mad_floor = getattr(self.diversity_defense_config, 'mad_floor', 0.25)
+        mad_eff = np.maximum(mad, mad_floor)
+        consensus = median / (1.0 + mad_eff)
+        
+        return {
+            'mean': mean,
+            'std': std,
+            'lower': lower,
+            'median': median,
+            'mad': mad,
+            'consensus': consensus,
+            'raw_preds': preds_mat
+        }
 
     def predict(self, X: np.ndarray) -> np.ndarray:
         """Return bag-lower raw prediction (mean - std)."""
+        if self.use_diversity_defense:
+            result = self.predict_diversity_defense(X)
+            return result['consensus']
         _, _, lower = self.predict_components(X)
         return lower
 
 
 class IncrementalLGBMBaggedTrainer(BaseIncrementalTrainer):
-    """Incremental bagged LightGBM trainer producing bag-lower predictions with calibration."""
+    """
+    Incremental bagged LightGBM trainer with Diversity Defense support.
+    
+    Produces bag-lower predictions with calibration. When diversity defense
+    is enabled, trains specialist models with different objectives:
+    - 3x Sharpe models (vol-normalized, risk-adjusted)
+    - 3x Tanh models (directional accuracy)
+    - 4x Huber models (2 standard + 2 asymmetric)
+    
+    Feature diversity is controlled via colsample_bytree (NOT external loops).
+    The optimal value is determined via DiversitySweep at the start of training.
+    """
 
     def __init__(self, model_id: str, config=None, model_config=None):
         super().__init__(model_id, config, model_config)
         self._feature_cols: List[str] = []
         self._n_bags = int((model_config or {}).get('n_bags', 10))
-        self._feature_fraction = float((model_config or {}).get('bagging_feature_fraction', 0.7))
         self._sample_fraction = float((model_config or {}).get('bagging_sample_fraction', 0.7))
         self._bagged_boosters = []  # Store boosters for warm start
+        
+        # Diversity Defense configuration
+        self._use_diversity_defense = bool((model_config or {}).get('use_diversity_defense', True))
+        self._run_diversity_sweep = bool((model_config or {}).get('run_diversity_sweep', True))
+        self._optimal_colsample_bytree = float((model_config or {}).get('colsample_bytree', 0.5))
+        self._diversity_sweep_done = False
+        self._dd_config = None
+        self._dd_objectives = None
+        
+        if self._use_diversity_defense:
+            try:
+                from src.utils.ml_common.optimization.diversity_defense_objectives import (
+                    DiversityDefenseConfig,
+                    DiversityDefenseObjectives,
+                )
+                dd_config_dict = (model_config or {}).get('diversity_defense_config', {})
+                # Initial config - colsample_bytree will be updated after sweep
+                self._dd_config = DiversityDefenseConfig(
+                    sharpe_count=dd_config_dict.get('sharpe_count', 3),
+                    tanh_count=dd_config_dict.get('tanh_count', 3),
+                    huber_standard_count=dd_config_dict.get('huber_standard_count', 2),
+                    huber_asymmetric_count=dd_config_dict.get('huber_asymmetric_count', 2),
+                    sharpe_lambdas=dd_config_dict.get('sharpe_lambdas', [0.5, 2.0, 8.0]),
+                    huber_delta=dd_config_dict.get('huber_delta', 0.01),
+                    asymmetric_penalty=dd_config_dict.get('asymmetric_penalty', 3.0),
+                    lr_sharpe=dd_config_dict.get('lr_sharpe', 0.03),
+                    lr_tanh=dd_config_dict.get('lr_tanh', 0.03),
+                    lr_huber=dd_config_dict.get('lr_huber', 0.03),
+                    sample_fraction=self._sample_fraction,
+                    colsample_bytree=self._optimal_colsample_bytree,
+                )
+                self._dd_objectives = DiversityDefenseObjectives(self._dd_config)
+                logger.info(f"Diversity Defense enabled for {model_id}")
+            except ImportError as e:
+                logger.warning(f"Diversity Defense not available: {e}, using standard bagging")
+                self._use_diversity_defense = False
+    
+    def _run_colsample_optimization(self, X: np.ndarray, y: np.ndarray, verbose: bool = True) -> float:
+        """
+        Run DiversitySweep to find optimal colsample_bytree.
+        
+        Args:
+            X: Feature matrix (numpy array)
+            y: Target array
+            verbose: Print progress
+            
+        Returns:
+            Optimal colsample_bytree value
+        """
+        if self._diversity_sweep_done:
+            return self._optimal_colsample_bytree
+        
+        try:
+            from src.utils.ml_common.optimization.diversity_defense_objectives import DiversitySweep
+            
+            # Need minimum samples for meaningful sweep
+            if len(X) < 500:
+                logger.info(f"Insufficient data for DiversitySweep ({len(X)} samples), using default colsample_bytree=0.5")
+                self._diversity_sweep_done = True
+                return 0.5
+            
+            if verbose:
+                logger.info("[DIVERSITY_SWEEP] Finding optimal colsample_bytree...")
+            
+            # Use a sample for faster sweep if dataset is large
+            sweep_sample_size = min(5000, len(X))
+            if len(X) > sweep_sample_size:
+                rng = np.random.RandomState(42)
+                sweep_indices = rng.choice(len(X), size=sweep_sample_size, replace=False)
+                sweep_indices.sort()
+                X_sweep = pd.DataFrame(X[sweep_indices])
+                y_sweep = y[sweep_indices]
+            else:
+                X_sweep = pd.DataFrame(X)
+                y_sweep = y
+            
+            sweep = DiversitySweep(
+                X=X_sweep,
+                y=y_sweep,
+                colsample_settings=[0.7, 0.6, 0.5, 0.4, 0.3],
+                n_splits=2,  # Fast sweep
+                n_models=5,  # Mini-ensemble for speed
+            )
+            
+            df_sweep = sweep.run(verbose=verbose)
+            optimal = sweep.get_optimal_fraction()
+            
+            if verbose:
+                logger.info(f"[DIVERSITY_SWEEP] ✅ Optimal colsample_bytree: {optimal:.2f}")
+            
+            self._diversity_sweep_done = True
+            self._optimal_colsample_bytree = optimal  # Cache the result
+            return optimal
+            
+        except Exception as e:
+            logger.warning(f"[DIVERSITY_SWEEP] Failed: {e}, using default colsample_bytree=0.5")
+            self._diversity_sweep_done = True
+            self._optimal_colsample_bytree = 0.5  # Cache the default
+            return 0.5
 
     def _get_default_params(self) -> Dict[str, Any]:
         params = {
@@ -811,7 +1050,7 @@ class IncrementalLGBMBaggedTrainer(BaseIncrementalTrainer):
     def _train_bagged_model(self, X: np.ndarray, y: np.ndarray, sample_weight: Optional[np.ndarray], verbose: bool) -> BaggedLGBMRegressor:
         n_samples, n_features = X.shape
         if n_samples == 0 or n_features == 0:
-            return BaggedLGBMRegressor([], [], n_features)
+            return BaggedLGBMRegressor([], n_features)
 
         base_params = self._get_default_params()
         base_params.update(self._best_params)
@@ -825,64 +1064,176 @@ class IncrementalLGBMBaggedTrainer(BaseIncrementalTrainer):
         # rely on global incremental training/HPO instead.
         base_params.pop("early_stopping_rounds", None)
 
-        n_bags = max(1, int(self._n_bags))
-        feat_frac = min(max(self._feature_fraction, 0.1), 1.0)
+        # ============================================================
+        # STEP 0: Run DiversitySweep to optimize colsample_bytree
+        # This is run ONCE at the start of training (first call only)
+        # ============================================================
+        if self._run_diversity_sweep and not self._diversity_sweep_done:
+            self._optimal_colsample_bytree = self._run_colsample_optimization(X, y, verbose=verbose)
+            
+            # Update DD config with optimized value
+            if self._use_diversity_defense and self._dd_config is not None:
+                # Create new config with optimized colsample_bytree
+                from src.utils.ml_common.optimization.diversity_defense_objectives import DiversityDefenseConfig
+                self._dd_config = DiversityDefenseConfig(
+                    sharpe_count=self._dd_config.sharpe_count,
+                    tanh_count=self._dd_config.tanh_count,
+                    huber_standard_count=self._dd_config.huber_standard_count,
+                    huber_asymmetric_count=self._dd_config.huber_asymmetric_count,
+                    sharpe_lambdas=self._dd_config.sharpe_lambdas,
+                    huber_delta=self._dd_config.huber_delta,
+                    asymmetric_penalty=self._dd_config.asymmetric_penalty,
+                    lr_sharpe=self._dd_config.lr_sharpe,
+                    lr_tanh=self._dd_config.lr_tanh,
+                    lr_huber=self._dd_config.lr_huber,
+                    sample_fraction=self._dd_config.sample_fraction,
+                    colsample_bytree=self._optimal_colsample_bytree,
+                    z_score_window=self._dd_config.z_score_window,
+                    mad_floor=self._dd_config.mad_floor,
+                    noise_threshold=self._dd_config.noise_threshold,
+                    cap_threshold=self._dd_config.cap_threshold,
+                )
+                logger.info(f"[DIVERSITY_DEFENSE] Updated colsample_bytree to {self._optimal_colsample_bytree:.2f}")
+
+        # Feature diversity via colsample_bytree (NOT external loop)
+        # Optimal value from DiversitySweep, or default 0.5
+        if self._use_diversity_defense and self._dd_config is not None:
+            base_params['colsample_bytree'] = self._dd_config.colsample_bytree
+        else:
+            base_params['colsample_bytree'] = self._optimal_colsample_bytree
+        
         sample_frac = min(max(self._sample_fraction, 0.1), 1.0)
 
         rng = np.random.RandomState(42)
         models: List[Any] = []
-        feature_indices: List[np.ndarray] = []
+        specialist_types: List[Any] = []
         new_boosters = []
+        
+        # Compute volatility for Sharpe objectives
+        y_vol = pd.Series(y).rolling(window=100, min_periods=10).std().bfill().values
+        
+        if self._use_diversity_defense and self._dd_config is not None and self._dd_objectives is not None:
+            # ============================================================
+            # DIVERSITY DEFENSE: Train specialist models with different objectives
+            # Feature diversity via colsample_bytree (NOT external loop)
+            # ============================================================
+            specialist_configs = self._dd_config.get_specialist_configs()
+            n_bags = len(specialist_configs)
+            
+            # Check if we have previous boosters for warm start
+            has_warm_start = len(self._bagged_boosters) == n_bags
+            
+            for spec_idx, spec_config in enumerate(specialist_configs):
+                params = dict(base_params)
+                params['random_state'] = int(params.get('random_state', 42)) + spec_idx
+                
+                # Get specialist-specific learning rate
+                lr = getattr(self._dd_config, spec_config.learning_rate_key, 0.03)
+                params['learning_rate'] = lr
 
-        # Check if we have previous boosters for warm start
-        has_warm_start = len(self._bagged_boosters) == n_bags
+                # Row sampling only - colsample_bytree handles feature diversity
+                n_rows_sub = max(10, int(round(sample_frac * n_samples)))
+                n_rows_sub = min(n_rows_sub, n_samples)
+                row_idx = np.sort(rng.choice(n_samples, size=n_rows_sub, replace=False))
 
-        for bag_idx in range(n_bags):
-            params = dict(base_params)
-            params['random_state'] = int(params.get('random_state', 42)) + bag_idx
-
-            n_feat_sub = max(1, int(round(feat_frac * n_features)))
-            feat_idx = np.sort(rng.choice(n_features, size=n_feat_sub, replace=False))
-
-            n_rows_sub = max(10, int(round(sample_frac * n_samples)))
-            n_rows_sub = min(n_rows_sub, n_samples)
-            row_idx = np.sort(rng.choice(n_samples, size=n_rows_sub, replace=False))
-
-            X_bag = X[row_idx][:, feat_idx]
-            y_bag = y[row_idx]
-            if sample_weight is not None:
-                sw_bag = sample_weight[row_idx]
-            else:
-                sw_bag = None
-
-            try:
-                model = lgb.LGBMRegressor(**params)
-
-                # Use warm start if available
-                init_model = self._bagged_boosters[bag_idx] if has_warm_start else None
-
-                if sw_bag is not None:
-                    model.fit(X_bag, y_bag, sample_weight=sw_bag, init_model=init_model)
+                # Use ALL features - colsample_bytree handles diversity internally
+                X_bag = X[row_idx]
+                y_bag = y[row_idx]
+                vol_bag = y_vol[row_idx]
+                
+                if sample_weight is not None:
+                    sw_bag = sample_weight[row_idx]
                 else:
-                    model.fit(X_bag, y_bag, init_model=init_model)
+                    sw_bag = None
 
-                models.append(model)
-                feature_indices.append(feat_idx)
+                try:
+                    # Get specialist objective
+                    fobj = self._dd_objectives.get_objective_for_specialist(spec_config, vol_bag)
+                    
+                    if fobj is not None:
+                        # Remove standard objective since we're using custom
+                        params_custom = {k: v for k, v in params.items() if k != 'objective'}
+                        model = lgb.LGBMRegressor(objective=fobj, **params_custom)
+                    else:
+                        model = lgb.LGBMRegressor(**params)
 
-                # Store booster for next round
-                # For LGBMRegressor, the booster is in booster_ attribute after fit
-                if hasattr(model, 'booster_'):
-                    new_boosters.append(model.booster_)
+                    # Use warm start if available
+                    init_model = self._bagged_boosters[spec_idx] if has_warm_start else None
 
-            except Exception as e:
-                logger.warning(f"Bag {bag_idx} failed during training: {e}")
-                continue
+                    if sw_bag is not None:
+                        model.fit(X_bag, y_bag, sample_weight=sw_bag, init_model=init_model)
+                    else:
+                        model.fit(X_bag, y_bag, init_model=init_model)
+
+                    models.append(model)
+                    specialist_types.append(spec_config.specialist_type)
+
+                    # Store booster for next round
+                    if hasattr(model, 'booster_'):
+                        new_boosters.append(model.booster_)
+
+                except Exception as e:
+                    logger.warning(f"Specialist {spec_idx} ({spec_config.role_description}) failed: {e}")
+                    continue
+        else:
+            # ============================================================
+            # STANDARD MODE: Train identical models with different seeds
+            # Feature diversity via colsample_bytree (NOT external loop)
+            # ============================================================
+            n_bags = max(1, int(self._n_bags))
+            
+            # Check if we have previous boosters for warm start
+            has_warm_start = len(self._bagged_boosters) == n_bags
+
+            for bag_idx in range(n_bags):
+                params = dict(base_params)
+                params['random_state'] = int(params.get('random_state', 42)) + bag_idx
+
+                # Row sampling only - colsample_bytree handles feature diversity
+                n_rows_sub = max(10, int(round(sample_frac * n_samples)))
+                n_rows_sub = min(n_rows_sub, n_samples)
+                row_idx = np.sort(rng.choice(n_samples, size=n_rows_sub, replace=False))
+
+                # Use ALL features - colsample_bytree handles diversity internally
+                X_bag = X[row_idx]
+                y_bag = y[row_idx]
+                if sample_weight is not None:
+                    sw_bag = sample_weight[row_idx]
+                else:
+                    sw_bag = None
+
+                try:
+                    model = lgb.LGBMRegressor(**params)
+
+                    # Use warm start if available
+                    init_model = self._bagged_boosters[bag_idx] if has_warm_start else None
+
+                    if sw_bag is not None:
+                        model.fit(X_bag, y_bag, sample_weight=sw_bag, init_model=init_model)
+                    else:
+                        model.fit(X_bag, y_bag, init_model=init_model)
+
+                    models.append(model)
+
+                    # Store booster for next round
+                    if hasattr(model, 'booster_'):
+                        new_boosters.append(model.booster_)
+
+                except Exception as e:
+                    logger.warning(f"Bag {bag_idx} failed during training: {e}")
+                    continue
 
         # Update stored boosters if we successfully trained
         if len(new_boosters) == len(models):
             self._bagged_boosters = new_boosters
 
-        return BaggedLGBMRegressor(models, feature_indices, n_features)
+        return BaggedLGBMRegressor(
+            models=models,
+            n_features=n_features,
+            specialist_types=specialist_types if self._use_diversity_defense else None,
+            use_diversity_defense=self._use_diversity_defense,
+            diversity_defense_config=self._dd_config,
+        )
 
     def _train_initial(self, train_data: pd.DataFrame, window: IncrementalTrainingWindow, verbose: bool) -> CalibratedModel:
         self._feature_cols = self._get_feature_cols(train_data)
@@ -963,8 +1314,8 @@ class IncrementalLGBMBaggedTrainer(BaseIncrementalTrainer):
         preds = self._current_model.predict(X)
         return pd.DataFrame({'prediction': preds}, index=pred_data.index)
 
-    def _run_incremental_hpo(self, train_data, window, verbose):
-        # Reuse single-model LGBM HPO to tune base learner hyperparameters.
+    def _run_burnin_hpo(self, train_data, window, verbose):
+        """Run HPO once at burn-in to tune base learner hyperparameters."""
         if not OPTUNA_AVAILABLE:
             return None
 
@@ -1172,7 +1523,8 @@ class IncrementalNGBoostTrainer(BaseIncrementalTrainer):
                 std = np.zeros_like(preds)
             return pd.DataFrame({'prediction': preds, 'std': std}, index=pred_data.index)
 
-    def _run_incremental_hpo(self, train_data, window, verbose):
+    def _run_burnin_hpo(self, train_data, window, verbose):
+        """Run HPO once at burn-in to find good hyperparameters."""
         if not OPTUNA_AVAILABLE:
             return None
 
@@ -1310,7 +1662,8 @@ class IncrementalKNNTrainer(BaseIncrementalTrainer):
         else:
             return pd.DataFrame({'prediction': preds}, index=pred_data.index)
 
-    def _run_incremental_hpo(self, train_data, window, verbose):
+    def _run_burnin_hpo(self, train_data, window, verbose):
+        """Run HPO once at burn-in to find good hyperparameters."""
         if not OPTUNA_AVAILABLE: return None
         X = train_data[self._feature_cols].values.astype(np.float32)
         y = train_data['__target__'].values
@@ -1485,7 +1838,8 @@ class IncrementalBayesianRidgeTrainer(BaseIncrementalTrainer):
 
         return pd.DataFrame({'prediction': preds, 'std': std}, index=pred_data.index)
 
-    def _run_incremental_hpo(self, train_data, window, verbose):
+    def _run_burnin_hpo(self, train_data, window, verbose):
+        """Run HPO once at burn-in to find good hyperparameters."""
         if not OPTUNA_AVAILABLE:
             return None
 
@@ -1539,7 +1893,17 @@ class IncrementalBayesianRidgeTrainer(BaseIncrementalTrainer):
 class IncrementalAnalystTrainer:
     """Unified incremental trainer that trains all analyst base models."""
     
-    def __init__(self, model_id: str, execution_mode="blank", task_type="regression", enable_incremental_hpo=True, model_configs=None):
+    def __init__(self, model_id: str, execution_mode="blank", task_type="regression", enable_burnin_hpo=True, model_configs=None):
+        """
+        Initialize the unified incremental trainer.
+        
+        Args:
+            model_id: Unique identifier for the model
+            execution_mode: "blank", "full", etc.
+            task_type: "regression" or "classification"
+            enable_burnin_hpo: If True, runs HPO ONCE at burn-in. No HPO during incremental windows.
+            model_configs: Dict of model-specific configurations
+        """
         self.model_id = model_id
         # Use 4 weeks (28 days) for full mode, 2 weeks (14 days) otherwise
         oof_batch_days = 28 if execution_mode == "full" else 14
@@ -1548,7 +1912,7 @@ class IncrementalAnalystTrainer:
             execution_mode,
             oof_batch_days=oof_batch_days,
             task_type=task_type,
-            enable_incremental_hpo=enable_incremental_hpo,
+            enable_burnin_hpo=enable_burnin_hpo,
         )
         self.model_configs = model_configs or {}
         

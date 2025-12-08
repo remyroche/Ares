@@ -44,6 +44,24 @@ from .ic_snr_objective import (
     DEFAULT_REGULARIZATION_RANGES,
     is_regularization_param,
 )
+from .diversity_defense_objectives import (
+    SpecialistType,
+    SpecialistConfig,
+    DiversityDefenseConfig,
+    DiversityDefenseObjectives,
+    DiversityDefenseAggregator,
+    DiversityDefenseHPO,
+    DiversitySweep,
+    LabelDiagnosticDashboard,
+    LabelDiagnosticResult,
+    create_diversity_defense_ensemble,
+    calculate_esr_score,
+    calculate_das_score,  # Backward compatibility
+    calculate_simple_sharpe,
+    generate_regime_meta_features,
+    create_volatility_normalized_label,
+    META_FEATURE_COLUMNS,
+)
 
 # Backward compatibility alias
 HyperparameterOptimizer = HyperparameterOptimization
@@ -94,4 +112,22 @@ __all__ = [
     'create_ic_snr_objective_for_xgb',
     'DEFAULT_REGULARIZATION_RANGES',
     'is_regularization_param',
+    
+    # Diversity Defense Objectives for Bagged LGBM Ensemble
+    'SpecialistType',
+    'SpecialistConfig',
+    'DiversityDefenseConfig',
+    'DiversityDefenseObjectives',
+    'DiversityDefenseAggregator',
+    'DiversityDefenseHPO',
+    'DiversitySweep',
+    'LabelDiagnosticDashboard',
+    'LabelDiagnosticResult',
+    'create_diversity_defense_ensemble',
+    'calculate_esr_score',
+    'calculate_das_score',  # Backward compatibility
+    'calculate_simple_sharpe',
+    'generate_regime_meta_features',
+    'create_volatility_normalized_label',
+    'META_FEATURE_COLUMNS',
 ]

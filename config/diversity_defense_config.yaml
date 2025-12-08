@@ -1,0 +1,356 @@
+# Diversity Defense Configuration for Bagged LGBM Ensemble
+# =============================================================================
+#
+# This configuration defines the "Diversity Defense" approach where 10 specialist
+# models are trained with different objectives to increase orthogonality and
+# reduce overfitting through disagreement filtering.
+#
+# Philosophy:
+# - Specialization: Different models focus on direction, magnitude, or risk
+# - Consensus: Only trade when the committee agrees
+# - Filters: Use disagreement (MAD) to filter out noisy signals
+#
+# The 3 "Specialist" Layers (10 models total):
+# 1. "Smart Money" (3x): Vol-Normalized Sharpe - Maximizes PnL consistency
+# 2. "Trend Follower" (3x): Robust Tanh Loss - Maximizes directional accuracy
+# 3. "Reality Check" (4x): Huber / Asymmetric Huber - Anchors to realistic values
+#
+# IMPORTANT: Feature diversity is controlled via colsample_bytree, NOT external loops.
+# The optimal range is 0.5-0.6 based on Diversity-Adjusted Sharpe (DAS) analysis.
+#
+# =============================================================================
+
+# Enable/disable diversity defense
+enabled: true
+
+# =============================================================================
+# Specialist Layer Configuration (10 models total)
+# =============================================================================
+specialist_layers:
+  # "Smart Money" layer - Risk-adjusted PnL maximization
+  sharpe:
+    count: 3
+    role: "Risk Manager"
+    description: "Maximizes PnL consistency, penalizes volatile wins"
+    # Risk aversion parameters (increasing values)
+    # Higher lambda = more conservative, more variance penalty
+    lambdas: [0.5, 2.0, 8.0]
+    learning_rate: 0.03
+  
+  # "Trend Follower" layer - Directional accuracy
+  tanh:
+    count: 3
+    role: "Aggressive Trader"
+    description: "Maximizes directional accuracy (hit rate), ignores magnitude"
+    learning_rate: 0.03
+  
+  # "Reality Check" layer - Regression accuracy
+  huber:
+    # Standard Huber (2 models)
+    standard_count: 2
+    # Asymmetric Huber with wrong-direction penalty (2 models)
+    asymmetric_count: 2
+    role: "Analyst"
+    description: "Anchors predictions to realistic values, robust to outliers"
+    # Outlier threshold for Huber loss
+    delta: 0.01
+    # Penalty factor for wrong-direction errors (2-5x typical)
+    asymmetric_penalty: 3.0
+    learning_rate: 0.03
+
+# =============================================================================
+# Feature and Sample Diversity
+# =============================================================================
+#
+# CRITICAL: Feature diversity is controlled via colsample_bytree (LightGBM internal).
+# This is more efficient than external feature loops and ensures different trees
+# within each model also see different feature subsets.
+#
+# Optimal colsample_bytree range: 0.5-0.6 (based on DAS analysis)
+# - 0.8: "The Clones" - High overlap, low diversity
+# - 0.5: "The Specialists" - Balanced (RECOMMENDED)
+# - 0.3: "The Blindfolded" - Aggressive diversity, may hurt performance
+#
+diversity:
+  # Fraction of samples used per model (external bootstrap)
+  sample_fraction: 0.7
+  # Random seed for reproducibility
+  random_seed: 42
+
+# =============================================================================
+# LGBM Base Parameters
+# =============================================================================
+lgbm_params:
+  n_estimators: 300
+  num_leaves: 40
+  max_depth: 6
+  subsample: 0.7
+  # CRITICAL: Controls feature diversity (0.3-0.8 range)
+  # Optimal: 0.5-0.6 based on Diversity-Adjusted Sharpe analysis
+  colsample_bytree: 0.5
+  min_child_samples: 20
+  reg_alpha: 0.1
+  reg_lambda: 0.1
+  verbosity: -1
+  n_jobs: -1
+
+# =============================================================================
+# Aggregation Pipeline Configuration
+# =============================================================================
+aggregation:
+  # Z-Score Normalization
+  z_score:
+    # Rolling window for computing Z-scores
+    window: 1000
+    # Minimum periods before computing valid Z-score
+    min_periods: 100
+  
+  # Consensus Mechanism (MAD-based veto)
+  consensus:
+    # Soft floor for MAD to prevent division by zero
+    mad_floor: 0.25
+    # Signal formula: median_z / (1 + max(mad, mad_floor))
+    # High disagreement (large MAD) shrinks signal toward zero
+  
+  # Bucketed Position Sizing
+  bucketing:
+    # Below this threshold, position = 0 (noise filter)
+    noise_threshold: 0.3
+    # Above this threshold, position is capped (prevents overconfidence)
+    cap_threshold: 0.7
+    # Linear scaling between thresholds
+
+# =============================================================================
+# Ensemble Sharpe Ratio (ESR) Scoring
+# =============================================================================
+#
+# The ESR formula calculates the theoretical ensemble Sharpe based on
+# portfolio theory - diversification provides a "free lunch" when models
+# are uncorrelated.
+#
+# Formula: ESR = avg_sharpe * sqrt(n / (1 + (n-1) * corr))
+#
+# Where:
+# - avg_sharpe: Average Sharpe ratio across models
+# - n: Number of models in ensemble
+# - corr: Average pairwise correlation of predictions
+#
+# The diversity_gain factor represents how much variance is cancelled out
+# by combining uncorrelated predictions.
+#
+esr_scoring:
+  # Number of models for ESR calculation
+  n_models: 10
+  
+# Kill Switch thresholds for live trading safety
+kill_switch:
+  # Correlation > 0.90: Diversity collapsed - halve position size
+  high_corr_threshold: 0.90
+  # Correlation < 0.0: Models confused - stop trading
+  low_corr_threshold: 0.0
+  # Rolling window for correlation monitoring (in periods, e.g., 24 hours)
+  monitoring_window: 24
+
+# =============================================================================
+# Diversity Sweep Configuration
+# =============================================================================
+#
+# Fast audit to find optimal colsample_bytree by measuring:
+# - Sharpe: Did performance hold up?
+# - Correlation: Did models become distinct?
+#
+# IMPORTANT: Set run_diversity_sweep to true to automatically optimize
+# colsample_bytree at the start of training. This adds ~30s overhead but
+# ensures optimal diversity vs. performance trade-off.
+#
+diversity_sweep:
+  # Whether to run diversity sweep at start of training
+  # When true: Automatically finds optimal colsample_bytree
+  # When false: Uses the value from lgbm_params.colsample_bytree
+  run_diversity_sweep: true
+  
+  # colsample_bytree values to test
+  settings: [0.7, 0.6, 0.5, 0.4, 0.3]
+  # Number of CV folds (use 2 for speed)
+  n_splits: 2
+  # Number of models in mini-ensemble (5 recommended for speed)
+  n_models: 5
+
+# =============================================================================
+# HPO Configuration (Meta-Model Optimization)
+# =============================================================================
+hpo:
+  # Optimization target: Diversity-Adjusted Sharpe (DAS)
+  objective: "das_score"
+  
+  # Transaction fee rate (5 bps default)
+  fee_rate: 0.0005
+  
+  # Annualization factor for Sharpe calculation
+  annualization_factor: 93.91  # sqrt(24 * 365) for hourly returns
+  
+  # Number of CV folds
+  n_splits: 3
+  
+  # Optuna settings
+  n_trials: 100
+  timeout_seconds: 3600  # 1 hour max
+  n_jobs: 1  # Parallel jobs
+  
+  # Parameter search ranges
+  search_ranges:
+    # Learning rates (log scale)
+    lr_sharpe: [0.001, 0.05]
+    lr_tanh: [0.001, 0.05]
+    lr_huber: [0.001, 0.05]
+    
+    # Sharpe lambdas (risk aversion)
+    lmbda_1: [0.01, 1.0]
+    lmbda_2: [1.0, 5.0]
+    lmbda_3: [5.0, 15.0]
+    
+    # Huber parameters
+    huber_delta: [0.001, 0.02]
+    asymmetric_penalty: [2.0, 5.0]
+    
+    # Feature diversity (colsample_bytree)
+    colsample_bytree: [0.3, 0.8]
+    
+    # Aggregation parameters
+    mad_floor: [0.1, 0.5]
+    noise_threshold: [0.2, 0.4]
+    
+    # Model complexity
+    n_estimators: [200, 600]
+    num_leaves: [30, 80]
+    max_depth: [4, 8]
+
+# =============================================================================
+# Regime-Conditional Meta-Features
+# =============================================================================
+#
+# These 3 meta-features bypass colsample_bytree to be available in EVERY tree.
+# They allow trees to create root splits based on market regime, making the
+# ensemble "context-aware".
+#
+# Why: RSI means one thing in a Trend and the opposite in a Range.
+#
+regime_meta_features:
+  enabled: true
+  
+  # 1. Volatility Regime: Current_ATR / 30d_Avg_ATR
+  # Is market waking up (>1) or sleeping (<1)?
+  volatility_regime:
+    atr_window: 14
+    avg_window_days: 30
+  
+  # 2. Trendiness: |Price - MA50| / Price
+  # Are we trending (high) or ranging (low)?
+  trendiness:
+    ma_window: 50
+  
+  # 3. Volume Shock: Current_Vol / 24h_Avg_Vol
+  # Is liquidity rushing in (>1)?
+  volume_shock:
+    vol_window: 24
+
+# =============================================================================
+# Smart Disagreement Scaling
+# =============================================================================
+#
+# Uses exponential decay instead of simple 1/(1+MAD) for position sizing.
+# Multiplier = exp(-MAD * k)
+# This punishes disagreement more aggressively than linear division.
+#
+# Additional logic:
+# - Low MAD + High Median: "Consensus Lock" (Trend) -> Scale UP
+# - High MAD: "Chaos/Noise" -> Scale DOWN
+#
+disagreement_scaling:
+  # Exponential decay factor (k in exp(-MAD * k))
+  decay_factor: 2.0
+  
+  # Consensus lock threshold (MAD below this = models agree)
+  consensus_threshold: 0.1
+  
+  # Chaos threshold (MAD above this = models fighting)
+  chaos_threshold: 0.5
+  
+  # Bonus multiplier when in consensus lock (up to 1.5x)
+  consensus_bonus: 1.5
+
+# =============================================================================
+# Label Diagnostic Dashboard
+# =============================================================================
+#
+# For auditing target label quality using ensemble internal metrics.
+# Measures: Learnability, SNR, Alpha, Stationarity
+#
+label_diagnostic:
+  enabled: true
+  n_splits: 3
+  rolling_sharpe_window: 100
+  
+  # Recommended baseline label: Volatility-Normalized Log-Returns
+  # Formula: log(P_t+h / P_t) / rolling_volatility
+  recommended_label:
+    type: "volatility_normalized_log_returns"
+    horizon: 4  # 4-hour returns
+    vol_window: 24  # 24-hour rolling vol
+
+# =============================================================================
+# Live Trading Signal Generation
+# =============================================================================
+live_trading:
+  # Whether to use diversity defense in live trading
+  enabled: true
+  
+  # Signal interpretation
+  signal_interpretation:
+    # Raw signal thresholds
+    strong_long: 0.5     # signal > 0.5 = strong long
+    weak_long: 0.3       # 0.3 < signal <= 0.5 = weak long
+    neutral: 0.0         # -0.3 < signal < 0.3 = neutral (no trade)
+    weak_short: -0.3     # -0.5 < signal <= -0.3 = weak short
+    strong_short: -0.5   # signal <= -0.5 = strong short
+  
+  # Position sizing from signal
+  max_position_size: 1.0   # Maximum position (100%)
+  min_position_size: 0.0   # Minimum non-zero position
+  
+  # Smart disagreement-based confidence (replaces simple MAD thresholds)
+  disagreement_confidence:
+    consensus_lock: 0.1   # MAD < 0.1 AND high median = scale up
+    normal: 0.3           # 0.1 <= MAD < 0.3 = normal sizing
+    uncertain: 0.5        # 0.3 <= MAD < 0.5 = reduce size
+    chaos: 0.5            # MAD >= 0.5 = minimal size
+
+# =============================================================================
+# Logging and Monitoring
+# =============================================================================
+logging:
+  # Log level for diversity defense module
+  level: "INFO"
+  
+  # Log individual specialist predictions
+  log_specialist_predictions: false
+  
+  # Log aggregation details
+  log_aggregation_details: true
+  
+  # Log MAD values
+  log_mad_values: true
+
+# =============================================================================
+# Integration Settings
+# =============================================================================
+integration:
+  # Files that use diversity defense
+  feature_generation_meta_labeling_step:
+    enabled: true
+    function: "train_bagged_lgbm_with_kfold"
+  
+  incremental_analyst_trainers:
+    enabled: true
+    class: "BaggedLGBMRegressor"
+    class: "IncrementalLGBMBaggedTrainer"

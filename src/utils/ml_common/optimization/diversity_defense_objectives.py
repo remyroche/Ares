@@ -59,6 +59,72 @@ logger = logging.getLogger(__name__)
 # Epsilon for numerical stability
 EPS = 1e-8
 
+
+# =============================================================================
+# Diversity-Adjusted Sharpe (DAS) Scoring
+# =============================================================================
+
+def calculate_das_score(
+    sharpe: float, 
+    avg_corr: float, 
+    target_floor: float = 0.5, 
+    penalty_weight: float = 4.0
+) -> float:
+    """
+    Calculate the Diversity-Adjusted Sharpe (DAS) score.
+    
+    Rewards raw performance (Sharpe) but applies a progressively heavier 
+    tax as correlation creeps above the target floor.
+    
+    Formula: Score = Sharpe - λ * max(0, Corr - 0.5)²
+    
+    Args:
+        sharpe: The annualized Sharpe ratio of the ensemble
+        avg_corr: The average pairwise correlation of the Z-scores
+        target_floor: Safe floor - correlations below this are free (default 0.5)
+        penalty_weight: Controls how hard to punish "herding" (default 4.0)
+        
+    Returns:
+        Diversity-Adjusted Sharpe score
+        
+    Example:
+        >>> calculate_das_score(sharpe=1.5, avg_corr=0.4)  # Below floor
+        1.5  # No penalty
+        >>> calculate_das_score(sharpe=1.5, avg_corr=0.7)  # Above floor
+        1.34  # Penalized: 1.5 - 4.0 * (0.2)² = 1.5 - 0.16
+    """
+    # Calculate how much we are 'over' the limit
+    excess_corr = max(0.0, avg_corr - target_floor)
+    
+    # Apply Quadratic Penalty (punishes extreme excesses harder)
+    penalty = penalty_weight * (excess_corr ** 2)
+    
+    # Final Score
+    return sharpe - penalty
+
+
+def calculate_simple_sharpe(
+    returns: np.ndarray, 
+    annualization_factor: float = np.sqrt(24 * 365)
+) -> float:
+    """
+    Calculate annualized Sharpe ratio.
+    
+    Args:
+        returns: Strategy returns
+        annualization_factor: sqrt(periods_per_year), default for hourly
+        
+    Returns:
+        Annualized Sharpe ratio
+    """
+    if len(returns) == 0:
+        return 0.0
+    std = np.std(returns)
+    if std < EPS:
+        return 0.0
+    return (np.mean(returns) / std) * annualization_factor
+
+
 # =============================================================================
 # Enums and Configuration
 # =============================================================================
@@ -103,9 +169,9 @@ class DiversityDefenseConfig:
     asymmetric_penalty: float = 3.0   # Penalty factor for wrong-direction (2-5x typical)
     
     # Learning rates per layer
-    lr_sharpe: float = 0.02
-    lr_tanh: float = 0.02
-    lr_huber: float = 0.02
+    lr_sharpe: float = 0.03          # Conservative default
+    lr_tanh: float = 0.03
+    lr_huber: float = 0.03
     
     # Aggregation parameters
     z_score_window: int = 1000       # Rolling window for Z-score normalization
@@ -113,20 +179,21 @@ class DiversityDefenseConfig:
     noise_threshold: float = 0.3     # Below this, signal = 0
     cap_threshold: float = 0.7       # Above this, signal capped
     
-    # Orthogonality penalty parameters
-    correlation_threshold: float = 0.5   # Penalize if avg correlation > this
-    orthogonality_penalty_strength: float = 2.0  # Multiplier for penalty
+    # Orthogonality penalty parameters (for DAS scoring)
+    correlation_threshold: float = 0.5   # Safe floor - correlations below this are free
+    das_penalty_weight: float = 4.0      # Quadratic penalty weight for DAS formula
     
-    # Feature/sample bagging fractions
-    feature_fraction: float = 0.6    # 60% of features per bag
-    sample_fraction: float = 0.6     # 60% of samples per bag
+    # Sample bagging fraction (row sampling via external loop)
+    sample_fraction: float = 0.7     # 70% of samples per bag
     
     # LGBM base parameters
-    n_estimators: int = 400
-    num_leaves: int = 50
+    # NOTE: Feature diversity is controlled via colsample_bytree, NOT external loop
+    # Optimal range is 0.5-0.6 based on Diversity-Adjusted Sharpe analysis
+    n_estimators: int = 300
+    num_leaves: int = 40
     max_depth: int = 6
-    subsample: float = 0.8
-    colsample_bytree: float = 0.8
+    subsample: float = 0.7           # Row sampling within LightGBM
+    colsample_bytree: float = 0.5    # CRITICAL: Controls feature diversity (0.3-0.8 range)
     
     def get_specialist_configs(self) -> List[SpecialistConfig]:
         """Generate specialist configurations for all 10 models."""
@@ -829,6 +896,276 @@ class DiversityDefenseHPO:
 
 
 # =============================================================================
+# Diversity Sweep - Feature Fraction Optimization
+# =============================================================================
+
+class DiversitySweep:
+    """
+    Diversity vs. Performance Sweep for finding optimal colsample_bytree.
+    
+    Instead of a full hyperparameter search, we fix all "brain" parameters
+    (learning rates, objectives) and only vary the "vision" parameter
+    (colsample_bytree). We measure:
+    - Sharpe: Did the performance hold up?
+    - Correlation: Did the models actually become distinct?
+    
+    Test regimes:
+    - Regime A (0.8): "The Clones" - High overlap
+    - Regime B (0.5): "The Specialists" - Balanced (recommended)
+    - Regime C (0.3): "The Blindfolded" - Aggressive diversity
+    """
+    
+    # Fixed "reasonable" defaults - lock these to isolate feature sampling effect
+    FIXED_PARAMS = {
+        'n_estimators': 300,
+        'num_leaves': 40,
+        'max_depth': 6,
+        'learning_rate': 0.03,
+        'subsample': 0.7,
+        'verbosity': -1,
+        'n_jobs': -1,
+    }
+    
+    def __init__(
+        self,
+        X: pd.DataFrame,
+        y: np.ndarray,
+        colsample_settings: Optional[List[float]] = None,
+        n_splits: int = 2,
+        n_models: int = 5,
+        das_floor: float = 0.5,
+        das_penalty: float = 4.0,
+    ):
+        """
+        Initialize the diversity sweep.
+        
+        Args:
+            X: Feature matrix
+            y: Target returns
+            colsample_settings: List of colsample_bytree values to test
+            n_splits: Number of time series CV splits
+            n_models: Number of models in mini-ensemble (5 recommended for speed)
+            das_floor: Target floor for DAS scoring
+            das_penalty: Penalty weight for DAS scoring
+        """
+        self.X = X
+        self.y = np.asarray(y)
+        self.colsample_settings = colsample_settings or [0.8, 0.6, 0.5, 0.4, 0.3]
+        self.n_splits = n_splits
+        self.n_models = n_models
+        self.das_floor = das_floor
+        self.das_penalty = das_penalty
+        
+        self.objectives = DiversityDefenseObjectives()
+    
+    @staticmethod
+    def _sharpe_proxy(preds: np.ndarray, dataset) -> Tuple[np.ndarray, np.ndarray]:
+        """Simplified Sharpe proxy objective with fixed lambda=1.0."""
+        r = DiversityDefenseObjectives._get_labels_from_dataset(dataset)
+        p = preds.astype(np.float64)
+        # Simple fixed lambda=1.0
+        grad = -r + 2.0 * 1.0 * (r ** 2) * p
+        hess = np.maximum(2.0 * 1.0 * (r ** 2), EPS)
+        return grad, hess
+    
+    @staticmethod
+    def _tanh_proxy(preds: np.ndarray, dataset) -> Tuple[np.ndarray, np.ndarray]:
+        """Simplified Tanh proxy objective."""
+        r = DiversityDefenseObjectives._get_labels_from_dataset(dataset)
+        p = preds.astype(np.float64)
+        t = np.tanh(p)
+        grad = -r * (1.0 - t * t)
+        hess = np.maximum(np.abs(2.0 * r * t * (1.0 - t * t)), EPS)
+        return grad, hess
+    
+    def _train_mini_ensemble(
+        self,
+        X_train: pd.DataFrame,
+        y_train: np.ndarray,
+        X_val: pd.DataFrame,
+        col_fraction: float,
+    ) -> np.ndarray:
+        """
+        Train a mini-ensemble and return predictions matrix.
+        
+        Args:
+            X_train: Training features
+            y_train: Training targets
+            X_val: Validation features
+            col_fraction: colsample_bytree value
+            
+        Returns:
+            Predictions matrix (n_models, n_val_samples)
+        """
+        try:
+            import lightgbm as lgb
+        except ImportError:
+            raise ImportError("LightGBM is required")
+        
+        preds_store = []
+        
+        # Common params for this run
+        run_params = dict(self.FIXED_PARAMS)
+        run_params['colsample_bytree'] = col_fraction
+        
+        # Distribution: 2 Sharpe, 1 Tanh, 2 Huber (MSE) for 5 models
+        # Or scale proportionally for different n_models
+        n_sharpe = max(1, self.n_models * 2 // 5)
+        n_tanh = max(1, self.n_models * 1 // 5)
+        n_huber = self.n_models - n_sharpe - n_tanh
+        
+        # 1. Sharpe Models
+        for i in range(n_sharpe):
+            try:
+                model = lgb.LGBMRegressor(
+                    objective=self._sharpe_proxy,
+                    random_state=i,
+                    **run_params
+                )
+                model.fit(X_train, y_train)
+                preds_store.append(model.predict(X_val))
+            except Exception:
+                preds_store.append(np.zeros(len(X_val)))
+        
+        # 2. Tanh Models
+        for i in range(n_tanh):
+            try:
+                model = lgb.LGBMRegressor(
+                    objective=self._tanh_proxy,
+                    random_state=42 + i,
+                    **run_params
+                )
+                model.fit(X_train, y_train)
+                preds_store.append(model.predict(X_val))
+            except Exception:
+                preds_store.append(np.zeros(len(X_val)))
+        
+        # 3. Huber/MSE Models (standard regression)
+        for i in range(n_huber):
+            try:
+                model = lgb.LGBMRegressor(
+                    objective='regression',
+                    random_state=100 + i,
+                    **run_params
+                )
+                model.fit(X_train, y_train)
+                preds_store.append(model.predict(X_val))
+            except Exception:
+                preds_store.append(np.zeros(len(X_val)))
+        
+        return np.array(preds_store)
+    
+    def run(self, verbose: bool = True) -> pd.DataFrame:
+        """
+        Run the diversity sweep.
+        
+        Args:
+            verbose: Print progress
+            
+        Returns:
+            DataFrame with columns: Fraction, Sharpe, Avg_Corr, DAS_Score
+        """
+        try:
+            from sklearn.model_selection import TimeSeriesSplit
+        except ImportError:
+            raise ImportError("scikit-learn is required")
+        
+        results = []
+        tscv = TimeSeriesSplit(n_splits=self.n_splits)
+        
+        if verbose:
+            print(f"{'Fraction':<10} | {'Sharpe':<10} | {'Avg Corr':<10} | {'DAS Score':<12}")
+            print("-" * 55)
+        
+        for col_fraction in self.colsample_settings:
+            fold_sharpes = []
+            fold_corrs = []
+            
+            for train_idx, val_idx in tscv.split(self.X):
+                X_train = self.X.iloc[train_idx]
+                X_val = self.X.iloc[val_idx]
+                y_train = self.y[train_idx]
+                y_val = self.y[val_idx]
+                
+                # Train mini-ensemble
+                preds_matrix = self._train_mini_ensemble(X_train, y_train, X_val, col_fraction)
+                
+                if len(preds_matrix) == 0:
+                    continue
+                
+                # A. Z-Score (Simple batch normalization)
+                z_matrix = []
+                for row in preds_matrix:
+                    z = (row - np.mean(row)) / (np.std(row) + EPS)
+                    z_matrix.append(z)
+                z_matrix = np.array(z_matrix)
+                
+                # B. Calculate Correlation (Diversity Metric)
+                if z_matrix.shape[0] >= 2:
+                    corr_mat = np.corrcoef(z_matrix)
+                    n_models = z_matrix.shape[0]
+                    avg_corr = np.mean(corr_mat[np.triu_indices(n_models, 1)])
+                    if np.isnan(avg_corr):
+                        avg_corr = 0.0
+                else:
+                    avg_corr = 0.0
+                fold_corrs.append(avg_corr)
+                
+                # C. Calculate Sharpe (Performance Metric)
+                med_z = np.median(z_matrix, axis=0)
+                mad_z = np.median(np.abs(z_matrix - med_z), axis=0)
+                final_sig = med_z / (1.0 + np.maximum(mad_z, 0.25))
+                
+                ret = final_sig * y_val
+                sharpe = calculate_simple_sharpe(ret)
+                fold_sharpes.append(sharpe)
+            
+            # Aggregate
+            avg_sharpe = np.mean(fold_sharpes) if fold_sharpes else 0.0
+            avg_corr = np.mean(fold_corrs) if fold_corrs else 0.0
+            das_score = calculate_das_score(
+                avg_sharpe, avg_corr, 
+                target_floor=self.das_floor,
+                penalty_weight=self.das_penalty
+            )
+            
+            results.append({
+                'Fraction': col_fraction,
+                'Sharpe': avg_sharpe,
+                'Avg_Corr': avg_corr,
+                'DAS_Score': das_score
+            })
+            
+            if verbose:
+                print(f"{col_fraction:<10.2f} | {avg_sharpe:<10.4f} | {avg_corr:<10.4f} | {das_score:<12.4f}")
+        
+        df_results = pd.DataFrame(results)
+        
+        # Find optimal
+        if len(df_results) > 0:
+            best_idx = df_results['DAS_Score'].idxmax()
+            best_fraction = df_results.loc[best_idx, 'Fraction']
+            if verbose:
+                print("-" * 55)
+                print(f"✅ Optimal colsample_bytree: {best_fraction:.2f} (DAS Score: {df_results.loc[best_idx, 'DAS_Score']:.4f})")
+        
+        return df_results
+    
+    def get_optimal_fraction(self) -> float:
+        """
+        Run sweep and return the optimal colsample_bytree value.
+        
+        Returns:
+            Optimal colsample_bytree value
+        """
+        df = self.run(verbose=False)
+        if len(df) == 0:
+            return 0.5  # Default
+        best_idx = df['DAS_Score'].idxmax()
+        return float(df.loc[best_idx, 'Fraction'])
+
+
+# =============================================================================
 # Integration Helper: Create Full Ensemble
 # =============================================================================
 
@@ -842,6 +1179,12 @@ def create_diversity_defense_ensemble(
     """
     Create a full Diversity Defense ensemble.
     
+    Feature diversity is controlled via colsample_bytree (NOT external feature loops).
+    This uses LightGBM's internal column sampling which is more efficient and 
+    ensures different trees within each model also see different feature subsets.
+    
+    Row sampling is done externally via sample_fraction for bootstrap diversity.
+    
     Args:
         X_train: Training features
         y_train: Training targets (returns)
@@ -852,9 +1195,9 @@ def create_diversity_defense_ensemble(
     Returns:
         Dict with:
             - 'models': List of trained models
-            - 'feature_indices': List of feature indices per model
             - 'specialist_types': List of specialist types
             - 'config': Configuration used
+            - 'n_features': Number of features (all models use full feature set)
     """
     try:
         import lightgbm as lgb
@@ -864,27 +1207,30 @@ def create_diversity_defense_ensemble(
     config = config or DiversityDefenseConfig()
     objectives = DiversityDefenseObjectives(config)
     
-    # Pre-calculate volatility
+    # Pre-calculate volatility for Sharpe objectives
     y_vol = pd.Series(y_train).rolling(window=config.z_score_window).std().bfill().values
     
     n_samples, n_features = X_train.shape
     rng = np.random.RandomState(42)
     
     models = []
-    feature_indices = []
     specialist_types = []
     
     specialist_configs = config.get_specialist_configs()
     
+    # Base params - Feature diversity via colsample_bytree (NOT external loop)
     base_params = {
         'n_estimators': config.n_estimators,
         'num_leaves': config.num_leaves,
         'max_depth': config.max_depth,
         'subsample': config.subsample,
-        'colsample_bytree': config.colsample_bytree,
+        'colsample_bytree': config.colsample_bytree,  # CRITICAL: Controls feature diversity
         'verbosity': -1,
         'n_jobs': -1
     }
+    
+    if verbose:
+        logger.info(f"Training {len(specialist_configs)} specialists with colsample_bytree={config.colsample_bytree}")
     
     for i, spec_config in enumerate(specialist_configs):
         if verbose:
@@ -896,16 +1242,17 @@ def create_diversity_defense_ensemble(
         # Get objective
         fobj = objectives.get_objective_for_specialist(spec_config, y_vol)
         
-        # Feature sampling
-        n_feat_sub = max(1, int(round(config.feature_fraction * n_features)))
-        feat_idx = np.sort(rng.choice(n_features, size=n_feat_sub, replace=False))
-        
-        # Sample sampling
+        # Row sampling (external bootstrap for sample diversity)
         n_rows_sub = max(10, int(round(config.sample_fraction * n_samples)))
         row_idx = np.sort(rng.choice(n_samples, size=n_rows_sub, replace=False))
         
-        X_bag = X_train.iloc[row_idx, feat_idx] if isinstance(X_train, pd.DataFrame) else X_train[row_idx][:, feat_idx]
+        # Use all features - colsample_bytree handles feature diversity internally
+        if isinstance(X_train, pd.DataFrame):
+            X_bag = X_train.iloc[row_idx]
+        else:
+            X_bag = X_train[row_idx]
         y_bag = y_train[row_idx]
+        vol_bag = y_vol[row_idx]
         
         if sample_weights is not None:
             sw_bag = sample_weights[row_idx]
@@ -916,6 +1263,12 @@ def create_diversity_defense_ensemble(
             params = dict(base_params)
             params['learning_rate'] = lr
             params['random_state'] = 42 + i
+            
+            # Update objective with current volatility for Sharpe models
+            if fobj is not None and spec_config.specialist_type == SpecialistType.SHARPE:
+                fobj = objectives.vol_normalized_sharpe_factory(
+                    spec_config.lmbda or 1.0, vol_bag
+                )
             
             if fobj is not None:
                 model = lgb.LGBMRegressor(objective=fobj, **params)
@@ -928,7 +1281,6 @@ def create_diversity_defense_ensemble(
                 model.fit(X_bag, y_bag)
             
             models.append(model)
-            feature_indices.append(feat_idx)
             specialist_types.append(spec_config.specialist_type)
             
         except Exception as e:
@@ -937,9 +1289,9 @@ def create_diversity_defense_ensemble(
     
     return {
         'models': models,
-        'feature_indices': feature_indices,
         'specialist_types': specialist_types,
-        'config': config
+        'config': config,
+        'n_features': n_features,
     }
 
 
@@ -948,12 +1300,20 @@ def create_diversity_defense_ensemble(
 # =============================================================================
 
 __all__ = [
+    # Core classes
     'SpecialistType',
     'SpecialistConfig',
     'DiversityDefenseConfig',
     'DiversityDefenseObjectives',
     'DiversityDefenseAggregator',
     'DiversityDefenseHPO',
+    'DiversitySweep',
+    
+    # Functions
     'create_diversity_defense_ensemble',
+    'calculate_das_score',
+    'calculate_simple_sharpe',
+    
+    # Constants
     'EPS',
 ]

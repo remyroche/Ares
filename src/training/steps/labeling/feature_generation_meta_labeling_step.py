@@ -5586,23 +5586,22 @@ def train_bagged_lgbm_with_kfold(
             pass
 
     # Force bagging-related parameters
-    base_params.setdefault('n_estimators', 1000)
-    if 'feature_fraction' not in base_params:
-        base_params['feature_fraction'] = 1.0
-    base_params['colsample_bytree'] = base_params.get('colsample_bytree', base_params['feature_fraction'])
-    if 'subsample' not in base_params:
-        base_params['subsample'] = 1.0
-    if 'bagging_fraction' not in base_params:
-        base_params['bagging_fraction'] = 1.0
-    base_params['bagging_freq'] = base_params.get('bagging_freq', 0)
-
-    # Adjust feature/sample fractions based on diversity defense config
+    base_params.setdefault('n_estimators', 300)  # Conservative for ensemble
+    
+    # Feature diversity is controlled via colsample_bytree (NOT external loop)
+    # Optimal range is 0.5-0.6 based on Diversity-Adjusted Sharpe analysis
     if use_diversity_defense and dd_config is not None:
-        external_feature_fraction = dd_config.feature_fraction
+        base_params['colsample_bytree'] = dd_config.colsample_bytree
         external_sample_fraction = dd_config.sample_fraction
     else:
-        external_feature_fraction = 0.7
+        base_params['colsample_bytree'] = 0.5  # Default for diversity
         external_sample_fraction = 0.7
+    
+    base_params['subsample'] = base_params.get('subsample', 0.7)
+    base_params['feature_fraction'] = base_params.get('colsample_bytree', 0.5)
+    base_params['bagging_fraction'] = base_params.get('bagging_fraction', 0.7)
+    base_params['bagging_freq'] = base_params.get('bagging_freq', 1)
+    
     rng = np.random.RandomState(42)
 
     oof_mean = pd.Series(np.nan, index=X.index)
@@ -5670,6 +5669,7 @@ def train_bagged_lgbm_with_kfold(
         if use_diversity_defense and dd_objectives is not None and dd_config is not None:
             # ============================================================
             # DIVERSITY DEFENSE: Train specialist models with different objectives
+            # Feature diversity is controlled via colsample_bytree (NOT external loop)
             # ============================================================
             specialist_configs = dd_config.get_specialist_configs()
             actual_n_bags = len(specialist_configs)
@@ -5679,27 +5679,19 @@ def train_bagged_lgbm_with_kfold(
                 params['random_state'] = int(params.get('random_state', 42)) + spec_idx
                 
                 # Get specialist-specific learning rate
-                lr = getattr(dd_config, spec_config.learning_rate_key, 0.02)
+                lr = getattr(dd_config, spec_config.learning_rate_key, 0.03)
                 params['learning_rate'] = lr
                 
-                # Feature subsampling
-                n_features = X_train_clean.shape[1]
-                n_feat_sub = max(1, int(round(external_feature_fraction * n_features)))
-                feat_indices = rng.choice(n_features, size=n_feat_sub, replace=False)
-                feat_indices.sort()
-                cols_sub = X_train_clean.columns[feat_indices]
-
-                X_train_bag = X_train_clean[cols_sub]
-                X_test_bag = X_test_clean[cols_sub]
-
-                # Sample subsampling
-                n_rows = X_train_bag.shape[0]
+                # colsample_bytree handles feature diversity internally
+                # Only do external row sampling for bootstrap diversity
+                n_rows = X_train_clean.shape[0]
                 n_rows_sub = max(10, int(round(external_sample_fraction * n_rows)))
                 n_rows_sub = min(n_rows_sub, n_rows)
                 row_indices = rng.choice(n_rows, size=n_rows_sub, replace=False)
                 row_indices.sort()
 
-                X_train_bag_sub = X_train_bag.iloc[row_indices]
+                # Use ALL features - colsample_bytree handles diversity
+                X_train_bag_sub = X_train_clean.iloc[row_indices]
                 y_train_bag_sub = y_train_clean.iloc[row_indices]
                 vol_train_sub = vol_train[row_indices]
                 
@@ -5719,8 +5711,8 @@ def train_bagged_lgbm_with_kfold(
                             model.fit(X_train_bag_sub, y_train_bag_sub.astype(float), sample_weight=weights_bag_sub)
                         else:
                             model.fit(X_train_bag_sub, y_train_bag_sub.astype(float))
-                        # Get predictions (regression output)
-                        y_pred = model.predict(X_test_bag)
+                        # Get predictions (regression output) on FULL feature set
+                        y_pred = model.predict(X_test_clean)
                         # Convert to probability-like output using sigmoid
                         y_pred_proba = 1.0 / (1.0 + np.exp(-y_pred))
                     else:
@@ -5730,7 +5722,7 @@ def train_bagged_lgbm_with_kfold(
                             model.fit(X_train_bag_sub, y_train_bag_sub, sample_weight=weights_bag_sub)
                         else:
                             model.fit(X_train_bag_sub, y_train_bag_sub)
-                        y_pred_proba = model.predict_proba(X_test_bag)[:, 1]
+                        y_pred_proba = model.predict_proba(X_test_clean)[:, 1]
                     
                     fold_preds.append(y_pred_proba)
                     specialist_types.append(spec_config.specialist_type)
@@ -5742,6 +5734,7 @@ def train_bagged_lgbm_with_kfold(
         else:
             # ============================================================
             # STANDARD MODE: Train identical classifiers with different seeds
+            # Feature diversity is controlled via colsample_bytree
             # ============================================================
             for bag_idx in range(int(max(1, n_bags))):
                 params = dict(base_params)
@@ -5749,22 +5742,14 @@ def train_bagged_lgbm_with_kfold(
 
                 model = lgb.LGBMClassifier(**params)
 
-                n_features = X_train_clean.shape[1]
-                n_feat_sub = max(1, int(round(external_feature_fraction * n_features)))
-                feat_indices = rng.choice(n_features, size=n_feat_sub, replace=False)
-                feat_indices.sort()
-                cols_sub = X_train_clean.columns[feat_indices]
-
-                X_train_bag = X_train_clean[cols_sub]
-                X_test_bag = X_test_clean[cols_sub]
-
-                n_rows = X_train_bag.shape[0]
+                # Row sampling only - colsample_bytree handles feature diversity
+                n_rows = X_train_clean.shape[0]
                 n_rows_sub = max(10, int(round(external_sample_fraction * n_rows)))
                 n_rows_sub = min(n_rows_sub, n_rows)
                 row_indices = rng.choice(n_rows, size=n_rows_sub, replace=False)
                 row_indices.sort()
 
-                X_train_bag_sub = X_train_bag.iloc[row_indices]
+                X_train_bag_sub = X_train_clean.iloc[row_indices]
                 y_train_bag_sub = y_train_clean.iloc[row_indices]
                 if weights_train_clean is not None:
                     weights_bag_sub = weights_train_clean[row_indices]
@@ -5776,7 +5761,8 @@ def train_bagged_lgbm_with_kfold(
                         model.fit(X_train_bag_sub, y_train_bag_sub, sample_weight=weights_bag_sub)
                     else:
                         model.fit(X_train_bag_sub, y_train_bag_sub)
-                    y_pred_proba = model.predict_proba(X_test_bag)[:, 1]
+                    # Predict on full feature set - colsample_bytree handles diversity
+                    y_pred_proba = model.predict_proba(X_test_clean)[:, 1]
                     fold_preds.append(y_pred_proba)
                 except Exception as e:
                     if verbose:

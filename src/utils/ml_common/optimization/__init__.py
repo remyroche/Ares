@@ -51,7 +51,10 @@ from .diversity_defense_objectives import (
     DiversityDefenseObjectives,
     DiversityDefenseAggregator,
     DiversityDefenseHPO,
+    DiversitySweep,
     create_diversity_defense_ensemble,
+    calculate_das_score,
+    calculate_simple_sharpe,
 )
 
 # Backward compatibility alias
@@ -111,5 +114,8 @@ __all__ = [
     'DiversityDefenseObjectives',
     'DiversityDefenseAggregator',
     'DiversityDefenseHPO',
+    'DiversitySweep',
     'create_diversity_defense_ensemble',
+    'calculate_das_score',
+    'calculate_simple_sharpe',
 ]

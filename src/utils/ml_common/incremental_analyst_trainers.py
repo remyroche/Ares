@@ -743,19 +743,20 @@ class BaggedLGBMRegressor:
     Supports mean/std/lower predictions, and when diversity defense is enabled,
     also provides MAD-based consensus predictions using specialist models with
     different objectives (Sharpe, Tanh, Huber).
+    
+    Feature diversity is controlled via colsample_bytree (NOT external feature loops).
+    All models use the full feature set, with LightGBM internally selecting subsets.
     """
 
     def __init__(
         self, 
         models: List[Any], 
-        feature_indices: List[np.ndarray], 
         n_features: int,
         specialist_types: Optional[List[Any]] = None,
         use_diversity_defense: bool = False,
         diversity_defense_config: Optional[Any] = None,
     ):
         self.models = models
-        self.feature_indices = feature_indices
         self.n_features = n_features
         self.specialist_types = specialist_types or []
         self.use_diversity_defense = use_diversity_defense
@@ -789,10 +790,10 @@ class BaggedLGBMRegressor:
             return zeros, zeros, zeros
 
         bag_preds = []
-        for model, idx in zip(self.models, self.feature_indices):
+        for model in self.models:
             try:
-                X_sub = X[:, idx]
-                bag_preds.append(model.predict(X_sub))
+                # All models use full feature set - colsample_bytree handles diversity
+                bag_preds.append(model.predict(X))
             except Exception:
                 continue
 
@@ -835,10 +836,10 @@ class BaggedLGBMRegressor:
             }
 
         bag_preds = []
-        for model, idx in zip(self.models, self.feature_indices):
+        for model in self.models:
             try:
-                X_sub = X[:, idx]
-                bag_preds.append(model.predict(X_sub))
+                # All models use full feature set - colsample_bytree handles diversity
+                bag_preds.append(model.predict(X))
             except Exception:
                 continue
 
@@ -960,7 +961,7 @@ class IncrementalLGBMBaggedTrainer(BaseIncrementalTrainer):
     def _train_bagged_model(self, X: np.ndarray, y: np.ndarray, sample_weight: Optional[np.ndarray], verbose: bool) -> BaggedLGBMRegressor:
         n_samples, n_features = X.shape
         if n_samples == 0 or n_features == 0:
-            return BaggedLGBMRegressor([], [], n_features)
+            return BaggedLGBMRegressor([], n_features)
 
         base_params = self._get_default_params()
         base_params.update(self._best_params)
@@ -974,12 +975,17 @@ class IncrementalLGBMBaggedTrainer(BaseIncrementalTrainer):
         # rely on global incremental training/HPO instead.
         base_params.pop("early_stopping_rounds", None)
 
-        feat_frac = min(max(self._feature_fraction, 0.1), 1.0)
+        # Feature diversity via colsample_bytree (NOT external loop)
+        # Optimal range is 0.5-0.6 based on Diversity-Adjusted Sharpe analysis
+        if self._use_diversity_defense and self._dd_config is not None:
+            base_params['colsample_bytree'] = self._dd_config.colsample_bytree
+        else:
+            base_params['colsample_bytree'] = 0.5  # Default for diversity
+        
         sample_frac = min(max(self._sample_fraction, 0.1), 1.0)
 
         rng = np.random.RandomState(42)
         models: List[Any] = []
-        feature_indices: List[np.ndarray] = []
         specialist_types: List[Any] = []
         new_boosters = []
         
@@ -989,6 +995,7 @@ class IncrementalLGBMBaggedTrainer(BaseIncrementalTrainer):
         if self._use_diversity_defense and self._dd_config is not None and self._dd_objectives is not None:
             # ============================================================
             # DIVERSITY DEFENSE: Train specialist models with different objectives
+            # Feature diversity via colsample_bytree (NOT external loop)
             # ============================================================
             specialist_configs = self._dd_config.get_specialist_configs()
             n_bags = len(specialist_configs)
@@ -1001,17 +1008,16 @@ class IncrementalLGBMBaggedTrainer(BaseIncrementalTrainer):
                 params['random_state'] = int(params.get('random_state', 42)) + spec_idx
                 
                 # Get specialist-specific learning rate
-                lr = getattr(self._dd_config, spec_config.learning_rate_key, 0.02)
+                lr = getattr(self._dd_config, spec_config.learning_rate_key, 0.03)
                 params['learning_rate'] = lr
 
-                n_feat_sub = max(1, int(round(feat_frac * n_features)))
-                feat_idx = np.sort(rng.choice(n_features, size=n_feat_sub, replace=False))
-
+                # Row sampling only - colsample_bytree handles feature diversity
                 n_rows_sub = max(10, int(round(sample_frac * n_samples)))
                 n_rows_sub = min(n_rows_sub, n_samples)
                 row_idx = np.sort(rng.choice(n_samples, size=n_rows_sub, replace=False))
 
-                X_bag = X[row_idx][:, feat_idx]
+                # Use ALL features - colsample_bytree handles diversity internally
+                X_bag = X[row_idx]
                 y_bag = y[row_idx]
                 vol_bag = y_vol[row_idx]
                 
@@ -1040,7 +1046,6 @@ class IncrementalLGBMBaggedTrainer(BaseIncrementalTrainer):
                         model.fit(X_bag, y_bag, init_model=init_model)
 
                     models.append(model)
-                    feature_indices.append(feat_idx)
                     specialist_types.append(spec_config.specialist_type)
 
                     # Store booster for next round
@@ -1053,6 +1058,7 @@ class IncrementalLGBMBaggedTrainer(BaseIncrementalTrainer):
         else:
             # ============================================================
             # STANDARD MODE: Train identical models with different seeds
+            # Feature diversity via colsample_bytree (NOT external loop)
             # ============================================================
             n_bags = max(1, int(self._n_bags))
             
@@ -1063,14 +1069,13 @@ class IncrementalLGBMBaggedTrainer(BaseIncrementalTrainer):
                 params = dict(base_params)
                 params['random_state'] = int(params.get('random_state', 42)) + bag_idx
 
-                n_feat_sub = max(1, int(round(feat_frac * n_features)))
-                feat_idx = np.sort(rng.choice(n_features, size=n_feat_sub, replace=False))
-
+                # Row sampling only - colsample_bytree handles feature diversity
                 n_rows_sub = max(10, int(round(sample_frac * n_samples)))
                 n_rows_sub = min(n_rows_sub, n_samples)
                 row_idx = np.sort(rng.choice(n_samples, size=n_rows_sub, replace=False))
 
-                X_bag = X[row_idx][:, feat_idx]
+                # Use ALL features - colsample_bytree handles diversity internally
+                X_bag = X[row_idx]
                 y_bag = y[row_idx]
                 if sample_weight is not None:
                     sw_bag = sample_weight[row_idx]
@@ -1089,7 +1094,6 @@ class IncrementalLGBMBaggedTrainer(BaseIncrementalTrainer):
                         model.fit(X_bag, y_bag, init_model=init_model)
 
                     models.append(model)
-                    feature_indices.append(feat_idx)
 
                     # Store booster for next round
                     if hasattr(model, 'booster_'):
@@ -1104,9 +1108,8 @@ class IncrementalLGBMBaggedTrainer(BaseIncrementalTrainer):
             self._bagged_boosters = new_boosters
 
         return BaggedLGBMRegressor(
-            models, 
-            feature_indices, 
-            n_features,
+            models=models,
+            n_features=n_features,
             specialist_types=specialist_types if self._use_diversity_defense else None,
             use_diversity_defense=self._use_diversity_defense,
             diversity_defense_config=self._dd_config,

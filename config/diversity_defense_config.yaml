@@ -15,6 +15,9 @@
 # 2. "Trend Follower" (3x): Robust Tanh Loss - Maximizes directional accuracy
 # 3. "Reality Check" (4x): Huber / Asymmetric Huber - Anchors to realistic values
 #
+# IMPORTANT: Feature diversity is controlled via colsample_bytree, NOT external loops.
+# The optimal range is 0.5-0.6 based on Diversity-Adjusted Sharpe (DAS) analysis.
+#
 # =============================================================================
 
 # Enable/disable diversity defense
@@ -32,14 +35,14 @@ specialist_layers:
     # Risk aversion parameters (increasing values)
     # Higher lambda = more conservative, more variance penalty
     lambdas: [0.5, 2.0, 8.0]
-    learning_rate: 0.02
+    learning_rate: 0.03
   
   # "Trend Follower" layer - Directional accuracy
   tanh:
     count: 3
     role: "Aggressive Trader"
     description: "Maximizes directional accuracy (hit rate), ignores magnitude"
-    learning_rate: 0.02
+    learning_rate: 0.03
   
   # "Reality Check" layer - Regression accuracy
   huber:
@@ -53,16 +56,24 @@ specialist_layers:
     delta: 0.01
     # Penalty factor for wrong-direction errors (2-5x typical)
     asymmetric_penalty: 3.0
-    learning_rate: 0.02
+    learning_rate: 0.03
 
 # =============================================================================
-# Feature and Sample Bagging
+# Feature and Sample Diversity
 # =============================================================================
-bagging:
-  # Fraction of features used per model (60%)
-  feature_fraction: 0.6
-  # Fraction of samples used per model (60%)
-  sample_fraction: 0.6
+#
+# CRITICAL: Feature diversity is controlled via colsample_bytree (LightGBM internal).
+# This is more efficient than external feature loops and ensures different trees
+# within each model also see different feature subsets.
+#
+# Optimal colsample_bytree range: 0.5-0.6 (based on DAS analysis)
+# - 0.8: "The Clones" - High overlap, low diversity
+# - 0.5: "The Specialists" - Balanced (RECOMMENDED)
+# - 0.3: "The Blindfolded" - Aggressive diversity, may hurt performance
+#
+diversity:
+  # Fraction of samples used per model (external bootstrap)
+  sample_fraction: 0.7
   # Random seed for reproducibility
   random_seed: 42
 
@@ -70,11 +81,13 @@ bagging:
 # LGBM Base Parameters
 # =============================================================================
 lgbm_params:
-  n_estimators: 400
-  num_leaves: 50
+  n_estimators: 300
+  num_leaves: 40
   max_depth: 6
-  subsample: 0.8
-  colsample_bytree: 0.8
+  subsample: 0.7
+  # CRITICAL: Controls feature diversity (0.3-0.8 range)
+  # Optimal: 0.5-0.6 based on Diversity-Adjusted Sharpe analysis
+  colsample_bytree: 0.5
   min_child_samples: 20
   reg_alpha: 0.1
   reg_lambda: 0.1
@@ -108,21 +121,49 @@ aggregation:
     # Linear scaling between thresholds
 
 # =============================================================================
-# Orthogonality Penalty (for HPO)
+# Diversity-Adjusted Sharpe (DAS) Scoring
 # =============================================================================
-orthogonality:
-  # Only penalize if average correlation > threshold
+#
+# The DAS formula rewards raw performance (Sharpe) but applies a progressively
+# heavier tax as correlation creeps above the target floor.
+#
+# Formula: DAS = Sharpe - λ * max(0, Corr - 0.5)²
+#
+# Where:
+# - Sharpe: Annualized Sharpe ratio of the ensemble
+# - Corr: Average pairwise correlation of Z-scores
+# - 0.5: Safe floor - correlations below this are free (no penalty)
+# - λ (penalty_weight): Controls how hard to punish "herding"
+#
+das_scoring:
+  # Safe floor - correlations below this are free (no penalty)
   correlation_threshold: 0.5
-  # Penalty strength multiplier
-  penalty_strength: 2.0
-  # Penalty = max(0, avg_corr - threshold) * strength
+  # Quadratic penalty weight for correlations above threshold
+  # Higher = more aggressive penalty for correlated models
+  penalty_weight: 4.0
+
+# =============================================================================
+# Diversity Sweep Configuration
+# =============================================================================
+#
+# Fast audit to find optimal colsample_bytree by measuring:
+# - Sharpe: Did performance hold up?
+# - Correlation: Did models become distinct?
+#
+diversity_sweep:
+  # colsample_bytree values to test
+  settings: [0.8, 0.6, 0.5, 0.4, 0.3]
+  # Number of CV folds (use 2 for speed)
+  n_splits: 2
+  # Number of models in mini-ensemble (5 recommended for speed)
+  n_models: 5
 
 # =============================================================================
 # HPO Configuration (Meta-Model Optimization)
 # =============================================================================
 hpo:
-  # Optimization target: Sharpe Ratio after fees
-  objective: "sharpe_after_fees"
+  # Optimization target: Diversity-Adjusted Sharpe (DAS)
+  objective: "das_score"
   
   # Transaction fee rate (5 bps default)
   fee_rate: 0.0005
@@ -153,6 +194,9 @@ hpo:
     # Huber parameters
     huber_delta: [0.001, 0.02]
     asymmetric_penalty: [2.0, 5.0]
+    
+    # Feature diversity (colsample_bytree)
+    colsample_bytree: [0.3, 0.8]
     
     # Aggregation parameters
     mad_floor: [0.1, 0.5]

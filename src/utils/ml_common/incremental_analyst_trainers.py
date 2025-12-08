@@ -543,9 +543,15 @@ class BaseIncrementalTrainer(ABC):
     
     def _get_feature_cols(self, data: pd.DataFrame) -> List[str]:
         all_features = [c for c in data.columns if not c.startswith('__')]
-        if self.model_config.get('use_specialist_outputs_only', False) and self._specialist_feature_names:
-            specialist_set = set(self._specialist_feature_names)
-            return [f for f in all_features if f in specialist_set]
+
+        if self.model_config.get('use_specialist_outputs_only', False):
+            if self._specialist_feature_names:
+                specialist_set = set(self._specialist_feature_names)
+                return [f for f in all_features if f in specialist_set]
+            else:
+                logger.warning(f"{self.model_id}: use_specialist_outputs_only=True but no specialist names provided! Falling back to ALL features.")
+                pass
+
         return all_features
 
 
@@ -866,6 +872,9 @@ class IncrementalLGBMBaggedTrainer(BaseIncrementalTrainer):
             except Exception as e:
                 logger.warning(f"Bag {bag_idx} failed during training: {e}")
                 continue
+
+        if not models:
+            raise ValueError(f"All {n_bags} bags failed during training. Cannot create BaggedLGBMRegressor.")
 
         return BaggedLGBMRegressor(models, feature_indices, n_features)
 
@@ -1503,7 +1512,7 @@ class IncrementalBayesianRidgeTrainer(BaseIncrementalTrainer):
 class IncrementalAnalystTrainer:
     """Unified incremental trainer that trains all analyst base models."""
     
-    def __init__(self, model_id: str, execution_mode="blank", task_type="regression", enable_incremental_hpo=True, model_configs=None):
+    def __init__(self, model_id: str, execution_mode="blank", task_type="regression", enable_incremental_hpo=True, model_configs=None, default_feature_set="A"):
         self.model_id = model_id
         self.config = IncrementalTrainingConfig(
             model_id,
@@ -1513,6 +1522,7 @@ class IncrementalAnalystTrainer:
             enable_incremental_hpo=enable_incremental_hpo,
         )
         self.model_configs = model_configs or {}
+        self.default_feature_set = default_feature_set
         
         self.trainers = {}
         if LIGHTGBM_AVAILABLE:
@@ -1538,9 +1548,42 @@ class IncrementalAnalystTrainer:
             
     def train_all_models(self, X, y, data_start, data_end, sample_weight=None, verbose=True, specialist_feature_names=None):
         results = {}
+
+        # Prepare feature sets lookup
+        feature_sets = {}
+        if isinstance(X, dict):
+            feature_sets = X
+        else:
+            # If single DataFrame provided, treat it as the default set (usually 'A' or whatever was active)
+            # We map it to both 'A' and 'B' to allow fallback if specific keys aren't strictly managed upstream
+            feature_sets = {'A': X, 'B': X, 'default': X}
+
         for name, trainer in self.trainers.items():
             if verbose: logger.info(f"Training {name}")
-            results[name] = trainer.train_and_predict(X, y, data_start, data_end, sample_weight, verbose, specialist_feature_names)
+
+            # Determine which feature set to use
+            # 1. Model specific override
+            target_set = trainer.model_config.get('feature_set')
+
+            # 2. Global default
+            if not target_set:
+                target_set = self.default_feature_set
+
+            target_set = str(target_set).upper()
+
+            # Select features
+            X_model = feature_sets.get(target_set)
+
+            # Fallback logic
+            if X_model is None:
+                if verbose: logger.warning(f"Feature set '{target_set}' not found for {name}. Falling back to default/available.")
+                # Try 'default', then 'A', then any
+                X_model = feature_sets.get('default', feature_sets.get('A', next(iter(feature_sets.values()))))
+
+            if verbose and isinstance(X, dict):
+                logger.info(f"   Using Feature Set: {target_set} (shape={X_model.shape})")
+
+            results[name] = trainer.train_and_predict(X_model, y, data_start, data_end, sample_weight, verbose, specialist_feature_names)
         return results
 
     def get_combined_oof_predictions(self, results):

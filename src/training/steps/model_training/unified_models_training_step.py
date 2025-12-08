@@ -601,6 +601,47 @@ class UnifiedModelsTrainingStep(BaseStep):
                 tprint_warning("No training data available, using default configuration from YAML")
             
             # ========================================================================
+            # FEATURE SET PREPARATION (A & B)
+            # ========================================================================
+            # Prepare Data Container with Feature Set A (Technical)
+            training_data_container = {'A': training_data}
+
+            feature_set_mode = str(
+                (yaml_config.get('analyst_config', {}) or {}).get('feature_set', 'A')
+            ).upper()
+
+            # Check if any enabled model requests B explicitly
+            model_configs = (yaml_config.get('analyst_config', {}) or {}).get('base_models', {})
+            any_model_wants_b = False
+            if isinstance(model_configs, dict):
+                any_model_wants_b = any(
+                    (m.get('feature_set', feature_set_mode) == 'B')
+                    for m in model_configs.values()
+                    if isinstance(m, dict) and m.get('enabled', True)
+                )
+
+            if training_type == 'analyst_base' and (feature_set_mode == 'B' or any_model_wants_b):
+                tprint_info("=" * 80)
+                tprint_info("🔄 FEATURE SET B: Building meta-gated feature set")
+                tprint_info("=" * 80)
+                meta_features = self._build_meta_gated_feature_set(training_data.index, config)
+                if meta_features is not None and not meta_features.empty:
+                    tprint_success(
+                        f"✅ Constructed Feature Set B (meta-gated): "
+                        f"{meta_features.shape[0]} samples × {meta_features.shape[1]} features"
+                    )
+                    training_data_container['B'] = meta_features
+
+                    # If global mode is B, update main training_data pointer for HPO/Legacy use
+                    if feature_set_mode == 'B':
+                         training_data = meta_features
+                else:
+                    tprint_warning(
+                        "⚠️ Requested Feature Set B (meta-gated), but failed to build a valid "
+                        "meta-gated feature frame; falling back to default analyst_base features."
+                    )
+
+            # ========================================================================
             # SESSION-BASED HPO CONTROL: Prevent infinite HPO loops
             # ========================================================================
             # HPO should run ONCE per session, then move to model training/testing
@@ -673,32 +714,12 @@ class UnifiedModelsTrainingStep(BaseStep):
             else:
                 tprint_info("Hyperparameter optimization disabled or no training data available")
             
-            # ========================================================================
-            # FEATURE SET B: Replace training_data with meta-gated feature set
-            # ========================================================================
-            feature_set_mode = str(
-                (yaml_config.get('analyst_config', {}) or {}).get('feature_set', 'A')
-            ).upper()
-            if training_type == 'analyst_base' and feature_set_mode == 'B':
-                tprint_info("=" * 80)
-                tprint_info("🔄 FEATURE SET B: Building meta-gated feature set")
-                tprint_info("=" * 80)
-                meta_features = self._build_meta_gated_feature_set(training_data.index, config)
-                if meta_features is not None and not meta_features.empty:
-                    tprint_success(
-                        f"✅ Replacing analyst_base features with meta-gated Feature Set B: "
-                        f"{meta_features.shape[0]} samples × {meta_features.shape[1]} features"
-                    )
-                    training_data = meta_features
-                else:
-                    tprint_warning(
-                        "⚠️ Requested Feature Set B (meta-gated), but failed to build a valid "
-                        "meta-gated feature frame; falling back to default analyst_base features."
-                    )
-
             # Execute training based on type
+            # Pass container if available (for analyst_base), else training_data
+            data_to_pass = training_data_container if training_type == 'analyst_base' else training_data
+
             result = await self._execute_training_by_type(
-                training_type, training_data, analyst_targets, tactician_targets, yaml_config, config
+                training_type, data_to_pass, analyst_targets, tactician_targets, yaml_config, config
             )
             
             # DEBUG: Log training result structure for artifact saving diagnostics
@@ -2854,54 +2875,69 @@ class UnifiedModelsTrainingStep(BaseStep):
         config: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Execute training based on the specified type."""
-        print(f"DEBUG: _execute_training_by_type called. training_type={training_type}") # Explicit print
+        # Handle dict vs DataFrame input (Multi Feature Set support)
+        training_data_primary = training_data
+        training_data_container = None
+
+        if isinstance(training_data, dict):
+            training_data_container = training_data
+            # Determine primary dataset for logging/compat
+            feature_set_mode = str(
+                (yaml_config.get('analyst_config', {}) or {}).get('feature_set', 'A')
+            ).upper()
+            primary_key = 'B' if feature_set_mode == 'B' and 'B' in training_data else 'A'
+            training_data_primary = training_data.get(primary_key, training_data.get('A'))
+            if training_data_primary is None:
+                # Fallback to first available
+                training_data_primary = next(iter(training_data.values()))
+
         # DEBUG: Log detailed feature information before training
         tprint_info("=" * 80)
         tprint_info("🔍 [DEBUG] FEATURE ANALYSIS BEFORE TRAINING")
         tprint_info("=" * 80)
         tprint_info(f"🔍 [DEBUG] Training type: {training_type}")
-        tprint_info(f"🔍 [DEBUG] Training data shape: {training_data.shape}")
-        tprint_info(f"🔍 [DEBUG] Training data columns (first 20): {list(training_data.columns[:20])}")
-        tprint_info(f"🔍 [DEBUG] Training data columns (last 20): {list(training_data.columns[-20:])}")
-        tprint_info(f"🔍 [DEBUG] Total feature count: {len(training_data.columns)}")
+        tprint_info(f"🔍 [DEBUG] Training data shape: {training_data_primary.shape}")
 
-        # Count regime features
-        regime_features = [col for col in training_data.columns if 'regime' in col.lower()]
+        # Count features using primary dataset
+        regime_features = [col for col in training_data_primary.columns if 'regime' in col.lower()]
         tprint_info(f"🔍 [DEBUG] Regime features count: {len(regime_features)}")
-        tprint_info(f"🔍 [DEBUG] Regime features: {regime_features}")
 
         # Count disagreement features
-        disagreement_features = [col for col in training_data.columns if any(term in col.lower() for term in ['dispersion', 'disagreement', 'uncertainty', 'confidence_gap', 'prediction_range'])]
+        disagreement_features = [col for col in training_data_primary.columns if any(term in col.lower() for term in ['dispersion', 'disagreement', 'uncertainty', 'confidence_gap', 'prediction_range'])]
         tprint_info(f"🔍 [DEBUG] Disagreement features count: {len(disagreement_features)}")
-        tprint_info(f"🔍 [DEBUG] Disagreement features: {disagreement_features}")
 
-        # Count model-specific features
-        model_specific_features = [col for col in training_data.columns if any(term in col.lower() for term in ['catboost', 'lgbm', 'lightgbm', 'depthwise', 'cnn', 'gru'])]
-        tprint_info(f"🔍 [DEBUG] Model-specific features count: {len(model_specific_features)}")
-        tprint_info(f"🔍 [DEBUG] Model-specific features: {model_specific_features}")
+        # Clean leakage from all datasets if dict, or just primary
+        leak_cols_names = ['label', 'target', 'future_', 'lead_']
 
-        leak_cols = [c for c in training_data.columns if any(term in c.lower() for term in ['label', 'target', 'future_', 'lead_'])]
-        if leak_cols:
-            tprint_warning(f"Removing {len(leak_cols)} target-like columns from training data")
-            training_data = training_data.drop(columns=leak_cols)
-        self._training_features = list(training_data.columns)
-        self._training_feature_count = len(training_data.columns)
-        tprint_info(f"🔍 [DEBUG] Saved training feature list ({len(self._training_features)} features) for prediction comparison")
-        try:
-            # Log the full ordered list of feature names actually used for training
-            feature_list_str = ", ".join(str(col) for col in self._training_features)
-            tprint_info(
-                f"🔍 [DEBUG] FULL TRAINING FEATURE LIST ({len(self._training_features)}): {feature_list_str}"
-            )
-        except Exception as exc:
-            # Non-fatal: keep training even if feature logging fails
-            self.logger.debug(f"Failed to log full training feature list: {exc}")
+        if training_data_container:
+            for key, df in training_data_container.items():
+                leak_cols = [c for c in df.columns if any(term in c.lower() for term in leak_cols_names)]
+                if leak_cols:
+                    tprint_warning(f"Removing {len(leak_cols)} target-like columns from Feature Set {key}")
+                    training_data_container[key] = df.drop(columns=leak_cols)
+            # Update primary
+            if isinstance(training_data, dict):
+                 feature_set_mode = str((yaml_config.get('analyst_config', {}) or {}).get('feature_set', 'A')).upper()
+                 primary_key = 'B' if feature_set_mode == 'B' and 'B' in training_data else 'A'
+                 training_data_primary = training_data_container.get(primary_key, training_data_container.get('A'))
+
+        else:
+            leak_cols = [c for c in training_data_primary.columns if any(term in c.lower() for term in leak_cols_names)]
+            if leak_cols:
+                tprint_warning(f"Removing {len(leak_cols)} target-like columns from training data")
+                training_data_primary = training_data_primary.drop(columns=leak_cols)
+            training_data = training_data_primary # Update reference
+
+        self._training_features = list(training_data_primary.columns)
+        self._training_feature_count = len(training_data_primary.columns)
+
         tprint_info("=" * 80)
         try:
             if training_type == 'analyst_base':
                 # Use IncrementalAnalystTrainer for rolling OOF predictions
-                # Train on burn-in -> generate OOF for next 14 days -> resume training
-                tprint_info(f"🔧 Training analyst base models INCREMENTALLY with {training_data.shape[1]} features...")
+                tprint_info(f"🔧 Training analyst base models INCREMENTALLY with mixed feature sets...")
+                if training_data_container:
+                    tprint_info(f"   Available Feature Sets: {list(training_data_container.keys())}")
                 
                 # Import incremental trainer
                 from src.utils.ml_common.incremental_analyst_trainers import IncrementalAnalystTrainer
@@ -2912,42 +2948,49 @@ class UnifiedModelsTrainingStep(BaseStep):
                 exchange = config.get('exchange', 'binance')
                 timeframe = config.get('timeframe', '15m')
                 
-                # Determine data start/end from index
-                if hasattr(training_data.index, 'min') and hasattr(training_data.index, 'max'):
-                    data_start = training_data.index.min()
-                    data_end = training_data.index.max()
+                # Determine data start/end from index (use primary)
+                if hasattr(training_data_primary.index, 'min') and hasattr(training_data_primary.index, 'max'):
+                    data_start = training_data_primary.index.min()
+                    data_end = training_data_primary.index.max()
                     
-                    # Convert to datetime if needed
                     if hasattr(data_start, 'to_pydatetime'):
                         data_start = data_start.to_pydatetime()
                     if hasattr(data_end, 'to_pydatetime'):
                         data_end = data_end.to_pydatetime()
                 else:
-                    # Fallback: use datetime.now and calculate based on data length
                     from datetime import datetime, timedelta
                     data_end = datetime.now()
-                    # Estimate days based on timeframe and data length
                     samples_per_day = {'1m': 1440, '5m': 288, '15m': 96, '1h': 24, '4h': 6, '1d': 1}.get(timeframe, 96)
-                    total_days = len(training_data) // samples_per_day
+                    total_days = len(training_data_primary) // samples_per_day
                     data_start = data_end - timedelta(days=total_days)
                 
                 tprint_info(f"   Data range: {data_start} → {data_end}")
-                tprint_info(f"   Execution mode: {execution_mode}")
                 
                 # Create incremental trainer
                 model_id = f"{symbol}_{exchange}_{timeframe}"
                 base_models_config = yaml_config.get('analyst_config', {}).get('base_models', {})
+
+                # Determine global default feature set from config
+                # Default to 'A' if not specified, but respect config if it says 'B'
+                global_feature_set = str(
+                    (yaml_config.get('analyst_config', {}) or {}).get('feature_set', 'A')
+                ).upper()
+
                 incremental_trainer = IncrementalAnalystTrainer(
                     model_id=model_id,
                     execution_mode=execution_mode,
                     task_type='regression',
                     enable_incremental_hpo=True,
-                    model_configs=base_models_config
+                    model_configs=base_models_config,
+                    default_feature_set=global_feature_set
                 )
                 
-                # Train all models incrementally
+                # Train all models incrementally (pass container or dataframe)
+                # If container exists, pass it. If not, pass training_data (dataframe)
+                data_arg = training_data_container if training_data_container else training_data
+
                 incremental_results = incremental_trainer.train_all_models(
-                    X=training_data,
+                    X=data_arg,
                     y=analyst_targets,
                     data_start=data_start,
                     data_end=data_end,

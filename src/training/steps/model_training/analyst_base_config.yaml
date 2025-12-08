@@ -12,6 +12,7 @@ analyst_config:
   base_models:
     lgbm:
       model_type: LGBMRegressor
+      feature_set: B
       use_float32: true
       use_isotonic_calibration: true
       params:
@@ -94,6 +95,7 @@ analyst_config:
     lgbm_bag_lower:
       enabled: true
       model_type: LGBMRegressor
+      feature_set: B
       use_float32: true
       use_isotonic_calibration: true
       # When true, restricts features to specialist scalars only. For meta-gated
@@ -125,6 +127,7 @@ analyst_config:
     knn:
       enabled: false
       model_type: KNeighborsRegressor
+      feature_set: A
       use_float32: true
       use_isotonic_calibration: true
       use_specialist_outputs_only: true
@@ -178,6 +181,7 @@ analyst_config:
           n_rounds: 2
     bayesianridge:
       model_type: BayesianRidge
+      feature_set: A
       use_float32: true
       use_isotonic_calibration: true
       # For Feature Set B we want full meta-gated features, not specialists-only
@@ -198,6 +202,7 @@ analyst_config:
         enabled: false
     ngboost:
       model_type: NGBoost
+      feature_set: A
       use_float32: true
       use_isotonic_calibration: true
       output_mean_and_variance: true

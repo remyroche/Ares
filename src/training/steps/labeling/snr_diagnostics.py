@@ -3404,6 +3404,330 @@ def run_full(
 
 
 # --------------------------------------------------------------------------------------
+# Feature Set Comparison (2025-12-08)
+# --------------------------------------------------------------------------------------
+
+
+def _load_feature_set_results(
+    symbol: str,
+    exchange: str,
+    timeframe: str,
+) -> Optional[Dict[str, Any]]:
+    """Load multi-feature-set results from outcomes directory."""
+    import glob
+    
+    outcomes_dir = Path("outcomes")
+    pattern = f"multi_feature_set_results_{symbol}_{timeframe}_*.json"
+    
+    files = sorted(glob.glob(str(outcomes_dir / pattern)), reverse=True)
+    if not files:
+        logger.warning(f"No feature set results found for {symbol} {timeframe}")
+        return None
+    
+    # Load latest results
+    latest_file = files[0]
+    try:
+        with open(latest_file, 'r') as f:
+            return json.load(f)
+    except Exception as e:
+        logger.error(f"Failed to load feature set results: {e}")
+        return None
+
+
+def _compute_metrics_for_feature_set(
+    df: pd.DataFrame,
+    feature_list: List[str],
+    direction: str = "long",
+    cv_splits: int = 5,
+) -> Dict[str, Any]:
+    """Compute key metrics for a specific feature set."""
+    from sklearn.model_selection import TimeSeriesSplit
+    
+    # Get labels
+    if direction == "long" and "binary_label_long" in df.columns:
+        y = df["binary_label_long"]
+    elif direction == "short" and "binary_label_short" in df.columns:
+        y = df["binary_label_short"]
+    elif "binary_label" in df.columns:
+        y = df["binary_label"]
+    else:
+        return {"error": "No binary labels found"}
+    
+    # Get realized returns
+    ret_col = "realized_return"
+    if ret_col not in df.columns:
+        ret_col = "realized_return_long" if direction == "long" else "realized_return_short"
+    
+    if ret_col not in df.columns:
+        realized_returns = None
+    else:
+        realized_returns = df[ret_col]
+    
+    # Filter to features that exist in the dataframe
+    available_features = [f for f in feature_list if f in df.columns]
+    if len(available_features) < 10:
+        return {"error": f"Only {len(available_features)} features available"}
+    
+    X = df[available_features].fillna(0)
+    
+    # Clean data
+    valid_mask = ~y.isna()
+    X_clean = X[valid_mask]
+    y_clean = y[valid_mask]
+    
+    if len(y_clean) < 100:
+        return {"error": "Too few samples"}
+    
+    # Run CV
+    tscv = TimeSeriesSplit(n_splits=cv_splits)
+    aucs = []
+    briers = []
+    
+    for tr_idx, te_idx in tscv.split(X_clean):
+        X_tr = X_clean.iloc[tr_idx]
+        X_te = X_clean.iloc[te_idx]
+        y_tr = y_clean.iloc[tr_idx]
+        y_te = y_clean.iloc[te_idx]
+        
+        if len(np.unique(y_tr)) < 2 or len(np.unique(y_te)) < 2:
+            continue
+        
+        try:
+            clf = lgb.LGBMClassifier(
+                boosting_type="gbdt",
+                objective="binary",
+                max_depth=4,
+                n_estimators=100,
+                learning_rate=0.05,
+                verbosity=-1,
+                random_state=42,
+            )
+            clf.fit(X_tr, y_tr)
+            prob = clf.predict_proba(X_te)[:, 1]
+            
+            aucs.append(roc_auc_score(y_te, prob))
+            briers.append(brier_score_loss(y_te, prob))
+        except Exception:
+            continue
+    
+    if not aucs:
+        return {"error": "CV failed"}
+    
+    # Compute generalization gap (train AUC - test AUC)
+    train_aucs = []
+    for tr_idx, te_idx in tscv.split(X_clean):
+        X_tr = X_clean.iloc[tr_idx]
+        y_tr = y_clean.iloc[tr_idx]
+        
+        if len(np.unique(y_tr)) < 2:
+            continue
+        
+        try:
+            clf = lgb.LGBMClassifier(
+                boosting_type="gbdt",
+                objective="binary",
+                max_depth=4,
+                n_estimators=100,
+                learning_rate=0.05,
+                verbosity=-1,
+                random_state=42,
+            )
+            clf.fit(X_tr, y_tr)
+            prob_tr = clf.predict_proba(X_tr)[:, 1]
+            train_aucs.append(roc_auc_score(y_tr, prob_tr))
+        except Exception:
+            continue
+    
+    generalization_gap = np.mean(train_aucs) - np.mean(aucs) if train_aucs and aucs else 0.0
+    
+    return {
+        "n_features": len(available_features),
+        "n_samples": len(y_clean),
+        "mean_auc": float(np.mean(aucs)),
+        "std_auc": float(np.std(aucs)),
+        "mean_brier": float(np.mean(briers)),
+        "generalization_gap": float(generalization_gap),
+        "cv_folds": len(aucs),
+    }
+
+
+def run_feature_set_comparison(
+    symbol: str,
+    exchange: str,
+    timeframe: str,
+    direction: str = "long",
+    model: str = "analyst",
+) -> Dict[str, Any]:
+    """
+    Compare metrics across different feature sets (50/60/70/80 features).
+    
+    This function:
+    1. Loads labeled data
+    2. Loads feature set definitions
+    3. Computes metrics for each feature set
+    4. Generates comparison report in markdown and CSV
+    
+    Returns:
+        Dictionary with comparison results
+    """
+    logger.info(f"Running feature set comparison for {symbol} {exchange} {timeframe}")
+    
+    # Load labeled data
+    try:
+        df = _load_labeled_data(symbol, exchange, timeframe, direction=direction, model=model)
+    except FileNotFoundError as e:
+        logger.error(f"Could not load labeled data: {e}")
+        return {"error": str(e)}
+    
+    # Load feature set definitions
+    from .lgbm_feature_selection import FeatureSetPersistence
+    persistence = FeatureSetPersistence()
+    
+    feature_sets_data = persistence.load_feature_sets(exchange, symbol)
+    if feature_sets_data is None:
+        logger.warning("No persisted feature sets found, using default sizes")
+        feature_sets_data = {"feature_sets": {}}
+    
+    feature_sets = feature_sets_data.get("feature_sets", {})
+    
+    # If no feature sets exist, build from numeric columns
+    if not feature_sets:
+        logger.info("Building feature sets from available columns")
+        numeric = df.select_dtypes(include=[np.number])
+        all_features = [c for c in numeric.columns if not any(
+            pat in c.lower() for pat in ["target", "label", "return", "meta_probability", "sample_weight"]
+        )]
+        
+        for size in [80, 70, 60, 50]:
+            feature_sets[str(size)] = {
+                "features": all_features[:size] if len(all_features) >= size else all_features
+            }
+    
+    # Compute metrics for each feature set
+    comparison_results = {}
+    for size_str, fs_data in feature_sets.items():
+        features = fs_data.get("features", [])
+        if not features:
+            continue
+        
+        size = int(size_str)
+        logger.info(f"Computing metrics for {size}-feature set ({len(features)} features)")
+        
+        metrics = _compute_metrics_for_feature_set(
+            df=df,
+            feature_list=features,
+            direction=direction,
+        )
+        
+        comparison_results[size] = metrics
+    
+    # Generate comparison report
+    ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    
+    # Markdown report
+    md_lines = [
+        f"# Feature Set Comparison Report",
+        f"",
+        f"**Symbol**: {symbol}",
+        f"**Exchange**: {exchange}",
+        f"**Timeframe**: {timeframe}",
+        f"**Direction**: {direction}",
+        f"**Generated**: {ts}",
+        f"",
+        f"## Summary",
+        f"",
+        f"| Feature Set | N Features | Mean AUC | Std AUC | Mean Brier | Generalization Gap |",
+        f"|-------------|------------|----------|---------|------------|-------------------|",
+    ]
+    
+    for size in sorted(comparison_results.keys(), reverse=True):
+        metrics = comparison_results[size]
+        if "error" in metrics:
+            md_lines.append(f"| {size} | - | - | - | - | {metrics['error']} |")
+        else:
+            md_lines.append(
+                f"| {size} | {metrics['n_features']} | "
+                f"{metrics['mean_auc']:.4f} | {metrics['std_auc']:.4f} | "
+                f"{metrics['mean_brier']:.4f} | {metrics['generalization_gap']:.4f} |"
+            )
+    
+    md_lines.extend([
+        f"",
+        f"## Interpretation",
+        f"",
+        f"- **Mean AUC**: Higher is better (target: 0.55-0.67 for prop-shop acceptable range)",
+        f"- **Generalization Gap**: Lower is better (indicates less overfitting)",
+        f"- **Mean Brier**: Lower is better (calibration quality)",
+        f"",
+        f"## Recommendation",
+        f"",
+    ])
+    
+    # Find best feature set
+    valid_results = {k: v for k, v in comparison_results.items() if "error" not in v}
+    if valid_results:
+        # Score based on AUC (higher better) and generalization gap (lower better)
+        scores = {}
+        for size, metrics in valid_results.items():
+            # Normalize: higher AUC is better, lower gap is better
+            auc_score = metrics["mean_auc"]
+            gap_penalty = metrics["generalization_gap"] * 2  # Penalize overfitting
+            scores[size] = auc_score - gap_penalty
+        
+        best_size = max(scores, key=scores.get)
+        md_lines.append(f"Based on the metrics above, the **{best_size}-feature set** is recommended.")
+        md_lines.append(f"")
+        md_lines.append(f"Score breakdown: AUC={valid_results[best_size]['mean_auc']:.4f}, Gap={valid_results[best_size]['generalization_gap']:.4f}")
+    else:
+        md_lines.append("Unable to compute recommendations due to errors in all feature sets.")
+    
+    # Save reports
+    payload = {
+        "symbol": symbol,
+        "exchange": exchange,
+        "timeframe": timeframe,
+        "direction": direction,
+        "comparison_results": comparison_results,
+        "feature_set_metadata": feature_sets_data.get("metadata", {}),
+    }
+    
+    json_path, md_path = _export_report(
+        prefix="feature_set_comparison",
+        symbol=symbol,
+        exchange=exchange,
+        timeframe=timeframe,
+        direction=direction,
+        model=model,
+        payload=payload,
+        markdown_lines=md_lines,
+    )
+    
+    # Save CSV
+    csv_path = _ensure_outcomes_dir() / f"feature_set_comparison_{symbol}_{timeframe}_{ts}.csv"
+    try:
+        rows = []
+        for size, metrics in comparison_results.items():
+            row = {"feature_set_size": size}
+            row.update(metrics)
+            rows.append(row)
+        
+        csv_df = pd.DataFrame(rows)
+        csv_df.to_csv(csv_path, index=False)
+        logger.info(f"Saved CSV report to {csv_path}")
+    except Exception as e:
+        logger.warning(f"Failed to save CSV: {e}")
+    
+    print(f"\nFeature set comparison report saved to: {json_path} and {md_path}")
+    
+    return {
+        "comparison_results": comparison_results,
+        "json_path": str(json_path),
+        "md_path": str(md_path),
+        "csv_path": str(csv_path),
+    }
+
+
+# --------------------------------------------------------------------------------------
 # CLI
 # --------------------------------------------------------------------------------------
 
@@ -3452,6 +3776,10 @@ def main() -> None:
                         help="Name of probability column to use for trading simulation (default: meta_probability)")
     p_full.add_argument("--prob-thresholds", type=float, nargs="+", default=[0.55, 0.60, 0.65, 0.70, 0.75, 0.80],
                         help="Probability thresholds to analyze (default: 0.55 0.60 0.65 0.70 0.75 0.80)")
+    
+    # feature-set-comparison (2025-12-08)
+    p_fs_compare = subparsers.add_parser("feature-set-comparison", help="Compare metrics across feature sets (50/60/70/80)")
+    _add_common_args(p_fs_compare)
 
     args = parser.parse_args()
 
@@ -3509,6 +3837,15 @@ def main() -> None:
             cv_splits_robust=args.cv_splits_robust,
             prob_column=args.prob_column,
             prob_thresholds=args.prob_thresholds,
+        )
+    
+    elif args.command == "feature-set-comparison":
+        run_feature_set_comparison(
+            symbol=args.symbol,
+            exchange=args.exchange,
+            timeframe=args.timeframe,
+            direction=args.direction,
+            model=args.model,
         )
 
 

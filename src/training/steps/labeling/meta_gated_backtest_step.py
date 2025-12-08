@@ -38,9 +38,14 @@ from src.training.steps.labeling.labeled_data_schema import (
     validate_labeled_data_schema,
 )
 from src.utils.ml_common.get_specialist_models_outputs import get_specialist_models_outputs
+from src.training.steps.labeling.winning_feature_set_selector import compute_winning_score
 
 
 logger = logging.getLogger(__name__)
+
+
+# Default confidence threshold for backtesting
+DEFAULT_CONFIDENCE_THRESHOLD = 0.55
 
 
 class MetaGatedBacktestStep(BaseStep):
@@ -811,6 +816,87 @@ class MetaGatedBacktestStep(BaseStep):
 
             tprint_success(f"\x0f Meta-gated backtest report saved to: {filepath}")
 
+            # ------------------------------------------------------------------
+            # 5) Calculate Winning Score and Determine Winner
+            # ------------------------------------------------------------------
+            # Formula: Score = (Mean Return % × Trades/Day) - (Max Drawdown % / 100)
+            # Note: mean_ret is in decimal form (e.g., 0.0015 = 0.15%)
+            # Convert to percentage for the formula
+            mean_return_pct = mean_ret * 100.0  # Convert to percent
+            max_drawdown_pct = abs(max_drawdown) * 100.0  # Convert to percent (positive)
+            trades_per_day_val = trades_per_day if trades_per_day is not None else 1.0
+            
+            winning_score = compute_winning_score(
+                mean_return_pct=mean_return_pct,
+                trades_per_day=trades_per_day_val,
+                max_drawdown_pct=max_drawdown_pct,
+            )
+            
+            tprint_info(
+                f"🏆 Winning Score: {winning_score:.4f} "
+                f"(MeanRet={mean_return_pct:.3f}% × Trades={trades_per_day_val:.2f}/day - DD={max_drawdown_pct:.2f}%/100)"
+            )
+            
+            # Get feature set size from config (if running multi-feature-set comparison)
+            feature_set_size = config.get("feature_set_size", 60)  # Default to 60
+            
+            # Save backtest results for this feature set
+            backtest_results_for_feature_set = {
+                "feature_set_size": feature_set_size,
+                "mean_return_pct": mean_return_pct,
+                "trades_per_day": trades_per_day_val,
+                "max_drawdown_pct": max_drawdown_pct,
+                "winning_score": winning_score,
+                "sharpe_trade": sharpe_trade,
+                "hit_rate": hit_rate,
+                "n_trades": n_trades,
+                "timestamp": timestamp,
+            }
+            
+            # Save feature set specific backtest results
+            fs_results_path = outcomes_dir / f"feature_set_backtest_{symbol}_{timeframe}_{feature_set_size}_{timestamp}.json"
+            with open(fs_results_path, "w") as f_fs:
+                json.dump(backtest_results_for_feature_set, f_fs, indent=2, default=str)
+            tprint_info(f"💾 Saved feature set backtest results to {fs_results_path}")
+            
+            # Check if we should determine the winning feature set
+            # This happens when: 1) explicitly requested, or 2) all feature sets have been evaluated
+            determine_winner = config.get("determine_winning_feature_set", False)
+            feature_set_sizes = config.get("feature_set_sizes", [50, 60, 70, 80])
+            
+            winning_feature_set_info = None
+            
+            if determine_winner:
+                tprint_info("🔄 Determining winning feature set...")
+                winning_feature_set_info = self._determine_and_save_winning_feature_set(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    direction=direction,
+                    feature_set_sizes=feature_set_sizes,
+                    outcomes_dir=outcomes_dir,
+                )
+            else:
+                # Check if all feature sets have backtest results
+                all_evaluated = True
+                for size in feature_set_sizes:
+                    pattern = f"feature_set_backtest_{symbol}_{timeframe}_{size}_*.json"
+                    import glob
+                    if not glob.glob(str(outcomes_dir / pattern)):
+                        all_evaluated = False
+                        break
+                
+                if all_evaluated:
+                    tprint_info("✅ All feature sets evaluated, determining winner...")
+                    winning_feature_set_info = self._determine_and_save_winning_feature_set(
+                        symbol=symbol,
+                        exchange=exchange,
+                        timeframe=timeframe,
+                        direction=direction,
+                        feature_set_sizes=feature_set_sizes,
+                        outcomes_dir=outcomes_dir,
+                    )
+
             metrics: Dict[str, Any] = {
                 "n_events": n_events,
                 "n_events_total": n_events_total,
@@ -823,9 +909,11 @@ class MetaGatedBacktestStep(BaseStep):
                 "gated_num_days": gated_num_days,
                 "trades_per_day": trades_per_day,
                 "mean_return_gated": mean_ret,
+                "mean_return_pct": mean_return_pct,
                 "std_return_gated": std_ret,
                 "sharpe_trade": sharpe_trade,
                 "max_drawdown_event_time": max_drawdown,
+                "max_drawdown_pct": max_drawdown_pct,
                 "hit_rate_gated": hit_rate,
                 "mean_return_ci_low": mean_ci_low,
                 "mean_return_ci_high": mean_ci_high,
@@ -840,11 +928,18 @@ class MetaGatedBacktestStep(BaseStep):
                 "expected_return_threshold": er_threshold,
                 "forward_walk_windows": forward_walk_windows_metrics,
                 "permutation_results": permutation_results,
+                # Winning score metrics
+                "winning_score": winning_score,
+                "feature_set_size": feature_set_size,
+                "winning_feature_set": winning_feature_set_info,
             }
 
             return {
                 "success": True,
-                "artifacts": {"meta_gated_backtest_report": str(filepath)},
+                "artifacts": {
+                    "meta_gated_backtest_report": str(filepath),
+                    "feature_set_backtest_results": str(fs_results_path),
+                },
                 "metrics": metrics,
             }
 
@@ -859,9 +954,381 @@ class MetaGatedBacktestStep(BaseStep):
                 "error": error_msg,
             }
 
+    def _determine_and_save_winning_feature_set(
+        self,
+        symbol: str,
+        exchange: str,
+        timeframe: str,
+        direction: str,
+        feature_set_sizes: list,
+        outcomes_dir: Path,
+    ) -> Dict[str, Any]:
+        """
+        Determine and save the winning feature set based on backtest results.
+        
+        Formula: Score = (Mean Return % × Trades/Day) - (Max Drawdown % / 100)
+        Higher is better.
+        
+        Args:
+            symbol: Trading symbol
+            exchange: Exchange name
+            timeframe: Timeframe string
+            direction: Trading direction
+            feature_set_sizes: List of feature set sizes to compare
+            outcomes_dir: Directory containing backtest results
+            
+        Returns:
+            Dictionary with winning feature set info
+        """
+        import glob
+        
+        tprint_info(f"🏆 Determining winning feature set for {symbol}/{exchange} [{timeframe}]")
+        tprint_info(f"   Formula: Score = (Mean Return % × Trades/Day) - (Max Drawdown % / 100)")
+        
+        results = {}
+        
+        for size in feature_set_sizes:
+            pattern = f"feature_set_backtest_{symbol}_{timeframe}_{size}_*.json"
+            files = sorted(glob.glob(str(outcomes_dir / pattern)), reverse=True)
+            
+            if not files:
+                tprint_warning(f"   ⚠️ No backtest results found for {size}-feature set")
+                continue
+            
+            # Load most recent results
+            try:
+                with open(files[0], 'r') as f:
+                    data = json.load(f)
+                
+                results[size] = {
+                    "mean_return_pct": data.get("mean_return_pct", 0.0),
+                    "trades_per_day": data.get("trades_per_day", 1.0),
+                    "max_drawdown_pct": data.get("max_drawdown_pct", 10.0),
+                    "winning_score": data.get("winning_score", 0.0),
+                    "sharpe_trade": data.get("sharpe_trade", 0.0),
+                    "hit_rate": data.get("hit_rate", 0.0),
+                    "n_trades": data.get("n_trades", 0),
+                }
+                
+                tprint_info(
+                    f"   📊 {size} features: Score={results[size]['winning_score']:.4f} "
+                    f"(MeanRet={results[size]['mean_return_pct']:.3f}% × "
+                    f"Trades={results[size]['trades_per_day']:.2f}/day - "
+                    f"DD={results[size]['max_drawdown_pct']:.2f}%/100)"
+                )
+            except Exception as e:
+                tprint_warning(f"   ⚠️ Failed to load results for {size}-feature set: {e}")
+                continue
+        
+        if not results:
+            tprint_error("❌ No valid backtest results found")
+            return {"error": "No valid backtest results"}
+        
+        # Determine winner (highest score)
+        winning_size = max(results, key=lambda s: results[s]["winning_score"])
+        winning_score = results[winning_size]["winning_score"]
+        winning_metrics = results[winning_size]
+        
+        tprint_success(f"🏆 WINNER: {winning_size}-feature set (Score: {winning_score:.4f})")
+        
+        # Save winning feature set to persistence
+        try:
+            from .lgbm_feature_selection import FeatureSetPersistence
+            
+            persistence = FeatureSetPersistence()
+            existing_data = persistence.load_feature_sets(exchange, symbol)
+            
+            if existing_data:
+                # Update with winning set info
+                persistence.save_feature_sets(
+                    feature_sets={
+                        int(k): v.get("features", [])
+                        for k, v in existing_data.get("feature_sets", {}).items()
+                    },
+                    exchange=exchange,
+                    asset=symbol,
+                    pipeline_log=existing_data.get("pipeline_log"),
+                    winning_set_size=winning_size,
+                    winning_metrics={
+                        **winning_metrics,
+                        "formula": "(mean_return_pct * trades_per_day) - (max_drawdown_pct / 100)",
+                        "confidence_threshold": DEFAULT_CONFIDENCE_THRESHOLD,
+                        "determined_at": datetime.now().isoformat(),
+                        "determined_by": "meta_gated_backtest",
+                    },
+                )
+                tprint_success(f"💾 Saved winning feature set ({winning_size}) for {symbol}/{exchange}")
+            else:
+                tprint_warning(f"⚠️ No existing feature sets found to update for {symbol}/{exchange}")
+        except Exception as e:
+            tprint_error(f"❌ Failed to persist winning feature set: {e}")
+        
+        # Generate winning feature set report
+        self._generate_winning_feature_set_report(
+            symbol=symbol,
+            exchange=exchange,
+            timeframe=timeframe,
+            direction=direction,
+            winning_size=winning_size,
+            winning_score=winning_score,
+            results=results,
+            outcomes_dir=outcomes_dir,
+        )
+        
+        return {
+            "winning_size": winning_size,
+            "winning_score": winning_score,
+            "winning_metrics": winning_metrics,
+            "all_results": results,
+        }
+    
+    def _generate_winning_feature_set_report(
+        self,
+        symbol: str,
+        exchange: str,
+        timeframe: str,
+        direction: str,
+        winning_size: int,
+        winning_score: float,
+        results: Dict[int, Dict[str, Any]],
+        outcomes_dir: Path,
+    ) -> Path:
+        """Generate markdown report for winning feature set determination."""
+        
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"winning_feature_set_{symbol}_{timeframe}_{timestamp}.md"
+        filepath = outcomes_dir / filename
+        
+        lines = [
+            "# Winning Feature Set Report",
+            "",
+            f"**Symbol**: {symbol}",
+            f"**Exchange**: {exchange}",
+            f"**Timeframe**: {timeframe}",
+            f"**Direction**: {direction}",
+            f"**Generated**: {timestamp}",
+            f"**Confidence Threshold**: {DEFAULT_CONFIDENCE_THRESHOLD}",
+            "",
+            "## Scoring Formula",
+            "",
+            "```",
+            "Score = (Mean Return % per Trade × Trades per Day) - (Max Drawdown % / 100)",
+            "```",
+            "",
+            "**Higher score is better.** This formula captures:",
+            "- **Expected daily profit**: mean return × trade frequency",
+            "- **Risk penalty**: max drawdown (scaled by /100)",
+            "",
+            "## Results",
+            "",
+            f"### 🏆 Winner: {winning_size}-Feature Set",
+            f"**Score: {winning_score:.4f}**",
+            "",
+            "### Comparison Table",
+            "",
+            "| Feature Set | Score | Mean Ret % | Trades/Day | Max DD % | Sharpe | Hit Rate | Trades |",
+            "|-------------|-------|------------|------------|----------|--------|----------|--------|",
+        ]
+        
+        for size in sorted(results.keys(), reverse=True):
+            r = results[size]
+            marker = " 🏆" if size == winning_size else ""
+            lines.append(
+                f"| {size}{marker} | {r['winning_score']:.4f} | {r['mean_return_pct']:.3f}% | "
+                f"{r['trades_per_day']:.2f} | {r['max_drawdown_pct']:.2f}% | "
+                f"{r['sharpe_trade']:.3f} | {r['hit_rate']:.2%} | {r['n_trades']} |"
+            )
+        
+        lines.extend([
+            "",
+            "### Score Calculation (Winner)",
+            "",
+        ])
+        
+        w = results[winning_size]
+        expected = w['mean_return_pct'] * w['trades_per_day']
+        penalty = w['max_drawdown_pct'] / 100.0
+        
+        lines.extend([
+            "```",
+            f"Score = ({w['mean_return_pct']:.3f}% × {w['trades_per_day']:.2f}) - ({w['max_drawdown_pct']:.2f}% / 100)",
+            f"     = {expected:.4f} - {penalty:.4f}",
+            f"     = {winning_score:.4f}",
+            "```",
+            "",
+            "## Usage",
+            "",
+            f"The **{winning_size}-feature set** is now saved as the winning set.",
+            "",
+            "To use in Analyst Base training:",
+            "",
+            "```yaml",
+            "analyst_config:",
+            "  feature_set: 'B'",
+            "  feature_set_b_use_winning: true  # Automatically uses this winner",
+            "```",
+        ])
+        
+        with open(filepath, 'w') as f:
+            f.write('\n'.join(lines))
+        
+        # Also save JSON
+        json_path = outcomes_dir / f"winning_feature_set_{symbol}_{timeframe}_{timestamp}.json"
+        json_data = {
+            "symbol": symbol,
+            "exchange": exchange,
+            "timeframe": timeframe,
+            "direction": direction,
+            "confidence_threshold": DEFAULT_CONFIDENCE_THRESHOLD,
+            "formula": "(mean_return_pct * trades_per_day) - (max_drawdown_pct / 100)",
+            "winning_size": winning_size,
+            "winning_score": winning_score,
+            "results": results,
+            "timestamp": timestamp,
+        }
+        with open(json_path, 'w') as f:
+            json.dump(json_data, f, indent=2, default=str)
+        
+        tprint_info(f"📝 Winning feature set report saved to: {filepath}")
+        return filepath
+
     async def run(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Run method required by BaseStep interface."""
         return await self.execute(config)
+
+
+def load_feature_set_comparison_results(
+    symbol: str,
+    exchange: str,
+    timeframe: str,
+) -> Optional[Dict[str, Any]]:
+    """
+    Load feature set comparison results from snr_diagnostics.
+    
+    Args:
+        symbol: Trading symbol
+        exchange: Exchange name
+        timeframe: Timeframe string
+        
+    Returns:
+        Dictionary with comparison results or None
+    """
+    import glob
+    
+    outcomes_dir = Path("outcomes")
+    pattern = f"feature_set_comparison_{symbol}_{timeframe}_*.json"
+    
+    files = sorted(glob.glob(str(outcomes_dir / pattern)), reverse=True)
+    if not files:
+        return None
+    
+    try:
+        with open(files[0], 'r') as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def generate_feature_set_comparison_report(
+    comparison_results: Dict[str, Any],
+    output_dir: Path,
+    symbol: str,
+    timeframe: str,
+    direction: str,
+) -> Optional[Path]:
+    """
+    Generate a combined comparison report for feature sets across all metrics.
+    
+    This combines:
+    - Learnability (from feature_generation_meta_labeling_step)
+    - Generalization gap (from snr_diagnostics)
+    - Risk-adjusted returns / Gated Sharpe (from meta_gated_backtest)
+    
+    Args:
+        comparison_results: Dictionary with results for each feature set
+        output_dir: Output directory
+        symbol: Trading symbol
+        timeframe: Timeframe string
+        direction: Trading direction
+        
+    Returns:
+        Path to the generated report
+    """
+    from datetime import datetime
+    
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    md_lines = [
+        "# Feature Set Comparison - Combined Metrics Report",
+        "",
+        f"**Symbol**: {symbol}",
+        f"**Timeframe**: {timeframe}",
+        f"**Direction**: {direction}",
+        f"**Generated**: {timestamp}",
+        "",
+        "## Winning Metrics Criteria",
+        "",
+        "1. **Learnability** (compute_learnability_with_calibration): Higher is better",
+        "2. **Generalization Gap** (snr_diagnostics): Lower is better (avoiding overfitting)",
+        "3. **Risk-Adjusted Returns** (meta_gated_backtest): Gated Sharpe Ratio - Higher is better",
+        "",
+        "## Comparison Table",
+        "",
+        "| Feature Set | Learnability | Gen. Gap | Gated Sharpe | Mean Return | Hit Rate | Score |",
+        "|-------------|--------------|----------|--------------|-------------|----------|-------|",
+    ]
+    
+    scores = {}
+    for size_str, data in comparison_results.items():
+        try:
+            size = int(size_str)
+            learnability = data.get("learnability", 0.0)
+            gen_gap = data.get("generalization_gap", 0.0)
+            gated_sharpe = data.get("sharpe_trade", 0.0)
+            mean_return = data.get("mean_return_gated", 0.0)
+            hit_rate = data.get("hit_rate_gated", 0.0)
+            
+            # Compute composite score
+            # Weight: Sharpe (40%), Learnability (30%), -Gap (30%)
+            score = (
+                0.4 * gated_sharpe +
+                0.3 * learnability -
+                0.3 * abs(gen_gap) * 10  # Penalize gap
+            )
+            scores[size] = score
+            
+            md_lines.append(
+                f"| {size} | {learnability:.4f} | {gen_gap:.4f} | {gated_sharpe:.3f} | "
+                f"{mean_return:.4%} | {hit_rate:.2%} | {score:.3f} |"
+            )
+        except Exception:
+            continue
+    
+    md_lines.extend([
+        "",
+        "## Recommendation",
+        "",
+    ])
+    
+    if scores:
+        best_size = max(scores, key=scores.get)
+        md_lines.append(f"**Recommended Feature Set**: {best_size} features")
+        md_lines.append(f"")
+        md_lines.append(f"This feature set achieves the best balance of:")
+        md_lines.append(f"- Risk-adjusted returns (Sharpe ratio)")
+        md_lines.append(f"- Learnability (model can learn the patterns)")
+        md_lines.append(f"- Generalization (low overfitting risk)")
+    else:
+        md_lines.append("Unable to determine recommendation due to missing data.")
+    
+    # Save report
+    output_path = output_dir / f"feature_set_combined_comparison_{symbol}_{timeframe}_{timestamp}.md"
+    try:
+        with open(output_path, 'w') as f:
+            f.write('\n'.join(md_lines))
+        return output_path
+    except Exception:
+        return None
 
 
 def register_meta_gated_backtest_step() -> None:

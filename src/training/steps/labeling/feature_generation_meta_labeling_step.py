@@ -2270,6 +2270,47 @@ def create_meta_features(
         features[f'dist_from_recent_high_{window}'] = dist_high_arr
         features[f'dist_from_recent_low_{window}'] = dist_low_arr
 
+    # ===== KAUFMAN EFFICIENCY RATIO (ER) =====
+    # ER = Change / Volatility
+    # Change = Abs(Price - Price_lag_n)
+    # Volatility = Sum(Abs(Price - Price_lag_1)) over n periods
+    er_window = 14
+    er_change = df['close'].diff(er_window).abs()
+    er_volatility = df['close'].diff().abs().rolling(er_window).sum()
+    er_series = er_change / (er_volatility + 1e-8)
+
+    if use_kalman:
+        features['kaufman_efficiency_ratio'] = _align_to_features(er_series, n_features)
+    else:
+        features['kaufman_efficiency_ratio'] = er_series.to_numpy()
+
+    # ===== SERIAL CORRELATION (ACF) =====
+    # Average of lags 1, 2, 5
+    acf_window = 20
+    acf_lags = [1, 2, 5]
+    acf_values = []
+
+    # Using log returns for ACF calculation
+    log_ret_acf = log_ret
+
+    for lag in acf_lags:
+        # Rolling correlation of log returns
+        # We need to manually shift because rolling().corr() aligns on index
+        lagged_ret = log_ret_acf.shift(lag)
+        acf = log_ret_acf.rolling(acf_window).corr(lagged_ret)
+        acf_values.append(acf)
+
+    # Average them
+    if acf_values:
+        acf_mean = pd.concat(acf_values, axis=1).mean(axis=1)
+    else:
+        acf_mean = pd.Series(0, index=df.index)
+
+    if use_kalman:
+        features['acf_mean_lags_1_2_5'] = _align_to_features(acf_mean, n_features)
+    else:
+        features['acf_mean_lags_1_2_5'] = acf_mean.to_numpy()
+
     # ===== MORE INTERACTION FEATURES =====
     # Combine features to capture non-linear relationships
 

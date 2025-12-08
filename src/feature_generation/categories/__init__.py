@@ -452,4 +452,11 @@ __all__ = [
     # Meta features
     "BarsSinceLastEventGenerator",
     "EventMeanReturnGenerator",
+    "KaufmanEfficiencyRatioGenerator",
+    "AveragedACFGenerator",
 ]
+
+from .efficiency_noise import (
+    KaufmanEfficiencyRatioGenerator,
+    AveragedACFGenerator
+)

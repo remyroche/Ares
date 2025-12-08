@@ -61,46 +61,65 @@ EPS = 1e-8
 
 
 # =============================================================================
-# Diversity-Adjusted Sharpe (DAS) Scoring
+# Ensemble Sharpe Ratio (ESR) Scoring
 # =============================================================================
 
+def calculate_esr_score(
+    avg_sharpe: float, 
+    avg_corr: float, 
+    n_models: int = 10
+) -> float:
+    """
+    Calculate the Theoretical Ensemble Sharpe Ratio (ESR).
+    
+    This is the exact metric to maximize for risk-adjusted PnL.
+    Based on portfolio theory: diversification provides a "free lunch"
+    when assets (models) are uncorrelated.
+    
+    Formula: ESR = avg_sharpe * sqrt(n / (1 + (n-1) * corr))
+    
+    The diversity_gain factor represents how much variance is cancelled out
+    by combining uncorrelated predictions.
+    
+    Args:
+        avg_sharpe: Average Sharpe ratio across models
+        avg_corr: Average pairwise correlation of model predictions
+        n_models: Number of models in ensemble (default 10)
+        
+    Returns:
+        Theoretical Ensemble Sharpe Ratio
+        
+    Example:
+        >>> calculate_esr_score(avg_sharpe=0.5, avg_corr=0.3, n_models=10)
+        1.02  # Diversity multiplier ~2x
+        >>> calculate_esr_score(avg_sharpe=0.5, avg_corr=0.9, n_models=10)
+        0.53  # Almost no diversity benefit
+    """
+    # Protect against div/0 or negative inputs
+    if avg_corr < 0:
+        avg_corr = 0.001  # Assume at least some minimal positive correlation
+    if avg_corr > 0.999:
+        avg_corr = 0.999  # Prevent division issues
+    
+    # The Diversity Multiplier (The "Free Lunch" from uncorrelated assets)
+    # This factor represents how much variance is cancelled out.
+    diversity_gain = np.sqrt(n_models / (1 + (n_models - 1) * avg_corr))
+    
+    # Projected Ensemble Sharpe
+    esr = avg_sharpe * diversity_gain
+    
+    return esr
+
+
+# Backward compatibility alias
 def calculate_das_score(
     sharpe: float, 
     avg_corr: float, 
     target_floor: float = 0.5, 
     penalty_weight: float = 4.0
 ) -> float:
-    """
-    Calculate the Diversity-Adjusted Sharpe (DAS) score.
-    
-    Rewards raw performance (Sharpe) but applies a progressively heavier 
-    tax as correlation creeps above the target floor.
-    
-    Formula: Score = Sharpe - λ * max(0, Corr - 0.5)²
-    
-    Args:
-        sharpe: The annualized Sharpe ratio of the ensemble
-        avg_corr: The average pairwise correlation of the Z-scores
-        target_floor: Safe floor - correlations below this are free (default 0.5)
-        penalty_weight: Controls how hard to punish "herding" (default 4.0)
-        
-    Returns:
-        Diversity-Adjusted Sharpe score
-        
-    Example:
-        >>> calculate_das_score(sharpe=1.5, avg_corr=0.4)  # Below floor
-        1.5  # No penalty
-        >>> calculate_das_score(sharpe=1.5, avg_corr=0.7)  # Above floor
-        1.34  # Penalized: 1.5 - 4.0 * (0.2)² = 1.5 - 0.16
-    """
-    # Calculate how much we are 'over' the limit
-    excess_corr = max(0.0, avg_corr - target_floor)
-    
-    # Apply Quadratic Penalty (punishes extreme excesses harder)
-    penalty = penalty_weight * (excess_corr ** 2)
-    
-    # Final Score
-    return sharpe - penalty
+    """Deprecated: Use calculate_esr_score instead."""
+    return calculate_esr_score(sharpe, avg_corr, n_models=10)
 
 
 def calculate_simple_sharpe(
@@ -123,6 +142,90 @@ def calculate_simple_sharpe(
     if std < EPS:
         return 0.0
     return (np.mean(returns) / std) * annualization_factor
+
+
+# =============================================================================
+# Regime-Conditional Meta-Features
+# =============================================================================
+
+def generate_regime_meta_features(
+    df: pd.DataFrame,
+    close_col: str = 'close',
+    high_col: str = 'high',
+    low_col: str = 'low',
+    volume_col: str = 'volume',
+    atr_window: int = 14,
+    ma_window: int = 50,
+    vol_window: int = 24,
+) -> pd.DataFrame:
+    """
+    Generate 3 regime-conditional meta-features that should bypass colsample_bytree.
+    
+    These features allow trees to create root splits based on market regime,
+    making the ensemble "context-aware".
+    
+    Features:
+    1. Volatility Regime: Current_ATR / 30d_Avg_ATR
+       - Is market waking up (>1) or sleeping (<1)?
+    2. Trendiness: ADX-like measure using |Price - MA50| / Price
+       - Are we trending (high) or ranging (low)?
+    3. Volume Shock: Current_Vol / 24h_Avg_Vol
+       - Is liquidity rushing in (>1)?
+    
+    Args:
+        df: DataFrame with OHLCV data
+        close_col: Column name for close price
+        high_col: Column name for high price
+        low_col: Column name for low price
+        volume_col: Column name for volume
+        atr_window: Window for ATR calculation
+        ma_window: Window for trend MA
+        vol_window: Window for volume average
+        
+    Returns:
+        DataFrame with 3 meta-feature columns:
+        - meta_volatility_regime
+        - meta_trendiness
+        - meta_volume_shock
+    """
+    result = pd.DataFrame(index=df.index)
+    
+    # 1. Volatility Regime: Current ATR / 30d Avg ATR
+    # ATR = Average True Range
+    high = df[high_col] if high_col in df.columns else df[close_col]
+    low = df[low_col] if low_col in df.columns else df[close_col]
+    close = df[close_col]
+    
+    tr1 = high - low
+    tr2 = np.abs(high - close.shift(1))
+    tr3 = np.abs(low - close.shift(1))
+    true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+    
+    current_atr = true_range.rolling(window=atr_window, min_periods=1).mean()
+    avg_atr_30d = current_atr.rolling(window=30 * 24, min_periods=atr_window).mean()  # 30 days for hourly
+    
+    result['meta_volatility_regime'] = (current_atr / (avg_atr_30d + EPS)).clip(0.1, 10.0)
+    
+    # 2. Trendiness: |Price - MA50| / Price
+    # High value = strong trend, Low value = ranging
+    ma = close.rolling(window=ma_window, min_periods=1).mean()
+    result['meta_trendiness'] = (np.abs(close - ma) / (close + EPS)).clip(0, 1.0)
+    
+    # 3. Volume Shock: Current Volume / 24h Avg Volume
+    if volume_col in df.columns:
+        volume = df[volume_col]
+        avg_vol = volume.rolling(window=vol_window, min_periods=1).mean()
+        result['meta_volume_shock'] = (volume / (avg_vol + EPS)).clip(0.1, 10.0)
+    else:
+        result['meta_volume_shock'] = 1.0  # Neutral if no volume data
+    
+    # Fill any NaN values
+    result = result.fillna(1.0)
+    
+    return result
+
+
+META_FEATURE_COLUMNS = ['meta_volatility_regime', 'meta_trendiness', 'meta_volume_shock']
 
 
 # =============================================================================
@@ -475,13 +578,23 @@ class DiversityDefenseAggregator:
     Implements:
     1. Z-Score standardization across models
     2. Median-based robust aggregation
-    3. MAD-based confidence weighting (veto mechanism)
+    3. Smart Disagreement Scaling with exponential decay
     4. Bucketed execution sizing
+    5. Kill Switch monitoring for live trading safety
     """
+    
+    # Kill Switch thresholds
+    KILL_SWITCH_HIGH_CORR = 0.90   # Diversity collapsed - halve position
+    KILL_SWITCH_LOW_CORR = 0.0    # Models confused - stop trading
     
     def __init__(self, config: Optional[DiversityDefenseConfig] = None):
         """Initialize with optional configuration."""
         self.config = config or DiversityDefenseConfig()
+        
+        # Disagreement scaling parameters
+        self.mad_consensus_threshold = 0.1   # Below this = consensus lock (scale up)
+        self.mad_chaos_threshold = 0.5       # Above this = chaos (scale down)
+        self.mad_decay_factor = 2.0          # k in exp(-MAD * k)
     
     def compute_z_matrix(
         self, 
@@ -510,6 +623,50 @@ class DiversityDefenseAggregator:
             z_out.append(z.fillna(0).values)
         
         return np.array(z_out)
+    
+    def compute_rolling_correlation(
+        self,
+        z_matrix: np.ndarray,
+        window: int = 24
+    ) -> Tuple[float, str]:
+        """
+        Compute rolling pairwise correlation for Kill Switch monitoring.
+        
+        Args:
+            z_matrix: Z-score normalized predictions (n_models, n_samples)
+            window: Rolling window (default 24 = 24 hours for hourly data)
+            
+        Returns:
+            Tuple of (avg_correlation, kill_switch_status)
+            Status: "normal", "danger_high_corr", "danger_low_corr"
+        """
+        if z_matrix.ndim != 2 or z_matrix.shape[0] < 2:
+            return 0.5, "normal"
+        
+        # Use last `window` samples for recent correlation
+        recent_z = z_matrix[:, -window:] if z_matrix.shape[1] >= window else z_matrix
+        
+        try:
+            corr_matrix = np.corrcoef(recent_z)
+            if corr_matrix.ndim != 2:
+                return 0.5, "normal"
+            
+            upper_tri = corr_matrix[np.triu_indices_from(corr_matrix, k=1)]
+            avg_corr = np.nanmean(upper_tri)
+            
+            if np.isnan(avg_corr):
+                return 0.5, "normal"
+            
+            # Kill Switch logic
+            if avg_corr > self.KILL_SWITCH_HIGH_CORR:
+                return avg_corr, "danger_high_corr"
+            elif avg_corr < self.KILL_SWITCH_LOW_CORR:
+                return avg_corr, "danger_low_corr"
+            else:
+                return avg_corr, "normal"
+                
+        except Exception:
+            return 0.5, "normal"
     
     def compute_correlation_penalty(
         self, 
@@ -552,12 +709,55 @@ class DiversityDefenseAggregator:
         except Exception:
             return 0.0
     
+    def smart_disagreement_multiplier(
+        self,
+        mad: np.ndarray,
+        median_abs: np.ndarray
+    ) -> np.ndarray:
+        """
+        Compute smart disagreement scaling multiplier.
+        
+        Instead of simple 1/(1+MAD), we use regime-aware scaling:
+        - Low MAD + High Median: "Consensus Lock" (Trend) -> Scale UP
+        - High MAD: "Chaos/Noise" -> Scale DOWN aggressively
+        
+        Uses exponential decay: multiplier = exp(-MAD * k)
+        This punishes disagreement more aggressively than linear division.
+        
+        Args:
+            mad: MAD values per sample
+            median_abs: Absolute median Z-score per sample
+            
+        Returns:
+            Multiplier array (0-1.5 range)
+        """
+        # Base multiplier: exponential decay based on MAD
+        base_multiplier = np.exp(-mad * self.mad_decay_factor)
+        
+        # Consensus Lock bonus: Low MAD AND High Median = trend confidence
+        # Scale up to 1.5x when in consensus lock
+        consensus_mask = (mad < self.mad_consensus_threshold) & (median_abs > 0.3)
+        consensus_bonus = np.where(consensus_mask, 1.5, 1.0)
+        
+        # Chaos penalty: Very high MAD = aggressive scale down
+        # Already handled by exponential decay, but add extra penalty
+        chaos_mask = mad > self.mad_chaos_threshold
+        chaos_penalty = np.where(chaos_mask, 0.5, 1.0)
+        
+        # Final multiplier
+        multiplier = base_multiplier * consensus_bonus * chaos_penalty
+        
+        # Clip to reasonable range
+        return np.clip(multiplier, 0.0, 1.5)
+    
     def robust_aggregate(
         self, 
         z_matrix: np.ndarray
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
-        Perform robust aggregation using median and MAD.
+        Perform robust aggregation using median and smart MAD scaling.
+        
+        Uses exponential decay for disagreement penalty instead of 1/(1+MAD).
         
         Args:
             z_matrix: Z-score normalized predictions (n_models, n_samples)
@@ -571,12 +771,11 @@ class DiversityDefenseAggregator:
         # MAD (Median Absolute Deviation) - measures disagreement
         mad_z = np.median(np.abs(z_matrix - med_z), axis=0)
         
-        # Soft floor on MAD to prevent division issues
-        mad_eff = np.maximum(mad_z, self.config.mad_floor)
+        # Smart disagreement multiplier (replaces simple 1/(1+MAD))
+        multiplier = self.smart_disagreement_multiplier(mad_z, np.abs(med_z))
         
-        # Raw signal: Median / (1 + MAD)
-        # Effect: High disagreement (large MAD) shrinks signal toward zero
-        raw_signal = med_z / (1.0 + mad_eff)
+        # Raw signal: Median * multiplier
+        raw_signal = med_z * multiplier
         
         return med_z, mad_z, raw_signal
     
@@ -934,11 +1133,12 @@ class DiversitySweep:
         colsample_settings: Optional[List[float]] = None,
         n_splits: int = 2,
         n_models: int = 5,
-        das_floor: float = 0.5,
-        das_penalty: float = 4.0,
     ):
         """
         Initialize the diversity sweep.
+        
+        Uses ESR (Ensemble Sharpe Ratio) to find optimal colsample_bytree.
+        ESR = avg_sharpe * sqrt(n / (1 + (n-1) * corr))
         
         Args:
             X: Feature matrix
@@ -946,16 +1146,12 @@ class DiversitySweep:
             colsample_settings: List of colsample_bytree values to test
             n_splits: Number of time series CV splits
             n_models: Number of models in mini-ensemble (5 recommended for speed)
-            das_floor: Target floor for DAS scoring
-            das_penalty: Penalty weight for DAS scoring
         """
         self.X = X
         self.y = np.asarray(y)
         self.colsample_settings = colsample_settings or [0.8, 0.6, 0.5, 0.4, 0.3]
         self.n_splits = n_splits
         self.n_models = n_models
-        self.das_floor = das_floor
-        self.das_penalty = das_penalty
         
         self.objectives = DiversityDefenseObjectives()
     
@@ -1064,7 +1260,7 @@ class DiversitySweep:
             verbose: Print progress
             
         Returns:
-            DataFrame with columns: Fraction, Sharpe, Avg_Corr, DAS_Score
+            DataFrame with columns: Fraction, Sharpe, Avg_Corr, ESR_Score
         """
         try:
             from sklearn.model_selection import TimeSeriesSplit
@@ -1075,7 +1271,7 @@ class DiversitySweep:
         tscv = TimeSeriesSplit(n_splits=self.n_splits)
         
         if verbose:
-            print(f"{'Fraction':<10} | {'Sharpe':<10} | {'Avg Corr':<10} | {'DAS Score':<12}")
+            print(f"{'Fraction':<10} | {'Sharpe':<10} | {'Avg Corr':<10} | {'ESR Score':<12}")
             print("-" * 55)
         
         for col_fraction in self.colsample_settings:
@@ -1115,40 +1311,41 @@ class DiversitySweep:
                 # C. Calculate Sharpe (Performance Metric)
                 med_z = np.median(z_matrix, axis=0)
                 mad_z = np.median(np.abs(z_matrix - med_z), axis=0)
-                final_sig = med_z / (1.0 + np.maximum(mad_z, 0.25))
+                # Use exponential decay for disagreement
+                multiplier = np.exp(-mad_z * 2.0)
+                final_sig = med_z * multiplier
                 
                 ret = final_sig * y_val
                 sharpe = calculate_simple_sharpe(ret)
                 fold_sharpes.append(sharpe)
             
-            # Aggregate
+            # Aggregate using ESR (Ensemble Sharpe Ratio)
             avg_sharpe = np.mean(fold_sharpes) if fold_sharpes else 0.0
             avg_corr = np.mean(fold_corrs) if fold_corrs else 0.0
-            das_score = calculate_das_score(
+            esr_score = calculate_esr_score(
                 avg_sharpe, avg_corr, 
-                target_floor=self.das_floor,
-                penalty_weight=self.das_penalty
+                n_models=self.n_models
             )
             
             results.append({
                 'Fraction': col_fraction,
                 'Sharpe': avg_sharpe,
                 'Avg_Corr': avg_corr,
-                'DAS_Score': das_score
+                'ESR_Score': esr_score
             })
             
             if verbose:
-                print(f"{col_fraction:<10.2f} | {avg_sharpe:<10.4f} | {avg_corr:<10.4f} | {das_score:<12.4f}")
+                print(f"{col_fraction:<10.2f} | {avg_sharpe:<10.4f} | {avg_corr:<10.4f} | {esr_score:<12.4f}")
         
         df_results = pd.DataFrame(results)
         
-        # Find optimal
+        # Find optimal based on ESR (Ensemble Sharpe Ratio)
         if len(df_results) > 0:
-            best_idx = df_results['DAS_Score'].idxmax()
+            best_idx = df_results['ESR_Score'].idxmax()
             best_fraction = df_results.loc[best_idx, 'Fraction']
             if verbose:
                 print("-" * 55)
-                print(f"✅ Optimal colsample_bytree: {best_fraction:.2f} (DAS Score: {df_results.loc[best_idx, 'DAS_Score']:.4f})")
+                print(f"✅ Optimal colsample_bytree: {best_fraction:.2f} (ESR Score: {df_results.loc[best_idx, 'ESR_Score']:.4f})")
         
         return df_results
     
@@ -1162,7 +1359,7 @@ class DiversitySweep:
         df = self.run(verbose=False)
         if len(df) == 0:
             return 0.5  # Default
-        best_idx = df['DAS_Score'].idxmax()
+        best_idx = df['ESR_Score'].idxmax()
         return float(df.loc[best_idx, 'Fraction'])
 
 
@@ -1297,6 +1494,382 @@ def create_diversity_defense_ensemble(
 
 
 # =============================================================================
+# Label Diagnostic Dashboard
+# =============================================================================
+
+@dataclass
+class LabelDiagnosticResult:
+    """Results from the Label Diagnostic Dashboard."""
+    
+    # Learnability (Overfitting Check)
+    train_error: float
+    val_error: float
+    learnability_gap: float
+    learnability_status: str  # "good", "warning", "poor"
+    
+    # Signal-to-Noise Ratio (Consensus Check)
+    avg_mad: float
+    snr_status: str  # "high_snr", "medium_snr", "low_snr"
+    
+    # Directional Causality (Alpha Check)
+    tanh_correlation: float
+    alpha_status: str  # "strong", "weak", "none"
+    
+    # Stationarity (Regime Check)
+    rolling_sharpe_std: float
+    stationarity_status: str  # "stable", "moderate", "unstable"
+    
+    # Overall recommendation
+    label_quality_score: float  # 0-100
+    recommendation: str
+
+
+class LabelDiagnosticDashboard:
+    """
+    Diagnostic dashboard for auditing the quality of target labels.
+    
+    Uses ensemble internal metrics to measure:
+    1. Learnability: Training vs Validation error gap
+    2. Signal-to-Noise Ratio: Ensemble MAD (model agreement)
+    3. Directional Causality: Tanh model correlation with target
+    4. Stationarity: Rolling Sharpe stability
+    
+    Recommended baseline label: Volatility-Normalized Log-Returns
+    Formula: log(Future_Price / Current_Price) / Rolling_Volatility
+    """
+    
+    def __init__(
+        self,
+        X: pd.DataFrame,
+        y: np.ndarray,
+        config: Optional[DiversityDefenseConfig] = None,
+        n_splits: int = 3,
+        rolling_sharpe_window: int = 100,
+    ):
+        """
+        Initialize the Label Diagnostic Dashboard.
+        
+        Args:
+            X: Feature matrix
+            y: Target variable to diagnose
+            config: Diversity Defense configuration
+            n_splits: Number of CV splits for learnability check
+            rolling_sharpe_window: Window for rolling Sharpe stability check
+        """
+        self.X = X
+        self.y = np.asarray(y)
+        self.config = config or DiversityDefenseConfig()
+        self.n_splits = n_splits
+        self.rolling_sharpe_window = rolling_sharpe_window
+        
+        self.objectives = DiversityDefenseObjectives(self.config)
+        self.aggregator = DiversityDefenseAggregator(self.config)
+    
+    def _compute_learnability(
+        self,
+        X_train: pd.DataFrame,
+        y_train: np.ndarray,
+        X_val: pd.DataFrame,
+        y_val: np.ndarray,
+    ) -> Tuple[float, float]:
+        """Train Huber models and compute train/val error."""
+        try:
+            import lightgbm as lgb
+        except ImportError:
+            return 0.0, 0.0
+        
+        # Use Huber models specifically (Reality Check layer)
+        huber_obj = self.objectives.huber_factory(delta=self.config.huber_delta)
+        
+        params = {
+            'n_estimators': 200,
+            'num_leaves': 40,
+            'max_depth': 6,
+            'learning_rate': 0.03,
+            'colsample_bytree': 0.5,
+            'verbosity': -1,
+        }
+        
+        model = lgb.LGBMRegressor(objective=huber_obj, **params)
+        model.fit(X_train, y_train)
+        
+        train_preds = model.predict(X_train)
+        val_preds = model.predict(X_val)
+        
+        # Use MAE as error metric
+        train_error = np.mean(np.abs(train_preds - y_train))
+        val_error = np.mean(np.abs(val_preds - y_val))
+        
+        return train_error, val_error
+    
+    def _compute_snr(self, preds_matrix: np.ndarray) -> float:
+        """Compute average MAD across predictions (lower = higher SNR)."""
+        z_matrix = self.aggregator.compute_z_matrix(preds_matrix)
+        _, mad_z, _ = self.aggregator.robust_aggregate(z_matrix)
+        return float(np.mean(mad_z))
+    
+    def _compute_alpha(
+        self,
+        X_train: pd.DataFrame,
+        y_train: np.ndarray,
+        X_val: pd.DataFrame,
+        y_val: np.ndarray,
+    ) -> float:
+        """Compute correlation between Tanh model predictions and target."""
+        try:
+            import lightgbm as lgb
+        except ImportError:
+            return 0.0
+        
+        # Train Tanh models (directional accuracy)
+        tanh_obj = self.objectives.robust_tanh_factory()
+        
+        params = {
+            'n_estimators': 200,
+            'num_leaves': 40,
+            'max_depth': 6,
+            'learning_rate': 0.03,
+            'colsample_bytree': 0.5,
+            'verbosity': -1,
+        }
+        
+        model = lgb.LGBMRegressor(objective=tanh_obj, **params)
+        model.fit(X_train, y_train)
+        
+        val_preds = model.predict(X_val)
+        
+        # Compute Spearman correlation (more robust for non-linear relationships)
+        from scipy.stats import spearmanr
+        corr, _ = spearmanr(val_preds, y_val)
+        
+        return float(corr) if not np.isnan(corr) else 0.0
+    
+    def _compute_stationarity(self, returns: np.ndarray) -> float:
+        """Compute rolling Sharpe standard deviation (stability metric)."""
+        if len(returns) < self.rolling_sharpe_window * 2:
+            return 0.0
+        
+        # Compute rolling Sharpe
+        rolling_sharpes = []
+        for i in range(self.rolling_sharpe_window, len(returns)):
+            window_returns = returns[i - self.rolling_sharpe_window:i]
+            sharpe = calculate_simple_sharpe(window_returns, annualization_factor=1.0)
+            rolling_sharpes.append(sharpe)
+        
+        # Standard deviation of rolling Sharpe (lower = more stable)
+        return float(np.std(rolling_sharpes)) if rolling_sharpes else 0.0
+    
+    def run(self, verbose: bool = True) -> LabelDiagnosticResult:
+        """
+        Run the full label diagnostic analysis.
+        
+        Args:
+            verbose: Print progress and results
+            
+        Returns:
+            LabelDiagnosticResult with all metrics
+        """
+        try:
+            import lightgbm as lgb
+            from sklearn.model_selection import TimeSeriesSplit
+        except ImportError:
+            raise ImportError("LightGBM and scikit-learn are required")
+        
+        if verbose:
+            print("=" * 60)
+            print("LABEL DIAGNOSTIC DASHBOARD")
+            print("=" * 60)
+        
+        # 1. LEARNABILITY CHECK
+        if verbose:
+            print("\n[1] Learnability (Overfitting Check)...")
+        
+        tscv = TimeSeriesSplit(n_splits=self.n_splits)
+        train_errors = []
+        val_errors = []
+        
+        for train_idx, val_idx in tscv.split(self.X):
+            X_train = self.X.iloc[train_idx]
+            X_val = self.X.iloc[val_idx]
+            y_train = self.y[train_idx]
+            y_val = self.y[val_idx]
+            
+            te, ve = self._compute_learnability(X_train, y_train, X_val, y_val)
+            train_errors.append(te)
+            val_errors.append(ve)
+        
+        avg_train_error = np.mean(train_errors)
+        avg_val_error = np.mean(val_errors)
+        learnability_gap = avg_val_error - avg_train_error
+        
+        if learnability_gap < 0.1:
+            learnability_status = "good"
+        elif learnability_gap < 0.3:
+            learnability_status = "warning"
+        else:
+            learnability_status = "poor"
+        
+        if verbose:
+            print(f"   Train Error: {avg_train_error:.4f}")
+            print(f"   Val Error: {avg_val_error:.4f}")
+            print(f"   Gap: {learnability_gap:.4f} -> {learnability_status.upper()}")
+        
+        # 2. SIGNAL-TO-NOISE RATIO CHECK
+        if verbose:
+            print("\n[2] Signal-to-Noise Ratio (Consensus Check)...")
+        
+        # Train mini-ensemble
+        sweep = DiversitySweep(self.X, self.y, n_splits=2, n_models=5)
+        
+        # Get predictions from a sweep run
+        all_mads = []
+        tscv = TimeSeriesSplit(n_splits=2)
+        for train_idx, val_idx in tscv.split(self.X):
+            X_train = self.X.iloc[train_idx]
+            X_val = self.X.iloc[val_idx]
+            y_train = self.y[train_idx]
+            
+            preds_matrix = sweep._train_mini_ensemble(X_train, y_train, X_val, 0.5)
+            if len(preds_matrix) > 0:
+                avg_mad = self._compute_snr(preds_matrix)
+                all_mads.append(avg_mad)
+        
+        avg_mad = np.mean(all_mads) if all_mads else 0.5
+        
+        if avg_mad < 0.2:
+            snr_status = "high_snr"
+        elif avg_mad < 0.5:
+            snr_status = "medium_snr"
+        else:
+            snr_status = "low_snr"
+        
+        if verbose:
+            print(f"   Average MAD: {avg_mad:.4f}")
+            print(f"   SNR Status: {snr_status.upper()}")
+        
+        # 3. ALPHA CHECK (Directional Causality)
+        if verbose:
+            print("\n[3] Directional Causality (Alpha Check)...")
+        
+        alphas = []
+        tscv = TimeSeriesSplit(n_splits=self.n_splits)
+        for train_idx, val_idx in tscv.split(self.X):
+            X_train = self.X.iloc[train_idx]
+            X_val = self.X.iloc[val_idx]
+            y_train = self.y[train_idx]
+            y_val = self.y[val_idx]
+            
+            alpha = self._compute_alpha(X_train, y_train, X_val, y_val)
+            alphas.append(alpha)
+        
+        tanh_correlation = np.mean(alphas)
+        
+        if abs(tanh_correlation) > 0.3:
+            alpha_status = "strong"
+        elif abs(tanh_correlation) > 0.1:
+            alpha_status = "weak"
+        else:
+            alpha_status = "none"
+        
+        if verbose:
+            print(f"   Tanh-Target Correlation: {tanh_correlation:.4f}")
+            print(f"   Alpha Status: {alpha_status.upper()}")
+        
+        # 4. STATIONARITY CHECK
+        if verbose:
+            print("\n[4] Stationarity (Regime Check)...")
+        
+        rolling_sharpe_std = self._compute_stationarity(self.y)
+        
+        if rolling_sharpe_std < 0.5:
+            stationarity_status = "stable"
+        elif rolling_sharpe_std < 1.0:
+            stationarity_status = "moderate"
+        else:
+            stationarity_status = "unstable"
+        
+        if verbose:
+            print(f"   Rolling Sharpe Std: {rolling_sharpe_std:.4f}")
+            print(f"   Stationarity Status: {stationarity_status.upper()}")
+        
+        # 5. OVERALL SCORE & RECOMMENDATION
+        # Score components (0-25 each)
+        learn_score = 25 if learnability_status == "good" else (15 if learnability_status == "warning" else 5)
+        snr_score = 25 if snr_status == "high_snr" else (15 if snr_status == "medium_snr" else 5)
+        alpha_score = 25 if alpha_status == "strong" else (15 if alpha_status == "weak" else 5)
+        stat_score = 25 if stationarity_status == "stable" else (15 if stationarity_status == "moderate" else 5)
+        
+        label_quality_score = learn_score + snr_score + alpha_score + stat_score
+        
+        # Generate recommendation
+        if label_quality_score >= 80:
+            recommendation = "EXCELLENT: Label is high quality. Proceed with training."
+        elif label_quality_score >= 60:
+            recommendation = "GOOD: Label is usable. Consider improving weakest area."
+        elif label_quality_score >= 40:
+            recommendation = "FAIR: Label has issues. Try volatility-normalized returns or different horizon."
+        else:
+            recommendation = "POOR: Label is problematic. Recommend: log(P_t+h/P_t) / rolling_vol"
+        
+        if verbose:
+            print("\n" + "=" * 60)
+            print(f"OVERALL LABEL QUALITY SCORE: {label_quality_score}/100")
+            print(f"RECOMMENDATION: {recommendation}")
+            print("=" * 60)
+        
+        return LabelDiagnosticResult(
+            train_error=avg_train_error,
+            val_error=avg_val_error,
+            learnability_gap=learnability_gap,
+            learnability_status=learnability_status,
+            avg_mad=avg_mad,
+            snr_status=snr_status,
+            tanh_correlation=tanh_correlation,
+            alpha_status=alpha_status,
+            rolling_sharpe_std=rolling_sharpe_std,
+            stationarity_status=stationarity_status,
+            label_quality_score=label_quality_score,
+            recommendation=recommendation,
+        )
+
+
+def create_volatility_normalized_label(
+    close_prices: pd.Series,
+    horizon: int = 4,
+    vol_window: int = 24,
+) -> pd.Series:
+    """
+    Create the recommended volatility-normalized log-return label.
+    
+    Formula: log(Price_t+h / Price_t) / rolling_volatility
+    
+    This normalizes returns by volatility, making the label more stationary
+    and easier to learn across different market regimes.
+    
+    Args:
+        close_prices: Close price series
+        horizon: Forward horizon in periods (e.g., 4 for 4-hour returns)
+        vol_window: Rolling window for volatility calculation
+        
+    Returns:
+        Volatility-normalized log-returns
+    """
+    # Log returns at horizon h
+    log_returns = np.log(close_prices.shift(-horizon) / close_prices)
+    
+    # Rolling volatility
+    rolling_vol = close_prices.pct_change().rolling(window=vol_window, min_periods=1).std()
+    
+    # Volatility-normalized returns
+    vol_norm_returns = log_returns / (rolling_vol + EPS)
+    
+    # Clip extreme values
+    vol_norm_returns = vol_norm_returns.clip(-5, 5)
+    
+    return vol_norm_returns
+
+
+# =============================================================================
 # Exports
 # =============================================================================
 
@@ -1309,12 +1882,18 @@ __all__ = [
     'DiversityDefenseAggregator',
     'DiversityDefenseHPO',
     'DiversitySweep',
+    'LabelDiagnosticDashboard',
+    'LabelDiagnosticResult',
     
     # Functions
     'create_diversity_defense_ensemble',
-    'calculate_das_score',
+    'calculate_esr_score',
+    'calculate_das_score',  # Backward compatibility
     'calculate_simple_sharpe',
+    'generate_regime_meta_features',
+    'create_volatility_normalized_label',
     
     # Constants
     'EPS',
+    'META_FEATURE_COLUMNS',
 ]

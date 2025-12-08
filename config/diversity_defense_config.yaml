@@ -121,26 +121,35 @@ aggregation:
     # Linear scaling between thresholds
 
 # =============================================================================
-# Diversity-Adjusted Sharpe (DAS) Scoring
+# Ensemble Sharpe Ratio (ESR) Scoring
 # =============================================================================
 #
-# The DAS formula rewards raw performance (Sharpe) but applies a progressively
-# heavier tax as correlation creeps above the target floor.
+# The ESR formula calculates the theoretical ensemble Sharpe based on
+# portfolio theory - diversification provides a "free lunch" when models
+# are uncorrelated.
 #
-# Formula: DAS = Sharpe - λ * max(0, Corr - 0.5)²
+# Formula: ESR = avg_sharpe * sqrt(n / (1 + (n-1) * corr))
 #
 # Where:
-# - Sharpe: Annualized Sharpe ratio of the ensemble
-# - Corr: Average pairwise correlation of Z-scores
-# - 0.5: Safe floor - correlations below this are free (no penalty)
-# - λ (penalty_weight): Controls how hard to punish "herding"
+# - avg_sharpe: Average Sharpe ratio across models
+# - n: Number of models in ensemble
+# - corr: Average pairwise correlation of predictions
 #
-das_scoring:
-  # Safe floor - correlations below this are free (no penalty)
-  correlation_threshold: 0.5
-  # Quadratic penalty weight for correlations above threshold
-  # Higher = more aggressive penalty for correlated models
-  penalty_weight: 4.0
+# The diversity_gain factor represents how much variance is cancelled out
+# by combining uncorrelated predictions.
+#
+esr_scoring:
+  # Number of models for ESR calculation
+  n_models: 10
+  
+# Kill Switch thresholds for live trading safety
+kill_switch:
+  # Correlation > 0.90: Diversity collapsed - halve position size
+  high_corr_threshold: 0.90
+  # Correlation < 0.0: Models confused - stop trading
+  low_corr_threshold: 0.0
+  # Rolling window for correlation monitoring (in periods, e.g., 24 hours)
+  monitoring_window: 24
 
 # =============================================================================
 # Diversity Sweep Configuration
@@ -217,6 +226,79 @@ hpo:
     max_depth: [4, 8]
 
 # =============================================================================
+# Regime-Conditional Meta-Features
+# =============================================================================
+#
+# These 3 meta-features bypass colsample_bytree to be available in EVERY tree.
+# They allow trees to create root splits based on market regime, making the
+# ensemble "context-aware".
+#
+# Why: RSI means one thing in a Trend and the opposite in a Range.
+#
+regime_meta_features:
+  enabled: true
+  
+  # 1. Volatility Regime: Current_ATR / 30d_Avg_ATR
+  # Is market waking up (>1) or sleeping (<1)?
+  volatility_regime:
+    atr_window: 14
+    avg_window_days: 30
+  
+  # 2. Trendiness: |Price - MA50| / Price
+  # Are we trending (high) or ranging (low)?
+  trendiness:
+    ma_window: 50
+  
+  # 3. Volume Shock: Current_Vol / 24h_Avg_Vol
+  # Is liquidity rushing in (>1)?
+  volume_shock:
+    vol_window: 24
+
+# =============================================================================
+# Smart Disagreement Scaling
+# =============================================================================
+#
+# Uses exponential decay instead of simple 1/(1+MAD) for position sizing.
+# Multiplier = exp(-MAD * k)
+# This punishes disagreement more aggressively than linear division.
+#
+# Additional logic:
+# - Low MAD + High Median: "Consensus Lock" (Trend) -> Scale UP
+# - High MAD: "Chaos/Noise" -> Scale DOWN
+#
+disagreement_scaling:
+  # Exponential decay factor (k in exp(-MAD * k))
+  decay_factor: 2.0
+  
+  # Consensus lock threshold (MAD below this = models agree)
+  consensus_threshold: 0.1
+  
+  # Chaos threshold (MAD above this = models fighting)
+  chaos_threshold: 0.5
+  
+  # Bonus multiplier when in consensus lock (up to 1.5x)
+  consensus_bonus: 1.5
+
+# =============================================================================
+# Label Diagnostic Dashboard
+# =============================================================================
+#
+# For auditing target label quality using ensemble internal metrics.
+# Measures: Learnability, SNR, Alpha, Stationarity
+#
+label_diagnostic:
+  enabled: true
+  n_splits: 3
+  rolling_sharpe_window: 100
+  
+  # Recommended baseline label: Volatility-Normalized Log-Returns
+  # Formula: log(P_t+h / P_t) / rolling_volatility
+  recommended_label:
+    type: "volatility_normalized_log_returns"
+    horizon: 4  # 4-hour returns
+    vol_window: 24  # 24-hour rolling vol
+
+# =============================================================================
 # Live Trading Signal Generation
 # =============================================================================
 live_trading:
@@ -236,11 +318,12 @@ live_trading:
   max_position_size: 1.0   # Maximum position (100%)
   min_position_size: 0.0   # Minimum non-zero position
   
-  # MAD-based confidence
-  mad_confidence:
-    low_mad: 0.2      # MAD < 0.2 = high confidence
-    medium_mad: 0.4   # 0.2 <= MAD < 0.4 = medium confidence
-    high_mad: 0.6     # MAD >= 0.6 = low confidence, reduce size
+  # Smart disagreement-based confidence (replaces simple MAD thresholds)
+  disagreement_confidence:
+    consensus_lock: 0.1   # MAD < 0.1 AND high median = scale up
+    normal: 0.3           # 0.1 <= MAD < 0.3 = normal sizing
+    uncertain: 0.5        # 0.3 <= MAD < 0.5 = reduce size
+    chaos: 0.5            # MAD >= 0.5 = minimal size
 
 # =============================================================================
 # Logging and Monitoring

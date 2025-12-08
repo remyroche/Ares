@@ -52,9 +52,15 @@ from .diversity_defense_objectives import (
     DiversityDefenseAggregator,
     DiversityDefenseHPO,
     DiversitySweep,
+    LabelDiagnosticDashboard,
+    LabelDiagnosticResult,
     create_diversity_defense_ensemble,
-    calculate_das_score,
+    calculate_esr_score,
+    calculate_das_score,  # Backward compatibility
     calculate_simple_sharpe,
+    generate_regime_meta_features,
+    create_volatility_normalized_label,
+    META_FEATURE_COLUMNS,
 )
 
 # Backward compatibility alias
@@ -115,7 +121,13 @@ __all__ = [
     'DiversityDefenseAggregator',
     'DiversityDefenseHPO',
     'DiversitySweep',
+    'LabelDiagnosticDashboard',
+    'LabelDiagnosticResult',
     'create_diversity_defense_ensemble',
-    'calculate_das_score',
+    'calculate_esr_score',
+    'calculate_das_score',  # Backward compatibility
     'calculate_simple_sharpe',
+    'generate_regime_meta_features',
+    'create_volatility_normalized_label',
+    'META_FEATURE_COLUMNS',
 ]

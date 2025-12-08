@@ -40,6 +40,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+import concurrent.futures
 
 import numpy as np
 import pandas as pd
@@ -493,12 +494,6 @@ class BaseIncrementalTrainer(ABC):
                 predictions = self._predict(pred_data)
                 all_predictions.append(predictions)
             
-            # HPO for next rounds
-            if self.config.enable_incremental_hpo and not window.is_burn_in:
-                hpo_result = self._run_incremental_hpo(train_data, window, verbose)
-                if hpo_result:
-                    hpo_history[f"window_{window.window_id}"] = hpo_result
-            
             # Metadata
             metadata = {
                 'window_id': window.window_id,
@@ -795,6 +790,7 @@ class IncrementalLGBMBaggedTrainer(BaseIncrementalTrainer):
         self._n_bags = int((model_config or {}).get('n_bags', 10))
         self._feature_fraction = float((model_config or {}).get('bagging_feature_fraction', 0.7))
         self._sample_fraction = float((model_config or {}).get('bagging_sample_fraction', 0.7))
+        self._bagged_boosters = []  # Store boosters for warm start
 
     def _get_default_params(self) -> Dict[str, Any]:
         params = {
@@ -837,6 +833,10 @@ class IncrementalLGBMBaggedTrainer(BaseIncrementalTrainer):
         rng = np.random.RandomState(42)
         models: List[Any] = []
         feature_indices: List[np.ndarray] = []
+        new_boosters = []
+
+        # Check if we have previous boosters for warm start
+        has_warm_start = len(self._bagged_boosters) == n_bags
 
         for bag_idx in range(n_bags):
             params = dict(base_params)
@@ -858,15 +858,30 @@ class IncrementalLGBMBaggedTrainer(BaseIncrementalTrainer):
 
             try:
                 model = lgb.LGBMRegressor(**params)
+
+                # Use warm start if available
+                init_model = self._bagged_boosters[bag_idx] if has_warm_start else None
+
                 if sw_bag is not None:
-                    model.fit(X_bag, y_bag, sample_weight=sw_bag)
+                    model.fit(X_bag, y_bag, sample_weight=sw_bag, init_model=init_model)
                 else:
-                    model.fit(X_bag, y_bag)
+                    model.fit(X_bag, y_bag, init_model=init_model)
+
                 models.append(model)
                 feature_indices.append(feat_idx)
+
+                # Store booster for next round
+                # For LGBMRegressor, the booster is in booster_ attribute after fit
+                if hasattr(model, 'booster_'):
+                    new_boosters.append(model.booster_)
+
             except Exception as e:
                 logger.warning(f"Bag {bag_idx} failed during training: {e}")
                 continue
+
+        # Update stored boosters if we successfully trained
+        if len(new_boosters) == len(models):
+            self._bagged_boosters = new_boosters
 
         return BaggedLGBMRegressor(models, feature_indices, n_features)
 
@@ -1057,7 +1072,7 @@ class IncrementalNGBoostTrainer(BaseIncrementalTrainer):
         self._feature_cols: List[str] = []
     
     def _get_default_params(self):
-        params = {'n_estimators': 500, 'learning_rate': 0.01, 'minibatch_frac': 0.5, 'verbose': False}
+        params = {'n_estimators': 300, 'learning_rate': 0.01, 'minibatch_frac': 0.5, 'verbose': False}
         if self.model_config and 'params' in self.model_config:
             # Copy to avoid mutating the original config dict
             cfg_params = dict(self.model_config['params'])
@@ -1117,9 +1132,24 @@ class IncrementalNGBoostTrainer(BaseIncrementalTrainer):
         return calibrated_model
 
     def _train_incremental(self, new_data, full_train_data, window, verbose) -> CalibratedModel:
-        # Re-train on full accumulated data (NGBoost doesn't support true partial_fit)
-        # Using consistent params to minimize drift
-        return self._train_initial(full_train_data, window, verbose)
+        # Use partial fitting logic if available (NGBoost doesn't have native partial_fit,
+        # but we can try to continue training or use a sliding window to reduce cost)
+
+        # Strategy: Use a sliding window of data to keep training time constant O(N) instead of O(N^2)
+        # Keep last N samples (e.g. 5000 or whatever corresponds to a reasonable history)
+        # This simulates "forgetting" old data similar to a partial fit on new data with some memory.
+
+        # Determine max history length (e.g., 20 windows worth or 60 days)
+        # 15m data: 96 points/day * 60 days = 5760 points
+        max_history = 10000
+
+        if len(full_train_data) > max_history:
+            if verbose: logger.info(f"   NGBoost: Truncating history to last {max_history} samples for speed")
+            train_data_window = full_train_data.iloc[-max_history:].copy()
+        else:
+            train_data_window = full_train_data
+
+        return self._train_initial(train_data_window, window, verbose)
 
     def _predict(self, pred_data) -> pd.DataFrame:
         if self._feature_cols:
@@ -1547,9 +1577,28 @@ class IncrementalAnalystTrainer:
             
     def train_all_models(self, X, y, data_start, data_end, sample_weight=None, verbose=True, specialist_feature_names=None):
         results = {}
-        for name, trainer in self.trainers.items():
-            if verbose: logger.info(f"Training {name}")
-            results[name] = trainer.train_and_predict(X, y, data_start, data_end, sample_weight, verbose, specialist_feature_names)
+
+        # Parallel execution using ThreadPoolExecutor (safer than ProcessPoolExecutor for pickling)
+        # Most underlying libraries (LGBM, Sklearn) release GIL for heavy ops.
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(self.trainers)) as executor:
+            future_to_name = {
+                executor.submit(
+                    trainer.train_and_predict,
+                    X, y, data_start, data_end, sample_weight, verbose, specialist_feature_names
+                ): name
+                for name, trainer in self.trainers.items()
+            }
+
+            for future in concurrent.futures.as_completed(future_to_name):
+                name = future_to_name[future]
+                try:
+                    results[name] = future.result()
+                    if verbose: logger.info(f"✅ {name} finished training")
+                except Exception as e:
+                    logger.error(f"❌ {name} failed: {e}")
+                    import traceback
+                    logger.error(traceback.format_exc())
+
         return results
 
     def get_combined_oof_predictions(self, results):

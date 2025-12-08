@@ -202,7 +202,7 @@ analyst_config:
       use_isotonic_calibration: true
       output_mean_and_variance: true
       params:
-        n_estimators: 500
+        n_estimators: 300
         learning_rate: 0.01
         minibatch_frac: 0.2
         verbose: false

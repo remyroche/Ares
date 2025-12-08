@@ -1944,6 +1944,32 @@ def create_meta_features(
         except Exception:
             pass
 
+    # ===== MARKET EFFICIENCY & NOISE FEATURES (NEW) =====
+    # These features specifically target "Chop" vs "Trend" regimes.
+
+    from src.feature_generation.categories.efficiency_noise import (
+        KaufmanEfficiencyRatioGenerator,
+        AveragedACFGenerator
+    )
+
+    # Kaufman's Efficiency Ratio (ER)
+    # ER near 1.0 = Clean Trend, ER near 0.0 = Chop/Noise
+    # We calculate it for 10 periods (short-term efficiency)
+    er_gen = KaufmanEfficiencyRatioGenerator(period=10)
+    er_series = er_gen._generate_feature(df)
+
+    # Averaged Autocorrelation (ACF)
+    # Positive = Trend Persistence, Negative = Mean Reversion
+    acf_gen = AveragedACFGenerator(window=20)
+    acf_series = acf_gen._generate_feature(df)
+
+    if use_kalman:
+        features['kaufman_efficiency_ratio'] = _align_to_features(er_series, n_features)
+        features['averaged_acf'] = _align_to_features(acf_series, n_features)
+    else:
+        features['kaufman_efficiency_ratio'] = er_series.to_numpy()
+        features['averaged_acf'] = acf_series.to_numpy()
+
     # ===== ENTROPY (SIMPLE MEASURE) =====
 
     # Price entropy using returns distribution

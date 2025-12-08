@@ -86,6 +86,7 @@ class GateModel:
         - Short-term volatility (RV, ATR, BB Width)
         - Trend strength (ADX proxy, Slope, R2)
         - Momentum
+        - Market Efficiency/Noise (Variance Ratio, Entropy, Choppiness)
 
         Args:
             ohlcv: DataFrame with 'open', 'high', 'low', 'close', 'volume'.
@@ -204,6 +205,51 @@ class GateModel:
             features['hour_sin'] = 0.0
             features['hour_cos'] = 0.0
             features['is_weekend'] = 0
+
+        # 5. Market Efficiency & Noise Features (Vectorized)
+
+        # Variance Ratio Test (Lo & MacKinlay)
+        # Ratio of Variance(2-lag) / (2 * Variance(1-lag))
+        # Measures Random Walk: 1.0 = Random, <1 = Mean Reverting, >1 = Trending
+        vr_window = 50
+        var_1 = log_ret.rolling(window=vr_window).var()
+        # Variance of 2-period log returns
+        log_ret_2 = np.log(close / close.shift(2))
+        var_2 = log_ret_2.rolling(window=vr_window).var()
+        # VR = Var(q) / (q * Var(1))
+        # Here q=2
+        features['variance_ratio'] = var_2 / (2 * var_1 + 1e-8)
+
+        # Permutation Entropy (Proxy)
+        # Full PE is slow (O(N*M!)). We use a vectorized proxy: count of sign changes
+        # High sign changes -> High Entropy (Noise)
+        # Low sign changes -> Low Entropy (Trend)
+        sign_changes = (np.sign(log_ret) != np.sign(log_ret.shift(1))).astype(int)
+        features['permutation_entropy_proxy'] = sign_changes.rolling(window=20).mean()
+
+        # Choppiness Index (Bill Dreiss)
+        # CI = 100 * LOG10( SUM(ATR(1), n) / (MaxHi(n) - MinLo(n)) ) / LOG10(n)
+        ci_window = 14
+        # True Range
+        tr1 = pd.concat([
+            high - low,
+            (high - close.shift(1)).abs(),
+            (low - close.shift(1)).abs()
+        ], axis=1).max(axis=1)
+
+        sum_tr = tr1.rolling(window=ci_window).sum()
+        max_hi = high.rolling(window=ci_window).max()
+        min_lo = low.rolling(window=ci_window).min()
+        range_hl = max_hi - min_lo
+
+        # Avoid log(0) and division by zero
+        # Default to 50 (neutral) if range is 0
+        ci_term = sum_tr / (range_hl + 1e-8)
+        ci_term = ci_term.replace(0, 1) # prevent log(0)
+
+        # Log10
+        ci = 100 * np.log10(ci_term) / np.log10(ci_window)
+        features['choppiness_index'] = ci
 
         return features
 

@@ -418,6 +418,30 @@ class ExchangeDispatcher:
                 return result
         
         return None
+
+    @tprint_logged(LogLevel.INFO)
+    async def get_recent_trades(self, symbol: str, limit: int = 100) -> List[Dict[str, Any]]:
+        """Get recent trades for symbol.
+
+        This is used by the live DataStreamer._stream_trades loop.
+        """
+        if not self._ensure_initialized():
+            return []
+
+        if hasattr(self.exchange, 'get_recent_trades'):
+            with tprint_timer(f"ExchangeDispatcher.get_recent_trades - {symbol}"):
+                result = await self.exchange.get_recent_trades(symbol, limit)
+                if result:
+                    tprint_data_preview(result[:3] if isinstance(result, list) else result, f"Recent trades for {symbol}", max_rows=3)
+                    tprint_performance(
+                        "ExchangeDispatcher.get_recent_trades - performance",
+                        0.0,
+                        metrics={"symbol": symbol, "limit": limit, "trade_count": len(result) if isinstance(result, list) else 0},
+                    )
+                return result or []
+
+        tprint_warning("get_recent_trades not supported by exchange")
+        return []
     
     # Account Operations
     @tprint_logged(LogLevel.INFO)

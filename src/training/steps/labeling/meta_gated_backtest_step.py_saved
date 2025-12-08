@@ -318,7 +318,18 @@ class MetaGatedBacktestStep(BaseStep):
             except Exception:
                 base_q05 = base_q25 = base_q50 = base_q75 = base_q95 = 0.0
 
-            gate_mask = event_probs >= prob_threshold
+            # Handle NaN probabilities: events without predictions should not pass the gate
+            # NaN >= threshold is False, but we make this explicit for clarity
+            valid_prob_mask = ~event_probs.isna()
+            n_valid_probs = int(valid_prob_mask.sum())
+            n_nan_probs = int((~valid_prob_mask).sum())
+            if n_nan_probs > 0:
+                tprint_warning(
+                    f"⚠️ {n_nan_probs} events have NaN meta_probability (no model prediction); "
+                    f"{n_valid_probs} events have valid probabilities"
+                )
+            
+            gate_mask = valid_prob_mask & (event_probs >= prob_threshold)
             expected_returns = None
 
             if use_expected_return and iso_model is not None:
@@ -411,9 +422,71 @@ class MetaGatedBacktestStep(BaseStep):
             n_trades = int(len(gated_returns))
 
             if n_trades == 0:
-                raise ValueError(
-                    "Meta gate produced zero trades; consider relaxing thresholds or verifying artifacts"
+                tprint_warning(
+                    f"⚠️ Meta gate produced zero trades with prob_threshold={prob_threshold:.2f} "
+                    f"(use_expected_return={use_expected_return}, er_threshold={er_threshold:.5f}); "
+                    "attempting fallback gating.",
                 )
+
+                # 1) Check if volatility/trend/liquidity filters removed all trades
+                raw_gate = event_probs >= prob_threshold
+                n_raw = int(raw_gate.sum())
+
+                if n_raw > 0:
+                    tprint_warning(
+                        f"   ↪ Probability-only gate at threshold={prob_threshold:.2f} yields {n_raw} trades; "
+                        "disabling volatility/trend/liquidity filters for this backtest run.",
+                    )
+                    gate_mask = raw_gate
+                    gated_returns = event_returns[gate_mask]
+                    n_trades = int(gated_returns.size)
+                else:
+                    # 2) Adaptive probability-only threshold search if even the base
+                    #    probability gate produces zero trades.
+                    candidate_thresholds = sorted(
+                        {prob_threshold, 0.50, 0.45, 0.40},
+                        reverse=True,
+                    )
+
+                    best_candidate = None
+                    try:
+                        base_min_trades = int(entry_cfg.get("min_trades", 0))
+                    except Exception:
+                        base_min_trades = 0
+                    min_trades_target = max(50, int(max(base_min_trades, 0) * 0.1))
+
+                    for p_thr in candidate_thresholds:
+                        if p_thr <= 0.0 or p_thr > 1.0:
+                            continue
+                        mask_local = event_probs >= p_thr
+                        n_local = int(mask_local.sum())
+                        if n_local == 0:
+                            continue
+                        ret_local = event_returns[mask_local]
+                        mean_local = float(ret_local.mean())
+
+                        if best_candidate is None:
+                            best_candidate = (p_thr, n_local, mean_local)
+
+                        if n_local >= min_trades_target and mean_local > 0.0:
+                            best_candidate = (p_thr, n_local, mean_local)
+                            break
+
+                    if best_candidate is not None:
+                        fb_thr, fb_n_trades, fb_mean = best_candidate
+                        tprint_warning(
+                            f"   ↪ Fallback: using probability-only gate with threshold={fb_thr:.2f} "
+                            f"yielding {fb_n_trades} trades (mean_return={fb_mean:.4f}).",
+                        )
+                        prob_threshold = float(fb_thr)
+                        gate_mask = event_probs >= prob_threshold
+                        gated_returns = event_returns[gate_mask]
+                        n_trades = int(gated_returns.size)
+
+                if n_trades == 0:
+                    raise ValueError(
+                        "Meta gate produced zero trades even after fallback; consider revisiting thresholds or artifacts"
+                    )
 
             gated_start_date = None
             gated_end_date = None

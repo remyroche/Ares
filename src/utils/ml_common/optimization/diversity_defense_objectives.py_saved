@@ -54,6 +54,11 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import numpy as np
 import pandas as pd
 
+try:
+    from scipy.stats import spearmanr
+except Exception:
+    spearmanr = None
+
 logger = logging.getLogger(__name__)
 
 # Epsilon for numerical stability
@@ -281,6 +286,18 @@ class DiversityDefenseConfig:
     mad_floor: float = 0.25          # Soft floor for MAD (prevents div by zero)
     noise_threshold: float = 0.3     # Below this, signal = 0
     cap_threshold: float = 0.7       # Above this, signal capped
+    
+    # Kill Switch parameters
+    kill_switch_high_corr: float = 0.90   # Correlation > threshold: diversity collapsed
+    kill_switch_low_corr: float = 0.0     # Correlation < threshold: models confused
+    kill_switch_window: int = 24          # Rolling window for correlation monitoring
+    
+    # Disagreement scaling parameters
+    mad_decay_factor: float = 2.0         # Exponential decay factor for MAD
+    mad_consensus_threshold: float = 0.1  # MAD below this = consensus lock
+    mad_chaos_threshold: float = 0.5      # MAD above this = chaos
+    mad_consensus_bonus: float = 1.5      # Multiplier when in consensus lock
+    mad_chaos_penalty: float = 0.5        # Multiplier when in chaos regime
     
     # Orthogonality penalty parameters (for DAS scoring)
     correlation_threshold: float = 0.5   # Safe floor - correlations below this are free
@@ -591,10 +608,12 @@ class DiversityDefenseAggregator:
         """Initialize with optional configuration."""
         self.config = config or DiversityDefenseConfig()
         
-        # Disagreement scaling parameters
-        self.mad_consensus_threshold = 0.1   # Below this = consensus lock (scale up)
-        self.mad_chaos_threshold = 0.5       # Above this = chaos (scale down)
-        self.mad_decay_factor = 2.0          # k in exp(-MAD * k)
+        # Disagreement scaling parameters (from config, with sane defaults)
+        self.mad_consensus_threshold = getattr(self.config, "mad_consensus_threshold", 0.1)
+        self.mad_chaos_threshold = getattr(self.config, "mad_chaos_threshold", 0.5)
+        self.mad_decay_factor = getattr(self.config, "mad_decay_factor", 2.0)
+        self.mad_consensus_bonus = getattr(self.config, "mad_consensus_bonus", 1.5)
+        self.mad_chaos_penalty = getattr(self.config, "mad_chaos_penalty", 0.5)
     
     def compute_z_matrix(
         self, 
@@ -627,7 +646,7 @@ class DiversityDefenseAggregator:
     def compute_rolling_correlation(
         self,
         z_matrix: np.ndarray,
-        window: int = 24
+        window: Optional[int] = None
     ) -> Tuple[float, str]:
         """
         Compute rolling pairwise correlation for Kill Switch monitoring.
@@ -643,8 +662,11 @@ class DiversityDefenseAggregator:
         if z_matrix.ndim != 2 or z_matrix.shape[0] < 2:
             return 0.5, "normal"
         
-        # Use last `window` samples for recent correlation
-        recent_z = z_matrix[:, -window:] if z_matrix.shape[1] >= window else z_matrix
+        # Determine effective window from argument or config
+        window_eff = window or getattr(self.config, "kill_switch_window", 24)
+        
+        # Use last `window_eff` samples for recent correlation
+        recent_z = z_matrix[:, -window_eff:] if z_matrix.shape[1] >= window_eff else z_matrix
         
         try:
             corr_matrix = np.corrcoef(recent_z)
@@ -657,10 +679,12 @@ class DiversityDefenseAggregator:
             if np.isnan(avg_corr):
                 return 0.5, "normal"
             
-            # Kill Switch logic
-            if avg_corr > self.KILL_SWITCH_HIGH_CORR:
+            # Kill Switch logic from config thresholds
+            high_thr = getattr(self.config, "kill_switch_high_corr", self.KILL_SWITCH_HIGH_CORR)
+            low_thr = getattr(self.config, "kill_switch_low_corr", self.KILL_SWITCH_LOW_CORR)
+            if avg_corr > high_thr:
                 return avg_corr, "danger_high_corr"
-            elif avg_corr < self.KILL_SWITCH_LOW_CORR:
+            elif avg_corr < low_thr:
                 return avg_corr, "danger_low_corr"
             else:
                 return avg_corr, "normal"
@@ -732,17 +756,22 @@ class DiversityDefenseAggregator:
             Multiplier array (0-1.5 range)
         """
         # Base multiplier: exponential decay based on MAD
-        base_multiplier = np.exp(-mad * self.mad_decay_factor)
+        mad_floor = getattr(self.config, "mad_floor", 0.0)
+        if mad_floor > 0.0:
+            mad_effective = np.maximum(mad, mad_floor)
+        else:
+            mad_effective = mad
+        base_multiplier = np.exp(-mad_effective * self.mad_decay_factor)
         
         # Consensus Lock bonus: Low MAD AND High Median = trend confidence
-        # Scale up to 1.5x when in consensus lock
+        # Scale up to configured bonus when in consensus lock
         consensus_mask = (mad < self.mad_consensus_threshold) & (median_abs > 0.3)
-        consensus_bonus = np.where(consensus_mask, 1.5, 1.0)
+        consensus_bonus = np.where(consensus_mask, self.mad_consensus_bonus, 1.0)
         
         # Chaos penalty: Very high MAD = aggressive scale down
         # Already handled by exponential decay, but add extra penalty
         chaos_mask = mad > self.mad_chaos_threshold
-        chaos_penalty = np.where(chaos_mask, 0.5, 1.0)
+        chaos_penalty = np.where(chaos_mask, self.mad_chaos_penalty, 1.0)
         
         # Final multiplier
         multiplier = base_multiplier * consensus_bonus * chaos_penalty
@@ -899,7 +928,11 @@ class DiversityDefenseHPO:
         self.annualization_factor = annualization_factor
         
         # Pre-calculate volatility for Sharpe normalization
-        self.y_vol = pd.Series(y).rolling(window=1000).std().bfill().values
+        y_series = pd.Series(y)
+        rolling_vol = y_series.rolling(window=1000, min_periods=1).std()
+        global_std = float(y_series.std()) if len(y_series) > 1 else 0.0
+        fallback_std = global_std if global_std > 0.0 else 1.0
+        self.y_vol = rolling_vol.fillna(fallback_std).replace(0.0, fallback_std).values
         
         self.objectives = DiversityDefenseObjectives(self.config)
         self.aggregator = DiversityDefenseAggregator(self.config)
@@ -1032,9 +1065,10 @@ class DiversityDefenseHPO:
                 )
                 aggregator = DiversityDefenseAggregator(agg_config)
                 
-                agg_result = aggregator.aggregate(preds_matrix)
-                ortho_penalty = agg_result['orthogonality_penalty']
+                # Aggregate predictions to get final signal and Z-matrix
+                agg_result = aggregator.aggregate(preds_matrix, compute_penalty=False)
                 pos_size = agg_result['final_signal']
+                z_matrix = agg_result['z_matrix']
                 
                 # F. Scoring: Sharpe after fees
                 strategy_ret = pos_size * y_val
@@ -1046,8 +1080,27 @@ class DiversityDefenseHPO:
                 else:
                     sharpe = (np.mean(net_ret) / np.std(net_ret)) * self.annualization_factor
                 
-                # Optimize for Sharpe minus Correlation Penalty
-                cv_scores.append(sharpe - ortho_penalty)
+                # G. Diversity: compute average correlation across models
+                if z_matrix.ndim == 2 and z_matrix.shape[0] >= 2:
+                    try:
+                        corr_matrix = np.corrcoef(z_matrix)
+                        if corr_matrix.ndim == 2:
+                            upper_tri = corr_matrix[np.triu_indices_from(corr_matrix, k=1)]
+                            avg_corr = np.nanmean(upper_tri)
+                        else:
+                            avg_corr = 0.0
+                    except Exception:
+                        avg_corr = 0.0
+                else:
+                    avg_corr = 0.0
+                if np.isnan(avg_corr):
+                    avg_corr = 0.0
+                
+                # H. ESR (Ensemble Sharpe Ratio) score
+                n_models_eff = z_matrix.shape[0] if z_matrix.ndim == 2 else preds_matrix.shape[0]
+                esr = calculate_esr_score(sharpe, avg_corr, n_models=n_models_eff)
+                
+                cv_scores.append(esr)
             
             return np.mean(cv_scores) if cv_scores else 0.0
         
@@ -1406,10 +1459,21 @@ def create_diversity_defense_ensemble(
     objectives = DiversityDefenseObjectives(config)
     
     # Pre-calculate volatility for Sharpe objectives
-    y_vol = pd.Series(y_train).rolling(window=config.z_score_window).std().bfill().values
+    y_series = pd.Series(y_train)
+    rolling_vol = y_series.rolling(window=config.z_score_window, min_periods=1).std()
+    global_std = float(y_series.std()) if len(y_series) > 1 else 0.0
+    fallback_std = global_std if global_std > 0.0 else 1.0
+    y_vol = rolling_vol.fillna(fallback_std).replace(0.0, fallback_std).values
     
     n_samples, n_features = X_train.shape
     rng = np.random.RandomState(42)
+    
+    if isinstance(X_train, pd.DataFrame):
+        meta_feature_columns = [c for c in META_FEATURE_COLUMNS if c in X_train.columns]
+        base_feature_columns = [c for c in X_train.columns if c not in meta_feature_columns]
+    else:
+        meta_feature_columns = []
+        base_feature_columns = list(range(n_features))
     
     models = []
     specialist_types = []
@@ -1490,6 +1554,8 @@ def create_diversity_defense_ensemble(
         'specialist_types': specialist_types,
         'config': config,
         'n_features': n_features,
+        'meta_feature_columns': meta_feature_columns,
+        'base_feature_columns': base_feature_columns,
     }
 
 
@@ -1639,8 +1705,16 @@ class LabelDiagnosticDashboard:
         val_preds = model.predict(X_val)
         
         # Compute Spearman correlation (more robust for non-linear relationships)
-        from scipy.stats import spearmanr
-        corr, _ = spearmanr(val_preds, y_val)
+        if spearmanr is not None:
+            corr, _ = spearmanr(val_preds, y_val)
+        else:
+            if len(val_preds) < 2:
+                return 0.0
+            corr_matrix = np.corrcoef(val_preds, y_val)
+            if corr_matrix.shape == (2, 2):
+                corr = corr_matrix[0, 1]
+            else:
+                corr = 0.0
         
         return float(corr) if not np.isnan(corr) else 0.0
     

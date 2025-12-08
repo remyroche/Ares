@@ -2941,6 +2941,13 @@ class MetaLabelingHPOExperimentStep(BaseStep):
             default_stage1_window = min(days_span, lookback_days_cfg)
         else:
             default_stage1_window = days_span
+
+        # Cap the default Stage 1 window to a shorter horizon so that the
+        # initial screening runs on a smaller subset of the available data.
+        stage1_default_cap_days = int(config.get("stage1_default_cap_days", 180))
+        if stage1_default_cap_days > 0:
+            default_stage1_window = min(default_stage1_window, stage1_default_cap_days)
+
         stage1_subsample_window_days = int(
             config.get("stage1_subsample_window_days", default_stage1_window)
         )
@@ -3337,7 +3344,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 Dict with keys: 'learnability', 'profitability', 'combined', 'edge'
             """
             # Determine CV splits based on model complexity
-            cv_splits_map = {"fast": 3, "medium": 4, "strong": 4}
+            cv_splits_map = {"fast": 3, "medium": 3, "strong": 3}
             cv_splits = cv_splits_map.get(model_complexity, 3)
 
             try:
@@ -3813,7 +3820,13 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 # ===== LEARNABILITY ASSESSMENT WITH CALIBRATION =====
                 # Create meta-features for this labeling configuration using the
                 # same pipeline as the production meta-labeling step.
-                meta_feature_cfg = config.get("meta_feature_engineering", {})
+                meta_feature_cfg = config.get("meta_feature_engineering", {}) or {}
+                if not isinstance(meta_feature_cfg, dict):
+                    meta_feature_cfg = {}
+                # Enable intra-run feature-selection caching so that the same
+                # feature subset is reused across HPO trials for a given
+                # dataset and configuration.
+                meta_feature_cfg.setdefault("enable_feature_selection_cache", True)
                 volume_available = "volume" in market_data.columns
 
                 meta_features, meta_features_model_processed, selected_feature_names, sample_weights = build_meta_features_for_model(

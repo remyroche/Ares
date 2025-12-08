@@ -242,12 +242,11 @@ Examples:
             return 0
         
         # Create trading config
-        tprint(f"⚙️ trade_launcher.main() - Creating trading config: mode={live_trading_mode}, exchange={args.exchange}, symbols={[args.asset]}, direction={args.direction}", "INFO")
+        tprint(f"⚙️ trade_launcher.main() - Creating trading config: mode={live_trading_mode}, exchange={args.exchange}, symbols={[args.asset]}", "INFO")
         trading_config = TradingConfig(
             mode=live_trading_mode,
             exchange_name=args.exchange,
-            symbols=[args.asset],
-            direction=args.direction
+            symbols=[args.asset]
         )
         tprint("✅ trade_launcher.main() - Trading config created successfully", "SUCCESS")
 

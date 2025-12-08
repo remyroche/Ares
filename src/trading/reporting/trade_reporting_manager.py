@@ -320,6 +320,123 @@ class TradeReportingManager:
         except Exception as e:
             tprint_error(f"❌ Failed to record trade: {e}")
             return False
+
+    def _parse_trade_row(self, row: Dict[str, Any], timestamp: datetime) -> Optional[TradeRecord]:
+        """Parse a CSV row back into a TradeRecord instance."""
+        def _parse_float(value: Any, default: Optional[float] = None) -> Optional[float]:
+            if value is None:
+                return default
+            if isinstance(value, (int, float)):
+                return float(value)
+            text = str(value).strip()
+            if text == "":
+                return default
+            try:
+                return float(text)
+            except Exception:
+                return default
+
+        def _parse_datetime(value: Any) -> Optional[datetime]:
+            if not value:
+                return None
+            if isinstance(value, datetime):
+                return value
+            text = str(value).strip()
+            if not text:
+                return None
+            try:
+                return datetime.fromisoformat(text)
+            except Exception:
+                return None
+
+        try:
+            entry_dt = _parse_datetime(row.get("entry_datetime")) or timestamp
+            exit_dt = _parse_datetime(row.get("exit_datetime"))
+
+            return TradeRecord(
+                trade_id=row.get("trade_id", ""),
+                timestamp=timestamp,
+                exchange=row.get("exchange", ""),
+                asset=row.get("asset", ""),
+                mode=row.get("mode", ""),
+                entry_datetime=entry_dt,
+                exit_datetime=exit_dt,
+                entry_price=float(_parse_float(row.get("entry_price"), 0.0) or 0.0),
+                exit_price=_parse_float(row.get("exit_price"), None),
+                quantity=float(_parse_float(row.get("quantity"), 0.0) or 0.0),
+                side=row.get("side", ""),
+                direction=row.get("direction", ""),
+                leverage=float(_parse_float(row.get("leverage"), 1.0) or 1.0),
+                net_gain_loss_pct=_parse_float(row.get("net_gain_loss_pct"), None),
+                net_gain_loss_absolute=_parse_float(row.get("net_gain_loss_absolute"), None),
+                realized_pnl=_parse_float(row.get("realized_pnl"), None),
+                gross_pnl=_parse_float(row.get("gross_pnl"), None),
+                fees=float(_parse_float(row.get("fees"), 0.0) or 0.0),
+                slippage_pct=float(_parse_float(row.get("slippage_pct"), 0.0) or 0.0),
+                analyst_confidence=float(_parse_float(row.get("analyst_confidence"), 0.0) or 0.0),
+                tactician_confidence=float(_parse_float(row.get("tactician_confidence"), 0.0) or 0.0),
+                strategist_confidence=float(_parse_float(row.get("strategist_confidence"), 0.0) or 0.0),
+                ensemble_confidence=float(_parse_float(row.get("ensemble_confidence"), 0.0) or 0.0),
+                signal_strength=float(_parse_float(row.get("signal_strength"), 0.0) or 0.0),
+                top_feature_1=row.get("top_feature_1", ""),
+                top_feature_1_importance=float(_parse_float(row.get("top_feature_1_importance"), 0.0) or 0.0),
+                top_feature_2=row.get("top_feature_2", ""),
+                top_feature_2_importance=float(_parse_float(row.get("top_feature_2_importance"), 0.0) or 0.0),
+                top_feature_3=row.get("top_feature_3", ""),
+                top_feature_3_importance=float(_parse_float(row.get("top_feature_3_importance"), 0.0) or 0.0),
+                regime_1=row.get("regime_1", ""),
+                regime_1_probability=float(_parse_float(row.get("regime_1_probability"), 0.0) or 0.0),
+                regime_2=row.get("regime_2", ""),
+                regime_2_probability=float(_parse_float(row.get("regime_2_probability"), 0.0) or 0.0),
+                regime_3=row.get("regime_3", ""),
+                regime_3_probability=float(_parse_float(row.get("regime_3_probability"), 0.0) or 0.0),
+                volume=float(_parse_float(row.get("volume"), 0.0) or 0.0),
+                volatility=float(_parse_float(row.get("volatility"), 0.0) or 0.0),
+                trend=row.get("trend", ""),
+                execution_time_ms=float(_parse_float(row.get("execution_time_ms"), 0.0) or 0.0),
+                execution_quality=float(_parse_float(row.get("execution_quality"), 0.0) or 0.0),
+            )
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to parse trade row for historical recap: {e}")
+            return None
+
+    def _load_trades_for_date(
+        self,
+        mode: str,
+        exchange: str,
+        asset: str,
+        target_date: date
+    ) -> List[TradeRecord]:
+        """Load trades for a specific date from persisted CSV files."""
+        trades: List[TradeRecord] = []
+        try:
+            report_dir = self._get_report_directory(mode, exchange, asset)
+            trade_dt = datetime(target_date.year, target_date.month, target_date.day)
+            trades_filename = self._get_trade_period_filename(trade_dt)
+            trades_file = report_dir / trades_filename
+            if not trades_file.exists():
+                return []
+
+            with open(trades_file, "r") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    ts_str = row.get("timestamp")
+                    if not ts_str:
+                        continue
+                    try:
+                        ts = datetime.fromisoformat(ts_str)
+                    except Exception:
+                        continue
+                    if ts.date() != target_date:
+                        continue
+                    record = self._parse_trade_row(row, ts)
+                    if record is not None:
+                        trades.append(record)
+        except Exception as e:
+            tprint_warning(
+                f"⚠️ Failed to load historical trades for {target_date} ({mode}/{exchange}/{asset}): {e}"
+            )
+        return trades
     
     def _get_trade_period_filename(self, trade_date: datetime) -> str:
         """
@@ -422,10 +539,21 @@ class TradeReportingManager:
         try:
             recap_date = target_date or date.today()
             
-            # Get trades for this date
+            # Get trades for this date from both in-memory storage and persisted CSVs
             storage_key = self._get_storage_key(mode, exchange, asset)
-            all_trades = self.current_trades.get(storage_key, [])
-            
+            in_memory_trades = self.current_trades.get(storage_key, [])
+
+            historical_trades = self._load_trades_for_date(mode, exchange, asset, recap_date)
+
+            # Merge and deduplicate by trade_id
+            all_trades: List[TradeRecord] = []
+            seen_ids = set()
+            for t in list(historical_trades) + list(in_memory_trades):
+                if t.trade_id in seen_ids:
+                    continue
+                seen_ids.add(t.trade_id)
+                all_trades.append(t)
+
             # Filter trades for target date
             daily_trades = [
                 t for t in all_trades

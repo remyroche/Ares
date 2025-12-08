@@ -39,7 +39,7 @@ import sys
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Tuple, List, Optional
+from typing import Tuple, List, Optional, Dict, Any
 
 import numpy as np
 import pandas as pd
@@ -2340,7 +2340,7 @@ def run_trading_simulation(
 
     Computes:
     - Model calibration (Brier score, calibration curves)
-    - Trading metrics at different probability thresholds (0.55, 0.60, 0.65):
+    - Trading metrics at different probability thresholds (e.g. 0.40, 0.50, 0.55, 0.60, 0.65):
       - Trades per day
       - PnL per day (average, percentage)
       - Simplified equity curve simulation
@@ -2348,7 +2348,7 @@ def run_trading_simulation(
       - Win-rate stability
     """
     if prob_thresholds is None:
-        prob_thresholds = [0.50, 0.55, 0.60, 0.65]
+        prob_thresholds = [0.40, 0.50, 0.55, 0.60, 0.65]
 
     df = _load_labeled_data(symbol, exchange, timeframe, direction=direction, model=model)
     X, y = _build_feature_matrix_from_labeled(df, direction=direction)
@@ -2358,15 +2358,11 @@ def run_trading_simulation(
     if "realized_return" not in df.columns:
         raise ValueError("labeled_data must contain 'realized_return' column for trading simulation")
 
-    # Get date range for trades per day calculation
+    # Get date range for trades per day calculation (will be refined to eval slice)
     if hasattr(df.index, 'to_pydatetime'):
         dates = pd.to_datetime(df.index)
     else:
         dates = pd.to_datetime(df.index)
-
-    date_range_days = (dates.max() - dates.min()).days
-    if date_range_days <= 0:
-        date_range_days = 1
 
     meta_prob = df[prob_column].astype(float)
     realized_returns = df["realized_return"].astype(float)
@@ -2398,6 +2394,30 @@ def run_trading_simulation(
     prob_valid = meta_prob[valid_mask].values
     returns_valid = realized_returns[valid_mask].values
     labels_valid = binary_labels[valid_mask].values if binary_labels is not None else None
+
+    # Align evaluation slice with MetaGatedBacktestStep: use last 30% of valid events
+    dates_valid = dates[valid_mask.values]
+    holdout_fraction = 0.30
+    n_total = int(prob_valid.shape[0])
+    n_holdout = max(50, int(round(n_total * holdout_fraction)))
+
+    if n_holdout < n_total:
+        holdout_idx = np.arange(n_total)[-n_holdout:]
+        prob_valid = prob_valid[holdout_idx]
+        returns_valid = returns_valid[holdout_idx]
+        if labels_valid is not None:
+            labels_valid = labels_valid[holdout_idx]
+        dates_eval = dates_valid.to_numpy()[holdout_idx]
+    else:
+        dates_eval = dates_valid.to_numpy()
+
+    # Recompute date range on the evaluation slice
+    if dates_eval.size > 0:
+        date_range_days = (dates_eval.max() - dates_eval.min()).astype('timedelta64[D]').astype(int)
+        if date_range_days <= 0:
+            date_range_days = 1
+    else:
+        date_range_days = 1
 
     # -------------------------------------------------------------------------
     # 1. Model Calibration Diagnostics
@@ -2798,24 +2818,37 @@ def run_trading_simulation(
                 continue
 
     # -------------------------------------------------------------------------
-    # 2B. Select best gate by PnL/day and update meta_gating_config
+    # 2B. Select best gate by PnL/day on evaluation slice and update meta_gating_config
     # -------------------------------------------------------------------------
 
-    # Select the threshold with the highest positive PnL per day.
-    best_key: Optional[str] = None
-    best_score: float = float("-inf")
+    # Prefer gates with positive PnL/day; otherwise fall back to the least-bad gate.
+    best_key_positive: Optional[str] = None
+    best_score_positive: float = float("-inf")
+    best_key_any: Optional[str] = None
+    best_score_any: float = float("-inf")
+
     for key, res in threshold_results.items():
         if res.get("insufficient_data", False):
             continue
         score = res.get("pnl_per_day_pct", float("nan"))
         if not np.isfinite(score):
             continue
-        if score > best_score:
-            best_score = float(score)
-            best_key = key
 
-    if best_key is not None and best_score > 0.0:
-        res = threshold_results[best_key]
+        # Track best gate regardless of sign
+        if score > best_score_any:
+            best_score_any = float(score)
+            best_key_any = key
+
+        # Track best among gates with strictly positive PnL/day and mean return
+        mean_ret_gate = res.get("mean_return_per_trade", float("nan"))
+        if score > 0.0 and mean_ret_gate > 0.0 and score > best_score_positive:
+            best_score_positive = float(score)
+            best_key_positive = key
+
+    chosen_key: Optional[str] = best_key_positive if best_key_positive is not None else best_key_any
+
+    if chosen_key is not None:
+        res = threshold_results[chosen_key]
         try:
             best_gate_info = {
                 "threshold": float(res["threshold"]),
@@ -2906,11 +2939,12 @@ def run_trading_simulation(
                     json.dump(meta_gating_config, f, indent=2)
                 logger.info(
                     "Updated meta_gating_config at %s using SNR trading-simulation best threshold %.2f "
-                    "(PnL/day=%.4f%%, trades/day=%.3f)",
+                    "(PnL/day=%.4f%%, trades/day=%.3f, positive_only=%s)",
                     gating_path,
                     best_gate_info["threshold"],
                     best_gate_info["pnl_per_day_pct"],
                     best_gate_info["trades_per_day"],
+                    best_key_positive is not None,
                 )
             except Exception as e:
                 logger.warning(

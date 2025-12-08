@@ -68,23 +68,23 @@ class ExecutionModeLookbackConfig:
                 data_loading_days=get_mode_lookback_days("full"),
 
                 # Feature lookback optimization - Full intensity
-                optimization_window_days=1460,  # ~4 years of daily data
+                optimization_window_days=1095,  # ~3 years of daily data
                 optimization_sample_size=100000,  # Full sample size
                 optimization_max_features=80,  # Maximum features to optimize
 
                 # PID-based feature generation - Full complexity
-                pid_generation_window_days=1460,  # ~4 years
+                pid_generation_window_days=1095,  # ~3 years
                 pid_interaction_features=100,  # Full interaction features
                 pid_polynomial_features=50,  # Full polynomial features
                 pid_cross_timeframe_features=50,  # Full cross-timeframe features
 
                 # Multi-horizon profit labeling - Full analysis
-                labeling_window_days=1460,  # ~4 years for comprehensive labeling
+                labeling_window_days=1095,  # ~3 years for comprehensive labeling
                 labeling_horizons_count=20,  # Multiple horizons for rich signals
                 labeling_sample_size=100000,  # Full sample for probability estimation
 
                 # Final feature selection - Full pipeline
-                selection_window_days=1460,  # ~4 years for feature selection
+                selection_window_days=1095,  # ~3 years for feature selection
                 selection_stage_targets=(120, 100, 80, 60),  # Complete 4-stage reduction
 
                 # General parameters

@@ -27,8 +27,8 @@ analyst_config:
         reg_lambda: 1.1236203565420875
         sampling_rate: 0.9852142919229748
         min_child_samples: 64
-        objective: regression_l1
-        metric: mae
+        objective: regression
+        metric: rmse
         early_stopping_rounds: 100
         min_boost_rounds: 200
       hpo:
@@ -118,8 +118,8 @@ analyst_config:
         reg_lambda: 1.1236203565420875
         sampling_rate: 0.9852142919229748
         min_child_samples: 64
-        objective: regression_l1
-        metric: mae
+        objective: regression
+        metric: rmse
         early_stopping_rounds: 100
         min_boost_rounds: 200
     knn:
@@ -202,7 +202,7 @@ analyst_config:
       use_isotonic_calibration: true
       output_mean_and_variance: true
       params:
-        n_estimators: 300
+        n_estimators: 500
         learning_rate: 0.01
         minibatch_frac: 0.2
         verbose: false

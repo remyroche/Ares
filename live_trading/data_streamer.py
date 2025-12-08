@@ -92,23 +92,23 @@ class DataStreamer:
     
     async def _start_symbol_streaming(self, symbol: str) -> None:
         """Start streaming for a specific symbol"""
-        # Start ticker streaming
-        if "ticker" in [h for handlers in self.data_handlers.values() for h in handlers]:
+        # Start ticker streaming if any ticker handlers are registered
+        if self.data_handlers.get("ticker"):
             task = asyncio.create_task(self._stream_ticker(symbol))
             self._streaming_tasks[f"{symbol}_ticker"] = task
         
-        # Start trade streaming
-        if "trade" in [h for handlers in self.data_handlers.values() for h in handlers]:
+        # Start trade streaming if any trade handlers are registered
+        if self.data_handlers.get("trade"):
             task = asyncio.create_task(self._stream_trades(symbol))
             self._streaming_tasks[f"{symbol}_trades"] = task
         
-        # Start orderbook streaming
-        if "orderbook" in [h for handlers in self.data_handlers.values() for h in handlers]:
+        # Start orderbook streaming if any orderbook handlers are registered
+        if self.data_handlers.get("orderbook"):
             task = asyncio.create_task(self._stream_orderbook(symbol))
             self._streaming_tasks[f"{symbol}_orderbook"] = task
         
-        # Start kline streaming
-        if "kline" in [h for handlers in self.data_handlers.values() for h in handlers]:
+        # Start kline streaming if any kline handlers are registered
+        if self.data_handlers.get("kline"):
             task = asyncio.create_task(self._stream_klines(symbol))
             self._streaming_tasks[f"{symbol}_klines"] = task
     

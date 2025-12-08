@@ -677,7 +677,7 @@ class TrainingPipelineOrchestrator:
                 model_id=model_id,
                 execution_mode=execution_mode,
                 task_type='regression',
-                enable_burnin_hpo=True,  # HPO runs ONCE at burn-in only
+                enable_incremental_hpo=True,
                 model_configs=base_models_config
             )
 

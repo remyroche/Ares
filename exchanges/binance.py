@@ -255,9 +255,19 @@ class BinanceExchange(BaseExchange):
             # In production, proper SSL certificates should be configured
             connector = aiohttp.TCPConnector(verify_ssl=False)
             self.session = aiohttp.ClientSession(timeout=timeout, connector=connector)
-
-            # Authenticate
-            await self._authenticate()
+            
+            # Authenticate. In testnet/paper contexts we degrade gracefully if
+            # authentication fails so that public market data remains available.
+            try:
+                await self._authenticate()
+            except Exception as auth_exc:
+                if self.use_testnet:
+                    tprint(
+                        f"Authentication failed in testnet mode, continuing with public-only access: {auth_exc}",
+                        "WARNING",
+                    )
+                else:
+                    raise
             
             # Initialize market data
             await self._initialize_market_data()

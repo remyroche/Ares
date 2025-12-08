@@ -94,12 +94,9 @@ from .label_config import (
     build_label_config,
     compute_label_config_id,
 )
-from .lgbm_feature_selection import (
-    lgbm_feature_selection_pipeline,
-    select_features_lgbm_for_meta_labeling,
-    select_features_by_importance_lgbm,
-    FeatureSetPersistence,
-    FEATURE_SELECTION_CONFIG,
+from src.feature_generation.utils.step06_labeling_components.trend_aware_meta_labeling import (
+    TrendAwareMetaLabeler,
+    MultiTimeframeConfig,
 )
 
 logger = logging.getLogger(__name__)
@@ -1559,6 +1556,16 @@ def create_meta_features(
     Returns:
         DataFrame of features for meta-model
     """
+    zigzag_features = None
+    try:
+        labeler = TrendAwareMetaLabeler()
+        zigzag_single = labeler.detect_zigzag_trend(df)
+        mtf_config = MultiTimeframeConfig()
+        zigzag_mtf = labeler.detect_zigzag_multi_timeframe(df, mtf_config=mtf_config, base_zigzag=zigzag_single)
+        zigzag_features = zigzag_single.join(zigzag_mtf, how="outer", rsuffix="_mtf")
+    except Exception:
+        zigzag_features = None
+
     # Hard-align df and signals to a shared tail window to avoid any
     # length mismatch when assigning signal-based features. We align
     # positionally (most recent data) and then construct features on
@@ -1591,9 +1598,26 @@ def create_meta_features(
     if (not df.index.equals(signals.index)) or df.index.has_duplicates or signals.index.has_duplicates:
         df = df.reset_index(drop=True)
         signals = signals.reset_index(drop=True)
+        if zigzag_features is not None:
+            if len(zigzag_features) > len(df):
+                zigzag_features = zigzag_features.iloc[-len(df):, :]
+            zigzag_features = zigzag_features.reset_index(drop=True)
 
     features = pd.DataFrame(index=df.index)
     n_features = len(features)
+    if zigzag_features is not None:
+        if len(zigzag_features) > n_features:
+            zigzag_features = zigzag_features.iloc[-n_features:, :]
+        elif len(zigzag_features) < n_features:
+            pad = pd.DataFrame(
+                np.nan,
+                index=range(n_features - len(zigzag_features)),
+                columns=zigzag_features.columns,
+            )
+            zigzag_features = pd.concat([pad, zigzag_features], axis=0, ignore_index=True)
+        for col in zigzag_features.columns:
+            if col not in features.columns:
+                features[col] = zigzag_features[col].to_numpy()
 
     # ===== VOLATILITY FEATURES (ENHANCED) =====
 
@@ -1609,31 +1633,39 @@ def create_meta_features(
     # Volatility of volatility (regime instability)
     features['vol_of_vol'] = features['volatility_1h'].rolling(window=20).std()
 
-    # ===== VOLATILITY REGIME LABELING (Z-SCORE) =====
+    # Volatility ratio (current vs baseline)
+    vol_baseline = features['volatility_1d'].rolling(96).mean()
+    features['vol_ratio'] = features['volatility_1d'] / (vol_baseline + 1e-8)
 
-    # Robust Volatility Regime using Relative Z-Score (Stationary)
-    # Using 20-period short volatility vs 200-period baseline, consistent with GateModel philosophy
+    # ===== VOLATILITY REGIME LABELING =====
 
-    # Short-term volatility (approx 5 hours on 15m)
-    vol_short_20 = log_ret.rolling(window=20).std()
+    # Compute rolling volatility for regime detection
+    vol_for_regime = log_ret.rolling(96).std()
 
-    # Long-term baseline statistics (approx 2 days on 15m)
-    # Using a 200-period window for baseline mean and std
-    vol_long_mean = vol_short_20.rolling(window=200, min_periods=50).mean()
-    vol_long_std = vol_short_20.rolling(window=200, min_periods=50).std()
+    # Create regime labels using quantiles estimated on early history to reduce lookahead
+    try:
+        vol_non_null = vol_for_regime.dropna()
+        if len(vol_non_null) >= 10:
+            split_idx = max(1, int(len(vol_non_null) * 0.7))
+            vol_train = vol_non_null.iloc[:split_idx]
+        else:
+            vol_train = vol_non_null
 
-    # Calculate Z-score: (Current - Baseline) / Baseline_Std
-    # High Z-score = Volatility Spike relative to recent history
-    rv_z_short = (vol_short_20 - vol_long_mean) / (vol_long_std + 1e-8)
+        if len(vol_train) >= 3:
+            q1, q2 = vol_train.quantile([1 / 3, 2 / 3])
+            bins = [-np.inf, q1, q2, np.inf]
+            labels = ['low', 'medium', 'high']
+            regime_full = pd.cut(vol_for_regime, bins=bins, labels=labels)
+            features['volatility_regime'] = regime_full
 
-    # Add to features (replacing old categorical volatility_regime)
-    features['rv_z_short'] = rv_z_short.fillna(0.0)
-
-    # Also add the raw ratio for robustness (Short / Long Mean)
-    features['vol_ratio_20_200'] = vol_short_20 / (vol_long_mean + 1e-8)
-
-    # Explicitly calculate volatility_20 here for reuse
-    features['volatility_20'] = vol_short_20
+            regime_dummies = pd.get_dummies(features['volatility_regime'], prefix='vol_regime', drop_first=True)
+            features = features.join(regime_dummies)
+        else:
+            raise ValueError("Not enough non-null volatility samples for regime estimation")
+    except Exception as e:
+        tprint(f"⚠️ Warning: Could not create volatility regimes: {e}", "WARNING")
+        features['vol_regime_medium'] = 0
+        features['vol_regime_high'] = 0
 
     # ===== EXTERNAL REGIME FEATURES (e.g., HMM regimes) =====
 
@@ -2094,6 +2126,16 @@ def create_meta_features(
         features['liquidity_gap_down'] = 0.0
         features['liquidity_gap_abs'] = 0.0
 
+    # Volatility / trend interaction features
+    if 'kalman_trend' in features.columns and 'vol_ratio' in features.columns:
+        features['kalman_trend_x_vol_ratio'] = features['kalman_trend'] * features['vol_ratio']
+    if 'sma_slope' in features.columns and 'vol_ratio' in features.columns:
+        features['sma_slope_x_vol_ratio'] = features['sma_slope'] * features['vol_ratio']
+    if 'price_vs_sma20' in features.columns and 'vol_ratio' in features.columns:
+        features['price_vs_sma20_x_vol_ratio'] = features['price_vs_sma20'] * features['vol_ratio']
+    if 'range_position' in features.columns and 'vol_ratio' in features.columns:
+        features['range_position_x_vol_ratio'] = features['range_position'] * features['vol_ratio']
+
     if 'consensus' in signals.columns:
         signal_consensus = signals['consensus']
         signal_active = (signal_consensus != 0).astype(int)
@@ -2102,8 +2144,27 @@ def create_meta_features(
             features['signal_active'] = _align_to_features(signal_active, n_features)
         else:
             features['signal_active'] = signal_active.to_numpy()
+
+        idx = np.arange(len(df))
+        last_signal_idx = np.where(signal_active.to_numpy() == 1, idx, np.nan)
+        last_signal_idx_series = pd.Series(last_signal_idx, index=df.index).ffill()
+
+        signal_age = idx - last_signal_idx_series.values
+        signal_age[last_signal_idx_series.isna().values] = np.nan
+        if use_kalman:
+            features['bars_since_last_signal'] = _align_to_features(signal_age, n_features)
+        else:
+            features['bars_since_last_signal'] = signal_age
+
+        density_50 = signal_consensus.abs().rolling(50).sum()
+        if use_kalman:
+            features['signal_density_50'] = _align_to_features(density_50, n_features)
+        else:
+            features['signal_density_50'] = density_50.to_numpy()
     else:
         features['signal_active'] = 0
+        features['bars_since_last_signal'] = np.nan
+        features['signal_density_50'] = 0.0
 
     base_signal_cols = [
         col for col in ['rsi', 'rsi_long', 'macd', 'macd_long', 'ma', 'mom']
@@ -2273,47 +2334,6 @@ def create_meta_features(
         features[f'dist_from_recent_high_{window}'] = dist_high_arr
         features[f'dist_from_recent_low_{window}'] = dist_low_arr
 
-    # ===== KAUFMAN EFFICIENCY RATIO (ER) =====
-    # ER = Change / Volatility
-    # Change = Abs(Price - Price_lag_n)
-    # Volatility = Sum(Abs(Price - Price_lag_1)) over n periods
-    er_window = 14
-    er_change = df['close'].diff(er_window).abs()
-    er_volatility = df['close'].diff().abs().rolling(er_window).sum()
-    er_series = er_change / (er_volatility + 1e-8)
-
-    if use_kalman:
-        features['kaufman_efficiency_ratio'] = _align_to_features(er_series, n_features)
-    else:
-        features['kaufman_efficiency_ratio'] = er_series.to_numpy()
-
-    # ===== SERIAL CORRELATION (ACF) =====
-    # Average of lags 1, 2, 5
-    acf_window = 20
-    acf_lags = [1, 2, 5]
-    acf_values = []
-
-    # Using log returns for ACF calculation
-    log_ret_acf = log_ret
-
-    for lag in acf_lags:
-        # Rolling correlation of log returns
-        # We need to manually shift because rolling().corr() aligns on index
-        lagged_ret = log_ret_acf.shift(lag)
-        acf = log_ret_acf.rolling(acf_window).corr(lagged_ret)
-        acf_values.append(acf)
-
-    # Average them
-    if acf_values:
-        acf_mean = pd.concat(acf_values, axis=1).mean(axis=1)
-    else:
-        acf_mean = pd.Series(0, index=df.index)
-
-    if use_kalman:
-        features['acf_mean_lags_1_2_5'] = _align_to_features(acf_mean, n_features)
-    else:
-        features['acf_mean_lags_1_2_5'] = acf_mean.to_numpy()
-
     # ===== MORE INTERACTION FEATURES =====
     # Combine features to capture non-linear relationships
 
@@ -2329,23 +2349,55 @@ def create_meta_features(
         denom_5 = features['volatility_1d'].replace(0.0, np.nan)
         features['momentum_5_div_volatility_1d'] = features['momentum_5'] / (denom_5 + 1e-8)
 
-    # Regime-conditional momentum (using continuous Z-score interaction)
-    # Replaces categorical interactions with continuous ones
-    if 'rv_z_short' in features.columns:
+    if 'volatility_regime' in features.columns:
+        # Regime-conditional momentum
         for col in ['momentum_5', 'momentum_10', 'momentum_20']:
             if col in features.columns:
-                # Interaction: Momentum * Volatility Z-Score
-                # Captures "Momentum in High Relative Vol" vs "Momentum in Low Relative Vol"
-                features[f'{col}_x_rv_z'] = features[col] * features['rv_z_short']
+                # Create dummy variables for regime if they don't exist
+                if 'vol_regime_high' in features.columns:
+                    features[f'{col}_x_regime_high'] = features[col] * features['vol_regime_high']
+                if 'vol_regime_medium' in features.columns:
+                    features[f'{col}_x_regime_medium'] = features[col] * features['vol_regime_medium']
 
     # ATR × Momentum
     if 'atr_ratio' in features.columns and 'momentum_20' in features.columns:
         features['atr_momentum'] = features['atr_ratio'] * features['momentum_20']
 
+    # Volatility × Range Position
+    if 'vol_ratio' in features.columns and 'range_position' in features.columns:
+        features['vol_range_interaction'] = features['vol_ratio'] * features['range_position']
+
     # Distance features × Volatility
     if 'dist_from_recent_high_50' in features.columns and 'volatility_1d' in features.columns:
         features['high_dist_x_vol'] = features['dist_from_recent_high_50'] * features['volatility_1d']
         features['low_dist_x_vol'] = features['dist_from_recent_low_50'] * features['volatility_1d']
+
+    # ===== EVENT HISTORY FEATURES (FOR PRE-FILTERING) =====
+    # Track historical event performance to filter low-quality signals
+    # NOTE: These will only be populated after first run; use with caution to avoid leakage
+
+    # Placeholder for event history features (to be populated from previous runs)
+    # These should be computed from historical realized returns, NOT current data
+    features['event_win_rate_last_50'] = 0.0  # Will be updated externally
+    features['event_mean_return_last_50'] = 0.0  # Will be updated externally
+    features['bars_since_last_event'] = np.nan  # Will be computed from signals
+
+    # Compute bars since last event (non-leaking, based on past signals only)
+    if 'consensus' in signals.columns:
+        signal_active = (signals['consensus'] != 0).astype(int)
+        idx_array = np.arange(len(df))
+        last_event_idx = np.where(signal_active == 1, idx_array, np.nan)
+        last_event_idx_series = pd.Series(last_event_idx, index=df.index).ffill()
+
+        bars_since_event = idx_array - last_event_idx_series.values
+        bars_since_event[last_event_idx_series.isna().values] = np.nan
+
+        if use_kalman:
+            # Align to feature index length to avoid length mismatches in
+            # scenarios where df/signals underwent tail alignment.
+            features['bars_since_last_event'] = _align_to_features(bars_since_event, len(features))
+        else:
+            features['bars_since_last_event'] = bars_since_event
 
     # ===== RAW SIGNALS (OPTIONAL, FOR DIAGNOSTICS) =====
 
@@ -2455,27 +2507,17 @@ def select_features_by_importance(
 
     NEW (2025-11-18): Proper feature selection to prevent overfitting with
     increased signal count and feature complexity.
-    
-    UPDATED (2025-12-08): Added 'lgbm' method for LGBM-based feature importance.
 
     Args:
         X: Feature matrix
         y: Binary labels
         max_features: Maximum number of features to keep (None = no limit)
         correlation_threshold: Remove features with correlation > this value
-        method: 'tree' for tree-based (RF), 'mutual_info' for MI, 'lgbm' for LGBM
+        method: 'tree' for tree-based importance, 'mutual_info' for MI
 
     Returns:
         List of selected feature names
     """
-    # Use LGBM method if specified
-    if method == 'lgbm':
-        return select_features_by_importance_lgbm(
-            X, y,
-            max_features=max_features if max_features else 60,
-            correlation_threshold=correlation_threshold,
-        )
-    
     # Remove features with NaN/Inf
     clean_mask = ~y.isna()
     X_clean = X[clean_mask].fillna(0)
@@ -2566,6 +2608,17 @@ def build_meta_features_for_model(
     if isinstance(meta_feature_cfg, dict):
         label_uncertainty = meta_feature_cfg.get('_label_uncertainty')
 
+    # Event-centric and label-history features (event-only where applicable)
+    event_mask = ~binary_labels.isna()
+
+    # Bars since last labeled event
+    idx = np.arange(len(market_data))
+    last_event_idx = np.where(event_mask.to_numpy(), idx, np.nan)
+    last_event_idx_series = pd.Series(last_event_idx, index=market_data.index).ffill()
+
+    bars_since_last_event = idx - last_event_idx_series.values
+    bars_since_last_event[last_event_idx_series.isna().values] = np.nan
+
     # Distance to recent highs/lows and recent drawdown
     recent_high_50 = market_data['high'].rolling(50).max()
     recent_low_50 = market_data['low'].rolling(50).min()
@@ -2574,6 +2627,63 @@ def build_meta_features_for_model(
 
     rolling_max_100 = market_data['close'].rolling(100).max()
     drawdown_100 = (market_data['close'] - rolling_max_100) / (rolling_max_100 + 1e-8)
+
+    # Label-history (rolling over past events only)
+    event_returns = realized_returns[event_mask]
+    event_labels = binary_labels[event_mask]
+    event_positions = np.flatnonzero(event_mask.to_numpy())
+
+    rolling_win_rate_50 = event_labels.rolling(window=50, min_periods=1).mean()
+    rolling_mean_ret_50 = event_returns.rolling(window=50, min_periods=1).mean()
+
+    win_rate_50_full = pd.Series(np.nan, index=market_data.index)
+    mean_ret_50_full = pd.Series(np.nan, index=market_data.index)
+
+    if len(event_positions) == len(rolling_win_rate_50):
+        win_rate_50_full.iloc[event_positions] = rolling_win_rate_50.to_numpy()
+        mean_ret_50_full.iloc[event_positions] = rolling_mean_ret_50.to_numpy()
+
+    # Event-mechanics history (R-multiple, TTO, MFE/MAE) based only on past events
+    try:
+        # Per-event R-multiple using adaptive stop as risk unit
+        r_unit_series = adaptive_stop_threshold.abs().replace(0.0, np.nan)
+        r_multiple_series = (realized_returns / (r_unit_series + 1e-8)).replace([np.inf, -np.inf], np.nan)
+        event_r_multiple = r_multiple_series[event_mask]
+
+        # Time-to-outcome ratio (TTO): duration normalized by horizon
+        if horizon > 0:
+            event_tto = (event_durations[event_mask] / float(horizon)).replace([np.inf, -np.inf], np.nan)
+        else:
+            event_tto = pd.Series(index=event_returns.index, dtype=float)
+
+        # MFE/MAE ratio
+        event_mfe = mfe_series[event_mask]
+        event_mae = mae_series[event_mask]
+        mfe_mae_ratio_series = (event_mfe / (event_mae + 1e-6)).replace([np.inf, -np.inf], np.nan)
+
+        # Rolling histories over past events only. For TTO, we shift the rolling
+        # window by one event so that the feature at event k depends only on
+        # events strictly before k (no self-outcome leakage).
+        rolling_r_multiple_50 = event_r_multiple.rolling(window=50, min_periods=1).mean()
+        rolling_tto_50 = event_tto.rolling(window=50, min_periods=1).mean()
+        rolling_tto_50_past = rolling_tto_50.shift(1)
+        rolling_mfe_mae_ratio_50 = mfe_mae_ratio_series.rolling(window=50, min_periods=1).mean()
+
+        r_mult_50_full = pd.Series(np.nan, index=market_data.index)
+        tto_50_full = pd.Series(np.nan, index=market_data.index)
+        mfe_mae_ratio_50_full = pd.Series(np.nan, index=market_data.index)
+
+        if len(event_positions) == len(rolling_r_multiple_50):
+            r_mult_50_full.iloc[event_positions] = rolling_r_multiple_50.to_numpy()
+            # Use the past-only rolling TTO (shifted by one event) so that the
+            # TTO feature at event k cannot incorporate the outcome of event k
+            # itself.
+            tto_50_full.iloc[event_positions] = rolling_tto_50_past.to_numpy()
+            mfe_mae_ratio_50_full.iloc[event_positions] = rolling_mfe_mae_ratio_50.to_numpy()
+    except Exception:
+        r_mult_50_full = pd.Series(np.nan, index=market_data.index)
+        tto_50_full = pd.Series(np.nan, index=market_data.index)
+        mfe_mae_ratio_50_full = pd.Series(np.nan, index=market_data.index)
 
     # STEP 5: Create meta-features with Kalman filtering
     tprint("🔧 [5/13] Creating meta-features with Kalman filtering...", "INFO")
@@ -2591,9 +2701,11 @@ def build_meta_features_for_model(
 
     # Attach event-centric and label-history features
     event_meta_features = pd.DataFrame(index=market_data.index)
+    event_meta_features['bars_since_last_event'] = bars_since_last_event
     event_meta_features['dist_from_recent_high_50'] = dist_from_recent_high_50
     event_meta_features['dist_from_recent_low_50'] = dist_from_recent_low_50
     event_meta_features['drawdown_100'] = drawdown_100
+    event_meta_features['event_tto_mean_last_50'] = tto_50_full
 
     # Attach/overwrite event-centric features without triggering index-based
     # reindexing (which is sensitive to duplicate datetime labels). Reset to a
@@ -2636,6 +2748,7 @@ def build_meta_features_for_model(
         "vol_expansion",
         "returns_std_50",
         "volume_spike_ema",
+        "event_r_multiple_mean_last_50",
     }
     forbidden_prefixes = ("zigzag_",)
     # Case-insensitive substrings for structural / memory / proxy features.
@@ -2645,8 +2758,7 @@ def build_meta_features_for_model(
         "pivot",
         "swing",
         "renko",
-        # Memory-style rolling P&L features and last-event counters
-        "last_",
+        # Memory-style rolling P&L features
         "last_50",
         "last_100",
         "cumulative",
@@ -2720,8 +2832,7 @@ def build_meta_features_for_model(
     selected_feature_names = list(meta_features_model_processed.columns)
     if meta_feature_cfg.get('enable_feature_selection', False):
         try:
-            # Default max_features changed from None to 60 (2025-12-08)
-            max_feats = meta_feature_cfg.get('max_features', 60)
+            max_feats = meta_feature_cfg.get('max_features', None)
             if max_feats is not None:
                 max_feats = int(max_feats)
             corr_threshold = float(meta_feature_cfg.get('correlation_threshold', 0.95))
@@ -2756,6 +2867,13 @@ def build_meta_features_for_model(
     except Exception:
         # Never let diagnostics break the main feature pipeline.
         pass
+
+    # Ensure the event-history TTO diagnostic remains available as a model feature
+    critical_tto_feature = 'event_tto_mean_last_50'
+    if critical_tto_feature in meta_features_model.columns and critical_tto_feature not in meta_features_model_processed.columns:
+        meta_features_model_processed[critical_tto_feature] = meta_features_model[critical_tto_feature]
+    if critical_tto_feature in meta_features_model_processed.columns and critical_tto_feature not in selected_feature_names:
+        selected_feature_names.append(critical_tto_feature)
 
     sample_weights: Optional[np.ndarray] = None
     if meta_feature_cfg.get('enable_sample_weighting', False):
@@ -4229,13 +4347,6 @@ def generate_diagnostics_report(
         regime_series = None
         if 'volatility_regime' in meta_features.columns:
             regime_series = meta_features['volatility_regime']
-        elif 'rv_z_short' in meta_features.columns:
-            # Derive from Z-score dynamically
-            z_vals = meta_features['rv_z_short']
-            reg_labels = np.full(len(z_vals), 'medium', dtype=object)
-            reg_labels[z_vals > 1.0] = 'high'
-            reg_labels[z_vals < -1.0] = 'low'
-            regime_series = pd.Series(reg_labels, index=meta_features.index)
         elif 'vol_regime_high' in meta_features.columns or 'vol_regime_medium' in meta_features.columns:
             # Derive simple labels from dummies
             regime_labels = []
@@ -5459,35 +5570,12 @@ def train_bagged_lgbm_with_kfold(
     n_bags: int = 10,
     lgbm_base_params: Optional[Dict[str, Any]] = None,
     verbose: bool = True,
-    use_diversity_defense: bool = True,
-    diversity_defense_config: Optional[Dict[str, Any]] = None,
 ) -> pd.DataFrame:
     """Train a 10x bagged LGBM meta-model with time-series CV.
-    
-    Supports "Diversity Defense" mode where specialists have different objectives:
-    - 3x Sharpe models (vol-normalized, risk-adjusted)
-    - 3x Tanh models (directional accuracy)
-    - 4x Huber models (2 standard + 2 asymmetric)
 
-    Returns a DataFrame with columns:
+    Returns a DataFrame with two columns:
         - 'lgbm_bag_mean': mean probability across bags
         - 'lgbm_bag_lower': mean - 1 * std, clipped to [0, 1]
-        
-    When use_diversity_defense=True, additional columns are returned:
-        - 'lgbm_bag_mad': MAD (median absolute deviation) of Z-scores
-        - 'lgbm_bag_consensus': MAD-weighted consensus signal
-    
-    Args:
-        X: Feature matrix
-        y: Target labels (binary)
-        horizon: Prediction horizon for purging
-        n_splits: Number of CV folds
-        sample_weights: Optional sample weights
-        n_bags: Number of bags (default 10 for diversity defense)
-        lgbm_base_params: Additional LGBM parameters
-        verbose: Print progress
-        use_diversity_defense: Enable diversity defense objectives (default True)
-        diversity_defense_config: Optional config dict for diversity defense
     """
 
     if not isinstance(X, pd.DataFrame):
@@ -5523,106 +5611,6 @@ def train_bagged_lgbm_with_kfold(
         except Exception:
             sample_weights = None
 
-    # Import Diversity Defense components if enabled
-    dd_objectives = None
-    dd_aggregator = None
-    dd_config = None
-    optimal_colsample_bytree = 0.5  # Default
-    
-    if use_diversity_defense:
-        try:
-            from src.utils.ml_common.optimization.diversity_defense_objectives import (
-                DiversityDefenseConfig,
-                DiversityDefenseObjectives,
-                DiversityDefenseAggregator,
-                DiversitySweep,
-                SpecialistType,
-            )
-            
-            # ============================================================
-            # STEP 1: Run DiversitySweep to find optimal colsample_bytree
-            # ============================================================
-            run_diversity_sweep = diversity_defense_config.get('run_diversity_sweep', True) if diversity_defense_config else True
-            
-            if run_diversity_sweep and len(X) >= 500:  # Need enough data for meaningful sweep
-                if verbose:
-                    tprint("  [DIVERSITY_SWEEP] Finding optimal colsample_bytree...", "INFO")
-                
-                # Use a sample for faster sweep if dataset is large
-                sweep_sample_size = min(5000, len(X))
-                if len(X) > sweep_sample_size:
-                    sweep_indices = np.random.choice(len(X), size=sweep_sample_size, replace=False)
-                    sweep_indices.sort()
-                    X_sweep = X.iloc[sweep_indices]
-                    y_sweep = y.iloc[sweep_indices].values
-                else:
-                    X_sweep = X
-                    y_sweep = y.values
-                
-                sweep = DiversitySweep(
-                    X=X_sweep,
-                    y=y_sweep,
-                    colsample_settings=diversity_defense_config.get('colsample_settings', [0.7, 0.6, 0.5, 0.4, 0.3]) if diversity_defense_config else [0.7, 0.6, 0.5, 0.4, 0.3],
-                    n_splits=2,  # Fast sweep
-                    n_models=5,  # Mini-ensemble for speed
-                )
-                
-                try:
-                    df_sweep = sweep.run(verbose=verbose)
-                    optimal_colsample_bytree = sweep.get_optimal_fraction()
-                    if verbose:
-                        tprint(f"  [DIVERSITY_SWEEP] ✅ Optimal colsample_bytree: {optimal_colsample_bytree:.2f}", "SUCCESS")
-                except Exception as e:
-                    if verbose:
-                        tprint(f"  [DIVERSITY_SWEEP] ⚠️ Sweep failed: {e}, using default 0.5", "WARNING")
-                    optimal_colsample_bytree = 0.5
-            else:
-                optimal_colsample_bytree = diversity_defense_config.get('colsample_bytree', 0.5) if diversity_defense_config else 0.5
-                if verbose:
-                    tprint(f"  [DIVERSITY_DEFENSE] Using configured colsample_bytree: {optimal_colsample_bytree}", "INFO")
-            
-            # ============================================================
-            # STEP 2: Create config with optimized colsample_bytree
-            # ============================================================
-            if diversity_defense_config is not None:
-                dd_config = DiversityDefenseConfig(
-                    sharpe_count=diversity_defense_config.get('sharpe_count', 3),
-                    tanh_count=diversity_defense_config.get('tanh_count', 3),
-                    huber_standard_count=diversity_defense_config.get('huber_standard_count', 2),
-                    huber_asymmetric_count=diversity_defense_config.get('huber_asymmetric_count', 2),
-                    sharpe_lambdas=diversity_defense_config.get('sharpe_lambdas', [0.5, 2.0, 8.0]),
-                    huber_delta=diversity_defense_config.get('huber_delta', 0.01),
-                    asymmetric_penalty=diversity_defense_config.get('asymmetric_penalty', 3.0),
-                    lr_sharpe=diversity_defense_config.get('lr_sharpe', 0.03),
-                    lr_tanh=diversity_defense_config.get('lr_tanh', 0.03),
-                    lr_huber=diversity_defense_config.get('lr_huber', 0.03),
-                    sample_fraction=diversity_defense_config.get('sample_fraction', 0.7),
-                    colsample_bytree=optimal_colsample_bytree,  # Use optimized value
-                    z_score_window=diversity_defense_config.get('z_score_window', 1000),
-                    mad_floor=diversity_defense_config.get('mad_floor', 0.25),
-                    noise_threshold=diversity_defense_config.get('noise_threshold', 0.3),
-                    cap_threshold=diversity_defense_config.get('cap_threshold', 0.7),
-                )
-            else:
-                dd_config = DiversityDefenseConfig(colsample_bytree=optimal_colsample_bytree)
-            
-            dd_objectives = DiversityDefenseObjectives(dd_config)
-            dd_aggregator = DiversityDefenseAggregator(dd_config)
-            
-            if verbose:
-                tprint("  [DIVERSITY_DEFENSE] Enabled - training specialist ensemble", "INFO")
-                tprint(f"    colsample_bytree: {dd_config.colsample_bytree} (optimized)", "INFO")
-                tprint(f"    Sharpe models: {dd_config.sharpe_count} (λ={dd_config.sharpe_lambdas})", "INFO")
-                tprint(f"    Tanh models: {dd_config.tanh_count}", "INFO")
-                tprint(f"    Huber models: {dd_config.huber_standard_count} standard + {dd_config.huber_asymmetric_count} asymmetric", "INFO")
-        except ImportError as e:
-            if verbose:
-                tprint(f"  ⚠️ Diversity Defense not available: {e}, falling back to standard", "WARNING")
-            use_diversity_defense = False
-            dd_objectives = None
-            dd_aggregator = None
-            dd_config = None
-
     # Base LGBM parameters from create_base_models (no focal loss)
     base_models = create_base_models({}, use_focal_loss=False)
     base_lgbm = base_models['lgbm']
@@ -5635,28 +5623,22 @@ def train_bagged_lgbm_with_kfold(
             pass
 
     # Force bagging-related parameters
-    base_params.setdefault('n_estimators', 300)  # Conservative for ensemble
-    
-    # Feature diversity is controlled via colsample_bytree (NOT external loop)
-    # Optimal range is 0.5-0.6 based on Diversity-Adjusted Sharpe analysis
-    if use_diversity_defense and dd_config is not None:
-        base_params['colsample_bytree'] = dd_config.colsample_bytree
-        external_sample_fraction = dd_config.sample_fraction
-    else:
-        base_params['colsample_bytree'] = 0.5  # Default for diversity
-        external_sample_fraction = 0.7
-    
-    base_params['subsample'] = base_params.get('subsample', 0.7)
-    base_params['feature_fraction'] = base_params.get('colsample_bytree', 0.5)
-    base_params['bagging_fraction'] = base_params.get('bagging_fraction', 0.7)
-    base_params['bagging_freq'] = base_params.get('bagging_freq', 1)
-    
+    base_params.setdefault('n_estimators', 1000)
+    if 'feature_fraction' not in base_params:
+        base_params['feature_fraction'] = 1.0
+    base_params['colsample_bytree'] = base_params.get('colsample_bytree', base_params['feature_fraction'])
+    if 'subsample' not in base_params:
+        base_params['subsample'] = 1.0
+    if 'bagging_fraction' not in base_params:
+        base_params['bagging_fraction'] = 1.0
+    base_params['bagging_freq'] = base_params.get('bagging_freq', 0)
+
+    external_feature_fraction = 0.7
+    external_sample_fraction = 0.7
     rng = np.random.RandomState(42)
 
     oof_mean = pd.Series(np.nan, index=X.index)
     oof_lower = pd.Series(np.nan, index=X.index)
-    oof_mad = pd.Series(np.nan, index=X.index)
-    oof_consensus = pd.Series(np.nan, index=X.index)
 
     tscv = TimeSeriesSplit(n_splits=n_splits)
 
@@ -5709,177 +5691,67 @@ def train_bagged_lgbm_with_kfold(
         test_indices_with_labels = test_idx[test_mask]
 
         fold_preds = []
-        specialist_types = []
-        
-        # Compute volatility for Sharpe objectives (for regression-like treatment)
-        y_train_numeric = y_train_clean.astype(float).values
-        vol_train = pd.Series(y_train_numeric).rolling(window=100, min_periods=10).std().bfill().values
-        
-        if use_diversity_defense and dd_objectives is not None and dd_config is not None:
-            # ============================================================
-            # DIVERSITY DEFENSE: Train specialist models with different objectives
-            # Feature diversity is controlled via colsample_bytree (NOT external loop)
-            # ============================================================
-            specialist_configs = dd_config.get_specialist_configs()
-            actual_n_bags = len(specialist_configs)
-            
-            for spec_idx, spec_config in enumerate(specialist_configs):
-                params = dict(base_params)
-                params['random_state'] = int(params.get('random_state', 42)) + spec_idx
-                
-                # Get specialist-specific learning rate
-                lr = getattr(dd_config, spec_config.learning_rate_key, 0.03)
-                params['learning_rate'] = lr
-                
-                # colsample_bytree handles feature diversity internally
-                # Only do external row sampling for bootstrap diversity
-                n_rows = X_train_clean.shape[0]
-                n_rows_sub = max(10, int(round(external_sample_fraction * n_rows)))
-                n_rows_sub = min(n_rows_sub, n_rows)
-                row_indices = rng.choice(n_rows, size=n_rows_sub, replace=False)
-                row_indices.sort()
+        for bag_idx in range(int(max(1, n_bags))):
+            params = dict(base_params)
+            params['random_state'] = int(params.get('random_state', 42)) + bag_idx
 
-                # Use ALL features - colsample_bytree handles diversity
-                X_train_bag_sub = X_train_clean.iloc[row_indices]
-                y_train_bag_sub = y_train_clean.iloc[row_indices]
-                vol_train_sub = vol_train[row_indices]
-                
-                if weights_train_clean is not None:
-                    weights_bag_sub = weights_train_clean[row_indices]
+            model = lgb.LGBMClassifier(**params)
+
+            n_features = X_train_clean.shape[1]
+            n_feat_sub = max(1, int(round(external_feature_fraction * n_features)))
+            feat_indices = rng.choice(n_features, size=n_feat_sub, replace=False)
+            feat_indices.sort()
+            cols_sub = X_train_clean.columns[feat_indices]
+
+            X_train_bag = X_train_clean[cols_sub]
+            X_test_bag = X_test_clean[cols_sub]
+
+            n_rows = X_train_bag.shape[0]
+            n_rows_sub = max(10, int(round(external_sample_fraction * n_rows)))
+            n_rows_sub = min(n_rows_sub, n_rows)
+            row_indices = rng.choice(n_rows, size=n_rows_sub, replace=False)
+            row_indices.sort()
+
+            X_train_bag_sub = X_train_bag.iloc[row_indices]
+            y_train_bag_sub = y_train_clean.iloc[row_indices]
+            if weights_train_clean is not None:
+                weights_bag_sub = weights_train_clean[row_indices]
+            else:
+                weights_bag_sub = None
+
+            try:
+                if weights_bag_sub is not None:
+                    model.fit(X_train_bag_sub, y_train_bag_sub, sample_weight=weights_bag_sub)
                 else:
-                    weights_bag_sub = None
-
-                try:
-                    # Get specialist objective
-                    fobj = dd_objectives.get_objective_for_specialist(spec_config, vol_train_sub)
-                    
-                    if fobj is not None:
-                        # Use LGBMRegressor with custom objective
-                        model = lgb.LGBMRegressor(objective=fobj, **params)
-                        if weights_bag_sub is not None:
-                            model.fit(X_train_bag_sub, y_train_bag_sub.astype(float), sample_weight=weights_bag_sub)
-                        else:
-                            model.fit(X_train_bag_sub, y_train_bag_sub.astype(float))
-                        # Get predictions (regression output) on FULL feature set
-                        y_pred = model.predict(X_test_clean)
-                        # Convert to probability-like output using sigmoid
-                        y_pred_proba = 1.0 / (1.0 + np.exp(-y_pred))
-                    else:
-                        # Fallback to classifier
-                        model = lgb.LGBMClassifier(**params)
-                        if weights_bag_sub is not None:
-                            model.fit(X_train_bag_sub, y_train_bag_sub, sample_weight=weights_bag_sub)
-                        else:
-                            model.fit(X_train_bag_sub, y_train_bag_sub)
-                        y_pred_proba = model.predict_proba(X_test_clean)[:, 1]
-                    
-                    fold_preds.append(y_pred_proba)
-                    specialist_types.append(spec_config.specialist_type)
-                    
-                except Exception as e:
-                    if verbose:
-                        tprint(f"    ❌ Specialist {spec_idx + 1} ({spec_config.role_description}) failed: {e}", "ERROR")
-                    continue
-        else:
-            # ============================================================
-            # STANDARD MODE: Train identical classifiers with different seeds
-            # Feature diversity is controlled via colsample_bytree
-            # ============================================================
-            for bag_idx in range(int(max(1, n_bags))):
-                params = dict(base_params)
-                params['random_state'] = int(params.get('random_state', 42)) + bag_idx
-
-                model = lgb.LGBMClassifier(**params)
-
-                # Row sampling only - colsample_bytree handles feature diversity
-                n_rows = X_train_clean.shape[0]
-                n_rows_sub = max(10, int(round(external_sample_fraction * n_rows)))
-                n_rows_sub = min(n_rows_sub, n_rows)
-                row_indices = rng.choice(n_rows, size=n_rows_sub, replace=False)
-                row_indices.sort()
-
-                X_train_bag_sub = X_train_clean.iloc[row_indices]
-                y_train_bag_sub = y_train_clean.iloc[row_indices]
-                if weights_train_clean is not None:
-                    weights_bag_sub = weights_train_clean[row_indices]
-                else:
-                    weights_bag_sub = None
-
-                try:
-                    if weights_bag_sub is not None:
-                        model.fit(X_train_bag_sub, y_train_bag_sub, sample_weight=weights_bag_sub)
-                    else:
-                        model.fit(X_train_bag_sub, y_train_bag_sub)
-                    # Predict on full feature set - colsample_bytree handles diversity
-                    y_pred_proba = model.predict_proba(X_test_clean)[:, 1]
-                    fold_preds.append(y_pred_proba)
-                except Exception as e:
-                    if verbose:
-                        tprint(f"    ❌ Bag {bag_idx + 1} failed: {e}", "ERROR")
-                    continue
+                    model.fit(X_train_bag_sub, y_train_bag_sub)
+                y_pred_proba = model.predict_proba(X_test_bag)[:, 1]
+                fold_preds.append(y_pred_proba)
+            except Exception as e:
+                if verbose:
+                    tprint(f"    ❌ Bag {bag_idx + 1} failed: {e}", "ERROR")
+                continue
 
         if not fold_preds:
             continue
 
         preds_mat = np.vstack(fold_preds).T  # shape: (n_test_clean, n_bags_effective)
-        
-        if use_diversity_defense and dd_aggregator is not None:
-            # ============================================================
-            # DIVERSITY DEFENSE AGGREGATION: MAD-based consensus
-            # ============================================================
-            # Transpose for aggregator: (n_models, n_samples)
-            preds_matrix_t = preds_mat.T
-            agg_result = dd_aggregator.aggregate(preds_matrix_t, compute_penalty=False)
-            
-            # Extract aggregation results
-            mu = np.median(preds_mat, axis=1)  # Median for robustness
-            sigma = np.std(preds_mat, axis=1)
-            
-            # Use MAD from aggregator
-            mad_values = agg_result['mad_z']
-            # Ensure mad_values has correct length (may need adjustment for window effects)
-            if len(mad_values) != len(mu):
-                # Fallback to simple MAD calculation
-                mad_values = np.median(np.abs(preds_mat - mu[:, np.newaxis]), axis=1)
-            
-            # Consensus signal: probability weighted by confidence
-            raw_signal = agg_result.get('raw_signal', mu)
-            if len(raw_signal) != len(mu):
-                raw_signal = mu
-            
-            oof_mean.iloc[test_indices_with_labels] = mu
-            lower = np.clip(mu - 1.0 * sigma, 0.0, 1.0)
-            oof_lower.iloc[test_indices_with_labels] = lower
-            oof_mad.iloc[test_indices_with_labels] = mad_values
-            oof_consensus.iloc[test_indices_with_labels] = raw_signal
-        else:
-            # Standard aggregation
-            mu = np.mean(preds_mat, axis=1)
-            sigma = np.std(preds_mat, axis=1)
+        mu = np.mean(preds_mat, axis=1)
+        sigma = np.std(preds_mat, axis=1)
 
-            oof_mean.iloc[test_indices_with_labels] = mu
-            lower = np.clip(mu - 1.0 * sigma, 0.0, 1.0)
-            oof_lower.iloc[test_indices_with_labels] = lower
+        oof_mean.iloc[test_indices_with_labels] = mu
+        lower = np.clip(mu - 1.0 * sigma, 0.0, 1.0)
+        oof_lower.iloc[test_indices_with_labels] = lower
 
     oof_mean = oof_mean.fillna(0.5)
     oof_lower = oof_lower.fillna(0.5)
-    
-    result_df = pd.DataFrame(
+
+    return pd.DataFrame(
         {
             'lgbm_bag_mean': oof_mean,
             'lgbm_bag_lower': oof_lower,
         },
         index=X.index,
     )
-    
-    # Add diversity defense columns if enabled
-    if use_diversity_defense:
-        oof_mad = oof_mad.fillna(0.25)  # Default to MAD floor
-        oof_consensus = oof_consensus.fillna(0.5)
-        result_df['lgbm_bag_mad'] = oof_mad
-        result_df['lgbm_bag_consensus'] = oof_consensus
-    
-    return result_df
 
 
 def calibrate_ensemble(
@@ -6227,17 +6099,11 @@ def compute_regime_wise_metrics(
     rr_tail = realized_returns.iloc[-n_common:] if realized_returns is not None else None
     y_pred_tail = np.asarray(y_pred, dtype=float)[-n_common:] if y_pred is not None else None
 
-    # Determine volatility regime (use 'volatility_regime' if present, else derive from 'rv_z_short')
-    if 'volatility_regime' in X_tail.columns:
-        vol_regime = X_tail['volatility_regime']
-    elif 'rv_z_short' in X_tail.columns:
-        # Dynamic regime definition from Z-score
-        z_scores = X_tail['rv_z_short']
-        vol_regime = pd.Series('medium', index=X_tail.index)
-        vol_regime.loc[z_scores > 1.0] = 'high'
-        vol_regime.loc[z_scores < -1.0] = 'low'
-    else:
+    # Volatility regime must be present to compute metrics
+    if 'volatility_regime' not in X_tail.columns:
         return metrics
+
+    vol_regime = X_tail['volatility_regime']
 
     # Convert labels and optional returns to numpy for robust masking
     y_arr = y_tail.to_numpy(dtype=float, copy=False)
@@ -6846,121 +6712,6 @@ class HPOCache:
             tprint(f"⚠️ Cache save failed: {e}", "WARNING")
 
 
-def run_lgbm_feature_selection_multi_set(
-    meta_features_model: pd.DataFrame,
-    binary_labels: pd.Series,
-    exchange: str,
-    asset: str,
-    correlation_threshold: float = 0.95,
-    force_reselection: bool = False,
-    log_dir: Optional[Path] = None,
-) -> Tuple[Dict[int, List[str]], Dict[str, Any]]:
-    """
-    Run LGBM-based feature selection to generate multiple feature sets (50/60/70/80).
-    
-    This function:
-    1. Checks if feature sets already exist for the exchange/asset
-    2. If not (or force=True), runs the LGBM feature selection pipeline
-    3. Returns feature sets and selection log
-    
-    Args:
-        meta_features_model: Feature matrix after basic processing
-        binary_labels: Binary target labels
-        exchange: Exchange name (e.g., 'binance')
-        asset: Asset symbol (e.g., 'ETHUSDT')
-        correlation_threshold: Threshold for correlation pruning
-        force_reselection: Force re-run feature selection
-        log_dir: Directory to save selection logs
-        
-    Returns:
-        Tuple of (feature_sets_dict, selection_log)
-        feature_sets_dict: {80: [...], 70: [...], 60: [...], 50: [...]}
-    """
-    tprint_info(f"🔬 Running LGBM feature selection for {asset} on {exchange}")
-    
-    try:
-        feature_sets, selection_log = select_features_lgbm_for_meta_labeling(
-            X=meta_features_model,
-            y=binary_labels,
-            exchange=exchange,
-            asset=asset,
-            correlation_threshold=correlation_threshold,
-            force_reselection=force_reselection,
-            log_dir=log_dir,
-            persist=True,
-        )
-        
-        tprint_success(f"✅ Generated {len(feature_sets)} feature sets: {list(feature_sets.keys())}")
-        return feature_sets, selection_log
-        
-    except Exception as e:
-        tprint_error(f"❌ LGBM feature selection failed: {e}")
-        # Fallback to returning empty dict
-        return {}, {"error": str(e)}
-
-
-def save_multi_feature_set_results(
-    results: Dict[int, Dict[str, Any]],
-    exchange: str,
-    asset: str,
-    timeframe: str,
-    output_dir: Optional[Path] = None,
-) -> Path:
-    """
-    Save results from running meta-labeling with multiple feature sets.
-    
-    Args:
-        results: Dictionary mapping feature set size to results
-        exchange: Exchange name
-        asset: Asset symbol
-        timeframe: Timeframe string
-        output_dir: Output directory (default: outcomes/)
-        
-    Returns:
-        Path to saved results file
-    """
-    output_dir = Path(output_dir) if output_dir else Path("outcomes")
-    output_dir.mkdir(parents=True, exist_ok=True)
-    
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"multi_feature_set_results_{asset}_{timeframe}_{timestamp}.json"
-    output_path = output_dir / filename
-    
-    save_data = {
-        "metadata": {
-            "exchange": exchange,
-            "asset": asset,
-            "timeframe": timeframe,
-            "timestamp": timestamp,
-            "datetime_iso": datetime.now().isoformat(),
-        },
-        "results": results,
-    }
-    
-    # Serialize complex objects
-    def serialize(obj):
-        if isinstance(obj, (np.floating, np.integer)):
-            return float(obj)
-        if isinstance(obj, np.ndarray):
-            return obj.tolist()
-        if isinstance(obj, pd.Series):
-            return obj.tolist()
-        if isinstance(obj, pd.DataFrame):
-            return obj.to_dict()
-        if hasattr(obj, '__dict__'):
-            return str(obj)
-        return str(obj)
-    
-    try:
-        with open(output_path, "w") as f:
-            json.dump(save_data, f, indent=2, default=serialize)
-        tprint_success(f"💾 Saved multi-feature-set results to {output_path}")
-    except Exception as e:
-        tprint_error(f"❌ Failed to save results: {e}")
-    
-    return output_path
-
-
 class FeatureGenerationMetaLabelingStep(BaseStep):
     """
     Feature Generation Meta-Labeling Step (Enhanced).
@@ -6972,20 +6723,12 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
     - Handles overlapping events and edge windows
     - Includes transaction costs
     - Uses economic metrics
-    
-    NEW (2025-12-08): Multi-feature-set support
-    - When use_lgbm_feature_selection=True, generates 4 feature sets (50/60/70/80)
-    - Runs meta-labeling with each feature set
-    - Persists feature sets with exchange/asset/datetime metadata
-    - Results are saved for comparison in snr_diagnostics and meta_gated_backtest
     """
 
     def __init__(self, step_name: str = "feature_generation_meta_labeling_step"):
         """Initialize the meta-labeling step."""
         super().__init__(step_name)
         self.logger = system_logger.getChild('FeatureGenerationMetaLabeling')
-        self._feature_sets_cache: Dict[int, List[str]] = {}
-        self._feature_selection_log: Dict[str, Any] = {}
 
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -7485,18 +7228,7 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             meta_feature_cfg_raw = config.get('meta_feature_engineering', {})
             meta_feature_cfg = dict(meta_feature_cfg_raw) if isinstance(meta_feature_cfg_raw, dict) else {}
             meta_feature_cfg["_label_uncertainty"] = label_uncertainty
-            
-            # LGBM Feature Selection Configuration (2025-12-08)
-            use_lgbm_feature_selection = bool(config.get('use_lgbm_feature_selection', False))
-            force_feature_reselection = bool(config.get('force_feature_reselection', False))
-            
-            if use_lgbm_feature_selection:
-                tprint_info(f"🔬 LGBM multi-feature-set selection enabled")
-                # Temporarily disable feature selection in meta_feature_cfg
-                # We'll handle it separately with LGBM pipeline
-                meta_feature_cfg['enable_feature_selection'] = False
-                meta_feature_cfg['selection_method'] = 'lgbm'
-            
+
             meta_features, meta_features_model_processed, selected_feature_names, sample_weights = build_meta_features_for_model(
                 market_data=market_data,
                 primary_signals=primary_signals,
@@ -7510,47 +7242,6 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                 volume_available=volume_available,
                 meta_feature_cfg=meta_feature_cfg,
             )
-            
-            # Run LGBM multi-feature-set selection if enabled
-            multi_feature_sets: Dict[int, List[str]] = {}
-            feature_selection_log: Dict[str, Any] = {}
-            
-            if use_lgbm_feature_selection:
-                try:
-                    exchange = config.get('exchange', 'binance')
-                    symbol = config.get('symbol', 'UNKNOWN')
-                    log_dir = Path("outcomes") / "feature_selection_logs"
-                    log_dir.mkdir(parents=True, exist_ok=True)
-                    
-                    multi_feature_sets, feature_selection_log = run_lgbm_feature_selection_multi_set(
-                        meta_features_model=meta_features_model_processed,
-                        binary_labels=binary_labels,
-                        exchange=exchange,
-                        asset=symbol,
-                        correlation_threshold=float(meta_feature_cfg.get('correlation_threshold', 0.95)),
-                        force_reselection=force_feature_reselection,
-                        log_dir=log_dir,
-                    )
-                    
-                    # Store for later use
-                    self._feature_sets_cache = multi_feature_sets
-                    self._feature_selection_log = feature_selection_log
-                    
-                    # Use the 60-feature set as the default (new default as of 2025-12-08)
-                    if 60 in multi_feature_sets and multi_feature_sets[60]:
-                        selected_feature_names = multi_feature_sets[60]
-                        meta_features_model_processed = meta_features_model_processed[selected_feature_names]
-                        tprint_info(f"   ↪ Using 60-feature set as primary: {len(selected_feature_names)} features")
-                    elif multi_feature_sets:
-                        # Fallback to largest available set
-                        largest = max(multi_feature_sets.keys())
-                        selected_feature_names = multi_feature_sets[largest]
-                        meta_features_model_processed = meta_features_model_processed[selected_feature_names]
-                        tprint_info(f"   ↪ Using {largest}-feature set as primary: {len(selected_feature_names)} features")
-                        
-                except Exception as e_lgbm:
-                    tprint_warning(f"⚠️ LGBM feature selection failed, using default: {e_lgbm}")
-                    multi_feature_sets = {}
 
             # STEP 6: Train ensemble meta-models with K-fold cross-fitting
             tprint("🎓 [6/13] Training ensemble meta-models (LGBM + LogReg + RF) with purged K-fold CV...", "INFO")
@@ -8765,33 +8456,6 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                 tprint(f"⚠️ Meta-gating artifact saving failed: {e}", "WARNING")
 
             elapsed_time = (datetime.now() - start_time).total_seconds()
-            
-            # Add multi-feature-set information if LGBM feature selection was used
-            multi_feature_set_info = {}
-            if multi_feature_sets:
-                multi_feature_set_info = {
-                    'enabled': True,
-                    'feature_sets': {k: len(v) for k, v in multi_feature_sets.items()},
-                    'primary_set_size': len(selected_feature_names),
-                    'selection_log_summary': {
-                        'initial_features': feature_selection_log.get('initial_features', 0),
-                        'n_iterations': len(feature_selection_log.get('iterations', [])),
-                    } if feature_selection_log else {},
-                }
-                
-                # Save multi-feature-set results for later comparison
-                try:
-                    save_multi_feature_set_results(
-                        results={
-                            k: {'feature_count': len(v), 'features': v}
-                            for k, v in multi_feature_sets.items()
-                        },
-                        exchange=config.get('exchange', 'binance'),
-                        asset=config.get('symbol', 'UNKNOWN'),
-                        timeframe=config.get('timeframe', '15m'),
-                    )
-                except Exception as e_save:
-                    tprint_warning(f"⚠️ Failed to save multi-feature-set results: {e_save}")
 
             result = {
                 'success': True,
@@ -8812,9 +8476,6 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                     'n_cv_folds': len(cv_results),
                     'elapsed_seconds': elapsed_time,
                     'top_features': dict(top_features),
-                    'selected_features': selected_feature_names,
-                    'n_selected_features': len(selected_feature_names),
-                    'multi_feature_sets': multi_feature_set_info,
                     'config': {
                         'profit_threshold': profit_threshold,
                         'stop_threshold': stop_threshold,
@@ -8829,8 +8490,7 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                         'ensemble_models': ['lgbm', 'xgb', 'rf'],
                         'use_platt_calibration': True,
                         'use_isotonic_calibration': True,
-                        'include_signal_disagreement': True,
-                        'use_lgbm_feature_selection': use_lgbm_feature_selection,
+                        'include_signal_disagreement': True
                     },
                     'enhancements': {
                         'kalman_filtering': True,
@@ -8841,18 +8501,14 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                         'platt_calibration': True,
                         'isotonic_calibration': True,
                         'signal_disagreement': True,
-                        'kfold_cross_fitting': True,
-                        'lgbm_feature_selection': use_lgbm_feature_selection,
+                        'kfold_cross_fitting': True
                     }
                 },
-                'cv_results': cv_results,
-                'feature_sets': multi_feature_sets if multi_feature_sets else None,
+                'cv_results': cv_results
             }
 
             tprint(f"✅ [done] Enhanced meta-labeling completed in {elapsed_time:.1f}s", "SUCCESS")
             tprint(f"📊 Performance: AUC={avg_auc:.3f}, Win Rate={win_rate:.1%}, Mean Return={mean_return:.2%}", "SUCCESS")
-            if multi_feature_sets:
-                tprint(f"📊 Feature sets generated: {list(multi_feature_sets.keys())}", "SUCCESS")
 
             return result
 

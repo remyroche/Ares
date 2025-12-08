@@ -328,9 +328,11 @@ class OrderManager:
                     
                     # Notify handlers
                     await self._notify_handlers("on_order_filled", order)
-                    
-                    # Record trade for reporting
-                    await self._record_trade_for_reporting(order)
+
+                    # Record trade for reporting only in live mode; in paper mode
+                    # the PaperTradingSimulator already records rich trade data.
+                    if self.config.mode.value != "paper":
+                        await self._record_trade_for_reporting(order)
                     
                     self.logger.info(f"Paper order filled via simulator: {order.id} @ {order.average_price}")
                 elif result.get("status") == "REJECTED":
@@ -462,6 +464,10 @@ class OrderManager:
                     del self.active_orders[order.id]
                 
                 await self._notify_handlers("on_order_filled", order)
+
+                # For live trading, also record trade for reporting when an order is filled
+                if self.config.mode.value != "paper":
+                    await self._record_trade_for_reporting(order)
                 
             elif exchange_status in ["PARTIALLY_FILLED", "PARTIALLY_FILLED"]:
                 order.status = OrderStatus.PARTIALLY_FILLED

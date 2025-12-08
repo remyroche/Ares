@@ -1,0 +1,132 @@
+{
+  "metadata": {
+    "symbol": "ETHUSDT",
+    "exchange": "binance",
+    "timeframe": "15m",
+    "direction": "long",
+    "model": "analyst",
+    "prefix": "snr_trading_simulation",
+    "timestamp_utc": "20251208_205803"
+  },
+  "section": "trading_simulation",
+  "date_range_days": 443,
+  "n_valid_samples": 21176,
+  "calibration": {
+    "brier_score": 0.14655404024068347,
+    "expected_calibration_error": 0.01698211350798014,
+    "max_calibration_error": 0.14823810166469015,
+    "n_samples": 17645
+  },
+  "calibration_curve": {
+    "fraction_of_positives": [
+      0.11877667140825035,
+      0.16395360171556683,
+      0.21047351524879615,
+      0.26537997587454765,
+      0.30656934306569344,
+      0.39285714285714285,
+      0.5
+    ],
+    "mean_predicted_value": [
+      0.08002524638920226,
+      0.15915963397910945,
+      0.23310811415956437,
+      0.3385076765045718,
+      0.4389719958120875,
+      0.541095244521833,
+      0.6300195983928394
+    ]
+  },
+  "threshold_results": {
+    "threshold_0.55": {
+      "threshold": 0.55,
+      "n_trades": 0,
+      "trades_per_day": 0.0,
+      "mean_return_per_trade": NaN,
+      "pnl_per_day_pct": NaN,
+      "win_rate": NaN,
+      "max_consecutive_losses": 0,
+      "avg_consecutive_losses": NaN,
+      "win_rate_stability": NaN,
+      "sharpe_ratio": NaN,
+      "max_drawdown": NaN,
+      "final_equity": NaN,
+      "insufficient_data": true
+    },
+    "threshold_0.60": {
+      "threshold": 0.6,
+      "n_trades": 0,
+      "trades_per_day": 0.0,
+      "mean_return_per_trade": NaN,
+      "pnl_per_day_pct": NaN,
+      "win_rate": NaN,
+      "max_consecutive_losses": 0,
+      "avg_consecutive_losses": NaN,
+      "win_rate_stability": NaN,
+      "sharpe_ratio": NaN,
+      "max_drawdown": NaN,
+      "final_equity": NaN,
+      "insufficient_data": true
+    },
+    "threshold_0.65": {
+      "threshold": 0.65,
+      "n_trades": 0,
+      "trades_per_day": 0.0,
+      "mean_return_per_trade": NaN,
+      "pnl_per_day_pct": NaN,
+      "win_rate": NaN,
+      "max_consecutive_losses": 0,
+      "avg_consecutive_losses": NaN,
+      "win_rate_stability": NaN,
+      "sharpe_ratio": NaN,
+      "max_drawdown": NaN,
+      "final_equity": NaN,
+      "insufficient_data": true
+    },
+    "threshold_0.70": {
+      "threshold": 0.7,
+      "n_trades": 0,
+      "trades_per_day": 0.0,
+      "mean_return_per_trade": NaN,
+      "pnl_per_day_pct": NaN,
+      "win_rate": NaN,
+      "max_consecutive_losses": 0,
+      "avg_consecutive_losses": NaN,
+      "win_rate_stability": NaN,
+      "sharpe_ratio": NaN,
+      "max_drawdown": NaN,
+      "final_equity": NaN,
+      "insufficient_data": true
+    },
+    "threshold_0.75": {
+      "threshold": 0.75,
+      "n_trades": 0,
+      "trades_per_day": 0.0,
+      "mean_return_per_trade": NaN,
+      "pnl_per_day_pct": NaN,
+      "win_rate": NaN,
+      "max_consecutive_losses": 0,
+      "avg_consecutive_losses": NaN,
+      "win_rate_stability": NaN,
+      "sharpe_ratio": NaN,
+      "max_drawdown": NaN,
+      "final_equity": NaN,
+      "insufficient_data": true
+    },
+    "threshold_0.80": {
+      "threshold": 0.8,
+      "n_trades": 0,
+      "trades_per_day": 0.0,
+      "mean_return_per_trade": NaN,
+      "pnl_per_day_pct": NaN,
+      "win_rate": NaN,
+      "max_consecutive_losses": 0,
+      "avg_consecutive_losses": NaN,
+      "win_rate_stability": NaN,
+      "sharpe_ratio": NaN,
+      "max_drawdown": NaN,
+      "final_equity": NaN,
+      "insufficient_data": true
+    }
+  }
+}

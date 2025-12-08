@@ -211,17 +211,60 @@ class RiskManager:
             # Get current position
             current_position = self.positions.get(symbol, 0.0)
             
-            # Get current market data
-            ticker = await self.exchange_client.get_ticker(symbol)
-            current_price = float(ticker.get("last", 0)) if ticker else 0.0
+            # Get current market data (prefer standardized price API when available)
+            current_price = 0.0
+            try:
+                # ExchangeDispatcher exposes get_price; fall back to ticker if unavailable
+                if hasattr(self.exchange_client, "get_price"):
+                    price_value = await self.exchange_client.get_price(symbol)
+                    if price_value is not None:
+                        current_price = float(price_value)
+                else:
+                    ticker = await self.exchange_client.get_ticker(symbol)
+                    if ticker:
+                        # Support both CCXT-style and raw Binance 24hr ticker
+                        current_price = float(
+                            ticker.get("last")
+                            or ticker.get("close")
+                            or ticker.get("price", 0.0)
+                        )
+            except Exception as price_exc:
+                self.logger.warning(f"⚠️ Failed to fetch current price for {symbol}: {price_exc}")
             
             # Calculate position value
             position_value = abs(current_position) * current_price
             
             # Get account info for margin calculations
-            account_info = await self.exchange_client.get_account_info()
-            total_balance = float(account_info.get("totalBalance", 0))
-            available_balance = float(account_info.get("availableBalance", 0))
+            total_balance = 0.0
+            available_balance = 0.0
+            try:
+                account_info = await self.exchange_client.get_account_info()
+                if account_info:
+                    # Binance spot futures-style schema: "balances": [{"asset": "USDT", "free": ..., "locked": ...}, ...]
+                    balances = account_info.get("balances") or account_info.get("assets") or []
+                    if isinstance(balances, list):
+                        usdt_entry = next(
+                            (b for b in balances if str(b.get("asset") or b.get("currency")).upper() == "USDT"),
+                            None,
+                        )
+                        if usdt_entry is not None:
+                            free = float(usdt_entry.get("free", usdt_entry.get("available", 0.0)))
+                            locked = float(usdt_entry.get("locked", usdt_entry.get("inOrder", 0.0)))
+                            available_balance = max(free, 0.0)
+                            total_balance = max(free + locked, available_balance)
+                    # Fallbacks if structure is different
+                    if total_balance == 0.0:
+                        total_balance = float(
+                            account_info.get("totalWalletBalance")
+                            or account_info.get("totalBalance", 0.0)
+                        )
+                    if available_balance == 0.0:
+                        available_balance = float(
+                            account_info.get("availableBalance")
+                            or account_info.get("freeMargin", 0.0)
+                        )
+            except Exception as acct_exc:
+                self.logger.warning(f"⚠️ Failed to parse account info for {symbol}: {acct_exc}")
             
             # Calculate leverage (simplified)
             leverage = position_value / total_balance if total_balance > 0 else 0.0
@@ -563,11 +606,18 @@ class RiskManager:
             return 0.0
     
     def _get_current_price(self, symbol: str) -> float:
-        """Get current price for symbol (cached)"""
-        # This would typically use cached data from data streamer
-        return 50000.0  # Fallback price
+        """Get current price for symbol using last known risk metrics or a safe default."""
+        metrics = self.risk_metrics.get(symbol)
+        if metrics and metrics.current_position != 0 and metrics.position_value > 0:
+            # Derive price from position value when available
+            try:
+                return abs(metrics.position_value / metrics.current_position)
+            except Exception:
+                pass
+        # As a final fallback, return 0.0 to avoid inflating exposure
+        return 0.0
     
     def _get_average_price(self, symbol: str) -> float:
-        """Get average price for symbol (simplified)"""
-        # This would typically track average entry price
-        return 50000.0  # Fallback price
+        """Get average entry price for symbol from tracked position entries when available."""
+        entry_price = self.position_entry_prices.get(symbol)
+        return float(entry_price) if entry_price is not None else 0.0

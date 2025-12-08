@@ -9,7 +9,6 @@ This module consolidates all labeling-specific functionality including:
 - Data validation for feature generation
 - SNR diagnostics for label quality assessment
 - Meta-gated backtesting for labeling evaluation
-- LGBM-based feature selection for meta-labeling (2025-12-08)
 """
 
 from .labeling_components import (
@@ -58,28 +57,6 @@ from .meta_gated_backtest_step import (
     MetaGatedBacktestStep,
 )
 
-# LGBM Feature Selection (2025-12-08)
-from .lgbm_feature_selection import (
-    lgbm_feature_selection_pipeline,
-    select_features_lgbm_for_meta_labeling,
-    select_features_by_importance_lgbm,
-    FeatureSetPersistence,
-    iterative_lgbm_importance_selection,
-    permutation_importance_rfe,
-    correlation_pruning,
-    FEATURE_SELECTION_CONFIG,
-    DEFAULT_LGBM_PARAMS,
-)
-
-# Winning Feature Set Selection (2025-12-08)
-from .winning_feature_set_selector import (
-    determine_winning_feature_set,
-    compute_winning_score,
-    compute_composite_score,  # Backward compat wrapper
-    run_winning_feature_set_selection,
-    METRIC_WEIGHTS,
-)
-
 __all__ = [
     "RegimeAwareLabeling",
     "FeatureGenerationMetaLabelingStep",
@@ -103,20 +80,4 @@ __all__ = [
     "DEFAULT_PROFIT_THRESHOLD",
     "DEFAULT_STOP_THRESHOLD",
     "DEFAULT_TRANSACTION_COST",
-    # LGBM Feature Selection (2025-12-08)
-    "lgbm_feature_selection_pipeline",
-    "select_features_lgbm_for_meta_labeling",
-    "select_features_by_importance_lgbm",
-    "FeatureSetPersistence",
-    "iterative_lgbm_importance_selection",
-    "permutation_importance_rfe",
-    "correlation_pruning",
-    "FEATURE_SELECTION_CONFIG",
-    "DEFAULT_LGBM_PARAMS",
-    # Winning Feature Set Selection (2025-12-08)
-    "determine_winning_feature_set",
-    "compute_winning_score",
-    "compute_composite_score",
-    "run_winning_feature_set_selection",
-    "METRIC_WEIGHTS",
 ]

@@ -180,8 +180,8 @@ diversity_sweep:
 # HPO Configuration (Meta-Model Optimization)
 # =============================================================================
 hpo:
-  # Optimization target: Diversity-Adjusted Sharpe (DAS)
-  objective: "das_score"
+  # Optimization target: Ensemble Sharpe Ratio (ESR)
+  objective: "esr_score"
   
   # Transaction fee rate (5 bps default)
   fee_rate: 0.0005
@@ -352,5 +352,6 @@ integration:
   
   incremental_analyst_trainers:
     enabled: true
-    class: "BaggedLGBMRegressor"
-    class: "IncrementalLGBMBaggedTrainer"
+    classes:
+      - "BaggedLGBMRegressor"
+      - "IncrementalLGBMBaggedTrainer"

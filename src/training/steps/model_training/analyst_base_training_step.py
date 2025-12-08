@@ -2,22 +2,6 @@
 Analyst Base Training Step.
 
 This step trains base analyst models.
-
-Feature Set B Configuration (2025-12-08):
-When using Feature Set B (meta-gated features), the following config options are available:
-
-    analyst_config:
-        feature_set: 'B'  # 'A' (default) or 'B' for meta-gated features
-        feature_set_b_use_winning: true  # Use winning feature set from LGBM selection
-        feature_set_b_size: 60  # Optional: specific size (50, 60, 70, 80)
-
-The winning feature set is dynamically loaded based on:
-- Learnability (compute_learnability_with_calibration)
-- Generalization gap (snr_diagnostics)
-- Risk-adjusted returns (meta_gated_backtest)
-
-Feature sets are persisted per exchange/asset/direction and can be regenerated
-by setting use_lgbm_feature_selection=True in feature_generation_meta_labeling_step.
 """
 
 import asyncio

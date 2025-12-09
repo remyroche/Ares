@@ -99,6 +99,25 @@ from src.feature_generation.utils.step06_labeling_components.trend_aware_meta_la
     MultiTimeframeConfig,
 )
 
+# LGBM Feature Selection utilities (2025-12-08)
+try:
+    from .lgbm_feature_selection import (
+        lgbm_feature_selection_pipeline,
+        select_features_lgbm_for_meta_labeling,
+        select_features_by_importance_lgbm,
+        FeatureSetPersistence,
+        FEATURE_SELECTION_CONFIG,
+    )
+    LGBM_FEATURE_SELECTION_AVAILABLE = True
+except ImportError:
+    LGBM_FEATURE_SELECTION_AVAILABLE = False
+
+# META_FEATURE_COLUMNS for regime-aware feature handling
+try:
+    from src.utils.ml_common.optimization.diversity_defense_objectives import META_FEATURE_COLUMNS
+except ImportError:
+    META_FEATURE_COLUMNS = []
+
 logger = logging.getLogger(__name__)
 
 
@@ -270,13 +289,14 @@ DEFAULT_STOP_THRESHOLD = 0.005   # 0.5%
 DEFAULT_TRANSACTION_COST = 0.003  # 0.30% per trade (increased from 0.15% for more realistic modeling)
 R_MULTIPLE_POS_THRESHOLD = 0.7
 R_MULTIPLE_NEG_THRESHOLD = -0.25
-ECON_MIN_RETURN_MULTIPLE = 2.0
+# Lowered to 1.0 (from 2.0) to avoid data starvation with higher costs (0.30%)
+ECON_MIN_RETURN_MULTIPLE = 1.0
 TARGET_POWER = 1.5
 # Hard floor for profit targets to ensure viability after transaction costs
 PROFIT_TARGET_FLOOR_BPS = 50  # 0.5% = 50 basis points (must exceed slippage + fees)
 PROFITABLE_TIMEOUT_RETURN_THRESHOLD = 0.005
-# Default probability threshold for meta-gating
-DEFAULT_PROBABILITY_THRESHOLD = 0.60
+# Default probability threshold for meta-gating (lowered from 0.65 for more trades)
+DEFAULT_PROBABILITY_THRESHOLD = 0.55
 # Default expected return threshold (lowered from 0.45% to 0.30%)
 DEFAULT_EXPECTED_RETURN_THRESHOLD = 0.003  # 0.30%
 

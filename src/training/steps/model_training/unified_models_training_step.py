@@ -2078,12 +2078,36 @@ class UnifiedModelsTrainingStep(BaseStep):
                         ld = self._get_artifact(artifact_name_candidate, 'data')
                         if ld is not None and isinstance(ld, pd.DataFrame):
                             tprint_info(f"✅ Found labeled_data artifact '{artifact_name_candidate}': {ld.shape}")
-                            # Prefer fused_target_long for analyst_base
-                            for target_col in ['fused_target_long', 'target_long', 'smoothed_label']:
+                            # Prefer directional binary labels for analyst_base classifiers
+                            priority_targets = []
+                            if direction == 'long':
+                                priority_targets = ['binary_label_long', 'binary_label']
+                            elif direction == 'short':
+                                priority_targets = ['binary_label_short', 'binary_label']
+
+                            # Add regression fallbacks
+                            priority_targets.extend(['fused_target_long', 'target_long', 'smoothed_label'])
+
+                            for target_col in priority_targets:
                                 if target_col in ld.columns:
                                     analyst_targets = ld[target_col]
                                     tprint_success(f"✅ Using '{target_col}' from labeled_data as analyst_targets")
                                     break
+
+                            # Also load target_sample_weight if available
+                            if 'target_sample_weight' in ld.columns:
+                                sample_weight = ld['target_sample_weight']
+                                tprint_success(f"✅ Loaded target_sample_weight from labeled_data")
+                                # Store for use in training - Attach to training_data later
+                                if training_data is not None:
+                                    # Align and attach to training_data so PipelineOrchestrator can pick it up
+                                    try:
+                                        sw_aligned = sample_weight.reindex(training_data.index).fillna(1.0)
+                                        training_data['target_sample_weight'] = sw_aligned
+                                        tprint_success(f"   Attached target_sample_weight to training data")
+                                    except Exception as e:
+                                        tprint_warning(f"   ⚠️ Failed to attach target_sample_weight: {e}")
+
                             if analyst_targets is not None:
                                 break
                     except Exception as e:

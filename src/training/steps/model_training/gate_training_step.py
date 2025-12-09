@@ -314,10 +314,19 @@ class GateTrainingStep(BaseStep):
                 'realized_return': net_returns.values
             })
 
-            # Generate Labels (Regression Target)
+            # Generate Labels (Classification Target)
             y = (net_returns > 0).astype(int)
 
-            tprint_success(f"Generated {len(y)} regression targets. Mean PnL: {net_returns.mean():.4f}")
+            # Generate Sample Weights based on PnL magnitude (penalize/reward more heavily)
+            # Using log-dampened formula: log(1 + |NetReturn|) to handle skewed distributions
+            # Normalize to mean 1.0 to preserve effective learning rate
+            sample_weights = np.log1p(np.abs(net_returns))
+            if sample_weights.mean() > 0:
+                sample_weights = sample_weights / sample_weights.mean()
+            # Ensure minimum weight for stability
+            sample_weights = np.maximum(sample_weights, 0.1)
+
+            tprint_success(f"Generated {len(y)} classification targets. Mean PnL: {net_returns.mean():.4f}")
 
             # 3. Initialize and Train GateModel
             gate_config = config.get('gate_config', {})
@@ -329,7 +338,7 @@ class GateTrainingStep(BaseStep):
                 and 'target_coverage' not in gate_config
                 and 'min_win_probability' not in gate_config
             ):
-                gate_config['min_win_probability'] = 0.4
+                gate_config['min_win_probability'] = 0.55 # Default higher threshold for safety
             model = GateModel(config=gate_config)
 
             # Prepare Features
@@ -360,6 +369,7 @@ class GateTrainingStep(BaseStep):
             # Slice for training
             X_train = X_full.loc[candidate_indices]
             y_train = y  # y is already aligned to candidate_indices
+            w_train = sample_weights.loc[candidate_indices] # Align weights
 
             # Row-level NaN handling
             if isinstance(X_train, pd.DataFrame) and X_train.shape[1] > 0:
@@ -374,6 +384,7 @@ class GateTrainingStep(BaseStep):
                 )
                 X_train = X_train[valid_mask]
                 y_train = y_train[valid_mask]
+                w_train = w_train[valid_mask]
             else:
                 tprint_error("[GateTrainingStep] X_train is empty or not a DataFrame after slicing. Skipping training.")
                 return {'success': False, 'error': 'Empty training matrix'}
@@ -430,6 +441,8 @@ class GateTrainingStep(BaseStep):
 
             X_train_fit = X_train[train_mask]
             y_train_fit = y_train[train_mask]
+            w_train_fit = w_train[train_mask]
+
             X_val = X_train[val_mask]
             y_val = y_train[val_mask]
             X_test = X_train[test_mask]
@@ -446,8 +459,8 @@ class GateTrainingStep(BaseStep):
                 )
                 return {'success': False, 'error': 'Insufficient samples after temporal split'}
 
-            # Train on training window only
-            model.train(X_train_fit, y_train_fit)
+            # Train on training window only, using sample weights
+            model.train(X_train_fit, y_train_fit, sample_weight=w_train_fit)
 
             # Probability calibration on validation window (isotonic)
             val_brier_raw = None

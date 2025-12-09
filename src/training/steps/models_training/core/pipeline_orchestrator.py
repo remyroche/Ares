@@ -686,7 +686,7 @@ class TrainingPipelineOrchestrator:
             incremental_trainer = IncrementalAnalystTrainer(
                 model_id=model_id,
                 execution_mode=execution_mode,
-                task_type='regression',
+                task_type='classification',
                 enable_burnin_hpo=True,  # HPO runs ONCE at burn-in only
                 model_configs=base_models_config
             )
@@ -697,12 +697,48 @@ class TrainingPipelineOrchestrator:
             if hasattr(self, '_specialist_feature_names'):
                 specialist_features = self._specialist_feature_names
 
+            # Retrieve sample weights if loaded (assumes unified step set it on trainer or passed it somehow)
+            # The UnifiedModelsTrainingStep orchestrates this, but here we are in PipelineOrchestrator.
+            # We need to rely on the caller (UnifiedStep) to have enhanced `data` or we need to extract weights from `data` if present.
+            # Standard convention: if `data` has `__weight__` column, trainers use it.
+            # Alternatively, if we updated UnifiedStep to pass weights, we need to update this signature or
+            # let the UnifiedStep handle the weight passing via `custom_params` or similar.
+
+            # Since UnifiedModelsTrainingStep calls this, and we just updated UnifiedStep to load weights into `self._analyst_sample_weight`,
+            # we need to pass that down. However, PipelineOrchestrator doesn't have access to UnifiedStep's state directly unless passed.
+            # Best approach: UnifiedStep should attach weights to `data` or pass in `custom_params`.
+            # Let's assume weights are passed in `data['__weight__']` if we modify UnifiedStep to put them there,
+            # OR we modify UnifiedStep to call `train_all_models` directly? No, UnifiedStep calls `execute_pipeline`.
+
+            # Wait, `UnifiedModelsTrainingStep` calls `self.unified_pipeline = UnifiedTrainingPipeline(self.logger)`
+            # but in `execute` it calls `_execute_training_by_type`.
+            # `UnifiedModelsTrainingStep` implementation shown in previous turn seems to contain `_execute_analyst_base_training` logic ITSELF
+            # or calls `pipeline_orchestrator`?
+
+            # Looking at `src/training/steps/model_training/unified_models_training_step.py`:
+            # It has `_execute_analyst_base_training` method? NO, my grep showed `pipeline_orchestrator.py` has `_execute_analyst_base_training`.
+
+            # Ah, `UnifiedModelsTrainingStep` uses `PipelineOrchestrator`?
+            # `UnifiedModelsTrainingStep` has `self.unified_pipeline = UnifiedTrainingPipeline(self.logger)`.
+            # But the grep result for `incremental_results = ...` came from `src/training/steps/models_training/core/pipeline_orchestrator.py`.
+
+            # So I need to modify `PipelineOrchestrator._execute_analyst_base_training` to check for weights.
+            # Where do weights come from? `execute_pipeline` takes `data`.
+            # Use `target_sample_weight` column in `data` if it exists.
+
+            sample_weight = None
+            if 'target_sample_weight' in data.columns:
+                sample_weight = data['target_sample_weight'].values
+                # Drop weight from features to avoid leakage
+                data = data.drop(columns=['target_sample_weight'])
+                tprint_info(f"   Using target_sample_weight from data (mean={sample_weight.mean():.4f})")
+
             incremental_results = incremental_trainer.train_all_models(
                 X=data,
                 y=targets,
                 data_start=data_start,
                 data_end=data_end,
-                sample_weight=None,
+                sample_weight=sample_weight,
                 verbose=True,
                 specialist_feature_names=specialist_features
             )

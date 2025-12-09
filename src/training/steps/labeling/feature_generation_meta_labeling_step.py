@@ -270,7 +270,7 @@ DEFAULT_STOP_THRESHOLD = 0.005   # 0.5%
 DEFAULT_TRANSACTION_COST = 0.003  # 0.30% per trade (increased from 0.15% for more realistic modeling)
 R_MULTIPLE_POS_THRESHOLD = 0.7
 R_MULTIPLE_NEG_THRESHOLD = -0.25
-ECON_MIN_RETURN_MULTIPLE = 2.0
+ECON_MIN_RETURN_MULTIPLE = 1.0
 TARGET_POWER = 1.5
 # Hard floor for profit targets to ensure viability after transaction costs
 PROFIT_TARGET_FLOOR_BPS = 50  # 0.5% = 50 basis points (must exceed slippage + fees)

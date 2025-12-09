@@ -289,8 +289,8 @@ DEFAULT_STOP_THRESHOLD = 0.005   # 0.5%
 DEFAULT_TRANSACTION_COST = 0.003  # 0.30% per trade (increased from 0.15% for more realistic modeling)
 R_MULTIPLE_POS_THRESHOLD = 0.7
 R_MULTIPLE_NEG_THRESHOLD = -0.25
-# Lowered to 1.0 (from 2.0) to avoid data starvation with higher costs (0.30%)
-ECON_MIN_RETURN_MULTIPLE = 1.0
+# Set to 1.5 (balanced between 1.0 and 2.0) for reasonable event filtering
+ECON_MIN_RETURN_MULTIPLE = 1.5
 TARGET_POWER = 1.5
 # Hard floor for profit targets to ensure viability after transaction costs
 PROFIT_TARGET_FLOOR_BPS = 50  # 0.5% = 50 basis points (must exceed slippage + fees)
@@ -2177,45 +2177,61 @@ def compute_regime_metrics(
 def compute_target_positive_fraction(
     trend_strength: pd.Series,
     volatility_ratio: pd.Series,
-    p_min: float = 0.30,
-    p_max: float = 0.70,
-    sigmoid_slope: float = 1.5,
+    p_min: float = 0.25,
+    p_max: float = 0.75,
+    sigmoid_slope: float = 2.0,
     sigmoid_midpoint: float = 0.0,
+    trend_weight: float = 0.65,
+    vol_weight: float = 0.35,
 ) -> pd.Series:
-    """Compute target positive label fraction using sigmoid function.
+    """Compute target positive label fraction using sigmoid function with weighted combination.
     
-    Uses a sigmoid function combining trend and volatility metrics:
+    Uses a sigmoid function combining trend and volatility metrics with a weighted
+    combination to prevent over-filtering in high volatility regimes:
     
-    p_positive(t) = p_min + (p_max - p_min) / (1 + exp(-a * (trend_t / vol_ratio_t - b)))
+    trend_score = trend_strength (rolling_mean_return / rolling_vol)
+    vol_score = clip(1.0 / volatility_ratio, 0.5, 2.0)
+    score = trend_weight * trend_score + vol_weight * vol_score
+    
+    p_positive(t) = p_min + (p_max - p_min) / (1 + exp(-a * (score - b)))
     
     Where:
-        - p_min, p_max = min/max target positive fraction (e.g., 0.3, 0.7)
-        - a = sigmoid_slope (controls sensitivity, e.g., 1.5)
-        - b = sigmoid_midpoint (central reference point, e.g., 0.0)
+        - p_min, p_max = min/max target positive fraction (e.g., 0.25, 0.75)
+        - a = sigmoid_slope (controls sensitivity, 1.5-3.0)
+        - b = sigmoid_midpoint (central reference point, -0.2 to 0.2)
+        - trend_weight = 0.65 (primary driver)
+        - vol_weight = 0.35 (secondary stabilizer)
     
-    This creates a dynamic target that:
-        - In strong uptrends → higher positive fraction (up to p_max)
-        - In strong downtrends → lower positive fraction (down to p_min)
-        - In neutral markets → around 0.5 positive fraction
+    The weighted combination prevents high volatility alone from suppressing
+    positive fraction, since vol_score is bounded and weighted lower.
     
     Args:
         trend_strength: Trend strength series (mean returns / vol)
         volatility_ratio: Volatility ratio series (current_vol / median_vol)
-        p_min: Minimum target positive fraction (default: 0.30)
-        p_max: Maximum target positive fraction (default: 0.70)
-        sigmoid_slope: Slope parameter 'a' (default: 1.5)
-        sigmoid_midpoint: Midpoint parameter 'b' (default: 0.0)
+        p_min: Minimum target positive fraction (default: 0.25)
+        p_max: Maximum target positive fraction (default: 0.75)
+        sigmoid_slope: Slope parameter 'a' (default: 2.0, HPO range: 1.5-3.0)
+        sigmoid_midpoint: Midpoint parameter 'b' (default: 0.0, HPO range: -0.2 to 0.2)
+        trend_weight: Weight for trend_score (default: 0.65)
+        vol_weight: Weight for vol_score (default: 0.35)
     
     Returns:
         Series of target positive fractions in [p_min, p_max]
     """
-    # Compute the regime signal: trend / vol_ratio
-    # High trend + low vol_ratio → strong bullish signal
-    # Low trend + high vol_ratio → strong bearish signal
-    regime_signal = trend_strength / (volatility_ratio + 1e-8)
+    # Compute trend_score: already normalized (return / vol)
+    trend_score = trend_strength
+    
+    # Compute vol_score: inverse of volatility ratio, clipped to [0.5, 2.0]
+    # When volatility is high (vol_ratio > 1), vol_score < 1 (but >= 0.5)
+    # When volatility is low (vol_ratio < 1), vol_score > 1 (but <= 2.0)
+    # This prevents extreme volatility from dominating the signal
+    vol_score = (1.0 / (volatility_ratio + 1e-8)).clip(0.5, 2.0)
+    
+    # Weighted combination: trend dominates but vol provides stability
+    score = trend_weight * trend_score + vol_weight * vol_score
     
     # Apply sigmoid function
-    exponent = -sigmoid_slope * (regime_signal - sigmoid_midpoint)
+    exponent = -sigmoid_slope * (score - sigmoid_midpoint)
     
     # Clip exponent to avoid overflow
     exponent = exponent.clip(-20, 20)
@@ -2233,6 +2249,8 @@ def compute_dynamic_threshold_k(
     p_positive: pd.Series,
     rolling_window: int = 400,
     min_periods: int = 100,
+    k_max_percentile: float = 0.99,
+    k_min_percentile: float = 0.01,
 ) -> pd.Series:
     """Compute dynamic threshold k_t for volatility-scaled labeling.
     
@@ -2242,6 +2260,11 @@ def compute_dynamic_threshold_k(
     - The target positive label fraction (regime-dependent)
     - Recent z-score distribution (rolling quantile)
     
+    Optional clipping ensures k_t never exceeds bounds that would exclude
+    nearly all high-volatility moves:
+    - k_max: 99th percentile of historical z-scores (upper bound)
+    - k_min: 1st percentile of historical z-scores (lower bound)
+    
     The label is then assigned as:
         y_t = 1 if future_return_t > k_t * rolling_volatility_t
     
@@ -2250,6 +2273,8 @@ def compute_dynamic_threshold_k(
         p_positive: Target positive fraction series (from sigmoid function)
         rolling_window: Rolling window for quantile computation (300-500 bars)
         min_periods: Minimum periods for rolling quantile
+        k_max_percentile: Upper percentile bound for k_t (default: 0.99)
+        k_min_percentile: Lower percentile bound for k_t (default: 0.01)
     
     Returns:
         Series of dynamic threshold k values
@@ -2268,6 +2293,15 @@ def compute_dynamic_threshold_k(
     z_arr = z_scores.to_numpy()
     p_arr = p_positive.reindex(z_scores.index).to_numpy()
     
+    # Compute global bounds for k_t clipping (prevents over-filtering)
+    z_valid = z_arr[~np.isnan(z_arr)]
+    if len(z_valid) >= min_periods:
+        k_upper_bound = float(np.quantile(z_valid, k_max_percentile))
+        k_lower_bound = float(np.quantile(z_valid, k_min_percentile))
+    else:
+        k_upper_bound = 5.0  # Fallback max
+        k_lower_bound = -5.0  # Fallback min
+    
     # Use rolling window approach
     for i in range(min_periods, len(z_arr)):
         if np.isnan(p_arr[i]) or np.isnan(z_arr[i]):
@@ -2285,7 +2319,10 @@ def compute_dynamic_threshold_k(
         quantile_level = 1.0 - p_arr[i]
         quantile_level = np.clip(quantile_level, 0.05, 0.95)  # Safety bounds
         
-        k_t.iloc[i] = float(np.quantile(z_window, quantile_level))
+        k_raw = float(np.quantile(z_window, quantile_level))
+        
+        # Apply clipping to prevent over-filtering
+        k_t.iloc[i] = np.clip(k_raw, k_lower_bound, k_upper_bound)
     
     return k_t
 
@@ -2300,10 +2337,16 @@ def create_volatility_scaled_labels(
     median_vol_lookback: int = 400,
     trend_lookback: int = 20,
     # Sigmoid parameters for p_positive
-    p_min: float = 0.30,
-    p_max: float = 0.70,
-    sigmoid_slope: float = 1.5,
+    p_min: float = 0.25,
+    p_max: float = 0.75,
+    sigmoid_slope: float = 2.0,
     sigmoid_midpoint: float = 0.0,
+    # Weighted combination parameters
+    trend_weight: float = 0.65,
+    vol_weight: float = 0.35,
+    # k_t clipping parameters
+    k_max_percentile: float = 0.99,
+    k_min_percentile: float = 0.01,
     # General parameters
     min_periods: int = 100,
     clip_zscore: float = 5.0,
@@ -2317,17 +2360,22 @@ def create_volatility_scaled_labels(
     2. Regime Metrics:
        - volatility_ratio = current_vol / median_vol
        - trend_strength = mean(returns) / vol
-    3. Target Positive Fraction via sigmoid:
-       p_positive(t) = p_min + (p_max - p_min) / (1 + exp(-a * (trend/vol_ratio - b)))
+    3. Target Positive Fraction via sigmoid with weighted combination:
+       trend_score = trend_strength
+       vol_score = clip(1 / volatility_ratio, 0.5, 2.0)
+       score = 0.65 * trend_score + 0.35 * vol_score
+       p_positive(t) = p_min + (p_max - p_min) / (1 + exp(-a * (score - b)))
     4. Z-score computation: z_t = future_return_t / vol_t
     5. Dynamic threshold: k_t = quantile_{1-p_positive}(z over rolling window)
+       with clipping at 99th percentile to prevent over-filtering
     6. Label assignment: y_t = 1 if future_return_t > k_t * vol_t
     
     Key benefits:
     - Labels are relative to market volatility (not fixed percentiles)
     - Threshold adapts to regime (trend + volatility conditions)
+    - Weighted combination prevents high volatility from suppressing labels
+    - k_t clipping prevents over-filtering in extreme conditions
     - Works across different market environments
-    - Z-score preserves trend magnitude while being volatility-aware
     
     Args:
         future_returns: Future returns at each timestamp (the target to predict)
@@ -2336,10 +2384,14 @@ def create_volatility_scaled_labels(
         rolling_k_window: Window for dynamic k quantile (300-500 bars = 3-5 days)
         median_vol_lookback: Window for median volatility (300-500 bars)
         trend_lookback: Window for trend strength (10-30 bars)
-        p_min: Minimum target positive fraction
-        p_max: Maximum target positive fraction
-        sigmoid_slope: Sigmoid slope parameter
-        sigmoid_midpoint: Sigmoid midpoint parameter
+        p_min: Minimum target positive fraction (HPO: 0.25-0.35)
+        p_max: Maximum target positive fraction (HPO: 0.6-0.8)
+        sigmoid_slope: Sigmoid slope parameter (HPO: 1.5-3.0)
+        sigmoid_midpoint: Sigmoid midpoint parameter (HPO: -0.2 to 0.2)
+        trend_weight: Weight for trend_score in combination (default: 0.65)
+        vol_weight: Weight for vol_score in combination (default: 0.35)
+        k_max_percentile: Upper percentile bound for k_t (default: 0.99)
+        k_min_percentile: Lower percentile bound for k_t (default: 0.01)
         min_periods: Minimum periods for rolling calculations
         clip_zscore: Maximum |z-score| to prevent outliers
         econ_floor: Optional economic floor for filtering trivial returns
@@ -2392,7 +2444,7 @@ def create_volatility_scaled_labels(
             min_periods=min_periods,
         )
         
-        # Step 4: Compute target positive fraction via sigmoid
+        # Step 4: Compute target positive fraction via sigmoid with weighted combination
         p_positive = compute_target_positive_fraction(
             trend_strength=trend_strength,
             volatility_ratio=volatility_ratio,
@@ -2400,6 +2452,8 @@ def create_volatility_scaled_labels(
             p_max=p_max,
             sigmoid_slope=sigmoid_slope,
             sigmoid_midpoint=sigmoid_midpoint,
+            trend_weight=trend_weight,
+            vol_weight=vol_weight,
         )
         
         # Step 5: Compute z-scores (future returns normalized by volatility)
@@ -2408,12 +2462,14 @@ def create_volatility_scaled_labels(
         z_scores = z_scores.replace([np.inf, -np.inf], np.nan)
         z_scores = z_scores.clip(lower=-clip_zscore, upper=clip_zscore)
         
-        # Step 6: Compute dynamic threshold k_t
+        # Step 6: Compute dynamic threshold k_t with clipping to prevent over-filtering
         k_t = compute_dynamic_threshold_k(
             z_scores=z_scores,
             p_positive=p_positive,
             rolling_window=rolling_k_window,
             min_periods=min_periods,
+            k_max_percentile=k_max_percentile,
+            k_min_percentile=k_min_percentile,
         )
         
         # Step 7: Assign labels: y_t = 1 if future_return > k_t * volatility
@@ -2482,10 +2538,16 @@ def create_volatility_scaled_labels_for_events(
     median_vol_lookback: int = 400,
     trend_lookback: int = 20,
     # Sigmoid parameters (HPO tunable)
-    p_min: float = 0.30,
-    p_max: float = 0.70,
-    sigmoid_slope: float = 1.5,
+    p_min: float = 0.25,
+    p_max: float = 0.75,
+    sigmoid_slope: float = 2.0,
     sigmoid_midpoint: float = 0.0,
+    # Weighted combination parameters
+    trend_weight: float = 0.65,
+    vol_weight: float = 0.35,
+    # k_t clipping parameters
+    k_max_percentile: float = 0.99,
+    k_min_percentile: float = 0.01,
     # General parameters
     min_periods: int = 100,
     clip_zscore: float = 5.0,
@@ -2510,10 +2572,14 @@ def create_volatility_scaled_labels_for_events(
         rolling_k_window: Window for dynamic k quantile (300-500 bars)
         median_vol_lookback: Window for median volatility (300-500 bars)
         trend_lookback: Window for trend strength (10-30 bars)
-        p_min: Minimum target positive fraction
-        p_max: Maximum target positive fraction
-        sigmoid_slope: Sigmoid slope parameter
-        sigmoid_midpoint: Sigmoid midpoint parameter
+        p_min: Minimum target positive fraction (HPO: 0.25-0.35)
+        p_max: Maximum target positive fraction (HPO: 0.6-0.8)
+        sigmoid_slope: Sigmoid slope parameter (HPO: 1.5-3.0)
+        sigmoid_midpoint: Sigmoid midpoint parameter (HPO: -0.2 to 0.2)
+        trend_weight: Weight for trend_score in combination (default: 0.65)
+        vol_weight: Weight for vol_score in combination (default: 0.35)
+        k_max_percentile: Upper percentile bound for k_t (default: 0.99)
+        k_min_percentile: Lower percentile bound for k_t (default: 0.01)
         min_periods: Minimum periods for calculations
         clip_zscore: Maximum |z-score| 
         econ_floor: Optional economic floor for filtering
@@ -2553,7 +2619,7 @@ def create_volatility_scaled_labels_for_events(
         min_periods=min_periods,
     )
     
-    # Compute target positive fraction
+    # Compute target positive fraction with weighted combination
     p_positive = compute_target_positive_fraction(
         trend_strength=trend_strength,
         volatility_ratio=volatility_ratio,
@@ -2561,6 +2627,8 @@ def create_volatility_scaled_labels_for_events(
         p_max=p_max,
         sigmoid_slope=sigmoid_slope,
         sigmoid_midpoint=sigmoid_midpoint,
+        trend_weight=trend_weight,
+        vol_weight=vol_weight,
     )
     
     # Align volatility to event timestamps
@@ -2572,7 +2640,7 @@ def create_volatility_scaled_labels_for_events(
     z_scores = z_scores.replace([np.inf, -np.inf], np.nan)
     z_scores = z_scores.clip(lower=-clip_zscore, upper=clip_zscore)
     
-    # Compute dynamic threshold k_t
+    # Compute dynamic threshold k_t with clipping
     # For events, we use the full z-score series but only label at event times
     full_z_for_quantile = pd.Series(index=market_data.index, dtype=float)
     full_z_for_quantile[:] = np.nan
@@ -2584,6 +2652,8 @@ def create_volatility_scaled_labels_for_events(
         p_positive=p_positive,
         rolling_window=rolling_k_window,
         min_periods=min_periods,
+        k_max_percentile=k_max_percentile,
+        k_min_percentile=k_min_percentile,
     )
     
     # Align k_t to event timestamps

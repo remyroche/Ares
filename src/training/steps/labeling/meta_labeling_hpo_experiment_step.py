@@ -2392,6 +2392,93 @@ def shrink_search_space(
     return new_space
 
 
+def apply_warm_start_to_param_groups(
+    param_groups: List[Dict[str, Any]],
+    warm_start_params: Dict[str, Any],
+    narrowing_factor: float = 0.3,
+    bypass_warm_start: bool = False,
+) -> List[Dict[str, Any]]:
+    """Apply warm start by narrowing parameter search space around previous best values.
+    
+    This significantly speeds up HPO by focusing the search in neighboring areas
+    of previously successful configurations. For parameters not found in
+    warm_start_params, the full original range is preserved.
+    
+    Args:
+        param_groups: List of parameter group definitions
+        warm_start_params: Dictionary of previous best parameters
+        narrowing_factor: How much to narrow the range (0.3 = ±30% of original range)
+        bypass_warm_start: If True, skip narrowing and return original groups
+        
+    Returns:
+        Modified param_groups with narrowed ranges for warm-started parameters
+    """
+    if bypass_warm_start or not warm_start_params:
+        return param_groups
+    
+    narrowed_groups = []
+    n_narrowed = 0
+    n_full_range = 0
+    
+    for group in param_groups:
+        new_group = group.copy()
+        new_params = {}
+        
+        for param_name, param_config in group.get("params", {}).items():
+            if param_name not in warm_start_params:
+                # Parameter not found in warm start - use full range
+                new_params[param_name] = param_config.copy()
+                n_full_range += 1
+                continue
+            
+            # Parameter found - narrow the range
+            prev_value = warm_start_params[param_name]
+            config = param_config.copy()
+            param_type = config.get("type", "float")
+            
+            orig_low = config.get("low", 0)
+            orig_high = config.get("high", 1)
+            orig_range = orig_high - orig_low
+            
+            if param_type in ("float", "int"):
+                # Narrow range to ±narrowing_factor around previous best
+                half_width = orig_range * narrowing_factor
+                
+                new_low = max(orig_low, prev_value - half_width)
+                new_high = min(orig_high, prev_value + half_width)
+                
+                # Ensure minimum viable range (at least 10% of original)
+                min_range = orig_range * 0.1
+                if new_high - new_low < min_range:
+                    center = (new_low + new_high) / 2
+                    new_low = max(orig_low, center - min_range / 2)
+                    new_high = min(orig_high, center + min_range / 2)
+                
+                if param_type == "int":
+                    new_low = int(max(orig_low, round(new_low)))
+                    new_high = int(min(orig_high, round(new_high)))
+                    # Ensure at least 2 options for int params
+                    if new_high <= new_low:
+                        new_high = new_low + max(1, config.get("step", 1))
+                
+                config["low"] = new_low
+                config["high"] = new_high
+                n_narrowed += 1
+            
+            new_params[param_name] = config
+        
+        new_group["params"] = new_params
+        narrowed_groups.append(new_group)
+    
+    if n_narrowed > 0:
+        tprint_info(
+            f"🔄 Warm start applied: {n_narrowed} params narrowed, "
+            f"{n_full_range} params using full range"
+        )
+    
+    return narrowed_groups
+
+
 def compute_realistic_pnl_edge(
     mean_return_positive: float,
     mean_auc: float,
@@ -3185,33 +3272,35 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 description="Kalman smoothing noise parameters",
             ),
             # Group 6.5: Sigmoid Regime Adaptation Parameters
-            # NEW: Parameters for dynamic threshold adaptation based on market regime
+            # Parameters for dynamic threshold adaptation based on market regime
+            # Uses weighted combination: score = 0.65*trend + 0.35*vol_score
             create_param_group(
                 name="sigmoid_regime_adaptation",
                 params={
                     # Minimum target positive fraction (strong downtrend -> p_min)
+                    # Wide enough to ensure some candidates are always labeled
                     "p_min": {
                         "type": "float",
                         "low": 0.25,
-                        "high": 0.40,
+                        "high": 0.35,
                     },
                     # Maximum target positive fraction (strong uptrend -> p_max)
                     "p_max": {
                         "type": "float",
                         "low": 0.60,
-                        "high": 0.75,
+                        "high": 0.80,
                     },
-                    # Sigmoid slope (sensitivity to regime signal)
+                    # Sigmoid slope: higher = faster transition between p_min/p_max
                     "sigmoid_slope": {
                         "type": "float",
-                        "low": 1.0,
-                        "high": 2.5,
+                        "low": 1.5,
+                        "high": 3.0,
                     },
-                    # Sigmoid midpoint (center reference point)
+                    # Sigmoid midpoint: shifts the regime value where p_positive ramps up
                     "sigmoid_midpoint": {
                         "type": "float",
-                        "low": -0.5,
-                        "high": 0.5,
+                        "low": -0.2,
+                        "high": 0.2,
                     },
                     # Median volatility lookback for vol_ratio (300-500 bars)
                     "median_vol_lookback": {
@@ -3445,6 +3534,8 @@ class MetaLabelingHPOExperimentStep(BaseStep):
         warm_start_best_params: Dict[str, Any] = {}
         warm_start_candidates_df: Optional[pd.DataFrame] = None
         outcomes_dir = Path("outcomes")
+        
+        # Load previous best parameters for warm start
         try:
             json_pattern = f"meta_labeling_hpo_best_params_{symbol}_{timeframe}_*.json"
             json_paths = sorted(outcomes_dir.glob(json_pattern))
@@ -3453,11 +3544,19 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 with open(latest_json, "r") as f:
                     data = json.load(f)
                     if isinstance(data, dict):
+                        # Try knee_params first, then best_params
+                        knee_params_data = data.get("knee_params", {})
                         best_params_data = data.get("best_params", {})
-                        if isinstance(best_params_data, dict):
+                        if isinstance(knee_params_data, dict) and knee_params_data:
+                            warm_start_best_params = knee_params_data
+                            tprint_info(f"🔄 Loaded warm start from knee_params: {latest_json}")
+                        elif isinstance(best_params_data, dict) and best_params_data:
                             warm_start_best_params = best_params_data
-        except Exception:
+                            tprint_info(f"🔄 Loaded warm start from best_params: {latest_json}")
+        except Exception as e:
+            tprint_warning(f"⚠️ Could not load warm start params: {e}")
             warm_start_best_params = {}
+        
         try:
             csv_pattern = f"meta_labeling_hpo_candidate_pool_{symbol}_{timeframe}_*.csv"
             csv_paths = sorted(outcomes_dir.glob(csv_pattern))
@@ -3466,6 +3565,23 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 warm_start_candidates_df = pd.read_csv(latest_csv)
         except Exception:
             warm_start_candidates_df = None
+        
+        # Apply warm start narrowing to parameter groups (unless bypassed)
+        bypass_warm_start = config.get("bypass_warm_start", False)
+        warm_start_narrowing = config.get("warm_start_narrowing_factor", 0.3)
+        
+        if warm_start_best_params and not bypass_warm_start:
+            tprint_info(f"🔄 Applying warm start with {len(warm_start_best_params)} previous params...")
+            param_groups = apply_warm_start_to_param_groups(
+                param_groups=param_groups,
+                warm_start_params=warm_start_best_params,
+                narrowing_factor=warm_start_narrowing,
+                bypass_warm_start=bypass_warm_start,
+            )
+        elif bypass_warm_start:
+            tprint_info("⏭️ Warm start bypassed - using full parameter ranges")
+        else:
+            tprint_info("🆕 No warm start params found - using full parameter ranges")
 
         calibrated_horizon: Optional[int] = None
         if stage1_enable_subsample:
@@ -3934,20 +4050,28 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 rolling_k_window = max(300, min(500, rolling_k_window))
                 
                 # Sigmoid regime adaptation parameters
-                p_min = float(params.get("p_min", 0.30))
-                p_min = max(0.25, min(0.40, p_min))
-                p_max = float(params.get("p_max", 0.70))
-                p_max = max(0.60, min(0.75, p_max))
+                p_min = float(params.get("p_min", 0.25))
+                p_min = max(0.25, min(0.35, p_min))
+                p_max = float(params.get("p_max", 0.75))
+                p_max = max(0.60, min(0.80, p_max))
                 
-                sigmoid_slope = float(params.get("sigmoid_slope", 1.5))
-                sigmoid_slope = max(1.0, min(2.5, sigmoid_slope))
+                sigmoid_slope = float(params.get("sigmoid_slope", 2.0))
+                sigmoid_slope = max(1.5, min(3.0, sigmoid_slope))
                 sigmoid_midpoint = float(params.get("sigmoid_midpoint", 0.0))
-                sigmoid_midpoint = max(-0.5, min(0.5, sigmoid_midpoint))
+                sigmoid_midpoint = max(-0.2, min(0.2, sigmoid_midpoint))
                 
                 median_vol_lookback = int(params.get("median_vol_lookback", 400))
                 median_vol_lookback = max(300, min(500, median_vol_lookback))
                 regime_trend_lookback = int(params.get("regime_trend_lookback", 20))
                 regime_trend_lookback = max(10, min(30, regime_trend_lookback))
+                
+                # Weighted combination parameters (fixed, not HPO tuned)
+                trend_weight = 0.65
+                vol_weight = 0.35
+                
+                # k_t clipping parameters (to prevent over-filtering)
+                k_max_percentile = 0.99
+                k_min_percentile = 0.01
                 
                 # Economic floor
                 econ_floor = DEFAULT_TRANSACTION_COST * econ_min_mult
@@ -3961,7 +4085,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
 
                 # Generate volatility-scaled labels using the new approach
                 # y = future_return > k_t * rolling_volatility
-                # where k_t adapts to regime (trend + volatility ratio)
+                # where k_t adapts to regime (weighted combination of trend + vol_score)
                 vol_scaled_labels, vol_z_scores, vol_diag = create_volatility_scaled_labels_for_events(
                     realized_returns=realized_returns,
                     market_data=market_data,
@@ -3973,6 +4097,10 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     p_max=p_max,
                     sigmoid_slope=sigmoid_slope,
                     sigmoid_midpoint=sigmoid_midpoint,
+                    trend_weight=trend_weight,
+                    vol_weight=vol_weight,
+                    k_max_percentile=k_max_percentile,
+                    k_min_percentile=k_min_percentile,
                     min_periods=100,
                     clip_zscore=5.0,
                     econ_floor=econ_floor,

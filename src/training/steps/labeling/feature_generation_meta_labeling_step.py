@@ -1736,7 +1736,8 @@ def create_conditional_quantile_labels(
     realized_returns: pd.Series,
     features: pd.DataFrame,
     volatility: pd.Series,
-    quantile: float = 0.6,
+    quantile_long: float = 0.6,
+    quantile_short: float = 0.35,
     lookback_bars: int = 3000,
     min_train_samples: int = 500,
     retrain_frequency: int = 500,
@@ -1745,21 +1746,32 @@ def create_conditional_quantile_labels(
     n_estimators: int = 50,
     max_depth: int = 4,
     feature_subset: Optional[List[str]] = None,
-) -> Tuple[pd.Series, pd.Series, Dict[str, Any]]:
-    """Create labels using conditional quantile regression: Predict Q_τ(z | X).
+    asymmetric_crypto: bool = True,
+) -> Tuple[pd.Series, pd.Series, pd.Series, Dict[str, Any]]:
+    """Create labels using conditional quantile regression with asymmetric tails.
     
-    Instead of using fixed or rolling thresholds, this approach:
-    1. Normalizes returns by volatility to get z-scores (trend-preserving)
-    2. Uses quantile regression to predict Q_τ(future_z | features)
-    3. Labels positive if actual_z > predicted_quantile (beat expectations)
+    Predicts conditional quantiles Q_τ(z | X) for both long and short directions,
+    supporting asymmetric selection thresholds for crypto markets.
     
-    This is superior because the threshold adapts to current market context.
+    Labeling logic:
+        z > Q_long(z|X)  → long signal (label = 1)
+        z < Q_short(z|X) → short signal (label = -1)
+        else             → no trade (label = NaN)
+    
+    For crypto, asymmetric quantiles are recommended (asymmetric_crypto=True):
+        - Longs: Q_0.6 (more selective, need to beat 60th percentile)
+        - Shorts: Q_0.35 (less selective, below 35th percentile)
+    
+    For symmetric selection (asymmetric_crypto=False):
+        - Longs: Q_0.6
+        - Shorts: Q_0.4 (symmetric = 1 - quantile_long)
     
     Args:
         realized_returns: Per-event realized returns
         features: Feature matrix X for conditioning
         volatility: Volatility series for z-score normalization
-        quantile: Target quantile τ (default: 0.6 = 60th percentile)
+        quantile_long: Upper quantile for long signals (default: 0.6)
+        quantile_short: Lower quantile for short signals (default: 0.35 for crypto asymmetry)
         lookback_bars: Training window size (default: 3000 ~= 31 days at 15m)
         min_train_samples: Minimum samples before model training starts
         retrain_frequency: Retrain model every N bars
@@ -1768,27 +1780,41 @@ def create_conditional_quantile_labels(
         n_estimators: Number of trees in ensemble
         max_depth: Maximum tree depth
         feature_subset: Optional list of features to use (for speed)
+        asymmetric_crypto: If True, use asymmetric quantiles (crypto-optimized)
     
     Returns:
-        Tuple of (labels, predicted_quantiles, diagnostics)
-        - labels: 1.0 if z > Q_τ(z|X), 0.0 if z < Q_(1-τ)(z|X), NaN otherwise
-        - predicted_quantiles: The predicted conditional quantiles
+        Tuple of (labels, labels_long, labels_short, diagnostics)
+        - labels: Combined directional labels (1=long, -1=short, NaN=no trade)
+        - labels_long: Binary long labels (1=long, 0=not long, NaN=no signal)
+        - labels_short: Binary short labels (1=short, 0=not short, NaN=no signal)
         - diagnostics: Dict with model performance metrics
     """
     labels = pd.Series(index=realized_returns.index, dtype=float)
     labels[:] = np.nan
     
-    predicted_quantiles = pd.Series(index=realized_returns.index, dtype=float)
-    predicted_quantiles[:] = np.nan
+    labels_long = pd.Series(index=realized_returns.index, dtype=float)
+    labels_long[:] = np.nan
+    
+    labels_short = pd.Series(index=realized_returns.index, dtype=float)
+    labels_short[:] = np.nan
+    
+    # Use symmetric quantiles if not crypto-asymmetric
+    if not asymmetric_crypto:
+        quantile_short = 1.0 - quantile_long  # e.g., 0.4 if long is 0.6
     
     diagnostics: Dict[str, Any] = {
         "n_labeled": 0,
-        "n_positive": 0,
-        "n_negative": 0,
-        "mean_predicted_quantile": np.nan,
-        "coverage_above": np.nan,
+        "n_long": 0,
+        "n_short": 0,
+        "n_no_trade": 0,
+        "quantile_long": quantile_long,
+        "quantile_short": quantile_short,
+        "asymmetric_crypto": asymmetric_crypto,
+        "mean_predicted_q_long": np.nan,
+        "mean_predicted_q_short": np.nan,
+        "coverage_long": np.nan,
+        "coverage_short": np.nan,
         "model_type": "lightgbm" if use_lightgbm else "sklearn_gbr",
-        "quantile": quantile,
     }
     
     try:
@@ -1820,30 +1846,33 @@ def create_conditional_quantile_labels(
         common_idx = z_scores.dropna().index.intersection(X.dropna(how='all').index)
         if len(common_idx) < min_train_samples:
             tprint(f"⚠️ Conditional quantile: insufficient data ({len(common_idx)} < {min_train_samples})", "WARNING")
-            return labels, predicted_quantiles, diagnostics
+            return labels, labels_long, labels_short, diagnostics
         
         z_aligned = z_scores.loc[common_idx]
         X_aligned = X.loc[common_idx].fillna(0.0)
         
         # Step 3: Rolling prediction with periodic retraining
-        tprint(f"📊 Conditional quantile regression: training on {len(common_idx)} samples...", "INFO")
+        tprint(
+            f"📊 Conditional quantile regression: Q_long={quantile_long}, Q_short={quantile_short}, "
+            f"asymmetric={asymmetric_crypto}, training on {len(common_idx)} samples...",
+            "INFO"
+        )
         
         # Convert to numpy for speed
         z_arr = z_aligned.to_numpy(dtype=float)
         X_arr = X_aligned.to_numpy(dtype=float)
-        idx_arr = np.arange(len(common_idx))
         
-        pred_q = np.full(len(common_idx), np.nan)
-        pred_q_low = np.full(len(common_idx), np.nan)  # For symmetric labeling
+        pred_q_long = np.full(len(common_idx), np.nan)
+        pred_q_short = np.full(len(common_idx), np.nan)
         
-        model_high = None
-        model_low = None
+        model_long = None
+        model_short = None
         last_train_idx = -retrain_frequency  # Force initial training
         
         # Rolling prediction
         for i in range(min_train_samples, len(common_idx)):
             # Retrain periodically
-            if (i - last_train_idx) >= retrain_frequency or model_high is None:
+            if (i - last_train_idx) >= retrain_frequency or model_long is None:
                 train_start = max(0, i - lookback_bars)
                 train_end = i
                 
@@ -1859,10 +1888,10 @@ def create_conditional_quantile_labels(
                 z_train = z_train[valid_train]
                 
                 if use_lightgbm:
-                    # LightGBM quantile regression
-                    model_high = lgb.LGBMRegressor(
+                    # LightGBM quantile regression for upper quantile (longs)
+                    model_long = lgb.LGBMRegressor(
                         objective='quantile',
-                        alpha=quantile,
+                        alpha=quantile_long,
                         n_estimators=n_estimators,
                         max_depth=max_depth,
                         learning_rate=0.05,
@@ -1873,9 +1902,10 @@ def create_conditional_quantile_labels(
                         verbose=-1,
                         random_state=42,
                     )
-                    model_low = lgb.LGBMRegressor(
+                    # LightGBM quantile regression for lower quantile (shorts)
+                    model_short = lgb.LGBMRegressor(
                         objective='quantile',
-                        alpha=1.0 - quantile,  # Symmetric lower quantile
+                        alpha=quantile_short,
                         n_estimators=n_estimators,
                         max_depth=max_depth,
                         learning_rate=0.05,
@@ -1889,9 +1919,9 @@ def create_conditional_quantile_labels(
                 else:
                     # Sklearn GradientBoostingRegressor
                     from sklearn.ensemble import GradientBoostingRegressor
-                    model_high = GradientBoostingRegressor(
+                    model_long = GradientBoostingRegressor(
                         loss='quantile',
-                        alpha=quantile,
+                        alpha=quantile_long,
                         n_estimators=n_estimators,
                         max_depth=max_depth,
                         learning_rate=0.05,
@@ -1899,9 +1929,9 @@ def create_conditional_quantile_labels(
                         min_samples_leaf=20,
                         random_state=42,
                     )
-                    model_low = GradientBoostingRegressor(
+                    model_short = GradientBoostingRegressor(
                         loss='quantile',
-                        alpha=1.0 - quantile,
+                        alpha=quantile_short,
                         n_estimators=n_estimators,
                         max_depth=max_depth,
                         learning_rate=0.05,
@@ -1911,73 +1941,103 @@ def create_conditional_quantile_labels(
                     )
                 
                 try:
-                    model_high.fit(X_train, z_train)
-                    model_low.fit(X_train, z_train)
+                    model_long.fit(X_train, z_train)
+                    model_short.fit(X_train, z_train)
                     last_train_idx = i
                 except Exception as fit_err:
                     tprint(f"⚠️ Model fit failed at i={i}: {fit_err}", "WARNING")
                     continue
             
             # Predict for current observation
-            if model_high is not None and model_low is not None:
+            if model_long is not None and model_short is not None:
                 try:
                     X_pred = X_arr[i:i+1]
-                    pred_q[i] = float(model_high.predict(X_pred)[0])
-                    pred_q_low[i] = float(model_low.predict(X_pred)[0])
+                    pred_q_long[i] = float(model_long.predict(X_pred)[0])
+                    pred_q_short[i] = float(model_short.predict(X_pred)[0])
                 except Exception:
                     pass
         
-        # Step 4: Generate labels based on conditional quantiles
-        # Label = 1 if z > predicted Q_τ (beat upper expectation)
-        # Label = 0 if z < predicted Q_(1-τ) (worse than lower expectation)
-        # Label = NaN if in between (uncertain zone)
+        # Step 4: Generate directional labels based on conditional quantiles
+        # z > Q_long → long signal (1)
+        # z < Q_short → short signal (-1)
+        # else → no trade (NaN)
         
         for i, idx in enumerate(common_idx):
-            if np.isnan(pred_q[i]) or np.isnan(z_arr[i]):
+            if np.isnan(pred_q_long[i]) or np.isnan(pred_q_short[i]) or np.isnan(z_arr[i]):
                 continue
             
-            predicted_quantiles.loc[idx] = pred_q[i]
+            z_val = z_arr[i]
+            q_long_val = pred_q_long[i]
+            q_short_val = pred_q_short[i]
             
-            if z_arr[i] >= pred_q[i]:
+            if z_val >= q_long_val:
+                # Long signal: z exceeds upper quantile
                 labels.loc[idx] = 1.0
-            elif z_arr[i] <= pred_q_low[i]:
-                labels.loc[idx] = 0.0
-            # else: remains NaN (uncertain zone)
+                labels_long.loc[idx] = 1.0
+                labels_short.loc[idx] = 0.0
+            elif z_val <= q_short_val:
+                # Short signal: z below lower quantile
+                labels.loc[idx] = -1.0
+                labels_long.loc[idx] = 0.0
+                labels_short.loc[idx] = 1.0
+            else:
+                # No trade zone (between quantiles)
+                labels.loc[idx] = 0.0  # Explicit no-trade
+                labels_long.loc[idx] = 0.0
+                labels_short.loc[idx] = 0.0
         
         # Diagnostics
-        n_labeled = int(labels.notna().sum())
-        n_pos = int((labels == 1.0).sum())
-        n_neg = int((labels == 0.0).sum())
+        n_labeled = int((labels != 0).sum())  # Exclude no-trade
+        n_long = int((labels == 1.0).sum())
+        n_short = int((labels == -1.0).sum())
+        n_no_trade = int((labels == 0.0).sum())
         
-        valid_pred = ~np.isnan(pred_q)
-        mean_pred_q = float(np.nanmean(pred_q)) if valid_pred.any() else np.nan
+        valid_pred = ~np.isnan(pred_q_long)
+        mean_pred_q_long = float(np.nanmean(pred_q_long)) if valid_pred.any() else np.nan
+        mean_pred_q_short = float(np.nanmean(pred_q_short)) if valid_pred.any() else np.nan
         
-        # Coverage: what fraction of actual z exceeded predicted quantile?
+        # Coverage diagnostics
         if valid_pred.any():
-            above_q = z_arr[valid_pred] >= pred_q[valid_pred]
-            coverage_above = float(above_q.mean())
+            above_q_long = z_arr[valid_pred] >= pred_q_long[valid_pred]
+            below_q_short = z_arr[valid_pred] <= pred_q_short[valid_pred]
+            coverage_long = float(above_q_long.mean())
+            coverage_short = float(below_q_short.mean())
         else:
-            coverage_above = np.nan
+            coverage_long = np.nan
+            coverage_short = np.nan
         
         diagnostics.update({
             "n_labeled": n_labeled,
-            "n_positive": n_pos,
-            "n_negative": n_neg,
-            "mean_predicted_quantile": mean_pred_q,
-            "coverage_above": coverage_above,
-            "expected_coverage": 1.0 - quantile,  # Should match this if well-calibrated
+            "n_long": n_long,
+            "n_short": n_short,
+            "n_no_trade": n_no_trade,
+            "mean_predicted_q_long": mean_pred_q_long,
+            "mean_predicted_q_short": mean_pred_q_short,
+            "coverage_long": coverage_long,
+            "coverage_short": coverage_short,
+            "expected_coverage_long": 1.0 - quantile_long,
+            "expected_coverage_short": quantile_short,
         })
         
         tprint(
-            f"📊 Conditional quantile labels: {n_labeled} labeled ({n_pos} pos, {n_neg} neg), "
-            f"coverage={coverage_above:.2%} (expected={1.0-quantile:.2%})",
+            f"📊 Conditional quantile labels: {n_long} long, {n_short} short, {n_no_trade} no-trade",
+            "INFO"
+        )
+        tprint(
+            f"   Coverage: long={coverage_long:.1%} (exp={1.0-quantile_long:.1%}), "
+            f"short={coverage_short:.1%} (exp={quantile_short:.1%})",
             "INFO"
         )
         
-        # Calibration check
-        if abs(coverage_above - (1.0 - quantile)) > 0.1:
+        # Calibration checks
+        if np.isfinite(coverage_long) and abs(coverage_long - (1.0 - quantile_long)) > 0.1:
             tprint(
-                f"⚠️ Quantile model may be miscalibrated: coverage={coverage_above:.2%} vs expected={1.0-quantile:.2%}",
+                f"⚠️ Long quantile may be miscalibrated: coverage={coverage_long:.1%} vs expected={1.0-quantile_long:.1%}",
+                "WARNING"
+            )
+        if np.isfinite(coverage_short) and abs(coverage_short - quantile_short) > 0.1:
+            tprint(
+                f"⚠️ Short quantile may be miscalibrated: coverage={coverage_short:.1%} vs expected={quantile_short:.1%}",
                 "WARNING"
             )
         
@@ -1986,7 +2046,7 @@ def create_conditional_quantile_labels(
         import traceback
         traceback.print_exc()
     
-    return labels, predicted_quantiles, diagnostics
+    return labels, labels_long, labels_short, diagnostics
 
 
 def diagnose_quantile_lookahead_bias(
@@ -7880,7 +7940,10 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             
             # Conditional quantile regression parameters (advanced)
             use_conditional_quantiles = labeling_method == "conditional"
-            conditional_quantile = float(config.get("conditional_quantile", 0.6))  # Q_0.6(z|X)
+            # Asymmetric quantiles for crypto (longs more selective, shorts less selective)
+            conditional_quantile_long = float(config.get("conditional_quantile_long", 0.6))  # Q_0.6(z|X) for longs
+            conditional_quantile_short = float(config.get("conditional_quantile_short", 0.35))  # Q_0.35(z|X) for shorts
+            conditional_asymmetric = bool(config.get("conditional_asymmetric_crypto", True))  # Use crypto-optimized asymmetry
             conditional_retrain_freq = int(config.get("conditional_retrain_frequency", 500))
             conditional_min_train = int(config.get("conditional_min_train_samples", 500))
             
@@ -7908,9 +7971,14 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             conditional_quantile_diagnostics: Dict[str, Any] = {}
 
             if use_conditional_quantiles:
-                # ADVANCED: Conditional quantile regression - Predict Q_τ(z|X)
-                # This adapts the threshold based on current market context (features)
-                tprint(f"📊 Using CONDITIONAL quantile regression Q_{conditional_quantile}(z|X)", "INFO")
+                # ADVANCED: Conditional quantile regression with asymmetric tails
+                # Predicts Q_long(z|X) and Q_short(z|X) separately for crypto markets
+                tprint(
+                    f"📊 Using CONDITIONAL quantile regression: "
+                    f"Q_long={conditional_quantile_long}, Q_short={conditional_quantile_short}, "
+                    f"asymmetric={conditional_asymmetric}",
+                    "INFO"
+                )
                 
                 # Build meta-features first (needed for conditioning)
                 # Use a minimal feature set for speed during labeling
@@ -7931,11 +7999,13 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                 ]
                 feature_subset = [f for f in stable_features if f in meta_features_for_cond.columns]
                 
-                quantile_labels, predicted_quantiles, conditional_quantile_diagnostics = create_conditional_quantile_labels(
+                # Returns: labels (directional), labels_long, labels_short, diagnostics
+                cond_labels, cond_labels_long, cond_labels_short, conditional_quantile_diagnostics = create_conditional_quantile_labels(
                     realized_returns=realized_returns,
                     features=meta_features_for_cond,
                     volatility=volatility_1d,
-                    quantile=conditional_quantile,
+                    quantile_long=conditional_quantile_long,
+                    quantile_short=conditional_quantile_short,
                     lookback_bars=rolling_lookback_bars,
                     min_train_samples=conditional_min_train,
                     retrain_frequency=conditional_retrain_freq,
@@ -7944,16 +8014,32 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                     n_estimators=50,
                     max_depth=4,
                     feature_subset=feature_subset if feature_subset else None,
+                    asymmetric_crypto=conditional_asymmetric,
                 )
+                
+                # Convert directional labels to binary for compatibility with downstream code
+                # For binary_labels: 1 = profitable trade (long or short), 0 = unprofitable
+                # We use the long labels for the main binary_labels since direction is in consensus
+                quantile_labels = cond_labels_long.copy()
+                # Store short labels separately for potential use
+                quantile_labels_short = cond_labels_short.copy()
                 
                 # Log diagnostics
                 if conditional_quantile_diagnostics:
-                    cov = conditional_quantile_diagnostics.get('coverage_above', np.nan)
-                    exp_cov = conditional_quantile_diagnostics.get('expected_coverage', np.nan)
+                    n_long = conditional_quantile_diagnostics.get('n_long', 0)
+                    n_short = conditional_quantile_diagnostics.get('n_short', 0)
+                    cov_long = conditional_quantile_diagnostics.get('coverage_long', np.nan)
+                    cov_short = conditional_quantile_diagnostics.get('coverage_short', np.nan)
                     tprint(
-                        f"📊 Conditional quantile calibration: coverage={cov:.2%} (expected={exp_cov:.2%})",
+                        f"📊 Conditional quantile results: {n_long} longs, {n_short} shorts",
                         "INFO"
                     )
+                    if np.isfinite(cov_long) and np.isfinite(cov_short):
+                        tprint(
+                            f"   Calibration: long={cov_long:.1%} (exp={1.0-conditional_quantile_long:.1%}), "
+                            f"short={cov_short:.1%} (exp={conditional_quantile_short:.1%})",
+                            "INFO"
+                        )
                     
             elif use_rolling_quantiles:
                 # Use rolling quantiles to eliminate look-ahead bias

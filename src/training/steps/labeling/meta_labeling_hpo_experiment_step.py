@@ -224,10 +224,17 @@ from src.training.steps.labeling.feature_generation_meta_labeling_step import (
     create_rolling_regime_aware_quantile_labels_from_vol_scaled_returns,
     compute_volatility_normalized_zscore,
     create_conditional_quantile_labels,
-    compute_zscore_gated_triple_barrier_labels,  # NEW: Full pipeline implementation
+    compute_zscore_gated_triple_barrier_labels,  # Full pipeline implementation
     diagnose_quantile_lookahead_bias,
     attach_rolling_hmm_regimes_to_market_data,
     create_regime_aware_quantile_labels_from_vol_scaled_returns,
+    # NEW: Volatility-scaled labeling functions
+    compute_ema_volatility,
+    compute_regime_metrics,
+    compute_target_positive_fraction,
+    compute_dynamic_threshold_k,
+    create_volatility_scaled_labels,
+    create_volatility_scaled_labels_for_events,
 )
 
 from src.utils.ml_common.optimization.hierarchical_parameter_optimizer import (
@@ -2385,6 +2392,736 @@ def shrink_search_space(
     return new_space
 
 
+def apply_warm_start_to_param_groups(
+    param_groups: List[Dict[str, Any]],
+    warm_start_params: Dict[str, Any],
+    narrowing_factor: float = 0.3,
+    bypass_warm_start: bool = False,
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Apply warm start by narrowing parameter search space around previous best values.
+    
+    This significantly speeds up HPO by focusing the search in neighboring areas
+    of previously successful configurations. For parameters not found in
+    warm_start_params, the full original range is preserved.
+    
+    Args:
+        param_groups: List of parameter group definitions
+        warm_start_params: Dictionary of previous best parameters
+        narrowing_factor: How much to narrow the range (0.3 = ±30% of original range)
+        bypass_warm_start: If True, skip narrowing and return original groups
+        
+    Returns:
+        Tuple of (modified param_groups, warm_start_report dict)
+    """
+    warm_start_report: Dict[str, Any] = {
+        "enabled": not bypass_warm_start and bool(warm_start_params),
+        "n_warm_start_params": len(warm_start_params) if warm_start_params else 0,
+        "narrowing_factor": narrowing_factor,
+        "n_narrowed": 0,
+        "n_full_range": 0,
+        "narrowing_details": [],
+        "full_range_params": [],
+    }
+    
+    if bypass_warm_start or not warm_start_params:
+        warm_start_report["enabled"] = False
+        return param_groups, warm_start_report
+    
+    narrowed_groups = []
+    n_narrowed = 0
+    n_full_range = 0
+    narrowing_details = []
+    full_range_params = []
+    
+    for group in param_groups:
+        new_group = group.copy()
+        new_params = {}
+        group_name = group.get("name", "unknown")
+        
+        for param_name, param_config in group.get("params", {}).items():
+            if param_name not in warm_start_params:
+                # Parameter not found in warm start - use full range
+                new_params[param_name] = param_config.copy()
+                n_full_range += 1
+                full_range_params.append(param_name)
+                continue
+            
+            # Parameter found - narrow the range
+            prev_value = warm_start_params[param_name]
+            config = param_config.copy()
+            param_type = config.get("type", "float")
+            
+            orig_low = config.get("low", 0)
+            orig_high = config.get("high", 1)
+            orig_range = orig_high - orig_low
+            
+            if param_type in ("float", "int"):
+                # Narrow range to ±narrowing_factor around previous best
+                half_width = orig_range * narrowing_factor
+                
+                new_low = max(orig_low, prev_value - half_width)
+                new_high = min(orig_high, prev_value + half_width)
+                
+                # Ensure minimum viable range (at least 10% of original)
+                min_range = orig_range * 0.1
+                if new_high - new_low < min_range:
+                    center = (new_low + new_high) / 2
+                    new_low = max(orig_low, center - min_range / 2)
+                    new_high = min(orig_high, center + min_range / 2)
+                
+                if param_type == "int":
+                    new_low = int(max(orig_low, round(new_low)))
+                    new_high = int(min(orig_high, round(new_high)))
+                    # Ensure at least 2 options for int params
+                    if new_high <= new_low:
+                        new_high = new_low + max(1, config.get("step", 1))
+                
+                # Calculate actual narrowing percentage
+                new_range = new_high - new_low
+                narrowing_pct = 100 * (1 - new_range / orig_range) if orig_range > 0 else 0
+                
+                narrowing_details.append({
+                    "param": param_name,
+                    "group": group_name,
+                    "prev_value": prev_value,
+                    "orig_range": f"[{orig_low}, {orig_high}]",
+                    "new_range": f"[{new_low}, {new_high}]",
+                    "narrowing_pct": f"{narrowing_pct:.1f}%",
+                })
+                
+                config["low"] = new_low
+                config["high"] = new_high
+                n_narrowed += 1
+            
+            new_params[param_name] = config
+        
+        new_group["params"] = new_params
+        narrowed_groups.append(new_group)
+    
+    warm_start_report.update({
+        "n_narrowed": n_narrowed,
+        "n_full_range": n_full_range,
+        "narrowing_details": narrowing_details,
+        "full_range_params": full_range_params,
+    })
+    
+    # Enhanced logging
+    if n_narrowed > 0:
+        tprint_info(
+            f"🔄 WARM START APPLIED: {n_narrowed} params narrowed (±{narrowing_factor*100:.0f}% of range), "
+            f"{n_full_range} params using full range"
+        )
+        tprint_info(f"   📋 Full-range params (new/not in warm start): {full_range_params[:5]}{'...' if len(full_range_params) > 5 else ''}")
+        
+        # Log top 5 narrowing details
+        for detail in narrowing_details[:5]:
+            tprint_info(
+                f"   ↔️ {detail['param']}: {detail['orig_range']} → {detail['new_range']} "
+                f"(prev={detail['prev_value']}, narrowed {detail['narrowing_pct']})"
+            )
+        if len(narrowing_details) > 5:
+            tprint_info(f"   ... and {len(narrowing_details) - 5} more params narrowed")
+    
+    return narrowed_groups, warm_start_report
+
+
+# =============================================================================
+# EARLY TRIAL REJECTION AND LABEL DIAGNOSTICS
+# =============================================================================
+
+@dataclass
+class TrialRejectionResult:
+    """Result of early trial rejection check."""
+    rejected: bool
+    reason: str
+    constraint: str
+    details: Dict[str, Any]
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "rejected": self.rejected,
+            "reason": self.reason,
+            "constraint": self.constraint,
+            "details": self.details,
+        }
+
+
+@dataclass
+class LabelDiagnostics:
+    """Comprehensive label generation diagnostics based on SNR analysis."""
+    # Core counts
+    total_labels: int
+    pos_labels_count: int
+    neg_labels_count: int
+    positive_ratio: float
+    
+    # Time-based metrics
+    labels_per_month: Dict[str, int]
+    labels_by_year: Dict[int, int]
+    unique_days_with_labels: int
+    total_days_span: float
+    labels_per_day: float
+    
+    # Regime-based metrics
+    labels_by_regime: Dict[str, int]  # {low_vol, med_vol, high_vol}
+    
+    # Dynamic threshold metrics
+    k_t_median: float
+    k_t_mean: float
+    k_t_std: float
+    k_t_percentile_95: float
+    k_t_clipping_rate: float  # % of k_t values that were clipped
+    
+    # Z-score metrics
+    z_score_median: float
+    z_score_mean: float
+    z_score_std: float
+    z_score_percentile_95: float
+    
+    # Sigmoid output metrics
+    p_target_mean: float
+    p_target_std: float
+    p_target_min: float
+    p_target_max: float
+    
+    # Trade quality metrics
+    win_rate_tp_vs_sl: float  # Fraction hitting TP > SL
+    avg_return_on_tp: float
+    avg_loss_on_sl: float
+    realized_rr: float  # Risk-reward ratio
+    
+    # Feature coverage
+    unique_feature_days: int  # Days with at least one label
+    
+    # Starvation detection
+    months_with_zero_labels: int
+    min_monthly_labels: int
+    max_monthly_labels: int
+    label_trend_slope: float  # Negative = declining labels over time
+    
+    # Model quality (if available)
+    auc_rolling: Optional[float] = None
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {k: v for k, v in self.__dict__.items() if not k.startswith('_')}
+
+
+def compute_label_diagnostics(
+    binary_labels: pd.Series,
+    realized_returns: pd.Series,
+    z_scores: pd.Series,
+    k_t: Optional[pd.Series] = None,
+    p_positive: Optional[pd.Series] = None,
+    volatility: Optional[pd.Series] = None,
+    exit_reasons: Optional[pd.Series] = None,
+    mfe: Optional[pd.Series] = None,
+    mae: Optional[pd.Series] = None,
+    market_data: Optional[pd.DataFrame] = None,
+) -> LabelDiagnostics:
+    """Compute comprehensive label diagnostics for SNR analysis.
+    
+    Args:
+        binary_labels: Binary labels (0/1)
+        realized_returns: Realized returns per event
+        z_scores: Volatility-normalized z-scores
+        k_t: Dynamic threshold series (optional)
+        p_positive: Target positive fraction series (optional)
+        volatility: Volatility series for regime bucketing (optional)
+        exit_reasons: Exit reason series (1=TP, 0=SL, 2=timeout) (optional)
+        mfe: Maximum favorable excursion (optional)
+        mae: Maximum adverse excursion (optional)
+        market_data: Full market data for feature coverage (optional)
+    
+    Returns:
+        LabelDiagnostics with comprehensive metrics
+    """
+    labeled_mask = ~binary_labels.isna()
+    labels = binary_labels[labeled_mask]
+    returns_labeled = realized_returns.reindex(labels.index)
+    
+    # Core counts
+    total_labels = len(labels)
+    pos_labels_count = int((labels == 1).sum())
+    neg_labels_count = int((labels == 0).sum())
+    positive_ratio = pos_labels_count / total_labels if total_labels > 0 else 0.0
+    
+    # Time-based metrics
+    labels_per_month: Dict[str, int] = {}
+    labels_by_year: Dict[int, int] = {}
+    unique_days_with_labels = 0
+    total_days_span = 0.0
+    labels_per_day = 0.0
+    
+    if total_labels > 0 and hasattr(labels.index, 'to_pydatetime'):
+        try:
+            # Monthly breakdown
+            for idx in labels.index:
+                month_key = idx.strftime("%Y-%m")
+                labels_per_month[month_key] = labels_per_month.get(month_key, 0) + 1
+                year = idx.year
+                labels_by_year[year] = labels_by_year.get(year, 0) + 1
+            
+            # Unique days
+            unique_days = set(idx.date() for idx in labels.index)
+            unique_days_with_labels = len(unique_days)
+            
+            # Total span
+            if len(labels.index) > 1:
+                total_days_span = (labels.index.max() - labels.index.min()).total_seconds() / 86400.0
+                labels_per_day = total_labels / max(1.0, total_days_span)
+        except Exception:
+            pass
+    
+    # Regime-based metrics (based on volatility quartiles)
+    labels_by_regime: Dict[str, int] = {"low_vol": 0, "med_vol": 0, "high_vol": 0}
+    if volatility is not None and total_labels > 0:
+        try:
+            vol_aligned = volatility.reindex(labels.index)
+            vol_valid = vol_aligned.dropna()
+            if len(vol_valid) > 10:
+                q33 = float(vol_valid.quantile(0.33))
+                q67 = float(vol_valid.quantile(0.67))
+                labels_by_regime["low_vol"] = int((vol_aligned <= q33).sum())
+                labels_by_regime["med_vol"] = int(((vol_aligned > q33) & (vol_aligned <= q67)).sum())
+                labels_by_regime["high_vol"] = int((vol_aligned > q67).sum())
+        except Exception:
+            pass
+    
+    # Dynamic threshold metrics
+    k_t_median = np.nan
+    k_t_mean = np.nan
+    k_t_std = np.nan
+    k_t_percentile_95 = np.nan
+    k_t_clipping_rate = 0.0
+    
+    if k_t is not None:
+        k_valid = k_t.dropna()
+        if len(k_valid) > 0:
+            k_t_median = float(k_valid.median())
+            k_t_mean = float(k_valid.mean())
+            k_t_std = float(k_valid.std())
+            k_t_percentile_95 = float(k_valid.quantile(0.95))
+    
+    # Z-score metrics
+    z_valid = z_scores.dropna()
+    z_score_median = float(z_valid.median()) if len(z_valid) > 0 else np.nan
+    z_score_mean = float(z_valid.mean()) if len(z_valid) > 0 else np.nan
+    z_score_std = float(z_valid.std()) if len(z_valid) > 0 else np.nan
+    z_score_percentile_95 = float(z_valid.quantile(0.95)) if len(z_valid) > 0 else np.nan
+    
+    # Sigmoid output metrics
+    p_target_mean = np.nan
+    p_target_std = np.nan
+    p_target_min = np.nan
+    p_target_max = np.nan
+    
+    if p_positive is not None:
+        p_valid = p_positive.dropna()
+        if len(p_valid) > 0:
+            p_target_mean = float(p_valid.mean())
+            p_target_std = float(p_valid.std())
+            p_target_min = float(p_valid.min())
+            p_target_max = float(p_valid.max())
+    
+    # Trade quality metrics
+    win_rate_tp_vs_sl = np.nan
+    avg_return_on_tp = np.nan
+    avg_loss_on_sl = np.nan
+    realized_rr = np.nan
+    
+    if exit_reasons is not None:
+        try:
+            exit_aligned = exit_reasons.reindex(labels.index)
+            tp_mask = exit_aligned == 1  # TP hit
+            sl_mask = exit_aligned == 0  # SL hit
+            n_tp = int(tp_mask.sum())
+            n_sl = int(sl_mask.sum())
+            
+            if n_tp + n_sl > 0:
+                win_rate_tp_vs_sl = n_tp / (n_tp + n_sl)
+            
+            if n_tp > 0:
+                avg_return_on_tp = float(returns_labeled[tp_mask].mean())
+            if n_sl > 0:
+                avg_loss_on_sl = float(returns_labeled[sl_mask].mean())
+            
+            if n_tp > 0 and n_sl > 0 and avg_loss_on_sl < 0:
+                realized_rr = abs(avg_return_on_tp / avg_loss_on_sl)
+        except Exception:
+            pass
+    
+    # Feature coverage
+    unique_feature_days = unique_days_with_labels
+    
+    # Starvation detection
+    months_with_zero_labels = 0
+    min_monthly_labels = 0
+    max_monthly_labels = 0
+    label_trend_slope = 0.0
+    
+    if labels_per_month:
+        monthly_counts = list(labels_per_month.values())
+        months_with_zero_labels = sum(1 for c in monthly_counts if c == 0)
+        min_monthly_labels = min(monthly_counts) if monthly_counts else 0
+        max_monthly_labels = max(monthly_counts) if monthly_counts else 0
+        
+        # Compute trend (linear regression slope on monthly counts)
+        if len(monthly_counts) >= 3:
+            try:
+                x = np.arange(len(monthly_counts))
+                y = np.array(monthly_counts)
+                slope, _ = np.polyfit(x, y, 1)
+                label_trend_slope = float(slope)
+            except Exception:
+                label_trend_slope = 0.0
+    
+    return LabelDiagnostics(
+        total_labels=total_labels,
+        pos_labels_count=pos_labels_count,
+        neg_labels_count=neg_labels_count,
+        positive_ratio=positive_ratio,
+        labels_per_month=labels_per_month,
+        labels_by_year=labels_by_year,
+        unique_days_with_labels=unique_days_with_labels,
+        total_days_span=total_days_span,
+        labels_per_day=labels_per_day,
+        labels_by_regime=labels_by_regime,
+        k_t_median=k_t_median,
+        k_t_mean=k_t_mean,
+        k_t_std=k_t_std,
+        k_t_percentile_95=k_t_percentile_95,
+        k_t_clipping_rate=k_t_clipping_rate,
+        z_score_median=z_score_median,
+        z_score_mean=z_score_mean,
+        z_score_std=z_score_std,
+        z_score_percentile_95=z_score_percentile_95,
+        p_target_mean=p_target_mean,
+        p_target_std=p_target_std,
+        p_target_min=p_target_min,
+        p_target_max=p_target_max,
+        win_rate_tp_vs_sl=win_rate_tp_vs_sl,
+        avg_return_on_tp=avg_return_on_tp,
+        avg_loss_on_sl=avg_loss_on_sl,
+        realized_rr=realized_rr,
+        unique_feature_days=unique_feature_days,
+        months_with_zero_labels=months_with_zero_labels,
+        min_monthly_labels=min_monthly_labels,
+        max_monthly_labels=max_monthly_labels,
+        label_trend_slope=label_trend_slope,
+        auc_rolling=None,
+    )
+
+
+def check_early_trial_rejection(
+    binary_labels: pd.Series,
+    z_scores: pd.Series,
+    k_t: Optional[pd.Series] = None,
+    volatility: Optional[pd.Series] = None,
+    k_t_clipping_rate_threshold: float = 0.20,
+    min_labels_per_year: int = 50,
+    min_labels_per_regime: int = 20,
+) -> TrialRejectionResult:
+    """Check if a trial should be rejected early based on label quality constraints.
+    
+    Rejection criteria (hard-fail if ANY is true):
+    1. total_positive_labels == 0
+    2. labels_in_any_year == 0
+    3. labels_in_any_regime_bucket == 0
+    4. median_k_t > 95th percentile of z (over-restrictive threshold)
+    5. k_t_clipping_rate > 20% (too much clipping)
+    
+    Args:
+        binary_labels: Binary labels series
+        z_scores: Z-score series
+        k_t: Dynamic threshold series (optional)
+        volatility: Volatility series for regime bucketing (optional)
+        k_t_clipping_rate_threshold: Max acceptable clipping rate (default: 0.20)
+        min_labels_per_year: Minimum labels required per year
+        min_labels_per_regime: Minimum labels required per volatility regime
+    
+    Returns:
+        TrialRejectionResult with rejection status and details
+    """
+    labeled_mask = ~binary_labels.isna()
+    labels = binary_labels[labeled_mask]
+    
+    # Compute basic stats
+    total_labels = len(labels)
+    pos_count = int((labels == 1).sum())
+    neg_count = int((labels == 0).sum())
+    
+    # Check 1: total_positive_labels == 0
+    if pos_count == 0:
+        return TrialRejectionResult(
+            rejected=True,
+            reason="No positive labels generated",
+            constraint="total_positive_labels == 0",
+            details={
+                "total_labels": total_labels,
+                "pos_labels": pos_count,
+                "neg_labels": neg_count,
+                "label_histogram": {"positive": pos_count, "negative": neg_count},
+            }
+        )
+    
+    # Check 2: labels_in_any_year == 0
+    labels_by_year: Dict[int, int] = {}
+    if total_labels > 0 and hasattr(labels.index, 'year'):
+        try:
+            for idx in labels.index:
+                year = idx.year
+                labels_by_year[year] = labels_by_year.get(year, 0) + 1
+            
+            years_with_zero = [y for y, c in labels_by_year.items() if c < min_labels_per_year]
+            if years_with_zero:
+                return TrialRejectionResult(
+                    rejected=True,
+                    reason=f"Insufficient labels in year(s): {years_with_zero}",
+                    constraint="labels_in_any_year == 0",
+                    details={
+                        "labels_by_year": labels_by_year,
+                        "years_with_insufficient_labels": years_with_zero,
+                        "min_required": min_labels_per_year,
+                    }
+                )
+        except Exception:
+            pass
+    
+    # Check 3: labels_in_any_regime_bucket == 0
+    labels_by_regime: Dict[str, int] = {"low_vol": 0, "med_vol": 0, "high_vol": 0}
+    if volatility is not None and total_labels > 0:
+        try:
+            vol_aligned = volatility.reindex(labels.index)
+            vol_valid = vol_aligned.dropna()
+            if len(vol_valid) > 10:
+                q33 = float(vol_valid.quantile(0.33))
+                q67 = float(vol_valid.quantile(0.67))
+                labels_by_regime["low_vol"] = int((vol_aligned <= q33).sum())
+                labels_by_regime["med_vol"] = int(((vol_aligned > q33) & (vol_aligned <= q67)).sum())
+                labels_by_regime["high_vol"] = int((vol_aligned > q67).sum())
+                
+                regimes_with_few = [r for r, c in labels_by_regime.items() if c < min_labels_per_regime]
+                if regimes_with_few:
+                    return TrialRejectionResult(
+                        rejected=True,
+                        reason=f"Insufficient labels in regime(s): {regimes_with_few}",
+                        constraint="labels_in_any_regime_bucket == 0",
+                        details={
+                            "labels_by_regime": labels_by_regime,
+                            "regimes_with_insufficient_labels": regimes_with_few,
+                            "min_required": min_labels_per_regime,
+                        }
+                    )
+        except Exception:
+            pass
+    
+    # Check 4: median_k_t > 95th percentile of z
+    if k_t is not None:
+        k_valid = k_t.dropna()
+        z_valid = z_scores.dropna()
+        if len(k_valid) > 0 and len(z_valid) > 0:
+            k_t_median = float(k_valid.median())
+            z_p95 = float(z_valid.quantile(0.95))
+            
+            if k_t_median > z_p95:
+                return TrialRejectionResult(
+                    rejected=True,
+                    reason=f"k_t median ({k_t_median:.3f}) > z 95th percentile ({z_p95:.3f})",
+                    constraint="median_k_t > 95th_percentile_z",
+                    details={
+                        "k_t_median": k_t_median,
+                        "k_t_mean": float(k_valid.mean()),
+                        "k_t_std": float(k_valid.std()),
+                        "z_p95": z_p95,
+                        "z_median": float(z_valid.median()),
+                        "k_t_distribution": {
+                            "p25": float(k_valid.quantile(0.25)),
+                            "p50": float(k_valid.quantile(0.50)),
+                            "p75": float(k_valid.quantile(0.75)),
+                            "p95": float(k_valid.quantile(0.95)),
+                        },
+                    }
+                )
+    
+    # Check 5: k_t_clipping_rate > 20%
+    # This requires knowing original vs clipped k_t values
+    # For now, we estimate based on k_t being at extreme bounds
+    if k_t is not None:
+        k_valid = k_t.dropna()
+        z_valid = z_scores.dropna()
+        if len(k_valid) > 10 and len(z_valid) > 10:
+            # Estimate clipping: k_t at bounds of z distribution
+            z_p01 = float(z_valid.quantile(0.01))
+            z_p99 = float(z_valid.quantile(0.99))
+            
+            n_at_lower = int((k_valid <= z_p01 * 1.01).sum())  # Within 1% of lower bound
+            n_at_upper = int((k_valid >= z_p99 * 0.99).sum())  # Within 1% of upper bound
+            clipping_rate = (n_at_lower + n_at_upper) / len(k_valid)
+            
+            if clipping_rate > k_t_clipping_rate_threshold:
+                return TrialRejectionResult(
+                    rejected=True,
+                    reason=f"k_t clipping rate ({clipping_rate:.1%}) > threshold ({k_t_clipping_rate_threshold:.1%})",
+                    constraint="k_t_clipping_rate > 20%",
+                    details={
+                        "clipping_rate": clipping_rate,
+                        "n_at_lower_bound": n_at_lower,
+                        "n_at_upper_bound": n_at_upper,
+                        "total_k_t": len(k_valid),
+                        "z_p01": z_p01,
+                        "z_p99": z_p99,
+                    }
+                )
+    
+    # All checks passed
+    return TrialRejectionResult(
+        rejected=False,
+        reason="All constraints satisfied",
+        constraint="none",
+        details={
+            "total_labels": total_labels,
+            "pos_labels": pos_count,
+            "neg_labels": neg_count,
+            "labels_by_year": labels_by_year,
+            "labels_by_regime": labels_by_regime,
+        }
+    )
+
+
+def log_trial_rejection(
+    rejection: TrialRejectionResult,
+    trial_id: int = 0,
+    params: Optional[Dict[str, Any]] = None,
+) -> None:
+    """Log detailed information about a rejected trial."""
+    if not rejection.rejected:
+        return
+    
+    tprint_warning(
+        f"❌ [TRIAL_REJECTED #{trial_id}] {rejection.reason}"
+    )
+    tprint_warning(
+        f"   Constraint: {rejection.constraint}"
+    )
+    
+    details = rejection.details
+    
+    # Log label histogram
+    if "label_histogram" in details:
+        tprint_warning(f"   Label histogram: {details['label_histogram']}")
+    
+    # Log by-year breakdown
+    if "labels_by_year" in details:
+        tprint_warning(f"   Labels by year: {details['labels_by_year']}")
+    
+    # Log by-regime breakdown
+    if "labels_by_regime" in details:
+        tprint_warning(f"   Labels by regime: {details['labels_by_regime']}")
+    
+    # Log k_t distribution if available
+    if "k_t_distribution" in details:
+        k_dist = details["k_t_distribution"]
+        tprint_warning(
+            f"   k_t distribution: p25={k_dist.get('p25', 'N/A'):.3f}, "
+            f"p50={k_dist.get('p50', 'N/A'):.3f}, "
+            f"p75={k_dist.get('p75', 'N/A'):.3f}, "
+            f"p95={k_dist.get('p95', 'N/A'):.3f}"
+        )
+    
+    # Log relevant params
+    if params:
+        relevant_params = {k: v for k, v in params.items() 
+                         if k in ['p_min', 'p_max', 'sigmoid_slope', 'sigmoid_midpoint',
+                                 'volatility_ema_span', 'rolling_k_window']}
+        if relevant_params:
+            tprint_warning(f"   Relevant params: {relevant_params}")
+
+
+def monitor_label_density_drift(
+    binary_labels: pd.Series,
+    window_bars: int = 500,
+    alert_threshold_drop: float = 0.15,
+) -> Dict[str, Any]:
+    """Monitor positive label percentage over time to detect drift.
+    
+    Args:
+        binary_labels: Binary labels series
+        window_bars: Rolling window size in bars
+        alert_threshold_drop: Alert if positive % drops by this amount
+        
+    Returns:
+        Dict with drift metrics and alerts
+    """
+    labeled_mask = ~binary_labels.isna()
+    labels = binary_labels[labeled_mask].astype(float)
+    
+    if len(labels) < window_bars:
+        return {
+            "monitoring_enabled": False,
+            "reason": f"Insufficient labels ({len(labels)} < {window_bars})",
+        }
+    
+    # Rolling positive percentage
+    rolling_pos_pct = labels.rolling(window=window_bars, min_periods=window_bars // 2).mean()
+    rolling_pos_pct = rolling_pos_pct.dropna()
+    
+    if len(rolling_pos_pct) < 10:
+        return {
+            "monitoring_enabled": False,
+            "reason": "Insufficient rolling window data",
+        }
+    
+    # Compute drift metrics
+    initial_pct = float(rolling_pos_pct.iloc[:window_bars // 2].mean())
+    final_pct = float(rolling_pos_pct.iloc[-window_bars // 2:].mean())
+    drift = final_pct - initial_pct
+    
+    # Trend via linear regression
+    x = np.arange(len(rolling_pos_pct))
+    y = rolling_pos_pct.values
+    try:
+        slope, intercept = np.polyfit(x, y, 1)
+        trend_slope = float(slope)
+    except Exception:
+        trend_slope = 0.0
+    
+    # Detect concerning patterns
+    alerts = []
+    if drift < -alert_threshold_drop:
+        alerts.append(f"Positive label % dropped by {abs(drift):.1%} (initial={initial_pct:.1%}, final={final_pct:.1%})")
+    
+    if trend_slope < -0.0001:  # Negative slope indicates declining positive rate
+        alerts.append(f"Declining trend detected: slope={trend_slope:.6f}")
+    
+    # Compute by-period breakdown
+    period_stats = []
+    n_periods = min(5, len(labels) // window_bars)
+    if n_periods >= 2:
+        period_size = len(labels) // n_periods
+        for i in range(n_periods):
+            start = i * period_size
+            end = (i + 1) * period_size if i < n_periods - 1 else len(labels)
+            period_labels = labels.iloc[start:end]
+            pos_pct = float(period_labels.mean())
+            period_stats.append({
+                "period": i + 1,
+                "n_labels": len(period_labels),
+                "positive_pct": pos_pct,
+            })
+    
+    return {
+        "monitoring_enabled": True,
+        "initial_positive_pct": initial_pct,
+        "final_positive_pct": final_pct,
+        "drift": drift,
+        "trend_slope": trend_slope,
+        "alerts": alerts,
+        "period_stats": period_stats,
+        "overall_positive_pct": float(labels.mean()),
+        "total_labels": len(labels),
+    }
+
+
 def compute_realistic_pnl_edge(
     mean_return_positive: float,
     mean_auc: float,
@@ -3091,29 +3828,36 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 depends_on=["event_geometry"],
                 description="Volatility adaptation baseline and multipliers",
             ),
-            # Group 4: Label Definition (3 params) - Depends on Volatility Adaptation
+            # Group 4: Volatility-Scaled Label Definition
+            # NEW: Uses y = future_return > k_t * rolling_volatility approach
+            # instead of percentile-based quantile thresholds
             create_param_group(
                 name="label_definition",
                 params={
-                    "label_low_q": {
-                        "type": "float",
-                        "low": 0.35,
-                        "high": 0.45,
+                    # Volatility EMA span: 32-64 bars (~8-16h at 15m timeframe)
+                    "volatility_ema_span": {
+                        "type": "int",
+                        "low": 32,
+                        "high": 64,
+                        "step": 8,
                     },
-                    "label_high_q": {
-                        "type": "float",
-                        "low": 0.65,
-                        "high": 0.75,
+                    # Rolling window for dynamic k threshold: 300-500 bars (~3-5 days)
+                    "rolling_k_window": {
+                        "type": "int",
+                        "low": 300,
+                        "high": 500,
+                        "step": 50,
                     },
+                    # Economic floor (still needed for filtering trivial events)
                     "econ_min_return_multiple": {
                         "type": "float",
                         "low": 1.2,
-                        "high": 1.6,
+                        "high": 1.8,
                     },
                 },
                 priority=4,
                 depends_on=["volatility_adaptation"],
-                description="Quantile-based label definition",
+                description="Volatility-scaled label definition (y = return > k*vol)",
             ),
             # Group 5: Target Engineering (5 params) - Depends on Label Definition
             create_param_group(
@@ -3170,10 +3914,60 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 depends_on=["event_geometry"],
                 description="Kalman smoothing noise parameters",
             ),
+            # Group 6.5: Sigmoid Regime Adaptation Parameters
+            # Parameters for dynamic threshold adaptation based on market regime
+            # Uses weighted combination: score = 0.65*trend + 0.35*vol_score
+            create_param_group(
+                name="sigmoid_regime_adaptation",
+                params={
+                    # Minimum target positive fraction (strong downtrend -> p_min)
+                    # Wide enough to ensure some candidates are always labeled
+                    "p_min": {
+                        "type": "float",
+                        "low": 0.25,
+                        "high": 0.35,
+                    },
+                    # Maximum target positive fraction (strong uptrend -> p_max)
+                    "p_max": {
+                        "type": "float",
+                        "low": 0.60,
+                        "high": 0.80,
+                    },
+                    # Sigmoid slope: higher = faster transition between p_min/p_max
+                    "sigmoid_slope": {
+                        "type": "float",
+                        "low": 1.5,
+                        "high": 3.0,
+                    },
+                    # Sigmoid midpoint: shifts the regime value where p_positive ramps up
+                    "sigmoid_midpoint": {
+                        "type": "float",
+                        "low": -0.2,
+                        "high": 0.2,
+                    },
+                    # Median volatility lookback for vol_ratio (300-500 bars)
+                    "median_vol_lookback": {
+                        "type": "int",
+                        "low": 300,
+                        "high": 500,
+                        "step": 50,
+                    },
+                    # Trend lookback for trend_strength (10-30 bars)
+                    "regime_trend_lookback": {
+                        "type": "int",
+                        "low": 10,
+                        "high": 30,
+                        "step": 5,
+                    },
+                },
+                priority=7,
+                depends_on=["label_definition"],
+                description="Sigmoid-based regime adaptation for dynamic k threshold",
+            ),
         ]
         
         # =====================================================================
-        # NEW GROUPS: Z-Score Gated Triple Barrier Pipeline Parameters
+        # ADDITIONAL GROUPS: Z-Score Gated Triple Barrier Pipeline Parameters
         # =====================================================================
         
         # Group 7: Triple Barrier Base Multipliers
@@ -3266,19 +4060,21 @@ class MetaLabelingHPOExperimentStep(BaseStep):
             )
         )
         
-        # Group 10: Trend Adjustment
-        # trend_alpha: Linear trend factor (0.1–0.4)
-        # trend_lookback: EMA/window size for trend calculation (10–50 bars)
+        # Group 10: Trend Adjustment for Barriers (Independent from vol-scaled labels)
+        # NOTE: This is for barrier adjustment only, NOT for label generation.
+        # The trend in label generation is handled by sigmoid_regime_adaptation.
+        # trend_alpha: Linear trend factor for TP/SL barrier adjustment
+        # trend_lookback: EMA/window size for trend calculation in barrier adjustment
         param_groups.append(
             create_param_group(
                 name="trend_adjustment",
                 params={
-                    "trend_alpha": {
+                    "barrier_trend_alpha": {
                         "type": "float",
                         "low": 0.1,
                         "high": 0.4,
                     },
-                    "trend_lookback": {
+                    "barrier_trend_lookback": {
                         "type": "int",
                         "low": 10,
                         "high": 50,
@@ -3287,7 +4083,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 },
                 priority=10,
                 depends_on=["zscore_scaling"],
-                description="Linear trend adjustment for TP barriers",
+                description="Barrier-specific trend adjustment (independent from vol-scaled labeling)",
             )
         )
         
@@ -3356,28 +4152,23 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 )
             )
         
-        # Group 13: Volatility Lookback
-        # rolling_vol_lookback: Volatility EMA lookback (50–200 bars)
+        # Group 13: Future Return Horizon
+        # future_return_horizon: Horizon for computing future returns (4-8 bars = 1-2h at 15m)
+        # This is independent from the vertical barrier horizon (horizon_bars)
         param_groups.append(
             create_param_group(
-                name="volatility_lookback",
+                name="future_return_horizon",
                 params={
-                    "rolling_vol_lookback": {
+                    "future_return_horizon": {
                         "type": "int",
-                        "low": 50,
-                        "high": 200,
-                        "step": 25,
-                    },
-                    "quantile_lookback_bars": {
-                        "type": "int",
-                        "low": 2000,
-                        "high": 4000,
-                        "step": 500,
+                        "low": 4,
+                        "high": 8,
+                        "step": 1,
                     },
                 },
                 priority=13,
-                depends_on=["volatility_adaptation"],
-                description="Lookback windows for volatility and quantile calculations",
+                depends_on=["label_definition"],
+                description="Horizon for future return computation in volatility-scaled labels",
             )
         )
         
@@ -3386,6 +4177,8 @@ class MetaLabelingHPOExperimentStep(BaseStep):
         warm_start_best_params: Dict[str, Any] = {}
         warm_start_candidates_df: Optional[pd.DataFrame] = None
         outcomes_dir = Path("outcomes")
+        
+        # Load previous best parameters for warm start
         try:
             json_pattern = f"meta_labeling_hpo_best_params_{symbol}_{timeframe}_*.json"
             json_paths = sorted(outcomes_dir.glob(json_pattern))
@@ -3394,11 +4187,19 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 with open(latest_json, "r") as f:
                     data = json.load(f)
                     if isinstance(data, dict):
+                        # Try knee_params first, then best_params
+                        knee_params_data = data.get("knee_params", {})
                         best_params_data = data.get("best_params", {})
-                        if isinstance(best_params_data, dict):
+                        if isinstance(knee_params_data, dict) and knee_params_data:
+                            warm_start_best_params = knee_params_data
+                            tprint_info(f"🔄 Loaded warm start from knee_params: {latest_json}")
+                        elif isinstance(best_params_data, dict) and best_params_data:
                             warm_start_best_params = best_params_data
-        except Exception:
+                            tprint_info(f"🔄 Loaded warm start from best_params: {latest_json}")
+        except Exception as e:
+            tprint_warning(f"⚠️ Could not load warm start params: {e}")
             warm_start_best_params = {}
+        
         try:
             csv_pattern = f"meta_labeling_hpo_candidate_pool_{symbol}_{timeframe}_*.csv"
             csv_paths = sorted(outcomes_dir.glob(csv_pattern))
@@ -3407,6 +4208,24 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 warm_start_candidates_df = pd.read_csv(latest_csv)
         except Exception:
             warm_start_candidates_df = None
+        
+        # Apply warm start narrowing to parameter groups (unless bypassed)
+        bypass_warm_start = config.get("bypass_warm_start", False)
+        warm_start_narrowing = config.get("warm_start_narrowing_factor", 0.3)
+        warm_start_report: Dict[str, Any] = {"enabled": False}
+        
+        if warm_start_best_params and not bypass_warm_start:
+            tprint_info(f"🔄 Applying warm start with {len(warm_start_best_params)} previous params...")
+            param_groups, warm_start_report = apply_warm_start_to_param_groups(
+                param_groups=param_groups,
+                warm_start_params=warm_start_best_params,
+                narrowing_factor=warm_start_narrowing,
+                bypass_warm_start=bypass_warm_start,
+            )
+        elif bypass_warm_start:
+            tprint_info("⏭️ Warm start bypassed - using full parameter ranges")
+        else:
+            tprint_info("🆕 No warm start params found - using full parameter ranges")
 
         calibrated_horizon: Optional[int] = None
         if stage1_enable_subsample:
@@ -3634,15 +4453,11 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 if not np.isfinite(econ_min_mult) or econ_min_mult <= 0:
                     econ_min_mult = float(ECON_MIN_RETURN_MULTIPLE)
 
-                # Label quantile thresholds (regime-aware when regimes are present).
-                label_low_q = float(params.get("label_low_q", 0.30))
-                label_high_q = float(params.get("label_high_q", 0.70))
-                # Guard-rail: ensure a proper ordering and keep them away from extremes.
-                # WIDENED bounds to allow denser label configurations
-                label_low_q = max(0.10, min(0.50, label_low_q))
-                label_high_q = max(0.50, min(0.90, label_high_q))
-                if label_high_q <= label_low_q:
-                    label_low_q, label_high_q = 0.30, 0.70
+                # NOTE: label_low_q and label_high_q are no longer used.
+                # Volatility-scaled labeling uses dynamic k threshold instead.
+                # These are kept for backwards compatibility but not used.
+                label_low_q = 0.30  # Legacy, unused
+                label_high_q = 0.70  # Legacy, unused
 
                 # NEW: R-multiple threshold for labeling - controls trade velocity filter
                 r_multiple_threshold = float(params.get("r_multiple_pos_threshold", 0.7))
@@ -3689,11 +4504,9 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 z_magnitude_scale = float(params.get("z_magnitude_scale", 0.3))
                 z_magnitude_scale = max(0.0, min(0.5, z_magnitude_scale))
                 
-                # Trend adjustment (LINEAR, not thresholds)
-                hpo_trend_alpha = float(params.get("trend_alpha", 0.3))
-                hpo_trend_alpha = max(0.1, min(0.4, hpo_trend_alpha))
-                hpo_trend_lookback = int(params.get("trend_lookback", 20))
-                hpo_trend_lookback = max(10, min(50, hpo_trend_lookback))
+                # NOTE: Barrier trend adjustment parameters (barrier_trend_alpha, barrier_trend_lookback)
+                # are extracted later in the barrier calculation section.
+                # These are independent from volatility-scaled labeling.
                 
                 # Clipping bounds (as multiples of base volatility)
                 tp_min_mult = float(params.get("tp_min_mult", 0.5))
@@ -3705,17 +4518,15 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 sl_max_mult = float(params.get("sl_max_mult", 2.0))
                 sl_max_mult = max(1.5, min(3.0, sl_max_mult))
                 
-                # Conditional quantile thresholds
+                # Conditional quantile thresholds (for entry gating, optional)
                 cond_quantile_long = float(params.get("conditional_quantile_long", 0.6))
                 cond_quantile_long = max(0.55, min(0.70, cond_quantile_long))
                 cond_quantile_short = float(params.get("conditional_quantile_short", 0.35))
                 cond_quantile_short = max(0.30, min(0.45, cond_quantile_short))
                 
-                # Volatility lookback parameters
-                rolling_vol_lookback = int(params.get("rolling_vol_lookback", 100))
-                rolling_vol_lookback = max(50, min(200, rolling_vol_lookback))
-                quantile_lookback_bars = int(params.get("quantile_lookback_bars", 3000))
-                quantile_lookback_bars = max(2000, min(4000, quantile_lookback_bars))
+                # Future return horizon (for vol-scaled labeling)
+                future_return_horizon = int(params.get("future_return_horizon", 6))
+                future_return_horizon = max(4, min(8, future_return_horizon))
 
                 # --- Recompute realized returns ---
                 # NO FUTURE LEAKAGE in volatility-based thresholds:
@@ -3729,30 +4540,22 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 low_prices = market_data["low"] if "low" in market_data.columns else market_data["close"]
                 close_prices = market_data["close"]
 
+                # ATR computation for barrier adjustment (independent from vol-scaled labeling)
                 tr1 = high_prices - low_prices
                 tr2 = (high_prices - close_prices.shift(1)).abs()
                 tr3 = (low_prices - close_prices.shift(1)).abs()
                 true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
 
-                trend_atr_window = int(config.get("trend_strength_atr_window", 14))
-                atr_series = true_range.rolling(window=trend_atr_window, min_periods=1).mean()
+                # NOTE: ATR-based TrendStrength is REMOVED from label generation.
+                # It was previously used to adjust labels via profit_factor/stop_factor.
+                # Now we use pure volatility-scaled labeling (y = return > k * vol).
+                # ATR is only kept for barrier adjustment purposes.
+                atr_series = true_range.rolling(window=14, min_periods=1).mean()
 
-                # Use HPO trend_lookback if available
-                trend_delta_lookback = hpo_trend_lookback if "trend_lookback" in params else int(config.get("trend_strength_delta_lookback", 4))
-                price_delta = close_prices.diff(trend_delta_lookback).abs()
-
-                trend_strength = (price_delta / (atr_series + 1e-8)).replace([np.inf, -np.inf], np.nan)
-                trend_strength = trend_strength.clip(
-                    lower=0.0,
-                    upper=float(config.get("trend_strength_clip", 5.0)),
-                ).fillna(0.0)
-
-                # Use HPO trend_alpha if available, otherwise fall back to config
-                trend_alpha_profit = hpo_trend_alpha if "trend_alpha" in params else float(config.get("trend_strength_alpha_profit", 0.5))
-                trend_beta = float(config.get("trend_strength_beta_stop", 0.5))
-
-                profit_factor = 1.0 + trend_alpha_profit * trend_strength
-                stop_factor = 1.0 + trend_beta * trend_strength
+                # Simple profit/stop factors for barrier adjustment only
+                # (these do NOT affect volatility-scaled label generation)
+                profit_factor = pd.Series(1.0, index=market_data.index)
+                stop_factor = pd.Series(1.0, index=market_data.index)
 
                 # =====================================================================
                 # Z-Score Gated Barrier Calculation (when new params are provided)
@@ -3761,16 +4564,21 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 use_zscore_gated_barriers = "k_tp_base" in params or "z_magnitude_scale" in params
                 
                 if use_zscore_gated_barriers:
-                    # NEW: Use rolling volatility with configurable lookback
-                    rolling_vol = volatility_1d.rolling(rolling_vol_lookback, min_periods=10).mean()
+                    # Use rolling volatility with EMA span from vol-scaled labeling params
+                    barrier_vol_span = int(params.get("volatility_ema_span", 48))
+                    log_returns = np.log(close_prices / close_prices.shift(1))
+                    rolling_vol = compute_ema_volatility(log_returns, span=barrier_vol_span, min_periods=10)
                     
                     # Base barriers using new k_tp_base and k_sl_base multipliers
                     tp_base = k_tp_base * rolling_vol
                     sl_base = k_sl_base * rolling_vol
                     
-                    # Z-score magnitude scaling (if we had z-scores)
-                    # For now, use trend_strength as a proxy for signal magnitude
-                    z_proxy = trend_strength.clip(0, 3)
+                    # Z-score magnitude scaling using the vol_z_scores from vol-scaled labeling
+                    # If not available, use simple absolute return magnitude
+                    try:
+                        z_proxy = vol_z_scores.reindex(market_data.index).abs().clip(0, 3).fillna(1.0)
+                    except Exception:
+                        z_proxy = pd.Series(1.0, index=market_data.index)
                     z_scale_factor = 1.0 + z_magnitude_scale * z_proxy
                     
                     # Apply direction-specific multipliers based on consensus signal
@@ -3792,14 +4600,19 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                         adaptive_profit.loc[short_mask] = tp_base.loc[short_mask] * k_tp_short_mult * z_scale_factor.loc[short_mask]
                         adaptive_stop.loc[short_mask] = sl_base.loc[short_mask] * k_sl_short_mult
                     
-                    # Apply trend adjustment (LINEAR formula)
-                    # Normalize trend_strength to [-1, 1] range for adjustment
-                    trend_norm = (trend_strength / (trend_strength.quantile(0.95) + 1e-8)).clip(-1, 1)
+                    # Apply barrier trend adjustment (independent from vol-scaled labeling trend)
+                    # This uses simple returns-based trend, NOT ATR-based TrendStrength
+                    barrier_trend_alpha = float(params.get("barrier_trend_alpha", 0.2))
+                    barrier_trend_lookback = int(params.get("barrier_trend_lookback", 20))
+                    
+                    simple_trend = log_returns.rolling(barrier_trend_lookback, min_periods=5).mean()
+                    simple_trend = simple_trend / (rolling_vol + 1e-8)  # Normalize by vol
+                    simple_trend_norm = simple_trend.clip(-1, 1).fillna(0)
                     
                     # For longs: positive trend → increase TP
-                    trend_adj_long = 1.0 + hpo_trend_alpha * trend_norm
+                    trend_adj_long = 1.0 + barrier_trend_alpha * simple_trend_norm
                     # For shorts: negative trend → increase TP
-                    trend_adj_short = 1.0 - hpo_trend_alpha * trend_norm
+                    trend_adj_short = 1.0 - barrier_trend_alpha * simple_trend_norm
                     
                     if long_mask.any():
                         adaptive_profit.loc[long_mask] = adaptive_profit.loc[long_mask] * trend_adj_long.loc[long_mask]
@@ -3866,80 +4679,206 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     trail_distance_atr_mult=trail_dist,
                 )
 
-                # Basic diagnostics on raw realized returns and labels before
-                # any vol-scaling or quantile-based relabeling.
+                # Basic diagnostics on raw realized returns and labels
                 n_raw_events = len(realized_returns)
                 n_raw_labeled = int((~binary_labels.isna()).sum())
+                
+                # =====================================================================
+                # NEW: Volatility-Scaled Label Generation (y = return > k * volatility)
+                # =====================================================================
+                # Extract new volatility-scaled labeling parameters
+                volatility_ema_span = int(params.get("volatility_ema_span", 48))
+                volatility_ema_span = max(32, min(64, volatility_ema_span))
+                
+                rolling_k_window = int(params.get("rolling_k_window", 400))
+                rolling_k_window = max(300, min(500, rolling_k_window))
+                
+                # Sigmoid regime adaptation parameters
+                p_min = float(params.get("p_min", 0.25))
+                p_min = max(0.25, min(0.35, p_min))
+                p_max = float(params.get("p_max", 0.75))
+                p_max = max(0.60, min(0.80, p_max))
+                
+                sigmoid_slope = float(params.get("sigmoid_slope", 2.0))
+                sigmoid_slope = max(1.5, min(3.0, sigmoid_slope))
+                sigmoid_midpoint = float(params.get("sigmoid_midpoint", 0.0))
+                sigmoid_midpoint = max(-0.2, min(0.2, sigmoid_midpoint))
+                
+                median_vol_lookback = int(params.get("median_vol_lookback", 400))
+                median_vol_lookback = max(300, min(500, median_vol_lookback))
+                regime_trend_lookback = int(params.get("regime_trend_lookback", 20))
+                regime_trend_lookback = max(10, min(30, regime_trend_lookback))
+                
+                # Weighted combination parameters (fixed, not HPO tuned)
+                trend_weight = 0.65
+                vol_weight = 0.35
+                
+                # k_t clipping parameters (to prevent over-filtering)
+                k_max_percentile = 0.99
+                k_min_percentile = 0.01
+                
+                # Economic floor
+                econ_floor = DEFAULT_TRANSACTION_COST * econ_min_mult
+                
                 if debug_sample_count < debug_sample_limit:
                     tprint_info(
                         f"[HPO_DEBUG_LABELS] raw_events={n_raw_events}, raw_labeled={n_raw_labeled}, "
-                        f"profit_thr_base={profit_thr_base:.6f}, stop_thr_base={stop_thr_base:.6f}, "
-                        f"econ_min_mult={econ_min_mult:.3f}, label_low_q={label_low_q:.3f}, label_high_q={label_high_q:.3f}",
+                        f"vol_ema_span={volatility_ema_span}, rolling_k_window={rolling_k_window}, "
+                        f"p_min={p_min:.2f}, p_max={p_max:.2f}, sigmoid_slope={sigmoid_slope:.2f}",
                     )
 
-                # Replace legacy R-multiple based labels with quantile-based labels
-                # derived from volatility-scaled realized returns, to improve label
-                # balance and economic relevance in HPO scoring.
-                #
-                # NO FUTURE VOLATILITY LEAKAGE:
-                # - volatility_1d at time T uses only data from T-96 to T-1 (backward-looking)
-                # - realized_returns at time T uses future prices (expected for labeling)
-                # - vol_scaled = realized_returns / past_volatility (no future vol leakage)
-                #
-                # NOTE: Quantile thresholds are computed from ALL training data, which is
-                # acceptable for HPO/training. In production, use expanding/rolling quantiles.
-                vol_scaled_returns = compute_vol_scaled_returns_for_events(
+                # Generate volatility-scaled labels using the new approach
+                # y = future_return > k_t * rolling_volatility
+                # where k_t adapts to regime (weighted combination of trend + vol_score)
+                vol_scaled_labels, vol_z_scores, vol_diag = create_volatility_scaled_labels_for_events(
                     realized_returns=realized_returns,
-                    volatility=volatility_1d,
-                    econ_min_return_multiple=econ_min_mult,
+                    market_data=market_data,
+                    volatility_ema_span=volatility_ema_span,
+                    rolling_k_window=rolling_k_window,
+                    median_vol_lookback=median_vol_lookback,
+                    trend_lookback=regime_trend_lookback,
+                    p_min=p_min,
+                    p_max=p_max,
+                    sigmoid_slope=sigmoid_slope,
+                    sigmoid_midpoint=sigmoid_midpoint,
+                    trend_weight=trend_weight,
+                    vol_weight=vol_weight,
+                    k_max_percentile=k_max_percentile,
+                    k_min_percentile=k_min_percentile,
+                    min_periods=100,
+                    clip_zscore=5.0,
+                    econ_floor=econ_floor,
                 )
+                
+                # Use volatility-scaled labels instead of quantile-based
+                binary_labels = vol_scaled_labels
 
-                n_vol_scaled_events = int(vol_scaled_returns.dropna().size)
-                if debug_sample_count < debug_sample_limit:
-                    tprint_info(
-                        f"[HPO_DEBUG_LABELS] vol_scaled_events={n_vol_scaled_events}",
-                    )
-
-                # Decide whether to use regime-aware quantiles based on the
-                # attached HMM regimes (typically 1h) on market_data.
-                regimes_for_labeling = None
-                if config.get("enable_regime_aware_quantiles", True) and "hmm_regime_label_1h" in market_data.columns:
-                    regimes_for_labeling = market_data["hmm_regime_label_1h"]
-
-                def _make_quantile_labels(vol_scaled_series: pd.Series) -> pd.Series:
-                    """Helper to create (regime-aware) quantile labels from a score series."""
-                    if regimes_for_labeling is not None:
-                        return create_regime_aware_quantile_labels_from_vol_scaled_returns(
-                            vol_scaled=vol_scaled_series,
-                            regimes=regimes_for_labeling,
-                            low_q=label_low_q,
-                            high_q=label_high_q,
-                        )
-                    return create_quantile_labels_from_vol_scaled_returns(
-                        vol_scaled=vol_scaled_series,
-                        low_q=label_low_q,
-                        high_q=label_high_q,
-                    )
-
-                # Primary quantile labels on vol-scaled returns with the
-                # HPO-chosen economic floor.
-                quantile_labels = _make_quantile_labels(vol_scaled_returns)
-                binary_labels = quantile_labels
-
-                n_quantile_non_nan = int((~quantile_labels.isna()).sum())
-                unique_quantile_vals: list[int] = []
-                if n_quantile_non_nan > 0:
+                n_vol_scaled_events = int(binary_labels.dropna().size)
+                unique_vol_labels: list[int] = []
+                if n_vol_scaled_events > 0:
                     try:
-                        unique_quantile_vals = sorted(
-                            pd.unique(quantile_labels.dropna().astype(int)).tolist()
+                        unique_vol_labels = sorted(
+                            pd.unique(binary_labels.dropna().astype(int)).tolist()
                         )
                     except Exception:
-                        unique_quantile_vals = []
+                        unique_vol_labels = []
                 if debug_sample_count < debug_sample_limit:
                     tprint_info(
-                        f"[HPO_DEBUG_LABELS] quantile_labels_non_nan={n_quantile_non_nan}, "
-                        f"unique_labels={unique_quantile_vals}",
+                        f"[HPO_DEBUG_LABELS] vol_scaled_labels={n_vol_scaled_events}, "
+                        f"unique_labels={unique_vol_labels}, "
+                        f"positive_ratio={vol_diag.get('positive_ratio', 'N/A'):.2%}" if vol_diag.get('positive_ratio') else "",
                     )
+
+                # =====================================================================
+                # EARLY TRIAL REJECTION CHECK
+                # =====================================================================
+                # Check if this configuration should be rejected early
+                try:
+                    # Compute volatility for regime bucketing
+                    log_returns_for_vol = np.log(close_prices / close_prices.shift(1))
+                    vol_for_regime = compute_ema_volatility(log_returns_for_vol, span=volatility_ema_span, min_periods=10)
+                    
+                    rejection_result = check_early_trial_rejection(
+                        binary_labels=binary_labels,
+                        z_scores=vol_z_scores,
+                        k_t=vol_diag.get("k_t_series"),  # If available in diagnostics
+                        volatility=vol_for_regime,
+                        k_t_clipping_rate_threshold=0.20,
+                        min_labels_per_year=50,
+                        min_labels_per_regime=20,
+                    )
+                    
+                    if rejection_result.rejected:
+                        log_trial_rejection(
+                            rejection=rejection_result,
+                            trial_id=debug_sample_count,
+                            params=params,
+                        )
+                        gate_stats["early_rejection"] = gate_stats.get("early_rejection", 0) + 1
+                        gate_stats[f"reject_{rejection_result.constraint}"] = gate_stats.get(f"reject_{rejection_result.constraint}", 0) + 1
+                        return -1e9
+                except Exception as e:
+                    if debug_sample_count < debug_sample_limit:
+                        tprint_warning(f"[EARLY_REJECTION] Check failed: {e}")
+
+                # =====================================================================
+                # LABEL DENSITY DRIFT MONITORING
+                # =====================================================================
+                try:
+                    drift_report = monitor_label_density_drift(
+                        binary_labels=binary_labels,
+                        window_bars=500,
+                        alert_threshold_drop=0.15,
+                    )
+                    
+                    if drift_report.get("monitoring_enabled", False):
+                        drift = drift_report.get("drift", 0)
+                        alerts = drift_report.get("alerts", [])
+                        
+                        if debug_sample_count < debug_sample_limit:
+                            tprint_info(
+                                f"[LABEL_DRIFT] pos%: {drift_report.get('initial_positive_pct', 0):.1%} → "
+                                f"{drift_report.get('final_positive_pct', 0):.1%} (drift={drift:+.1%})"
+                            )
+                        
+                        if alerts:
+                            for alert in alerts:
+                                tprint_warning(f"[LABEL_DRIFT_ALERT] {alert}")
+                except Exception as e:
+                    if debug_sample_count < debug_sample_limit:
+                        tprint_warning(f"[LABEL_DRIFT] Monitoring failed: {e}")
+
+                # =====================================================================
+                # COMPREHENSIVE LABEL DIAGNOSTICS (SNR-based)
+                # =====================================================================
+                label_diagnostics: Optional[LabelDiagnostics] = None
+                try:
+                    label_diagnostics = compute_label_diagnostics(
+                        binary_labels=binary_labels,
+                        realized_returns=realized_returns,
+                        z_scores=vol_z_scores,
+                        k_t=vol_diag.get("k_t_series"),
+                        p_positive=vol_diag.get("p_positive_series"),
+                        volatility=vol_for_regime if 'vol_for_regime' in dir() else None,
+                        exit_reasons=exit_reasons,
+                        mfe=mfe_series,
+                        mae=mae_series,
+                        market_data=market_data,
+                    )
+                    
+                    if debug_sample_count < debug_sample_limit:
+                        diag = label_diagnostics
+                        tprint_info(
+                            f"[LABEL_DIAG] total={diag.total_labels}, pos={diag.pos_labels_count}, neg={diag.neg_labels_count}, "
+                            f"ratio={diag.positive_ratio:.1%}, labels/day={diag.labels_per_day:.2f}"
+                        )
+                        tprint_info(
+                            f"[LABEL_DIAG] k_t: median={diag.k_t_median:.3f}, mean={diag.k_t_mean:.3f}, "
+                            f"z: median={diag.z_score_median:.3f}, p_target: mean={diag.p_target_mean:.3f}"
+                        )
+                        if diag.win_rate_tp_vs_sl and not np.isnan(diag.win_rate_tp_vs_sl):
+                            tprint_info(
+                                f"[LABEL_DIAG] win_rate_TP_vs_SL={diag.win_rate_tp_vs_sl:.1%}, "
+                                f"avg_TP={diag.avg_return_on_tp:.4f}, avg_SL={diag.avg_loss_on_sl:.4f}, "
+                                f"RR={diag.realized_rr:.2f}"
+                            )
+                        if diag.labels_per_month:
+                            monthly_vals = list(diag.labels_per_month.values())
+                            tprint_info(
+                                f"[LABEL_DIAG] monthly: min={min(monthly_vals)}, max={max(monthly_vals)}, "
+                                f"trend_slope={diag.label_trend_slope:.2f}, zero_months={diag.months_with_zero_labels}"
+                            )
+                        
+                        # Alert conditions
+                        if diag.win_rate_tp_vs_sl and not np.isnan(diag.win_rate_tp_vs_sl) and diag.win_rate_tp_vs_sl < 0.35:
+                            tprint_warning(f"[ALERT] win_rate_TP_vs_SL={diag.win_rate_tp_vs_sl:.1%} < 35%")
+                        if diag.label_trend_slope < -5.0:
+                            tprint_warning(f"[ALERT] Declining label trend: slope={diag.label_trend_slope:.2f}")
+                        if diag.unique_days_with_labels < 10:
+                            tprint_warning(f"[ALERT] Labels clustered to only {diag.unique_days_with_labels} days")
+                except Exception as e:
+                    if debug_sample_count < debug_sample_limit:
+                        tprint_warning(f"[LABEL_DIAG] Computation failed: {e}")
 
                 # Guard: configurations that produce no labeled events at all are
                 # rejected outright; sparse but non-zero densities are handled via
@@ -3962,13 +4901,12 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     if debug_sample_count < debug_sample_limit:
                         tprint_warning(
                             f"[HPO_DEBUG_LABELS] rejecting config with zero labeled events: "
-                            f"raw_labeled={n_raw_labeled}, vol_non_nan={n_vol_scaled_events}, "
-                            f"quantile_non_nan={n_quantile_non_nan}",
+                            f"raw_labeled={n_raw_labeled}, vol_scaled_labels={n_vol_scaled_events}",
                         )
                     tprint_warning(
                         f"[EARLY_EXIT_EVENTS] Zero labeled events: n_events={n_events}, "
                         f"events_per_day={events_per_day:.3f}, raw_labeled={n_raw_labeled}, "
-                        f"vol_non_nan={n_vol_scaled_events}, quantile_non_nan={n_quantile_non_nan}",
+                        f"vol_scaled_labels={n_vol_scaled_events}",
                     )
                     gate_stats["events_zero"] = gate_stats.get("events_zero", 0) + 1
                     return -1e9
@@ -6701,28 +7639,17 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 low_prices = market_data["low"] if "low" in market_data.columns else market_data["close"]
                 close_prices = market_data["close"]
 
+                # ATR for barrier adjustment (independent from volatility-scaled labeling)
                 tr1 = high_prices - low_prices
                 tr2 = (high_prices - close_prices.shift(1)).abs()
                 tr3 = (low_prices - close_prices.shift(1)).abs()
                 true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+                atr_series = true_range.rolling(window=14, min_periods=1).mean()
 
-                trend_atr_window = int(config.get("trend_strength_atr_window", 14))
-                atr_series = true_range.rolling(window=trend_atr_window, min_periods=1).mean()
-
-                trend_delta_lookback = int(config.get("trend_strength_delta_lookback", 4))
-                price_delta = close_prices.diff(trend_delta_lookback).abs()
-
-                trend_strength = (price_delta / (atr_series + 1e-8)).replace([np.inf, -np.inf], np.nan)
-                trend_strength = trend_strength.clip(
-                    lower=0.0,
-                    upper=float(config.get("trend_strength_clip", 5.0)),
-                ).fillna(0.0)
-
-                trend_alpha = float(config.get("trend_strength_alpha_profit", 0.5))
-                trend_beta = float(config.get("trend_strength_beta_stop", 0.5))
-
-                profit_factor = 1.0 + trend_alpha * trend_strength
-                stop_factor = 1.0 + trend_beta * trend_strength
+                # NOTE: ATR-based TrendStrength removed - now using pure volatility-scaled labeling
+                # Simple profit/stop factors for barriers only
+                profit_factor = pd.Series(1.0, index=market_data.index)
+                stop_factor = pd.Series(1.0, index=market_data.index)
 
                 adaptive_profit = profit_thr_base * vol_factor * profit_factor
                 adaptive_stop = stop_thr_base * vol_factor * stop_factor

@@ -31,6 +31,7 @@ Based on guidance from "Advances in Financial Machine Learning" by Marcos López
 import asyncio
 import logging
 import json
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Union, Tuple
 from datetime import datetime
 from pathlib import Path
@@ -98,6 +99,25 @@ from src.feature_generation.utils.step06_labeling_components.trend_aware_meta_la
     TrendAwareMetaLabeler,
     MultiTimeframeConfig,
 )
+
+# LGBM Feature Selection utilities (2025-12-08)
+try:
+    from .lgbm_feature_selection import (
+        lgbm_feature_selection_pipeline,
+        select_features_lgbm_for_meta_labeling,
+        select_features_by_importance_lgbm,
+        FeatureSetPersistence,
+        FEATURE_SELECTION_CONFIG,
+    )
+    LGBM_FEATURE_SELECTION_AVAILABLE = True
+except ImportError:
+    LGBM_FEATURE_SELECTION_AVAILABLE = False
+
+# META_FEATURE_COLUMNS for regime-aware feature handling
+try:
+    from src.utils.ml_common.optimization.diversity_defense_objectives import META_FEATURE_COLUMNS
+except ImportError:
+    META_FEATURE_COLUMNS = []
 
 logger = logging.getLogger(__name__)
 
@@ -270,13 +290,14 @@ DEFAULT_STOP_THRESHOLD = 0.005   # 0.5%
 DEFAULT_TRANSACTION_COST = 0.003  # 0.30% per trade (increased from 0.15% for more realistic modeling)
 R_MULTIPLE_POS_THRESHOLD = 0.7
 R_MULTIPLE_NEG_THRESHOLD = -0.25
-ECON_MIN_RETURN_MULTIPLE = 2.0
+# Set to 1.5 (balanced between 1.0 and 2.0) for reasonable event filtering
+ECON_MIN_RETURN_MULTIPLE = 1.5
 TARGET_POWER = 1.5
 # Hard floor for profit targets to ensure viability after transaction costs
 PROFIT_TARGET_FLOOR_BPS = 50  # 0.5% = 50 basis points (must exceed slippage + fees)
 PROFITABLE_TIMEOUT_RETURN_THRESHOLD = 0.005
-# Default probability threshold for meta-gating
-DEFAULT_PROBABILITY_THRESHOLD = 0.60
+# Default probability threshold for meta-gating (lowered from 0.65 for more trades)
+DEFAULT_PROBABILITY_THRESHOLD = 0.55
 # Default expected return threshold (lowered from 0.45% to 0.30%)
 DEFAULT_EXPECTED_RETURN_THRESHOLD = 0.003  # 0.30%
 
@@ -2047,6 +2068,655 @@ def create_conditional_quantile_labels(
         traceback.print_exc()
     
     return labels, labels_long, labels_short, diagnostics
+
+
+# ==============================================================================
+# VOLATILITY-BASED LABELING SYSTEM
+# ==============================================================================
+# These functions implement the new volatility-scaled labeling approach:
+#   y = future_return > k_t * rolling_volatility
+# Where k_t is a dynamic threshold that adapts to market regimes.
+# ==============================================================================
+
+
+def compute_ema_volatility(
+    returns: pd.Series,
+    span: int = 48,
+    min_periods: int = 10,
+) -> pd.Series:
+    """Compute rolling volatility using EMA of squared returns.
+    
+    Uses the formula: volatility_t = sqrt(EMA(return^2, span=N))
+    
+    This provides a responsive, smooth estimate of recent volatility that:
+    - Avoids excessive lag from simple rolling windows
+    - Responds quickly to volatility regime changes
+    - Is suitable for dynamic threshold calibration
+    
+    Args:
+        returns: Log returns or percentage returns series
+        span: EMA span in bars (recommended: 32-64 bars for 15m data = 8-16h)
+        min_periods: Minimum periods before computing volatility
+    
+    Returns:
+        Series of EMA-based volatility estimates
+    """
+    # Compute squared returns
+    squared_returns = returns ** 2
+    
+    # Compute EMA of squared returns
+    ema_sq_ret = squared_returns.ewm(span=span, min_periods=min_periods, adjust=False).mean()
+    
+    # Take square root to get volatility (standard deviation estimate)
+    ema_volatility = np.sqrt(ema_sq_ret)
+    
+    # Replace zeros and infinities with NaN
+    ema_volatility = ema_volatility.replace([0.0, np.inf, -np.inf], np.nan)
+    
+    return ema_volatility
+
+
+def compute_regime_metrics(
+    volatility: pd.Series,
+    returns: pd.Series,
+    median_lookback_bars: int = 400,
+    trend_lookback_bars: int = 20,
+    min_periods: int = 50,
+) -> Tuple[pd.Series, pd.Series]:
+    """Compute regime metrics for dynamic threshold adaptation.
+    
+    Computes two regime metrics:
+    1. Volatility ratio: current_vol / median_vol_over_window
+       - > 1 means higher than typical volatility
+       - < 1 means lower than typical volatility
+       
+    2. Trend strength: rolling_mean(returns) / rolling_vol
+       - Positive = upward trend
+       - Negative = downward trend
+       - Near zero = mean-reverting / choppy
+    
+    Args:
+        volatility: EMA-based volatility series
+        returns: Returns series
+        median_lookback_bars: Window for computing median volatility (300-500 bars = 3-5 days)
+        trend_lookback_bars: Window for computing trend strength (10-30 bars)
+        min_periods: Minimum periods for rolling calculations
+    
+    Returns:
+        Tuple of (volatility_ratio, trend_strength) series
+    """
+    # Volatility ratio: current_vol / median_vol
+    # Use rolling median for robustness to outliers
+    median_vol = volatility.rolling(
+        window=median_lookback_bars, 
+        min_periods=min_periods
+    ).median()
+    
+    volatility_ratio = volatility / (median_vol + 1e-8)
+    volatility_ratio = volatility_ratio.replace([np.inf, -np.inf], np.nan)
+    
+    # Trend strength: rolling_mean(returns) / rolling_vol
+    rolling_mean_returns = returns.rolling(
+        window=trend_lookback_bars, 
+        min_periods=min_periods // 2
+    ).mean()
+    rolling_vol = volatility.rolling(
+        window=trend_lookback_bars, 
+        min_periods=min_periods // 2
+    ).mean()
+    
+    trend_strength = rolling_mean_returns / (rolling_vol + 1e-8)
+    trend_strength = trend_strength.replace([np.inf, -np.inf], np.nan)
+    
+    # Clip extreme values
+    volatility_ratio = volatility_ratio.clip(0.1, 10.0)
+    trend_strength = trend_strength.clip(-5.0, 5.0)
+    
+    return volatility_ratio, trend_strength
+
+
+def compute_target_positive_fraction(
+    trend_strength: pd.Series,
+    volatility_ratio: pd.Series,
+    p_min: float = 0.25,
+    p_max: float = 0.75,
+    sigmoid_slope: float = 2.0,
+    sigmoid_midpoint: float = 0.0,
+    trend_weight: float = 0.65,
+    vol_weight: float = 0.35,
+) -> pd.Series:
+    """Compute target positive label fraction using sigmoid function with weighted combination.
+    
+    Uses a sigmoid function combining trend and volatility metrics with a weighted
+    combination to prevent over-filtering in high volatility regimes:
+    
+    trend_score = trend_strength (rolling_mean_return / rolling_vol)
+    vol_score = clip(1.0 / volatility_ratio, 0.5, 2.0)
+    score = trend_weight * trend_score + vol_weight * vol_score
+    
+    p_positive(t) = p_min + (p_max - p_min) / (1 + exp(-a * (score - b)))
+    
+    Where:
+        - p_min, p_max = min/max target positive fraction (e.g., 0.25, 0.75)
+        - a = sigmoid_slope (controls sensitivity, 1.5-3.0)
+        - b = sigmoid_midpoint (central reference point, -0.2 to 0.2)
+        - trend_weight = 0.65 (primary driver)
+        - vol_weight = 0.35 (secondary stabilizer)
+    
+    The weighted combination prevents high volatility alone from suppressing
+    positive fraction, since vol_score is bounded and weighted lower.
+    
+    Args:
+        trend_strength: Trend strength series (mean returns / vol)
+        volatility_ratio: Volatility ratio series (current_vol / median_vol)
+        p_min: Minimum target positive fraction (default: 0.25)
+        p_max: Maximum target positive fraction (default: 0.75)
+        sigmoid_slope: Slope parameter 'a' (default: 2.0, HPO range: 1.5-3.0)
+        sigmoid_midpoint: Midpoint parameter 'b' (default: 0.0, HPO range: -0.2 to 0.2)
+        trend_weight: Weight for trend_score (default: 0.65)
+        vol_weight: Weight for vol_score (default: 0.35)
+    
+    Returns:
+        Series of target positive fractions in [p_min, p_max]
+    """
+    # Compute trend_score: already normalized (return / vol)
+    trend_score = trend_strength
+    
+    # Compute vol_score: inverse of volatility ratio, clipped to [0.5, 2.0]
+    # When volatility is high (vol_ratio > 1), vol_score < 1 (but >= 0.5)
+    # When volatility is low (vol_ratio < 1), vol_score > 1 (but <= 2.0)
+    # This prevents extreme volatility from dominating the signal
+    vol_score = (1.0 / (volatility_ratio + 1e-8)).clip(0.5, 2.0)
+    
+    # Weighted combination: trend dominates but vol provides stability
+    score = trend_weight * trend_score + vol_weight * vol_score
+    
+    # Apply sigmoid function
+    exponent = -sigmoid_slope * (score - sigmoid_midpoint)
+    
+    # Clip exponent to avoid overflow
+    exponent = exponent.clip(-20, 20)
+    
+    sigmoid_output = 1.0 / (1.0 + np.exp(exponent))
+    
+    # Scale to [p_min, p_max]
+    p_positive = p_min + (p_max - p_min) * sigmoid_output
+    
+    return p_positive
+
+
+def compute_dynamic_threshold_k(
+    z_scores: pd.Series,
+    p_positive: pd.Series,
+    rolling_window: int = 400,
+    min_periods: int = 100,
+    k_max_percentile: float = 0.99,
+    k_min_percentile: float = 0.01,
+) -> pd.Series:
+    """Compute dynamic threshold k_t for volatility-scaled labeling.
+    
+    Computes: k_t = quantile_{1 - p_positive(t)}(z over rolling window)
+    
+    This threshold adapts to:
+    - The target positive label fraction (regime-dependent)
+    - Recent z-score distribution (rolling quantile)
+    
+    Optional clipping ensures k_t never exceeds bounds that would exclude
+    nearly all high-volatility moves:
+    - k_max: 99th percentile of historical z-scores (upper bound)
+    - k_min: 1st percentile of historical z-scores (lower bound)
+    
+    The label is then assigned as:
+        y_t = 1 if future_return_t > k_t * rolling_volatility_t
+    
+    Args:
+        z_scores: Volatility-normalized z-scores (future_return / vol)
+        p_positive: Target positive fraction series (from sigmoid function)
+        rolling_window: Rolling window for quantile computation (300-500 bars)
+        min_periods: Minimum periods for rolling quantile
+        k_max_percentile: Upper percentile bound for k_t (default: 0.99)
+        k_min_percentile: Lower percentile bound for k_t (default: 0.01)
+    
+    Returns:
+        Series of dynamic threshold k values
+    """
+    k_t = pd.Series(index=z_scores.index, dtype=float)
+    k_t[:] = np.nan
+    
+    # We need to compute rolling quantiles at the (1 - p_positive) level
+    # This is done per-timestep with expanding/rolling windows
+    
+    valid_idx = z_scores.dropna().index
+    if len(valid_idx) < min_periods:
+        return k_t
+    
+    # Convert to numpy for efficient computation
+    z_arr = z_scores.to_numpy()
+    p_arr = p_positive.reindex(z_scores.index).to_numpy()
+    
+    # Compute global bounds for k_t clipping (prevents over-filtering)
+    z_valid = z_arr[~np.isnan(z_arr)]
+    if len(z_valid) >= min_periods:
+        k_upper_bound = float(np.quantile(z_valid, k_max_percentile))
+        k_lower_bound = float(np.quantile(z_valid, k_min_percentile))
+    else:
+        k_upper_bound = 5.0  # Fallback max
+        k_lower_bound = -5.0  # Fallback min
+    
+    # Use rolling window approach
+    for i in range(min_periods, len(z_arr)):
+        if np.isnan(p_arr[i]) or np.isnan(z_arr[i]):
+            continue
+            
+        # Get rolling window of z-scores
+        start_idx = max(0, i - rolling_window)
+        z_window = z_arr[start_idx:i]  # Exclude current (no lookahead)
+        z_window = z_window[~np.isnan(z_window)]
+        
+        if len(z_window) < min_periods // 2:
+            continue
+        
+        # Compute quantile at (1 - p_positive)
+        quantile_level = 1.0 - p_arr[i]
+        quantile_level = np.clip(quantile_level, 0.05, 0.95)  # Safety bounds
+        
+        k_raw = float(np.quantile(z_window, quantile_level))
+        
+        # Apply clipping to prevent over-filtering
+        k_t.iloc[i] = np.clip(k_raw, k_lower_bound, k_upper_bound)
+    
+    return k_t
+
+
+def create_volatility_scaled_labels(
+    future_returns: pd.Series,
+    close_prices: pd.Series,
+    # Volatility parameters
+    volatility_ema_span: int = 48,
+    # Dynamic threshold parameters
+    rolling_k_window: int = 400,
+    median_vol_lookback: int = 400,
+    trend_lookback: int = 20,
+    # Sigmoid parameters for p_positive
+    p_min: float = 0.25,
+    p_max: float = 0.75,
+    sigmoid_slope: float = 2.0,
+    sigmoid_midpoint: float = 0.0,
+    # Weighted combination parameters
+    trend_weight: float = 0.65,
+    vol_weight: float = 0.35,
+    # k_t clipping parameters
+    k_max_percentile: float = 0.99,
+    k_min_percentile: float = 0.01,
+    # General parameters
+    min_periods: int = 100,
+    clip_zscore: float = 5.0,
+    econ_floor: Optional[float] = None,
+) -> Tuple[pd.Series, pd.Series, Dict[str, Any]]:
+    """Create volatility-scaled labels using dynamic threshold k.
+    
+    This implements the full volatility-based labeling pipeline:
+    
+    1. Volatility Estimation: vol_t = sqrt(EMA(return^2, span=N))
+    2. Regime Metrics:
+       - volatility_ratio = current_vol / median_vol
+       - trend_strength = mean(returns) / vol
+    3. Target Positive Fraction via sigmoid with weighted combination:
+       trend_score = trend_strength
+       vol_score = clip(1 / volatility_ratio, 0.5, 2.0)
+       score = 0.65 * trend_score + 0.35 * vol_score
+       p_positive(t) = p_min + (p_max - p_min) / (1 + exp(-a * (score - b)))
+    4. Z-score computation: z_t = future_return_t / vol_t
+    5. Dynamic threshold: k_t = quantile_{1-p_positive}(z over rolling window)
+       with clipping at 99th percentile to prevent over-filtering
+    6. Label assignment: y_t = 1 if future_return_t > k_t * vol_t
+    
+    Key benefits:
+    - Labels are relative to market volatility (not fixed percentiles)
+    - Threshold adapts to regime (trend + volatility conditions)
+    - Weighted combination prevents high volatility from suppressing labels
+    - k_t clipping prevents over-filtering in extreme conditions
+    - Works across different market environments
+    
+    Args:
+        future_returns: Future returns at each timestamp (the target to predict)
+        close_prices: Close price series for computing returns
+        volatility_ema_span: EMA span for volatility (32-64 bars = 8-16h at 15m)
+        rolling_k_window: Window for dynamic k quantile (300-500 bars = 3-5 days)
+        median_vol_lookback: Window for median volatility (300-500 bars)
+        trend_lookback: Window for trend strength (10-30 bars)
+        p_min: Minimum target positive fraction (HPO: 0.25-0.35)
+        p_max: Maximum target positive fraction (HPO: 0.6-0.8)
+        sigmoid_slope: Sigmoid slope parameter (HPO: 1.5-3.0)
+        sigmoid_midpoint: Sigmoid midpoint parameter (HPO: -0.2 to 0.2)
+        trend_weight: Weight for trend_score in combination (default: 0.65)
+        vol_weight: Weight for vol_score in combination (default: 0.35)
+        k_max_percentile: Upper percentile bound for k_t (default: 0.99)
+        k_min_percentile: Lower percentile bound for k_t (default: 0.01)
+        min_periods: Minimum periods for rolling calculations
+        clip_zscore: Maximum |z-score| to prevent outliers
+        econ_floor: Optional economic floor for filtering trivial returns
+    
+    Returns:
+        Tuple of (labels, z_scores, diagnostics)
+        - labels: Binary labels (1=positive, 0=negative, NaN=filtered)
+        - z_scores: Volatility-normalized z-scores
+        - diagnostics: Dict with computation diagnostics
+    """
+    labels = pd.Series(index=future_returns.index, dtype=float)
+    labels[:] = np.nan
+    
+    z_scores = pd.Series(index=future_returns.index, dtype=float)
+    z_scores[:] = np.nan
+    
+    diagnostics: Dict[str, Any] = {
+        "n_total": len(future_returns),
+        "n_labeled": 0,
+        "n_positive": 0,
+        "n_negative": 0,
+        "positive_ratio": np.nan,
+        "mean_k_threshold": np.nan,
+        "mean_volatility": np.nan,
+        "mean_vol_ratio": np.nan,
+        "mean_trend_strength": np.nan,
+        "mean_p_positive": np.nan,
+        "mean_z_score": np.nan,
+        "std_z_score": np.nan,
+    }
+    
+    try:
+        # Step 1: Compute returns for volatility estimation
+        log_returns = np.log(close_prices / close_prices.shift(1))
+        log_returns = log_returns.replace([np.inf, -np.inf], np.nan)
+        
+        # Step 2: Compute EMA-based volatility
+        ema_volatility = compute_ema_volatility(
+            returns=log_returns,
+            span=volatility_ema_span,
+            min_periods=min_periods // 4,
+        )
+        
+        # Step 3: Compute regime metrics
+        volatility_ratio, trend_strength = compute_regime_metrics(
+            volatility=ema_volatility,
+            returns=log_returns,
+            median_lookback_bars=median_vol_lookback,
+            trend_lookback_bars=trend_lookback,
+            min_periods=min_periods,
+        )
+        
+        # Step 4: Compute target positive fraction via sigmoid with weighted combination
+        p_positive = compute_target_positive_fraction(
+            trend_strength=trend_strength,
+            volatility_ratio=volatility_ratio,
+            p_min=p_min,
+            p_max=p_max,
+            sigmoid_slope=sigmoid_slope,
+            sigmoid_midpoint=sigmoid_midpoint,
+            trend_weight=trend_weight,
+            vol_weight=vol_weight,
+        )
+        
+        # Step 5: Compute z-scores (future returns normalized by volatility)
+        vol_aligned = ema_volatility.reindex(future_returns.index)
+        z_scores = future_returns / (vol_aligned + 1e-8)
+        z_scores = z_scores.replace([np.inf, -np.inf], np.nan)
+        z_scores = z_scores.clip(lower=-clip_zscore, upper=clip_zscore)
+        
+        # Step 6: Compute dynamic threshold k_t with clipping to prevent over-filtering
+        k_t = compute_dynamic_threshold_k(
+            z_scores=z_scores,
+            p_positive=p_positive,
+            rolling_window=rolling_k_window,
+            min_periods=min_periods,
+            k_max_percentile=k_max_percentile,
+            k_min_percentile=k_min_percentile,
+        )
+        
+        # Step 7: Assign labels: y_t = 1 if future_return > k_t * volatility
+        # Equivalently: y_t = 1 if z_t > k_t
+        valid_mask = (
+            z_scores.notna() & 
+            k_t.notna() & 
+            vol_aligned.notna() &
+            future_returns.notna()
+        )
+        
+        # Apply economic floor if specified
+        if econ_floor is not None and econ_floor > 0:
+            valid_mask = valid_mask & (future_returns.abs() >= econ_floor)
+        
+        # Assign labels based on z-score vs dynamic threshold
+        labels.loc[valid_mask & (z_scores > k_t)] = 1.0
+        labels.loc[valid_mask & (z_scores <= k_t)] = 0.0
+        
+        # Compute diagnostics
+        n_labeled = int(labels.notna().sum())
+        n_positive = int((labels == 1.0).sum())
+        n_negative = int((labels == 0.0).sum())
+        
+        diagnostics.update({
+            "n_labeled": n_labeled,
+            "n_positive": n_positive,
+            "n_negative": n_negative,
+            "positive_ratio": n_positive / n_labeled if n_labeled > 0 else np.nan,
+            "mean_k_threshold": float(k_t.mean()) if k_t.notna().any() else np.nan,
+            "mean_volatility": float(ema_volatility.mean()) if ema_volatility.notna().any() else np.nan,
+            "mean_vol_ratio": float(volatility_ratio.mean()) if volatility_ratio.notna().any() else np.nan,
+            "mean_trend_strength": float(trend_strength.mean()) if trend_strength.notna().any() else np.nan,
+            "mean_p_positive": float(p_positive.mean()) if p_positive.notna().any() else np.nan,
+            "mean_z_score": float(z_scores.mean()) if z_scores.notna().any() else np.nan,
+            "std_z_score": float(z_scores.std()) if z_scores.notna().any() else np.nan,
+        })
+        
+        tprint(
+            f"📊 Volatility-scaled labels: {n_labeled} labeled ({n_positive} pos, {n_negative} neg), "
+            f"ratio={n_positive/n_labeled:.1%}" if n_labeled > 0 else "📊 No labels generated",
+            "INFO"
+        )
+        tprint(
+            f"   Vol: mean={diagnostics['mean_volatility']:.4f}, "
+            f"k: mean={diagnostics['mean_k_threshold']:.3f}, "
+            f"z: mean={diagnostics['mean_z_score']:.3f} std={diagnostics['std_z_score']:.3f}",
+            "INFO"
+        )
+        
+    except Exception as e:
+        tprint(f"⚠️ Volatility-scaled labeling failed: {e}", "WARNING")
+        import traceback
+        traceback.print_exc()
+    
+    return labels, z_scores, diagnostics
+
+
+def create_volatility_scaled_labels_for_events(
+    realized_returns: pd.Series,
+    market_data: pd.DataFrame,
+    # Volatility parameters (HPO tunable)
+    volatility_ema_span: int = 48,
+    # Dynamic threshold parameters (HPO tunable)
+    rolling_k_window: int = 400,
+    median_vol_lookback: int = 400,
+    trend_lookback: int = 20,
+    # Sigmoid parameters (HPO tunable)
+    p_min: float = 0.25,
+    p_max: float = 0.75,
+    sigmoid_slope: float = 2.0,
+    sigmoid_midpoint: float = 0.0,
+    # Weighted combination parameters
+    trend_weight: float = 0.65,
+    vol_weight: float = 0.35,
+    # k_t clipping parameters
+    k_max_percentile: float = 0.99,
+    k_min_percentile: float = 0.01,
+    # General parameters
+    min_periods: int = 100,
+    clip_zscore: float = 5.0,
+    econ_floor: Optional[float] = None,
+) -> Tuple[pd.Series, pd.Series, Dict[str, Any]]:
+    """Create volatility-scaled labels for event-based returns.
+    
+    This is a convenience wrapper for create_volatility_scaled_labels that
+    works with event-based realized returns (from triple barrier or similar).
+    
+    The key difference from the base function:
+    - Takes event-based realized_returns (sparse, with NaN for non-events)
+    - Computes volatility from underlying market_data close prices
+    - Aligns all computations to the event timestamps
+    
+    This is the function to use in HPO for label generation.
+    
+    Args:
+        realized_returns: Event-based realized returns (NaN for non-events)
+        market_data: Full market data with 'close' column
+        volatility_ema_span: EMA span for volatility (32-64 bars)
+        rolling_k_window: Window for dynamic k quantile (300-500 bars)
+        median_vol_lookback: Window for median volatility (300-500 bars)
+        trend_lookback: Window for trend strength (10-30 bars)
+        p_min: Minimum target positive fraction (HPO: 0.25-0.35)
+        p_max: Maximum target positive fraction (HPO: 0.6-0.8)
+        sigmoid_slope: Sigmoid slope parameter (HPO: 1.5-3.0)
+        sigmoid_midpoint: Sigmoid midpoint parameter (HPO: -0.2 to 0.2)
+        trend_weight: Weight for trend_score in combination (default: 0.65)
+        vol_weight: Weight for vol_score in combination (default: 0.35)
+        k_max_percentile: Upper percentile bound for k_t (default: 0.99)
+        k_min_percentile: Lower percentile bound for k_t (default: 0.01)
+        min_periods: Minimum periods for calculations
+        clip_zscore: Maximum |z-score| 
+        econ_floor: Optional economic floor for filtering
+    
+    Returns:
+        Tuple of (labels, z_scores, diagnostics)
+    """
+    # Extract close prices
+    close_col = 'close' if 'close' in market_data.columns else 'Close'
+    if close_col not in market_data.columns:
+        tprint("⚠️ No 'close' column in market_data", "WARNING")
+        return (
+            pd.Series(np.nan, index=realized_returns.index),
+            pd.Series(np.nan, index=realized_returns.index),
+            {"error": "no close column"}
+        )
+    
+    close_prices = market_data[close_col]
+    
+    # Compute returns for volatility estimation (from full market data)
+    log_returns = np.log(close_prices / close_prices.shift(1))
+    log_returns = log_returns.replace([np.inf, -np.inf], np.nan)
+    
+    # Compute EMA-based volatility from market data
+    ema_volatility = compute_ema_volatility(
+        returns=log_returns,
+        span=volatility_ema_span,
+        min_periods=min_periods // 4,
+    )
+    
+    # Compute regime metrics from market data
+    volatility_ratio, trend_strength = compute_regime_metrics(
+        volatility=ema_volatility,
+        returns=log_returns,
+        median_lookback_bars=median_vol_lookback,
+        trend_lookback_bars=trend_lookback,
+        min_periods=min_periods,
+    )
+    
+    # Compute target positive fraction with weighted combination
+    p_positive = compute_target_positive_fraction(
+        trend_strength=trend_strength,
+        volatility_ratio=volatility_ratio,
+        p_min=p_min,
+        p_max=p_max,
+        sigmoid_slope=sigmoid_slope,
+        sigmoid_midpoint=sigmoid_midpoint,
+        trend_weight=trend_weight,
+        vol_weight=vol_weight,
+    )
+    
+    # Align volatility to event timestamps
+    vol_aligned = ema_volatility.reindex(realized_returns.index)
+    p_pos_aligned = p_positive.reindex(realized_returns.index)
+    
+    # Compute z-scores for events
+    z_scores = realized_returns / (vol_aligned + 1e-8)
+    z_scores = z_scores.replace([np.inf, -np.inf], np.nan)
+    z_scores = z_scores.clip(lower=-clip_zscore, upper=clip_zscore)
+    
+    # Compute dynamic threshold k_t with clipping
+    # For events, we use the full z-score series but only label at event times
+    full_z_for_quantile = pd.Series(index=market_data.index, dtype=float)
+    full_z_for_quantile[:] = np.nan
+    # Fill with event z-scores at event times
+    full_z_for_quantile.loc[z_scores.index] = z_scores
+    
+    k_t = compute_dynamic_threshold_k(
+        z_scores=full_z_for_quantile,
+        p_positive=p_positive,
+        rolling_window=rolling_k_window,
+        min_periods=min_periods,
+        k_max_percentile=k_max_percentile,
+        k_min_percentile=k_min_percentile,
+    )
+    
+    # Align k_t to event timestamps
+    k_t_aligned = k_t.reindex(realized_returns.index)
+    
+    # Initialize labels
+    labels = pd.Series(index=realized_returns.index, dtype=float)
+    labels[:] = np.nan
+    
+    # Valid mask
+    valid_mask = (
+        z_scores.notna() &
+        k_t_aligned.notna() &
+        vol_aligned.notna() &
+        realized_returns.notna()
+    )
+    
+    # Apply economic floor if specified
+    if econ_floor is not None and econ_floor > 0:
+        valid_mask = valid_mask & (realized_returns.abs() >= econ_floor)
+    
+    # Assign labels: y = 1 if z > k_t
+    labels.loc[valid_mask & (z_scores > k_t_aligned)] = 1.0
+    labels.loc[valid_mask & (z_scores <= k_t_aligned)] = 0.0
+    
+    # Compute diagnostics
+    n_labeled = int(labels.notna().sum())
+    n_positive = int((labels == 1.0).sum())
+    n_negative = int((labels == 0.0).sum())
+    
+    diagnostics: Dict[str, Any] = {
+        "n_total": len(realized_returns),
+        "n_events": int(realized_returns.notna().sum()),
+        "n_labeled": n_labeled,
+        "n_positive": n_positive,
+        "n_negative": n_negative,
+        "positive_ratio": n_positive / n_labeled if n_labeled > 0 else np.nan,
+        "mean_k_threshold": float(k_t_aligned.mean()) if k_t_aligned.notna().any() else np.nan,
+        "mean_volatility": float(vol_aligned.mean()) if vol_aligned.notna().any() else np.nan,
+        "mean_vol_ratio": float(volatility_ratio.mean()) if volatility_ratio.notna().any() else np.nan,
+        "mean_trend_strength": float(trend_strength.mean()) if trend_strength.notna().any() else np.nan,
+        "mean_p_positive": float(p_pos_aligned.mean()) if p_pos_aligned.notna().any() else np.nan,
+        "mean_z_score": float(z_scores.mean()) if z_scores.notna().any() else np.nan,
+        "std_z_score": float(z_scores.std()) if z_scores.notna().any() else np.nan,
+        "volatility_ema_span": volatility_ema_span,
+        "rolling_k_window": rolling_k_window,
+        "p_min": p_min,
+        "p_max": p_max,
+        "sigmoid_slope": sigmoid_slope,
+        # NEW: Include series for comprehensive diagnostics in HPO
+        "k_t_series": k_t_aligned,  # Dynamic threshold series
+        "p_positive_series": p_pos_aligned,  # Target positive fraction series
+        "volatility_series": vol_aligned,  # EMA volatility series
+    }
+    
+    tprint(
+        f"📊 Vol-scaled event labels: {n_labeled} labeled ({n_positive} pos, {n_negative} neg), "
+        f"ratio={n_positive/n_labeled:.1%}" if n_labeled > 0 else "📊 No event labels generated",
+        "INFO"
+    )
+    
+    return labels, z_scores, diagnostics
 
 
 def compute_zscore_gated_triple_barrier_labels(
@@ -7832,6 +8502,322 @@ class HPOCache:
                 pickle.dump(labels, f)
         except Exception as e:
             tprint(f"⚠️ Cache save failed: {e}", "WARNING")
+
+
+# =============================================================================
+# LABEL GENERATION DIAGNOSTICS (SNR-based monitoring)
+# =============================================================================
+
+@dataclass
+class LabelGenerationReport:
+    """Comprehensive report on label generation quality for regressor training."""
+    # Core counts
+    total_labels: int
+    pos_labels_count: int
+    neg_labels_count: int
+    positive_ratio: float
+    
+    # Time-based metrics
+    labels_per_month: Dict[str, int]
+    labels_per_day: float
+    unique_days_with_labels: int
+    total_days_span: float
+    
+    # Starvation detection
+    months_with_zero_labels: int
+    min_monthly_labels: int
+    max_monthly_labels: int
+    label_trend_slope: float  # Negative = declining
+    
+    # Dynamic threshold metrics
+    p_target_mean: float
+    p_target_std: float
+    k_t_median: float
+    k_t_mean: float
+    
+    # Trade quality
+    win_rate_tp_vs_sl: float
+    avg_return_on_tp: float
+    avg_loss_on_sl: float
+    realized_rr: float
+    
+    # Feature coverage
+    unique_feature_days: int
+    
+    # Alerts
+    alerts: List[str]
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {k: v for k, v in self.__dict__.items() if not k.startswith('_')}
+    
+    def log_summary(self, stage: str = ""):
+        """Log a summary of the label generation report."""
+        prefix = f"[{stage}] " if stage else ""
+        tprint(
+            f"{prefix}📊 Labels: total={self.total_labels}, pos={self.pos_labels_count}, "
+            f"neg={self.neg_labels_count}, ratio={self.positive_ratio:.1%}",
+            "INFO"
+        )
+        tprint(
+            f"{prefix}📊 Density: labels/day={self.labels_per_day:.2f}, "
+            f"unique_days={self.unique_days_with_labels}, span={self.total_days_span:.1f} days",
+            "INFO"
+        )
+        if self.labels_per_month:
+            monthly_vals = list(self.labels_per_month.values())
+            tprint(
+                f"{prefix}📊 Monthly: min={min(monthly_vals)}, max={max(monthly_vals)}, "
+                f"trend={self.label_trend_slope:.2f}, zero_months={self.months_with_zero_labels}",
+                "INFO"
+            )
+        if not np.isnan(self.win_rate_tp_vs_sl):
+            tprint(
+                f"{prefix}📊 Quality: win_rate={self.win_rate_tp_vs_sl:.1%}, "
+                f"avg_TP={self.avg_return_on_tp:.4f}, avg_SL={self.avg_loss_on_sl:.4f}, RR={self.realized_rr:.2f}",
+                "INFO"
+            )
+        for alert in self.alerts:
+            tprint(f"{prefix}⚠️ ALERT: {alert}", "WARNING")
+
+
+def compute_label_generation_report(
+    binary_labels: pd.Series,
+    realized_returns: pd.Series,
+    z_scores: Optional[pd.Series] = None,
+    k_t: Optional[pd.Series] = None,
+    p_positive: Optional[pd.Series] = None,
+    exit_reasons: Optional[pd.Series] = None,
+    stage: str = "",
+    auc_threshold: float = 0.55,
+    win_rate_threshold: float = 0.35,
+) -> LabelGenerationReport:
+    """Compute comprehensive label generation report for regressor training.
+    
+    Implements SNR-based diagnostics:
+    - labels_per_month: trend across months (detect starvation)
+    - pos_labels_count / neg_labels_count: absolute counts per class
+    - p_target(t): computed p_positive(t) (sigmoid output)
+    - k_t_median, k_t_mean: central tendency
+    - win_rate_TP_vs_SL: fraction hitting TP > SL (alert if < 35%)
+    - avg_return_on_tp and avg_loss_on_sl: realized RR
+    - unique_feature_cov: unique days with labels (detect clustering)
+    
+    Args:
+        binary_labels: Binary labels series
+        realized_returns: Realized returns per event
+        z_scores: Z-scores (optional)
+        k_t: Dynamic threshold series (optional)
+        p_positive: Target positive fraction (optional)
+        exit_reasons: Exit reasons (optional)
+        stage: Stage name for logging
+        auc_threshold: AUC alert threshold
+        win_rate_threshold: Win rate alert threshold
+    
+    Returns:
+        LabelGenerationReport with all metrics and alerts
+    """
+    labeled_mask = ~binary_labels.isna()
+    labels = binary_labels[labeled_mask]
+    returns_labeled = realized_returns.reindex(labels.index)
+    
+    # Core counts
+    total_labels = len(labels)
+    pos_labels_count = int((labels == 1).sum())
+    neg_labels_count = int((labels == 0).sum())
+    positive_ratio = pos_labels_count / total_labels if total_labels > 0 else 0.0
+    
+    # Time-based metrics
+    labels_per_month: Dict[str, int] = {}
+    labels_per_day = 0.0
+    unique_days_with_labels = 0
+    total_days_span = 0.0
+    
+    if total_labels > 0 and hasattr(labels.index, 'to_pydatetime'):
+        try:
+            for idx in labels.index:
+                month_key = idx.strftime("%Y-%m")
+                labels_per_month[month_key] = labels_per_month.get(month_key, 0) + 1
+            
+            unique_days = set(idx.date() for idx in labels.index)
+            unique_days_with_labels = len(unique_days)
+            
+            if len(labels.index) > 1:
+                total_days_span = (labels.index.max() - labels.index.min()).total_seconds() / 86400.0
+                labels_per_day = total_labels / max(1.0, total_days_span)
+        except Exception:
+            pass
+    
+    # Starvation detection
+    months_with_zero_labels = 0
+    min_monthly_labels = 0
+    max_monthly_labels = 0
+    label_trend_slope = 0.0
+    
+    if labels_per_month:
+        monthly_counts = list(labels_per_month.values())
+        months_with_zero_labels = sum(1 for c in monthly_counts if c == 0)
+        min_monthly_labels = min(monthly_counts) if monthly_counts else 0
+        max_monthly_labels = max(monthly_counts) if monthly_counts else 0
+        
+        if len(monthly_counts) >= 3:
+            try:
+                x = np.arange(len(monthly_counts))
+                y = np.array(monthly_counts)
+                slope, _ = np.polyfit(x, y, 1)
+                label_trend_slope = float(slope)
+            except Exception:
+                pass
+    
+    # Dynamic threshold metrics
+    p_target_mean = np.nan
+    p_target_std = np.nan
+    k_t_median = np.nan
+    k_t_mean = np.nan
+    
+    if p_positive is not None:
+        p_valid = p_positive.dropna()
+        if len(p_valid) > 0:
+            p_target_mean = float(p_valid.mean())
+            p_target_std = float(p_valid.std())
+    
+    if k_t is not None:
+        k_valid = k_t.dropna()
+        if len(k_valid) > 0:
+            k_t_median = float(k_valid.median())
+            k_t_mean = float(k_valid.mean())
+    
+    # Trade quality metrics
+    win_rate_tp_vs_sl = np.nan
+    avg_return_on_tp = np.nan
+    avg_loss_on_sl = np.nan
+    realized_rr = np.nan
+    
+    if exit_reasons is not None:
+        try:
+            exit_aligned = exit_reasons.reindex(labels.index)
+            tp_mask = exit_aligned == 1
+            sl_mask = exit_aligned == 0
+            n_tp = int(tp_mask.sum())
+            n_sl = int(sl_mask.sum())
+            
+            if n_tp + n_sl > 0:
+                win_rate_tp_vs_sl = n_tp / (n_tp + n_sl)
+            
+            if n_tp > 0:
+                avg_return_on_tp = float(returns_labeled[tp_mask].mean())
+            if n_sl > 0:
+                avg_loss_on_sl = float(returns_labeled[sl_mask].mean())
+            
+            if n_tp > 0 and n_sl > 0 and avg_loss_on_sl < 0:
+                realized_rr = abs(avg_return_on_tp / avg_loss_on_sl)
+        except Exception:
+            pass
+    
+    # Generate alerts
+    alerts: List[str] = []
+    
+    if total_labels < 100:
+        alerts.append(f"Very few labels ({total_labels} < 100) - may not train well")
+    
+    if pos_labels_count < 30:
+        alerts.append(f"Very few positive labels ({pos_labels_count} < 30)")
+    
+    if neg_labels_count < 30:
+        alerts.append(f"Very few negative labels ({neg_labels_count} < 30)")
+    
+    if not np.isnan(win_rate_tp_vs_sl) and win_rate_tp_vs_sl < win_rate_threshold:
+        alerts.append(f"Low win rate TP vs SL: {win_rate_tp_vs_sl:.1%} < {win_rate_threshold:.0%}")
+    
+    if label_trend_slope < -5.0:
+        alerts.append(f"Declining label trend: slope={label_trend_slope:.2f}")
+    
+    if unique_days_with_labels < 10:
+        alerts.append(f"Labels clustered to only {unique_days_with_labels} days")
+    
+    if months_with_zero_labels > 0:
+        alerts.append(f"{months_with_zero_labels} month(s) with zero labels")
+    
+    if min_monthly_labels < 10 and labels_per_month:
+        alerts.append(f"Min monthly labels ({min_monthly_labels}) < 10")
+    
+    return LabelGenerationReport(
+        total_labels=total_labels,
+        pos_labels_count=pos_labels_count,
+        neg_labels_count=neg_labels_count,
+        positive_ratio=positive_ratio,
+        labels_per_month=labels_per_month,
+        labels_per_day=labels_per_day,
+        unique_days_with_labels=unique_days_with_labels,
+        total_days_span=total_days_span,
+        months_with_zero_labels=months_with_zero_labels,
+        min_monthly_labels=min_monthly_labels,
+        max_monthly_labels=max_monthly_labels,
+        label_trend_slope=label_trend_slope,
+        p_target_mean=p_target_mean,
+        p_target_std=p_target_std,
+        k_t_median=k_t_median,
+        k_t_mean=k_t_mean,
+        win_rate_tp_vs_sl=win_rate_tp_vs_sl,
+        avg_return_on_tp=avg_return_on_tp,
+        avg_loss_on_sl=avg_loss_on_sl,
+        realized_rr=realized_rr,
+        unique_feature_days=unique_days_with_labels,
+        alerts=alerts,
+    )
+
+
+def monitor_label_density_by_stage(
+    labels_by_stage: Dict[str, pd.Series],
+    min_labels_per_stage: int = 50,
+) -> Dict[str, Any]:
+    """Monitor label density across different stages of the pipeline.
+    
+    Args:
+        labels_by_stage: Dict mapping stage name to binary labels series
+        min_labels_per_stage: Minimum labels required per stage
+    
+    Returns:
+        Dict with monitoring results and alerts
+    """
+    results: Dict[str, Any] = {
+        "stages": {},
+        "alerts": [],
+        "total_labels_by_stage": {},
+    }
+    
+    for stage_name, labels in labels_by_stage.items():
+        labeled_mask = ~labels.isna()
+        n_labels = int(labeled_mask.sum())
+        n_positive = int((labels == 1).sum())
+        
+        results["stages"][stage_name] = {
+            "total_labels": n_labels,
+            "positive_labels": n_positive,
+            "negative_labels": n_labels - n_positive,
+            "positive_ratio": n_positive / n_labels if n_labels > 0 else 0.0,
+        }
+        results["total_labels_by_stage"][stage_name] = n_labels
+        
+        if n_labels < min_labels_per_stage:
+            results["alerts"].append(
+                f"Stage '{stage_name}' has insufficient labels ({n_labels} < {min_labels_per_stage})"
+            )
+    
+    # Check for label starvation between stages
+    stage_names = list(labels_by_stage.keys())
+    if len(stage_names) >= 2:
+        for i in range(1, len(stage_names)):
+            prev_count = results["total_labels_by_stage"][stage_names[i-1]]
+            curr_count = results["total_labels_by_stage"][stage_names[i]]
+            
+            if prev_count > 0 and curr_count < prev_count * 0.5:
+                drop_pct = (prev_count - curr_count) / prev_count * 100
+                results["alerts"].append(
+                    f"Large label drop from '{stage_names[i-1]}' to '{stage_names[i]}': "
+                    f"{prev_count} → {curr_count} ({drop_pct:.0f}% drop)"
+                )
+    
+    return results
 
 
 class FeatureGenerationMetaLabelingStep(BaseStep):

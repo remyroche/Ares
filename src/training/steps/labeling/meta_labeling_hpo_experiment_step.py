@@ -2995,6 +2995,14 @@ class MetaLabelingHPOExperimentStep(BaseStep):
         # ------------------------------------------------------------------
         # 2) Define parameter groups for hierarchical HPO
         # ------------------------------------------------------------------
+        # Trading mode: "long" (default), "short", or "both"
+        # Determines which direction-specific parameters to include
+        trading_mode = str(config.get("trading_mode", "long")).lower()
+        include_long_params = trading_mode in ("long", "both")
+        include_short_params = trading_mode in ("short", "both")
+        
+        tprint_info(f"📊 HPO trading_mode: {trading_mode} (long_params={include_long_params}, short_params={include_short_params})")
+        
         param_groups = [
             # Group 1: Signal Structure (3 params)
             create_param_group(
@@ -3163,6 +3171,217 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 description="Kalman smoothing noise parameters",
             ),
         ]
+        
+        # =====================================================================
+        # NEW GROUPS: Z-Score Gated Triple Barrier Pipeline Parameters
+        # =====================================================================
+        
+        # Group 7: Triple Barrier Base Multipliers
+        # k_tp_base: Base TP scaling (1.0–3.0 × σ)
+        # k_sl_base: Base SL scaling (0.5–2.0 × σ)
+        param_groups.append(
+            create_param_group(
+                name="barrier_base_multipliers",
+                params={
+                    "k_tp_base": {
+                        "type": "float",
+                        "low": 1.0,
+                        "high": 3.0,
+                    },
+                    "k_sl_base": {
+                        "type": "float",
+                        "low": 0.5,
+                        "high": 2.0,
+                    },
+                    "trail_atr_mult": {
+                        "type": "float",
+                        "low": 1.0,
+                        "high": 3.0,
+                    },
+                },
+                priority=7,
+                depends_on=["volatility_adaptation"],
+                description="Base TP/SL volatility multipliers and trailing stop",
+            )
+        )
+        
+        # Group 8: Direction-Specific Asymmetric Multipliers (Crypto)
+        # Only include long params if in long mode, short params if in short mode
+        asymmetric_params: Dict[str, Any] = {}
+        
+        if include_long_params:
+            # Long TP multiplier: 1.0–1.3 (slightly larger TP for crypto upward bias)
+            asymmetric_params["k_tp_long_mult"] = {
+                "type": "float",
+                "low": 1.0,
+                "high": 1.3,
+            }
+            # Long SL multiplier: 0.7–1.0 (tighter stops to capture pullbacks)
+            asymmetric_params["k_sl_long_mult"] = {
+                "type": "float",
+                "low": 0.7,
+                "high": 1.0,
+            }
+        
+        if include_short_params:
+            # Short TP multiplier: 0.9–1.2
+            asymmetric_params["k_tp_short_mult"] = {
+                "type": "float",
+                "low": 0.9,
+                "high": 1.2,
+            }
+            # Short SL multiplier: 0.8–1.2
+            asymmetric_params["k_sl_short_mult"] = {
+                "type": "float",
+                "low": 0.8,
+                "high": 1.2,
+            }
+        
+        if asymmetric_params:
+            param_groups.append(
+                create_param_group(
+                    name="asymmetric_crypto_multipliers",
+                    params=asymmetric_params,
+                    priority=8,
+                    depends_on=["barrier_base_multipliers"],
+                    description="Direction-specific TP/SL multipliers for crypto markets",
+                )
+            )
+        
+        # Group 9: Z-Score Scaling
+        # z_magnitude_scale: Multiplier for |z| scaling (0–0.5)
+        param_groups.append(
+            create_param_group(
+                name="zscore_scaling",
+                params={
+                    "z_magnitude_scale": {
+                        "type": "float",
+                        "low": 0.0,
+                        "high": 0.5,
+                    },
+                },
+                priority=9,
+                depends_on=["barrier_base_multipliers"],
+                description="Z-score magnitude scaling for barrier adjustment",
+            )
+        )
+        
+        # Group 10: Trend Adjustment
+        # trend_alpha: Linear trend factor (0.1–0.4)
+        # trend_lookback: EMA/window size for trend calculation (10–50 bars)
+        param_groups.append(
+            create_param_group(
+                name="trend_adjustment",
+                params={
+                    "trend_alpha": {
+                        "type": "float",
+                        "low": 0.1,
+                        "high": 0.4,
+                    },
+                    "trend_lookback": {
+                        "type": "int",
+                        "low": 10,
+                        "high": 50,
+                        "step": 5,
+                    },
+                },
+                priority=10,
+                depends_on=["zscore_scaling"],
+                description="Linear trend adjustment for TP barriers",
+            )
+        )
+        
+        # Group 11: Clipping / Bounds
+        # tp_min_mult: Minimum TP (0.3–1 × σ)
+        # tp_max_mult: Maximum TP (2–5 × σ)
+        param_groups.append(
+            create_param_group(
+                name="barrier_clipping",
+                params={
+                    "tp_min_mult": {
+                        "type": "float",
+                        "low": 0.3,
+                        "high": 1.0,
+                    },
+                    "tp_max_mult": {
+                        "type": "float",
+                        "low": 2.0,
+                        "high": 5.0,
+                    },
+                    "sl_min_mult": {
+                        "type": "float",
+                        "low": 0.2,
+                        "high": 0.5,
+                    },
+                    "sl_max_mult": {
+                        "type": "float",
+                        "low": 1.5,
+                        "high": 3.0,
+                    },
+                },
+                priority=11,
+                depends_on=["trend_adjustment"],
+                description="Clipping bounds to avoid extreme TP/SL values",
+            )
+        )
+        
+        # Group 12: Conditional Quantiles
+        # Direction-specific quantile thresholds for entry gating
+        cond_quantile_params: Dict[str, Any] = {}
+        
+        if include_long_params:
+            # Long entry threshold: 0.55–0.7 (z > Q_long → long entry)
+            cond_quantile_params["conditional_quantile_long"] = {
+                "type": "float",
+                "low": 0.55,
+                "high": 0.70,
+            }
+        
+        if include_short_params:
+            # Short entry threshold: 0.30–0.45 (z < Q_short → short entry)
+            cond_quantile_params["conditional_quantile_short"] = {
+                "type": "float",
+                "low": 0.30,
+                "high": 0.45,
+            }
+        
+        if cond_quantile_params:
+            param_groups.append(
+                create_param_group(
+                    name="conditional_quantiles",
+                    params=cond_quantile_params,
+                    priority=12,
+                    depends_on=["label_definition"],
+                    description="Conditional quantile thresholds for entry gating",
+                )
+            )
+        
+        # Group 13: Volatility Lookback
+        # rolling_vol_lookback: Volatility EMA lookback (50–200 bars)
+        param_groups.append(
+            create_param_group(
+                name="volatility_lookback",
+                params={
+                    "rolling_vol_lookback": {
+                        "type": "int",
+                        "low": 50,
+                        "high": 200,
+                        "step": 25,
+                    },
+                    "quantile_lookback_bars": {
+                        "type": "int",
+                        "low": 2000,
+                        "high": 4000,
+                        "step": 500,
+                    },
+                },
+                priority=13,
+                depends_on=["volatility_adaptation"],
+                description="Lookback windows for volatility and quantile calculations",
+            )
+        )
+        
+        tprint_info(f"📊 HPO param groups: {len(param_groups)} total (trading_mode={trading_mode})")
 
         warm_start_best_params: Dict[str, Any] = {}
         warm_start_candidates_df: Optional[pd.DataFrame] = None
@@ -3439,6 +3658,64 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 cusum_threshold = max(0.010, min(0.03, cusum_threshold))
                 target_signal_density = float(params.get("target_signal_density", 4.0))
                 target_signal_density = max(3.0, min(5.0, target_signal_density))
+                
+                # =====================================================================
+                # Z-Score Gated Pipeline Parameters (NEW)
+                # =====================================================================
+                # Base barrier multipliers (× volatility)
+                k_tp_base = float(params.get("k_tp_base", 1.5))
+                k_tp_base = max(1.0, min(3.0, k_tp_base))
+                k_sl_base = float(params.get("k_sl_base", 1.0))
+                k_sl_base = max(0.5, min(2.0, k_sl_base))
+                
+                # Trailing ATR multiplier
+                trail_atr_mult = float(params.get("trail_atr_mult", trail_dist))
+                trail_atr_mult = max(1.0, min(3.0, trail_atr_mult))
+                # Update trail_dist to use the new param if available
+                if "trail_atr_mult" in params:
+                    trail_dist = trail_atr_mult
+                
+                # Direction-specific asymmetric multipliers (for crypto)
+                k_tp_long_mult = float(params.get("k_tp_long_mult", 1.1))
+                k_tp_long_mult = max(1.0, min(1.3, k_tp_long_mult))
+                k_sl_long_mult = float(params.get("k_sl_long_mult", 0.9))
+                k_sl_long_mult = max(0.7, min(1.0, k_sl_long_mult))
+                k_tp_short_mult = float(params.get("k_tp_short_mult", 1.0))
+                k_tp_short_mult = max(0.9, min(1.2, k_tp_short_mult))
+                k_sl_short_mult = float(params.get("k_sl_short_mult", 1.0))
+                k_sl_short_mult = max(0.8, min(1.2, k_sl_short_mult))
+                
+                # Z-score magnitude scaling
+                z_magnitude_scale = float(params.get("z_magnitude_scale", 0.3))
+                z_magnitude_scale = max(0.0, min(0.5, z_magnitude_scale))
+                
+                # Trend adjustment (LINEAR, not thresholds)
+                hpo_trend_alpha = float(params.get("trend_alpha", 0.3))
+                hpo_trend_alpha = max(0.1, min(0.4, hpo_trend_alpha))
+                hpo_trend_lookback = int(params.get("trend_lookback", 20))
+                hpo_trend_lookback = max(10, min(50, hpo_trend_lookback))
+                
+                # Clipping bounds (as multiples of base volatility)
+                tp_min_mult = float(params.get("tp_min_mult", 0.5))
+                tp_min_mult = max(0.3, min(1.0, tp_min_mult))
+                tp_max_mult = float(params.get("tp_max_mult", 4.0))
+                tp_max_mult = max(2.0, min(5.0, tp_max_mult))
+                sl_min_mult = float(params.get("sl_min_mult", 0.3))
+                sl_min_mult = max(0.2, min(0.5, sl_min_mult))
+                sl_max_mult = float(params.get("sl_max_mult", 2.0))
+                sl_max_mult = max(1.5, min(3.0, sl_max_mult))
+                
+                # Conditional quantile thresholds
+                cond_quantile_long = float(params.get("conditional_quantile_long", 0.6))
+                cond_quantile_long = max(0.55, min(0.70, cond_quantile_long))
+                cond_quantile_short = float(params.get("conditional_quantile_short", 0.35))
+                cond_quantile_short = max(0.30, min(0.45, cond_quantile_short))
+                
+                # Volatility lookback parameters
+                rolling_vol_lookback = int(params.get("rolling_vol_lookback", 100))
+                rolling_vol_lookback = max(50, min(200, rolling_vol_lookback))
+                quantile_lookback_bars = int(params.get("quantile_lookback_bars", 3000))
+                quantile_lookback_bars = max(2000, min(4000, quantile_lookback_bars))
 
                 # --- Recompute realized returns ---
                 # NO FUTURE LEAKAGE in volatility-based thresholds:
@@ -3460,7 +3737,8 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 trend_atr_window = int(config.get("trend_strength_atr_window", 14))
                 atr_series = true_range.rolling(window=trend_atr_window, min_periods=1).mean()
 
-                trend_delta_lookback = int(config.get("trend_strength_delta_lookback", 4))
+                # Use HPO trend_lookback if available
+                trend_delta_lookback = hpo_trend_lookback if "trend_lookback" in params else int(config.get("trend_strength_delta_lookback", 4))
                 price_delta = close_prices.diff(trend_delta_lookback).abs()
 
                 trend_strength = (price_delta / (atr_series + 1e-8)).replace([np.inf, -np.inf], np.nan)
@@ -3469,22 +3747,89 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     upper=float(config.get("trend_strength_clip", 5.0)),
                 ).fillna(0.0)
 
-                trend_alpha = float(config.get("trend_strength_alpha_profit", 0.5))
+                # Use HPO trend_alpha if available, otherwise fall back to config
+                trend_alpha_profit = hpo_trend_alpha if "trend_alpha" in params else float(config.get("trend_strength_alpha_profit", 0.5))
                 trend_beta = float(config.get("trend_strength_beta_stop", 0.5))
 
-                profit_factor = 1.0 + trend_alpha * trend_strength
+                profit_factor = 1.0 + trend_alpha_profit * trend_strength
                 stop_factor = 1.0 + trend_beta * trend_strength
 
-                adaptive_profit = profit_thr_base * vol_factor * profit_factor
-                adaptive_stop = stop_thr_base * vol_factor * stop_factor
-                adaptive_profit = adaptive_profit.clip(
-                    lower=profit_thr_base * profit_mult_min,
-                    upper=profit_thr_base * profit_mult_max,
-                )
-                adaptive_stop = adaptive_stop.clip(
-                    lower=stop_thr_base * stop_mult_min,
-                    upper=stop_thr_base * stop_mult_max,
-                )
+                # =====================================================================
+                # Z-Score Gated Barrier Calculation (when new params are provided)
+                # =====================================================================
+                # Check if we're using the new z-score gated parameters
+                use_zscore_gated_barriers = "k_tp_base" in params or "z_magnitude_scale" in params
+                
+                if use_zscore_gated_barriers:
+                    # NEW: Use rolling volatility with configurable lookback
+                    rolling_vol = volatility_1d.rolling(rolling_vol_lookback, min_periods=10).mean()
+                    
+                    # Base barriers using new k_tp_base and k_sl_base multipliers
+                    tp_base = k_tp_base * rolling_vol
+                    sl_base = k_sl_base * rolling_vol
+                    
+                    # Z-score magnitude scaling (if we had z-scores)
+                    # For now, use trend_strength as a proxy for signal magnitude
+                    z_proxy = trend_strength.clip(0, 3)
+                    z_scale_factor = 1.0 + z_magnitude_scale * z_proxy
+                    
+                    # Apply direction-specific multipliers based on consensus signal
+                    consensus = primary_signals['consensus'] if 'consensus' in primary_signals.columns else pd.Series(0, index=market_data.index)
+                    
+                    # Initialize with base values
+                    adaptive_profit = tp_base.copy()
+                    adaptive_stop = sl_base.copy()
+                    
+                    # Long positions: use long multipliers
+                    long_mask = consensus > 0
+                    if long_mask.any():
+                        adaptive_profit.loc[long_mask] = tp_base.loc[long_mask] * k_tp_long_mult * z_scale_factor.loc[long_mask]
+                        adaptive_stop.loc[long_mask] = sl_base.loc[long_mask] * k_sl_long_mult
+                    
+                    # Short positions: use short multipliers
+                    short_mask = consensus < 0
+                    if short_mask.any():
+                        adaptive_profit.loc[short_mask] = tp_base.loc[short_mask] * k_tp_short_mult * z_scale_factor.loc[short_mask]
+                        adaptive_stop.loc[short_mask] = sl_base.loc[short_mask] * k_sl_short_mult
+                    
+                    # Apply trend adjustment (LINEAR formula)
+                    # Normalize trend_strength to [-1, 1] range for adjustment
+                    trend_norm = (trend_strength / (trend_strength.quantile(0.95) + 1e-8)).clip(-1, 1)
+                    
+                    # For longs: positive trend → increase TP
+                    trend_adj_long = 1.0 + hpo_trend_alpha * trend_norm
+                    # For shorts: negative trend → increase TP
+                    trend_adj_short = 1.0 - hpo_trend_alpha * trend_norm
+                    
+                    if long_mask.any():
+                        adaptive_profit.loc[long_mask] = adaptive_profit.loc[long_mask] * trend_adj_long.loc[long_mask]
+                    if short_mask.any():
+                        adaptive_profit.loc[short_mask] = adaptive_profit.loc[short_mask] * trend_adj_short.loc[short_mask]
+                    
+                    # Apply clipping bounds
+                    tp_min = tp_min_mult * rolling_vol
+                    tp_max = tp_max_mult * rolling_vol
+                    sl_min = sl_min_mult * rolling_vol
+                    sl_max = sl_max_mult * rolling_vol
+                    
+                    adaptive_profit = adaptive_profit.clip(lower=tp_min, upper=tp_max)
+                    adaptive_stop = adaptive_stop.clip(lower=sl_min, upper=sl_max)
+                    
+                    # Ensure minimum absolute thresholds
+                    adaptive_profit = adaptive_profit.clip(lower=0.002)
+                    adaptive_stop = adaptive_stop.clip(lower=0.001)
+                else:
+                    # LEGACY: Use original volatility-based barrier calculation
+                    adaptive_profit = profit_thr_base * vol_factor * profit_factor
+                    adaptive_stop = stop_thr_base * vol_factor * stop_factor
+                    adaptive_profit = adaptive_profit.clip(
+                        lower=profit_thr_base * profit_mult_min,
+                        upper=profit_thr_base * profit_mult_max,
+                    )
+                    adaptive_stop = adaptive_stop.clip(
+                        lower=stop_thr_base * stop_mult_min,
+                        upper=stop_thr_base * stop_mult_max,
+                    )
 
                 # NEW: Regenerate primary signals if cusum_threshold differs from default
                 # This allows HPO to explore different signal densities

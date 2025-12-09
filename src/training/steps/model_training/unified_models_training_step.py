@@ -2093,6 +2093,21 @@ class UnifiedModelsTrainingStep(BaseStep):
                                     analyst_targets = ld[target_col]
                                     tprint_success(f"✅ Using '{target_col}' from labeled_data as analyst_targets")
                                     break
+
+                            # Also load target_sample_weight if available
+                            if 'target_sample_weight' in ld.columns:
+                                sample_weight = ld['target_sample_weight']
+                                tprint_success(f"✅ Loaded target_sample_weight from labeled_data")
+                                # Store for use in training - Attach to training_data later
+                                if training_data is not None:
+                                    # Align and attach to training_data so PipelineOrchestrator can pick it up
+                                    try:
+                                        sw_aligned = sample_weight.reindex(training_data.index).fillna(1.0)
+                                        training_data['target_sample_weight'] = sw_aligned
+                                        tprint_success(f"   Attached target_sample_weight to training data")
+                                    except Exception as e:
+                                        tprint_warning(f"   ⚠️ Failed to attach target_sample_weight: {e}")
+
                             if analyst_targets is not None:
                                 break
                     except Exception as e:

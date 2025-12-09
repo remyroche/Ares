@@ -318,9 +318,12 @@ class GateTrainingStep(BaseStep):
             y = (net_returns > 0).astype(int)
 
             # Generate Sample Weights based on PnL magnitude (penalize/reward more heavily)
-            # Using abs(net_returns) * 100 to make weights more perceptible (e.g. 1% return = weight 1.0)
-            sample_weights = np.abs(net_returns) * 100.0
-            # Ensure minimum weight
+            # Using log-dampened formula: log(1 + |NetReturn|) to handle skewed distributions
+            # Normalize to mean 1.0 to preserve effective learning rate
+            sample_weights = np.log1p(np.abs(net_returns))
+            if sample_weights.mean() > 0:
+                sample_weights = sample_weights / sample_weights.mean()
+            # Ensure minimum weight for stability
             sample_weights = np.maximum(sample_weights, 0.1)
 
             tprint_success(f"Generated {len(y)} classification targets. Mean PnL: {net_returns.mean():.4f}")

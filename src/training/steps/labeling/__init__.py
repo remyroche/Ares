@@ -36,6 +36,10 @@ from .feature_generation_meta_labeling_step import (
     compute_dynamic_threshold_k,
     create_volatility_scaled_labels,
     create_volatility_scaled_labels_for_events,
+    # NEW: Label generation diagnostics (SNR-based, 2025-12-09)
+    LabelGenerationReport,
+    compute_label_generation_report,
+    monitor_label_density_by_stage,
     DEFAULT_PROFIT_THRESHOLD,
     DEFAULT_STOP_THRESHOLD,
     DEFAULT_TRANSACTION_COST,
@@ -114,6 +118,10 @@ __all__ = [
     "compute_dynamic_threshold_k",
     "create_volatility_scaled_labels",
     "create_volatility_scaled_labels_for_events",
+    # NEW: Label generation diagnostics (SNR-based, 2025-12-09)
+    "LabelGenerationReport",
+    "compute_label_generation_report",
+    "monitor_label_density_by_stage",
     "DEFAULT_PROFIT_THRESHOLD",
     "DEFAULT_STOP_THRESHOLD",
     "DEFAULT_TRANSACTION_COST",

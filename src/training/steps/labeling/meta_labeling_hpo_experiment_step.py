@@ -2397,7 +2397,7 @@ def apply_warm_start_to_param_groups(
     warm_start_params: Dict[str, Any],
     narrowing_factor: float = 0.3,
     bypass_warm_start: bool = False,
-) -> List[Dict[str, Any]]:
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """Apply warm start by narrowing parameter search space around previous best values.
     
     This significantly speeds up HPO by focusing the search in neighboring areas
@@ -2411,24 +2411,39 @@ def apply_warm_start_to_param_groups(
         bypass_warm_start: If True, skip narrowing and return original groups
         
     Returns:
-        Modified param_groups with narrowed ranges for warm-started parameters
+        Tuple of (modified param_groups, warm_start_report dict)
     """
+    warm_start_report: Dict[str, Any] = {
+        "enabled": not bypass_warm_start and bool(warm_start_params),
+        "n_warm_start_params": len(warm_start_params) if warm_start_params else 0,
+        "narrowing_factor": narrowing_factor,
+        "n_narrowed": 0,
+        "n_full_range": 0,
+        "narrowing_details": [],
+        "full_range_params": [],
+    }
+    
     if bypass_warm_start or not warm_start_params:
-        return param_groups
+        warm_start_report["enabled"] = False
+        return param_groups, warm_start_report
     
     narrowed_groups = []
     n_narrowed = 0
     n_full_range = 0
+    narrowing_details = []
+    full_range_params = []
     
     for group in param_groups:
         new_group = group.copy()
         new_params = {}
+        group_name = group.get("name", "unknown")
         
         for param_name, param_config in group.get("params", {}).items():
             if param_name not in warm_start_params:
                 # Parameter not found in warm start - use full range
                 new_params[param_name] = param_config.copy()
                 n_full_range += 1
+                full_range_params.append(param_name)
                 continue
             
             # Parameter found - narrow the range
@@ -2461,6 +2476,19 @@ def apply_warm_start_to_param_groups(
                     if new_high <= new_low:
                         new_high = new_low + max(1, config.get("step", 1))
                 
+                # Calculate actual narrowing percentage
+                new_range = new_high - new_low
+                narrowing_pct = 100 * (1 - new_range / orig_range) if orig_range > 0 else 0
+                
+                narrowing_details.append({
+                    "param": param_name,
+                    "group": group_name,
+                    "prev_value": prev_value,
+                    "orig_range": f"[{orig_low}, {orig_high}]",
+                    "new_range": f"[{new_low}, {new_high}]",
+                    "narrowing_pct": f"{narrowing_pct:.1f}%",
+                })
+                
                 config["low"] = new_low
                 config["high"] = new_high
                 n_narrowed += 1
@@ -2470,13 +2498,628 @@ def apply_warm_start_to_param_groups(
         new_group["params"] = new_params
         narrowed_groups.append(new_group)
     
+    warm_start_report.update({
+        "n_narrowed": n_narrowed,
+        "n_full_range": n_full_range,
+        "narrowing_details": narrowing_details,
+        "full_range_params": full_range_params,
+    })
+    
+    # Enhanced logging
     if n_narrowed > 0:
         tprint_info(
-            f"🔄 Warm start applied: {n_narrowed} params narrowed, "
+            f"🔄 WARM START APPLIED: {n_narrowed} params narrowed (±{narrowing_factor*100:.0f}% of range), "
             f"{n_full_range} params using full range"
         )
+        tprint_info(f"   📋 Full-range params (new/not in warm start): {full_range_params[:5]}{'...' if len(full_range_params) > 5 else ''}")
+        
+        # Log top 5 narrowing details
+        for detail in narrowing_details[:5]:
+            tprint_info(
+                f"   ↔️ {detail['param']}: {detail['orig_range']} → {detail['new_range']} "
+                f"(prev={detail['prev_value']}, narrowed {detail['narrowing_pct']})"
+            )
+        if len(narrowing_details) > 5:
+            tprint_info(f"   ... and {len(narrowing_details) - 5} more params narrowed")
     
-    return narrowed_groups
+    return narrowed_groups, warm_start_report
+
+
+# =============================================================================
+# EARLY TRIAL REJECTION AND LABEL DIAGNOSTICS
+# =============================================================================
+
+@dataclass
+class TrialRejectionResult:
+    """Result of early trial rejection check."""
+    rejected: bool
+    reason: str
+    constraint: str
+    details: Dict[str, Any]
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "rejected": self.rejected,
+            "reason": self.reason,
+            "constraint": self.constraint,
+            "details": self.details,
+        }
+
+
+@dataclass
+class LabelDiagnostics:
+    """Comprehensive label generation diagnostics based on SNR analysis."""
+    # Core counts
+    total_labels: int
+    pos_labels_count: int
+    neg_labels_count: int
+    positive_ratio: float
+    
+    # Time-based metrics
+    labels_per_month: Dict[str, int]
+    labels_by_year: Dict[int, int]
+    unique_days_with_labels: int
+    total_days_span: float
+    labels_per_day: float
+    
+    # Regime-based metrics
+    labels_by_regime: Dict[str, int]  # {low_vol, med_vol, high_vol}
+    
+    # Dynamic threshold metrics
+    k_t_median: float
+    k_t_mean: float
+    k_t_std: float
+    k_t_percentile_95: float
+    k_t_clipping_rate: float  # % of k_t values that were clipped
+    
+    # Z-score metrics
+    z_score_median: float
+    z_score_mean: float
+    z_score_std: float
+    z_score_percentile_95: float
+    
+    # Sigmoid output metrics
+    p_target_mean: float
+    p_target_std: float
+    p_target_min: float
+    p_target_max: float
+    
+    # Trade quality metrics
+    win_rate_tp_vs_sl: float  # Fraction hitting TP > SL
+    avg_return_on_tp: float
+    avg_loss_on_sl: float
+    realized_rr: float  # Risk-reward ratio
+    
+    # Feature coverage
+    unique_feature_days: int  # Days with at least one label
+    
+    # Starvation detection
+    months_with_zero_labels: int
+    min_monthly_labels: int
+    max_monthly_labels: int
+    label_trend_slope: float  # Negative = declining labels over time
+    
+    # Model quality (if available)
+    auc_rolling: Optional[float] = None
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {k: v for k, v in self.__dict__.items() if not k.startswith('_')}
+
+
+def compute_label_diagnostics(
+    binary_labels: pd.Series,
+    realized_returns: pd.Series,
+    z_scores: pd.Series,
+    k_t: Optional[pd.Series] = None,
+    p_positive: Optional[pd.Series] = None,
+    volatility: Optional[pd.Series] = None,
+    exit_reasons: Optional[pd.Series] = None,
+    mfe: Optional[pd.Series] = None,
+    mae: Optional[pd.Series] = None,
+    market_data: Optional[pd.DataFrame] = None,
+) -> LabelDiagnostics:
+    """Compute comprehensive label diagnostics for SNR analysis.
+    
+    Args:
+        binary_labels: Binary labels (0/1)
+        realized_returns: Realized returns per event
+        z_scores: Volatility-normalized z-scores
+        k_t: Dynamic threshold series (optional)
+        p_positive: Target positive fraction series (optional)
+        volatility: Volatility series for regime bucketing (optional)
+        exit_reasons: Exit reason series (1=TP, 0=SL, 2=timeout) (optional)
+        mfe: Maximum favorable excursion (optional)
+        mae: Maximum adverse excursion (optional)
+        market_data: Full market data for feature coverage (optional)
+    
+    Returns:
+        LabelDiagnostics with comprehensive metrics
+    """
+    labeled_mask = ~binary_labels.isna()
+    labels = binary_labels[labeled_mask]
+    returns_labeled = realized_returns.reindex(labels.index)
+    
+    # Core counts
+    total_labels = len(labels)
+    pos_labels_count = int((labels == 1).sum())
+    neg_labels_count = int((labels == 0).sum())
+    positive_ratio = pos_labels_count / total_labels if total_labels > 0 else 0.0
+    
+    # Time-based metrics
+    labels_per_month: Dict[str, int] = {}
+    labels_by_year: Dict[int, int] = {}
+    unique_days_with_labels = 0
+    total_days_span = 0.0
+    labels_per_day = 0.0
+    
+    if total_labels > 0 and hasattr(labels.index, 'to_pydatetime'):
+        try:
+            # Monthly breakdown
+            for idx in labels.index:
+                month_key = idx.strftime("%Y-%m")
+                labels_per_month[month_key] = labels_per_month.get(month_key, 0) + 1
+                year = idx.year
+                labels_by_year[year] = labels_by_year.get(year, 0) + 1
+            
+            # Unique days
+            unique_days = set(idx.date() for idx in labels.index)
+            unique_days_with_labels = len(unique_days)
+            
+            # Total span
+            if len(labels.index) > 1:
+                total_days_span = (labels.index.max() - labels.index.min()).total_seconds() / 86400.0
+                labels_per_day = total_labels / max(1.0, total_days_span)
+        except Exception:
+            pass
+    
+    # Regime-based metrics (based on volatility quartiles)
+    labels_by_regime: Dict[str, int] = {"low_vol": 0, "med_vol": 0, "high_vol": 0}
+    if volatility is not None and total_labels > 0:
+        try:
+            vol_aligned = volatility.reindex(labels.index)
+            vol_valid = vol_aligned.dropna()
+            if len(vol_valid) > 10:
+                q33 = float(vol_valid.quantile(0.33))
+                q67 = float(vol_valid.quantile(0.67))
+                labels_by_regime["low_vol"] = int((vol_aligned <= q33).sum())
+                labels_by_regime["med_vol"] = int(((vol_aligned > q33) & (vol_aligned <= q67)).sum())
+                labels_by_regime["high_vol"] = int((vol_aligned > q67).sum())
+        except Exception:
+            pass
+    
+    # Dynamic threshold metrics
+    k_t_median = np.nan
+    k_t_mean = np.nan
+    k_t_std = np.nan
+    k_t_percentile_95 = np.nan
+    k_t_clipping_rate = 0.0
+    
+    if k_t is not None:
+        k_valid = k_t.dropna()
+        if len(k_valid) > 0:
+            k_t_median = float(k_valid.median())
+            k_t_mean = float(k_valid.mean())
+            k_t_std = float(k_valid.std())
+            k_t_percentile_95 = float(k_valid.quantile(0.95))
+    
+    # Z-score metrics
+    z_valid = z_scores.dropna()
+    z_score_median = float(z_valid.median()) if len(z_valid) > 0 else np.nan
+    z_score_mean = float(z_valid.mean()) if len(z_valid) > 0 else np.nan
+    z_score_std = float(z_valid.std()) if len(z_valid) > 0 else np.nan
+    z_score_percentile_95 = float(z_valid.quantile(0.95)) if len(z_valid) > 0 else np.nan
+    
+    # Sigmoid output metrics
+    p_target_mean = np.nan
+    p_target_std = np.nan
+    p_target_min = np.nan
+    p_target_max = np.nan
+    
+    if p_positive is not None:
+        p_valid = p_positive.dropna()
+        if len(p_valid) > 0:
+            p_target_mean = float(p_valid.mean())
+            p_target_std = float(p_valid.std())
+            p_target_min = float(p_valid.min())
+            p_target_max = float(p_valid.max())
+    
+    # Trade quality metrics
+    win_rate_tp_vs_sl = np.nan
+    avg_return_on_tp = np.nan
+    avg_loss_on_sl = np.nan
+    realized_rr = np.nan
+    
+    if exit_reasons is not None:
+        try:
+            exit_aligned = exit_reasons.reindex(labels.index)
+            tp_mask = exit_aligned == 1  # TP hit
+            sl_mask = exit_aligned == 0  # SL hit
+            n_tp = int(tp_mask.sum())
+            n_sl = int(sl_mask.sum())
+            
+            if n_tp + n_sl > 0:
+                win_rate_tp_vs_sl = n_tp / (n_tp + n_sl)
+            
+            if n_tp > 0:
+                avg_return_on_tp = float(returns_labeled[tp_mask].mean())
+            if n_sl > 0:
+                avg_loss_on_sl = float(returns_labeled[sl_mask].mean())
+            
+            if n_tp > 0 and n_sl > 0 and avg_loss_on_sl < 0:
+                realized_rr = abs(avg_return_on_tp / avg_loss_on_sl)
+        except Exception:
+            pass
+    
+    # Feature coverage
+    unique_feature_days = unique_days_with_labels
+    
+    # Starvation detection
+    months_with_zero_labels = 0
+    min_monthly_labels = 0
+    max_monthly_labels = 0
+    label_trend_slope = 0.0
+    
+    if labels_per_month:
+        monthly_counts = list(labels_per_month.values())
+        months_with_zero_labels = sum(1 for c in monthly_counts if c == 0)
+        min_monthly_labels = min(monthly_counts) if monthly_counts else 0
+        max_monthly_labels = max(monthly_counts) if monthly_counts else 0
+        
+        # Compute trend (linear regression slope on monthly counts)
+        if len(monthly_counts) >= 3:
+            try:
+                x = np.arange(len(monthly_counts))
+                y = np.array(monthly_counts)
+                slope, _ = np.polyfit(x, y, 1)
+                label_trend_slope = float(slope)
+            except Exception:
+                label_trend_slope = 0.0
+    
+    return LabelDiagnostics(
+        total_labels=total_labels,
+        pos_labels_count=pos_labels_count,
+        neg_labels_count=neg_labels_count,
+        positive_ratio=positive_ratio,
+        labels_per_month=labels_per_month,
+        labels_by_year=labels_by_year,
+        unique_days_with_labels=unique_days_with_labels,
+        total_days_span=total_days_span,
+        labels_per_day=labels_per_day,
+        labels_by_regime=labels_by_regime,
+        k_t_median=k_t_median,
+        k_t_mean=k_t_mean,
+        k_t_std=k_t_std,
+        k_t_percentile_95=k_t_percentile_95,
+        k_t_clipping_rate=k_t_clipping_rate,
+        z_score_median=z_score_median,
+        z_score_mean=z_score_mean,
+        z_score_std=z_score_std,
+        z_score_percentile_95=z_score_percentile_95,
+        p_target_mean=p_target_mean,
+        p_target_std=p_target_std,
+        p_target_min=p_target_min,
+        p_target_max=p_target_max,
+        win_rate_tp_vs_sl=win_rate_tp_vs_sl,
+        avg_return_on_tp=avg_return_on_tp,
+        avg_loss_on_sl=avg_loss_on_sl,
+        realized_rr=realized_rr,
+        unique_feature_days=unique_feature_days,
+        months_with_zero_labels=months_with_zero_labels,
+        min_monthly_labels=min_monthly_labels,
+        max_monthly_labels=max_monthly_labels,
+        label_trend_slope=label_trend_slope,
+        auc_rolling=None,
+    )
+
+
+def check_early_trial_rejection(
+    binary_labels: pd.Series,
+    z_scores: pd.Series,
+    k_t: Optional[pd.Series] = None,
+    volatility: Optional[pd.Series] = None,
+    k_t_clipping_rate_threshold: float = 0.20,
+    min_labels_per_year: int = 50,
+    min_labels_per_regime: int = 20,
+) -> TrialRejectionResult:
+    """Check if a trial should be rejected early based on label quality constraints.
+    
+    Rejection criteria (hard-fail if ANY is true):
+    1. total_positive_labels == 0
+    2. labels_in_any_year == 0
+    3. labels_in_any_regime_bucket == 0
+    4. median_k_t > 95th percentile of z (over-restrictive threshold)
+    5. k_t_clipping_rate > 20% (too much clipping)
+    
+    Args:
+        binary_labels: Binary labels series
+        z_scores: Z-score series
+        k_t: Dynamic threshold series (optional)
+        volatility: Volatility series for regime bucketing (optional)
+        k_t_clipping_rate_threshold: Max acceptable clipping rate (default: 0.20)
+        min_labels_per_year: Minimum labels required per year
+        min_labels_per_regime: Minimum labels required per volatility regime
+    
+    Returns:
+        TrialRejectionResult with rejection status and details
+    """
+    labeled_mask = ~binary_labels.isna()
+    labels = binary_labels[labeled_mask]
+    
+    # Compute basic stats
+    total_labels = len(labels)
+    pos_count = int((labels == 1).sum())
+    neg_count = int((labels == 0).sum())
+    
+    # Check 1: total_positive_labels == 0
+    if pos_count == 0:
+        return TrialRejectionResult(
+            rejected=True,
+            reason="No positive labels generated",
+            constraint="total_positive_labels == 0",
+            details={
+                "total_labels": total_labels,
+                "pos_labels": pos_count,
+                "neg_labels": neg_count,
+                "label_histogram": {"positive": pos_count, "negative": neg_count},
+            }
+        )
+    
+    # Check 2: labels_in_any_year == 0
+    labels_by_year: Dict[int, int] = {}
+    if total_labels > 0 and hasattr(labels.index, 'year'):
+        try:
+            for idx in labels.index:
+                year = idx.year
+                labels_by_year[year] = labels_by_year.get(year, 0) + 1
+            
+            years_with_zero = [y for y, c in labels_by_year.items() if c < min_labels_per_year]
+            if years_with_zero:
+                return TrialRejectionResult(
+                    rejected=True,
+                    reason=f"Insufficient labels in year(s): {years_with_zero}",
+                    constraint="labels_in_any_year == 0",
+                    details={
+                        "labels_by_year": labels_by_year,
+                        "years_with_insufficient_labels": years_with_zero,
+                        "min_required": min_labels_per_year,
+                    }
+                )
+        except Exception:
+            pass
+    
+    # Check 3: labels_in_any_regime_bucket == 0
+    labels_by_regime: Dict[str, int] = {"low_vol": 0, "med_vol": 0, "high_vol": 0}
+    if volatility is not None and total_labels > 0:
+        try:
+            vol_aligned = volatility.reindex(labels.index)
+            vol_valid = vol_aligned.dropna()
+            if len(vol_valid) > 10:
+                q33 = float(vol_valid.quantile(0.33))
+                q67 = float(vol_valid.quantile(0.67))
+                labels_by_regime["low_vol"] = int((vol_aligned <= q33).sum())
+                labels_by_regime["med_vol"] = int(((vol_aligned > q33) & (vol_aligned <= q67)).sum())
+                labels_by_regime["high_vol"] = int((vol_aligned > q67).sum())
+                
+                regimes_with_few = [r for r, c in labels_by_regime.items() if c < min_labels_per_regime]
+                if regimes_with_few:
+                    return TrialRejectionResult(
+                        rejected=True,
+                        reason=f"Insufficient labels in regime(s): {regimes_with_few}",
+                        constraint="labels_in_any_regime_bucket == 0",
+                        details={
+                            "labels_by_regime": labels_by_regime,
+                            "regimes_with_insufficient_labels": regimes_with_few,
+                            "min_required": min_labels_per_regime,
+                        }
+                    )
+        except Exception:
+            pass
+    
+    # Check 4: median_k_t > 95th percentile of z
+    if k_t is not None:
+        k_valid = k_t.dropna()
+        z_valid = z_scores.dropna()
+        if len(k_valid) > 0 and len(z_valid) > 0:
+            k_t_median = float(k_valid.median())
+            z_p95 = float(z_valid.quantile(0.95))
+            
+            if k_t_median > z_p95:
+                return TrialRejectionResult(
+                    rejected=True,
+                    reason=f"k_t median ({k_t_median:.3f}) > z 95th percentile ({z_p95:.3f})",
+                    constraint="median_k_t > 95th_percentile_z",
+                    details={
+                        "k_t_median": k_t_median,
+                        "k_t_mean": float(k_valid.mean()),
+                        "k_t_std": float(k_valid.std()),
+                        "z_p95": z_p95,
+                        "z_median": float(z_valid.median()),
+                        "k_t_distribution": {
+                            "p25": float(k_valid.quantile(0.25)),
+                            "p50": float(k_valid.quantile(0.50)),
+                            "p75": float(k_valid.quantile(0.75)),
+                            "p95": float(k_valid.quantile(0.95)),
+                        },
+                    }
+                )
+    
+    # Check 5: k_t_clipping_rate > 20%
+    # This requires knowing original vs clipped k_t values
+    # For now, we estimate based on k_t being at extreme bounds
+    if k_t is not None:
+        k_valid = k_t.dropna()
+        z_valid = z_scores.dropna()
+        if len(k_valid) > 10 and len(z_valid) > 10:
+            # Estimate clipping: k_t at bounds of z distribution
+            z_p01 = float(z_valid.quantile(0.01))
+            z_p99 = float(z_valid.quantile(0.99))
+            
+            n_at_lower = int((k_valid <= z_p01 * 1.01).sum())  # Within 1% of lower bound
+            n_at_upper = int((k_valid >= z_p99 * 0.99).sum())  # Within 1% of upper bound
+            clipping_rate = (n_at_lower + n_at_upper) / len(k_valid)
+            
+            if clipping_rate > k_t_clipping_rate_threshold:
+                return TrialRejectionResult(
+                    rejected=True,
+                    reason=f"k_t clipping rate ({clipping_rate:.1%}) > threshold ({k_t_clipping_rate_threshold:.1%})",
+                    constraint="k_t_clipping_rate > 20%",
+                    details={
+                        "clipping_rate": clipping_rate,
+                        "n_at_lower_bound": n_at_lower,
+                        "n_at_upper_bound": n_at_upper,
+                        "total_k_t": len(k_valid),
+                        "z_p01": z_p01,
+                        "z_p99": z_p99,
+                    }
+                )
+    
+    # All checks passed
+    return TrialRejectionResult(
+        rejected=False,
+        reason="All constraints satisfied",
+        constraint="none",
+        details={
+            "total_labels": total_labels,
+            "pos_labels": pos_count,
+            "neg_labels": neg_count,
+            "labels_by_year": labels_by_year,
+            "labels_by_regime": labels_by_regime,
+        }
+    )
+
+
+def log_trial_rejection(
+    rejection: TrialRejectionResult,
+    trial_id: int = 0,
+    params: Optional[Dict[str, Any]] = None,
+) -> None:
+    """Log detailed information about a rejected trial."""
+    if not rejection.rejected:
+        return
+    
+    tprint_warning(
+        f"❌ [TRIAL_REJECTED #{trial_id}] {rejection.reason}"
+    )
+    tprint_warning(
+        f"   Constraint: {rejection.constraint}"
+    )
+    
+    details = rejection.details
+    
+    # Log label histogram
+    if "label_histogram" in details:
+        tprint_warning(f"   Label histogram: {details['label_histogram']}")
+    
+    # Log by-year breakdown
+    if "labels_by_year" in details:
+        tprint_warning(f"   Labels by year: {details['labels_by_year']}")
+    
+    # Log by-regime breakdown
+    if "labels_by_regime" in details:
+        tprint_warning(f"   Labels by regime: {details['labels_by_regime']}")
+    
+    # Log k_t distribution if available
+    if "k_t_distribution" in details:
+        k_dist = details["k_t_distribution"]
+        tprint_warning(
+            f"   k_t distribution: p25={k_dist.get('p25', 'N/A'):.3f}, "
+            f"p50={k_dist.get('p50', 'N/A'):.3f}, "
+            f"p75={k_dist.get('p75', 'N/A'):.3f}, "
+            f"p95={k_dist.get('p95', 'N/A'):.3f}"
+        )
+    
+    # Log relevant params
+    if params:
+        relevant_params = {k: v for k, v in params.items() 
+                         if k in ['p_min', 'p_max', 'sigmoid_slope', 'sigmoid_midpoint',
+                                 'volatility_ema_span', 'rolling_k_window']}
+        if relevant_params:
+            tprint_warning(f"   Relevant params: {relevant_params}")
+
+
+def monitor_label_density_drift(
+    binary_labels: pd.Series,
+    window_bars: int = 500,
+    alert_threshold_drop: float = 0.15,
+) -> Dict[str, Any]:
+    """Monitor positive label percentage over time to detect drift.
+    
+    Args:
+        binary_labels: Binary labels series
+        window_bars: Rolling window size in bars
+        alert_threshold_drop: Alert if positive % drops by this amount
+        
+    Returns:
+        Dict with drift metrics and alerts
+    """
+    labeled_mask = ~binary_labels.isna()
+    labels = binary_labels[labeled_mask].astype(float)
+    
+    if len(labels) < window_bars:
+        return {
+            "monitoring_enabled": False,
+            "reason": f"Insufficient labels ({len(labels)} < {window_bars})",
+        }
+    
+    # Rolling positive percentage
+    rolling_pos_pct = labels.rolling(window=window_bars, min_periods=window_bars // 2).mean()
+    rolling_pos_pct = rolling_pos_pct.dropna()
+    
+    if len(rolling_pos_pct) < 10:
+        return {
+            "monitoring_enabled": False,
+            "reason": "Insufficient rolling window data",
+        }
+    
+    # Compute drift metrics
+    initial_pct = float(rolling_pos_pct.iloc[:window_bars // 2].mean())
+    final_pct = float(rolling_pos_pct.iloc[-window_bars // 2:].mean())
+    drift = final_pct - initial_pct
+    
+    # Trend via linear regression
+    x = np.arange(len(rolling_pos_pct))
+    y = rolling_pos_pct.values
+    try:
+        slope, intercept = np.polyfit(x, y, 1)
+        trend_slope = float(slope)
+    except Exception:
+        trend_slope = 0.0
+    
+    # Detect concerning patterns
+    alerts = []
+    if drift < -alert_threshold_drop:
+        alerts.append(f"Positive label % dropped by {abs(drift):.1%} (initial={initial_pct:.1%}, final={final_pct:.1%})")
+    
+    if trend_slope < -0.0001:  # Negative slope indicates declining positive rate
+        alerts.append(f"Declining trend detected: slope={trend_slope:.6f}")
+    
+    # Compute by-period breakdown
+    period_stats = []
+    n_periods = min(5, len(labels) // window_bars)
+    if n_periods >= 2:
+        period_size = len(labels) // n_periods
+        for i in range(n_periods):
+            start = i * period_size
+            end = (i + 1) * period_size if i < n_periods - 1 else len(labels)
+            period_labels = labels.iloc[start:end]
+            pos_pct = float(period_labels.mean())
+            period_stats.append({
+                "period": i + 1,
+                "n_labels": len(period_labels),
+                "positive_pct": pos_pct,
+            })
+    
+    return {
+        "monitoring_enabled": True,
+        "initial_positive_pct": initial_pct,
+        "final_positive_pct": final_pct,
+        "drift": drift,
+        "trend_slope": trend_slope,
+        "alerts": alerts,
+        "period_stats": period_stats,
+        "overall_positive_pct": float(labels.mean()),
+        "total_labels": len(labels),
+    }
 
 
 def compute_realistic_pnl_edge(
@@ -3569,10 +4212,11 @@ class MetaLabelingHPOExperimentStep(BaseStep):
         # Apply warm start narrowing to parameter groups (unless bypassed)
         bypass_warm_start = config.get("bypass_warm_start", False)
         warm_start_narrowing = config.get("warm_start_narrowing_factor", 0.3)
+        warm_start_report: Dict[str, Any] = {"enabled": False}
         
         if warm_start_best_params and not bypass_warm_start:
             tprint_info(f"🔄 Applying warm start with {len(warm_start_best_params)} previous params...")
-            param_groups = apply_warm_start_to_param_groups(
+            param_groups, warm_start_report = apply_warm_start_to_param_groups(
                 param_groups=param_groups,
                 warm_start_params=warm_start_best_params,
                 narrowing_factor=warm_start_narrowing,
@@ -4124,6 +4768,117 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                         f"unique_labels={unique_vol_labels}, "
                         f"positive_ratio={vol_diag.get('positive_ratio', 'N/A'):.2%}" if vol_diag.get('positive_ratio') else "",
                     )
+
+                # =====================================================================
+                # EARLY TRIAL REJECTION CHECK
+                # =====================================================================
+                # Check if this configuration should be rejected early
+                try:
+                    # Compute volatility for regime bucketing
+                    log_returns_for_vol = np.log(close_prices / close_prices.shift(1))
+                    vol_for_regime = compute_ema_volatility(log_returns_for_vol, span=volatility_ema_span, min_periods=10)
+                    
+                    rejection_result = check_early_trial_rejection(
+                        binary_labels=binary_labels,
+                        z_scores=vol_z_scores,
+                        k_t=vol_diag.get("k_t_series"),  # If available in diagnostics
+                        volatility=vol_for_regime,
+                        k_t_clipping_rate_threshold=0.20,
+                        min_labels_per_year=50,
+                        min_labels_per_regime=20,
+                    )
+                    
+                    if rejection_result.rejected:
+                        log_trial_rejection(
+                            rejection=rejection_result,
+                            trial_id=debug_sample_count,
+                            params=params,
+                        )
+                        gate_stats["early_rejection"] = gate_stats.get("early_rejection", 0) + 1
+                        gate_stats[f"reject_{rejection_result.constraint}"] = gate_stats.get(f"reject_{rejection_result.constraint}", 0) + 1
+                        return -1e9
+                except Exception as e:
+                    if debug_sample_count < debug_sample_limit:
+                        tprint_warning(f"[EARLY_REJECTION] Check failed: {e}")
+
+                # =====================================================================
+                # LABEL DENSITY DRIFT MONITORING
+                # =====================================================================
+                try:
+                    drift_report = monitor_label_density_drift(
+                        binary_labels=binary_labels,
+                        window_bars=500,
+                        alert_threshold_drop=0.15,
+                    )
+                    
+                    if drift_report.get("monitoring_enabled", False):
+                        drift = drift_report.get("drift", 0)
+                        alerts = drift_report.get("alerts", [])
+                        
+                        if debug_sample_count < debug_sample_limit:
+                            tprint_info(
+                                f"[LABEL_DRIFT] pos%: {drift_report.get('initial_positive_pct', 0):.1%} → "
+                                f"{drift_report.get('final_positive_pct', 0):.1%} (drift={drift:+.1%})"
+                            )
+                        
+                        if alerts:
+                            for alert in alerts:
+                                tprint_warning(f"[LABEL_DRIFT_ALERT] {alert}")
+                except Exception as e:
+                    if debug_sample_count < debug_sample_limit:
+                        tprint_warning(f"[LABEL_DRIFT] Monitoring failed: {e}")
+
+                # =====================================================================
+                # COMPREHENSIVE LABEL DIAGNOSTICS (SNR-based)
+                # =====================================================================
+                label_diagnostics: Optional[LabelDiagnostics] = None
+                try:
+                    label_diagnostics = compute_label_diagnostics(
+                        binary_labels=binary_labels,
+                        realized_returns=realized_returns,
+                        z_scores=vol_z_scores,
+                        k_t=vol_diag.get("k_t_series"),
+                        p_positive=vol_diag.get("p_positive_series"),
+                        volatility=vol_for_regime if 'vol_for_regime' in dir() else None,
+                        exit_reasons=exit_reasons,
+                        mfe=mfe_series,
+                        mae=mae_series,
+                        market_data=market_data,
+                    )
+                    
+                    if debug_sample_count < debug_sample_limit:
+                        diag = label_diagnostics
+                        tprint_info(
+                            f"[LABEL_DIAG] total={diag.total_labels}, pos={diag.pos_labels_count}, neg={diag.neg_labels_count}, "
+                            f"ratio={diag.positive_ratio:.1%}, labels/day={diag.labels_per_day:.2f}"
+                        )
+                        tprint_info(
+                            f"[LABEL_DIAG] k_t: median={diag.k_t_median:.3f}, mean={diag.k_t_mean:.3f}, "
+                            f"z: median={diag.z_score_median:.3f}, p_target: mean={diag.p_target_mean:.3f}"
+                        )
+                        if diag.win_rate_tp_vs_sl and not np.isnan(diag.win_rate_tp_vs_sl):
+                            tprint_info(
+                                f"[LABEL_DIAG] win_rate_TP_vs_SL={diag.win_rate_tp_vs_sl:.1%}, "
+                                f"avg_TP={diag.avg_return_on_tp:.4f}, avg_SL={diag.avg_loss_on_sl:.4f}, "
+                                f"RR={diag.realized_rr:.2f}"
+                            )
+                        if diag.labels_per_month:
+                            monthly_vals = list(diag.labels_per_month.values())
+                            tprint_info(
+                                f"[LABEL_DIAG] monthly: min={min(monthly_vals)}, max={max(monthly_vals)}, "
+                                f"trend_slope={diag.label_trend_slope:.2f}, zero_months={diag.months_with_zero_labels}"
+                            )
+                        
+                        # Alert conditions
+                        if diag.win_rate_tp_vs_sl and not np.isnan(diag.win_rate_tp_vs_sl) and diag.win_rate_tp_vs_sl < 0.35:
+                            tprint_warning(f"[ALERT] win_rate_TP_vs_SL={diag.win_rate_tp_vs_sl:.1%} < 35%")
+                        if diag.label_trend_slope < -5.0:
+                            tprint_warning(f"[ALERT] Declining label trend: slope={diag.label_trend_slope:.2f}")
+                        if diag.unique_days_with_labels < 10:
+                            tprint_warning(f"[ALERT] Labels clustered to only {diag.unique_days_with_labels} days")
+                except Exception as e:
+                    if debug_sample_count < debug_sample_limit:
+                        tprint_warning(f"[LABEL_DIAG] Computation failed: {e}")
 
                 # Guard: configurations that produce no labeled events at all are
                 # rejected outright; sparse but non-zero densities are handled via

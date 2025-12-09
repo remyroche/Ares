@@ -31,6 +31,7 @@ Based on guidance from "Advances in Financial Machine Learning" by Marcos López
 import asyncio
 import logging
 import json
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Union, Tuple
 from datetime import datetime
 from pathlib import Path
@@ -2703,6 +2704,10 @@ def create_volatility_scaled_labels_for_events(
         "p_min": p_min,
         "p_max": p_max,
         "sigmoid_slope": sigmoid_slope,
+        # NEW: Include series for comprehensive diagnostics in HPO
+        "k_t_series": k_t_aligned,  # Dynamic threshold series
+        "p_positive_series": p_pos_aligned,  # Target positive fraction series
+        "volatility_series": vol_aligned,  # EMA volatility series
     }
     
     tprint(
@@ -8497,6 +8502,322 @@ class HPOCache:
                 pickle.dump(labels, f)
         except Exception as e:
             tprint(f"⚠️ Cache save failed: {e}", "WARNING")
+
+
+# =============================================================================
+# LABEL GENERATION DIAGNOSTICS (SNR-based monitoring)
+# =============================================================================
+
+@dataclass
+class LabelGenerationReport:
+    """Comprehensive report on label generation quality for regressor training."""
+    # Core counts
+    total_labels: int
+    pos_labels_count: int
+    neg_labels_count: int
+    positive_ratio: float
+    
+    # Time-based metrics
+    labels_per_month: Dict[str, int]
+    labels_per_day: float
+    unique_days_with_labels: int
+    total_days_span: float
+    
+    # Starvation detection
+    months_with_zero_labels: int
+    min_monthly_labels: int
+    max_monthly_labels: int
+    label_trend_slope: float  # Negative = declining
+    
+    # Dynamic threshold metrics
+    p_target_mean: float
+    p_target_std: float
+    k_t_median: float
+    k_t_mean: float
+    
+    # Trade quality
+    win_rate_tp_vs_sl: float
+    avg_return_on_tp: float
+    avg_loss_on_sl: float
+    realized_rr: float
+    
+    # Feature coverage
+    unique_feature_days: int
+    
+    # Alerts
+    alerts: List[str]
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {k: v for k, v in self.__dict__.items() if not k.startswith('_')}
+    
+    def log_summary(self, stage: str = ""):
+        """Log a summary of the label generation report."""
+        prefix = f"[{stage}] " if stage else ""
+        tprint(
+            f"{prefix}📊 Labels: total={self.total_labels}, pos={self.pos_labels_count}, "
+            f"neg={self.neg_labels_count}, ratio={self.positive_ratio:.1%}",
+            "INFO"
+        )
+        tprint(
+            f"{prefix}📊 Density: labels/day={self.labels_per_day:.2f}, "
+            f"unique_days={self.unique_days_with_labels}, span={self.total_days_span:.1f} days",
+            "INFO"
+        )
+        if self.labels_per_month:
+            monthly_vals = list(self.labels_per_month.values())
+            tprint(
+                f"{prefix}📊 Monthly: min={min(monthly_vals)}, max={max(monthly_vals)}, "
+                f"trend={self.label_trend_slope:.2f}, zero_months={self.months_with_zero_labels}",
+                "INFO"
+            )
+        if not np.isnan(self.win_rate_tp_vs_sl):
+            tprint(
+                f"{prefix}📊 Quality: win_rate={self.win_rate_tp_vs_sl:.1%}, "
+                f"avg_TP={self.avg_return_on_tp:.4f}, avg_SL={self.avg_loss_on_sl:.4f}, RR={self.realized_rr:.2f}",
+                "INFO"
+            )
+        for alert in self.alerts:
+            tprint(f"{prefix}⚠️ ALERT: {alert}", "WARNING")
+
+
+def compute_label_generation_report(
+    binary_labels: pd.Series,
+    realized_returns: pd.Series,
+    z_scores: Optional[pd.Series] = None,
+    k_t: Optional[pd.Series] = None,
+    p_positive: Optional[pd.Series] = None,
+    exit_reasons: Optional[pd.Series] = None,
+    stage: str = "",
+    auc_threshold: float = 0.55,
+    win_rate_threshold: float = 0.35,
+) -> LabelGenerationReport:
+    """Compute comprehensive label generation report for regressor training.
+    
+    Implements SNR-based diagnostics:
+    - labels_per_month: trend across months (detect starvation)
+    - pos_labels_count / neg_labels_count: absolute counts per class
+    - p_target(t): computed p_positive(t) (sigmoid output)
+    - k_t_median, k_t_mean: central tendency
+    - win_rate_TP_vs_SL: fraction hitting TP > SL (alert if < 35%)
+    - avg_return_on_tp and avg_loss_on_sl: realized RR
+    - unique_feature_cov: unique days with labels (detect clustering)
+    
+    Args:
+        binary_labels: Binary labels series
+        realized_returns: Realized returns per event
+        z_scores: Z-scores (optional)
+        k_t: Dynamic threshold series (optional)
+        p_positive: Target positive fraction (optional)
+        exit_reasons: Exit reasons (optional)
+        stage: Stage name for logging
+        auc_threshold: AUC alert threshold
+        win_rate_threshold: Win rate alert threshold
+    
+    Returns:
+        LabelGenerationReport with all metrics and alerts
+    """
+    labeled_mask = ~binary_labels.isna()
+    labels = binary_labels[labeled_mask]
+    returns_labeled = realized_returns.reindex(labels.index)
+    
+    # Core counts
+    total_labels = len(labels)
+    pos_labels_count = int((labels == 1).sum())
+    neg_labels_count = int((labels == 0).sum())
+    positive_ratio = pos_labels_count / total_labels if total_labels > 0 else 0.0
+    
+    # Time-based metrics
+    labels_per_month: Dict[str, int] = {}
+    labels_per_day = 0.0
+    unique_days_with_labels = 0
+    total_days_span = 0.0
+    
+    if total_labels > 0 and hasattr(labels.index, 'to_pydatetime'):
+        try:
+            for idx in labels.index:
+                month_key = idx.strftime("%Y-%m")
+                labels_per_month[month_key] = labels_per_month.get(month_key, 0) + 1
+            
+            unique_days = set(idx.date() for idx in labels.index)
+            unique_days_with_labels = len(unique_days)
+            
+            if len(labels.index) > 1:
+                total_days_span = (labels.index.max() - labels.index.min()).total_seconds() / 86400.0
+                labels_per_day = total_labels / max(1.0, total_days_span)
+        except Exception:
+            pass
+    
+    # Starvation detection
+    months_with_zero_labels = 0
+    min_monthly_labels = 0
+    max_monthly_labels = 0
+    label_trend_slope = 0.0
+    
+    if labels_per_month:
+        monthly_counts = list(labels_per_month.values())
+        months_with_zero_labels = sum(1 for c in monthly_counts if c == 0)
+        min_monthly_labels = min(monthly_counts) if monthly_counts else 0
+        max_monthly_labels = max(monthly_counts) if monthly_counts else 0
+        
+        if len(monthly_counts) >= 3:
+            try:
+                x = np.arange(len(monthly_counts))
+                y = np.array(monthly_counts)
+                slope, _ = np.polyfit(x, y, 1)
+                label_trend_slope = float(slope)
+            except Exception:
+                pass
+    
+    # Dynamic threshold metrics
+    p_target_mean = np.nan
+    p_target_std = np.nan
+    k_t_median = np.nan
+    k_t_mean = np.nan
+    
+    if p_positive is not None:
+        p_valid = p_positive.dropna()
+        if len(p_valid) > 0:
+            p_target_mean = float(p_valid.mean())
+            p_target_std = float(p_valid.std())
+    
+    if k_t is not None:
+        k_valid = k_t.dropna()
+        if len(k_valid) > 0:
+            k_t_median = float(k_valid.median())
+            k_t_mean = float(k_valid.mean())
+    
+    # Trade quality metrics
+    win_rate_tp_vs_sl = np.nan
+    avg_return_on_tp = np.nan
+    avg_loss_on_sl = np.nan
+    realized_rr = np.nan
+    
+    if exit_reasons is not None:
+        try:
+            exit_aligned = exit_reasons.reindex(labels.index)
+            tp_mask = exit_aligned == 1
+            sl_mask = exit_aligned == 0
+            n_tp = int(tp_mask.sum())
+            n_sl = int(sl_mask.sum())
+            
+            if n_tp + n_sl > 0:
+                win_rate_tp_vs_sl = n_tp / (n_tp + n_sl)
+            
+            if n_tp > 0:
+                avg_return_on_tp = float(returns_labeled[tp_mask].mean())
+            if n_sl > 0:
+                avg_loss_on_sl = float(returns_labeled[sl_mask].mean())
+            
+            if n_tp > 0 and n_sl > 0 and avg_loss_on_sl < 0:
+                realized_rr = abs(avg_return_on_tp / avg_loss_on_sl)
+        except Exception:
+            pass
+    
+    # Generate alerts
+    alerts: List[str] = []
+    
+    if total_labels < 100:
+        alerts.append(f"Very few labels ({total_labels} < 100) - may not train well")
+    
+    if pos_labels_count < 30:
+        alerts.append(f"Very few positive labels ({pos_labels_count} < 30)")
+    
+    if neg_labels_count < 30:
+        alerts.append(f"Very few negative labels ({neg_labels_count} < 30)")
+    
+    if not np.isnan(win_rate_tp_vs_sl) and win_rate_tp_vs_sl < win_rate_threshold:
+        alerts.append(f"Low win rate TP vs SL: {win_rate_tp_vs_sl:.1%} < {win_rate_threshold:.0%}")
+    
+    if label_trend_slope < -5.0:
+        alerts.append(f"Declining label trend: slope={label_trend_slope:.2f}")
+    
+    if unique_days_with_labels < 10:
+        alerts.append(f"Labels clustered to only {unique_days_with_labels} days")
+    
+    if months_with_zero_labels > 0:
+        alerts.append(f"{months_with_zero_labels} month(s) with zero labels")
+    
+    if min_monthly_labels < 10 and labels_per_month:
+        alerts.append(f"Min monthly labels ({min_monthly_labels}) < 10")
+    
+    return LabelGenerationReport(
+        total_labels=total_labels,
+        pos_labels_count=pos_labels_count,
+        neg_labels_count=neg_labels_count,
+        positive_ratio=positive_ratio,
+        labels_per_month=labels_per_month,
+        labels_per_day=labels_per_day,
+        unique_days_with_labels=unique_days_with_labels,
+        total_days_span=total_days_span,
+        months_with_zero_labels=months_with_zero_labels,
+        min_monthly_labels=min_monthly_labels,
+        max_monthly_labels=max_monthly_labels,
+        label_trend_slope=label_trend_slope,
+        p_target_mean=p_target_mean,
+        p_target_std=p_target_std,
+        k_t_median=k_t_median,
+        k_t_mean=k_t_mean,
+        win_rate_tp_vs_sl=win_rate_tp_vs_sl,
+        avg_return_on_tp=avg_return_on_tp,
+        avg_loss_on_sl=avg_loss_on_sl,
+        realized_rr=realized_rr,
+        unique_feature_days=unique_days_with_labels,
+        alerts=alerts,
+    )
+
+
+def monitor_label_density_by_stage(
+    labels_by_stage: Dict[str, pd.Series],
+    min_labels_per_stage: int = 50,
+) -> Dict[str, Any]:
+    """Monitor label density across different stages of the pipeline.
+    
+    Args:
+        labels_by_stage: Dict mapping stage name to binary labels series
+        min_labels_per_stage: Minimum labels required per stage
+    
+    Returns:
+        Dict with monitoring results and alerts
+    """
+    results: Dict[str, Any] = {
+        "stages": {},
+        "alerts": [],
+        "total_labels_by_stage": {},
+    }
+    
+    for stage_name, labels in labels_by_stage.items():
+        labeled_mask = ~labels.isna()
+        n_labels = int(labeled_mask.sum())
+        n_positive = int((labels == 1).sum())
+        
+        results["stages"][stage_name] = {
+            "total_labels": n_labels,
+            "positive_labels": n_positive,
+            "negative_labels": n_labels - n_positive,
+            "positive_ratio": n_positive / n_labels if n_labels > 0 else 0.0,
+        }
+        results["total_labels_by_stage"][stage_name] = n_labels
+        
+        if n_labels < min_labels_per_stage:
+            results["alerts"].append(
+                f"Stage '{stage_name}' has insufficient labels ({n_labels} < {min_labels_per_stage})"
+            )
+    
+    # Check for label starvation between stages
+    stage_names = list(labels_by_stage.keys())
+    if len(stage_names) >= 2:
+        for i in range(1, len(stage_names)):
+            prev_count = results["total_labels_by_stage"][stage_names[i-1]]
+            curr_count = results["total_labels_by_stage"][stage_names[i]]
+            
+            if prev_count > 0 and curr_count < prev_count * 0.5:
+                drop_pct = (prev_count - curr_count) / prev_count * 100
+                results["alerts"].append(
+                    f"Large label drop from '{stage_names[i-1]}' to '{stage_names[i]}': "
+                    f"{prev_count} → {curr_count} ({drop_pct:.0f}% drop)"
+                )
+    
+    return results
 
 
 class FeatureGenerationMetaLabelingStep(BaseStep):

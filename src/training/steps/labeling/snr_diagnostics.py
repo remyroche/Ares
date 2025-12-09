@@ -964,6 +964,7 @@ def run_label_quality(
     # using isotonic expected returns instead of raw realized returns.
     bucket_stats = {}
     prob_series = None
+    prob_variance_warning = None
     if "meta_probability" in df.columns and expected_ret is not None:
         prob_series = df["meta_probability"].astype(float)
         valid_bucket_mask = labeled_mask & prob_series.notna() & expected_ret.notna()
@@ -971,6 +972,15 @@ def run_label_quality(
             probs_valid = prob_series[valid_bucket_mask]
             rets_valid = expected_ret[valid_bucket_mask]
             labels_valid = binary_labels[valid_bucket_mask]
+            
+            # Check for constant or near-constant probabilities (indicates model not learning)
+            prob_std = float(probs_valid.std())
+            prob_range = float(probs_valid.max() - probs_valid.min())
+            if prob_std < 0.01 or prob_range < 0.05:
+                prob_variance_warning = (
+                    f"⚠️ Low probability variance (std={prob_std:.4f}, range={prob_range:.4f}). "
+                    "Model may be outputting constant probabilities - bucket analysis unreliable."
+                )
 
             bucket_fracs = [0.05, 0.10, 0.20, 0.30, 0.40]
             for frac in bucket_fracs:
@@ -1173,6 +1183,8 @@ def run_label_quality(
     if bucket_stats:
         print()
         print("-- High-Probability Buckets (by meta_probability, isotonic expected returns) --")
+        if prob_variance_warning:
+            print(prob_variance_warning)
         for key in sorted(bucket_stats.keys(), key=lambda k: bucket_stats[k]["frac"]):
             stats = bucket_stats[key]
             print(
@@ -1245,6 +1257,7 @@ def run_label_quality(
             "frac_small_vs_cost": float(frac_small),
         },
         "probability_buckets": bucket_stats,
+        "probability_variance_warning": prob_variance_warning,
         "volatility_buckets": vol_bucket_stats,
         "advanced": {
             "aleatoric_uncertainty_fraction": float(aleatoric_fraction),
@@ -1301,6 +1314,8 @@ def run_label_quality(
     ]
 
     if bucket_stats:
+        if prob_variance_warning:
+            md_lines.append(f"\n{prob_variance_warning}\n")
         for key in sorted(bucket_stats.keys(), key=lambda k: bucket_stats[k]["frac"]):
             stats = bucket_stats[key]
             md_lines.append(
@@ -2340,7 +2355,7 @@ def run_trading_simulation(
 
     Computes:
     - Model calibration (Brier score, calibration curves)
-    - Trading metrics at different probability thresholds (0.55, 0.60, 0.65):
+    - Trading metrics at different probability thresholds (0.60, 0.65, 0.70, 0.75):
       - Trades per day
       - PnL per day (average, percentage)
       - Simplified equity curve simulation
@@ -2348,7 +2363,7 @@ def run_trading_simulation(
       - Win-rate stability
     """
     if prob_thresholds is None:
-        prob_thresholds = [0.50, 0.55, 0.60, 0.65]
+        prob_thresholds = [0.60, 0.65, 0.70, 0.75]
 
     df = _load_labeled_data(symbol, exchange, timeframe, direction=direction, model=model)
     X, y = _build_feature_matrix_from_labeled(df, direction=direction)

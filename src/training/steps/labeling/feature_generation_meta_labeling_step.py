@@ -275,8 +275,8 @@ TARGET_POWER = 1.5
 # Hard floor for profit targets to ensure viability after transaction costs
 PROFIT_TARGET_FLOOR_BPS = 50  # 0.5% = 50 basis points (must exceed slippage + fees)
 PROFITABLE_TIMEOUT_RETURN_THRESHOLD = 0.005
-# Default probability threshold for meta-gating (lowered from 0.65 for more trades)
-DEFAULT_PROBABILITY_THRESHOLD = 0.55
+# Default probability threshold for meta-gating
+DEFAULT_PROBABILITY_THRESHOLD = 0.60
 # Default expected return threshold (lowered from 0.45% to 0.30%)
 DEFAULT_EXPECTED_RETURN_THRESHOLD = 0.003  # 0.30%
 
@@ -8654,9 +8654,9 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                             if target_trades_per_day_max < target_trades_per_day_min:
                                 target_trades_per_day_max = target_trades_per_day_min
 
-                            # Thresholds for meta-gating search: fairly loose probability thresholds
-                            # and reduced expected-return multipliers so that gates are easier to satisfy
-                            prob_thresholds = [0.50, 0.55, 0.60, 0.65, 0.70]
+                            # Thresholds for meta-gating search: probability thresholds starting at 0.55
+                            # to ensure meaningful filtering, with reduced expected-return multipliers
+                            prob_thresholds = [0.55, 0.60, 0.65, 0.70, 0.75]
                             # With tx_cost ≈ 0.3%, these multipliers correspond to ≈0.075%–0.30%
                             # expected-return thresholds, instead of the previous 0.15%–0.60% range.
                             er_multipliers = [0.25, 0.5, 0.75, 1.0]

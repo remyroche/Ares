@@ -10,7 +10,7 @@ import pandas as pd
 import joblib
 import os
 from typing import Dict, Any, Optional, Tuple, List
-from sklearn.ensemble import ExtraTreesClassifier
+from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.preprocessing import StandardScaler
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
@@ -61,22 +61,16 @@ class GateModel:
         self.threshold = 0.0  # Default threshold (breakeven), updated after training
         self.feature_names = []
 
-        # Hyperparameters for ElasticNetCV
-        self.l1_ratios = self.config.get('l1_ratios', [0.1, 0.3, 0.5, 0.7, 0.9, 0.95, 0.99])
-        self.cv_splits = self.config.get('cv_splits', 5)
-        self.max_iter = self.config.get('max_iter', 5000)
-        self.n_jobs = self.config.get('n_jobs', -1)
-
-        # ExtraTrees-based gate configuration ("Dumb Manager")
+        # Hyperparameters (ExtraTreesRegressor)
         self.n_estimators = self.config.get('n_estimators', 500)
         self.max_depth = self.config.get('max_depth', 3)
         self.min_samples_leaf = self.config.get('min_samples_leaf', 0.05)
         self.max_features = self.config.get('max_features', 'sqrt')
         self.bootstrap = self.config.get('bootstrap', True)
-        self.class_weight = self.config.get('class_weight', 'balanced')
         self.random_state = self.config.get('random_state', 42)
+        # class_weight is not used in Regression, removing it.
 
-        # Optional probability calibration
+        # Optional calibration (Isotonic Regression for PnL mapping if needed)
         self.calibration_model = None
         self.calibration_method = self.config.get('calibration_method', 'isotonic')
 
@@ -492,25 +486,24 @@ class GateModel:
 
         Args:
             X: Feature DataFrame.
-            y: Target labels (e.g., binary trade outcomes).
+            y: Target labels (continuous PnL/returns).
             sample_weight: Optional sample weights.
         """
         self.pipeline = Pipeline([
             ('imputer', SimpleImputer(strategy='median')),
             ('scaler', StandardScaler()),
-            ('model', ExtraTreesClassifier(
+            ('model', ExtraTreesRegressor(
                 n_estimators=self.n_estimators,
                 max_depth=self.max_depth,
                 min_samples_leaf=self.min_samples_leaf,
                 max_features=self.max_features,
                 bootstrap=self.bootstrap,
-                class_weight=self.class_weight,
-                n_jobs=self.n_jobs,
+                n_jobs=self.config.get('n_jobs', -1),
                 random_state=self.random_state,
             )),
         ])
 
-        print(f"Training GateModel (ExtraTreesClassifier) with {X.shape[0]} samples and {X.shape[1]} features...")
+        print(f"Training GateModel (ExtraTreesRegressor) with {X.shape[0]} samples and {X.shape[1]} features...")
 
         fit_kwargs: Dict[str, Any] = {}
         if sample_weight is not None:
@@ -575,27 +568,25 @@ class GateModel:
                 print(f"SHAP computation failed: {e}")
 
     def predict_raw_score(self, X: pd.DataFrame) -> np.ndarray:
-        """Predict uncalibrated gate score from the underlying classifier."""
+        """Predict raw gate score (Expected PnL) from the underlying regressor."""
         if self.pipeline is None:
             raise ValueError("Model not trained yet.")
-        if hasattr(self.pipeline, 'predict_proba'):
-            probs = self.pipeline.predict_proba(X)
-            if probs.ndim == 2 and probs.shape[1] >= 2:
-                return probs[:, 1]
-            return probs.ravel()
+
+        # Regression: direct predict
         return self.pipeline.predict(X)
 
     def fit_calibrator(self, X_val: pd.DataFrame, y_val: pd.Series) -> None:
-        """Fit optional probability calibration model on a validation window."""
+        """Fit optional calibration model (e.g., Isotonic Regression)."""
         if self.pipeline is None:
             raise ValueError("Model not trained yet.")
         if X_val is None or y_val is None or len(X_val) == 0:
             return
 
         y_array = np.asarray(y_val).ravel()
-        # Need at least two classes to calibrate
-        if np.unique(y_array).size < 2:
-            return
+        # For regression, we might want to calibrate outputs to match true mean PnL better
+        # or simply rely on the Regressor.
+        # But `IsotonicRegression` assumes monotonicity.
+        # If predicted PnL increases, realized PnL should increase.
 
         try:
             raw_scores = self.predict_raw_score(X_val)
@@ -603,16 +594,14 @@ class GateModel:
             return
 
         method = str(self.calibration_method).lower()
-        # For now, support isotonic regression; other values fall back to isotonic
         if method not in ("isotonic", "isotonic_regression"):
             method = "isotonic"
 
         try:
-            calibrator = IsotonicRegression(out_of_bounds="clip")
+            calibrator = IsotonicRegression(out_of_bounds="clip", increasing=True)
             calibrator.fit(raw_scores, y_array)
             self.calibration_model = calibrator
         except Exception:
-            # If calibration fails, fall back to raw scores
             self.calibration_model = None
 
     def calibrate_threshold(self, X: pd.DataFrame, percentile: int = 25):
@@ -620,10 +609,9 @@ class GateModel:
 
         Logic:
         1) If ``min_predicted_pnl`` is in config, use that (e.g., 0.0 for breakeven).
-        2) Else, if ``min_win_probability`` is set (e.g. 0.5), we set threshold to this.
-        3) Else, if ``target_coverage`` is set (e.g. 0.75), we set threshold to the
+        2) Else, if ``target_coverage`` is set (e.g. 0.75), we set threshold to the
            corresponding quantile (25th percentile) to block the bottom 25%.
-        4) Fallback to ``percentile`` arg (default 25).
+        3) Fallback to ``percentile`` arg (default 25).
         """
 
         if self.pipeline is None:
@@ -638,16 +626,6 @@ class GateModel:
             print(
                 f"Threshold set from min_predicted_pnl={self.threshold:.6f} "
                 "(blocking regions where predicted PnL < this)."
-            )
-            return
-
-        # 1b) Direct probability threshold on predicted win probability
-        min_win_prob = self.config.get('min_win_probability', None)
-        if isinstance(min_win_prob, (int, float)):
-            self.threshold = float(min_win_prob)
-            print(
-                f"Threshold set from min_win_probability={self.threshold:.6f} "
-                "(blocking trades with predicted win probability below this)."
             )
             return
 
@@ -673,13 +651,14 @@ class GateModel:
         print(f"Threshold calibrated at {calib_pct:.1f}th percentile: {self.threshold:.6f}")
 
     def predict_score(self, X: pd.DataFrame) -> np.ndarray:
-        """Predict continuous gate score (e.g., probability of accepting a trade)."""
+        """Predict continuous gate score (Expected PnL)."""
         raw_scores = self.predict_raw_score(X)
 
         if self.calibration_model is not None:
             try:
                 calibrated = self.calibration_model.predict(raw_scores)
-                return np.clip(calibrated, 0.0, 1.0)
+                # Don't clip PnL to [0,1] - regression targets can be negative or >1
+                return calibrated
             except Exception:
                 return raw_scores
 

@@ -314,22 +314,22 @@ class GateTrainingStep(BaseStep):
                 'realized_return': net_returns.values
             })
 
-            # Generate Labels (Regression Target)
-            y = (net_returns > 0).astype(int)
+            # Generate Labels (Regression Target - Expected PnL)
+            # Use raw net returns as the target
+            y = net_returns
 
-            tprint_success(f"Generated {len(y)} regression targets. Mean PnL: {net_returns.mean():.4f}")
+            tprint_success(f"Generated {len(y)} regression targets. Mean PnL: {net_returns.mean():.4f}, Std: {net_returns.std():.4f}")
 
             # 3. Initialize and Train GateModel
             gate_config = config.get('gate_config', {})
             # If the user has not provided an explicit calibration target, default
-            # to blocking trades whose predicted win probability is below 0.5.
+            # to blocking trades whose predicted PnL is below 0.0 (breakeven).
             if (
                 'min_predicted_pnl' not in gate_config
                 and 'calibration_percentile' not in gate_config
                 and 'target_coverage' not in gate_config
-                and 'min_win_probability' not in gate_config
             ):
-                gate_config['min_win_probability'] = 0.4
+                gate_config['min_predicted_pnl'] = 0.0
             model = GateModel(config=gate_config)
 
             # Prepare Features
@@ -449,36 +449,12 @@ class GateTrainingStep(BaseStep):
             # Train on training window only
             model.train(X_train_fit, y_train_fit)
 
-            # Probability calibration on validation window (isotonic)
-            val_brier_raw = None
-            val_brier_cal = None
-            val_ece_raw = None
-            val_ece_cal = None
-
-            if isinstance(X_val, pd.DataFrame) and len(X_val) >= 20 and y_val.nunique() >= 2:
+            # Calibration (Optional fit)
+            if isinstance(X_val, pd.DataFrame) and len(X_val) >= 20:
                 try:
-                    raw_scores_val = model.predict_raw_score(X_val)
-                    prob_raw = np.column_stack([1.0 - raw_scores_val, raw_scores_val])
-                    calib_raw = calculate_calibration_metrics(y_val.values, prob_raw)
-                    val_brier_raw = calib_raw.get('brier_score')
-                    val_ece_raw = calib_raw.get('expected_calibration_error')
-
-                    # Fit calibrator and re-evaluate
+                    # For regression, calibration fits an isotonic map to align predictions with actuals
+                    # mostly useful if the model is biased.
                     model.fit_calibrator(X_val, y_val)
-                    cal_scores_val = model.predict_score(X_val)
-                    prob_cal = np.column_stack([1.0 - cal_scores_val, cal_scores_val])
-                    calib_cal = calculate_calibration_metrics(y_val.values, prob_cal)
-                    val_brier_cal = calib_cal.get('brier_score')
-                    val_ece_cal = calib_cal.get('expected_calibration_error')
-
-                    if val_brier_raw is not None and val_brier_cal is not None:
-                        raw_ece_str = f"{val_ece_raw:.4f}" if val_ece_raw is not None else "nan"
-                        cal_ece_str = f"{val_ece_cal:.4f}" if val_ece_cal is not None else "nan"
-                        tprint(
-                            f"[GateTrainingStep] Validation calibration - Brier raw={val_brier_raw:.4f}, cal={val_brier_cal:.4f}; "
-                            f"ECE raw={raw_ece_str}, cal={cal_ece_str}",
-                            "INFO",
-                        )
                 except Exception as e:
                     tprint_warning(f"[GateTrainingStep] Calibration step failed: {e}")
 
@@ -546,11 +522,11 @@ class GateTrainingStep(BaseStep):
                 'post_total_return': post_stats['total_return'],
                 'coverage_rate': coverage,
                 'avg_return_lift': avg_lift,
-                # Calibration metrics on validation window
-                'brier_val_raw': float(val_brier_raw) if val_brier_raw is not None else None,
-                'brier_val_cal': float(val_brier_cal) if val_brier_cal is not None else None,
-                'ece_val_raw': float(val_ece_raw) if val_ece_raw is not None else None,
-                'ece_val_cal': float(val_ece_cal) if val_ece_cal is not None else None,
+                # Calibration metrics (removed classification-specific Brier/ECE)
+                'brier_val_raw': None,
+                'brier_val_cal': None,
+                'ece_val_raw': None,
+                'ece_val_cal': None,
             }
 
             # Volatility-regime stability metrics (p_success vs realized winrate across rv_short buckets)

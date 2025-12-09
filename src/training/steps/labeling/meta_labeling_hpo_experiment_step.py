@@ -220,6 +220,9 @@ from src.training.steps.labeling.feature_generation_meta_labeling_step import (
     generate_diagnostics_report,
     compute_vol_scaled_returns_for_events,
     create_quantile_labels_from_vol_scaled_returns,
+    create_rolling_quantile_labels_from_vol_scaled_returns,
+    create_rolling_regime_aware_quantile_labels_from_vol_scaled_returns,
+    diagnose_quantile_lookahead_bias,
     attach_rolling_hmm_regimes_to_market_data,
     create_regime_aware_quantile_labels_from_vol_scaled_returns,
 )

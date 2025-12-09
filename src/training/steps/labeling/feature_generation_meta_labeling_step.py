@@ -1433,6 +1433,11 @@ def create_quantile_labels_from_vol_scaled_returns(
     low_q: float = 0.3,
     high_q: float = 0.8,
 ) -> pd.Series:
+    """Create binary labels using GLOBAL quantile thresholds.
+    
+    WARNING: This uses look-ahead bias as thresholds are computed across ALL data.
+    For production use, prefer create_rolling_quantile_labels_from_vol_scaled_returns().
+    """
     labels = pd.Series(index=vol_scaled.index, dtype=float)
     labels[:] = np.nan
 
@@ -1453,6 +1458,387 @@ def create_quantile_labels_from_vol_scaled_returns(
         labels[:] = np.nan
 
     return labels
+
+
+def create_rolling_quantile_labels_from_vol_scaled_returns(
+    vol_scaled: pd.Series,
+    low_q: float = 0.3,
+    high_q: float = 0.7,
+    lookback_bars: int = 2000,
+    min_periods: int = 200,
+    expanding_start: bool = True,
+) -> pd.Series:
+    """Create binary labels using ROLLING quantile thresholds (no look-ahead bias).
+    
+    This function computes quantile thresholds using only PAST data at each point,
+    eliminating the look-ahead bias present in global quantile approaches.
+    
+    Args:
+        vol_scaled: Volatility-scaled returns series
+        low_q: Lower quantile for negative labels (e.g., 0.3 = bottom 30%)
+        high_q: Upper quantile for positive labels (e.g., 0.7 = top 30%)
+        lookback_bars: Rolling window size in bars (default: 2000 ~= 21 days at 15m)
+        min_periods: Minimum observations required before computing quantiles
+        expanding_start: If True, use expanding window until lookback_bars is reached
+    
+    Returns:
+        Series with labels: 1.0 (positive), 0.0 (negative), NaN (unlabeled/insufficient data)
+    """
+    labels = pd.Series(index=vol_scaled.index, dtype=float)
+    labels[:] = np.nan
+    
+    try:
+        # Get non-NaN values and their positions
+        valid_mask = ~vol_scaled.isna()
+        if valid_mask.sum() < min_periods:
+            tprint(f"⚠️ Rolling quantiles: insufficient data ({valid_mask.sum()} < {min_periods})", "WARNING")
+            return labels
+        
+        # Compute rolling quantiles using only past data
+        # Use shift(1) to ensure we don't include the current observation in its own threshold
+        if expanding_start:
+            # Start with expanding window, switch to rolling after lookback_bars
+            rolling_low = vol_scaled.expanding(min_periods=min_periods).quantile(low_q).shift(1)
+            rolling_high = vol_scaled.expanding(min_periods=min_periods).quantile(high_q).shift(1)
+            
+            # After we have enough data, switch to fixed rolling window
+            rolling_low_fixed = vol_scaled.rolling(window=lookback_bars, min_periods=min_periods).quantile(low_q).shift(1)
+            rolling_high_fixed = vol_scaled.rolling(window=lookback_bars, min_periods=min_periods).quantile(high_q).shift(1)
+            
+            # Use fixed rolling where we have enough history
+            enough_history = pd.Series(range(len(vol_scaled)), index=vol_scaled.index) >= lookback_bars
+            rolling_low = rolling_low.where(~enough_history, rolling_low_fixed)
+            rolling_high = rolling_high.where(~enough_history, rolling_high_fixed)
+        else:
+            # Pure rolling window (NaN until min_periods reached)
+            rolling_low = vol_scaled.rolling(window=lookback_bars, min_periods=min_periods).quantile(low_q).shift(1)
+            rolling_high = vol_scaled.rolling(window=lookback_bars, min_periods=min_periods).quantile(high_q).shift(1)
+        
+        # Apply thresholds
+        valid_thresholds = (
+            rolling_low.notna() & 
+            rolling_high.notna() & 
+            (rolling_high > rolling_low) &
+            vol_scaled.notna()
+        )
+        
+        # Label based on rolling thresholds
+        labels.loc[valid_thresholds & (vol_scaled >= rolling_high)] = 1.0
+        labels.loc[valid_thresholds & (vol_scaled <= rolling_low)] = 0.0
+        
+        # Diagnostics
+        n_labeled = labels.notna().sum()
+        n_pos = (labels == 1.0).sum()
+        n_neg = (labels == 0.0).sum()
+        tprint(
+            f"📊 Rolling quantile labels: {n_labeled} labeled ({n_pos} pos, {n_neg} neg), "
+            f"lookback={lookback_bars}, q=[{low_q:.2f}, {high_q:.2f}]",
+            "INFO"
+        )
+        
+    except Exception as e:
+        tprint(f"⚠️ Rolling quantile labeling failed: {e}", "WARNING")
+        labels[:] = np.nan
+    
+    return labels
+
+
+def create_rolling_regime_aware_quantile_labels_from_vol_scaled_returns(
+    vol_scaled: pd.Series,
+    regimes: Optional[pd.Series] = None,
+    low_q: float = 0.3,
+    high_q: float = 0.7,
+    lookback_bars: int = 2000,
+    min_periods: int = 200,
+    min_samples_per_regime: int = 50,
+    expanding_start: bool = True,
+) -> pd.Series:
+    """Regime-aware rolling quantile labeling (no look-ahead bias).
+    
+    Combines rolling quantile thresholds with regime conditioning. Within each
+    regime, computes quantiles using only past data from that regime.
+    
+    Args:
+        vol_scaled: Volatility-scaled returns series
+        regimes: Optional regime labels (e.g., HMM states)
+        low_q: Lower quantile for negative labels
+        high_q: Upper quantile for positive labels
+        lookback_bars: Rolling window size in bars
+        min_periods: Minimum observations before computing quantiles
+        min_samples_per_regime: Minimum samples per regime for regime-specific thresholds
+        expanding_start: If True, use expanding window until lookback_bars reached
+    
+    Returns:
+        Series with labels: 1.0 (positive), 0.0 (negative), NaN (unlabeled)
+    """
+    labels = pd.Series(index=vol_scaled.index, dtype=float)
+    labels[:] = np.nan
+    
+    # Fall back to non-regime-aware if no regimes provided
+    if regimes is None:
+        return create_rolling_quantile_labels_from_vol_scaled_returns(
+            vol_scaled=vol_scaled,
+            low_q=low_q,
+            high_q=high_q,
+            lookback_bars=lookback_bars,
+            min_periods=min_periods,
+            expanding_start=expanding_start,
+        )
+    
+    try:
+        regimes_aligned = regimes.reindex(vol_scaled.index)
+        unique_regimes = pd.unique(regimes_aligned.dropna())
+        
+        if len(unique_regimes) == 0:
+            return create_rolling_quantile_labels_from_vol_scaled_returns(
+                vol_scaled=vol_scaled,
+                low_q=low_q,
+                high_q=high_q,
+                lookback_bars=lookback_bars,
+                min_periods=min_periods,
+                expanding_start=expanding_start,
+            )
+        
+        for reg_val in unique_regimes:
+            try:
+                regime_mask = regimes_aligned == reg_val
+                regime_data = vol_scaled.where(regime_mask)
+                
+                # Count samples in this regime
+                n_regime = regime_data.notna().sum()
+                if n_regime < min_samples_per_regime:
+                    continue
+                
+                # Compute rolling quantiles within this regime
+                # Use cumcount to track regime-specific sample count
+                if expanding_start:
+                    reg_rolling_low = regime_data.expanding(min_periods=min(min_periods, min_samples_per_regime)).quantile(low_q).shift(1)
+                    reg_rolling_high = regime_data.expanding(min_periods=min(min_periods, min_samples_per_regime)).quantile(high_q).shift(1)
+                else:
+                    reg_rolling_low = regime_data.rolling(window=lookback_bars, min_periods=min_periods).quantile(low_q).shift(1)
+                    reg_rolling_high = regime_data.rolling(window=lookback_bars, min_periods=min_periods).quantile(high_q).shift(1)
+                
+                # Apply thresholds for this regime
+                valid_regime = (
+                    regime_mask &
+                    reg_rolling_low.notna() &
+                    reg_rolling_high.notna() &
+                    (reg_rolling_high > reg_rolling_low) &
+                    vol_scaled.notna()
+                )
+                
+                labels.loc[valid_regime & (vol_scaled >= reg_rolling_high)] = 1.0
+                labels.loc[valid_regime & (vol_scaled <= reg_rolling_low)] = 0.0
+                
+            except Exception:
+                # Skip this regime on error
+                continue
+        
+        # If no labels assigned (regimes too sparse), fall back to global rolling
+        if labels.dropna().empty:
+            tprint("⚠️ Regime-aware rolling quantiles: falling back to global", "WARNING")
+            return create_rolling_quantile_labels_from_vol_scaled_returns(
+                vol_scaled=vol_scaled,
+                low_q=low_q,
+                high_q=high_q,
+                lookback_bars=lookback_bars,
+                min_periods=min_periods,
+                expanding_start=expanding_start,
+            )
+        
+        n_labeled = labels.notna().sum()
+        n_pos = (labels == 1.0).sum()
+        n_neg = (labels == 0.0).sum()
+        tprint(
+            f"📊 Rolling regime-aware quantile labels: {n_labeled} labeled ({n_pos} pos, {n_neg} neg)",
+            "INFO"
+        )
+        
+    except Exception as e:
+        tprint(f"⚠️ Rolling regime-aware quantile labeling failed: {e}", "WARNING")
+        return create_rolling_quantile_labels_from_vol_scaled_returns(
+            vol_scaled=vol_scaled,
+            low_q=low_q,
+            high_q=high_q,
+            lookback_bars=lookback_bars,
+            min_periods=min_periods,
+            expanding_start=expanding_start,
+        )
+    
+    return labels
+
+
+def diagnose_quantile_lookahead_bias(
+    vol_scaled: pd.Series,
+    low_q: float = 0.3,
+    high_q: float = 0.7,
+    print_results: bool = True,
+) -> Dict[str, Any]:
+    """Diagnose look-ahead bias in quantile-based labeling.
+    
+    Computes per-year statistics to detect if global quantile thresholds
+    cause systematic bias across time periods (a sign of look-ahead bias).
+    
+    Args:
+        vol_scaled: Volatility-scaled returns series (must have DatetimeIndex)
+        low_q: Lower quantile threshold
+        high_q: Upper quantile threshold
+        print_results: If True, print diagnostic summary
+    
+    Returns:
+        Dictionary with per-year statistics and bias indicators
+    """
+    diagnostics: Dict[str, Any] = {
+        "global_thresholds": {},
+        "per_year": {},
+        "bias_detected": False,
+        "bias_severity": "none",
+        "recommendation": "",
+    }
+    
+    try:
+        v = vol_scaled.dropna()
+        if len(v) < 50:
+            diagnostics["error"] = "Insufficient data for diagnosis"
+            return diagnostics
+        
+        # Global thresholds (what global quantile labeling uses)
+        global_low = float(v.quantile(low_q))
+        global_high = float(v.quantile(high_q))
+        global_median = float(v.median())
+        
+        diagnostics["global_thresholds"] = {
+            "low_q": low_q,
+            "high_q": high_q,
+            "low_val": global_low,
+            "high_val": global_high,
+            "median": global_median,
+        }
+        
+        # Per-year analysis
+        if not isinstance(vol_scaled.index, pd.DatetimeIndex):
+            diagnostics["error"] = "Index must be DatetimeIndex for per-year analysis"
+            return diagnostics
+        
+        years = vol_scaled.index.year
+        unique_years = sorted(years.unique())
+        
+        year_stats = []
+        for year in unique_years:
+            year_mask = years == year
+            year_data = vol_scaled[year_mask].dropna()
+            
+            if len(year_data) < 20:
+                continue
+            
+            year_median = float(year_data.median())
+            year_q30 = float(year_data.quantile(low_q))
+            year_q70 = float(year_data.quantile(high_q))
+            
+            # How does this year's data compare to global thresholds?
+            n_above_global_high = int((year_data >= global_high).sum())
+            n_below_global_low = int((year_data <= global_low).sum())
+            n_total = len(year_data)
+            
+            pct_positive_global = n_above_global_high / n_total if n_total > 0 else 0
+            pct_negative_global = n_below_global_low / n_total if n_total > 0 else 0
+            
+            stats = {
+                "year": int(year),
+                "n_samples": n_total,
+                "median": year_median,
+                f"q{int(low_q*100)}": year_q30,
+                f"q{int(high_q*100)}": year_q70,
+                "pct_positive_global_thresh": pct_positive_global,
+                "pct_negative_global_thresh": pct_negative_global,
+                "median_vs_global_high": year_median - global_high,
+            }
+            year_stats.append(stats)
+            diagnostics["per_year"][int(year)] = stats
+        
+        # Detect bias: if early years have very high positive rates
+        if len(year_stats) >= 2:
+            early_years = year_stats[:len(year_stats)//2]
+            late_years = year_stats[len(year_stats)//2:]
+            
+            early_pos_rate = np.mean([s["pct_positive_global_thresh"] for s in early_years])
+            late_pos_rate = np.mean([s["pct_positive_global_thresh"] for s in late_years])
+            
+            early_neg_rate = np.mean([s["pct_negative_global_thresh"] for s in early_years])
+            late_neg_rate = np.mean([s["pct_negative_global_thresh"] for s in late_years])
+            
+            diagnostics["early_vs_late"] = {
+                "early_years": [s["year"] for s in early_years],
+                "late_years": [s["year"] for s in late_years],
+                "early_positive_rate": early_pos_rate,
+                "late_positive_rate": late_pos_rate,
+                "early_negative_rate": early_neg_rate,
+                "late_negative_rate": late_neg_rate,
+                "positive_rate_diff": early_pos_rate - late_pos_rate,
+            }
+            
+            # Detect bias severity
+            pos_diff = early_pos_rate - late_pos_rate
+            if pos_diff > 0.4 or early_pos_rate > 0.9:
+                diagnostics["bias_detected"] = True
+                diagnostics["bias_severity"] = "severe"
+                diagnostics["recommendation"] = (
+                    "SEVERE look-ahead bias detected. Early years have nearly 100% positive labels. "
+                    "Use rolling quantiles (use_rolling_quantiles=True) to eliminate bias."
+                )
+            elif pos_diff > 0.2:
+                diagnostics["bias_detected"] = True
+                diagnostics["bias_severity"] = "moderate"
+                diagnostics["recommendation"] = (
+                    "Moderate look-ahead bias detected. Consider using rolling quantiles."
+                )
+            elif pos_diff > 0.1:
+                diagnostics["bias_detected"] = True
+                diagnostics["bias_severity"] = "mild"
+                diagnostics["recommendation"] = (
+                    "Mild temporal drift detected. Rolling quantiles recommended for robustness."
+                )
+            else:
+                diagnostics["bias_severity"] = "none"
+                diagnostics["recommendation"] = (
+                    "No significant look-ahead bias detected. Global quantiles are acceptable."
+                )
+        
+        if print_results:
+            print("\n" + "=" * 70)
+            print("QUANTILE LOOK-AHEAD BIAS DIAGNOSTIC")
+            print("=" * 70)
+            print(f"\nGlobal Thresholds (computed across ALL data):")
+            print(f"  q{int(low_q*100)} (negative threshold): {global_low:.4f}")
+            print(f"  q{int(high_q*100)} (positive threshold): {global_high:.4f}")
+            print(f"  median: {global_median:.4f}")
+            
+            print(f"\nPer-Year Statistics:")
+            print("-" * 70)
+            print(f"{'Year':<6} {'N':<6} {'Median':<10} {'q30':<10} {'q70':<10} {'%Pos(global)':<12} {'%Neg(global)':<12}")
+            print("-" * 70)
+            for s in year_stats:
+                print(
+                    f"{s['year']:<6} {s['n_samples']:<6} {s['median']:<10.4f} "
+                    f"{s[f'q{int(low_q*100)}']:<10.4f} {s[f'q{int(high_q*100)}']:<10.4f} "
+                    f"{s['pct_positive_global_thresh']*100:<12.1f} "
+                    f"{s['pct_negative_global_thresh']*100:<12.1f}"
+                )
+            
+            print("\n" + "-" * 70)
+            if diagnostics["bias_detected"]:
+                print(f"⚠️  BIAS DETECTED: {diagnostics['bias_severity'].upper()}")
+            else:
+                print("✅ No significant bias detected")
+            print(f"\n{diagnostics['recommendation']}")
+            print("=" * 70 + "\n")
+    
+    except Exception as e:
+        diagnostics["error"] = str(e)
+        if print_results:
+            print(f"⚠️ Diagnosis failed: {e}")
+    
+    return diagnostics
 
 
 def create_regime_aware_quantile_labels_from_vol_scaled_returns(
@@ -7159,24 +7545,68 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
 
             quantile_low_q = float(config.get("quantile_low_q", 0.3))
             quantile_high_q = float(config.get("quantile_high_q", 0.7))
+            
+            # NEW: Rolling quantiles to eliminate look-ahead bias
+            use_rolling_quantiles = bool(config.get("use_rolling_quantiles", True))  # Default: True for safety
+            rolling_lookback_bars = int(config.get("rolling_quantile_lookback_bars", 2000))  # ~21 days at 15m
+            rolling_min_periods = int(config.get("rolling_quantile_min_periods", 200))  # ~2 days at 15m
+            
+            # Run look-ahead bias diagnostic if enabled
+            if config.get("diagnose_quantile_bias", False):
+                tprint("🔍 Running quantile look-ahead bias diagnostic...", "INFO")
+                bias_diag = diagnose_quantile_lookahead_bias(
+                    vol_scaled=vol_scaled_returns,
+                    low_q=quantile_low_q,
+                    high_q=quantile_high_q,
+                    print_results=True,
+                )
+                if bias_diag.get("bias_detected", False) and not use_rolling_quantiles:
+                    tprint(
+                        f"⚠️ Look-ahead bias detected ({bias_diag.get('bias_severity', 'unknown')}) "
+                        "but rolling quantiles disabled. Consider enabling use_rolling_quantiles=True",
+                        "WARNING"
+                    )
 
             regimes_for_labeling = None
             if config.get("enable_regime_aware_quantiles", True) and "hmm_regime_label_1h" in market_data.columns:
                 regimes_for_labeling = market_data["hmm_regime_label_1h"]
 
-            if regimes_for_labeling is not None:
-                quantile_labels = create_regime_aware_quantile_labels_from_vol_scaled_returns(
-                    vol_scaled=vol_scaled_returns,
-                    regimes=regimes_for_labeling,
-                    low_q=quantile_low_q,
-                    high_q=quantile_high_q,
-                )
+            if use_rolling_quantiles:
+                # Use rolling quantiles to eliminate look-ahead bias
+                tprint(f"📊 Using ROLLING quantiles (lookback={rolling_lookback_bars} bars) to prevent look-ahead bias", "INFO")
+                if regimes_for_labeling is not None:
+                    quantile_labels = create_rolling_regime_aware_quantile_labels_from_vol_scaled_returns(
+                        vol_scaled=vol_scaled_returns,
+                        regimes=regimes_for_labeling,
+                        low_q=quantile_low_q,
+                        high_q=quantile_high_q,
+                        lookback_bars=rolling_lookback_bars,
+                        min_periods=rolling_min_periods,
+                    )
+                else:
+                    quantile_labels = create_rolling_quantile_labels_from_vol_scaled_returns(
+                        vol_scaled=vol_scaled_returns,
+                        low_q=quantile_low_q,
+                        high_q=quantile_high_q,
+                        lookback_bars=rolling_lookback_bars,
+                        min_periods=rolling_min_periods,
+                    )
             else:
-                quantile_labels = create_quantile_labels_from_vol_scaled_returns(
-                    vol_scaled=vol_scaled_returns,
-                    low_q=quantile_low_q,
-                    high_q=quantile_high_q,
-                )
+                # Legacy: global quantiles (has look-ahead bias)
+                tprint("⚠️ Using GLOBAL quantiles (may have look-ahead bias)", "WARNING")
+                if regimes_for_labeling is not None:
+                    quantile_labels = create_regime_aware_quantile_labels_from_vol_scaled_returns(
+                        vol_scaled=vol_scaled_returns,
+                        regimes=regimes_for_labeling,
+                        low_q=quantile_low_q,
+                        high_q=quantile_high_q,
+                    )
+                else:
+                    quantile_labels = create_quantile_labels_from_vol_scaled_returns(
+                        vol_scaled=vol_scaled_returns,
+                        low_q=quantile_low_q,
+                        high_q=quantile_high_q,
+                    )
 
             relabel_profitable_timeouts = bool(config.get("relabel_profitable_timeouts", True))
             profitable_timeout_return_threshold = float(

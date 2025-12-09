@@ -1,0 +1,268 @@
+--- src/training/steps/model_training/unified_models_training_step.py	2025-12-09 11:25:03.098681345 +0000
++++ src/training/steps/model_training/unified_models_training_step.py_saved	2025-12-09 11:25:03.102681807 +0000
+@@ -676,14 +676,31 @@
+             # ========================================================================
+             # FEATURE SET B: Replace training_data with meta-gated feature set
+             # ========================================================================
++            # Feature Set B configuration:
++            # - feature_set: 'A' (default) or 'B' (use meta-gated/winning features)
++            # - feature_set_b_size: Specific size to use (50, 60, 70, 80) - default: winning set
++            # - feature_set_b_use_winning: True (default) to use winning feature set from LGBM selection
+             feature_set_mode = str(
+                 (yaml_config.get('analyst_config', {}) or {}).get('feature_set', 'A')
+             ).upper()
++            feature_set_b_size = (yaml_config.get('analyst_config', {}) or {}).get('feature_set_b_size')
++            feature_set_b_use_winning = bool(
++                (yaml_config.get('analyst_config', {}) or {}).get('feature_set_b_use_winning', True)
++            )
++
+             if training_type == 'analyst_base' and feature_set_mode == 'B':
+                 tprint_info("=" * 80)
+                 tprint_info("🔄 FEATURE SET B: Building meta-gated feature set")
+                 tprint_info("=" * 80)
+-                meta_features = self._build_meta_gated_feature_set(training_data.index, config)
++                tprint_info(f"  Configuration: use_winning={feature_set_b_use_winning}, specific_size={feature_set_b_size}")
++
++                # Pass feature set B configuration to the builder
++                config_with_fs = dict(config)
++                config_with_fs['feature_set_b_use_winning'] = feature_set_b_use_winning
++                if feature_set_b_size is not None:
++                    config_with_fs['feature_set_b_size'] = int(feature_set_b_size)
++
++                meta_features = self._build_meta_gated_feature_set(training_data.index, config_with_fs)
+                 if meta_features is not None and not meta_features.empty:
+                     tprint_success(
+                         f"✅ Replacing analyst_base features with meta-gated Feature Set B: "
+@@ -2411,6 +2428,8 @@
+                 tprint_info(
+                     f"   ↪ Added analyst_base_outputs features, cumulative={sum(df.shape[1] for df in additional_features_list)} columns"
+                 )
++                if isinstance(yaml_config, dict):
++                    yaml_config['ensemble_features'] = base_outputs
+
+             elif training_type == 'tactician_base':
+                 # Base model for tactician_base is the analyst_ensemble output
+@@ -2686,11 +2705,15 @@
+         explicit label/realized-return leakage. Includes:
+         - Whitelisted columns from labeled_data (meta_probability, volatility_1d, etc.)
+         - Canonical specialist scalar features (risk, liquidity, SMC, MR, etc.)
++
++        NEW (2025-12-08): Dynamically uses the winning feature set from LGBM feature
++        selection if available for the given exchange/asset/direction.
+         """
+         try:
+             symbol = config.get('symbol', 'ETHUSDT')
+             exchange = config.get('exchange', 'binance')
+             timeframe = config.get('timeframe', '15m')
++            direction = config.get('direction', 'long')
+
+             artifact_name = f"labeled_data_{symbol}_{timeframe}"
+             tprint_info(f"  Building meta-gated feature set from '{artifact_name}' for {symbol}/{exchange} [{timeframe}]")
+@@ -2732,6 +2755,69 @@
+             # Align to the training 15m grid
+             df = df.reindex(base_index)
+
++            # ================================================================
++            # DYNAMIC WINNING FEATURE SET (2025-12-08)
++            # ================================================================
++            # First try to load the winning feature set from LGBM feature selection.
++            # This provides dynamically selected features based on:
++            # - Learnability (compute_learnability_with_calibration)
++            # - Generalization gap (snr_diagnostics)
++            # - Risk-adjusted returns (meta_gated_backtest)
++            #
++            # Configuration options:
++            # - feature_set_b_use_winning: True to use winning set, False to skip
++            # - feature_set_b_size: Specific size (50, 60, 70, 80) to use
++            use_winning = config.get('feature_set_b_use_winning', True)
++            specific_size = config.get('feature_set_b_size')
++
++            winning_features = None
++            if use_winning:
++                try:
++                    if specific_size is not None:
++                        # Use specific feature set size (50, 60, 70, or 80)
++                        winning_features = self.get_winning_feature_set(exchange, symbol, feature_set_size=int(specific_size))
++                        if winning_features:
++                            tprint_info(f"  🎯 Using specified {specific_size}-feature set for {symbol}/{exchange}: {len(winning_features)} features")
++                    else:
++                        # Use the winning feature set (determined by best metrics)
++                        winning_features = self.get_feature_set_b_for_analyst(exchange, symbol)
++                        if winning_features:
++                            tprint_info(f"  🎯 Found winning feature set for {symbol}/{exchange}: {len(winning_features)} features")
++
++                    if winning_features:
++                        # Filter to features available in labeled_data
++                        available_winning = [f for f in winning_features if f in df.columns]
++                        if len(available_winning) >= 20:
++                            tprint_success(
++                                f"  ✅ Using dynamic feature set: {len(available_winning)} features "
++                                f"(from {len(winning_features)} selected)"
++                            )
++                            # Use winning features instead of hardcoded candidate_cols
++                            safe_cols = available_winning
++                            features = df[safe_cols].copy()
++                            tprint_info(f"  Meta-gated Feature Set B: {len(safe_cols)} columns from feature set")
++
++                            # Add specialist scalars (same as fallback path below)
++                            features = self._add_specialist_scalars_to_features(
++                                features, base_index, config
++                            )
++
++                            tprint_success(
++                                f"✅ Meta-gated Feature Set B (dynamic) constructed: {features.shape[0]} samples × "
++                                f"{features.shape[1]} features"
++                            )
++                            return features
++                        else:
++                            tprint_warning(
++                                f"  ⚠️ Feature set has only {len(available_winning)} available features; "
++                                f"falling back to default candidate columns"
++                            )
++                except Exception as winning_exc:
++                    tprint_warning(f"  ⚠️ Failed to load feature set: {winning_exc}; using default")
++
++            # ================================================================
++            # FALLBACK: Default hardcoded candidate columns
++            # ================================================================
+             # Whitelist meta-gated, non-leaky columns from labeled_data.
+             # This list is aligned with the features actually used by
+             # MetaGatedBacktestStep: meta probabilities + thresholds,
+@@ -2784,55 +2870,8 @@
+             features = df[safe_cols].copy()
+             tprint_info(f"  Meta-gated Feature Set B: {len(safe_cols)} columns from labeled_data")
+
+-            # ------------------------------------------------------------------
+-            # Add canonical specialist scalar features (same utility as
+-            # MetaGatedBacktestStep), aligned to the 15m grid. These are
+-            # regime/risk/liquidity/SMC/MR scalars and do not expose
+-            # realized-return labels.
+-            # ------------------------------------------------------------------
+-            try:
+-                specialist_config = dict(config)
+-                specialist_config.setdefault("use_canonical_specialist_scalars", True)
+-                specialist_config.setdefault("enable_risk_hmm_specialist", False)
+-
+-                from src.utils.ml_common.get_specialist_models_outputs import (
+-                    get_specialist_models_outputs,
+-                )
+-
+-                specialist_df = get_specialist_models_outputs(
+-                    artifact_router=self.artifact_router,
+-                    training_index=base_index,
+-                    config=specialist_config,
+-                    logger=self.logger,
+-                    strict=False,
+-                )
+-
+-                if specialist_df is not None and not specialist_df.empty:
+-                    # Drop all-NaN columns
+-                    non_null_counts = specialist_df.notna().sum()
+-                    active_cols = non_null_counts[non_null_counts > 0].index.tolist()
+-                    if active_cols:
+-                        specialist_df = specialist_df[active_cols]
+-                        # Align to base_index and forward-fill
+-                        specialist_df = specialist_df.reindex(base_index).ffill()
+-                        # Avoid duplicate columns
+-                        new_cols = [c for c in specialist_df.columns if c not in features.columns]
+-                        if new_cols:
+-                            features = pd.concat([features, specialist_df[new_cols]], axis=1)
+-                            tprint_info(
+-                                f"  Meta-gated Feature Set B: added {len(new_cols)} specialist scalar features"
+-                            )
+-                    else:
+-                        tprint_warning(
+-                            "  Meta-gated Feature Set B: all specialist columns are NaN after alignment; "
+-                            "skipping specialist features."
+-                        )
+-                else:
+-                    tprint_info(
+-                        "  Meta-gated Feature Set B: no specialist outputs available; using labeled_data-only features."
+-                    )
+-            except Exception as spec_exc:
+-                self.logger.warning(f"Meta-gated Feature Set B: specialist feature integration failed: {spec_exc}")
++            # Add specialist scalars via helper method
++            features = self._add_specialist_scalars_to_features(features, base_index, config)
+
+             tprint_success(
+                 f"✅ Meta-gated Feature Set B constructed: {features.shape[0]} samples × "
+@@ -2844,6 +2883,71 @@
+             self.logger.warning(f"Meta-gated Feature Set B construction failed: {e}")
+             return None
+
++    def _add_specialist_scalars_to_features(
++        self,
++        features: pd.DataFrame,
++        base_index: pd.Index,
++        config: Dict[str, Any]
++    ) -> pd.DataFrame:
++        """Add canonical specialist scalar features to the feature DataFrame.
++
++        This helper method is used by _build_meta_gated_feature_set to add
++        specialist features (risk, liquidity, SMC, MR scalars).
++
++        Args:
++            features: Base feature DataFrame
++            base_index: Target index for alignment
++            config: Configuration dictionary
++
++        Returns:
++            Features DataFrame with specialist scalars added
++        """
++        try:
++            specialist_config = dict(config)
++            specialist_config.setdefault("use_canonical_specialist_scalars", True)
++            specialist_config.setdefault("enable_risk_hmm_specialist", False)
++
++            from src.utils.ml_common.get_specialist_models_outputs import (
++                get_specialist_models_outputs,
++            )
++
++            specialist_df = get_specialist_models_outputs(
++                artifact_router=self.artifact_router,
++                training_index=base_index,
++                config=specialist_config,
++                logger=self.logger,
++                strict=False,
++            )
++
++            if specialist_df is not None and not specialist_df.empty:
++                # Drop all-NaN columns
++                non_null_counts = specialist_df.notna().sum()
++                active_cols = non_null_counts[non_null_counts > 0].index.tolist()
++                if active_cols:
++                    specialist_df = specialist_df[active_cols]
++                    # Align to base_index and forward-fill
++                    specialist_df = specialist_df.reindex(base_index).ffill()
++                    # Avoid duplicate columns
++                    new_cols = [c for c in specialist_df.columns if c not in features.columns]
++                    if new_cols:
++                        features = pd.concat([features, specialist_df[new_cols]], axis=1)
++                        tprint_info(
++                            f"  Meta-gated Feature Set B: added {len(new_cols)} specialist scalar features"
++                        )
++                else:
++                    tprint_warning(
++                        "  Meta-gated Feature Set B: all specialist columns are NaN after alignment; "
++                        "skipping specialist features."
++                    )
++            else:
++                tprint_info(
++                    "  Meta-gated Feature Set B: no specialist outputs available; using labeled_data-only features."
++                )
++        except Exception as spec_exc:
++            self.logger.warning(f"Meta-gated Feature Set B: specialist feature integration failed: {spec_exc}")
++
++        return features
++
+     async def _execute_training_by_type(
+         self,
+         training_type: str,
+@@ -2941,7 +3045,7 @@
+                     model_id=model_id,
+                     execution_mode=execution_mode,
+                     task_type='regression',
+-                    enable_incremental_hpo=True,
++                    enable_burnin_hpo=True,  # HPO runs ONCE at burn-in only
+                     model_configs=base_models_config
+                 )

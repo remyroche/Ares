@@ -1,0 +1,40 @@
+--- src/training/steps/models_training/core/pipeline_orchestrator.py	2025-12-09 11:25:03.110682729 +0000
++++ src/training/steps/models_training/core/pipeline_orchestrator.py_saved	2025-12-09 11:25:03.110682729 +0000
+@@ -519,15 +519,25 @@
+                         from src.utils.enhanced_artifact_manager import get_artifact_manager
+                         artifact_mgr = get_artifact_manager()
+                         # Try to load analyst base outputs (predictions from base models)
+-                        base_outputs = artifact_mgr.load_artifact('analyst_base_outputs', artifact_type='data')
++                        base_outputs = None
++                        for artifact_name in [
++                            'analyst_base_predictions_oof',
++                            'analyst_base_predictions',
++                            'analyst_base_outputs'
++                        ]:
++                            candidate = artifact_mgr.load_artifact(artifact_name, artifact_type='data')
++                            if candidate is not None:
++                                base_outputs = candidate
++                                tprint_info(f"   Loaded base model outputs from '{artifact_name}': {base_outputs.shape}")
++                                break
+                         if base_outputs is not None:
+                             artifacts['analyst_base_models'] = {'loaded_from_artifacts': True}  # Dummy models dict
+                             artifacts['analyst_predictions'] = base_outputs
+-                            tprint_success(f"✅ Loaded base model outputs: {base_outputs.shape}")
++                            tprint_success(f"Loaded base model outputs: {base_outputs.shape}")
+                         else:
+-                            tprint_warning("⚠️ Could not load analyst_base_outputs, ensemble may not have base features")
++                            tprint_warning("Could not load analyst base outputs (tried analyst_base_predictions_oof, analyst_base_predictions, analyst_base_outputs); ensemble may not have base features")
+                     except Exception as e:
+-                        tprint_warning(f"⚠️ Failed to load base artifacts: {e}")
++                        tprint_warning(f"Failed to load base artifacts: {e}")
+
+             # Phase 2: Analyst Ensemble Training (uses Analyst base models)
+             if self.config.enable_analyst and self.config.enable_ensemble and artifacts['analyst_base_models'] is not None:
+@@ -677,7 +687,7 @@
+                 model_id=model_id,
+                 execution_mode=execution_mode,
+                 task_type='regression',
+-                enable_incremental_hpo=True,
++                enable_burnin_hpo=True,  # HPO runs ONCE at burn-in only
+                 model_configs=base_models_config
+             )

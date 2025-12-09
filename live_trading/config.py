@@ -41,6 +41,7 @@ class TradingConfig:
     # Exchange Configuration
     exchange_name: str = "binance"
     symbols: List[str] = field(default_factory=lambda: ["BTCUSDT"])
+    direction: str = "long"  # "long", "short", or "both"
     
     # Risk Management
     max_position_size: float = 1000.0
@@ -87,6 +88,8 @@ class TradingConfig:
             raise ValueError("take_profit_percentage must be positive")
         if not self.symbols:
             raise ValueError("At least one symbol must be specified")
+        if self.direction not in ["long", "short", "both"]:
+            raise ValueError("direction must be 'long', 'short', or 'both'")
         
         return True
     
@@ -96,6 +99,7 @@ class TradingConfig:
             "mode": self.mode.value,
             "exchange_name": self.exchange_name,
             "symbols": self.symbols,
+            "direction": self.direction,
             "max_position_size": self.max_position_size,
             "max_daily_loss": self.max_daily_loss,
             "max_leverage": self.max_leverage,
@@ -126,6 +130,8 @@ class TradingConfig:
             config.exchange_name = data["exchange_name"]
         if "symbols" in data:
             config.symbols = data["symbols"]
+        if "direction" in data:
+            config.direction = data["direction"]
         if "max_position_size" in data:
             config.max_position_size = data["max_position_size"]
         if "max_daily_loss" in data:

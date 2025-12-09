@@ -1,0 +1,359 @@
+--- live_trading/trading_engine.py	2025-12-09 11:25:02.462604879 +0000
++++ live_trading/trading_engine.py_saved	2025-12-09 11:25:02.466605363 +0000
+@@ -77,10 +77,10 @@
+         self.trade_history: List[Dict[str, Any]] = []
+         self.performance_metrics: Dict[str, Any] = {}
+
+-        # Signal generation pipelines (one per symbol)
++        # Signal generation pipelines (key format: "{symbol}_{direction}")
+         self.signal_pipelines: Dict[str, SignalGenerationPipeline] = {}
+
+-        # Sizing components (one set per symbol, using dampened Kelly stack)
++        # Sizing components (key format: "{symbol}_{direction}")
+         self.position_sizers: Dict[str, PositionSizer] = {}
+         self.leverage_managers: Dict[str, LeverageManager] = {}
+         self.sizing_risk_calculators: Dict[str, RiskCalculator] = {}
+@@ -109,6 +109,10 @@
+             # Load warm-up data
+             await self._load_warmup_data()
+
++            # Register internal handlers before starting components so that
++            # the DataStreamer sees all configured handlers when starting
++            self._register_internal_handlers()
++
+             # Start components
+             await self.order_manager.start()
+             await self.data_streamer.start()
+@@ -120,9 +124,6 @@
+             # Initialize sizing components (Kelly-based position sizing stack)
+             await self._initialize_sizing_components()
+
+-            # Register event handlers
+-            self._register_internal_handlers()
+-
+             # Start trading
+             self._running = True
+             self._trading_active = True
+@@ -177,76 +178,95 @@
+                     self.logger.warning(f"⚠️ Failed to initialize RegimeMonitor: {exc}")
+                     self.regime_monitor = None
+
+-            # Create a dedicated signal pipeline per symbol
+-            for symbol in self.config.symbols:
+-                if symbol in self.signal_pipelines:
+-                    continue
++            # Determine directions to initialize
++            directions_to_init = []
++            if self.config.direction == "both":
++                directions_to_init = ["long", "short"]
++            else:
++                directions_to_init = [self.config.direction]
+
+-                # Build pipeline trading config aligned with training-time config
+-                pipeline_cfg = PipelineTradingConfig()
+-                # Attach runtime attributes used by SignalGenerationPipeline
+-                pipeline_cfg.symbol = symbol
+-                pipeline_cfg.exchange = getattr(self.config, "exchange_name", "binance")
+-                pipeline_cfg.direction = "long"
+-                pipeline_cfg.timeframe = "15m"
+-                pipeline_cfg.analyst_timeframe = "15m"
+-                pipeline_cfg.tactician_timeframe = "5m"
+-                pipeline_cfg.regime_timeframe = "15m"
+-
+-                pipeline = await setup_signal_generation_pipeline(pipeline_cfg)
+-                if pipeline is None:
+-                    self.logger.error(f"❌ Failed to initialize SignalGenerationPipeline for {symbol}")
+-                    continue
++            # Create a dedicated signal pipeline per symbol per direction
++            for symbol in self.config.symbols:
++                for direction in directions_to_init:
++                    pipeline_key = f"{symbol}_{direction}"
++                    if pipeline_key in self.signal_pipelines:
++                        continue
++
++                    # Build pipeline trading config aligned with training-time config
++                    pipeline_cfg = PipelineTradingConfig()
++                    # Attach runtime attributes used by SignalGenerationPipeline
++                    pipeline_cfg.symbol = symbol
++                    pipeline_cfg.exchange = getattr(self.config, "exchange_name", "binance")
++                    pipeline_cfg.direction = direction
++                    pipeline_cfg.timeframe = "15m"
++                    pipeline_cfg.analyst_timeframe = "15m"
++                    pipeline_cfg.tactician_timeframe = "5m"
++                    pipeline_cfg.regime_timeframe = "15m"
++
++                    pipeline = await setup_signal_generation_pipeline(pipeline_cfg)
++                    if pipeline is None:
++                        self.logger.error(f"❌ Failed to initialize SignalGenerationPipeline for {pipeline_key}")
++                        continue
+
+-                self.signal_pipelines[symbol] = pipeline
+-                self.logger.info(f"✅ SignalGenerationPipeline initialized for {symbol}")
++                    self.signal_pipelines[pipeline_key] = pipeline
++                    self.logger.info(f"✅ SignalGenerationPipeline initialized for {pipeline_key}")
+
+         except Exception as exc:
+             self.logger.error(f"❌ Failed to initialize signal pipelines: {exc}")
+
+     async def _initialize_sizing_components(self) -> None:
+-        """Initialize Kelly-based sizing components for each symbol.
++        """Initialize Kelly-based sizing components for each symbol and direction.
+
+         This sets up PositionSizer, LeverageManager, and RiskCalculator
+         using the same training-aligned TradingConfig used by the
+         SignalGenerationPipeline, with optimized parameters applied.
+         """
+         try:
+-            for symbol in self.config.symbols:
+-                # Skip if already initialized
+-                if symbol in self.position_sizers:
+-                    continue
+-
+-                pipeline_cfg = PipelineTradingConfig()
+-                pipeline_cfg.symbol = symbol
+-                pipeline_cfg.exchange = getattr(self.config, "exchange_name", "binance")
+-                pipeline_cfg.direction = "long"
+-                pipeline_cfg.timeframe = "15m"
+-                pipeline_cfg.analyst_timeframe = "15m"
+-                pipeline_cfg.tactician_timeframe = "5m"
+-                pipeline_cfg.regime_timeframe = "15m"
+-
+-                try:
+-                    sizing_components = await setup_sizing_components(pipeline_cfg)
+-                except Exception as exc:
+-                    self.logger.warning(f"⚠️ Failed to setup sizing components for {symbol}: {exc}")
+-                    continue
++            # Determine directions to initialize
++            directions_to_init = []
++            if self.config.direction == "both":
++                directions_to_init = ["long", "short"]
++            else:
++                directions_to_init = [self.config.direction]
+
+-                position_sizer = sizing_components.get("position_sizer")
+-                leverage_manager = sizing_components.get("leverage_manager")
+-                risk_calculator = sizing_components.get("risk_calculator")
++            for symbol in self.config.symbols:
++                for direction in directions_to_init:
++                    pipeline_key = f"{symbol}_{direction}"
+
+-                if position_sizer is None:
+-                    self.logger.warning(
+-                        f"⚠️ PositionSizer not initialized for {symbol} - falling back to inline sizing"
+-                    )
+-                else:
+-                    self.position_sizers[symbol] = position_sizer
++                    # Skip if already initialized
++                    if pipeline_key in self.position_sizers:
++                        continue
++
++                    pipeline_cfg = PipelineTradingConfig()
++                    pipeline_cfg.symbol = symbol
++                    pipeline_cfg.exchange = getattr(self.config, "exchange_name", "binance")
++                    pipeline_cfg.direction = direction
++                    pipeline_cfg.timeframe = "15m"
++                    pipeline_cfg.analyst_timeframe = "15m"
++                    pipeline_cfg.tactician_timeframe = "5m"
++                    pipeline_cfg.regime_timeframe = "15m"
+
+-                if leverage_manager is not None:
+-                    self.leverage_managers[symbol] = leverage_manager
+-                if risk_calculator is not None:
+-                    self.sizing_risk_calculators[symbol] = risk_calculator
++                    try:
++                        sizing_components = await setup_sizing_components(pipeline_cfg)
++                    except Exception as exc:
++                        self.logger.warning(f"⚠️ Failed to setup sizing components for {pipeline_key}: {exc}")
++                        continue
++
++                    position_sizer = sizing_components.get("position_sizer")
++                    leverage_manager = sizing_components.get("leverage_manager")
++                    risk_calculator = sizing_components.get("risk_calculator")
++
++                    if position_sizer is None:
++                        self.logger.warning(
++                            f"⚠️ PositionSizer not initialized for {pipeline_key} - falling back to inline sizing"
++                        )
++                    else:
++                        self.position_sizers[pipeline_key] = position_sizer
++
++                    if leverage_manager is not None:
++                        self.leverage_managers[pipeline_key] = leverage_manager
++                    if risk_calculator is not None:
++                        self.sizing_risk_calculators[pipeline_key] = risk_calculator
+
+             self.logger.info("✅ Sizing components initialization completed")
+
+@@ -348,14 +368,14 @@
+         streaming_status = await self.data_streamer.get_streaming_status()
+         risk_summary = await self.risk_manager.get_risk_summary()
+
+-        # Aggregate signal pipeline metrics per symbol (if available)
++        # Aggregate signal pipeline metrics per symbol and direction (if available)
+         signal_status: Dict[str, Any] = {}
+-        for symbol, pipeline in self.signal_pipelines.items():
++        for key, pipeline in self.signal_pipelines.items():
+             try:
+-                signal_status[symbol] = pipeline.get_performance_metrics()
++                signal_status[key] = pipeline.get_performance_metrics()
+             except Exception as exc:
+-                self.logger.warning(f"⚠️ Failed to get signal metrics for {symbol}: {exc}")
+-                signal_status[symbol] = {"error": str(exc)}
++                self.logger.warning(f"⚠️ Failed to get signal metrics for {key}: {exc}")
++                signal_status[key] = {"error": str(exc)}
+
+         return {
+             "running": self._running,
+@@ -758,18 +778,12 @@
+
+         # --- Signal Generation Logic ---
+
+-        # If we have a signal pipeline for this symbol and enough 15m history
+-        pipeline = self.signal_pipelines.get(symbol)
+-
+         # Check if we should update signal (every 5 minutes)
+         # Trigger on 0, 5, 10, 15... minutes
+         if market_data.timestamp.minute % 5 != 0:
+             return
+
+-        if pipeline is None:
+-            return
+-
+-        # Prepare input data for pipeline:
++        # Prepare input data once for all pipelines of this symbol
+         # 1. Start with standard closed 15m history
+         input_data = self._ohlcv_history_15m.get(symbol)
+         if input_data is None or len(input_data) < 50: # Need decent history for indicators
+@@ -836,38 +850,52 @@
+         except Exception as exc:
+             self.logger.warning(f"⚠️ Failed to fetch account balance for sizing: {exc}")
+
+-        try:
+-            result: SignalGenerationResult = await pipeline.generate_signal(
+-                symbol=symbol,
+-                market_data=prediction_input,
+-                additional_features=None,
+-            )
++        # Iterate over all initialized pipelines for this symbol (e.g., long and short)
++        # Pipelines are keyed by "{symbol}_{direction}"
++        relevant_pipelines = [
++            (k, p) for k, p in self.signal_pipelines.items()
++            if k.startswith(f"{symbol}_")
++        ]
+
+-            # Update RegimeMonitor with latest regime probabilities
+-            if self.regime_monitor is not None and result and result.hmm_output:
+-                try:
+-                    await self.regime_monitor.update_regime_state(
+-                        regime_probabilities=result.hmm_output.regime_probabilities,
+-                        confidence=result.hmm_output.confidence,
+-                        market_conditions={
+-                            "symbol": symbol,
+-                            "timestamp": result.timestamp,
+-                        },
+-                    )
+-                except Exception as exc:
+-                    self.logger.warning(f"⚠️ Failed to update RegimeMonitor: {exc}")
++        for pipeline_key, pipeline in relevant_pipelines:
++            try:
++                result: SignalGenerationResult = await pipeline.generate_signal(
++                    symbol=symbol,
++                    market_data=prediction_input,
++                    additional_features=None,
++                )
+
+-            # Map SignalGenerationResult -> TradeDecision and execute it
+-            decision = await self._map_signal_to_trade_decision(
+-                result,
+-                prediction_input,
+-                account_balance,
+-            )
+-            if decision is not None:
+-                await self.execute_trade_decision(decision)
++                # Update RegimeMonitor with latest regime probabilities
++                # (Shared monitor, any pipeline update is fine, ideally consistent)
++                if (
++                    self.regime_monitor is not None
++                    and result is not None
++                    and getattr(result, "regime_output", None) is not None
++                ):
++                    try:
++                        await self.regime_monitor.update_regime_state(
++                            regime_probabilities=result.regime_output.regime_probabilities,
++                            confidence=result.regime_output.confidence,
++                            market_conditions={
++                                "symbol": symbol,
++                                "timestamp": result.timestamp,
++                            },
++                        )
++                    except Exception as exc:
++                        self.logger.warning(f"⚠️ Failed to update RegimeMonitor: {exc}")
++
++                # Map SignalGenerationResult -> TradeDecision and execute it
++                decision = await self._map_signal_to_trade_decision(
++                    result,
++                    prediction_input,
++                    account_balance,
++                    pipeline_key=pipeline_key
++                )
++                if decision is not None:
++                    await self.execute_trade_decision(decision)
+
+-        except Exception as exc:
+-            self.logger.error(f"❌ Failed to generate or execute signal for {symbol}: {exc}")
++            except Exception as exc:
++                self.logger.error(f"❌ Failed to generate or execute signal for {pipeline_key}: {exc}")
+
+     async def _save_market_data(self, symbol: str, data: pd.DataFrame, timeframe: str) -> None:
+         """Save market data to Parquet files."""
+@@ -960,6 +988,7 @@
+         result: SignalGenerationResult,
+         market_data_15m: pd.DataFrame,
+         account_balance: float,
++        pipeline_key: Optional[str] = None
+     ) -> Optional[TradeDecision]:
+         """Convert SignalGenerationResult into a live TradeDecision.
+
+@@ -994,12 +1023,24 @@
+             stop_loss_pct = float(params.get("stop_loss_pct", 0.03))
+             take_profit_pct = float(params.get("take_profit_pct", 0.06))
+
+-            if action in {"buy", "close"}:
++            # Determine direction context based on action
++            # buy = Long Entry
++            # sell = Short Entry
++            # close = Exit (depends on open position, handled by order manager)
++
++            # Note: For closing, we need price/quantity but SL/TP are irrelevant
++            # For entries, we calculate SL/TP based on direction.
++
++            if action == "buy": # Long Entry
+                 stop_loss = current_price * (1.0 - stop_loss_pct)
+                 take_profit = current_price * (1.0 + take_profit_pct)
+-            else:  # sell / short
++            elif action == "sell": # Short Entry
+                 stop_loss = current_price * (1.0 + stop_loss_pct)
+                 take_profit = current_price * (1.0 - take_profit_pct)
++            else: # Close (Exit)
++                # SL/TP not used for market close, but populated for completeness
++                stop_loss = 0.0
++                take_profit = 0.0
+
+             # Base confidence-anchored risk score
+             confidence = float(result.final_confidence)
+@@ -1009,7 +1050,14 @@
+             leverage: float
+
+             # Prefer Kelly-based PositionSizer if available and account_balance is valid
+-            sizer = self.position_sizers.get(result.symbol)
++            # Look up sizer by pipeline_key (e.g. "ETHUSDT_long") if provided
++            sizer = None
++            if pipeline_key:
++                sizer = self.position_sizers.get(pipeline_key)
++            else:
++                # Fallback to symbol lookup if using old keys (legacy safety)
++                sizer = self.position_sizers.get(result.symbol)
++
+             if (
+                 sizer is not None
+                 and getattr(sizer, "is_initialized", False)

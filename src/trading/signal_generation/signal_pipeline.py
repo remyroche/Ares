@@ -1186,21 +1186,30 @@ class SignalGenerationPipeline:
         signal_thresh = self.optimization_params.get('signal_confidence_threshold', 0.6)
 
         if eff_conf >= signal_thresh:
-            # Determine direction from signal_score
-            # Assuming score > 0 is Long, < 0 is Short (or use classes if probabilistic)
-            # If LGBM is a regressor predicting return:
-            direction = 'buy' if analyst_output.signal_score > 0 else 'sell'
-            # If LGBM is binary classifier (1=Long, 0=Short? Or 1=Buy, 0=Hold?)
-            # Adjust based on your model training target.
-            # Assuming Regressor for now or Binary Target where 1=Buy.
-            # If score is probability of BUY:
+            # Respect configured direction
+            configured_direction = getattr(self.config, 'direction', 'long')
+
+            # Note: analyst_output.signal_score is typically the probability of the target class.
+            # For a Long model, target=1 means "Long Profitable".
+            # For a Short model, target=1 means "Short Profitable" (assuming separate models).
+
+            # If score > 0.5 (or threshold), it's a signal to ENTER the configured direction.
+            # If score <= 0.5, it's a signal to HOLD (not enter).
+
+            # We strictly prevent "Long" model from signaling "Short" and vice versa.
+
+            signal_direction = 'hold'
+
             if analyst_output.signal_score > 0.5:
-                direction = 'buy'
-            else:
-                direction = 'sell' # or hold?
+                if configured_direction == 'long':
+                    signal_direction = 'buy'
+                elif configured_direction == 'short':
+                    signal_direction = 'sell'
+
+            # If signal_score is low, we hold. We do NOT reverse direction.
 
             return {
-                'signal': direction,
+                'signal': signal_direction,
                 'confidence': eff_conf,
                 'strength': abs(analyst_output.signal_score)
             }

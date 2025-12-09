@@ -1769,6 +1769,204 @@ class BaseStep(ABC):
             )
             return failure_result
 
+    # =========================================================================
+    # Winning Feature Set Management (2025-12-08)
+    # =========================================================================
+
+    def get_winning_feature_set(
+        self,
+        exchange: str,
+        asset: str,
+        feature_set_size: Optional[int] = None,
+    ) -> Optional[List[str]]:
+        """
+        Get the winning feature set for the given exchange/asset.
+
+        This method retrieves the persisted feature set that achieved the best
+        metrics (learnability, generalization gap, risk-adjusted returns).
+
+        Args:
+            exchange: Exchange name (e.g., 'binance')
+            asset: Asset symbol (e.g., 'ETHUSDT')
+            feature_set_size: Specific size to retrieve (50, 60, 70, 80)
+                            If None, returns the winning set size
+
+        Returns:
+            List of feature names or None if not found
+        """
+        from pathlib import Path
+        import json
+
+        # Look for persisted feature sets
+        fs_dir = Path("versioned_artifacts") / f"feature_sets_{asset}_{exchange}"
+        latest_path = fs_dir / "latest_feature_sets.json"
+
+        if not latest_path.exists():
+            self.logger.warning(f"No feature sets found for {asset} on {exchange}")
+            return None
+
+        try:
+            with open(latest_path, 'r') as f:
+                data = json.load(f)
+
+            feature_sets = data.get("feature_sets", {})
+
+            # Get winning set info if available
+            winning_info = data.get("winning_set", {})
+            winning_size = winning_info.get("size") if winning_info else None
+
+            # If specific size requested
+            if feature_set_size is not None:
+                size_key = str(feature_set_size)
+                if size_key in feature_sets:
+                    return feature_sets[size_key].get("features", [])
+                return None
+
+            # Return winning set if known
+            if winning_size and str(winning_size) in feature_sets:
+                return feature_sets[str(winning_size)].get("features", [])
+
+            # Default to 60-feature set (new default)
+            if "60" in feature_sets:
+                return feature_sets["60"].get("features", [])
+
+            # Fallback to largest available
+            if feature_sets:
+                largest = max(int(k) for k in feature_sets.keys())
+                return feature_sets[str(largest)].get("features", [])
+
+            return None
+
+        except Exception as e:
+            self.logger.error(f"Failed to load feature sets: {e}")
+            return None
+
+    def set_winning_feature_set(
+        self,
+        exchange: str,
+        asset: str,
+        winning_size: int,
+        winning_metrics: Dict[str, Any],
+    ) -> bool:
+        """
+        Set the winning feature set based on evaluation metrics.
+
+        Args:
+            exchange: Exchange name
+            asset: Asset symbol
+            winning_size: Size of the winning feature set
+            winning_metrics: Metrics that determined the winner
+
+        Returns:
+            True if successfully saved
+        """
+        from pathlib import Path
+        import json
+
+        fs_dir = Path("versioned_artifacts") / f"feature_sets_{asset}_{exchange}"
+        latest_path = fs_dir / "latest_feature_sets.json"
+
+        if not latest_path.exists():
+            self.logger.warning(f"No feature sets found to update for {asset} on {exchange}")
+            return False
+
+        try:
+            with open(latest_path, 'r') as f:
+                data = json.load(f)
+
+            # Update winning set info
+            data["winning_set"] = {
+                "size": winning_size,
+                "metrics": winning_metrics,
+                "updated_at": datetime.now().isoformat(),
+            }
+
+            with open(latest_path, 'w') as f:
+                json.dump(data, f, indent=2, default=str)
+
+            self.logger.info(f"Updated winning feature set to {winning_size} for {asset} on {exchange}")
+            tprint(f"💾 Updated winning feature set to {winning_size} features", "SUCCESS")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Failed to update winning feature set: {e}")
+            return False
+
+    def get_feature_set_b_for_analyst(
+        self,
+        exchange: str,
+        asset: str,
+    ) -> Optional[List[str]]:
+        """
+        Get the feature set for Analyst base models (feature_set B).
+
+        This returns the winning feature set identified through the
+        feature selection process, for use in Analyst model training.
+
+        Args:
+            exchange: Exchange name
+            asset: Asset symbol
+
+        Returns:
+            List of feature names for feature_set B
+        """
+        features = self.get_winning_feature_set(exchange, asset)
+        if features:
+            tprint(f"📂 Loaded feature_set B with {len(features)} features for {asset} on {exchange}")
+        return features
+
+    def feature_set_info(
+        self,
+        exchange: str,
+        asset: str,
+    ) -> Dict[str, Any]:
+        """
+        Get information about all available feature sets for an exchange/asset.
+
+        Args:
+            exchange: Exchange name
+            asset: Asset symbol
+
+        Returns:
+            Dictionary with feature set information
+        """
+        from pathlib import Path
+        import json
+
+        fs_dir = Path("versioned_artifacts") / f"feature_sets_{asset}_{exchange}"
+        latest_path = fs_dir / "latest_feature_sets.json"
+
+        if not latest_path.exists():
+            return {"available": False, "error": "No feature sets found"}
+
+        try:
+            with open(latest_path, 'r') as f:
+                data = json.load(f)
+
+            feature_sets = data.get("feature_sets", {})
+            metadata = data.get("metadata", {})
+            winning = data.get("winning_set", {})
+
+            info = {
+                "available": True,
+                "exchange": exchange,
+                "asset": asset,
+                "created_at": metadata.get("datetime_iso"),
+                "feature_set_sizes": [int(k) for k in feature_sets.keys()],
+                "winning_set_size": winning.get("size") if winning else None,
+                "winning_metrics": winning.get("metrics") if winning else None,
+            }
+
+            # Add summary of each set
+            for size_str, fs_data in feature_sets.items():
+                size = int(size_str)
+                info[f"set_{size}_count"] = len(fs_data.get("features", []))
+
+            return info
+
+        except Exception as e:
+            return {"available": False, "error": str(e)}
+
 
 class StepRegistry:
     """

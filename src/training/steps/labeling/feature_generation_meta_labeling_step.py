@@ -2049,6 +2049,361 @@ def create_conditional_quantile_labels(
     return labels, labels_long, labels_short, diagnostics
 
 
+def compute_zscore_gated_triple_barrier_labels(
+    df: pd.DataFrame,
+    features: pd.DataFrame,
+    signals: pd.DataFrame,
+    volatility: pd.Series,
+    # Conditional quantile parameters
+    quantile_long: float = 0.6,
+    quantile_short: float = 0.35,
+    asymmetric_crypto: bool = True,
+    quantile_lookback: int = 3000,
+    quantile_min_train: int = 500,
+    quantile_retrain_freq: int = 500,
+    # Barrier parameters
+    k_tp_base: float = 1.5,
+    k_sl_base: float = 1.0,
+    k_tp_long_mult: float = 1.1,   # Slightly larger TP for longs (crypto upward bias)
+    k_sl_long_mult: float = 0.9,  # Slightly smaller SL for longs (capture pullbacks)
+    k_tp_short_mult: float = 1.0,
+    k_sl_short_mult: float = 1.0,
+    # Z-score magnitude scaling
+    z_magnitude_scale: float = 0.3,  # k_TP = k0 * (1 + z_magnitude_scale * |z|)
+    # Trend adjustment
+    trend_alpha: float = 0.3,  # TP_adj = TP * (1 + alpha * trend_strength)
+    trend_lookback: int = 20,
+    # Clipping bounds (as multiples of base volatility)
+    tp_min_mult: float = 0.5,
+    tp_max_mult: float = 4.0,
+    sl_min_mult: float = 0.3,
+    sl_max_mult: float = 2.0,
+    # Horizon and other parameters
+    horizon: int = 26,
+    transaction_cost: float = 0.003,
+    min_event_spacing: int = 2,
+    # Trailing profit
+    atr_series: Optional[pd.Series] = None,
+    trail_distance_atr_mult: Optional[float] = None,
+    # Feature subset for quantile model
+    feature_subset: Optional[List[str]] = None,
+) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+    """
+    Z-Score Gated Triple Barrier Labeling Pipeline.
+    
+    This implements the full pipeline:
+    
+        [ Market Features ]
+                ↓
+        Conditional Quantile Filter
+                ↓   (z > Q_long OR z < Q_short)
+           Trade Entry Candidate
+                ↓
+        Triple Barrier Labeling (volatility-aware, trend-adjusted)
+                ↓
+           Final Supervised Target
+    
+    Key Features:
+    1. Entry gating via conditional quantile regression on z-scores
+    2. Volatility-aware barriers: TP = k_TP × σ_rolling, SL = k_SL × σ_rolling
+    3. Z-score magnitude scaling: k_TP = k_base × (1 + scale × |z|)
+    4. Trend-aware adjustment: TP_adj = TP × (1 + α × trend_strength)
+    5. Asymmetric multipliers for crypto (longs vs shorts)
+    6. Clipping to avoid extreme TP/SL in low/high volatility
+    7. Trailing profit support
+    
+    Args:
+        df: OHLCV DataFrame with 'close', 'high', 'low' columns
+        features: Feature matrix for conditional quantile model
+        signals: Signal DataFrame with 'consensus' column
+        volatility: Volatility series (e.g., volatility_1d)
+        
+        # Quantile parameters
+        quantile_long: Upper quantile threshold for longs (default: 0.6)
+        quantile_short: Lower quantile threshold for shorts (default: 0.35)
+        asymmetric_crypto: Use asymmetric quantiles for crypto
+        quantile_lookback: Rolling window for quantile model training
+        quantile_min_train: Minimum samples before training
+        quantile_retrain_freq: Retrain model every N bars
+        
+        # Barrier parameters
+        k_tp_base: Base take-profit multiplier (× volatility)
+        k_sl_base: Base stop-loss multiplier (× volatility)
+        k_tp_long_mult: Additional TP multiplier for longs
+        k_sl_long_mult: Additional SL multiplier for longs
+        k_tp_short_mult: Additional TP multiplier for shorts
+        k_sl_short_mult: Additional SL multiplier for shorts
+        
+        # Z-score scaling
+        z_magnitude_scale: Scale factor for |z| adjustment
+        
+        # Trend adjustment (linear, not thresholds)
+        trend_alpha: Trend adjustment factor (0.2-0.4 recommended)
+        trend_lookback: Lookback for trend calculation
+        
+        # Clipping
+        tp_min_mult: Minimum TP as multiple of base volatility
+        tp_max_mult: Maximum TP as multiple of base volatility
+        sl_min_mult: Minimum SL as multiple of base volatility
+        sl_max_mult: Maximum SL as multiple of base volatility
+        
+        # Other parameters
+        horizon: Maximum bars to look ahead
+        transaction_cost: Transaction cost per trade
+        min_event_spacing: Minimum bars between events
+        atr_series: ATR series for trailing stops
+        trail_distance_atr_mult: Trailing distance in ATR multiples
+        feature_subset: Optional feature subset for quantile model
+    
+    Returns:
+        Tuple of (labeled_data DataFrame, diagnostics dict)
+    """
+    n = len(df)
+    
+    # Initialize output DataFrame
+    labeled_data = pd.DataFrame(index=df.index)
+    labeled_data['close'] = df['close']
+    
+    diagnostics: Dict[str, Any] = {
+        "n_signals": 0,
+        "n_gated_long": 0,
+        "n_gated_short": 0,
+        "n_trades": 0,
+        "quantile_diagnostics": {},
+        "barrier_stats": {},
+    }
+    
+    try:
+        # =====================================================================
+        # STEP 1: Compute z-scores and conditional quantile filter
+        # =====================================================================
+        tprint("📊 Step 1: Computing conditional z-scores and quantile filter...", "INFO")
+        
+        # Compute future returns for z-score calculation
+        # rt+1:t+h = return over horizon period
+        future_returns = df['close'].pct_change(horizon).shift(-horizon)
+        
+        # Compute volatility-normalized z-scores
+        z_scores = compute_volatility_normalized_zscore(
+            realized_returns=future_returns,
+            volatility=volatility,
+            vol_lookback=100,
+            clip_zscore=5.0,
+        )
+        labeled_data['z_score'] = z_scores
+        
+        # Run conditional quantile regression
+        cond_labels, labels_long, labels_short, quantile_diag = create_conditional_quantile_labels(
+            realized_returns=future_returns,
+            features=features,
+            volatility=volatility,
+            quantile_long=quantile_long,
+            quantile_short=quantile_short,
+            lookback_bars=quantile_lookback,
+            min_train_samples=quantile_min_train,
+            retrain_frequency=quantile_retrain_freq,
+            vol_lookback=100,
+            use_lightgbm=True,
+            n_estimators=50,
+            max_depth=4,
+            feature_subset=feature_subset,
+            asymmetric_crypto=asymmetric_crypto,
+        )
+        
+        diagnostics["quantile_diagnostics"] = quantile_diag
+        
+        # Entry candidates: where quantile filter passes
+        # labels_long == 1 means z > Q_long (good long candidate)
+        # labels_short == 1 means z < Q_short (good short candidate)
+        long_candidates = labels_long == 1.0
+        short_candidates = labels_short == 1.0
+        
+        n_long_cand = int(long_candidates.sum())
+        n_short_cand = int(short_candidates.sum())
+        
+        tprint(f"   Entry candidates: {n_long_cand} longs, {n_short_cand} shorts", "INFO")
+        
+        # =====================================================================
+        # STEP 2: Compute volatility-aware barriers with z-score & trend scaling
+        # =====================================================================
+        tprint("📊 Step 2: Computing volatility-aware barriers...", "INFO")
+        
+        # Rolling volatility for barrier computation
+        rolling_vol = volatility.rolling(50, min_periods=10).mean()
+        labeled_data['rolling_vol'] = rolling_vol
+        
+        # Trend strength: EMA slope normalized (linear, not threshold)
+        ema_fast = df['close'].ewm(span=10).mean()
+        ema_slow = df['close'].ewm(span=30).mean()
+        ema_slope = (ema_fast - ema_slow) / df['close']
+        
+        # Z-score momentum (rolling mean of z-scores)
+        z_momentum = z_scores.rolling(trend_lookback, min_periods=5).mean().fillna(0)
+        
+        # Combined trend strength (normalized to roughly [-1, 1])
+        trend_strength = (ema_slope / (rolling_vol + 1e-8)).clip(-2, 2) / 2
+        labeled_data['trend_strength'] = trend_strength
+        
+        # Compute per-bar barrier thresholds
+        z_abs = z_scores.abs().fillna(0)
+        
+        # Base barriers (in price %)
+        tp_base = k_tp_base * rolling_vol
+        sl_base = k_sl_base * rolling_vol
+        
+        # Z-score magnitude scaling: k = k_base × (1 + scale × |z|)
+        # Stronger signals → larger targets
+        z_scale_factor = 1.0 + z_magnitude_scale * z_abs.clip(0, 3)
+        
+        # Direction-specific multipliers
+        # For longs: apply long multipliers
+        # For shorts: apply short multipliers
+        consensus = signals['consensus'] if 'consensus' in signals.columns else pd.Series(0, index=df.index)
+        
+        # Compute direction-aware TP/SL
+        tp_scaled = pd.Series(index=df.index, dtype=float)
+        sl_scaled = pd.Series(index=df.index, dtype=float)
+        
+        # Long positions
+        long_mask = consensus > 0
+        tp_scaled.loc[long_mask] = tp_base.loc[long_mask] * k_tp_long_mult * z_scale_factor.loc[long_mask]
+        sl_scaled.loc[long_mask] = sl_base.loc[long_mask] * k_sl_long_mult
+        
+        # Short positions
+        short_mask = consensus < 0
+        tp_scaled.loc[short_mask] = tp_base.loc[short_mask] * k_tp_short_mult * z_scale_factor.loc[short_mask]
+        sl_scaled.loc[short_mask] = sl_base.loc[short_mask] * k_sl_short_mult
+        
+        # =====================================================================
+        # STEP 3: Trend-aware adjustment (LINEAR, not thresholds)
+        # =====================================================================
+        # TP_adj = TP × (1 + α × trend_strength)
+        # For longs: positive trend → increase TP, negative trend → decrease TP
+        # For shorts: negative trend → increase TP, positive trend → decrease TP
+        
+        trend_adjustment_long = 1.0 + trend_alpha * trend_strength.clip(-1, 1)
+        trend_adjustment_short = 1.0 - trend_alpha * trend_strength.clip(-1, 1)  # Inverted for shorts
+        
+        tp_trend_adjusted = pd.Series(index=df.index, dtype=float)
+        tp_trend_adjusted.loc[long_mask] = tp_scaled.loc[long_mask] * trend_adjustment_long.loc[long_mask]
+        tp_trend_adjusted.loc[short_mask] = tp_scaled.loc[short_mask] * trend_adjustment_short.loc[short_mask]
+        
+        # =====================================================================
+        # STEP 4: Clipping to avoid extreme TP/SL
+        # =====================================================================
+        tp_min = tp_min_mult * rolling_vol
+        tp_max = tp_max_mult * rolling_vol
+        sl_min = sl_min_mult * rolling_vol
+        sl_max = sl_max_mult * rolling_vol
+        
+        tp_final = tp_trend_adjusted.clip(lower=tp_min, upper=tp_max)
+        sl_final = sl_scaled.clip(lower=sl_min, upper=sl_max)
+        
+        # Ensure minimum absolute thresholds
+        tp_final = tp_final.clip(lower=0.002)  # At least 0.2%
+        sl_final = sl_final.clip(lower=0.001)  # At least 0.1%
+        
+        labeled_data['tp_threshold'] = tp_final
+        labeled_data['sl_threshold'] = sl_final
+        
+        tprint(
+            f"   Barrier stats: TP mean={tp_final.mean():.4f}, SL mean={sl_final.mean():.4f}",
+            "INFO"
+        )
+        
+        # =====================================================================
+        # STEP 5: Apply triple barrier labeling with gated entries
+        # =====================================================================
+        tprint("📊 Step 3: Applying triple barrier labeling...", "INFO")
+        
+        # Create gated signals: only where quantile filter passes
+        gated_signals = signals.copy()
+        
+        # Gate: only allow long signals where long_candidates == True
+        # Gate: only allow short signals where short_candidates == True
+        original_consensus = gated_signals['consensus'].copy()
+        gated_consensus = pd.Series(0.0, index=df.index)
+        
+        # Apply long gate
+        gated_consensus.loc[long_candidates & (original_consensus > 0)] = 1.0
+        # Apply short gate
+        gated_consensus.loc[short_candidates & (original_consensus < 0)] = -1.0
+        
+        gated_signals['consensus'] = gated_consensus
+        
+        n_gated_long = int((gated_consensus > 0).sum())
+        n_gated_short = int((gated_consensus < 0).sum())
+        diagnostics["n_gated_long"] = n_gated_long
+        diagnostics["n_gated_short"] = n_gated_short
+        
+        tprint(f"   Gated signals: {n_gated_long} longs, {n_gated_short} shorts", "INFO")
+        
+        # Run triple barrier with volatility-aware thresholds
+        (
+            realized_returns,
+            binary_labels,
+            exit_reasons,
+            event_durations,
+            mfe_series,
+            mae_series,
+            binary_labels_long,
+            binary_labels_short,
+        ) = compute_realized_returns(
+            df=df,
+            signals=gated_signals,
+            profit_threshold=tp_final,  # Volatility-aware, trend-adjusted
+            stop_threshold=sl_final,    # Volatility-aware
+            horizon=horizon,
+            transaction_cost=transaction_cost,
+            min_event_spacing=min_event_spacing,
+            volatility_series=volatility,
+            atr_series=atr_series,
+            trail_distance_atr_mult=trail_distance_atr_mult,
+        )
+        
+        # Store results
+        labeled_data['realized_return'] = realized_returns
+        labeled_data['binary_label'] = binary_labels
+        labeled_data['binary_label_long'] = binary_labels_long
+        labeled_data['binary_label_short'] = binary_labels_short
+        labeled_data['exit_reason'] = exit_reasons
+        labeled_data['event_duration'] = event_durations
+        labeled_data['mfe'] = mfe_series
+        labeled_data['mae'] = mae_series
+        labeled_data['gated_consensus'] = gated_consensus
+        
+        # Compute final statistics
+        n_trades = int(realized_returns.notna().sum())
+        n_profitable = int((realized_returns > 0).sum())
+        mean_return = float(realized_returns.mean()) if n_trades > 0 else 0.0
+        
+        diagnostics["n_trades"] = n_trades
+        diagnostics["n_profitable"] = n_profitable
+        diagnostics["win_rate"] = n_profitable / n_trades if n_trades > 0 else 0.0
+        diagnostics["mean_return"] = mean_return
+        diagnostics["barrier_stats"] = {
+            "tp_mean": float(tp_final.mean()),
+            "tp_std": float(tp_final.std()),
+            "sl_mean": float(sl_final.mean()),
+            "sl_std": float(sl_final.std()),
+            "trend_alpha": trend_alpha,
+            "z_magnitude_scale": z_magnitude_scale,
+        }
+        
+        tprint(
+            f"📊 Final results: {n_trades} trades, {n_profitable} profitable ({diagnostics['win_rate']:.1%}), "
+            f"mean return={mean_return:.4f}",
+            "INFO"
+        )
+        
+    except Exception as e:
+        tprint(f"⚠️ Z-score gated triple barrier labeling failed: {e}", "WARNING")
+        import traceback
+        traceback.print_exc()
+    
+    return labeled_data, diagnostics
+
+
 def diagnose_quantile_lookahead_bias(
     vol_scaled: pd.Series,
     low_q: float = 0.3,
@@ -7930,6 +8285,8 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             # Labeling method selection:
             # - "rolling": Rolling quantiles with fixed thresholds (default, no look-ahead bias)
             # - "conditional": Conditional quantile regression Q_τ(z|X) - context-adaptive
+            # - "zscore_gated": Full pipeline - Conditional quantile filter THEN triple barrier
+            #                   [ Features ] → Quantile Filter → Entry Candidate → Triple Barrier → Labels
             # - "global": Global quantiles (legacy, has look-ahead bias)
             labeling_method = str(config.get("labeling_method", "rolling")).lower()
             
@@ -7938,14 +8295,35 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             rolling_lookback_bars = int(config.get("rolling_quantile_lookback_bars", 3000))  # ~31 days at 15m
             rolling_min_periods = int(config.get("rolling_quantile_min_periods", 300))  # ~3 days at 15m
             
-            # Conditional quantile regression parameters (advanced)
+            # Conditional quantile regression parameters (for "conditional" and "zscore_gated")
             use_conditional_quantiles = labeling_method == "conditional"
+            use_zscore_gated_pipeline = labeling_method == "zscore_gated"
             # Asymmetric quantiles for crypto (longs more selective, shorts less selective)
             conditional_quantile_long = float(config.get("conditional_quantile_long", 0.6))  # Q_0.6(z|X) for longs
             conditional_quantile_short = float(config.get("conditional_quantile_short", 0.35))  # Q_0.35(z|X) for shorts
             conditional_asymmetric = bool(config.get("conditional_asymmetric_crypto", True))  # Use crypto-optimized asymmetry
             conditional_retrain_freq = int(config.get("conditional_retrain_frequency", 500))
             conditional_min_train = int(config.get("conditional_min_train_samples", 500))
+            
+            # Z-score gated pipeline parameters (for "zscore_gated" method)
+            # Barrier multipliers (× volatility)
+            zg_k_tp_base = float(config.get("zscore_gated_k_tp_base", 1.5))
+            zg_k_sl_base = float(config.get("zscore_gated_k_sl_base", 1.0))
+            # Asymmetric multipliers for longs vs shorts (crypto upward bias)
+            zg_k_tp_long_mult = float(config.get("zscore_gated_k_tp_long_mult", 1.1))
+            zg_k_sl_long_mult = float(config.get("zscore_gated_k_sl_long_mult", 0.9))
+            zg_k_tp_short_mult = float(config.get("zscore_gated_k_tp_short_mult", 1.0))
+            zg_k_sl_short_mult = float(config.get("zscore_gated_k_sl_short_mult", 1.0))
+            # Z-score magnitude scaling: k_TP = k0 × (1 + scale × |z|)
+            zg_z_magnitude_scale = float(config.get("zscore_gated_z_magnitude_scale", 0.3))
+            # Trend adjustment (linear): TP_adj = TP × (1 + α × trend_strength)
+            zg_trend_alpha = float(config.get("zscore_gated_trend_alpha", 0.3))
+            zg_trend_lookback = int(config.get("zscore_gated_trend_lookback", 20))
+            # Clipping bounds (as multiples of base volatility)
+            zg_tp_min_mult = float(config.get("zscore_gated_tp_min_mult", 0.5))
+            zg_tp_max_mult = float(config.get("zscore_gated_tp_max_mult", 4.0))
+            zg_sl_min_mult = float(config.get("zscore_gated_sl_min_mult", 0.3))
+            zg_sl_max_mult = float(config.get("zscore_gated_sl_max_mult", 2.0))
             
             # Run look-ahead bias diagnostic if enabled
             if config.get("diagnose_quantile_bias", False):
@@ -7959,7 +8337,7 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                 if bias_diag.get("bias_detected", False) and labeling_method == "global":
                     tprint(
                         f"⚠️ Look-ahead bias detected ({bias_diag.get('bias_severity', 'unknown')}) "
-                        "with global quantiles. Consider using labeling_method='rolling' or 'conditional'",
+                        "with global quantiles. Consider using labeling_method='rolling', 'conditional', or 'zscore_gated'",
                         "WARNING"
                     )
 
@@ -7969,8 +8347,133 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
 
             # Store conditional quantile diagnostics if used
             conditional_quantile_diagnostics: Dict[str, Any] = {}
+            zscore_gated_diagnostics: Dict[str, Any] = {}
 
-            if use_conditional_quantiles:
+            if use_zscore_gated_pipeline:
+                # =====================================================================
+                # FULL PIPELINE: Z-Score Gated Triple Barrier
+                # =====================================================================
+                # [ Market Features ]
+                #         ↓
+                # Conditional Quantile Filter
+                #         ↓   (z > Q_long OR z < Q_short)
+                #    Trade Entry Candidate
+                #         ↓
+                # Triple Barrier Labeling (volatility-aware, trend-adjusted)
+                #         ↓
+                #    Final Supervised Target
+                # =====================================================================
+                tprint(
+                    f"📊 Using Z-SCORE GATED TRIPLE BARRIER PIPELINE:\n"
+                    f"   - Quantile filter: Q_long={conditional_quantile_long}, Q_short={conditional_quantile_short}\n"
+                    f"   - Barrier scaling: k_TP={zg_k_tp_base}, k_SL={zg_k_sl_base}\n"
+                    f"   - Z-score magnitude scale: {zg_z_magnitude_scale}\n"
+                    f"   - Trend alpha: {zg_trend_alpha}",
+                    "INFO"
+                )
+                
+                # Build meta-features for conditional quantile model
+                meta_features_for_cond = create_meta_features(
+                    df=market_data,
+                    signals=primary_signals,
+                    volume_available=volume_available,
+                    include_raw_signals=False,
+                    use_kalman=True,
+                )
+                
+                # Stable features for conditioning
+                stable_features = [
+                    'volatility_1h', 'volatility_4h', 'volatility_1d', 'volatility_ema',
+                    'vol_of_vol', 'momentum_20', 'momentum_ema', 'rsi_kalman',
+                    'ma_distance_kalman', 'kalman_trend', 'range_position',
+                    'hour_sin', 'hour_cos', 'day_of_week',
+                ]
+                feature_subset = [f for f in stable_features if f in meta_features_for_cond.columns]
+                
+                # Prepare ATR series for trailing stops
+                atr_for_trailing = None
+                trail_mult_for_pipeline = None
+                if 'atr_14' in market_data.columns:
+                    atr_for_trailing = market_data['atr_14']
+                    # Use a reasonable trailing distance (1.5 ATR by default)
+                    trail_mult_for_pipeline = float(config.get("zscore_gated_trail_atr_mult", 1.5))
+                
+                # Run the full z-score gated pipeline
+                gated_labeled_data, zscore_gated_diagnostics = compute_zscore_gated_triple_barrier_labels(
+                    df=market_data,
+                    features=meta_features_for_cond,
+                    signals=primary_signals,
+                    volatility=volatility_1d,
+                    # Conditional quantile parameters
+                    quantile_long=conditional_quantile_long,
+                    quantile_short=conditional_quantile_short,
+                    asymmetric_crypto=conditional_asymmetric,
+                    quantile_lookback=rolling_lookback_bars,
+                    quantile_min_train=conditional_min_train,
+                    quantile_retrain_freq=conditional_retrain_freq,
+                    # Barrier parameters
+                    k_tp_base=zg_k_tp_base,
+                    k_sl_base=zg_k_sl_base,
+                    k_tp_long_mult=zg_k_tp_long_mult,
+                    k_sl_long_mult=zg_k_sl_long_mult,
+                    k_tp_short_mult=zg_k_tp_short_mult,
+                    k_sl_short_mult=zg_k_sl_short_mult,
+                    # Z-score scaling
+                    z_magnitude_scale=zg_z_magnitude_scale,
+                    # Trend adjustment
+                    trend_alpha=zg_trend_alpha,
+                    trend_lookback=zg_trend_lookback,
+                    # Clipping
+                    tp_min_mult=zg_tp_min_mult,
+                    tp_max_mult=zg_tp_max_mult,
+                    sl_min_mult=zg_sl_min_mult,
+                    sl_max_mult=zg_sl_max_mult,
+                    # Other
+                    horizon=horizon,
+                    transaction_cost=transaction_cost,
+                    min_event_spacing=min_event_spacing,
+                    atr_series=atr_for_trailing,
+                    trail_distance_atr_mult=trail_mult_for_pipeline,
+                    feature_subset=feature_subset if feature_subset else None,
+                )
+                
+                # Extract labels from the gated pipeline output
+                # The pipeline returns a DataFrame with all labeling information
+                quantile_labels = gated_labeled_data.get('binary_label', pd.Series(index=market_data.index, dtype=float))
+                quantile_labels_short = gated_labeled_data.get('binary_label_short', pd.Series(index=market_data.index, dtype=float))
+                
+                # Override realized_returns with the gated pipeline results
+                realized_returns = gated_labeled_data.get('realized_return', realized_returns)
+                
+                # Use gated consensus instead of original
+                gated_consensus = gated_labeled_data.get('gated_consensus', pd.Series(0, index=market_data.index))
+                primary_signals['consensus'] = gated_consensus
+                
+                # Log diagnostics
+                n_trades = zscore_gated_diagnostics.get('n_trades', 0)
+                win_rate = zscore_gated_diagnostics.get('win_rate', 0.0)
+                mean_ret = zscore_gated_diagnostics.get('mean_return', 0.0)
+                n_gated_long = zscore_gated_diagnostics.get('n_gated_long', 0)
+                n_gated_short = zscore_gated_diagnostics.get('n_gated_short', 0)
+                
+                tprint(
+                    f"📊 Z-Score Gated Pipeline Results:\n"
+                    f"   - Gated entries: {n_gated_long} longs, {n_gated_short} shorts\n"
+                    f"   - Trades executed: {n_trades}, Win rate: {win_rate:.1%}, Mean return: {mean_ret:.4f}",
+                    "INFO"
+                )
+                
+                # Store additional columns from the gated pipeline
+                if 'tp_threshold' in gated_labeled_data.columns:
+                    labeled_data['tp_threshold'] = gated_labeled_data['tp_threshold']
+                if 'sl_threshold' in gated_labeled_data.columns:
+                    labeled_data['sl_threshold'] = gated_labeled_data['sl_threshold']
+                if 'trend_strength' in gated_labeled_data.columns:
+                    labeled_data['trend_strength'] = gated_labeled_data['trend_strength']
+                if 'z_score' in gated_labeled_data.columns:
+                    labeled_data['z_score'] = gated_labeled_data['z_score']
+                
+            elif use_conditional_quantiles:
                 # ADVANCED: Conditional quantile regression with asymmetric tails
                 # Predicts Q_long(z|X) and Q_short(z|X) separately for crypto markets
                 tprint(

@@ -1464,8 +1464,8 @@ def create_rolling_quantile_labels_from_vol_scaled_returns(
     vol_scaled: pd.Series,
     low_q: float = 0.3,
     high_q: float = 0.7,
-    lookback_bars: int = 2000,
-    min_periods: int = 200,
+    lookback_bars: int = 3000,
+    min_periods: int = 300,
     expanding_start: bool = True,
 ) -> pd.Series:
     """Create binary labels using ROLLING quantile thresholds (no look-ahead bias).
@@ -1477,7 +1477,7 @@ def create_rolling_quantile_labels_from_vol_scaled_returns(
         vol_scaled: Volatility-scaled returns series
         low_q: Lower quantile for negative labels (e.g., 0.3 = bottom 30%)
         high_q: Upper quantile for positive labels (e.g., 0.7 = top 30%)
-        lookback_bars: Rolling window size in bars (default: 2000 ~= 21 days at 15m)
+        lookback_bars: Rolling window size in bars (default: 3000 ~= 31 days at 15m)
         min_periods: Minimum observations required before computing quantiles
         expanding_start: If True, use expanding window until lookback_bars is reached
     
@@ -1548,8 +1548,8 @@ def create_rolling_regime_aware_quantile_labels_from_vol_scaled_returns(
     regimes: Optional[pd.Series] = None,
     low_q: float = 0.3,
     high_q: float = 0.7,
-    lookback_bars: int = 2000,
-    min_periods: int = 200,
+    lookback_bars: int = 3000,
+    min_periods: int = 300,
     min_samples_per_regime: int = 50,
     expanding_start: bool = True,
 ) -> pd.Series:
@@ -1563,7 +1563,7 @@ def create_rolling_regime_aware_quantile_labels_from_vol_scaled_returns(
         regimes: Optional regime labels (e.g., HMM states)
         low_q: Lower quantile for negative labels
         high_q: Upper quantile for positive labels
-        lookback_bars: Rolling window size in bars
+        lookback_bars: Rolling window size in bars (default: 3000 ~= 31 days at 15m)
         min_periods: Minimum observations before computing quantiles
         min_samples_per_regime: Minimum samples per regime for regime-specific thresholds
         expanding_start: If True, use expanding window until lookback_bars reached
@@ -1666,6 +1666,327 @@ def create_rolling_regime_aware_quantile_labels_from_vol_scaled_returns(
         )
     
     return labels
+
+
+def compute_volatility_normalized_zscore(
+    realized_returns: pd.Series,
+    volatility: pd.Series,
+    vol_lookback: int = 100,
+    vol_min_periods: int = 20,
+    clip_zscore: float = 5.0,
+) -> pd.Series:
+    """Compute volatility-normalized z-scores for trend-preserving labeling.
+    
+    Normalizes future returns by rolling volatility to produce z-scores that:
+    - Preserve trend-following signal (magnitude matters)
+    - Are volatility-aware (scale-normalized)
+    - Are comparable across different volatility regimes
+    
+    z = future_return / rolling_volatility
+    
+    Args:
+        realized_returns: Raw realized returns series
+        volatility: Volatility series (e.g., volatility_1d or ATR-based)
+        vol_lookback: Lookback for volatility smoothing (default: 100 bars)
+        vol_min_periods: Minimum periods for volatility calculation
+        clip_zscore: Maximum absolute z-score to prevent outliers
+    
+    Returns:
+        Series of volatility-normalized z-scores
+    """
+    z_scores = pd.Series(index=realized_returns.index, dtype=float)
+    z_scores[:] = np.nan
+    
+    try:
+        # Align volatility to returns
+        vol_aligned = volatility.reindex(realized_returns.index)
+        
+        # Use rolling volatility for smoothing (EMA-style for responsiveness)
+        rolling_vol = vol_aligned.ewm(span=vol_lookback, min_periods=vol_min_periods).mean()
+        
+        # Ensure positive volatility
+        rolling_vol = rolling_vol.replace(0.0, np.nan).abs()
+        
+        # Compute z-scores
+        z_scores = realized_returns / (rolling_vol + 1e-8)
+        
+        # Clip extreme values to prevent outlier domination
+        z_scores = z_scores.clip(lower=-clip_zscore, upper=clip_zscore)
+        
+        # Fill any infinities
+        z_scores = z_scores.replace([np.inf, -np.inf], np.nan)
+        
+        n_valid = z_scores.notna().sum()
+        z_mean = float(z_scores.mean()) if n_valid > 0 else 0.0
+        z_std = float(z_scores.std()) if n_valid > 1 else 1.0
+        
+        tprint(
+            f"📊 Z-score normalization: n={n_valid}, mean={z_mean:.3f}, std={z_std:.3f}",
+            "INFO"
+        )
+        
+    except Exception as e:
+        tprint(f"⚠️ Z-score computation failed: {e}", "WARNING")
+        z_scores[:] = np.nan
+    
+    return z_scores
+
+
+def create_conditional_quantile_labels(
+    realized_returns: pd.Series,
+    features: pd.DataFrame,
+    volatility: pd.Series,
+    quantile: float = 0.6,
+    lookback_bars: int = 3000,
+    min_train_samples: int = 500,
+    retrain_frequency: int = 500,
+    vol_lookback: int = 100,
+    use_lightgbm: bool = True,
+    n_estimators: int = 50,
+    max_depth: int = 4,
+    feature_subset: Optional[List[str]] = None,
+) -> Tuple[pd.Series, pd.Series, Dict[str, Any]]:
+    """Create labels using conditional quantile regression: Predict Q_τ(z | X).
+    
+    Instead of using fixed or rolling thresholds, this approach:
+    1. Normalizes returns by volatility to get z-scores (trend-preserving)
+    2. Uses quantile regression to predict Q_τ(future_z | features)
+    3. Labels positive if actual_z > predicted_quantile (beat expectations)
+    
+    This is superior because the threshold adapts to current market context.
+    
+    Args:
+        realized_returns: Per-event realized returns
+        features: Feature matrix X for conditioning
+        volatility: Volatility series for z-score normalization
+        quantile: Target quantile τ (default: 0.6 = 60th percentile)
+        lookback_bars: Training window size (default: 3000 ~= 31 days at 15m)
+        min_train_samples: Minimum samples before model training starts
+        retrain_frequency: Retrain model every N bars
+        vol_lookback: Lookback for volatility smoothing
+        use_lightgbm: If True, use LightGBM; else use sklearn GBR
+        n_estimators: Number of trees in ensemble
+        max_depth: Maximum tree depth
+        feature_subset: Optional list of features to use (for speed)
+    
+    Returns:
+        Tuple of (labels, predicted_quantiles, diagnostics)
+        - labels: 1.0 if z > Q_τ(z|X), 0.0 if z < Q_(1-τ)(z|X), NaN otherwise
+        - predicted_quantiles: The predicted conditional quantiles
+        - diagnostics: Dict with model performance metrics
+    """
+    labels = pd.Series(index=realized_returns.index, dtype=float)
+    labels[:] = np.nan
+    
+    predicted_quantiles = pd.Series(index=realized_returns.index, dtype=float)
+    predicted_quantiles[:] = np.nan
+    
+    diagnostics: Dict[str, Any] = {
+        "n_labeled": 0,
+        "n_positive": 0,
+        "n_negative": 0,
+        "mean_predicted_quantile": np.nan,
+        "coverage_above": np.nan,
+        "model_type": "lightgbm" if use_lightgbm else "sklearn_gbr",
+        "quantile": quantile,
+    }
+    
+    try:
+        # Step 1: Compute volatility-normalized z-scores
+        z_scores = compute_volatility_normalized_zscore(
+            realized_returns=realized_returns,
+            volatility=volatility,
+            vol_lookback=vol_lookback,
+        )
+        
+        # Step 2: Prepare features
+        if feature_subset is not None and len(feature_subset) > 0:
+            available_features = [f for f in feature_subset if f in features.columns]
+            if len(available_features) < 5:
+                # Fallback to all numeric features
+                X = features.select_dtypes(include=[np.number])
+            else:
+                X = features[available_features]
+        else:
+            X = features.select_dtypes(include=[np.number])
+        
+        # Remove columns that might leak future info
+        drop_cols = [c for c in X.columns if any(
+            pat in c.lower() for pat in ['target', 'label', 'return', 'future', 'forward']
+        )]
+        X = X.drop(columns=drop_cols, errors='ignore')
+        
+        # Align indices
+        common_idx = z_scores.dropna().index.intersection(X.dropna(how='all').index)
+        if len(common_idx) < min_train_samples:
+            tprint(f"⚠️ Conditional quantile: insufficient data ({len(common_idx)} < {min_train_samples})", "WARNING")
+            return labels, predicted_quantiles, diagnostics
+        
+        z_aligned = z_scores.loc[common_idx]
+        X_aligned = X.loc[common_idx].fillna(0.0)
+        
+        # Step 3: Rolling prediction with periodic retraining
+        tprint(f"📊 Conditional quantile regression: training on {len(common_idx)} samples...", "INFO")
+        
+        # Convert to numpy for speed
+        z_arr = z_aligned.to_numpy(dtype=float)
+        X_arr = X_aligned.to_numpy(dtype=float)
+        idx_arr = np.arange(len(common_idx))
+        
+        pred_q = np.full(len(common_idx), np.nan)
+        pred_q_low = np.full(len(common_idx), np.nan)  # For symmetric labeling
+        
+        model_high = None
+        model_low = None
+        last_train_idx = -retrain_frequency  # Force initial training
+        
+        # Rolling prediction
+        for i in range(min_train_samples, len(common_idx)):
+            # Retrain periodically
+            if (i - last_train_idx) >= retrain_frequency or model_high is None:
+                train_start = max(0, i - lookback_bars)
+                train_end = i
+                
+                X_train = X_arr[train_start:train_end]
+                z_train = z_arr[train_start:train_end]
+                
+                # Remove NaN from training
+                valid_train = ~np.isnan(z_train)
+                if valid_train.sum() < 50:
+                    continue
+                
+                X_train = X_train[valid_train]
+                z_train = z_train[valid_train]
+                
+                if use_lightgbm:
+                    # LightGBM quantile regression
+                    model_high = lgb.LGBMRegressor(
+                        objective='quantile',
+                        alpha=quantile,
+                        n_estimators=n_estimators,
+                        max_depth=max_depth,
+                        learning_rate=0.05,
+                        subsample=0.8,
+                        colsample_bytree=0.8,
+                        min_child_samples=20,
+                        n_jobs=-1,
+                        verbose=-1,
+                        random_state=42,
+                    )
+                    model_low = lgb.LGBMRegressor(
+                        objective='quantile',
+                        alpha=1.0 - quantile,  # Symmetric lower quantile
+                        n_estimators=n_estimators,
+                        max_depth=max_depth,
+                        learning_rate=0.05,
+                        subsample=0.8,
+                        colsample_bytree=0.8,
+                        min_child_samples=20,
+                        n_jobs=-1,
+                        verbose=-1,
+                        random_state=42,
+                    )
+                else:
+                    # Sklearn GradientBoostingRegressor
+                    from sklearn.ensemble import GradientBoostingRegressor
+                    model_high = GradientBoostingRegressor(
+                        loss='quantile',
+                        alpha=quantile,
+                        n_estimators=n_estimators,
+                        max_depth=max_depth,
+                        learning_rate=0.05,
+                        subsample=0.8,
+                        min_samples_leaf=20,
+                        random_state=42,
+                    )
+                    model_low = GradientBoostingRegressor(
+                        loss='quantile',
+                        alpha=1.0 - quantile,
+                        n_estimators=n_estimators,
+                        max_depth=max_depth,
+                        learning_rate=0.05,
+                        subsample=0.8,
+                        min_samples_leaf=20,
+                        random_state=42,
+                    )
+                
+                try:
+                    model_high.fit(X_train, z_train)
+                    model_low.fit(X_train, z_train)
+                    last_train_idx = i
+                except Exception as fit_err:
+                    tprint(f"⚠️ Model fit failed at i={i}: {fit_err}", "WARNING")
+                    continue
+            
+            # Predict for current observation
+            if model_high is not None and model_low is not None:
+                try:
+                    X_pred = X_arr[i:i+1]
+                    pred_q[i] = float(model_high.predict(X_pred)[0])
+                    pred_q_low[i] = float(model_low.predict(X_pred)[0])
+                except Exception:
+                    pass
+        
+        # Step 4: Generate labels based on conditional quantiles
+        # Label = 1 if z > predicted Q_τ (beat upper expectation)
+        # Label = 0 if z < predicted Q_(1-τ) (worse than lower expectation)
+        # Label = NaN if in between (uncertain zone)
+        
+        for i, idx in enumerate(common_idx):
+            if np.isnan(pred_q[i]) or np.isnan(z_arr[i]):
+                continue
+            
+            predicted_quantiles.loc[idx] = pred_q[i]
+            
+            if z_arr[i] >= pred_q[i]:
+                labels.loc[idx] = 1.0
+            elif z_arr[i] <= pred_q_low[i]:
+                labels.loc[idx] = 0.0
+            # else: remains NaN (uncertain zone)
+        
+        # Diagnostics
+        n_labeled = int(labels.notna().sum())
+        n_pos = int((labels == 1.0).sum())
+        n_neg = int((labels == 0.0).sum())
+        
+        valid_pred = ~np.isnan(pred_q)
+        mean_pred_q = float(np.nanmean(pred_q)) if valid_pred.any() else np.nan
+        
+        # Coverage: what fraction of actual z exceeded predicted quantile?
+        if valid_pred.any():
+            above_q = z_arr[valid_pred] >= pred_q[valid_pred]
+            coverage_above = float(above_q.mean())
+        else:
+            coverage_above = np.nan
+        
+        diagnostics.update({
+            "n_labeled": n_labeled,
+            "n_positive": n_pos,
+            "n_negative": n_neg,
+            "mean_predicted_quantile": mean_pred_q,
+            "coverage_above": coverage_above,
+            "expected_coverage": 1.0 - quantile,  # Should match this if well-calibrated
+        })
+        
+        tprint(
+            f"📊 Conditional quantile labels: {n_labeled} labeled ({n_pos} pos, {n_neg} neg), "
+            f"coverage={coverage_above:.2%} (expected={1.0-quantile:.2%})",
+            "INFO"
+        )
+        
+        # Calibration check
+        if abs(coverage_above - (1.0 - quantile)) > 0.1:
+            tprint(
+                f"⚠️ Quantile model may be miscalibrated: coverage={coverage_above:.2%} vs expected={1.0-quantile:.2%}",
+                "WARNING"
+            )
+        
+    except Exception as e:
+        tprint(f"⚠️ Conditional quantile labeling failed: {e}", "WARNING")
+        import traceback
+        traceback.print_exc()
+    
+    return labels, predicted_quantiles, diagnostics
 
 
 def diagnose_quantile_lookahead_bias(
@@ -7546,10 +7867,22 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             quantile_low_q = float(config.get("quantile_low_q", 0.3))
             quantile_high_q = float(config.get("quantile_high_q", 0.7))
             
-            # NEW: Rolling quantiles to eliminate look-ahead bias
-            use_rolling_quantiles = bool(config.get("use_rolling_quantiles", True))  # Default: True for safety
-            rolling_lookback_bars = int(config.get("rolling_quantile_lookback_bars", 2000))  # ~21 days at 15m
-            rolling_min_periods = int(config.get("rolling_quantile_min_periods", 200))  # ~2 days at 15m
+            # Labeling method selection:
+            # - "rolling": Rolling quantiles with fixed thresholds (default, no look-ahead bias)
+            # - "conditional": Conditional quantile regression Q_τ(z|X) - context-adaptive
+            # - "global": Global quantiles (legacy, has look-ahead bias)
+            labeling_method = str(config.get("labeling_method", "rolling")).lower()
+            
+            # Rolling quantile parameters
+            use_rolling_quantiles = labeling_method == "rolling" or bool(config.get("use_rolling_quantiles", True))
+            rolling_lookback_bars = int(config.get("rolling_quantile_lookback_bars", 3000))  # ~31 days at 15m
+            rolling_min_periods = int(config.get("rolling_quantile_min_periods", 300))  # ~3 days at 15m
+            
+            # Conditional quantile regression parameters (advanced)
+            use_conditional_quantiles = labeling_method == "conditional"
+            conditional_quantile = float(config.get("conditional_quantile", 0.6))  # Q_0.6(z|X)
+            conditional_retrain_freq = int(config.get("conditional_retrain_frequency", 500))
+            conditional_min_train = int(config.get("conditional_min_train_samples", 500))
             
             # Run look-ahead bias diagnostic if enabled
             if config.get("diagnose_quantile_bias", False):
@@ -7560,10 +7893,10 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                     high_q=quantile_high_q,
                     print_results=True,
                 )
-                if bias_diag.get("bias_detected", False) and not use_rolling_quantiles:
+                if bias_diag.get("bias_detected", False) and labeling_method == "global":
                     tprint(
                         f"⚠️ Look-ahead bias detected ({bias_diag.get('bias_severity', 'unknown')}) "
-                        "but rolling quantiles disabled. Consider enabling use_rolling_quantiles=True",
+                        "with global quantiles. Consider using labeling_method='rolling' or 'conditional'",
                         "WARNING"
                     )
 
@@ -7571,7 +7904,58 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             if config.get("enable_regime_aware_quantiles", True) and "hmm_regime_label_1h" in market_data.columns:
                 regimes_for_labeling = market_data["hmm_regime_label_1h"]
 
-            if use_rolling_quantiles:
+            # Store conditional quantile diagnostics if used
+            conditional_quantile_diagnostics: Dict[str, Any] = {}
+
+            if use_conditional_quantiles:
+                # ADVANCED: Conditional quantile regression - Predict Q_τ(z|X)
+                # This adapts the threshold based on current market context (features)
+                tprint(f"📊 Using CONDITIONAL quantile regression Q_{conditional_quantile}(z|X)", "INFO")
+                
+                # Build meta-features first (needed for conditioning)
+                # Use a minimal feature set for speed during labeling
+                meta_features_for_cond = create_meta_features(
+                    df=market_data,
+                    signals=primary_signals,
+                    volume_available=volume_available,
+                    include_raw_signals=False,
+                    use_kalman=True,
+                )
+                
+                # Select stable features for conditioning (avoid noisy/leaky ones)
+                stable_features = [
+                    'volatility_1h', 'volatility_4h', 'volatility_1d', 'volatility_ema',
+                    'vol_of_vol', 'momentum_20', 'momentum_ema', 'rsi_kalman',
+                    'ma_distance_kalman', 'kalman_trend', 'range_position',
+                    'hour_sin', 'hour_cos', 'day_of_week',
+                ]
+                feature_subset = [f for f in stable_features if f in meta_features_for_cond.columns]
+                
+                quantile_labels, predicted_quantiles, conditional_quantile_diagnostics = create_conditional_quantile_labels(
+                    realized_returns=realized_returns,
+                    features=meta_features_for_cond,
+                    volatility=volatility_1d,
+                    quantile=conditional_quantile,
+                    lookback_bars=rolling_lookback_bars,
+                    min_train_samples=conditional_min_train,
+                    retrain_frequency=conditional_retrain_freq,
+                    vol_lookback=100,
+                    use_lightgbm=True,
+                    n_estimators=50,
+                    max_depth=4,
+                    feature_subset=feature_subset if feature_subset else None,
+                )
+                
+                # Log diagnostics
+                if conditional_quantile_diagnostics:
+                    cov = conditional_quantile_diagnostics.get('coverage_above', np.nan)
+                    exp_cov = conditional_quantile_diagnostics.get('expected_coverage', np.nan)
+                    tprint(
+                        f"📊 Conditional quantile calibration: coverage={cov:.2%} (expected={exp_cov:.2%})",
+                        "INFO"
+                    )
+                    
+            elif use_rolling_quantiles:
                 # Use rolling quantiles to eliminate look-ahead bias
                 tprint(f"📊 Using ROLLING quantiles (lookback={rolling_lookback_bars} bars) to prevent look-ahead bias", "INFO")
                 if regimes_for_labeling is not None:

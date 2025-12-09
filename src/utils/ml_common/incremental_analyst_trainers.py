@@ -45,6 +45,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import numpy as np
 import pandas as pd
 from scipy import sparse
+from scipy.special import expit
 
 logger = logging.getLogger(__name__)
 
@@ -796,6 +797,696 @@ class IncrementalLGBMTrainer(BaseIncrementalTrainer):
 
 
 # ============================================================================
+# Incremental Bagged LGBM Trainer (Bag-Lower)
+# ============================================================================
+
+class BaggedLGBMRegressor:
+    """
+    Bagged LGBM regressor/classifier with Diversity Defense support.
+
+    Supports mean/std/lower predictions, and when diversity defense is enabled,
+    also provides MAD-based consensus predictions using specialist models with
+    different objectives (Sharpe, Tanh, Huber).
+
+    Feature diversity is controlled via colsample_bytree (NOT external feature loops).
+    All models use the full feature set, with LightGBM internally selecting subsets.
+    """
+
+    def __init__(
+        self,
+        models: List[Any],
+        n_features: int,
+        specialist_types: Optional[List[Any]] = None,
+        use_diversity_defense: bool = False,
+        diversity_defense_config: Optional[Any] = None,
+    ):
+        self.models = models
+        self.n_features = n_features
+        self.specialist_types = specialist_types or []
+        self.use_diversity_defense = use_diversity_defense
+        self.diversity_defense_config = diversity_defense_config
+
+        # Initialize aggregator for diversity defense
+        self._aggregator = None
+        if use_diversity_defense:
+            try:
+                from src.utils.ml_common.optimization.diversity_defense_objectives import (
+                    DiversityDefenseAggregator,
+                    DiversityDefenseConfig,
+                )
+                if diversity_defense_config is not None:
+                    self._aggregator = DiversityDefenseAggregator(diversity_defense_config)
+                else:
+                    self._aggregator = DiversityDefenseAggregator()
+            except ImportError:
+                logger.warning("Diversity Defense not available, falling back to standard aggregation")
+                self.use_diversity_defense = False
+
+    def predict_components(self, X: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """
+        Return (mean, std, lower) or classifier metrics across bags.
+
+        For Classification (Standard Bagging):
+        Output = (N_up * AvgConf_up - N_down * AvgConf_down) / Total_N
+        This replaces the simple mean-std calculation.
+        """
+        if X.ndim != 2 or X.shape[1] != self.n_features:
+            # Best-effort fallback: clip to common number of features
+            n_common = min(self.n_features, X.shape[1])
+            X = X[:, :n_common]
+        if not self.models:
+            n_samples = X.shape[0]
+            zeros = np.zeros(n_samples, dtype=float)
+            return zeros, zeros, zeros
+
+        bag_preds = []
+        for model in self.models:
+            try:
+                # All models use full feature set - colsample_bytree handles diversity
+                # Predict probability of class 1
+                if hasattr(model, 'predict_proba'):
+                    prob = model.predict_proba(X)[:, 1]
+                else:
+                    # Fallback for regressors or custom objectives without proba
+                    # Assuming they return raw margin or probability directly
+                    prob = model.predict(X)
+
+                bag_preds.append(prob)
+            except Exception:
+                continue
+
+        if not bag_preds:
+            n_samples = X.shape[0]
+            zeros = np.zeros(n_samples, dtype=float)
+            return zeros, zeros, zeros
+
+        preds_mat = np.vstack(bag_preds).T  # (n_samples, n_bags)
+
+        # --- Standard Bagging Logic ---
+        # Output: (N_up * AvgConf_up - N_down * AvgConf_down) / total_models
+        # Up if p > 0.5, Down if p <= 0.5
+        # Conf_up = p
+        # Conf_down = 1 - p
+
+        # Masks for Up/Down
+        up_mask = preds_mat > 0.5
+        down_mask = ~up_mask
+
+        # Counts
+        n_up = up_mask.sum(axis=1)
+        n_down = down_mask.sum(axis=1)
+        n_total = preds_mat.shape[1]
+
+        # Average Confidence (handle zero counts to avoid NaN)
+        # Using masked arrays or where
+
+        # Sum of probabilities for UP
+        sum_p_up = np.where(up_mask, preds_mat, 0.0).sum(axis=1)
+        avg_conf_up = np.divide(sum_p_up, n_up, out=np.zeros_like(sum_p_up), where=n_up!=0)
+
+        # Sum of (1-p) for DOWN
+        sum_p_down = np.where(down_mask, 1.0 - preds_mat, 0.0).sum(axis=1)
+        avg_conf_down = np.divide(sum_p_down, n_down, out=np.zeros_like(sum_p_down), where=n_down!=0)
+
+        # Final Score
+        # (N_up * AvgConf_up - N_down * AvgConf_down) / N
+        score = (n_up * avg_conf_up - n_down * avg_conf_down) / n_total
+
+        # Mean and Std for backward compatibility / logging
+        mean = preds_mat.mean(axis=1)
+        std = preds_mat.std(axis=1)
+
+        return mean, std, score
+
+    def predict_diversity_defense(self, X: np.ndarray) -> Dict[str, np.ndarray]:
+        """
+        Return diversity defense predictions with MAD-based consensus.
+
+        Returns:
+            Dict with keys:
+                - 'mean': Mean prediction
+                - 'std': Standard deviation
+                - 'lower': Mean - std
+                - 'median': Median prediction (more robust)
+                - 'mad': Median Absolute Deviation (disagreement measure)
+                - 'consensus': MAD-weighted consensus signal
+                - 'raw_preds': Raw predictions from all specialists
+        """
+        if X.ndim != 2 or X.shape[1] != self.n_features:
+            n_common = min(self.n_features, X.shape[1])
+            X = X[:, :n_common]
+
+        if not self.models:
+            n_samples = X.shape[0]
+            zeros = np.zeros(n_samples, dtype=float)
+            return {
+                'mean': zeros, 'std': zeros, 'lower': zeros,
+                'median': zeros, 'mad': zeros, 'consensus': zeros,
+                'raw_preds': np.zeros((n_samples, 1))
+            }
+
+        bag_preds = []
+        for model in self.models:
+            try:
+                # All models use full feature set - colsample_bytree handles diversity
+                if hasattr(model, 'predict_proba'):
+                    prob = model.predict_proba(X)[:, 1]
+                else:
+                    # Custom objectives might return raw scores (margin) which need sigmoid
+                    # OR they return probability directly if handled by LGBM wrapper
+                    # Assuming standard sklearn-like API returns class labels for predict()
+                    # and probs for predict_proba().
+                    # If predict() returns raw scores for custom obj, we need sigmoid.
+                    # But here models are LGBMClassifier instances trained with custom obj.
+                    # LGBMClassifier.predict_proba usually works but might need raw_score=True + Expit.
+                    # Let's try standard predict_proba first.
+                    try:
+                        prob = model.predict_proba(X)[:, 1]
+                    except:
+                        # Fallback for custom objective if predict_proba fails
+                        raw = model.predict(X, raw_score=True)
+                        prob = expit(raw)
+
+                bag_preds.append(prob)
+            except Exception:
+                continue
+
+        if not bag_preds:
+            n_samples = X.shape[0]
+            zeros = np.zeros(n_samples, dtype=float)
+            return {
+                'mean': zeros, 'std': zeros, 'lower': zeros,
+                'median': zeros, 'mad': zeros, 'consensus': zeros,
+                'raw_preds': np.zeros((n_samples, 1))
+            }
+
+        preds_mat = np.vstack(bag_preds).T  # (n_samples, n_bags)
+
+        # Standard statistics (on Probabilities)
+        mean = preds_mat.mean(axis=1)
+        std = preds_mat.std(axis=1)
+        lower = mean - std # Less meaningful for probs but kept for structure
+
+        # Robust statistics
+        # Calculate MAD on transformed signal space [-1, 1] for consistency with aggregator
+        preds_signal = 2.0 * preds_mat - 1.0
+        median_signal = np.median(preds_signal, axis=1)
+        mad = np.median(np.abs(preds_signal - median_signal[:, np.newaxis]), axis=1)
+
+        # Median prob for fallback (mapped back from signal or computed directly)
+        median = np.median(preds_mat, axis=1)
+
+        consensus = None
+        if self._aggregator is not None:
+            try:
+                # DiversityDefenseAggregator expects (n_models, n_samples)
+                # And it handles probability -> signal conversion internally (2p-1)
+                preds_matrix = np.vstack(bag_preds)
+                agg_result = self._aggregator.aggregate(preds_matrix)
+                consensus = agg_result.get('final_signal')
+            except Exception as e:
+                logger.warning(
+                    "Diversity Defense aggregation failed, falling back to simple MAD consensus: %s",
+                    e,
+                )
+
+        if consensus is None:
+            # Consensus signal: median / (1 + mad)
+            # High disagreement (large MAD) shrinks signal toward zero
+            mad_floor = 0.25
+            if self.diversity_defense_config is not None:
+                mad_floor = getattr(self.diversity_defense_config, 'mad_floor', 0.25)
+            mad_eff = np.maximum(mad, mad_floor)
+            # Use signal-space median
+            consensus = median_signal / (1.0 + mad_eff)
+
+        return {
+            'mean': mean,
+            'std': std,
+            'lower': lower,
+            'median': median,
+            'mad': mad,
+            'consensus': consensus,
+            'raw_preds': preds_mat
+        }
+
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        """Return consensus signal or bagging score."""
+        if self.use_diversity_defense:
+            result = self.predict_diversity_defense(X)
+            return result['consensus']
+        _, _, score = self.predict_components(X)
+        return score
+
+
+class IncrementalLGBMBaggedTrainer(BaseIncrementalTrainer):
+    """
+    Incremental bagged LightGBM trainer with Diversity Defense support.
+
+    Produces bag-lower predictions with calibration. When diversity defense
+    is enabled, trains specialist models with different objectives:
+    - 3x Sharpe models (vol-normalized, risk-adjusted)
+    - 3x Tanh models (directional accuracy)
+    - 4x Huber models (2 standard + 2 asymmetric)
+
+    Feature diversity is controlled via colsample_bytree (NOT external loops).
+    The optimal value is determined via DiversitySweep at the start of training.
+    """
+
+    def __init__(self, model_id: str, config=None, model_config=None):
+        super().__init__(model_id, config, model_config)
+        self._feature_cols: List[str] = []
+        self._n_bags = int((model_config or {}).get('n_bags', 10))
+        self._sample_fraction = float((model_config or {}).get('bagging_sample_fraction', 0.7))
+        self._bagged_boosters = []  # Store boosters for warm start
+
+        # Diversity Defense configuration
+        self._use_diversity_defense = bool((model_config or {}).get('use_diversity_defense', True))
+        self._run_diversity_sweep = bool((model_config or {}).get('run_diversity_sweep', True))
+        self._optimal_colsample_bytree = float((model_config or {}).get('colsample_bytree', 0.5))
+        self._diversity_sweep_done = False
+        self._dd_config = None
+        self._dd_objectives = None
+
+        if self._use_diversity_defense:
+            try:
+                from src.utils.ml_common.optimization.diversity_defense_objectives import (
+                    DiversityDefenseConfig,
+                    DiversityDefenseObjectives,
+                )
+                dd_config_dict = (model_config or {}).get('diversity_defense_config', {})
+                # Initial config - colsample_bytree will be updated after sweep
+                self._dd_config = DiversityDefenseConfig(
+                    sharpe_count=dd_config_dict.get('sharpe_count', 3),
+                    tanh_count=dd_config_dict.get('tanh_count', 3),
+                    huber_standard_count=dd_config_dict.get('huber_standard_count', 2),
+                    huber_asymmetric_count=dd_config_dict.get('huber_asymmetric_count', 2),
+                    sharpe_lambdas=dd_config_dict.get('sharpe_lambdas', [0.5, 2.0, 8.0]),
+                    huber_delta=dd_config_dict.get('huber_delta', 0.01),
+                    asymmetric_penalty=dd_config_dict.get('asymmetric_penalty', 3.0),
+                    lr_sharpe=dd_config_dict.get('lr_sharpe', 0.03),
+                    lr_tanh=dd_config_dict.get('lr_tanh', 0.03),
+                    lr_huber=dd_config_dict.get('lr_huber', 0.03),
+                    sample_fraction=self._sample_fraction,
+                    colsample_bytree=self._optimal_colsample_bytree,
+                    z_score_window=self._dd_config.z_score_window,
+                    mad_floor=self._dd_config.mad_floor,
+                    noise_threshold=self._dd_config.noise_threshold,
+                    cap_threshold=self._dd_config.cap_threshold,
+                    # Pass new params
+                    focal_gamma_standard=dd_config_dict.get('focal_gamma_standard', 2.0),
+                    focal_alpha_standard=dd_config_dict.get('focal_alpha_standard', 0.25),
+                    focal_gamma_asymmetric=dd_config_dict.get('focal_gamma_asymmetric', 2.0),
+                    focal_alpha_asymmetric=dd_config_dict.get('focal_alpha_asymmetric', 0.75),
+                )
+                self._dd_objectives = DiversityDefenseObjectives(self._dd_config)
+                logger.info(f"Diversity Defense enabled for {model_id}")
+            except ImportError as e:
+                logger.warning(f"Diversity Defense not available: {e}, using standard bagging")
+                self._use_diversity_defense = False
+
+    def _run_colsample_optimization(self, X: np.ndarray, y: np.ndarray, verbose: bool = True) -> float:
+        """
+        Run DiversitySweep to find optimal colsample_bytree.
+
+        Args:
+            X: Feature matrix (numpy array)
+            y: Target array
+            verbose: Print progress
+
+        Returns:
+            Optimal colsample_bytree value
+        """
+        if self._diversity_sweep_done:
+            return self._optimal_colsample_bytree
+
+        try:
+            from src.utils.ml_common.optimization.diversity_defense_objectives import DiversitySweep
+
+            # Need minimum samples for meaningful sweep
+            if len(X) < 500:
+                logger.info(f"Insufficient data for DiversitySweep ({len(X)} samples), using default colsample_bytree=0.5")
+                self._diversity_sweep_done = True
+                return 0.5
+
+            if verbose:
+                logger.info("[DIVERSITY_SWEEP] Finding optimal colsample_bytree...")
+
+            # Use a sample for faster sweep if dataset is large
+            sweep_sample_size = min(5000, len(X))
+            if len(X) > sweep_sample_size:
+                rng = np.random.RandomState(42)
+                sweep_indices = rng.choice(len(X), size=sweep_sample_size, replace=False)
+                sweep_indices.sort()
+                X_sweep = pd.DataFrame(X[sweep_indices])
+                y_sweep = y[sweep_indices]
+            else:
+                X_sweep = pd.DataFrame(X)
+                y_sweep = y
+
+            sweep = DiversitySweep(
+                X=X_sweep,
+                y=y_sweep,
+                colsample_settings=[0.7, 0.6, 0.5, 0.4, 0.3],
+                n_splits=2,  # Fast sweep
+                n_models=5,  # Mini-ensemble for speed
+            )
+
+            df_sweep = sweep.run(verbose=verbose)
+            optimal = sweep.get_optimal_fraction()
+
+            if verbose:
+                logger.info(f"[DIVERSITY_SWEEP] ✅ Optimal colsample_bytree: {optimal:.2f}")
+                try:
+                    if df_sweep is not None and not df_sweep.empty:
+                        best_idx = df_sweep['ESR_Score'].idxmax()
+                        best_row = df_sweep.loc[best_idx]
+                        logger.info(
+                            "[DIVERSITY_SWEEP] Summary -> fraction=%.2f, Sharpe=%.4f, AvgCorr=%.4f, ESR=%.4f",
+                            best_row.get('Fraction', float('nan')),
+                            best_row.get('Sharpe', float('nan')),
+                            best_row.get('Avg_Corr', float('nan')),
+                            best_row.get('ESR_Score', float('nan')),
+                        )
+                except Exception as e:
+                    logger.warning("[DIVERSITY_SWEEP] Failed to log summary statistics: %s", e)
+
+            self._diversity_sweep_done = True
+            self._optimal_colsample_bytree = optimal  # Cache the result
+            return optimal
+
+        except Exception as e:
+            logger.warning(f"[DIVERSITY_SWEEP] Failed: {e}, using default colsample_bytree=0.5")
+            self._diversity_sweep_done = True
+            self._optimal_colsample_bytree = 0.5  # Cache the default
+            return 0.5
+
+    def _get_default_params(self) -> Dict[str, Any]:
+        params = {
+            'objective': 'binary', # Default to binary for Classifier
+            'metric': 'binary_logloss',
+            'boosting_type': 'gbdt',
+            'verbosity': -1,
+            'n_jobs': -1,
+            'learning_rate': 0.05,
+            'num_leaves': 31,
+            'max_depth': 6,
+            'reg_alpha': 0.1,
+            'reg_lambda': 0.1,
+        }
+        if self.model_config and 'params' in self.model_config:
+            params.update(self.model_config['params'])
+        return params
+
+    def _train_bagged_model(self, X: np.ndarray, y: np.ndarray, sample_weight: Optional[np.ndarray], verbose: bool) -> BaggedLGBMRegressor:
+        n_samples, n_features = X.shape
+        if n_samples == 0 or n_features == 0:
+            return BaggedLGBMRegressor([], n_features)
+
+        base_params = self._get_default_params()
+        base_params.update(self._best_params)
+
+        # Drop early-stopping parameters that are only valid for the low-level
+        # lgb.train API. Passing early_stopping_rounds into the scikit-learn
+        # LGBMRegressor constructor without an eval_set causes LightGBM to
+        # raise "For early stopping, at least one dataset and eval metric is
+        # required for evaluation". Bag-level models are trained on simple
+        # bootstrap subsets, so we disable built-in early stopping here and
+        # rely on global incremental training/HPO instead.
+        base_params.pop("early_stopping_rounds", None)
+
+        # ============================================================
+        # STEP 0: Run DiversitySweep to optimize colsample_bytree
+        # This is run ONCE at the start of training (first call only)
+        # ============================================================
+        if self._run_diversity_sweep and not self._diversity_sweep_done:
+            self._optimal_colsample_bytree = self._run_colsample_optimization(X, y, verbose=verbose)
+
+            # Update DD config with optimized value
+            if self._use_diversity_defense and self._dd_config is not None:
+                # Create new config with optimized colsample_bytree
+                from src.utils.ml_common.optimization.diversity_defense_objectives import DiversityDefenseConfig
+                self._dd_config = DiversityDefenseConfig(
+                    sharpe_count=self._dd_config.sharpe_count,
+                    tanh_count=self._dd_config.tanh_count,
+                    huber_standard_count=self._dd_config.huber_standard_count,
+                    huber_asymmetric_count=self._dd_config.huber_asymmetric_count,
+                    sharpe_lambdas=self._dd_config.sharpe_lambdas,
+                    huber_delta=self._dd_config.huber_delta,
+                    asymmetric_penalty=self._dd_config.asymmetric_penalty,
+                    lr_sharpe=self._dd_config.lr_sharpe,
+                    lr_tanh=self._dd_config.lr_tanh,
+                    lr_huber=self._dd_config.lr_huber,
+                    sample_fraction=self._dd_config.sample_fraction,
+                    colsample_bytree=self._optimal_colsample_bytree,
+                    z_score_window=self._dd_config.z_score_window,
+                    mad_floor=self._dd_config.mad_floor,
+                    noise_threshold=self._dd_config.noise_threshold,
+                    cap_threshold=self._dd_config.cap_threshold,
+                    # Pass new params
+                    focal_gamma_standard=self._dd_config.focal_gamma_standard,
+                    focal_alpha_standard=self._dd_config.focal_alpha_standard,
+                    focal_gamma_asymmetric=self._dd_config.focal_gamma_asymmetric,
+                    focal_alpha_asymmetric=self._dd_config.focal_alpha_asymmetric,
+                )
+                logger.info(f"[DIVERSITY_DEFENSE] Updated colsample_bytree to {self._optimal_colsample_bytree:.2f}")
+
+        # Feature diversity via colsample_bytree (NOT external loop)
+        # Optimal value from DiversitySweep, or default 0.5
+        if self._use_diversity_defense and self._dd_config is not None:
+            base_params['colsample_bytree'] = self._dd_config.colsample_bytree
+        else:
+            base_params['colsample_bytree'] = self._optimal_colsample_bytree
+
+        sample_frac = min(max(self._sample_fraction, 0.1), 1.0)
+
+        if verbose:
+            try:
+                logger.info(
+                    "[BAGGED_LGBM] Training %s bags with colsample_bytree=%.2f, sample_fraction=%.2f, use_diversity_defense=%s",
+                    self._n_bags,
+                    float(base_params.get('colsample_bytree', 0.0)),
+                    float(sample_frac),
+                    self._use_diversity_defense,
+                )
+            except Exception:
+                # Logging must never break training
+                pass
+
+        rng = np.random.RandomState(42)
+        models: List[Any] = []
+        specialist_types: List[Any] = []
+        new_boosters = []
+
+        # Compute volatility for Sharpe objectives (needed for Diversity Defense)
+        if self._use_diversity_defense and self._dd_config is not None and self._dd_objectives is not None:
+            # We assume y is continuous returns.
+            # Use diversity defense helper to create ensemble
+            from src.utils.ml_common.optimization.diversity_defense_objectives import (
+                create_diversity_defense_ensemble,
+                get_sharpe_weights
+            )
+
+            # --- CRITICAL: Calculate Sharpe Weights BEFORE Bagging ---
+            # Weights depend on time-series rolling volatility.
+            # Bagging shuffles data, destroying this structure.
+            # We must calculate weights on the full time-ordered `y` vector here.
+
+            # Convert y to series for rolling calc if needed
+            y_series = pd.Series(y)
+
+            # Calculate weights for 12h and 4d windows (assuming 15m data for now as per user prompt context)
+            # User specified: 12h_Volatility, 4d_Volatility
+            # Windows: 12h = 48 periods, 4d = 384 periods (at 15m)
+            # The get_sharpe_weights helper handles window conversion if we pass hours.
+
+            # Note: get_sharpe_weights returns numpy array aligned with input
+            w_sharpe_12h = get_sharpe_weights(y_series, window_hours=12)
+            w_sharpe_4d = get_sharpe_weights(y_series, window_hours=96) # 4 days = 96 hours
+
+            # Downside Deviation (User requested "Standard Rolling Deviation" as proxy for efficiency)
+            # We'll use a medium window, e.g., 24h
+            w_sharpe_dd = get_sharpe_weights(y_series, window_hours=24)
+
+            specialist_configs = self._dd_config.get_specialist_configs()
+            n_bags = len(specialist_configs)
+
+            # Check if we have previous boosters for warm start
+            has_warm_start = len(self._bagged_boosters) == n_bags
+
+            for spec_idx, spec_config in enumerate(specialist_configs):
+                # Prepare params
+                params = dict(base_params)
+                params['random_state'] = int(params.get('random_state', 42)) + spec_idx
+
+                # Learning rate
+                lr = getattr(self._dd_config, spec_config.learning_rate_key, 0.03)
+                params['learning_rate'] = lr
+
+                # Row sampling (Bootstrap)
+                n_rows_sub = max(10, int(round(sample_frac * n_samples)))
+                row_idx = np.sort(rng.choice(n_samples, size=n_rows_sub, replace=False))
+
+                # Subset Data
+                # Note: X is numpy array here usually
+                X_bag = X[row_idx]
+
+                # Prepare Targets & Weights based on Specialist Type
+                y_bag_raw = y[row_idx] # Continuous returns
+                y_bag_target = None
+                sample_weight_bag = None
+                fobj = None
+
+                if spec_config.specialist_type == self._dd_objectives.config.SpecialistType.SHARPE:
+                    # Target: Binary (>0)
+                    y_bag_target = (y_bag_raw > 0).astype(int)
+
+                    # Weights: Select based on model index (0, 1, 2)
+                    # We need to map spec_idx to specific Sharpe role.
+                    # Assuming order: 3 Sharpe, then Tanh...
+                    sharpe_idx = sum(1 for c in specialist_configs[:spec_idx] if c.specialist_type == self._dd_objectives.config.SpecialistType.SHARPE)
+
+                    if sharpe_idx == 0:
+                        weights_full = w_sharpe_12h
+                    elif sharpe_idx == 1:
+                        weights_full = w_sharpe_4d
+                    else:
+                        weights_full = w_sharpe_dd
+
+                    # Slice weights for this bag
+                    sample_weight_bag = weights_full[row_idx]
+
+                    # Use standard binary objective
+                    params['objective'] = 'binary'
+                    params['metric'] = 'binary_logloss'
+
+                elif spec_config.specialist_type == self._dd_objectives.config.SpecialistType.TANH:
+                    # Target: Binary (> Threshold)
+                    # Thresholds: 0.3%, 0.6%, 0.9%
+                    tanh_idx = sum(1 for c in specialist_configs[:spec_idx] if c.specialist_type == self._dd_objectives.config.SpecialistType.TANH)
+                    threshold = [0.003, 0.006, 0.009][tanh_idx % 3]
+                    y_bag_target = (y_bag_raw > threshold).astype(int)
+
+                    # Use standard binary objective
+                    params['objective'] = 'binary'
+                    params['metric'] = 'binary_logloss'
+
+                elif spec_config.specialist_type in (self._dd_objectives.config.SpecialistType.HUBER, self._dd_objectives.config.SpecialistType.ASYMMETRIC_HUBER):
+                    # Target: Binary (>0)
+                    y_bag_target = (y_bag_raw > 0).astype(int)
+
+                    # Custom Focal Loss Objective
+                    fobj = self._dd_objectives.get_objective_for_specialist(spec_config)
+                    # Remove standard objective param to avoid conflict
+                    if 'objective' in params: del params['objective']
+                    if 'metric' in params: del params['metric']
+
+                # Fallback if no target set
+                if y_bag_target is None:
+                    y_bag_target = (y_bag_raw > 0).astype(int)
+
+                try:
+                    # Initialize Model
+                    if fobj is not None:
+                        model = lgb.LGBMClassifier(objective=fobj, **params)
+                    else:
+                        model = lgb.LGBMClassifier(**params)
+
+                    # Warm start
+                    init_model = self._bagged_boosters[spec_idx] if has_warm_start else None
+
+                    # Fit
+                    if sample_weight_bag is not None:
+                        model.fit(X_bag, y_bag_target, sample_weight=sample_weight_bag, init_model=init_model)
+                    else:
+                        model.fit(X_bag, y_bag_target, init_model=init_model)
+
+                    models.append(model)
+                    specialist_types.append(spec_config.specialist_type)
+
+                    # Store booster
+                    if hasattr(model, 'booster_'):
+                        new_boosters.append(model.booster_)
+
+                except Exception as e:
+                    logger.warning(f"Specialist {spec_idx} ({spec_config.role_description}) failed: {e}")
+                    continue
+
+        else:
+            # ============================================================
+            # STANDARD MODE: Train identical models with different seeds
+            # ============================================================
+            n_bags = max(1, int(self._n_bags))
+
+            # Check if we have previous boosters for warm start
+            has_warm_start = len(self._bagged_boosters) == n_bags
+
+            # Use Focal Loss for Standard Bagging
+            # alpha=0.25, gamma=2.0 (Default)
+            from src.utils.ml_common.optimization.diversity_defense_objectives import get_focal_loss
+            focal_loss_obj = get_focal_loss(alpha=0.25, gamma=2.0)
+
+            # Target is Binary (>0)
+            y_binary = (y > 0).astype(int)
+
+            for bag_idx in range(n_bags):
+                params = dict(base_params)
+                params['random_state'] = int(params.get('random_state', 42)) + bag_idx
+
+                # Explicitly set AUC metric as requested
+                # Note: 'metric' is used for validation/early stopping.
+                # Since we don't have eval_set here (bootstrap), it mostly affects log.
+                # But we set it for correctness.
+                params['metric'] = 'auc'
+
+                # Remove standard objective since we're using custom
+                if 'objective' in params: del params['objective']
+
+                # Row sampling
+                n_rows_sub = max(10, int(round(sample_frac * n_samples)))
+                n_rows_sub = min(n_rows_sub, n_samples)
+                row_idx = np.sort(rng.choice(n_samples, size=n_rows_sub, replace=False))
+
+                # Subset
+                X_bag = X[row_idx]
+                y_bag = y_binary[row_idx]
+                if sample_weight is not None:
+                    sw_bag = sample_weight[row_idx]
+                else:
+                    sw_bag = None
+
+                try:
+                    model = lgb.LGBMClassifier(objective=focal_loss_obj, **params)
+
+                    # Use warm start if available
+                    init_model = self._bagged_boosters[bag_idx] if has_warm_start else None
+
+                    if sw_bag is not None:
+                        model.fit(X_bag, y_bag, sample_weight=sw_bag, init_model=init_model)
+                    else:
+                        model.fit(X_bag, y_bag, init_model=init_model)
+
+                    models.append(model)
+
+                    # Store booster for next round
+                    if hasattr(model, 'booster_'):
+                        new_boosters.append(model.booster_)
+
+                except Exception as e:
+                    logger.warning(f"Bag {bag_idx} failed during training: {e}")
+                    continue
+
+        # Update stored boosters if we successfully trained
+        if len(new_boosters) == len(models):
+            self._bagged_boosters = new_boosters
+
+        return BaggedLGBMRegressor(
+            models=models,
+            n_features=n_features,
+            specialist_types=specialist_types if self._use_diversity_defense else None,
+            use_diversity_defense=self._use_diversity_defense,
+            diversity_defense_config=self._dd_config,
+        )
 # Incremental NGBoost Trainer
 # ============================================================================
 

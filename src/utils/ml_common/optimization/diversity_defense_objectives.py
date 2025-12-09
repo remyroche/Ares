@@ -53,6 +53,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
+from scipy.special import expit  # Numerically stable sigmoid
 
 try:
     from scipy.stats import spearmanr
@@ -63,6 +64,116 @@ logger = logging.getLogger(__name__)
 
 # Epsilon for numerical stability
 EPS = 1e-8
+
+
+# =============================================================================
+# Custom Loss Functions (Focal Loss)
+# =============================================================================
+
+def get_focal_loss(alpha=0.25, gamma=2.0):
+    """
+    Returns a custom Focal Loss objective function for LightGBM.
+
+    Parameters:
+    -----------
+    alpha : float
+        Balancing factor. In the paper, alpha=0.25 works best for imbalanced data
+        (even though class 1 is minority). It balances the scale of the loss.
+    gamma : float
+        Focusing parameter.
+        gamma=0.0 -> Equivalent to standard LogLoss.
+        gamma>0.0 -> Down-weights 'easy' examples (where p is close to y).
+
+    Returns:
+    --------
+    focal_loss : function
+        The objective function required by LightGBM (returns grad, hess).
+    """
+
+    def focal_loss(y_pred, dtrain):
+        # 1. Retrieve true labels
+        y_true = dtrain.get_label()
+
+        # 2. Compute probabilities using robust sigmoid
+        # y_pred comes as raw logits (margin scores) from LGBM
+        p = expit(y_pred)
+
+        # 3. Compute gradients and hessians term by term
+        # We need the derivatives of the Loss with respect to the LOGITS (y_pred), not probability.
+
+        # --- Precompute common terms ---
+        # The 'focus' terms
+        term1 = (1 - p) ** gamma
+        term2 = p ** gamma
+
+        # Log terms (add epsilon to avoid log(0))
+        epsilon = 1e-15
+        log_p = np.log(p + epsilon)
+        log_1_p = np.log(1 - p + epsilon)
+
+        # --- Gradient (First Derivative dL/dx) ---
+        # For y=1: grad = alpha * term1 * (gamma * p * log_p + p - 1)
+        # For y=0: grad = (1-alpha) * term2 * (gamma * (1-p) * log_1_p + p)
+
+        # Vectorized implementation:
+        grad = np.zeros_like(y_pred)
+
+        # Case y=1
+        pos_mask = (y_true == 1)
+        grad[pos_mask] = alpha * term1[pos_mask] * (
+            gamma * p[pos_mask] * log_p[pos_mask] + p[pos_mask] - 1
+        )
+
+        # Case y=0
+        neg_mask = (y_true == 0)
+        grad[neg_mask] = (1 - alpha) * term2[neg_mask] * (
+            gamma * (1 - p[neg_mask]) * log_1_p[neg_mask] + p[neg_mask]
+        )
+
+        # --- Hessian (Second Derivative d2L/dx2) ---
+        # Robust/Simplified Hessian (Recommended for Stability):
+        # This keeps the 'shape' of the curvature but ensures it is positive.
+        hess = np.zeros_like(y_pred)
+
+        hess[pos_mask] = alpha * term1[pos_mask] * p[pos_mask] * (1 - p[pos_mask]) * (1 + p[pos_mask]*gamma)
+        hess[neg_mask] = (1 - alpha) * term2[neg_mask] * p[neg_mask] * (1 - p[neg_mask]) * (1 + (1-p[neg_mask])*gamma)
+
+        return grad, hess
+
+    return focal_loss
+
+
+def get_sharpe_weights(returns_series, window_hours, data_freq='15m'):
+    """
+    Calculates weights based on Rolling Sharpe logic efficiently.
+    returns_series: pd.Series of raw returns
+    window_hours: integer (e.g., 12 or 96 for 4 days)
+    """
+    # 1. Convert hours to periods based on data frequency
+    freq_map = {'15m': 4, '1h': 1, '5m': 12, '1m': 60}
+    multiplier = freq_map.get(data_freq, 4) # Default to 15m
+    window = int(window_hours * multiplier)
+
+    # 2. Efficient Rolling Volatility (Standard Deviation)
+    # min_periods=window//2 allows weights to generate earlier without dropping too much data
+    rolling_vol = returns_series.rolling(window=window, min_periods=1).std()
+
+    # 3. Handle Zero Volatility (prevent division by zero)
+    # Replace 0 with mean vol or small epsilon
+    rolling_vol = rolling_vol.replace(0, rolling_vol.mean())
+
+    # 4. Calculate Weight: Future Return / Past Volatility
+    # (We align 'future return' with 'past vol' to ensure no leakage,
+    # assuming returns_series is ALREADY the target return for that row)
+    weights = np.abs(returns_series) / rolling_vol
+
+    # 5. Clip weights to prevent explosions (e.g., huge return on tiny vol)
+    weights = weights.clip(upper=3.0)
+
+    # 6. Fill NaNs with mean or 1.0
+    weights = weights.fillna(1.0)
+
+    return weights.values
 
 
 # =============================================================================
@@ -258,6 +369,10 @@ class SpecialistConfig:
     delta: Optional[float] = None          # For Huber models (outlier threshold)
     penalty_factor: Optional[float] = None  # For Asymmetric Huber (wrong-direction penalty)
 
+    # Focal Loss parameters
+    gamma: Optional[float] = None
+    alpha: Optional[float] = None
+
 
 @dataclass 
 class DiversityDefenseConfig:
@@ -266,16 +381,22 @@ class DiversityDefenseConfig:
     # Specialist layer configuration (10 models total)
     sharpe_count: int = 3          # "Smart Money" layer
     tanh_count: int = 3            # "Trend Follower" layer
-    huber_standard_count: int = 2  # "Reality Check" - Standard
-    huber_asymmetric_count: int = 2  # "Reality Check" - Asymmetric
+    huber_standard_count: int = 2  # "Reality Check" - Standard (now Focal Loss)
+    huber_asymmetric_count: int = 2  # "Reality Check" - Asymmetric (now Focal Loss)
     
     # Sharpe lambdas (risk aversion) - increasing values
     sharpe_lambdas: List[float] = field(default_factory=lambda: [0.5, 2.0, 8.0])
     
-    # Huber parameters
-    huber_delta: float = 0.01        # Outlier threshold for Huber
+    # Huber/Focal parameters
+    huber_delta: float = 0.01        # Outlier threshold for Huber (kept for legacy ref)
     asymmetric_penalty: float = 3.0   # Penalty factor for wrong-direction (2-5x typical)
     
+    # Focal Loss params
+    focal_gamma_standard: float = 2.0
+    focal_alpha_standard: float = 0.25
+    focal_gamma_asymmetric: float = 2.0
+    focal_alpha_asymmetric: float = 0.75
+
     # Learning rates per layer
     lr_sharpe: float = 0.03          # Conservative default
     lr_tanh: float = 0.03
@@ -321,6 +442,7 @@ class DiversityDefenseConfig:
         configs = []
         
         # Sharpe models (3x)
+        # Using binary objective (needs weights calculated externally)
         for i, lmbda in enumerate(self.sharpe_lambdas[:self.sharpe_count]):
             configs.append(SpecialistConfig(
                 specialist_type=SpecialistType.SHARPE,
@@ -331,6 +453,7 @@ class DiversityDefenseConfig:
             ))
         
         # Tanh models (3x)
+        # Using binary objective (needs custom labels 0.3%, 0.6%, 0.9%)
         for i in range(self.tanh_count):
             configs.append(SpecialistConfig(
                 specialist_type=SpecialistType.TANH,
@@ -339,25 +462,36 @@ class DiversityDefenseConfig:
                 role_description=f"Trend Follower #{i+1}"
             ))
         
-        # Huber Standard models (2x)
+        # Huber Standard models (2x) (Now Focal Loss - Standard)
+        # gamma=[0.0, 2.0], alpha=0.25
+        huber_gammas = [0.0, 2.0]
         for i in range(self.huber_standard_count):
+            gamma = huber_gammas[i % len(huber_gammas)]
             configs.append(SpecialistConfig(
                 specialist_type=SpecialistType.HUBER,
                 count=1,
                 learning_rate_key='lr_huber',
                 role_description=f"Reality Check (Huber) #{i+1}",
-                delta=self.huber_delta
+                gamma=gamma,
+                alpha=0.25
             ))
         
-        # Huber Asymmetric models (2x)
+        # Huber Asymmetric models (2x) (Now Focal Loss - Asymmetric/Modified)
+        # gamma=5.0, alpha=0.25 (model 3)
+        # gamma=2.0, alpha=0.75 (model 4)
+        huber_asym_configs = [
+            {'gamma': 5.0, 'alpha': 0.25},
+            {'gamma': 2.0, 'alpha': 0.75}
+        ]
         for i in range(self.huber_asymmetric_count):
+            conf = huber_asym_configs[i % len(huber_asym_configs)]
             configs.append(SpecialistConfig(
                 specialist_type=SpecialistType.ASYMMETRIC_HUBER,
                 count=1,
                 learning_rate_key='lr_huber',
                 role_description=f"Reality Check (Asymmetric) #{i+1}",
-                delta=self.huber_delta,
-                penalty_factor=self.asymmetric_penalty
+                gamma=conf['gamma'],
+                alpha=conf['alpha']
             ))
         
         return configs
@@ -396,152 +530,26 @@ class DiversityDefenseObjectives:
         else:
             return np.asarray(dataset, dtype=np.float64)
     
+    # NOTE: Old regression factories kept for reference but unused in new Classifier flow
+    # New Classifier flow uses 'binary' objective mostly, with weights/labels handling the logic.
+    # Except for Huber/Focal which needs custom objective.
+
     @staticmethod
-    def vol_normalized_sharpe_factory(
-        lmbda: float, 
-        volatility: np.ndarray
-    ) -> Callable:
+    def focal_loss_factory(alpha: float, gamma: float) -> Callable:
         """
-        Create a Vol-Normalized Sharpe objective function.
-        
-        Maximizes: E[p * r_norm] - lambda * E[(p * r_norm)^2]
-        Where r_norm = r / vol.
-        
-        This optimizes Sharpe on Strategy PnL, independent of market regimes.
+        Create a Focal Loss objective function.
         
         Args:
-            lmbda: Risk aversion parameter (higher = more conservative)
-            volatility: Pre-calculated volatility vector matching the dataset
+            alpha: Balancing factor
+            gamma: Focusing parameter
             
         Returns:
             Objective function (grad, hess) callable
         """
-        # Convert volatility to numpy array and ensure it's float
-        vol = np.asarray(volatility, dtype=np.float64) + EPS
-        
-        def fobj(preds: np.ndarray, dataset) -> Tuple[np.ndarray, np.ndarray]:
-            """LightGBM objective function."""
-            r = DiversityDefenseObjectives._get_labels_from_dataset(dataset)
-            p = preds.astype(np.float64)
-            
-            # Handle length mismatches (volatility may be from different fold)
-            n = len(r)
-            if len(vol) != n:
-                # Use mean volatility or slice to match
-                if len(vol) > n:
-                    v = vol[:n]
-                else:
-                    v = np.full(n, np.mean(vol), dtype=np.float64) + EPS
-            else:
-                v = vol
-            
-            # Normalize returns by volatility
-            r_norm = r / v
-            
-            # Gradient: -r_norm + 2 * lambda * p * (r_norm^2)
-            # This penalizes variance of the PnL (p*r), not just variance of r
-            grad = -r_norm + 2.0 * lmbda * p * (r_norm ** 2)
-            
-            # Hessian: 2 * lambda * (r_norm^2)
-            hess = 2.0 * lmbda * (r_norm ** 2)
-            hess = np.maximum(hess, EPS)  # Ensure positive curvature
-            
-            return grad, hess
-        
-        return fobj
-    
-    @staticmethod
-    def robust_tanh_factory() -> Callable:
-        """
-        Create a Robust Tanh objective function.
-        
-        Optimizes directional accuracy (hit rate) while being robust to magnitude.
-        Uses absolute value of hessian to ensure positive curvature.
-        
-        Returns:
-            Objective function (grad, hess) callable
-        """
-        def fobj(preds: np.ndarray, dataset) -> Tuple[np.ndarray, np.ndarray]:
-            """LightGBM objective function."""
-            r = DiversityDefenseObjectives._get_labels_from_dataset(dataset)
-            p = preds.astype(np.float64)
-            
-            # Tanh transformation for bounded output
-            t = np.tanh(p)
-            
-            # Gradient: -r * (1 - tanh(p)^2)
-            grad = -r * (1.0 - t * t)
-            
-            # Hessian: abs(2 * r * tanh(p) * (1 - tanh(p)^2)) + eps
-            # Absolute value ensures positive curvature for Newton step stability
-            hess = np.abs(2.0 * r * t * (1.0 - t * t)) + EPS
-            
-            return grad, hess
-        
-        return fobj
-    
-    @staticmethod
-    def huber_factory(delta: float) -> Callable:
-        """
-        Create a Standard Huber objective function.
-        
-        Combines MSE for small errors and MAE for large errors.
-        Robust to outliers beyond the delta threshold.
-        
-        Args:
-            delta: Threshold for switching between MSE and MAE
-            
-        Returns:
-            Objective function (grad, hess) callable
-        """
-        return DiversityDefenseObjectives.asymmetric_huber_factory(delta, penalty_factor=1.0)
-    
-    @staticmethod
-    def asymmetric_huber_factory(
-        delta: float, 
-        penalty_factor: float = 3.0
-    ) -> Callable:
-        """
-        Create an Asymmetric Huber objective function.
-        
-        Scales GRADIENT ONLY for wrong-direction errors.
-        Maintains curvature stability (Hessian=1) but takes larger steps
-        for wrong-direction predictions.
-        
-        Args:
-            delta: Threshold for Huber transition
-            penalty_factor: Multiplier for gradient when direction is wrong (1.0-5.0)
-            
-        Returns:
-            Objective function (grad, hess) callable
-        """
-        def fobj(preds: np.ndarray, dataset) -> Tuple[np.ndarray, np.ndarray]:
-            """LightGBM objective function."""
-            r = DiversityDefenseObjectives._get_labels_from_dataset(dataset)
-            p = preds.astype(np.float64)
-            z = p - r  # Residual
-            
-            # Direction Mask: True where direction is WRONG (signs differ)
-            # When p and r have different signs, the product is negative
-            wrong_dir_mask = (p * r) < 0
-            
-            # Base Huber loss gradient and hessian
-            absz = np.abs(z)
-            
-            # Gradient: z for |z| <= delta, else delta * sign(z)
-            base_grad = np.where(absz <= delta, z, delta * np.sign(z))
-            
-            # Hessian: 1 for |z| <= delta, else eps (flat region)
-            base_hess = np.where(absz <= delta, 1.0, EPS)
-            
-            # Apply asymmetric scaling to gradient only
-            scale = np.where(wrong_dir_mask, penalty_factor, 1.0)
-            grad = base_grad * scale
-            
-            # Return base_hess to keep Newton step stable
-            return grad, base_hess
-        
-        return fobj
+        # We reuse the global function defined above
+        # Create a closure to capture alpha/gamma
+        loss_fn = get_focal_loss(alpha, gamma)
+        return loss_fn
     
     def get_objective_for_specialist(
         self, 
@@ -558,27 +566,26 @@ class DiversityDefenseObjectives:
         Returns:
             Objective function callable or None for standard objective
         """
+        # Sharpe and Tanh now use standard binary objective with custom labels/weights
+        # So we return None here to let XGBoost/LGBM use 'binary'
         if specialist_config.specialist_type == SpecialistType.SHARPE:
-            if volatility is None:
-                logger.warning("Sharpe objective requires volatility; using default")
-                volatility = np.ones(1)  # Will be handled in factory
-            return self.vol_normalized_sharpe_factory(
-                lmbda=specialist_config.lmbda or 1.0,
-                volatility=volatility
-            )
+            return None # Use 'binary'
         
         elif specialist_config.specialist_type == SpecialistType.TANH:
-            return self.robust_tanh_factory()
+            return None # Use 'binary'
         
         elif specialist_config.specialist_type == SpecialistType.HUBER:
-            return self.huber_factory(
-                delta=specialist_config.delta or self.config.huber_delta
+            # Use Focal Loss
+            return self.focal_loss_factory(
+                alpha=specialist_config.alpha or 0.25,
+                gamma=specialist_config.gamma or 2.0
             )
         
         elif specialist_config.specialist_type == SpecialistType.ASYMMETRIC_HUBER:
-            return self.asymmetric_huber_factory(
-                delta=specialist_config.delta or self.config.huber_delta,
-                penalty_factor=specialist_config.penalty_factor or self.config.asymmetric_penalty
+            # Use Focal Loss with asymmetric params
+            return self.focal_loss_factory(
+                alpha=specialist_config.alpha or 0.25,
+                gamma=specialist_config.gamma or 2.0
             )
         
         return None
@@ -630,10 +637,15 @@ class DiversityDefenseAggregator:
         Returns:
             Z-score normalized matrix of same shape
         """
+        # Transform probability [0, 1] to Direction [-1, 1]
+        # Since we are now using Classifiers
+        # 2*p - 1
+        signal_matrix = 2.0 * preds_matrix - 1.0
+
         window = window or self.config.z_score_window
         z_out = []
         
-        for row in preds_matrix:
+        for row in signal_matrix:
             s = pd.Series(row)
             r = s.rolling(window=window, min_periods=100)
             mu = r.mean()
@@ -998,60 +1010,87 @@ class DiversityDefenseHPO:
                 
                 # 1. Sharpe Models (Vol-Normalized) - 3 models
                 for lam in sharpe_lambdas:
-                    fobj = self.objectives.vol_normalized_sharpe_factory(lam, vol_train)
-                    model = lgb.LGBMRegressor(
+                    # Note: Sharpe now uses binary objective in production flow, but for HPO
+                    # we keep using the regression proxy or switch to binary if needed.
+                    # For simplicity, we use binary objective here assuming y_train is returns
+                    # and we convert to binary targets for HPO training.
+                    # However, DiversityDefenseObjectives HPO currently uses regression logic.
+                    # TODO: Update HPO to use binary classification logic if needed.
+
+                    # For now, sticking to the existing pattern but acknowledging the shift
+                    # The get_objective_for_specialist returns None for Sharpe (meaning binary)
+                    # so we should use binary:logistic here too.
+
+                    y_train_bin = (y_train > 0).astype(int)
+
+                    model = lgb.LGBMClassifier(
                         learning_rate=lr_sharpe, 
-                        objective=fobj, 
+                        objective='binary',
                         **param_grid
                     )
                     try:
-                        model.fit(X_train, y_train)
-                        preds_store.append(model.predict(X_val))
+                        # Sharpe weighting logic needs to be applied manually here
+                        # weights = abs(return) / vol
+                        w_train = np.abs(y_train) / (vol_train + EPS)
+                        model.fit(X_train, y_train_bin, sample_weight=w_train)
+                        preds_store.append(model.predict_proba(X_val)[:, 1])
                     except Exception:
                         preds_store.append(np.zeros(len(X_val)))
                 
                 # 2. Tanh Models - 3 models
-                fobj_tanh = self.objectives.robust_tanh_factory()
                 for i in range(3):
-                    model = lgb.LGBMRegressor(
+                    # Tanh logic: Thresholds 0.3%, 0.6%, 0.9%
+                    threshold = [0.003, 0.006, 0.009][i]
+                    y_train_bin = (y_train > threshold).astype(int)
+
+                    model = lgb.LGBMClassifier(
                         learning_rate=lr_tanh, 
-                        objective=fobj_tanh,
+                        objective='binary',
                         random_state=42 + i,
                         **param_grid
                     )
                     try:
-                        model.fit(X_train, y_train)
-                        preds_store.append(model.predict(X_val))
+                        model.fit(X_train, y_train_bin)
+                        preds_store.append(model.predict_proba(X_val)[:, 1])
                     except Exception:
                         preds_store.append(np.zeros(len(X_val)))
                 
                 # 3. Huber Standard Models - 2 models
-                fobj_huber = self.objectives.huber_factory(delta)
+                # Focal Loss
+                fobj_huber = self.objectives.focal_loss_factory(alpha=0.25, gamma=2.0)
+                y_train_bin = (y_train > 0).astype(int)
                 for i in range(2):
-                    model = lgb.LGBMRegressor(
+                    # For custom objective, we use train method usually, or pass fobj to LGBMClassifier
+                    # LGBMClassifier accepts `objective` as callable
+                    model = lgb.LGBMClassifier(
                         learning_rate=lr_huber, 
                         objective=fobj_huber,
                         random_state=100 + i,
                         **param_grid
                     )
                     try:
-                        model.fit(X_train, y_train)
-                        preds_store.append(model.predict(X_val))
+                        model.fit(X_train, y_train_bin)
+                        # Predict returns raw scores for custom objective, need sigmoid
+                        raw_preds = model.predict(X_val, raw_score=True)
+                        preds_store.append(expit(raw_preds))
                     except Exception:
                         preds_store.append(np.zeros(len(X_val)))
                 
                 # 4. Asymmetric Huber Models - 2 models
-                fobj_asym = self.objectives.asymmetric_huber_factory(delta, asym_penalty)
+                # Focal Loss (Modified)
+                fobj_asym = self.objectives.focal_loss_factory(alpha=0.75, gamma=2.0)
+                y_train_bin = (y_train > 0).astype(int)
                 for i in range(2):
-                    model = lgb.LGBMRegressor(
+                    model = lgb.LGBMClassifier(
                         learning_rate=lr_huber, 
                         objective=fobj_asym,
                         random_state=200 + i,
                         **param_grid
                     )
                     try:
-                        model.fit(X_train, y_train)
-                        preds_store.append(model.predict(X_val))
+                        model.fit(X_train, y_train_bin)
+                        raw_preds = model.predict(X_val, raw_score=True)
+                        preds_store.append(expit(raw_preds))
                     except Exception:
                         preds_store.append(np.zeros(len(X_val)))
                 
@@ -1211,21 +1250,14 @@ class DiversitySweep:
     @staticmethod
     def _sharpe_proxy(preds: np.ndarray, dataset) -> Tuple[np.ndarray, np.ndarray]:
         """Simplified Sharpe proxy objective with fixed lambda=1.0."""
+        # Note: In binary classifier mode, this proxy is less relevant,
+        # but kept for legacy regression-based sweep if needed.
+        # Ideally sweep should use the new classifier logic.
         r = DiversityDefenseObjectives._get_labels_from_dataset(dataset)
         p = preds.astype(np.float64)
         # Simple fixed lambda=1.0
         grad = -r + 2.0 * 1.0 * (r ** 2) * p
         hess = np.maximum(2.0 * 1.0 * (r ** 2), EPS)
-        return grad, hess
-    
-    @staticmethod
-    def _tanh_proxy(preds: np.ndarray, dataset) -> Tuple[np.ndarray, np.ndarray]:
-        """Simplified Tanh proxy objective."""
-        r = DiversityDefenseObjectives._get_labels_from_dataset(dataset)
-        p = preds.astype(np.float64)
-        t = np.tanh(p)
-        grad = -r * (1.0 - t * t)
-        hess = np.maximum(np.abs(2.0 * r * t * (1.0 - t * t)), EPS)
         return grad, hess
     
     def _train_mini_ensemble(
@@ -1258,48 +1290,55 @@ class DiversitySweep:
         run_params = dict(self.FIXED_PARAMS)
         run_params['colsample_bytree'] = col_fraction
         
-        # Distribution: 2 Sharpe, 1 Tanh, 2 Huber (MSE) for 5 models
-        # Or scale proportionally for different n_models
+        # Distribution: 2 Sharpe, 1 Tanh, 2 Huber (Focal) for 5 models
         n_sharpe = max(1, self.n_models * 2 // 5)
         n_tanh = max(1, self.n_models * 1 // 5)
         n_huber = self.n_models - n_sharpe - n_tanh
         
-        # 1. Sharpe Models
+        # 1. Sharpe Models (Binary + Weights)
+        y_train_bin = (y_train > 0).astype(int)
         for i in range(n_sharpe):
             try:
-                model = lgb.LGBMRegressor(
-                    objective=self._sharpe_proxy,
+                # Approximate Sharpe weighting
+                w_train = np.abs(y_train) / (np.std(y_train) + EPS)
+                model = lgb.LGBMClassifier(
+                    objective='binary',
                     random_state=i,
                     **run_params
                 )
-                model.fit(X_train, y_train)
-                preds_store.append(model.predict(X_val))
+                model.fit(X_train, y_train_bin, sample_weight=w_train)
+                preds_store.append(model.predict_proba(X_val)[:, 1])
             except Exception:
                 preds_store.append(np.zeros(len(X_val)))
         
-        # 2. Tanh Models
+        # 2. Tanh Models (Binary with thresholds)
         for i in range(n_tanh):
             try:
-                model = lgb.LGBMRegressor(
-                    objective=self._tanh_proxy,
+                thresh = 0.003
+                y_train_bin_t = (y_train > thresh).astype(int)
+                model = lgb.LGBMClassifier(
+                    objective='binary',
                     random_state=42 + i,
                     **run_params
                 )
-                model.fit(X_train, y_train)
-                preds_store.append(model.predict(X_val))
+                model.fit(X_train, y_train_bin_t)
+                preds_store.append(model.predict_proba(X_val)[:, 1])
             except Exception:
                 preds_store.append(np.zeros(len(X_val)))
         
-        # 3. Huber/MSE Models (standard regression)
+        # 3. Huber/Focal Models
+        focal_obj = self.objectives.focal_loss_factory(alpha=0.25, gamma=2.0)
+        y_train_bin_f = (y_train > 0).astype(int)
         for i in range(n_huber):
             try:
-                model = lgb.LGBMRegressor(
-                    objective='regression',
+                model = lgb.LGBMClassifier(
+                    objective=focal_obj,
                     random_state=100 + i,
                     **run_params
                 )
-                model.fit(X_train, y_train)
-                preds_store.append(model.predict(X_val))
+                model.fit(X_train, y_train_bin_f)
+                raw = model.predict(X_val, raw_score=True)
+                preds_store.append(expit(raw))
             except Exception:
                 preds_store.append(np.zeros(len(X_val)))
         
@@ -1344,8 +1383,12 @@ class DiversitySweep:
                     continue
                 
                 # A. Z-Score (Simple batch normalization)
+                # Now preds are Probabilities [0,1]
+                # Convert to Signal [-1, 1] before correlation/sharpe
+                sig_matrix = 2.0 * preds_matrix - 1.0
+
                 z_matrix = []
-                for row in preds_matrix:
+                for row in sig_matrix:
                     z = (row - np.mean(row)) / (np.std(row) + EPS)
                     z_matrix.append(z)
                 z_matrix = np.array(z_matrix)
@@ -1458,12 +1501,9 @@ def create_diversity_defense_ensemble(
     config = config or DiversityDefenseConfig()
     objectives = DiversityDefenseObjectives(config)
     
-    # Pre-calculate volatility for Sharpe objectives
-    y_series = pd.Series(y_train)
-    rolling_vol = y_series.rolling(window=config.z_score_window, min_periods=1).std()
-    global_std = float(y_series.std()) if len(y_series) > 1 else 0.0
-    fallback_std = global_std if global_std > 0.0 else 1.0
-    y_vol = rolling_vol.fillna(fallback_std).replace(0.0, fallback_std).values
+    # Pre-calculate volatility for Sharpe objectives if needed
+    # Note: In classifier mode we calculate weights per model iteration often
+    # but we can reuse this logic
     
     n_samples, n_features = X_train.shape
     rng = np.random.RandomState(42)
@@ -1480,13 +1520,13 @@ def create_diversity_defense_ensemble(
     
     specialist_configs = config.get_specialist_configs()
     
-    # Base params - Feature diversity via colsample_bytree (NOT external loop)
+    # Base params
     base_params = {
         'n_estimators': config.n_estimators,
         'num_leaves': config.num_leaves,
         'max_depth': config.max_depth,
         'subsample': config.subsample,
-        'colsample_bytree': config.colsample_bytree,  # CRITICAL: Controls feature diversity
+        'colsample_bytree': config.colsample_bytree,
         'verbosity': -1,
         'n_jobs': -1
     }
@@ -1502,45 +1542,79 @@ def create_diversity_defense_ensemble(
         lr = getattr(config, spec_config.learning_rate_key)
         
         # Get objective
-        fobj = objectives.get_objective_for_specialist(spec_config, y_vol)
+        fobj = objectives.get_objective_for_specialist(spec_config)
         
-        # Row sampling (external bootstrap for sample diversity)
+        # Row sampling
         n_rows_sub = max(10, int(round(config.sample_fraction * n_samples)))
         row_idx = np.sort(rng.choice(n_samples, size=n_rows_sub, replace=False))
         
-        # Use all features - colsample_bytree handles feature diversity internally
         if isinstance(X_train, pd.DataFrame):
             X_bag = X_train.iloc[row_idx]
         else:
             X_bag = X_train[row_idx]
-        y_bag = y_train[row_idx]
-        vol_bag = y_vol[row_idx]
         
-        if sample_weights is not None:
-            sw_bag = sample_weights[row_idx]
-        else:
-            sw_bag = None
+        # Original Targets (Returns)
+        y_bag_raw = y_train[row_idx]
         
+        # Logic to prepare targets/weights for Classifier based on Specialist Type
+        y_bag_target = None
+        sample_weight_bag = None
+
+        if spec_config.specialist_type == SpecialistType.SHARPE:
+            # Target: Binary (>0)
+            y_bag_target = (y_bag_raw > 0).astype(int)
+            # Weights: Future_Return / Volatility
+            # Need Volatility of y_bag_raw
+            # We use the helper function, assuming y_bag_raw is a time series (might not be if shuffled)
+            # But here we are bootstrapping. Best effort: use pre-calc global weights if possible or simple vol.
+            # Assuming y_train was chronological before this function, we can slice pre-calc weights.
+
+            # Better approach: Pass full weights in sample_weights if pre-calculated,
+            # Or assume y_bag_raw has enough structure.
+            # Since we shuffle in bagging, we lose time structure for rolling vol calculation.
+            # The caller should ideally provide volatility-based weights if possible.
+            # Fallback: calculate weights on the bag (might be noisy) or use simple abs return.
+
+            # Using simple Sharpe proxy: |Return| / Global_Std
+            vol = np.std(y_bag_raw) + EPS
+            sample_weight_bag = np.abs(y_bag_raw) / vol
+            sample_weight_bag = np.clip(sample_weight_bag, 0, 3.0)
+
+        elif spec_config.specialist_type == SpecialistType.TANH:
+            # Target: Binary (> Threshold)
+            # Thresholds: 0.3%, 0.6%, 0.9% for the 3 models
+            # We map the i-th Tanh model to a threshold
+            # Count how many Tanh models we have processed so far or check index
+            # This relies on order.
+            # Let's use simple logic: i % 3 maps to 0.003, 0.006, 0.009
+            threshold = [0.003, 0.006, 0.009][i % 3]
+            y_bag_target = (y_bag_raw > threshold).astype(int)
+
+        elif spec_config.specialist_type in (SpecialistType.HUBER, SpecialistType.ASYMMETRIC_HUBER):
+            # Target: Binary (>0)
+            y_bag_target = (y_bag_raw > 0).astype(int)
+            # Objective: Custom Focal Loss
+
+        if y_bag_target is None:
+             # Fallback
+             y_bag_target = (y_bag_raw > 0).astype(int)
+
         try:
             params = dict(base_params)
             params['learning_rate'] = lr
             params['random_state'] = 42 + i
             
-            # Update objective with current volatility for Sharpe models
-            if fobj is not None and spec_config.specialist_type == SpecialistType.SHARPE:
-                fobj = objectives.vol_normalized_sharpe_factory(
-                    spec_config.lmbda or 1.0, vol_bag
-                )
-            
             if fobj is not None:
-                model = lgb.LGBMRegressor(objective=fobj, **params)
+                # Custom objective (Focal)
+                model = lgb.LGBMClassifier(objective=fobj, **params)
             else:
-                model = lgb.LGBMRegressor(**params)
+                # Standard binary
+                model = lgb.LGBMClassifier(objective='binary', **params)
             
-            if sw_bag is not None:
-                model.fit(X_bag, y_bag, sample_weight=sw_bag)
+            if sample_weight_bag is not None:
+                model.fit(X_bag, y_bag_target, sample_weight=sample_weight_bag)
             else:
-                model.fit(X_bag, y_bag)
+                model.fit(X_bag, y_bag_target)
             
             models.append(model)
             specialist_types.append(spec_config.specialist_type)
@@ -1638,14 +1712,15 @@ class LabelDiagnosticDashboard:
         X_val: pd.DataFrame,
         y_val: np.ndarray,
     ) -> Tuple[float, float]:
-        """Train Huber models and compute train/val error."""
+        """Train Huber (Focal) models and compute train/val error (Accuracy/LogLoss)."""
         try:
             import lightgbm as lgb
+            from sklearn.metrics import log_loss
         except ImportError:
             return 0.0, 0.0
         
-        # Use Huber models specifically (Reality Check layer)
-        huber_obj = self.objectives.huber_factory(delta=self.config.huber_delta)
+        # Use Focal Loss (Reality Check layer)
+        fobj = self.objectives.focal_loss_factory(alpha=0.25, gamma=2.0)
         
         params = {
             'n_estimators': 200,
@@ -1656,15 +1731,17 @@ class LabelDiagnosticDashboard:
             'verbosity': -1,
         }
         
-        model = lgb.LGBMRegressor(objective=huber_obj, **params)
-        model.fit(X_train, y_train)
+        y_train_bin = (y_train > 0).astype(int)
+        y_val_bin = (y_val > 0).astype(int)
+
+        model = lgb.LGBMClassifier(objective=fobj, **params)
+        model.fit(X_train, y_train_bin)
         
-        train_preds = model.predict(X_train)
-        val_preds = model.predict(X_val)
+        train_probs = expit(model.predict(X_train, raw_score=True))
+        val_probs = expit(model.predict(X_val, raw_score=True))
         
-        # Use MAE as error metric
-        train_error = np.mean(np.abs(train_preds - y_train))
-        val_error = np.mean(np.abs(val_preds - y_val))
+        train_error = log_loss(y_train_bin, train_probs)
+        val_error = log_loss(y_val_bin, val_probs)
         
         return train_error, val_error
     
@@ -1688,7 +1765,7 @@ class LabelDiagnosticDashboard:
             return 0.0
         
         # Train Tanh models (directional accuracy)
-        tanh_obj = self.objectives.robust_tanh_factory()
+        # Using binary objective
         
         params = {
             'n_estimators': 200,
@@ -1699,18 +1776,20 @@ class LabelDiagnosticDashboard:
             'verbosity': -1,
         }
         
-        model = lgb.LGBMRegressor(objective=tanh_obj, **params)
-        model.fit(X_train, y_train)
+        y_train_bin = (y_train > 0.003).astype(int) # Using first Tanh threshold
+
+        model = lgb.LGBMClassifier(objective='binary', **params)
+        model.fit(X_train, y_train_bin)
         
-        val_preds = model.predict(X_val)
+        val_probs = model.predict_proba(X_val)[:, 1]
         
-        # Compute Spearman correlation (more robust for non-linear relationships)
+        # Compute Spearman correlation
         if spearmanr is not None:
-            corr, _ = spearmanr(val_preds, y_val)
+            corr, _ = spearmanr(val_probs, y_val) # Correlate probs with raw returns
         else:
-            if len(val_preds) < 2:
+            if len(val_probs) < 2:
                 return 0.0
-            corr_matrix = np.corrcoef(val_preds, y_val)
+            corr_matrix = np.corrcoef(val_probs, y_val)
             if corr_matrix.shape == (2, 2):
                 corr = corr_matrix[0, 1]
             else:
@@ -1966,6 +2045,8 @@ __all__ = [
     'calculate_simple_sharpe',
     'generate_regime_meta_features',
     'create_volatility_normalized_label',
+    'get_focal_loss',
+    'get_sharpe_weights',
     
     # Constants
     'EPS',

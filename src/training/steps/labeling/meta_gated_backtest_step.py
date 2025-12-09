@@ -266,7 +266,7 @@ class MetaGatedBacktestStep(BaseStep):
             backtest_metrics_cfg = meta_gating.get("backtest_metrics", {})
             filters_cfg = meta_gating.get("filters", {})
 
-            prob_threshold = float(entry_cfg.get("prob_threshold", 0.0))
+            prob_threshold = float(entry_cfg.get("prob_threshold", 0.6))
             use_expected_return = bool(entry_cfg.get("use_expected_return", False))
             er_threshold = float(entry_cfg.get("expected_return_threshold", 0.0))
 

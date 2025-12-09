@@ -275,8 +275,8 @@ TARGET_POWER = 1.5
 # Hard floor for profit targets to ensure viability after transaction costs
 PROFIT_TARGET_FLOOR_BPS = 50  # 0.5% = 50 basis points (must exceed slippage + fees)
 PROFITABLE_TIMEOUT_RETURN_THRESHOLD = 0.005
-# Default probability threshold for meta-gating (lowered from 0.65 for more trades)
-DEFAULT_PROBABILITY_THRESHOLD = 0.55
+# Default probability threshold for meta-gating
+DEFAULT_PROBABILITY_THRESHOLD = 0.60
 # Default expected return threshold (lowered from 0.45% to 0.30%)
 DEFAULT_EXPECTED_RETURN_THRESHOLD = 0.003  # 0.30%
 
@@ -1433,6 +1433,11 @@ def create_quantile_labels_from_vol_scaled_returns(
     low_q: float = 0.3,
     high_q: float = 0.8,
 ) -> pd.Series:
+    """Create binary labels using GLOBAL quantile thresholds.
+    
+    WARNING: This uses look-ahead bias as thresholds are computed across ALL data.
+    For production use, prefer create_rolling_quantile_labels_from_vol_scaled_returns().
+    """
     labels = pd.Series(index=vol_scaled.index, dtype=float)
     labels[:] = np.nan
 
@@ -1453,6 +1458,1123 @@ def create_quantile_labels_from_vol_scaled_returns(
         labels[:] = np.nan
 
     return labels
+
+
+def create_rolling_quantile_labels_from_vol_scaled_returns(
+    vol_scaled: pd.Series,
+    low_q: float = 0.3,
+    high_q: float = 0.7,
+    lookback_bars: int = 3000,
+    min_periods: int = 300,
+    expanding_start: bool = True,
+) -> pd.Series:
+    """Create binary labels using ROLLING quantile thresholds (no look-ahead bias).
+    
+    This function computes quantile thresholds using only PAST data at each point,
+    eliminating the look-ahead bias present in global quantile approaches.
+    
+    Args:
+        vol_scaled: Volatility-scaled returns series
+        low_q: Lower quantile for negative labels (e.g., 0.3 = bottom 30%)
+        high_q: Upper quantile for positive labels (e.g., 0.7 = top 30%)
+        lookback_bars: Rolling window size in bars (default: 3000 ~= 31 days at 15m)
+        min_periods: Minimum observations required before computing quantiles
+        expanding_start: If True, use expanding window until lookback_bars is reached
+    
+    Returns:
+        Series with labels: 1.0 (positive), 0.0 (negative), NaN (unlabeled/insufficient data)
+    """
+    labels = pd.Series(index=vol_scaled.index, dtype=float)
+    labels[:] = np.nan
+    
+    try:
+        # Get non-NaN values and their positions
+        valid_mask = ~vol_scaled.isna()
+        if valid_mask.sum() < min_periods:
+            tprint(f"⚠️ Rolling quantiles: insufficient data ({valid_mask.sum()} < {min_periods})", "WARNING")
+            return labels
+        
+        # Compute rolling quantiles using only past data
+        # Use shift(1) to ensure we don't include the current observation in its own threshold
+        if expanding_start:
+            # Start with expanding window, switch to rolling after lookback_bars
+            rolling_low = vol_scaled.expanding(min_periods=min_periods).quantile(low_q).shift(1)
+            rolling_high = vol_scaled.expanding(min_periods=min_periods).quantile(high_q).shift(1)
+            
+            # After we have enough data, switch to fixed rolling window
+            rolling_low_fixed = vol_scaled.rolling(window=lookback_bars, min_periods=min_periods).quantile(low_q).shift(1)
+            rolling_high_fixed = vol_scaled.rolling(window=lookback_bars, min_periods=min_periods).quantile(high_q).shift(1)
+            
+            # Use fixed rolling where we have enough history
+            enough_history = pd.Series(range(len(vol_scaled)), index=vol_scaled.index) >= lookback_bars
+            rolling_low = rolling_low.where(~enough_history, rolling_low_fixed)
+            rolling_high = rolling_high.where(~enough_history, rolling_high_fixed)
+        else:
+            # Pure rolling window (NaN until min_periods reached)
+            rolling_low = vol_scaled.rolling(window=lookback_bars, min_periods=min_periods).quantile(low_q).shift(1)
+            rolling_high = vol_scaled.rolling(window=lookback_bars, min_periods=min_periods).quantile(high_q).shift(1)
+        
+        # Apply thresholds
+        valid_thresholds = (
+            rolling_low.notna() & 
+            rolling_high.notna() & 
+            (rolling_high > rolling_low) &
+            vol_scaled.notna()
+        )
+        
+        # Label based on rolling thresholds
+        labels.loc[valid_thresholds & (vol_scaled >= rolling_high)] = 1.0
+        labels.loc[valid_thresholds & (vol_scaled <= rolling_low)] = 0.0
+        
+        # Diagnostics
+        n_labeled = labels.notna().sum()
+        n_pos = (labels == 1.0).sum()
+        n_neg = (labels == 0.0).sum()
+        tprint(
+            f"📊 Rolling quantile labels: {n_labeled} labeled ({n_pos} pos, {n_neg} neg), "
+            f"lookback={lookback_bars}, q=[{low_q:.2f}, {high_q:.2f}]",
+            "INFO"
+        )
+        
+    except Exception as e:
+        tprint(f"⚠️ Rolling quantile labeling failed: {e}", "WARNING")
+        labels[:] = np.nan
+    
+    return labels
+
+
+def create_rolling_regime_aware_quantile_labels_from_vol_scaled_returns(
+    vol_scaled: pd.Series,
+    regimes: Optional[pd.Series] = None,
+    low_q: float = 0.3,
+    high_q: float = 0.7,
+    lookback_bars: int = 3000,
+    min_periods: int = 300,
+    min_samples_per_regime: int = 50,
+    expanding_start: bool = True,
+) -> pd.Series:
+    """Regime-aware rolling quantile labeling (no look-ahead bias).
+    
+    Combines rolling quantile thresholds with regime conditioning. Within each
+    regime, computes quantiles using only past data from that regime.
+    
+    Args:
+        vol_scaled: Volatility-scaled returns series
+        regimes: Optional regime labels (e.g., HMM states)
+        low_q: Lower quantile for negative labels
+        high_q: Upper quantile for positive labels
+        lookback_bars: Rolling window size in bars (default: 3000 ~= 31 days at 15m)
+        min_periods: Minimum observations before computing quantiles
+        min_samples_per_regime: Minimum samples per regime for regime-specific thresholds
+        expanding_start: If True, use expanding window until lookback_bars reached
+    
+    Returns:
+        Series with labels: 1.0 (positive), 0.0 (negative), NaN (unlabeled)
+    """
+    labels = pd.Series(index=vol_scaled.index, dtype=float)
+    labels[:] = np.nan
+    
+    # Fall back to non-regime-aware if no regimes provided
+    if regimes is None:
+        return create_rolling_quantile_labels_from_vol_scaled_returns(
+            vol_scaled=vol_scaled,
+            low_q=low_q,
+            high_q=high_q,
+            lookback_bars=lookback_bars,
+            min_periods=min_periods,
+            expanding_start=expanding_start,
+        )
+    
+    try:
+        regimes_aligned = regimes.reindex(vol_scaled.index)
+        unique_regimes = pd.unique(regimes_aligned.dropna())
+        
+        if len(unique_regimes) == 0:
+            return create_rolling_quantile_labels_from_vol_scaled_returns(
+                vol_scaled=vol_scaled,
+                low_q=low_q,
+                high_q=high_q,
+                lookback_bars=lookback_bars,
+                min_periods=min_periods,
+                expanding_start=expanding_start,
+            )
+        
+        for reg_val in unique_regimes:
+            try:
+                regime_mask = regimes_aligned == reg_val
+                regime_data = vol_scaled.where(regime_mask)
+                
+                # Count samples in this regime
+                n_regime = regime_data.notna().sum()
+                if n_regime < min_samples_per_regime:
+                    continue
+                
+                # Compute rolling quantiles within this regime
+                # Use cumcount to track regime-specific sample count
+                if expanding_start:
+                    reg_rolling_low = regime_data.expanding(min_periods=min(min_periods, min_samples_per_regime)).quantile(low_q).shift(1)
+                    reg_rolling_high = regime_data.expanding(min_periods=min(min_periods, min_samples_per_regime)).quantile(high_q).shift(1)
+                else:
+                    reg_rolling_low = regime_data.rolling(window=lookback_bars, min_periods=min_periods).quantile(low_q).shift(1)
+                    reg_rolling_high = regime_data.rolling(window=lookback_bars, min_periods=min_periods).quantile(high_q).shift(1)
+                
+                # Apply thresholds for this regime
+                valid_regime = (
+                    regime_mask &
+                    reg_rolling_low.notna() &
+                    reg_rolling_high.notna() &
+                    (reg_rolling_high > reg_rolling_low) &
+                    vol_scaled.notna()
+                )
+                
+                labels.loc[valid_regime & (vol_scaled >= reg_rolling_high)] = 1.0
+                labels.loc[valid_regime & (vol_scaled <= reg_rolling_low)] = 0.0
+                
+            except Exception:
+                # Skip this regime on error
+                continue
+        
+        # If no labels assigned (regimes too sparse), fall back to global rolling
+        if labels.dropna().empty:
+            tprint("⚠️ Regime-aware rolling quantiles: falling back to global", "WARNING")
+            return create_rolling_quantile_labels_from_vol_scaled_returns(
+                vol_scaled=vol_scaled,
+                low_q=low_q,
+                high_q=high_q,
+                lookback_bars=lookback_bars,
+                min_periods=min_periods,
+                expanding_start=expanding_start,
+            )
+        
+        n_labeled = labels.notna().sum()
+        n_pos = (labels == 1.0).sum()
+        n_neg = (labels == 0.0).sum()
+        tprint(
+            f"📊 Rolling regime-aware quantile labels: {n_labeled} labeled ({n_pos} pos, {n_neg} neg)",
+            "INFO"
+        )
+        
+    except Exception as e:
+        tprint(f"⚠️ Rolling regime-aware quantile labeling failed: {e}", "WARNING")
+        return create_rolling_quantile_labels_from_vol_scaled_returns(
+            vol_scaled=vol_scaled,
+            low_q=low_q,
+            high_q=high_q,
+            lookback_bars=lookback_bars,
+            min_periods=min_periods,
+            expanding_start=expanding_start,
+        )
+    
+    return labels
+
+
+def compute_volatility_normalized_zscore(
+    realized_returns: pd.Series,
+    volatility: pd.Series,
+    vol_lookback: int = 100,
+    vol_min_periods: int = 20,
+    clip_zscore: float = 5.0,
+) -> pd.Series:
+    """Compute volatility-normalized z-scores for trend-preserving labeling.
+    
+    Normalizes future returns by rolling volatility to produce z-scores that:
+    - Preserve trend-following signal (magnitude matters)
+    - Are volatility-aware (scale-normalized)
+    - Are comparable across different volatility regimes
+    
+    z = future_return / rolling_volatility
+    
+    Args:
+        realized_returns: Raw realized returns series
+        volatility: Volatility series (e.g., volatility_1d or ATR-based)
+        vol_lookback: Lookback for volatility smoothing (default: 100 bars)
+        vol_min_periods: Minimum periods for volatility calculation
+        clip_zscore: Maximum absolute z-score to prevent outliers
+    
+    Returns:
+        Series of volatility-normalized z-scores
+    """
+    z_scores = pd.Series(index=realized_returns.index, dtype=float)
+    z_scores[:] = np.nan
+    
+    try:
+        # Align volatility to returns
+        vol_aligned = volatility.reindex(realized_returns.index)
+        
+        # Use rolling volatility for smoothing (EMA-style for responsiveness)
+        rolling_vol = vol_aligned.ewm(span=vol_lookback, min_periods=vol_min_periods).mean()
+        
+        # Ensure positive volatility
+        rolling_vol = rolling_vol.replace(0.0, np.nan).abs()
+        
+        # Compute z-scores
+        z_scores = realized_returns / (rolling_vol + 1e-8)
+        
+        # Clip extreme values to prevent outlier domination
+        z_scores = z_scores.clip(lower=-clip_zscore, upper=clip_zscore)
+        
+        # Fill any infinities
+        z_scores = z_scores.replace([np.inf, -np.inf], np.nan)
+        
+        n_valid = z_scores.notna().sum()
+        z_mean = float(z_scores.mean()) if n_valid > 0 else 0.0
+        z_std = float(z_scores.std()) if n_valid > 1 else 1.0
+        
+        tprint(
+            f"📊 Z-score normalization: n={n_valid}, mean={z_mean:.3f}, std={z_std:.3f}",
+            "INFO"
+        )
+        
+    except Exception as e:
+        tprint(f"⚠️ Z-score computation failed: {e}", "WARNING")
+        z_scores[:] = np.nan
+    
+    return z_scores
+
+
+def create_conditional_quantile_labels(
+    realized_returns: pd.Series,
+    features: pd.DataFrame,
+    volatility: pd.Series,
+    quantile_long: float = 0.6,
+    quantile_short: float = 0.35,
+    lookback_bars: int = 3000,
+    min_train_samples: int = 500,
+    retrain_frequency: int = 500,
+    vol_lookback: int = 100,
+    use_lightgbm: bool = True,
+    n_estimators: int = 50,
+    max_depth: int = 4,
+    feature_subset: Optional[List[str]] = None,
+    asymmetric_crypto: bool = True,
+) -> Tuple[pd.Series, pd.Series, pd.Series, Dict[str, Any]]:
+    """Create labels using conditional quantile regression with asymmetric tails.
+    
+    Predicts conditional quantiles Q_τ(z | X) for both long and short directions,
+    supporting asymmetric selection thresholds for crypto markets.
+    
+    Labeling logic:
+        z > Q_long(z|X)  → long signal (label = 1)
+        z < Q_short(z|X) → short signal (label = -1)
+        else             → no trade (label = NaN)
+    
+    For crypto, asymmetric quantiles are recommended (asymmetric_crypto=True):
+        - Longs: Q_0.6 (more selective, need to beat 60th percentile)
+        - Shorts: Q_0.35 (less selective, below 35th percentile)
+    
+    For symmetric selection (asymmetric_crypto=False):
+        - Longs: Q_0.6
+        - Shorts: Q_0.4 (symmetric = 1 - quantile_long)
+    
+    Args:
+        realized_returns: Per-event realized returns
+        features: Feature matrix X for conditioning
+        volatility: Volatility series for z-score normalization
+        quantile_long: Upper quantile for long signals (default: 0.6)
+        quantile_short: Lower quantile for short signals (default: 0.35 for crypto asymmetry)
+        lookback_bars: Training window size (default: 3000 ~= 31 days at 15m)
+        min_train_samples: Minimum samples before model training starts
+        retrain_frequency: Retrain model every N bars
+        vol_lookback: Lookback for volatility smoothing
+        use_lightgbm: If True, use LightGBM; else use sklearn GBR
+        n_estimators: Number of trees in ensemble
+        max_depth: Maximum tree depth
+        feature_subset: Optional list of features to use (for speed)
+        asymmetric_crypto: If True, use asymmetric quantiles (crypto-optimized)
+    
+    Returns:
+        Tuple of (labels, labels_long, labels_short, diagnostics)
+        - labels: Combined directional labels (1=long, -1=short, NaN=no trade)
+        - labels_long: Binary long labels (1=long, 0=not long, NaN=no signal)
+        - labels_short: Binary short labels (1=short, 0=not short, NaN=no signal)
+        - diagnostics: Dict with model performance metrics
+    """
+    labels = pd.Series(index=realized_returns.index, dtype=float)
+    labels[:] = np.nan
+    
+    labels_long = pd.Series(index=realized_returns.index, dtype=float)
+    labels_long[:] = np.nan
+    
+    labels_short = pd.Series(index=realized_returns.index, dtype=float)
+    labels_short[:] = np.nan
+    
+    # Use symmetric quantiles if not crypto-asymmetric
+    if not asymmetric_crypto:
+        quantile_short = 1.0 - quantile_long  # e.g., 0.4 if long is 0.6
+    
+    diagnostics: Dict[str, Any] = {
+        "n_labeled": 0,
+        "n_long": 0,
+        "n_short": 0,
+        "n_no_trade": 0,
+        "quantile_long": quantile_long,
+        "quantile_short": quantile_short,
+        "asymmetric_crypto": asymmetric_crypto,
+        "mean_predicted_q_long": np.nan,
+        "mean_predicted_q_short": np.nan,
+        "coverage_long": np.nan,
+        "coverage_short": np.nan,
+        "model_type": "lightgbm" if use_lightgbm else "sklearn_gbr",
+    }
+    
+    try:
+        # Step 1: Compute volatility-normalized z-scores
+        z_scores = compute_volatility_normalized_zscore(
+            realized_returns=realized_returns,
+            volatility=volatility,
+            vol_lookback=vol_lookback,
+        )
+        
+        # Step 2: Prepare features
+        if feature_subset is not None and len(feature_subset) > 0:
+            available_features = [f for f in feature_subset if f in features.columns]
+            if len(available_features) < 5:
+                # Fallback to all numeric features
+                X = features.select_dtypes(include=[np.number])
+            else:
+                X = features[available_features]
+        else:
+            X = features.select_dtypes(include=[np.number])
+        
+        # Remove columns that might leak future info
+        drop_cols = [c for c in X.columns if any(
+            pat in c.lower() for pat in ['target', 'label', 'return', 'future', 'forward']
+        )]
+        X = X.drop(columns=drop_cols, errors='ignore')
+        
+        # Align indices
+        common_idx = z_scores.dropna().index.intersection(X.dropna(how='all').index)
+        if len(common_idx) < min_train_samples:
+            tprint(f"⚠️ Conditional quantile: insufficient data ({len(common_idx)} < {min_train_samples})", "WARNING")
+            return labels, labels_long, labels_short, diagnostics
+        
+        z_aligned = z_scores.loc[common_idx]
+        X_aligned = X.loc[common_idx].fillna(0.0)
+        
+        # Step 3: Rolling prediction with periodic retraining
+        tprint(
+            f"📊 Conditional quantile regression: Q_long={quantile_long}, Q_short={quantile_short}, "
+            f"asymmetric={asymmetric_crypto}, training on {len(common_idx)} samples...",
+            "INFO"
+        )
+        
+        # Convert to numpy for speed
+        z_arr = z_aligned.to_numpy(dtype=float)
+        X_arr = X_aligned.to_numpy(dtype=float)
+        
+        pred_q_long = np.full(len(common_idx), np.nan)
+        pred_q_short = np.full(len(common_idx), np.nan)
+        
+        model_long = None
+        model_short = None
+        last_train_idx = -retrain_frequency  # Force initial training
+        
+        # Rolling prediction
+        for i in range(min_train_samples, len(common_idx)):
+            # Retrain periodically
+            if (i - last_train_idx) >= retrain_frequency or model_long is None:
+                train_start = max(0, i - lookback_bars)
+                train_end = i
+                
+                X_train = X_arr[train_start:train_end]
+                z_train = z_arr[train_start:train_end]
+                
+                # Remove NaN from training
+                valid_train = ~np.isnan(z_train)
+                if valid_train.sum() < 50:
+                    continue
+                
+                X_train = X_train[valid_train]
+                z_train = z_train[valid_train]
+                
+                if use_lightgbm:
+                    # LightGBM quantile regression for upper quantile (longs)
+                    model_long = lgb.LGBMRegressor(
+                        objective='quantile',
+                        alpha=quantile_long,
+                        n_estimators=n_estimators,
+                        max_depth=max_depth,
+                        learning_rate=0.05,
+                        subsample=0.8,
+                        colsample_bytree=0.8,
+                        min_child_samples=20,
+                        n_jobs=-1,
+                        verbose=-1,
+                        random_state=42,
+                    )
+                    # LightGBM quantile regression for lower quantile (shorts)
+                    model_short = lgb.LGBMRegressor(
+                        objective='quantile',
+                        alpha=quantile_short,
+                        n_estimators=n_estimators,
+                        max_depth=max_depth,
+                        learning_rate=0.05,
+                        subsample=0.8,
+                        colsample_bytree=0.8,
+                        min_child_samples=20,
+                        n_jobs=-1,
+                        verbose=-1,
+                        random_state=42,
+                    )
+                else:
+                    # Sklearn GradientBoostingRegressor
+                    from sklearn.ensemble import GradientBoostingRegressor
+                    model_long = GradientBoostingRegressor(
+                        loss='quantile',
+                        alpha=quantile_long,
+                        n_estimators=n_estimators,
+                        max_depth=max_depth,
+                        learning_rate=0.05,
+                        subsample=0.8,
+                        min_samples_leaf=20,
+                        random_state=42,
+                    )
+                    model_short = GradientBoostingRegressor(
+                        loss='quantile',
+                        alpha=quantile_short,
+                        n_estimators=n_estimators,
+                        max_depth=max_depth,
+                        learning_rate=0.05,
+                        subsample=0.8,
+                        min_samples_leaf=20,
+                        random_state=42,
+                    )
+                
+                try:
+                    model_long.fit(X_train, z_train)
+                    model_short.fit(X_train, z_train)
+                    last_train_idx = i
+                except Exception as fit_err:
+                    tprint(f"⚠️ Model fit failed at i={i}: {fit_err}", "WARNING")
+                    continue
+            
+            # Predict for current observation
+            if model_long is not None and model_short is not None:
+                try:
+                    X_pred = X_arr[i:i+1]
+                    pred_q_long[i] = float(model_long.predict(X_pred)[0])
+                    pred_q_short[i] = float(model_short.predict(X_pred)[0])
+                except Exception:
+                    pass
+        
+        # Step 4: Generate directional labels based on conditional quantiles
+        # z > Q_long → long signal (1)
+        # z < Q_short → short signal (-1)
+        # else → no trade (NaN)
+        
+        for i, idx in enumerate(common_idx):
+            if np.isnan(pred_q_long[i]) or np.isnan(pred_q_short[i]) or np.isnan(z_arr[i]):
+                continue
+            
+            z_val = z_arr[i]
+            q_long_val = pred_q_long[i]
+            q_short_val = pred_q_short[i]
+            
+            if z_val >= q_long_val:
+                # Long signal: z exceeds upper quantile
+                labels.loc[idx] = 1.0
+                labels_long.loc[idx] = 1.0
+                labels_short.loc[idx] = 0.0
+            elif z_val <= q_short_val:
+                # Short signal: z below lower quantile
+                labels.loc[idx] = -1.0
+                labels_long.loc[idx] = 0.0
+                labels_short.loc[idx] = 1.0
+            else:
+                # No trade zone (between quantiles)
+                labels.loc[idx] = 0.0  # Explicit no-trade
+                labels_long.loc[idx] = 0.0
+                labels_short.loc[idx] = 0.0
+        
+        # Diagnostics
+        n_labeled = int((labels != 0).sum())  # Exclude no-trade
+        n_long = int((labels == 1.0).sum())
+        n_short = int((labels == -1.0).sum())
+        n_no_trade = int((labels == 0.0).sum())
+        
+        valid_pred = ~np.isnan(pred_q_long)
+        mean_pred_q_long = float(np.nanmean(pred_q_long)) if valid_pred.any() else np.nan
+        mean_pred_q_short = float(np.nanmean(pred_q_short)) if valid_pred.any() else np.nan
+        
+        # Coverage diagnostics
+        if valid_pred.any():
+            above_q_long = z_arr[valid_pred] >= pred_q_long[valid_pred]
+            below_q_short = z_arr[valid_pred] <= pred_q_short[valid_pred]
+            coverage_long = float(above_q_long.mean())
+            coverage_short = float(below_q_short.mean())
+        else:
+            coverage_long = np.nan
+            coverage_short = np.nan
+        
+        diagnostics.update({
+            "n_labeled": n_labeled,
+            "n_long": n_long,
+            "n_short": n_short,
+            "n_no_trade": n_no_trade,
+            "mean_predicted_q_long": mean_pred_q_long,
+            "mean_predicted_q_short": mean_pred_q_short,
+            "coverage_long": coverage_long,
+            "coverage_short": coverage_short,
+            "expected_coverage_long": 1.0 - quantile_long,
+            "expected_coverage_short": quantile_short,
+        })
+        
+        tprint(
+            f"📊 Conditional quantile labels: {n_long} long, {n_short} short, {n_no_trade} no-trade",
+            "INFO"
+        )
+        tprint(
+            f"   Coverage: long={coverage_long:.1%} (exp={1.0-quantile_long:.1%}), "
+            f"short={coverage_short:.1%} (exp={quantile_short:.1%})",
+            "INFO"
+        )
+        
+        # Calibration checks
+        if np.isfinite(coverage_long) and abs(coverage_long - (1.0 - quantile_long)) > 0.1:
+            tprint(
+                f"⚠️ Long quantile may be miscalibrated: coverage={coverage_long:.1%} vs expected={1.0-quantile_long:.1%}",
+                "WARNING"
+            )
+        if np.isfinite(coverage_short) and abs(coverage_short - quantile_short) > 0.1:
+            tprint(
+                f"⚠️ Short quantile may be miscalibrated: coverage={coverage_short:.1%} vs expected={quantile_short:.1%}",
+                "WARNING"
+            )
+        
+    except Exception as e:
+        tprint(f"⚠️ Conditional quantile labeling failed: {e}", "WARNING")
+        import traceback
+        traceback.print_exc()
+    
+    return labels, labels_long, labels_short, diagnostics
+
+
+def compute_zscore_gated_triple_barrier_labels(
+    df: pd.DataFrame,
+    features: pd.DataFrame,
+    signals: pd.DataFrame,
+    volatility: pd.Series,
+    # Conditional quantile parameters
+    quantile_long: float = 0.6,
+    quantile_short: float = 0.35,
+    asymmetric_crypto: bool = True,
+    quantile_lookback: int = 3000,
+    quantile_min_train: int = 500,
+    quantile_retrain_freq: int = 500,
+    # Barrier parameters
+    k_tp_base: float = 1.5,
+    k_sl_base: float = 1.0,
+    k_tp_long_mult: float = 1.1,   # Slightly larger TP for longs (crypto upward bias)
+    k_sl_long_mult: float = 0.9,  # Slightly smaller SL for longs (capture pullbacks)
+    k_tp_short_mult: float = 1.0,
+    k_sl_short_mult: float = 1.0,
+    # Z-score magnitude scaling
+    z_magnitude_scale: float = 0.3,  # k_TP = k0 * (1 + z_magnitude_scale * |z|)
+    # Trend adjustment
+    trend_alpha: float = 0.3,  # TP_adj = TP * (1 + alpha * trend_strength)
+    trend_lookback: int = 20,
+    # Clipping bounds (as multiples of base volatility)
+    tp_min_mult: float = 0.5,
+    tp_max_mult: float = 4.0,
+    sl_min_mult: float = 0.3,
+    sl_max_mult: float = 2.0,
+    # Horizon and other parameters
+    horizon: int = 26,
+    transaction_cost: float = 0.003,
+    min_event_spacing: int = 2,
+    # Trailing profit
+    atr_series: Optional[pd.Series] = None,
+    trail_distance_atr_mult: Optional[float] = None,
+    # Feature subset for quantile model
+    feature_subset: Optional[List[str]] = None,
+) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+    """
+    Z-Score Gated Triple Barrier Labeling Pipeline.
+    
+    This implements the full pipeline:
+    
+        [ Market Features ]
+                ↓
+        Conditional Quantile Filter
+                ↓   (z > Q_long OR z < Q_short)
+           Trade Entry Candidate
+                ↓
+        Triple Barrier Labeling (volatility-aware, trend-adjusted)
+                ↓
+           Final Supervised Target
+    
+    Key Features:
+    1. Entry gating via conditional quantile regression on z-scores
+    2. Volatility-aware barriers: TP = k_TP × σ_rolling, SL = k_SL × σ_rolling
+    3. Z-score magnitude scaling: k_TP = k_base × (1 + scale × |z|)
+    4. Trend-aware adjustment: TP_adj = TP × (1 + α × trend_strength)
+    5. Asymmetric multipliers for crypto (longs vs shorts)
+    6. Clipping to avoid extreme TP/SL in low/high volatility
+    7. Trailing profit support
+    
+    Args:
+        df: OHLCV DataFrame with 'close', 'high', 'low' columns
+        features: Feature matrix for conditional quantile model
+        signals: Signal DataFrame with 'consensus' column
+        volatility: Volatility series (e.g., volatility_1d)
+        
+        # Quantile parameters
+        quantile_long: Upper quantile threshold for longs (default: 0.6)
+        quantile_short: Lower quantile threshold for shorts (default: 0.35)
+        asymmetric_crypto: Use asymmetric quantiles for crypto
+        quantile_lookback: Rolling window for quantile model training
+        quantile_min_train: Minimum samples before training
+        quantile_retrain_freq: Retrain model every N bars
+        
+        # Barrier parameters
+        k_tp_base: Base take-profit multiplier (× volatility)
+        k_sl_base: Base stop-loss multiplier (× volatility)
+        k_tp_long_mult: Additional TP multiplier for longs
+        k_sl_long_mult: Additional SL multiplier for longs
+        k_tp_short_mult: Additional TP multiplier for shorts
+        k_sl_short_mult: Additional SL multiplier for shorts
+        
+        # Z-score scaling
+        z_magnitude_scale: Scale factor for |z| adjustment
+        
+        # Trend adjustment (linear, not thresholds)
+        trend_alpha: Trend adjustment factor (0.2-0.4 recommended)
+        trend_lookback: Lookback for trend calculation
+        
+        # Clipping
+        tp_min_mult: Minimum TP as multiple of base volatility
+        tp_max_mult: Maximum TP as multiple of base volatility
+        sl_min_mult: Minimum SL as multiple of base volatility
+        sl_max_mult: Maximum SL as multiple of base volatility
+        
+        # Other parameters
+        horizon: Maximum bars to look ahead
+        transaction_cost: Transaction cost per trade
+        min_event_spacing: Minimum bars between events
+        atr_series: ATR series for trailing stops
+        trail_distance_atr_mult: Trailing distance in ATR multiples
+        feature_subset: Optional feature subset for quantile model
+    
+    Returns:
+        Tuple of (labeled_data DataFrame, diagnostics dict)
+    """
+    n = len(df)
+    
+    # Initialize output DataFrame
+    labeled_data = pd.DataFrame(index=df.index)
+    labeled_data['close'] = df['close']
+    
+    diagnostics: Dict[str, Any] = {
+        "n_signals": 0,
+        "n_gated_long": 0,
+        "n_gated_short": 0,
+        "n_trades": 0,
+        "quantile_diagnostics": {},
+        "barrier_stats": {},
+    }
+    
+    try:
+        # =====================================================================
+        # STEP 1: Compute z-scores and conditional quantile filter
+        # =====================================================================
+        tprint("📊 Step 1: Computing conditional z-scores and quantile filter...", "INFO")
+        
+        # Compute future returns for z-score calculation
+        # rt+1:t+h = return over horizon period
+        future_returns = df['close'].pct_change(horizon).shift(-horizon)
+        
+        # Compute volatility-normalized z-scores
+        z_scores = compute_volatility_normalized_zscore(
+            realized_returns=future_returns,
+            volatility=volatility,
+            vol_lookback=100,
+            clip_zscore=5.0,
+        )
+        labeled_data['z_score'] = z_scores
+        
+        # Run conditional quantile regression
+        cond_labels, labels_long, labels_short, quantile_diag = create_conditional_quantile_labels(
+            realized_returns=future_returns,
+            features=features,
+            volatility=volatility,
+            quantile_long=quantile_long,
+            quantile_short=quantile_short,
+            lookback_bars=quantile_lookback,
+            min_train_samples=quantile_min_train,
+            retrain_frequency=quantile_retrain_freq,
+            vol_lookback=100,
+            use_lightgbm=True,
+            n_estimators=50,
+            max_depth=4,
+            feature_subset=feature_subset,
+            asymmetric_crypto=asymmetric_crypto,
+        )
+        
+        diagnostics["quantile_diagnostics"] = quantile_diag
+        
+        # Entry candidates: where quantile filter passes
+        # labels_long == 1 means z > Q_long (good long candidate)
+        # labels_short == 1 means z < Q_short (good short candidate)
+        long_candidates = labels_long == 1.0
+        short_candidates = labels_short == 1.0
+        
+        n_long_cand = int(long_candidates.sum())
+        n_short_cand = int(short_candidates.sum())
+        
+        tprint(f"   Entry candidates: {n_long_cand} longs, {n_short_cand} shorts", "INFO")
+        
+        # =====================================================================
+        # STEP 2: Compute volatility-aware barriers with z-score & trend scaling
+        # =====================================================================
+        tprint("📊 Step 2: Computing volatility-aware barriers...", "INFO")
+        
+        # Rolling volatility for barrier computation
+        rolling_vol = volatility.rolling(50, min_periods=10).mean()
+        labeled_data['rolling_vol'] = rolling_vol
+        
+        # Trend strength: EMA slope normalized (linear, not threshold)
+        ema_fast = df['close'].ewm(span=10).mean()
+        ema_slow = df['close'].ewm(span=30).mean()
+        ema_slope = (ema_fast - ema_slow) / df['close']
+        
+        # Z-score momentum (rolling mean of z-scores)
+        z_momentum = z_scores.rolling(trend_lookback, min_periods=5).mean().fillna(0)
+        
+        # Combined trend strength (normalized to roughly [-1, 1])
+        trend_strength = (ema_slope / (rolling_vol + 1e-8)).clip(-2, 2) / 2
+        labeled_data['trend_strength'] = trend_strength
+        
+        # Compute per-bar barrier thresholds
+        z_abs = z_scores.abs().fillna(0)
+        
+        # Base barriers (in price %)
+        tp_base = k_tp_base * rolling_vol
+        sl_base = k_sl_base * rolling_vol
+        
+        # Z-score magnitude scaling: k = k_base × (1 + scale × |z|)
+        # Stronger signals → larger targets
+        z_scale_factor = 1.0 + z_magnitude_scale * z_abs.clip(0, 3)
+        
+        # Direction-specific multipliers
+        # For longs: apply long multipliers
+        # For shorts: apply short multipliers
+        consensus = signals['consensus'] if 'consensus' in signals.columns else pd.Series(0, index=df.index)
+        
+        # Compute direction-aware TP/SL
+        tp_scaled = pd.Series(index=df.index, dtype=float)
+        sl_scaled = pd.Series(index=df.index, dtype=float)
+        
+        # Long positions
+        long_mask = consensus > 0
+        tp_scaled.loc[long_mask] = tp_base.loc[long_mask] * k_tp_long_mult * z_scale_factor.loc[long_mask]
+        sl_scaled.loc[long_mask] = sl_base.loc[long_mask] * k_sl_long_mult
+        
+        # Short positions
+        short_mask = consensus < 0
+        tp_scaled.loc[short_mask] = tp_base.loc[short_mask] * k_tp_short_mult * z_scale_factor.loc[short_mask]
+        sl_scaled.loc[short_mask] = sl_base.loc[short_mask] * k_sl_short_mult
+        
+        # =====================================================================
+        # STEP 3: Trend-aware adjustment (LINEAR, not thresholds)
+        # =====================================================================
+        # TP_adj = TP × (1 + α × trend_strength)
+        # For longs: positive trend → increase TP, negative trend → decrease TP
+        # For shorts: negative trend → increase TP, positive trend → decrease TP
+        
+        trend_adjustment_long = 1.0 + trend_alpha * trend_strength.clip(-1, 1)
+        trend_adjustment_short = 1.0 - trend_alpha * trend_strength.clip(-1, 1)  # Inverted for shorts
+        
+        tp_trend_adjusted = pd.Series(index=df.index, dtype=float)
+        tp_trend_adjusted.loc[long_mask] = tp_scaled.loc[long_mask] * trend_adjustment_long.loc[long_mask]
+        tp_trend_adjusted.loc[short_mask] = tp_scaled.loc[short_mask] * trend_adjustment_short.loc[short_mask]
+        
+        # =====================================================================
+        # STEP 4: Clipping to avoid extreme TP/SL
+        # =====================================================================
+        tp_min = tp_min_mult * rolling_vol
+        tp_max = tp_max_mult * rolling_vol
+        sl_min = sl_min_mult * rolling_vol
+        sl_max = sl_max_mult * rolling_vol
+        
+        tp_final = tp_trend_adjusted.clip(lower=tp_min, upper=tp_max)
+        sl_final = sl_scaled.clip(lower=sl_min, upper=sl_max)
+        
+        # Ensure minimum absolute thresholds
+        tp_final = tp_final.clip(lower=0.002)  # At least 0.2%
+        sl_final = sl_final.clip(lower=0.001)  # At least 0.1%
+        
+        labeled_data['tp_threshold'] = tp_final
+        labeled_data['sl_threshold'] = sl_final
+        
+        tprint(
+            f"   Barrier stats: TP mean={tp_final.mean():.4f}, SL mean={sl_final.mean():.4f}",
+            "INFO"
+        )
+        
+        # =====================================================================
+        # STEP 5: Apply triple barrier labeling with gated entries
+        # =====================================================================
+        tprint("📊 Step 3: Applying triple barrier labeling...", "INFO")
+        
+        # Create gated signals: only where quantile filter passes
+        gated_signals = signals.copy()
+        
+        # Gate: only allow long signals where long_candidates == True
+        # Gate: only allow short signals where short_candidates == True
+        original_consensus = gated_signals['consensus'].copy()
+        gated_consensus = pd.Series(0.0, index=df.index)
+        
+        # Apply long gate
+        gated_consensus.loc[long_candidates & (original_consensus > 0)] = 1.0
+        # Apply short gate
+        gated_consensus.loc[short_candidates & (original_consensus < 0)] = -1.0
+        
+        gated_signals['consensus'] = gated_consensus
+        
+        n_gated_long = int((gated_consensus > 0).sum())
+        n_gated_short = int((gated_consensus < 0).sum())
+        diagnostics["n_gated_long"] = n_gated_long
+        diagnostics["n_gated_short"] = n_gated_short
+        
+        tprint(f"   Gated signals: {n_gated_long} longs, {n_gated_short} shorts", "INFO")
+        
+        # Run triple barrier with volatility-aware thresholds
+        (
+            realized_returns,
+            binary_labels,
+            exit_reasons,
+            event_durations,
+            mfe_series,
+            mae_series,
+            binary_labels_long,
+            binary_labels_short,
+        ) = compute_realized_returns(
+            df=df,
+            signals=gated_signals,
+            profit_threshold=tp_final,  # Volatility-aware, trend-adjusted
+            stop_threshold=sl_final,    # Volatility-aware
+            horizon=horizon,
+            transaction_cost=transaction_cost,
+            min_event_spacing=min_event_spacing,
+            volatility_series=volatility,
+            atr_series=atr_series,
+            trail_distance_atr_mult=trail_distance_atr_mult,
+        )
+        
+        # Store results
+        labeled_data['realized_return'] = realized_returns
+        labeled_data['binary_label'] = binary_labels
+        labeled_data['binary_label_long'] = binary_labels_long
+        labeled_data['binary_label_short'] = binary_labels_short
+        labeled_data['exit_reason'] = exit_reasons
+        labeled_data['event_duration'] = event_durations
+        labeled_data['mfe'] = mfe_series
+        labeled_data['mae'] = mae_series
+        labeled_data['gated_consensus'] = gated_consensus
+        
+        # Compute final statistics
+        n_trades = int(realized_returns.notna().sum())
+        n_profitable = int((realized_returns > 0).sum())
+        mean_return = float(realized_returns.mean()) if n_trades > 0 else 0.0
+        
+        diagnostics["n_trades"] = n_trades
+        diagnostics["n_profitable"] = n_profitable
+        diagnostics["win_rate"] = n_profitable / n_trades if n_trades > 0 else 0.0
+        diagnostics["mean_return"] = mean_return
+        diagnostics["barrier_stats"] = {
+            "tp_mean": float(tp_final.mean()),
+            "tp_std": float(tp_final.std()),
+            "sl_mean": float(sl_final.mean()),
+            "sl_std": float(sl_final.std()),
+            "trend_alpha": trend_alpha,
+            "z_magnitude_scale": z_magnitude_scale,
+        }
+        
+        tprint(
+            f"📊 Final results: {n_trades} trades, {n_profitable} profitable ({diagnostics['win_rate']:.1%}), "
+            f"mean return={mean_return:.4f}",
+            "INFO"
+        )
+        
+    except Exception as e:
+        tprint(f"⚠️ Z-score gated triple barrier labeling failed: {e}", "WARNING")
+        import traceback
+        traceback.print_exc()
+    
+    return labeled_data, diagnostics
+
+
+def diagnose_quantile_lookahead_bias(
+    vol_scaled: pd.Series,
+    low_q: float = 0.3,
+    high_q: float = 0.7,
+    print_results: bool = True,
+) -> Dict[str, Any]:
+    """Diagnose look-ahead bias in quantile-based labeling.
+    
+    Computes per-year statistics to detect if global quantile thresholds
+    cause systematic bias across time periods (a sign of look-ahead bias).
+    
+    Args:
+        vol_scaled: Volatility-scaled returns series (must have DatetimeIndex)
+        low_q: Lower quantile threshold
+        high_q: Upper quantile threshold
+        print_results: If True, print diagnostic summary
+    
+    Returns:
+        Dictionary with per-year statistics and bias indicators
+    """
+    diagnostics: Dict[str, Any] = {
+        "global_thresholds": {},
+        "per_year": {},
+        "bias_detected": False,
+        "bias_severity": "none",
+        "recommendation": "",
+    }
+    
+    try:
+        v = vol_scaled.dropna()
+        if len(v) < 50:
+            diagnostics["error"] = "Insufficient data for diagnosis"
+            return diagnostics
+        
+        # Global thresholds (what global quantile labeling uses)
+        global_low = float(v.quantile(low_q))
+        global_high = float(v.quantile(high_q))
+        global_median = float(v.median())
+        
+        diagnostics["global_thresholds"] = {
+            "low_q": low_q,
+            "high_q": high_q,
+            "low_val": global_low,
+            "high_val": global_high,
+            "median": global_median,
+        }
+        
+        # Per-year analysis
+        if not isinstance(vol_scaled.index, pd.DatetimeIndex):
+            diagnostics["error"] = "Index must be DatetimeIndex for per-year analysis"
+            return diagnostics
+        
+        years = vol_scaled.index.year
+        unique_years = sorted(years.unique())
+        
+        year_stats = []
+        for year in unique_years:
+            year_mask = years == year
+            year_data = vol_scaled[year_mask].dropna()
+            
+            if len(year_data) < 20:
+                continue
+            
+            year_median = float(year_data.median())
+            year_q30 = float(year_data.quantile(low_q))
+            year_q70 = float(year_data.quantile(high_q))
+            
+            # How does this year's data compare to global thresholds?
+            n_above_global_high = int((year_data >= global_high).sum())
+            n_below_global_low = int((year_data <= global_low).sum())
+            n_total = len(year_data)
+            
+            pct_positive_global = n_above_global_high / n_total if n_total > 0 else 0
+            pct_negative_global = n_below_global_low / n_total if n_total > 0 else 0
+            
+            stats = {
+                "year": int(year),
+                "n_samples": n_total,
+                "median": year_median,
+                f"q{int(low_q*100)}": year_q30,
+                f"q{int(high_q*100)}": year_q70,
+                "pct_positive_global_thresh": pct_positive_global,
+                "pct_negative_global_thresh": pct_negative_global,
+                "median_vs_global_high": year_median - global_high,
+            }
+            year_stats.append(stats)
+            diagnostics["per_year"][int(year)] = stats
+        
+        # Detect bias: if early years have very high positive rates
+        if len(year_stats) >= 2:
+            early_years = year_stats[:len(year_stats)//2]
+            late_years = year_stats[len(year_stats)//2:]
+            
+            early_pos_rate = np.mean([s["pct_positive_global_thresh"] for s in early_years])
+            late_pos_rate = np.mean([s["pct_positive_global_thresh"] for s in late_years])
+            
+            early_neg_rate = np.mean([s["pct_negative_global_thresh"] for s in early_years])
+            late_neg_rate = np.mean([s["pct_negative_global_thresh"] for s in late_years])
+            
+            diagnostics["early_vs_late"] = {
+                "early_years": [s["year"] for s in early_years],
+                "late_years": [s["year"] for s in late_years],
+                "early_positive_rate": early_pos_rate,
+                "late_positive_rate": late_pos_rate,
+                "early_negative_rate": early_neg_rate,
+                "late_negative_rate": late_neg_rate,
+                "positive_rate_diff": early_pos_rate - late_pos_rate,
+            }
+            
+            # Detect bias severity
+            pos_diff = early_pos_rate - late_pos_rate
+            if pos_diff > 0.4 or early_pos_rate > 0.9:
+                diagnostics["bias_detected"] = True
+                diagnostics["bias_severity"] = "severe"
+                diagnostics["recommendation"] = (
+                    "SEVERE look-ahead bias detected. Early years have nearly 100% positive labels. "
+                    "Use rolling quantiles (use_rolling_quantiles=True) to eliminate bias."
+                )
+            elif pos_diff > 0.2:
+                diagnostics["bias_detected"] = True
+                diagnostics["bias_severity"] = "moderate"
+                diagnostics["recommendation"] = (
+                    "Moderate look-ahead bias detected. Consider using rolling quantiles."
+                )
+            elif pos_diff > 0.1:
+                diagnostics["bias_detected"] = True
+                diagnostics["bias_severity"] = "mild"
+                diagnostics["recommendation"] = (
+                    "Mild temporal drift detected. Rolling quantiles recommended for robustness."
+                )
+            else:
+                diagnostics["bias_severity"] = "none"
+                diagnostics["recommendation"] = (
+                    "No significant look-ahead bias detected. Global quantiles are acceptable."
+                )
+        
+        if print_results:
+            print("\n" + "=" * 70)
+            print("QUANTILE LOOK-AHEAD BIAS DIAGNOSTIC")
+            print("=" * 70)
+            print(f"\nGlobal Thresholds (computed across ALL data):")
+            print(f"  q{int(low_q*100)} (negative threshold): {global_low:.4f}")
+            print(f"  q{int(high_q*100)} (positive threshold): {global_high:.4f}")
+            print(f"  median: {global_median:.4f}")
+            
+            print(f"\nPer-Year Statistics:")
+            print("-" * 70)
+            print(f"{'Year':<6} {'N':<6} {'Median':<10} {'q30':<10} {'q70':<10} {'%Pos(global)':<12} {'%Neg(global)':<12}")
+            print("-" * 70)
+            for s in year_stats:
+                print(
+                    f"{s['year']:<6} {s['n_samples']:<6} {s['median']:<10.4f} "
+                    f"{s[f'q{int(low_q*100)}']:<10.4f} {s[f'q{int(high_q*100)}']:<10.4f} "
+                    f"{s['pct_positive_global_thresh']*100:<12.1f} "
+                    f"{s['pct_negative_global_thresh']*100:<12.1f}"
+                )
+            
+            print("\n" + "-" * 70)
+            if diagnostics["bias_detected"]:
+                print(f"⚠️  BIAS DETECTED: {diagnostics['bias_severity'].upper()}")
+            else:
+                print("✅ No significant bias detected")
+            print(f"\n{diagnostics['recommendation']}")
+            print("=" * 70 + "\n")
+    
+    except Exception as e:
+        diagnostics["error"] = str(e)
+        if print_results:
+            print(f"⚠️ Diagnosis failed: {e}")
+    
+    return diagnostics
 
 
 def create_regime_aware_quantile_labels_from_vol_scaled_returns(
@@ -7159,24 +8281,305 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
 
             quantile_low_q = float(config.get("quantile_low_q", 0.3))
             quantile_high_q = float(config.get("quantile_high_q", 0.7))
+            
+            # Labeling method selection:
+            # - "rolling": Rolling quantiles with fixed thresholds (default, no look-ahead bias)
+            # - "conditional": Conditional quantile regression Q_τ(z|X) - context-adaptive
+            # - "zscore_gated": Full pipeline - Conditional quantile filter THEN triple barrier
+            #                   [ Features ] → Quantile Filter → Entry Candidate → Triple Barrier → Labels
+            # - "global": Global quantiles (legacy, has look-ahead bias)
+            labeling_method = str(config.get("labeling_method", "rolling")).lower()
+            
+            # Rolling quantile parameters
+            use_rolling_quantiles = labeling_method == "rolling" or bool(config.get("use_rolling_quantiles", True))
+            rolling_lookback_bars = int(config.get("rolling_quantile_lookback_bars", 3000))  # ~31 days at 15m
+            rolling_min_periods = int(config.get("rolling_quantile_min_periods", 300))  # ~3 days at 15m
+            
+            # Conditional quantile regression parameters (for "conditional" and "zscore_gated")
+            use_conditional_quantiles = labeling_method == "conditional"
+            use_zscore_gated_pipeline = labeling_method == "zscore_gated"
+            # Asymmetric quantiles for crypto (longs more selective, shorts less selective)
+            conditional_quantile_long = float(config.get("conditional_quantile_long", 0.6))  # Q_0.6(z|X) for longs
+            conditional_quantile_short = float(config.get("conditional_quantile_short", 0.35))  # Q_0.35(z|X) for shorts
+            conditional_asymmetric = bool(config.get("conditional_asymmetric_crypto", True))  # Use crypto-optimized asymmetry
+            conditional_retrain_freq = int(config.get("conditional_retrain_frequency", 500))
+            conditional_min_train = int(config.get("conditional_min_train_samples", 500))
+            
+            # Z-score gated pipeline parameters (for "zscore_gated" method)
+            # Barrier multipliers (× volatility)
+            zg_k_tp_base = float(config.get("zscore_gated_k_tp_base", 1.5))
+            zg_k_sl_base = float(config.get("zscore_gated_k_sl_base", 1.0))
+            # Asymmetric multipliers for longs vs shorts (crypto upward bias)
+            zg_k_tp_long_mult = float(config.get("zscore_gated_k_tp_long_mult", 1.1))
+            zg_k_sl_long_mult = float(config.get("zscore_gated_k_sl_long_mult", 0.9))
+            zg_k_tp_short_mult = float(config.get("zscore_gated_k_tp_short_mult", 1.0))
+            zg_k_sl_short_mult = float(config.get("zscore_gated_k_sl_short_mult", 1.0))
+            # Z-score magnitude scaling: k_TP = k0 × (1 + scale × |z|)
+            zg_z_magnitude_scale = float(config.get("zscore_gated_z_magnitude_scale", 0.3))
+            # Trend adjustment (linear): TP_adj = TP × (1 + α × trend_strength)
+            zg_trend_alpha = float(config.get("zscore_gated_trend_alpha", 0.3))
+            zg_trend_lookback = int(config.get("zscore_gated_trend_lookback", 20))
+            # Clipping bounds (as multiples of base volatility)
+            zg_tp_min_mult = float(config.get("zscore_gated_tp_min_mult", 0.5))
+            zg_tp_max_mult = float(config.get("zscore_gated_tp_max_mult", 4.0))
+            zg_sl_min_mult = float(config.get("zscore_gated_sl_min_mult", 0.3))
+            zg_sl_max_mult = float(config.get("zscore_gated_sl_max_mult", 2.0))
+            
+            # Run look-ahead bias diagnostic if enabled
+            if config.get("diagnose_quantile_bias", False):
+                tprint("🔍 Running quantile look-ahead bias diagnostic...", "INFO")
+                bias_diag = diagnose_quantile_lookahead_bias(
+                    vol_scaled=vol_scaled_returns,
+                    low_q=quantile_low_q,
+                    high_q=quantile_high_q,
+                    print_results=True,
+                )
+                if bias_diag.get("bias_detected", False) and labeling_method == "global":
+                    tprint(
+                        f"⚠️ Look-ahead bias detected ({bias_diag.get('bias_severity', 'unknown')}) "
+                        "with global quantiles. Consider using labeling_method='rolling', 'conditional', or 'zscore_gated'",
+                        "WARNING"
+                    )
 
             regimes_for_labeling = None
             if config.get("enable_regime_aware_quantiles", True) and "hmm_regime_label_1h" in market_data.columns:
                 regimes_for_labeling = market_data["hmm_regime_label_1h"]
 
-            if regimes_for_labeling is not None:
-                quantile_labels = create_regime_aware_quantile_labels_from_vol_scaled_returns(
-                    vol_scaled=vol_scaled_returns,
-                    regimes=regimes_for_labeling,
-                    low_q=quantile_low_q,
-                    high_q=quantile_high_q,
+            # Store conditional quantile diagnostics if used
+            conditional_quantile_diagnostics: Dict[str, Any] = {}
+            zscore_gated_diagnostics: Dict[str, Any] = {}
+
+            if use_zscore_gated_pipeline:
+                # =====================================================================
+                # FULL PIPELINE: Z-Score Gated Triple Barrier
+                # =====================================================================
+                # [ Market Features ]
+                #         ↓
+                # Conditional Quantile Filter
+                #         ↓   (z > Q_long OR z < Q_short)
+                #    Trade Entry Candidate
+                #         ↓
+                # Triple Barrier Labeling (volatility-aware, trend-adjusted)
+                #         ↓
+                #    Final Supervised Target
+                # =====================================================================
+                tprint(
+                    f"📊 Using Z-SCORE GATED TRIPLE BARRIER PIPELINE:\n"
+                    f"   - Quantile filter: Q_long={conditional_quantile_long}, Q_short={conditional_quantile_short}\n"
+                    f"   - Barrier scaling: k_TP={zg_k_tp_base}, k_SL={zg_k_sl_base}\n"
+                    f"   - Z-score magnitude scale: {zg_z_magnitude_scale}\n"
+                    f"   - Trend alpha: {zg_trend_alpha}",
+                    "INFO"
                 )
+                
+                # Build meta-features for conditional quantile model
+                meta_features_for_cond = create_meta_features(
+                    df=market_data,
+                    signals=primary_signals,
+                    volume_available=volume_available,
+                    include_raw_signals=False,
+                    use_kalman=True,
+                )
+                
+                # Stable features for conditioning
+                stable_features = [
+                    'volatility_1h', 'volatility_4h', 'volatility_1d', 'volatility_ema',
+                    'vol_of_vol', 'momentum_20', 'momentum_ema', 'rsi_kalman',
+                    'ma_distance_kalman', 'kalman_trend', 'range_position',
+                    'hour_sin', 'hour_cos', 'day_of_week',
+                ]
+                feature_subset = [f for f in stable_features if f in meta_features_for_cond.columns]
+                
+                # Prepare ATR series for trailing stops
+                atr_for_trailing = None
+                trail_mult_for_pipeline = None
+                if 'atr_14' in market_data.columns:
+                    atr_for_trailing = market_data['atr_14']
+                    # Use a reasonable trailing distance (1.5 ATR by default)
+                    trail_mult_for_pipeline = float(config.get("zscore_gated_trail_atr_mult", 1.5))
+                
+                # Run the full z-score gated pipeline
+                gated_labeled_data, zscore_gated_diagnostics = compute_zscore_gated_triple_barrier_labels(
+                    df=market_data,
+                    features=meta_features_for_cond,
+                    signals=primary_signals,
+                    volatility=volatility_1d,
+                    # Conditional quantile parameters
+                    quantile_long=conditional_quantile_long,
+                    quantile_short=conditional_quantile_short,
+                    asymmetric_crypto=conditional_asymmetric,
+                    quantile_lookback=rolling_lookback_bars,
+                    quantile_min_train=conditional_min_train,
+                    quantile_retrain_freq=conditional_retrain_freq,
+                    # Barrier parameters
+                    k_tp_base=zg_k_tp_base,
+                    k_sl_base=zg_k_sl_base,
+                    k_tp_long_mult=zg_k_tp_long_mult,
+                    k_sl_long_mult=zg_k_sl_long_mult,
+                    k_tp_short_mult=zg_k_tp_short_mult,
+                    k_sl_short_mult=zg_k_sl_short_mult,
+                    # Z-score scaling
+                    z_magnitude_scale=zg_z_magnitude_scale,
+                    # Trend adjustment
+                    trend_alpha=zg_trend_alpha,
+                    trend_lookback=zg_trend_lookback,
+                    # Clipping
+                    tp_min_mult=zg_tp_min_mult,
+                    tp_max_mult=zg_tp_max_mult,
+                    sl_min_mult=zg_sl_min_mult,
+                    sl_max_mult=zg_sl_max_mult,
+                    # Other
+                    horizon=horizon,
+                    transaction_cost=transaction_cost,
+                    min_event_spacing=min_event_spacing,
+                    atr_series=atr_for_trailing,
+                    trail_distance_atr_mult=trail_mult_for_pipeline,
+                    feature_subset=feature_subset if feature_subset else None,
+                )
+                
+                # Extract labels from the gated pipeline output
+                # The pipeline returns a DataFrame with all labeling information
+                quantile_labels = gated_labeled_data.get('binary_label', pd.Series(index=market_data.index, dtype=float))
+                quantile_labels_short = gated_labeled_data.get('binary_label_short', pd.Series(index=market_data.index, dtype=float))
+                
+                # Override realized_returns with the gated pipeline results
+                realized_returns = gated_labeled_data.get('realized_return', realized_returns)
+                
+                # Use gated consensus instead of original
+                gated_consensus = gated_labeled_data.get('gated_consensus', pd.Series(0, index=market_data.index))
+                primary_signals['consensus'] = gated_consensus
+                
+                # Log diagnostics
+                n_trades = zscore_gated_diagnostics.get('n_trades', 0)
+                win_rate = zscore_gated_diagnostics.get('win_rate', 0.0)
+                mean_ret = zscore_gated_diagnostics.get('mean_return', 0.0)
+                n_gated_long = zscore_gated_diagnostics.get('n_gated_long', 0)
+                n_gated_short = zscore_gated_diagnostics.get('n_gated_short', 0)
+                
+                tprint(
+                    f"📊 Z-Score Gated Pipeline Results:\n"
+                    f"   - Gated entries: {n_gated_long} longs, {n_gated_short} shorts\n"
+                    f"   - Trades executed: {n_trades}, Win rate: {win_rate:.1%}, Mean return: {mean_ret:.4f}",
+                    "INFO"
+                )
+                
+                # Store additional columns from the gated pipeline
+                if 'tp_threshold' in gated_labeled_data.columns:
+                    labeled_data['tp_threshold'] = gated_labeled_data['tp_threshold']
+                if 'sl_threshold' in gated_labeled_data.columns:
+                    labeled_data['sl_threshold'] = gated_labeled_data['sl_threshold']
+                if 'trend_strength' in gated_labeled_data.columns:
+                    labeled_data['trend_strength'] = gated_labeled_data['trend_strength']
+                if 'z_score' in gated_labeled_data.columns:
+                    labeled_data['z_score'] = gated_labeled_data['z_score']
+                
+            elif use_conditional_quantiles:
+                # ADVANCED: Conditional quantile regression with asymmetric tails
+                # Predicts Q_long(z|X) and Q_short(z|X) separately for crypto markets
+                tprint(
+                    f"📊 Using CONDITIONAL quantile regression: "
+                    f"Q_long={conditional_quantile_long}, Q_short={conditional_quantile_short}, "
+                    f"asymmetric={conditional_asymmetric}",
+                    "INFO"
+                )
+                
+                # Build meta-features first (needed for conditioning)
+                # Use a minimal feature set for speed during labeling
+                meta_features_for_cond = create_meta_features(
+                    df=market_data,
+                    signals=primary_signals,
+                    volume_available=volume_available,
+                    include_raw_signals=False,
+                    use_kalman=True,
+                )
+                
+                # Select stable features for conditioning (avoid noisy/leaky ones)
+                stable_features = [
+                    'volatility_1h', 'volatility_4h', 'volatility_1d', 'volatility_ema',
+                    'vol_of_vol', 'momentum_20', 'momentum_ema', 'rsi_kalman',
+                    'ma_distance_kalman', 'kalman_trend', 'range_position',
+                    'hour_sin', 'hour_cos', 'day_of_week',
+                ]
+                feature_subset = [f for f in stable_features if f in meta_features_for_cond.columns]
+                
+                # Returns: labels (directional), labels_long, labels_short, diagnostics
+                cond_labels, cond_labels_long, cond_labels_short, conditional_quantile_diagnostics = create_conditional_quantile_labels(
+                    realized_returns=realized_returns,
+                    features=meta_features_for_cond,
+                    volatility=volatility_1d,
+                    quantile_long=conditional_quantile_long,
+                    quantile_short=conditional_quantile_short,
+                    lookback_bars=rolling_lookback_bars,
+                    min_train_samples=conditional_min_train,
+                    retrain_frequency=conditional_retrain_freq,
+                    vol_lookback=100,
+                    use_lightgbm=True,
+                    n_estimators=50,
+                    max_depth=4,
+                    feature_subset=feature_subset if feature_subset else None,
+                    asymmetric_crypto=conditional_asymmetric,
+                )
+                
+                # Convert directional labels to binary for compatibility with downstream code
+                # For binary_labels: 1 = profitable trade (long or short), 0 = unprofitable
+                # We use the long labels for the main binary_labels since direction is in consensus
+                quantile_labels = cond_labels_long.copy()
+                # Store short labels separately for potential use
+                quantile_labels_short = cond_labels_short.copy()
+                
+                # Log diagnostics
+                if conditional_quantile_diagnostics:
+                    n_long = conditional_quantile_diagnostics.get('n_long', 0)
+                    n_short = conditional_quantile_diagnostics.get('n_short', 0)
+                    cov_long = conditional_quantile_diagnostics.get('coverage_long', np.nan)
+                    cov_short = conditional_quantile_diagnostics.get('coverage_short', np.nan)
+                    tprint(
+                        f"📊 Conditional quantile results: {n_long} longs, {n_short} shorts",
+                        "INFO"
+                    )
+                    if np.isfinite(cov_long) and np.isfinite(cov_short):
+                        tprint(
+                            f"   Calibration: long={cov_long:.1%} (exp={1.0-conditional_quantile_long:.1%}), "
+                            f"short={cov_short:.1%} (exp={conditional_quantile_short:.1%})",
+                            "INFO"
+                        )
+                    
+            elif use_rolling_quantiles:
+                # Use rolling quantiles to eliminate look-ahead bias
+                tprint(f"📊 Using ROLLING quantiles (lookback={rolling_lookback_bars} bars) to prevent look-ahead bias", "INFO")
+                if regimes_for_labeling is not None:
+                    quantile_labels = create_rolling_regime_aware_quantile_labels_from_vol_scaled_returns(
+                        vol_scaled=vol_scaled_returns,
+                        regimes=regimes_for_labeling,
+                        low_q=quantile_low_q,
+                        high_q=quantile_high_q,
+                        lookback_bars=rolling_lookback_bars,
+                        min_periods=rolling_min_periods,
+                    )
+                else:
+                    quantile_labels = create_rolling_quantile_labels_from_vol_scaled_returns(
+                        vol_scaled=vol_scaled_returns,
+                        low_q=quantile_low_q,
+                        high_q=quantile_high_q,
+                        lookback_bars=rolling_lookback_bars,
+                        min_periods=rolling_min_periods,
+                    )
             else:
-                quantile_labels = create_quantile_labels_from_vol_scaled_returns(
-                    vol_scaled=vol_scaled_returns,
-                    low_q=quantile_low_q,
-                    high_q=quantile_high_q,
-                )
+                # Legacy: global quantiles (has look-ahead bias)
+                tprint("⚠️ Using GLOBAL quantiles (may have look-ahead bias)", "WARNING")
+                if regimes_for_labeling is not None:
+                    quantile_labels = create_regime_aware_quantile_labels_from_vol_scaled_returns(
+                        vol_scaled=vol_scaled_returns,
+                        regimes=regimes_for_labeling,
+                        low_q=quantile_low_q,
+                        high_q=quantile_high_q,
+                    )
+                else:
+                    quantile_labels = create_quantile_labels_from_vol_scaled_returns(
+                        vol_scaled=vol_scaled_returns,
+                        low_q=quantile_low_q,
+                        high_q=quantile_high_q,
+                    )
 
             relabel_profitable_timeouts = bool(config.get("relabel_profitable_timeouts", True))
             profitable_timeout_return_threshold = float(
@@ -8224,9 +9627,9 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                             if target_trades_per_day_max < target_trades_per_day_min:
                                 target_trades_per_day_max = target_trades_per_day_min
 
-                            # Thresholds for meta-gating search: fairly loose probability thresholds
-                            # and reduced expected-return multipliers so that gates are easier to satisfy
-                            prob_thresholds = [0.50, 0.55, 0.60, 0.65, 0.70]
+                            # Thresholds for meta-gating search: probability thresholds starting at 0.55
+                            # to ensure meaningful filtering, with reduced expected-return multipliers
+                            prob_thresholds = [0.55, 0.60, 0.65, 0.70, 0.75]
                             # With tx_cost ≈ 0.3%, these multipliers correspond to ≈0.075%–0.30%
                             # expected-return thresholds, instead of the previous 0.15%–0.60% range.
                             er_multipliers = [0.25, 0.5, 0.75, 1.0]

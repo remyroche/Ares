@@ -642,67 +642,30 @@ def compute_learnability_with_calibration(
         kf = KFold(n_splits=cv_splits, shuffle=True, random_state=42)
         cv_splits_indices = list(kf.split(X_clean))
 
-    # Cost/return-aware sample weights with slight positive class bias (1.2x)
+    # Enhanced Weighting Logic (Signal vs Magnitude) for HPO scoring
+    # Step A: Log-Dampening (Taming the Whales)
+    # NetReturn = (ExitPrice - EntryPrice)/EntryPrice - (1.5 * FeeRate)
+    # returns_clean is realized_returns (Gross - Cost).
+    # Assuming standard Cost = 0.003
+    # NetReturn = (realized + 0.003) - 1.5 * 0.003 = realized - 0.0015
+
+    fee_rate_fixed = 0.003
     returns_array = returns_clean.fillna(0.0).to_numpy(dtype=float)
-    y_array = y_clean.to_numpy(dtype=float)
 
-    sample_weights = np.ones_like(returns_array, dtype=float)
+    # Calculate Custom Net Return
+    gross_approx = returns_array + fee_rate_fixed
+    net_return_custom = gross_approx - (1.5 * fee_rate_fixed)
 
-    # Conservative positive class up-weighting
-    pos_mask = (y_array == 1.0)
-    sample_weights[pos_mask] *= 1.2
+    # RawWeight = log(1 + |NetReturn|)
+    raw_weights = np.log1p(np.abs(net_return_custom))
 
-    # Return-based weighting for label=1: linear in realized return, clipped
-    try:
-        finite_returns = returns_clean.replace([np.inf, -np.inf], np.nan).dropna().values
-        if finite_returns.size >= 50:
-            ret_clip = float(np.nanpercentile(np.abs(finite_returns), 95))
-            ret_clip = max(ret_clip, 1e-4)
-        else:
-            ret_clip = 0.02
-    except Exception:
-        ret_clip = 0.02
-
-    if ret_clip > 0:
-        ret_for_weight = np.clip(np.maximum(returns_array, 0.0), 0.0, ret_clip)
-        weight_factor = 1.0 + (ret_for_weight / ret_clip)
-        sample_weights[pos_mask] *= weight_factor[pos_mask]
-
-    # Optional: scale positive-class weights by signal strength so that
-    # high-confidence signal configurations receive slightly higher weight
-    # in the learnability scorer. We use the "signal_strength_all" meta-feature
-    # when present in X_clean, normalised and clipped for robustness. The
-    # overall strength of this effect is controlled by ``signal_strength_scale_max``.
-    signal_strength = None
-    if isinstance(X_clean, pd.DataFrame) and "signal_strength_all" in X_clean.columns:
-        try:
-            s = X_clean.loc[valid_mask, "signal_strength_all"].to_numpy(dtype=float)
-            s = np.abs(s)
-            # Robust scaling: use 90th percentile to avoid extreme values
-            if np.isfinite(s).any():
-                s_clean = s[np.isfinite(s)]
-                if s_clean.size >= 10:
-                    s_clip = float(np.nanpercentile(s_clean, 90))
-                    s_clip = max(s_clip, 1e-6)
-                else:
-                    s_clip = float(np.nanmax(s_clean)) if s_clean.size > 0 else 1.0
-                if s_clip <= 0:
-                    s_clip = 1.0
-                strength_norm = np.clip(s / s_clip, 0.0, 1.0)
-                # Map to [1.0, signal_strength_scale_max] so HPO can tune the
-                # influence of signal strength on sample weighting.
-                scale_max = max(1.0, float(signal_strength_scale_max))
-                scale_range = max(0.0, scale_max - 1.0)
-                signal_weight = 1.0 + scale_range * strength_norm
-                sample_weights[pos_mask] *= signal_weight[pos_mask]
-        except Exception:
-            # If anything goes wrong, fall back to return-only weighting.
-            pass
-
-    # Normalize weights for numerical stability
-    mean_w = float(sample_weights.mean()) if sample_weights.size > 0 else 1.0
-    if mean_w > 0:
-        sample_weights = sample_weights / mean_w
+    # Step B: Mean Normalization (Stabilizing the Model)
+    # Scale so average weight is 1.0
+    avg_weight = np.mean(raw_weights)
+    if avg_weight > 0:
+        sample_weights = raw_weights / avg_weight
+    else:
+        sample_weights = np.ones_like(raw_weights)
 
     oof_probs_full = np.full(len(X_clean), np.nan, dtype=float)
 

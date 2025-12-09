@@ -27,8 +27,8 @@ analyst_config:
         reg_lambda: 1.1236203565420875
         sampling_rate: 0.9852142919229748
         min_child_samples: 64
-        objective: regression_l1
-        metric: mae
+        objective: binary
+        metric: binary_logloss
         early_stopping_rounds: 100
         min_boost_rounds: 200
       hpo:
@@ -118,13 +118,13 @@ analyst_config:
         reg_lambda: 1.1236203565420875
         sampling_rate: 0.9852142919229748
         min_child_samples: 64
-        objective: regression_l1
-        metric: mae
+        objective: binary
+        metric: binary_logloss
         early_stopping_rounds: 100
         min_boost_rounds: 200
     knn:
       enabled: false
-      model_type: KNeighborsRegressor
+      model_type: KNeighborsClassifier
       use_float32: true
       use_isotonic_calibration: true
       use_specialist_outputs_only: true
@@ -177,7 +177,7 @@ analyst_config:
           total_time_seconds: 0.0
           n_rounds: 2
     bayesianridge:
-      model_type: BayesianRidge
+      model_type: RidgeClassifier
       use_float32: true
       use_isotonic_calibration: true
       # For Feature Set B we want full meta-gated features, not specialists-only
@@ -186,18 +186,13 @@ analyst_config:
       soft_clip_stretch: 2.0
       standardize_features: true
       params:
-        n_iter: 300
+        alpha: 1.0
         tol: 0.001
-        alpha_1: 1.0e-06
-        alpha_2: 1.0e-06
-        lambda_1: 1.0e-06
-        lambda_2: 1.0e-06
-        compute_score: true
-        fit_intercept: true
+        class_weight: balanced
       hpo:
         enabled: false
     ngboost:
-      model_type: NGBoost
+      model_type: NGBClassifier
       use_float32: true
       use_isotonic_calibration: true
       output_mean_and_variance: true

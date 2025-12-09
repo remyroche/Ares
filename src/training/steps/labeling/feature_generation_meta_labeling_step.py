@@ -10334,34 +10334,40 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             try:
                 r_unit = labeled_data['adaptive_stop_threshold'].abs().replace(0.0, np.nan)
                 r_multiple = (labeled_data['realized_return'] / r_unit).replace([np.inf, -np.inf], np.nan)
+                labeled_data['r_multiple'] = r_multiple.astype(np.float32)
 
-                strength = r_multiple.abs().clip(lower=0.5, upper=3.0)
-                confidence = labeled_data['meta_probability'].astype(float).clip(lower=0.2, upper=1.0)
+                # Enhanced Weighting Logic (Signal vs Magnitude)
+                # Step A: Log-Dampening (Taming the Whales)
+                # NetReturn = (ExitPrice - EntryPrice)/EntryPrice - (1.5 * FeeRate)
+                # We approximate NetReturn from realized_return (which is Gross - transaction_cost)
+                # So Gross = realized_return + transaction_cost
+                # NetReturn = Gross - 1.5 * 0.003
 
-                raw_weight = np.sqrt(strength * confidence)
-                sample_weight = raw_weight.clip(lower=0.1, upper=5.0)
+                fee_rate_fixed = 0.003  # Fixed as per instruction "FeeRate is 0.3" (0.3% -> 0.003)
+                # Use fee_rate_fixed as transaction_cost for backing out gross return,
+                # as the prompt implies FeeRate is the transaction cost constant.
+                gross_return = labeled_data['realized_return'] + fee_rate_fixed
+                net_return_custom = gross_return - (1.5 * fee_rate_fixed)
 
-                # Exploit ensemble disagreement as anti-signal for downstream training weights
-                try:
-                    if 'meta_features_enhanced' in locals() and isinstance(meta_features_enhanced, pd.DataFrame):
-                        if 'signal_disagreement' in meta_features_enhanced.columns:
-                            dis = pd.to_numeric(meta_features_enhanced['signal_disagreement'], errors="coerce")
-                            dis = dis.reindex(labeled_data.index)
-                            if dis.notna().any():
-                                dis_filled = dis.fillna(dis.median())
-                                dis_norm = (dis_filled - dis_filled.min()) / (dis_filled.max() - dis_filled.min() + 1e-8)
-                                # High disagreement → stronger down-weight (≈0.5–1.0)
-                                dis_factor = 1.0 - 0.5 * dis_norm.clip(0.0, 1.0)
-                                sample_weight = sample_weight * dis_factor
-                except Exception as w_disc_exc:
-                    tprint(f"⚠️ Disagreement-based weighting failed, keeping base sample_weight: {w_disc_exc}", "WARNING")
+                # RawWeight = log(1 + |NetReturn|)
+                raw_weight = np.log1p(net_return_custom.abs())
+
+                # Step B: Mean Normalization (Stabilizing the Model)
+                # Scale so average weight is 1.0
+                avg_weight = raw_weight.mean()
+                if avg_weight > 0:
+                    final_weight = raw_weight / avg_weight
+                else:
+                    final_weight = raw_weight.fillna(1.0)
 
                 if 'binary_label' in labeled_data.columns:
-                    sample_weight = sample_weight.where(~labeled_data['binary_label'].isna())
+                    final_weight = final_weight.where(~labeled_data['binary_label'].isna())
 
-                labeled_data['r_multiple'] = r_multiple.astype(np.float32)
-                labeled_data['target_sample_weight'] = sample_weight.astype(np.float32)
-            except Exception:
+                labeled_data['target_sample_weight'] = final_weight.astype(np.float32)
+
+                tprint(f"⚖️ Applied enhanced sample weighting: mean={final_weight.mean():.4f}, max={final_weight.max():.4f}", "INFO")
+            except Exception as e:
+                tprint(f"⚠️ Weight calculation failed: {e}", "WARNING")
                 labeled_data['target_sample_weight'] = np.float32(1.0)
 
             # Rename targets to "fused" for backward compatibility with subsequent steps

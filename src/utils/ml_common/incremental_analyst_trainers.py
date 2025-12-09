@@ -5,7 +5,7 @@ This module provides incremental training for Analyst base models:
 - LGBM: incremental training via init_model
 - NGBoost: incremental training via warm_start/init_model
 - KNN: incremental addition of points
-- BayesianRidge: incremental training via partial_fit
+- RidgeClassifier (replaces BayesianRidge): incremental training via warm_start/partial_fit simulation
 
 Key Features:
 - Train on burn-in period -> Generate OOF for next 14 days -> Resume training
@@ -21,6 +21,7 @@ Usage:
     trainer = IncrementalAnalystTrainer(
         model_id="ETHUSDT_binance_15m",
         execution_mode="blank",  # 1 year for blank, 3+ years for full
+        task_type="classification" # Now defaults to classification for Analyst models
     )
     results = trainer.train_all_models(X, y, data_start, data_end)
     ```
@@ -63,7 +64,7 @@ except ImportError:
 try:
     import ngboost
     from ngboost import NGBRegressor, NGBClassifier
-    from ngboost.distns import Normal
+    from ngboost.distns import Normal, Bernoulli
     NGBOOST_AVAILABLE = True
 except ImportError:
     NGBOOST_AVAILABLE = False
@@ -71,10 +72,11 @@ except ImportError:
     NGBRegressor = None
     NGBClassifier = None
     Normal = None
+    Bernoulli = None
 
 try:
     from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
-    from sklearn.linear_model import BayesianRidge
+    from sklearn.linear_model import BayesianRidge, RidgeClassifier
     from sklearn.preprocessing import StandardScaler
     from sklearn.isotonic import IsotonicRegression
     from sklearn.base import BaseEstimator, RegressorMixin, ClassifierMixin, clone
@@ -85,6 +87,7 @@ except ImportError:
     KNeighborsClassifier = None
     KNeighborsRegressor = None
     BayesianRidge = None
+    RidgeClassifier = None
     StandardScaler = None
     IsotonicRegression = None
     BaseEstimator = None
@@ -136,7 +139,7 @@ class IncrementalTrainingConfig:
     oof_batch_days: int = OOF_BATCH_DAYS
     
     # Task type
-    task_type: str = "regression"  # "classification" or "regression"
+    task_type: str = "classification"  # Defaulting to classification as per request
     
     # HPO configuration - runs ONCE at burn-in only (NOT during incremental windows)
     # This finds good hyperparameters on the initial data, then warm-starts from there
@@ -155,8 +158,8 @@ class IncrementalTrainingConfig:
     sensitive_params_knn: List[str] = field(default_factory=lambda: [
         'n_neighbors', 'leaf_size'
     ])
-    sensitive_params_bayesian: List[str] = field(default_factory=lambda: [
-        'alpha_1', 'alpha_2', 'lambda_1', 'lambda_2'
+    sensitive_params_ridge: List[str] = field(default_factory=lambda: [
+        'alpha', 'tol'
     ])
     
     # Neighborhood search radius for HPO (percentage of default value)
@@ -243,7 +246,7 @@ class CalibratedModel(BaseEstimator, RegressorMixin):
     Handles both regression and classification (via probability).
     """
 
-    def __init__(self, base_model, task_type='regression'):
+    def __init__(self, base_model, task_type='classification'):
         self.base_model = base_model
         self.task_type = task_type
         self.calibrator = IsotonicRegression(out_of_bounds='clip', increasing='auto')
@@ -257,8 +260,18 @@ class CalibratedModel(BaseEstimator, RegressorMixin):
 
         # Get base predictions
         try:
-            if self.task_type == 'classification' and hasattr(self.base_model, 'predict_proba'):
-                raw_preds = self.base_model.predict_proba(X_val)[:, 1]
+            if self.task_type == 'classification':
+                if hasattr(self.base_model, 'predict_proba'):
+                    # Use probability of positive class
+                    raw_preds = self.base_model.predict_proba(X_val)[:, 1]
+                elif hasattr(self.base_model, 'decision_function'):
+                    # For RidgeClassifier etc, map decision function to 0-1 via sigmoid
+                    # or just rely on isotonic to map decision score -> probability
+                    raw_preds = self.base_model.decision_function(X_val)
+                    if raw_preds.ndim > 1: raw_preds = raw_preds[:, 0]
+                else:
+                    # Fallback to binary pred if nothing else (poor calibration source)
+                    raw_preds = self.base_model.predict(X_val)
             else:
                 raw_preds = self.base_model.predict(X_val)
         except Exception as e:
@@ -275,13 +288,35 @@ class CalibratedModel(BaseEstimator, RegressorMixin):
 
     def predict(self, X):
         """Predict with calibration."""
-        if self.task_type == 'classification' and hasattr(self.base_model, 'predict_proba'):
-            raw_preds = self.base_model.predict_proba(X)[:, 1]
-        else:
-            raw_preds = self.base_model.predict(X)
+        try:
+            if self.task_type == 'classification':
+                if hasattr(self.base_model, 'predict_proba'):
+                    raw_preds = self.base_model.predict_proba(X)[:, 1]
+                elif hasattr(self.base_model, 'decision_function'):
+                    raw_preds = self.base_model.decision_function(X)
+                    if raw_preds.ndim > 1: raw_preds = raw_preds[:, 0]
+                else:
+                    raw_preds = self.base_model.predict(X)
+            else:
+                raw_preds = self.base_model.predict(X)
+        except Exception as e:
+            # Last resort fallback
+            logger.error(f"Prediction failed in wrapper: {e}")
+            return np.zeros(len(X))
 
         if self.is_calibrated:
             return self.calibrator.predict(raw_preds)
+
+        # If not calibrated and it's classification decision function,
+        # squeeze to 0-1 range roughly using sigmoid if needed,
+        # or just return raw if expected.
+        # But predict() usually returns the target variable.
+        # For classification, this wrapper `predict` returns PROBABILITY.
+
+        if self.task_type == 'classification' and hasattr(self.base_model, 'decision_function') and not hasattr(self.base_model, 'predict_proba'):
+             # Simple sigmoid fallback if no calibration
+             return 1 / (1 + np.exp(-raw_preds))
+
         return raw_preds
 
     def predict_proba(self, X):
@@ -431,6 +466,7 @@ class BaseIncrementalTrainer(ABC):
         if verbose:
             logger.info("=" * 80)
             logger.info(f"🚀 Starting Incremental {self.__class__.__name__} Training")
+            logger.info(f"   Task Type: {self.config.task_type}")
             logger.info("=" * 80)
             logger.info(f"Burn-in period: {self.config.burn_in_days} days")
         
@@ -595,8 +631,6 @@ class IncrementalLGBMTrainer(BaseIncrementalTrainer):
                 "IncrementalLGBMTrainer: no specialist features found; "
                 "using dummy feature to prevent crash."
             )
-            # Add dummy column to avoid empty dataset crash
-            # We must modify the dataframe passed (it is a copy in BaseIncrementalTrainer loop)
             train_data = train_data.copy()
             train_data['__dummy_const__'] = 0.0
             self._feature_cols = ['__dummy_const__']
@@ -605,10 +639,18 @@ class IncrementalLGBMTrainer(BaseIncrementalTrainer):
         y = train_data['__target__'].values
         X = np.nan_to_num(X, nan=0.0)
         
-        X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, shuffle=False)
+        sw = None
+        if '__weight__' in train_data.columns:
+            sw = train_data['__weight__'].values
         
-        train_ds = lgb.Dataset(X_train, label=y_train)
-        val_ds = lgb.Dataset(X_val, label=y_val, reference=train_ds)
+        if sw is not None:
+            X_train, X_val, y_train, y_val, sw_train, sw_val = train_test_split(X, y, sw, test_size=0.2, shuffle=False)
+            train_ds = lgb.Dataset(X_train, label=y_train, weight=sw_train)
+            val_ds = lgb.Dataset(X_val, label=y_val, reference=train_ds, weight=sw_val)
+        else:
+            X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, shuffle=False)
+            train_ds = lgb.Dataset(X_train, label=y_train)
+            val_ds = lgb.Dataset(X_val, label=y_val, reference=train_ds)
         
         params = self._get_default_params()
         params.update(self._best_params)
@@ -632,7 +674,6 @@ class IncrementalLGBMTrainer(BaseIncrementalTrainer):
     
     def _train_incremental(self, new_data: pd.DataFrame, full_train_data: pd.DataFrame, window: IncrementalTrainingWindow, verbose: bool) -> CalibratedModel:
         if not self._feature_cols:
-             # Should have been set by initial train, but if not:
              self._feature_cols = self._get_feature_cols(full_train_data)
              if not self._feature_cols:
                  full_train_data = full_train_data.copy()
@@ -643,10 +684,18 @@ class IncrementalLGBMTrainer(BaseIncrementalTrainer):
         y = full_train_data['__target__'].values
         X = np.nan_to_num(X, nan=0.0)
         
-        X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, shuffle=False)
+        sw = None
+        if '__weight__' in full_train_data.columns:
+            sw = full_train_data['__weight__'].values
         
-        train_ds = lgb.Dataset(X_train, label=y_train)
-        val_ds = lgb.Dataset(X_val, label=y_val, reference=train_ds)
+        if sw is not None:
+            X_train, X_val, y_train, y_val, sw_train, sw_val = train_test_split(X, y, sw, test_size=0.2, shuffle=False)
+            train_ds = lgb.Dataset(X_train, label=y_train, weight=sw_train)
+            val_ds = lgb.Dataset(X_val, label=y_val, reference=train_ds, weight=sw_val)
+        else:
+            X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, shuffle=False)
+            train_ds = lgb.Dataset(X_train, label=y_train)
+            val_ds = lgb.Dataset(X_val, label=y_val, reference=train_ds)
         
         params = self._get_default_params()
         params.update(self._best_params)
@@ -669,10 +718,8 @@ class IncrementalLGBMTrainer(BaseIncrementalTrainer):
     
     def _predict(self, pred_data: pd.DataFrame) -> pd.DataFrame:
         if not self._feature_cols:
-             # Just in case
              return pd.DataFrame({'prediction': 0}, index=pred_data.index)
 
-        # Handle dummy feature if needed
         if '__dummy_const__' in self._feature_cols and '__dummy_const__' not in pred_data:
             pred_data = pred_data.copy()
             pred_data['__dummy_const__'] = 0.0
@@ -680,7 +727,6 @@ class IncrementalLGBMTrainer(BaseIncrementalTrainer):
         X = pred_data[self._feature_cols].values.astype(np.float32)
         X = np.nan_to_num(X, nan=0.0)
         
-        # Predict using calibrated wrapper
         preds = self._current_model.predict(X)
         
         if self.config.task_type == 'classification':
@@ -689,7 +735,6 @@ class IncrementalLGBMTrainer(BaseIncrementalTrainer):
             return pd.DataFrame({'prediction': preds}, index=pred_data.index)
 
     def _run_burnin_hpo(self, train_data, window, verbose):
-        """Run HPO once at burn-in to find good hyperparameters."""
         if not OPTUNA_AVAILABLE: return None
 
         if not self._feature_cols:
@@ -699,7 +744,6 @@ class IncrementalLGBMTrainer(BaseIncrementalTrainer):
                  train_data['__dummy_const__'] = 0.0
                  self._feature_cols = ['__dummy_const__']
 
-        # Ensure dummy column exists in train_data if needed
         if '__dummy_const__' in self._feature_cols and '__dummy_const__' not in train_data:
             train_data = train_data.copy()
             train_data['__dummy_const__'] = 0.0
@@ -732,7 +776,6 @@ class IncrementalLGBMTrainer(BaseIncrementalTrainer):
             dtrain = lgb.Dataset(X_train, label=y_train)
             dval = lgb.Dataset(X_val, label=y_val, reference=dtrain)
             try:
-                # Suppress LightGBM verbose output during HPO
                 model = lgb.train(
                     params, dtrain, num_boost_round=200, valid_sets=[dval],
                     callbacks=[lgb.early_stopping(20, verbose=False), lgb.log_evaluation(0)]
@@ -1444,3 +1487,484 @@ class IncrementalLGBMBaggedTrainer(BaseIncrementalTrainer):
             use_diversity_defense=self._use_diversity_defense,
             diversity_defense_config=self._dd_config,
         )
+# Incremental NGBoost Trainer
+# ============================================================================
+
+class IncrementalNGBoostTrainer(BaseIncrementalTrainer):
+    """Incremental NGBoost trainer with calibration. Now defaulting to Classifier."""
+    
+    def __init__(self, model_id: str, config=None, model_config=None):
+        super().__init__(model_id, config, model_config)
+        self._feature_cols: List[str] = []
+    
+    def _get_default_params(self):
+        params = {'n_estimators': 300, 'learning_rate': 0.01, 'minibatch_frac': 0.5, 'verbose': False}
+        if self.model_config and 'params' in self.model_config:
+            cfg_params = dict(self.model_config['params'])
+            base_cfg = cfg_params.pop('base_learner_params', None) or {}
+            if isinstance(base_cfg, dict):
+                if 'max_depth' in base_cfg and 'base_learner_max_depth' not in cfg_params:
+                    cfg_params['base_learner_max_depth'] = base_cfg['max_depth']
+                if 'min_samples_leaf' in base_cfg and 'base_learner_min_samples_leaf' not in cfg_params:
+                    cfg_params['base_learner_min_samples_leaf'] = base_cfg['min_samples_leaf']
+            params.update(cfg_params)
+        return params
+    
+    def _create_base_learner(self, params):
+        from ngboost.learners import default_tree_learner
+        tree_params = dict(default_tree_learner.get_params(deep=True))
+        tree_params['max_depth'] = int(params.get('base_learner_max_depth', 3))
+        if 'base_learner_min_samples_leaf' in params:
+            tree_params['min_samples_leaf'] = int(params['base_learner_min_samples_leaf'])
+        return default_tree_learner.__class__(**tree_params)
+
+    def _train_initial(self, train_data: pd.DataFrame, window: IncrementalTrainingWindow, verbose: bool) -> CalibratedModel:
+        self._feature_cols = self._get_feature_cols(train_data)
+        X = train_data[self._feature_cols].values.astype(np.float64)
+        y = train_data['__target__'].values.astype(int if self.config.task_type == 'classification' else np.float64)
+        X = np.nan_to_num(X, nan=0.0)
+        
+        sw = None
+        if '__weight__' in train_data.columns:
+            sw = train_data['__weight__'].values
+
+        if sw is not None:
+            X_train, X_val, y_train, y_val, sw_train, sw_val = train_test_split(X, y, sw, test_size=0.2, shuffle=False)
+        else:
+            X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, shuffle=False)
+            sw_train = None
+        
+        params = self._get_default_params()
+        params.update(self._best_params)
+        base_learner = self._create_base_learner(params)
+        ng_params = {
+            k: v
+            for k, v in params.items()
+            if k not in ('base_learner_max_depth', 'base_learner_min_samples_leaf', 'base_learner_params')
+        }
+        
+        early_stopping_rounds = params.pop('early_stopping_rounds', 35)
+
+        if self.config.task_type == 'classification':
+            model = NGBClassifier(Dist=Bernoulli, Base=base_learner, **ng_params)
+        else:
+            model = NGBRegressor(Dist=Normal, Base=base_learner, **ng_params)
+
+        model.fit(X_train, y_train, X_val=X_val, Y_val=y_val, sample_weight=sw_train, early_stopping_rounds=early_stopping_rounds)
+        
+        calibrated_model = CalibratedModel(model, self.config.task_type)
+        calibrated_model.fit_calibration(X_val, y_val)
+        
+        if verbose:
+            logger.info(f"   Initial NGBoost trained, calibrated={calibrated_model.is_calibrated}")
+        
+        return calibrated_model
+
+    def _train_incremental(self, new_data, full_train_data, window, verbose) -> CalibratedModel:
+        max_history = 10000
+        if len(full_train_data) > max_history:
+            if verbose: logger.info(f"   NGBoost: Truncating history to last {max_history} samples for speed")
+            train_data_window = full_train_data.iloc[-max_history:].copy()
+        else:
+            train_data_window = full_train_data
+
+        return self._train_initial(train_data_window, window, verbose)
+
+    def _predict(self, pred_data) -> pd.DataFrame:
+        if self._feature_cols:
+            X = pred_data[self._feature_cols].values.astype(np.float64)
+        else:
+            X = np.zeros((len(pred_data), 1), dtype=np.float64)
+        X = np.nan_to_num(X, nan=0.0)
+        
+        preds = self._current_model.predict(X)
+        
+        if self.config.task_type == 'classification':
+            probs = self._current_model.predict_proba(X)
+            return pd.DataFrame({'prediction': (probs[:, 1] > 0.5).astype(int), 'probability': probs[:, 1]}, index=pred_data.index)
+        else:
+            try:
+                dist = self._current_model.base_model.pred_dist(X)
+                std = dist.params.get('scale', np.zeros_like(preds))
+            except:
+                std = np.zeros_like(preds)
+            return pd.DataFrame({'prediction': preds, 'std': std}, index=pred_data.index)
+
+    def _run_burnin_hpo(self, train_data, window, verbose):
+        if not OPTUNA_AVAILABLE: return None
+
+        if not self._feature_cols:
+            self._feature_cols = self._get_feature_cols(train_data)
+
+        X = train_data[self._feature_cols].values.astype(np.float64)
+        y = train_data['__target__'].values.astype(int if self.config.task_type == 'classification' else np.float64)
+        X = np.nan_to_num(X, nan=0.0)
+        X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, shuffle=False)
+        
+        current_best = self._best_params.copy()
+        radius = self.config.hpo_neighborhood_radius
+        
+        def objective(trial):
+            params = self._get_default_params()
+            for param_name in self.config.sensitive_params_ngboost:
+                current_val = current_best.get(param_name)
+                if param_name == 'learning_rate':
+                    base = current_val or 0.01
+                    params['learning_rate'] = trial.suggest_float('learning_rate', max(0.01, base*(1-radius)), min(0.05, base*(1+radius)), log=True)
+                elif param_name == 'n_estimators':
+                    base = current_val or 500
+                    params['n_estimators'] = trial.suggest_int('n_estimators', max(100, int(base*(1-radius))), min(1000, int(base*(1+radius))))
+                elif param_name == 'minibatch_frac':
+                    base = current_val or 0.5
+                    params['minibatch_frac'] = trial.suggest_float('minibatch_frac', max(0.1, base*(1-radius)), min(1.0, base*(1+radius)))
+                elif param_name == 'base_learner_max_depth':
+                    params['base_learner_max_depth'] = trial.suggest_int('base_learner_max_depth', 3, 5)
+            
+            try:
+                base_learner = self._create_base_learner(params)
+                ng_params = {
+                    k: v
+                    for k, v in params.items()
+                    if k not in ('base_learner_max_depth', 'base_learner_min_samples_leaf', 'base_learner_params')
+                }
+                if self.config.task_type == 'classification':
+                    model = NGBClassifier(Dist=Bernoulli, Base=base_learner, **ng_params)
+                else:
+                    model = NGBRegressor(Dist=Normal, Base=base_learner, **ng_params)
+                model.fit(X_train, y_train, X_val=X_val, Y_val=y_val, early_stopping_rounds=35)
+
+                if self.config.task_type == 'regression':
+                    preds = model.predict(X_val)
+                    return -((y_val - preds)**2).mean()
+                else:
+                    from sklearn.metrics import log_loss
+                    probs = model.predict_proba(X_val)
+                    return -log_loss(y_val, probs)
+            except:
+                return float('-inf')
+
+        study = optuna.create_study(direction='maximize')
+        study.optimize(objective, n_trials=self.config.hpo_n_trials_per_round, timeout=self.config.hpo_timeout_per_round, show_progress_bar=False)
+        if study.best_trial:
+            self._best_params.update(study.best_params)
+        return {'best_params': study.best_params, 'best_value': study.best_value}
+
+
+# ============================================================================
+# Incremental KNN Trainer
+# ============================================================================
+
+class IncrementalKNNTrainer(BaseIncrementalTrainer):
+    def __init__(self, model_id, config=None, model_config=None):
+        super().__init__(model_id, config, model_config)
+        self._scaler = None
+        self._feature_cols: List[str] = []
+
+    def _get_default_params(self):
+        params = {'n_neighbors': 15, 'weights': 'distance', 'n_jobs': -1}
+        if self.model_config: params.update(self.model_config.get('params', {}))
+        return params
+
+    def _train_initial(self, train_data, window, verbose) -> CalibratedModel:
+        self._feature_cols = self._get_feature_cols(train_data)
+        X = train_data[self._feature_cols].values.astype(np.float32)
+        y = train_data['__target__'].values
+        X = np.nan_to_num(X, nan=0.0)
+        
+        X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, shuffle=False)
+        
+        self._scaler = StandardScaler()
+        X_train_scaled = self._scaler.fit_transform(X_train)
+        
+        params = self._get_default_params()
+        n_samples = len(y_train)
+        max_k = max(5, int(np.sqrt(n_samples)))
+        if 'n_neighbors' in params: params['n_neighbors'] = min(params['n_neighbors'], max_k)
+        
+        if self.config.task_type == 'classification':
+            y_train = y_train.astype(int)
+            y_val = y_val.astype(int)
+            model = KNeighborsClassifier(**params)
+        else:
+            model = KNeighborsRegressor(**params)
+
+        model.fit(X_train_scaled, y_train)
+        
+        class ScaledModel:
+            def __init__(self, model, scaler):
+                self.model = model
+                self.scaler = scaler
+            def predict(self, X):
+                return self.model.predict(self.scaler.transform(X))
+            def predict_proba(self, X):
+                return self.model.predict_proba(self.scaler.transform(X))
+
+        calibrated_model = CalibratedModel(ScaledModel(model, self._scaler), self.config.task_type)
+        calibrated_model.fit_calibration(X_val, y_val)
+        
+        return calibrated_model
+
+    def _train_incremental(self, new_data, full_train_data, window, verbose):
+        return self._train_initial(full_train_data, window, verbose)
+
+    def _predict(self, pred_data) -> pd.DataFrame:
+        X = pred_data[self._feature_cols].values.astype(np.float32)
+        X = np.nan_to_num(X, nan=0.0)
+        
+        preds = self._current_model.predict(X)
+        
+        if self.config.task_type == 'classification':
+            probs = self._current_model.predict_proba(X)
+            return pd.DataFrame({'prediction': preds, 'probability': probs[:, 1]}, index=pred_data.index)
+        else:
+            return pd.DataFrame({'prediction': preds}, index=pred_data.index)
+
+    def _run_burnin_hpo(self, train_data, window, verbose):
+        if not OPTUNA_AVAILABLE: return None
+        if not self._feature_cols:
+            self._feature_cols = self._get_feature_cols(train_data)
+
+        X = train_data[self._feature_cols].values.astype(np.float32)
+        y = train_data['__target__'].values
+        X = np.nan_to_num(X, nan=0.0)
+
+        if self.config.task_type == 'classification':
+            y = y.astype(int)
+
+        scaler = StandardScaler()
+        X_scaled = scaler.fit_transform(X)
+        
+        current_best = self._best_params.copy()
+        radius = self.config.hpo_neighborhood_radius
+        max_k = max(5, int(np.sqrt(len(y))))
+        
+        def objective(trial):
+            params = self._get_default_params()
+            for param_name in self.config.sensitive_params_knn:
+                current_val = current_best.get(param_name)
+                if param_name == 'n_neighbors':
+                    base = current_val or 15
+                    params['n_neighbors'] = trial.suggest_int('n_neighbors', max(3, int(base*(1-radius))), min(max_k, int(base*(1+radius))))
+                elif param_name == 'leaf_size':
+                    base = current_val or 30
+                    params['leaf_size'] = trial.suggest_int('leaf_size', max(10, int(base*(1-radius))), min(100, int(base*(1+radius))))
+            
+            try:
+                if self.config.task_type == 'classification':
+                    model = KNeighborsClassifier(n_jobs=1, **params)
+                    scores = cross_val_score(model, X_scaled, y, cv=3, scoring='accuracy', n_jobs=1)
+                else:
+                    model = KNeighborsRegressor(n_jobs=1, **params)
+                    scores = cross_val_score(model, X_scaled, y, cv=3, scoring='neg_mean_squared_error', n_jobs=1)
+                return scores.mean()
+            except:
+                return float('-inf')
+
+        study = optuna.create_study(direction='maximize')
+        study.optimize(objective, n_trials=self.config.hpo_n_trials_per_round, timeout=self.config.hpo_timeout_per_round, show_progress_bar=False)
+        if study.best_trial:
+            self._best_params.update(study.best_params)
+        return {'best_params': study.best_params, 'best_value': study.best_value}
+
+
+# ============================================================================
+# Incremental Ridge Trainer (Replacing BayesianRidge)
+# ============================================================================
+
+class IncrementalBayesianRidgeTrainer(BaseIncrementalTrainer):
+    """
+    Renamed to RidgeClassifier under the hood, but keeping class name for compatibility.
+    Uses RidgeClassifier for classification tasks.
+    """
+    def __init__(self, model_id, config=None, model_config=None):
+        super().__init__(model_id, config, model_config)
+        self._scaler = None
+        self._feature_cols: List[str] = []
+
+    def _get_default_params(self):
+        params = {'alpha': 1.0, 'tol': 1e-3, 'class_weight': 'balanced'}
+        if self.model_config:
+            params.update(self.model_config.get('params', {}))
+        for k in ['n_iter', 'lambda_1', 'lambda_2', 'alpha_1', 'alpha_2']:
+            params.pop(k, None)
+        return params
+
+    def _train_initial(self, train_data: pd.DataFrame, window: IncrementalTrainingWindow, verbose: bool) -> CalibratedModel:
+        self._feature_cols = self._get_feature_cols(train_data)
+        if not self._feature_cols:
+            logger.warning("IncrementalBayesianRidgeTrainer: no specialist features found; using constant feature.")
+            train_data = train_data.copy()
+            train_data['__dummy_const__'] = 0.0
+            self._feature_cols = ['__dummy_const__']
+
+        X = train_data[self._feature_cols].values.astype(np.float64)
+        y = train_data['__target__'].values
+        X = np.nan_to_num(X, nan=0.0)
+        
+        sw = None
+        if '__weight__' in train_data.columns:
+            sw = train_data['__weight__'].values
+
+        if sw is not None:
+            X_tr, X_va, y_tr, y_va, sw_tr, sw_va = train_test_split(X, y, sw, test_size=0.2, shuffle=False)
+        else:
+            X_tr, X_va, y_tr, y_va = train_test_split(X, y, test_size=0.2, shuffle=False)
+            sw_tr = None
+        
+        self._scaler = StandardScaler()
+        X_tr_scaled = self._scaler.fit_transform(X_tr)
+        
+        params = self._get_default_params()
+        params.update(self._best_params)
+        
+        if self.config.task_type == 'classification':
+            y_tr = y_tr.astype(int)
+            y_va = y_va.astype(int)
+            model = RidgeClassifier(**params)
+        else:
+            logger.warning("Regression task requested for RidgeClassifier trainer. Falling back to BayesianRidge.")
+            model = BayesianRidge()
+
+        if sw_tr is not None:
+            model.fit(X_tr_scaled, y_tr, sample_weight=sw_tr)
+        else:
+            model.fit(X_tr_scaled, y_tr)
+        
+        class ScaledModel:
+            def __init__(self, model, scaler):
+                self.model = model
+                self.scaler = scaler
+            def predict(self, X):
+                return self.model.predict(self.scaler.transform(X))
+            def decision_function(self, X):
+                if hasattr(self.model, 'decision_function'):
+                    return self.model.decision_function(self.scaler.transform(X))
+                return self.model.predict(self.scaler.transform(X))
+        
+        calibrated_model = CalibratedModel(ScaledModel(model, self._scaler), self.config.task_type)
+        calibrated_model.fit_calibration(X_va, y_va)
+        
+        return calibrated_model
+
+    def _train_incremental(self, new_data, full_train_data, window, verbose):
+        return self._train_initial(full_train_data, window, verbose)
+
+    def _predict(self, pred_data) -> pd.DataFrame:
+        if not self._feature_cols:
+             return pd.DataFrame({'prediction': 0, 'probability': 0}, index=pred_data.index)
+
+        if '__dummy_const__' in self._feature_cols and '__dummy_const__' not in pred_data:
+            pred_data = pred_data.copy()
+            pred_data['__dummy_const__'] = 0.0
+
+        X = pred_data[self._feature_cols].values.astype(np.float64)
+        X = np.nan_to_num(X, nan=0.0)
+        
+        if self.config.task_type == 'classification':
+            probs = self._current_model.predict_proba(X)
+            preds = (probs[:, 1] > 0.5).astype(int)
+            return pd.DataFrame({'prediction': preds, 'probability': probs[:, 1]}, index=pred_data.index)
+        else:
+            preds = self._current_model.predict(X)
+            return pd.DataFrame({'prediction': preds}, index=pred_data.index)
+
+    def _run_burnin_hpo(self, train_data, window, verbose):
+        if not OPTUNA_AVAILABLE: return None
+
+        if not self._feature_cols:
+            self._feature_cols = self._get_feature_cols(train_data)
+
+        X = train_data[self._feature_cols].values.astype(np.float64)
+        y = train_data['__target__'].values
+        X = np.nan_to_num(X, nan=0.0)
+        
+        if self.config.task_type == 'classification':
+            y = y.astype(int)
+
+        scaler = StandardScaler()
+        X_scaled = scaler.fit_transform(X)
+        
+        current_best = self._best_params.copy()
+        radius = self.config.hpo_neighborhood_radius
+        
+        def objective(trial):
+            params = self._get_default_params()
+            for param_name in self.config.sensitive_params_ridge:
+                current_val = current_best.get(param_name)
+                if param_name == 'alpha':
+                    base = current_val or 1.0
+                    params['alpha'] = trial.suggest_float('alpha', max(0.01, base*(1-radius)), min(10.0, base*(1+radius)), log=True)
+                elif param_name == 'tol':
+                    base = current_val or 1e-3
+                    params['tol'] = trial.suggest_float('tol', 1e-5, 1e-2, log=True)
+            
+            try:
+                if self.config.task_type == 'classification':
+                    model = RidgeClassifier(**params)
+                    scores = cross_val_score(model, X_scaled, y, cv=3, scoring='accuracy', n_jobs=1)
+                else:
+                    model = BayesianRidge()
+                    scores = cross_val_score(model, X_scaled, y, cv=3, scoring='neg_mean_squared_error', n_jobs=1)
+                return scores.mean()
+            except:
+                return float('-inf')
+
+        study = optuna.create_study(direction='maximize')
+        study.optimize(objective, n_trials=self.config.hpo_n_trials_per_round, timeout=self.config.hpo_timeout_per_round, show_progress_bar=False)
+        if study.best_trial:
+            self._best_params.update(study.best_params)
+        return {'best_params': study.best_params, 'best_value': study.best_value}
+
+# ============================================================================
+# Unified Incremental Analyst Trainer
+# ============================================================================
+
+class IncrementalAnalystTrainer:
+    """Unified incremental trainer that trains all analyst base models."""
+    
+    def __init__(self, model_id: str, execution_mode="blank", task_type="classification", enable_burnin_hpo=True, model_configs=None):
+        self.model_id = model_id
+        oof_batch_days = 28 if execution_mode == "full" else 14
+        self.config = IncrementalTrainingConfig(
+            model_id,
+            execution_mode,
+            oof_batch_days=oof_batch_days,
+            task_type=task_type,
+            enable_burnin_hpo=enable_burnin_hpo,
+        )
+        self.model_configs = model_configs or {}
+        
+        self.trainers = {}
+        if LIGHTGBM_AVAILABLE:
+            lgbm_cfg = self.model_configs.get('lgbm') or {}
+            if lgbm_cfg.get('enabled', True):
+                self.trainers['lgbm'] = IncrementalLGBMTrainer(model_id, self.config, lgbm_cfg)
+
+            bag_cfg = self.model_configs.get('lgbm_bag_lower') or {}
+            if bag_cfg.get('enabled', False):
+                self.trainers['lgbm_bag_lower'] = IncrementalLGBMBaggedTrainer(model_id, self.config, bag_cfg)
+
+        if NGBOOST_AVAILABLE:
+            self.trainers['ngboost'] = IncrementalNGBoostTrainer(model_id, self.config, self.model_configs.get('ngboost'))
+        if SKLEARN_AVAILABLE:
+            knn_cfg = self.model_configs.get('knn') or {}
+            if knn_cfg.get('enabled', True):
+                self.trainers['knn'] = IncrementalKNNTrainer(model_id, self.config, knn_cfg)
+            bayes_cfg = self.model_configs.get('bayesianridge') or {}
+            if bayes_cfg.get('enabled', True):
+                self.trainers['bayesianridge'] = IncrementalBayesianRidgeTrainer(model_id, self.config, bayes_cfg)
+            
+    def train_all_models(self, X, y, data_start, data_end, sample_weight=None, verbose=True, specialist_feature_names=None):
+        results = {}
+        for name, trainer in self.trainers.items():
+            if verbose: logger.info(f"Training {name}")
+            results[name] = trainer.train_and_predict(X, y, data_start, data_end, sample_weight, verbose, specialist_feature_names)
+        return results
+
+    def get_combined_oof_predictions(self, results):
+        combined = {}
+        for name, res in results.items():
+            if not res.oof_predictions.empty:
+                for col in res.oof_predictions.columns:
+                    combined[f"{name}_{col}"] = res.oof_predictions[col]
+        return pd.DataFrame(combined)

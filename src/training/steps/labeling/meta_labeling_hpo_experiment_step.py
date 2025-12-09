@@ -5109,55 +5109,6 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     use_smoothed_brier_objective_lgbm=use_smoothed_brier_objective_lgbm,
                 )
 
-                # ===== AUC RANGE-BASED SCORING =====
-                # Target AUC range: 0.55 - 0.67 (prop-shop acceptable range)
-                # 
-                # AUC INTERPRETATION GUIDELINES:
-                # < 0.54:  Too noisy - model cannot distinguish signal from noise
-                # 0.54 - 0.62: Good edge, acceptable by prop shops
-                # 0.60 - 0.67: Excellent, but check for leakage or horizon bias
-                # > 0.70:  Suspicious - likely data leakage or look-ahead bias
-                #
-                # Within target range: higher is better
-                # Outside target range: penalize and shift weight to edge/pnl/trades
-                
-                auc_in_target_range = (mean_auc >= 0.55) and (mean_auc <= 0.67)
-                auc_penalty = 0.0
-                auc_weight_multiplier = 1.0  # Will reduce AUC influence when outside range
-                
-                if mean_auc < 0.54:
-                    # Too noisy - heavy penalty, strong shift to edge metrics
-                    auc_penalty = (0.54 - mean_auc) * 15.0
-                    auc_weight_multiplier = 0.3  # AUC has less sway, edge/pnl matter more
-                    if debug_sample_count < debug_sample_limit:
-                        tprint_warning(f"[AUC] {mean_auc:.3f} < 0.54: Too noisy, model cannot distinguish signal")
-                elif mean_auc < 0.55:
-                    # Slightly below target - mild penalty
-                    auc_penalty = (0.55 - mean_auc) * 8.0
-                    auc_weight_multiplier = 0.7
-                elif mean_auc > 0.70:
-                    # Suspicious - likely leakage, heavy penalty
-                    auc_penalty = (mean_auc - 0.70) * 20.0
-                    auc_weight_multiplier = 0.2  # Strongly discount AUC contribution
-                    tprint_warning(
-                        f"[AUC] {mean_auc:.3f} > 0.70: SUSPICIOUS - check for data leakage, "
-                        f"look-ahead bias, or horizon issues"
-                    )
-                elif mean_auc > 0.67:
-                    # Above excellent range - moderate penalty, check for issues
-                    auc_penalty = (mean_auc - 0.67) * 10.0
-                    auc_weight_multiplier = 0.5
-                    if debug_sample_count < debug_sample_limit:
-                        tprint_warning(f"[AUC] {mean_auc:.3f} > 0.67: Excellent but verify no leakage/horizon bias")
-                else:
-                    # In target range [0.55, 0.67]: reward higher AUC within range
-                    # Bonus peaks at 0.62 (center of "good edge" zone)
-                    distance_from_sweet_spot = abs(mean_auc - 0.62)
-                    auc_penalty = -max(0, 0.05 - distance_from_sweet_spot) * 5.0  # Negative = bonus
-                    auc_weight_multiplier = 1.0
-                
-                learnability_score -= auc_penalty
-
                 # ===== ROBUSTNESS HARD CONSTRAINTS (CV-based) =====
                 worst_fold_auc_cv: Optional[float] = None
                 auc_cv_std: Optional[float] = None
@@ -5210,13 +5161,8 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 # Compute label entropy/balance score
                 balance_score = compute_label_entropy_score(binary_labels)
 
-                # NOTE: Comprehensive diagnostics (filtering, calibration, robustness, overlap)
-                # are computed ONLY for the best config at the end of HPO, not during
-                # the search loop. This improves HPO performance significantly.
-                # See post-HPO diagnostics section below.
-
-                # ===== ECONOMIC PROFITABILITY =====
-                # Compute economic separation metrics on labeled events
+                # ===== ECONOMIC PROFITABILITY & EDGE =====
+                # Compute economic metrics on labeled events
                 returns_labeled = realized_returns[labeled_mask]
                 labels_labeled = binary_labels[labeled_mask]
 
@@ -5226,7 +5172,6 @@ class MetaLabelingHPOExperimentStep(BaseStep):
 
                 mean_pos = float(r_pos.mean()) if len(r_pos) > 0 else 0.0
                 mean_neg = float(r_neg.mean()) if len(r_neg) > 0 else 0.0
-                sep = mean_pos - mean_neg
 
                 # Simple Sharpe for label=1 trades
                 std_pos = float(r_pos.std()) if len(r_pos) > 1 else 0.0
@@ -5235,29 +5180,92 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 # Use effective transaction cost (HPO-tunable via tx_cost_mult)
                 tx = float(effective_tx_cost)
 
-                # Targeted debug logging for a small sample of trials
-                if debug_sample_count < debug_sample_limit:
-                    tprint_info(
-                        f"[HPO_DEBUG] n_events={n_events}, events_per_day={events_per_day:.3f}, "
-                        f"mean_pos={mean_pos:.6f}, tx={tx:.6f}, above_tx={mean_pos > tx}",
-                    )
-                    debug_sample_count += 1
+                # Phase 1: Metric Unification (Driver)
+                # Calculate pnl_edge: Average Net R per trade.
+                # Net R = (Realized Return - Cost) / Risk (adaptive stop distance)
 
-                # Hard economic gate: positive bucket must beat transaction cost
-                if mean_pos <= tx:
-                    if debug_sample_count < debug_sample_limit:
-                        tprint_warning(
-                            f"[EARLY_EXIT_ECON] Rejecting config: mean_pos={mean_pos:.6f} <= tx={tx:.6f} "
-                            f"(n_events={n_events}, events_per_day={events_per_day:.3f})"
-                        )
-                        debug_sample_count += 1
-                    gate_stats["econ_gate"] = gate_stats.get("econ_gate", 0) + 1
-                    return {
-                        'learnability': float(learnability_score),
-                        'profitability': -1e9,
-                        'edge': -1e9,
-                        'combined': -1e9,
-                    }
+                # Get adaptive stop for labeled events
+                stops_labeled = adaptive_stop[labeled_mask]
+
+                # Calculate R-multiples for positive labels
+                pos_mask = (labels_labeled == 1)
+                if pos_mask.sum() > 0:
+                    net_returns_pos = returns_labeled[pos_mask]
+                    risk_pos = stops_labeled[pos_mask]
+
+                    # Avoid division by zero
+                    risk_pos = risk_pos.replace(0, np.nan).fillna(1e-8)
+
+                    # R-multiples
+                    r_multiples = net_returns_pos / risk_pos
+
+                    # Clamp outliers for stability
+                    r_multiples = r_multiples.clip(-5.0, 10.0)
+
+                    pnl_edge = float(r_multiples.mean())
+                else:
+                    pnl_edge = -1.0 # Penalty for no trades
+
+                # Re-apply capture ratio: learnable_pnl = pnl_edge * capture_ratio
+                # Capture ratio scales from 0 at AUC 0.5 to 1 at AUC 1.0
+                if mean_auc <= 0.5:
+                    capture_ratio = 0.0
+                else:
+                    # Linear scaling: (AUC - 0.5) * 2
+                    capture_ratio = max(0.0, min(1.0, (mean_auc - 0.5) * 2.0))
+
+                learnable_pnl = pnl_edge * capture_ratio
+
+                # Phase 2: Distributional Control (Shape)
+                # Prevent label inflation/bias.
+                # Alignment Penalty = 0.3 * |actual_pos_frac - target_pos_frac|
+
+                actual_pos_frac = float(labels_labeled.mean())
+
+                # Target pos frac: median probability of the model.
+                try:
+                    if len(calibrated_probs) > 0:
+                        target_pos_frac = float(np.median(calibrated_probs))
+                    else:
+                        target_pos_frac = 0.5
+                except:
+                    target_pos_frac = 0.5
+
+                alignment_penalty = 0.3 * abs(actual_pos_frac - target_pos_frac)
+
+                # Phase 3: Volume Constraints (Floor)
+                # Quadratic Starvation: 2.0 * (max(0, Min_Trades - Actual_Trades))^2
+
+                # Configurable trades per day floor.
+                min_trades_per_day = float(config.get("hpo_min_trades_per_day", 1.5))
+
+                # Normalized starvation penalty based on rate shortfall
+                trades_per_day = n_events / max(float(effective_days_span), 1.0)
+                starvation_penalty = 2.0 * (max(0.0, min_trades_per_day - trades_per_day) ** 2)
+
+                # Phase 4: Safety Layer (Shield)
+                # 1. Remove Leakage Penalty (AUC > 0.70 check removed)
+                # 2. Retain Robustness Penalty (already calculated above as robustness_penalty)
+
+                # Phase 5: The Final Equation
+                # score = learnable_pnl - alignment_penalty - starvation_penalty - robustness_penalty
+
+                # Scale down the existing robustness_penalty to match PnL units if it was large
+                robustness_penalty_scaled = 0.0
+                if (worst_fold_auc_cv is not None) and (auc_cv_std is not None):
+                    # Penalize high variance
+                    if auc_cv_std > 0.05:
+                        robustness_penalty_scaled += (auc_cv_std - 0.05) * 1.0
+                    # Penalize very low worst-fold
+                    if worst_fold_auc_cv < 0.45:
+                        robustness_penalty_scaled += (0.45 - worst_fold_auc_cv) * 1.0
+
+                combined_score = (
+                    learnable_pnl
+                    - alignment_penalty
+                    - starvation_penalty
+                    - robustness_penalty_scaled
+                )
 
                 # Penalize configurations dominated by economically trivial events
                 returns_labeled_nonnull = returns_labeled.dropna()
@@ -5287,552 +5295,51 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                         retention_pos = n_post_pos / max(n_pre_pos, 1) if n_pre_pos > 0 else 0.0
                         retention_neg = n_post_neg / max(n_pre_neg, 1) if n_pre_neg > 0 else 0.0
 
-                        pre_pos_ret = pre_returns[raw_label_pre == 1]
-                        pre_neg_ret = pre_returns[raw_label_pre == 0]
+                        # Calculate SNR (Signal-to-Noise Ratio)
+                        snr_post = 0.0
+                        if len(r_pos) > 1:
+                            snr_post = float(r_pos.mean()) / (float(r_pos.std()) + 1e-8)
 
-                        def _safe_stats(x: pd.Series) -> tuple[float, float]:
-                            return (
-                                float(x.mean()) if len(x) > 0 else 0.0,
-                                float(x.std() if len(x) > 1 else 0.0),
-                            )
-
-                        pre_pos_mean, pre_pos_std = _safe_stats(pre_pos_ret)
-                        pre_neg_mean, pre_neg_std = _safe_stats(pre_neg_ret)
-                        post_pos_mean, post_pos_std = _safe_stats(r_pos)
-                        post_neg_mean, post_neg_std = _safe_stats(r_neg)
-
-                        def _cohens_d(m1: float, s1: float, n1: int, m2: float, s2: float, n2: int) -> float:
-                            if n1 <= 1 or n2 <= 1:
-                                return float('nan')
-                            pooled = ((n1 - 1) * (s1 ** 2) + (n2 - 1) * (s2 ** 2)) / max(n1 + n2 - 2, 1)
-                            if pooled <= 0:
-                                return float('nan')
-                            return (m1 - m2) / np.sqrt(pooled)
-
-                        d_pre = _cohens_d(
-                            pre_pos_mean,
-                            pre_pos_std,
-                            max(len(pre_pos_ret), 1),
-                            pre_neg_mean,
-                            pre_neg_std,
-                            max(len(pre_neg_ret), 1),
-                        )
-                        d_post = _cohens_d(
-                            post_pos_mean,
-                            post_pos_std,
-                            max(len(r_pos), 1),
-                            post_neg_mean,
-                            post_neg_std,
-                            max(len(r_neg), 1),
-                        )
-
-                        snr_pre = pre_pos_mean / (pre_pos_std + 1e-8) if pre_pos_std > 0 else 0.0
-                        snr_post = post_pos_mean / (post_pos_std + 1e-8) if post_pos_std > 0 else 0.0
                     else:
                         n_pre_total = 0
                         retention_total = 0.0
-                        retention_pos = 0.0
-                        retention_neg = 0.0
-                        d_pre = float('nan')
-                        d_post = float('nan')
-                        snr_pre = 0.0
                         snr_post = 0.0
                 except Exception:
                     n_pre_total = 0
                     retention_total = 0.0
-                    retention_pos = 0.0
-                    retention_neg = 0.0
-                    d_pre = float('nan')
-                    d_post = float('nan')
-                    snr_pre = 0.0
                     snr_post = 0.0
-
-                # Event density penalty: prefer ~1–4 trades/day (centered near ~2)
-                # Slightly stricter lower bound to discourage very sparse regimes
-                trades_per_day = n_events / max(effective_days_span, 1.0)
-                penalty_density = 0.0
-                if trades_per_day < 0.5:
-                    # Moderate penalty for sparse regimes (threshold raised from 0.3)
-                    penalty_density += (0.5 - trades_per_day) * 10.0
-                elif trades_per_day > 4.0:
-                    # Gentler penalty for active regimes (was 3.0 threshold, 5.0 weight)
-                    penalty_density += (trades_per_day - 4.0) * 3.0
-
-                density_retention_penalty = 0.0
-                if trades_per_day > 4.0 and retention_total > 0.0:
-                    retention_target_local = float(config.get("retention_target", 0.30))
-                    retention_target_local = max(0.05, min(0.80, retention_target_local))
-                    retention_excess = max(0.0, float(retention_total) - retention_target_local)
-                    if retention_excess > 0.0:
-                        density_retention_penalty = (trades_per_day - 4.0) * retention_excess * 10.0
-
-                penalty_density += density_retention_penalty
-
-                penalty_noise = frac_small * 10.0
-
-                # Top-bucket economics (top 10% by smoothed probability) to capture
-                # how good the very best signals are.
-                top_bucket_mean = 0.0
-                top_bucket_sharpe = 0.0
-                try:
-                    prob_array = prob_clipped.values.astype(float)
-                    if np.isfinite(prob_array).any():
-                        q90 = np.nanquantile(prob_array, 0.9)
-                        top_mask = (prob_array >= q90) & labeled_mask.to_numpy()
-                        top_returns = realized_returns[top_mask]
-                        top_returns = top_returns.dropna()
-                        if len(top_returns) >= 20:
-                            top_bucket_mean = float(top_returns.mean())
-                            top_std = float(top_returns.std())
-                            top_bucket_sharpe = top_bucket_mean / (top_std + 1e-8) if top_std > 0 else 0.0
-                except Exception:
-                    top_bucket_mean = 0.0
-                    top_bucket_sharpe = 0.0
-
-                # Profitability score: emphasize separation and Sharpe, subtract penalties,
-                # and reward strong top-bucket performance. TTO penalty is secondary but
-                # present so that extremely slow configurations are disfavoured.
-                profitability_score = (
-                    sep * 100.0
-                    + sharpe_pos * 10.0
-                    + top_bucket_sharpe * 15.0
-                    + top_bucket_mean * 1000.0
-                    - penalty_density
-                    - penalty_noise
-                    - tto_penalty
-                )
-
-                # Extra penalty when label balance is extreme (balance_score == 0)
-                if balance_score <= 0.0:
-                    learnability_score -= 0.5
-
-                # Simple power heuristic: required samples for ~80% power based on post-filter effect size
-                try:
-                    if np.isfinite(d_post) and d_post != 0.0:
-                        n_required_80 = 16.0 / (d_post ** 2)
-                    else:
-                        n_required_80 = float('inf')
-                except Exception:
-                    n_required_80 = float('inf')
-
-                # ===== REGULARIZATION CHECKS =====
-                # Temporal stability check (rolling window AUC variance)
-                auc_variance = 0.0
-                try:
-                    window_size = max(100, n_events // 5)
-                    n_windows = min(5, n_events // window_size)
-
-                    if n_windows >= 2:
-                        window_aucs = []
-                        for w in range(n_windows):
-                            start_idx = w * window_size
-                            end_idx = min((w + 1) * window_size, n_events)
-                            window_labels = labels_labeled.iloc[start_idx:end_idx]
-
-                            if len(window_labels.unique()) >= 2 and len(window_labels) >= 20:
-                                # Compute simple correlation as AUC proxy
-                                window_returns = returns_labeled.iloc[start_idx:end_idx]
-                                try:
-                                    window_auc = abs(window_labels.corr(window_returns))
-                                    window_aucs.append(window_auc if not np.isnan(window_auc) else 0.5)
-                                except:
-                                    window_aucs.append(0.5)
-
-                        if len(window_aucs) >= 2:
-                            auc_variance = float(np.var(window_aucs))
-                            # Penalize high variance (instability across time) more strongly
-                            temporal_stability_penalty = auc_variance * 30.0
-                            profitability_score -= temporal_stability_penalty
-                except Exception:
-                    pass  # Skip if temporal check fails
-
-                # Reference trade count for Sharpe-like scaling of edge. We
-                # center this around a target trades/day consistent with the
-                # density band above so that edge mildly rewards configurations
-                # that achieve a healthy number of good trades.
-                target_trades_per_day = float(config.get("edge_target_trades_per_day", 2.0))
-                reference_trades = max(1.0, float(effective_days_span) * target_trades_per_day)
-
-                # ===== REALISTIC P&L EDGE METRIC =====
-                # Edge = (Mean Return - Cost) × max(0, 2×AUC - 1)
-                # This penalizes "profitable but unlearnable" strategies more realistically
-                # ENHANCED: Pass days_span for density bonus to encourage healthy trade counts
-                edge_score = compute_realistic_pnl_edge(
-                    mean_return_positive=mean_pos,
-                    mean_auc=mean_auc,
-                    transaction_cost=tx,
-                    n_trades=n_events,
-                    reference_trades=reference_trades,
-                    days_span=float(effective_days_span),
-                    target_trades_per_day=target_trades_per_day,
-                )
-                # Tie temporal instability to edge: softly down-weight edge when
-                # rolling-window AUC variance is high.
-                if auc_variance > 0.0:
-                    # For typical auc_variance in [0, ~0.02], this yields a modest
-                    # 0–20% down-weighting for unstable configurations.
-                    instability = min(1.0, auc_variance / 0.02)
-                    edge_score *= (1.0 - 0.3 * instability)
-
-                # Scale edge for combined metric (multiply by 1000 to make comparable)
-                edge_scaled = edge_score * 1000.0
-
-                # Additional hard penalties for pathological configurations (no positive
-                # or negative bucket), while still keeping them in the candidate pool
-                # for diagnostics.
-                if len(r_pos) == 0 or len(r_neg) == 0:
-                    profitability_score = -1e9
-
-                # ===== COMBINED OBJECTIVE WITH RETENTION REGULARIZATION =====
-                # New formulation: objective adjusts the filtered AUC based on how far
-                # the retention rate falls below a soft target.
-                #
-                #   ret_target = 0.35  (35% of pre-events retained)
-                #   penalty    = alpha * (max(0, ret_target - retention_total))^2
-                #   objective  = AUC_filtered -  penalty
-                #
-                # This penalizes overly aggressive filtering (very low retention) while
-                # not rewarding sparse configs purely via 1/retention.
-
-                # Retention regularization parameter (configurable)
-                alpha_retention = float(config.get("retention_regularization_alpha", 0.05))
-                alpha_retention = max(0.01, min(0.10, alpha_retention))  # Clamp to [0.01, 0.10]
-
-                # Soft target for overall retention (fraction of pre-events kept)
-                retention_target = float(config.get("retention_target", 0.35))
-                retention_target = max(0.05, min(0.80, retention_target))
-
-                # Compute nonlinear shortfall penalty relative to the target
-                # retention_total is already computed above as n_post_total / n_pre_total
-                if retention_total > 0:
-                    retention_shortfall = max(0.0, retention_target - float(retention_total))
-                    # Quadratic penalty so that very low retention is punished more strongly
-                    retention_penalty = alpha_retention * (retention_shortfall ** 2)
-                else:
-                    # If no events survive, apply maximal penalty against the target
-                    retention_penalty = alpha_retention * retention_target
-
-                # Cap retention penalty to avoid dominating the objective
-                retention_penalty = min(retention_penalty, 0.5)
-                
-                # ===== UNIFIED AUC ADJUSTMENT =====
-                # Combine AUC range penalties directly into adjusted AUC instead of
-                # having separate auc_penalty and learnability_bonus terms.
-                # This simplifies the objective and avoids double-counting.
-                
-                auc_range_adjustment = 0.0
-                if mean_auc < 0.54:
-                    # Too noisy: heavy penalty incorporated into AUC
-                    auc_range_adjustment = -(0.54 - mean_auc) * 0.5
-                elif mean_auc > 0.70:
-                    # Suspicious (likely leakage): heavy penalty
-                    auc_range_adjustment = -(mean_auc - 0.70) * 1.0
-                elif mean_auc > 0.67:
-                    # Above excellent range: moderate penalty
-                    auc_range_adjustment = -(mean_auc - 0.67) * 0.3
-                elif auc_in_target_range:
-                    # In target range [0.55, 0.67]: small bonus for 0.60-0.62 sweet spot
-                    if mean_auc >= 0.58 and mean_auc <= 0.64:
-                        auc_range_adjustment = 0.02  # Small bonus for ideal range
-                
-                # Final retention-adjusted AUC (unified primary signal)
-                auc_ret_raw = mean_auc + auc_range_adjustment - retention_penalty
-                auc_cap = 0.65
-                auc_retention_adjusted = min(auc_ret_raw, auc_cap)
-                
-                # Trade density bonus: stronger when AUC is outside target range
-                # This gives edge/pnl/trades more influence when AUC is penalized
-                edge_weight = 1.0 + (1.0 - auc_weight_multiplier) * 0.5  # Up to 1.5x edge weight
-                density_weight = 1.0 + (1.0 - auc_weight_multiplier) * 1.0  # Up to 2x density weight
-                
-                # Trades/day bonus for being in sweet spot (1-3 trades/day)
-                trades_bonus = 0.0
-                if trades_per_day >= 0.8 and trades_per_day <= 4.0:
-                    # Peak bonus at 2 trades/day
-                    trades_bonus = max(0, 1.0 - abs(trades_per_day - 2.0) / 2.0) * 50.0
-
-                # Geometry penalty: if profit threshold is unrealistically large
-                # relative to the average trailing stop distance (ATR-based) while
-                # overall retention is below target, down-weight the configuration.
-                trail_geom_penalty = 0.0
-                try:
-                    if trail_dist > 0.0 and isinstance(atr_series, pd.Series) and "close" in market_data.columns:
-                        atr_events = atr_series[labeled_mask]
-                        price_events = market_data["close"][labeled_mask]
-                        denom = price_events.abs().replace(0.0, np.nan)
-                        avg_trail_pct = float(((trail_dist * atr_events) / (denom + 1e-8)).replace([np.inf, -np.inf], np.nan).mean())
-
-                        if np.isfinite(avg_trail_pct) and avg_trail_pct > 0:
-                            k_trail = float(config.get("trail_profit_ratio_k", 3.5))
-                            # Only activate when retention is below target (over-selection regime)
-                            if float(retention_total) < retention_target:
-                                threshold = k_trail * avg_trail_pct
-                                if profit_thr_base > threshold:
-                                    excess_ratio = (profit_thr_base / max(threshold, 1e-8)) - 1.0
-                                    weight = float(config.get("trail_penalty_weight", 80.0))
-                                    trail_geom_penalty = max(0.0, excess_ratio) * weight
-                except Exception:
-                    trail_geom_penalty = 0.0
-
-                # Diagnostic penalties: when aggressive filtering or ultra-easy
-                # problems are detected (only computed when compute_diagnostics
-                # is True to keep HPO runtime manageable).
-                diagnostics_penalty = 0.0
-                if compute_diagnostics:
-                    try:
-                        econ_floor_local = econ_min_mult * effective_tx_cost
-                        y_full_local = pd.Series(np.nan, index=realized_returns.index)
-                        full_mask_local = ~realized_returns.isna() & (realized_returns.abs() >= econ_floor_local)
-                        y_full_local[full_mask_local & (realized_returns > 0)] = 1.0
-                        y_full_local[full_mask_local & (realized_returns <= 0)] = 0.0
-
-                        filtering_diag_local = compute_filtering_inflation_diagnostics(
-                            X=meta_features_model_processed,
-                            y_full=y_full_local,
-                            y_filtered=binary_labels,
-                            realized_returns=realized_returns,
-                            volatility=volatility_1d,
-                            probabilities=calibrated_probs,
-                            cv_splits=3,
-                            time_aware_cv=True,
-                        )
-
-                        easy_problem_flag = False
-                        try:
-                            overlap_diag_local = compute_class_overlap_features(
-                                X=meta_features_model_processed,
-                                retained_mask=labeled_mask,
-                                top_k_features=5,
-                            )
-                            easy_problem_flag = bool(overlap_diag_local.get("easy_problem_detected", False))
-                        except Exception:
-                            overlap_diag_local = {}
-                            easy_problem_flag = False
-
-                        if (
-                            filtering_diag_local.get("filtering_is_major_contributor")
-                            or filtering_diag_local.get("precision_collapse_detected")
-                            or easy_problem_flag
-                        ):
-                            diagnostics_penalty = float(config.get("diagnostic_penalty_weight", 150.0))
-                    except Exception:
-                        diagnostics_penalty = 0.0
-
-                # ===== COMBINED OBJECTIVE WITH RETENTION REGULARIZATION =====
-                # New formulation: objective adjusts the filtered AUC based on how far
-                # the retention rate falls below a soft target.
-                #
-                #   ret_target = 0.35  (35% of pre-events retained)
-                #   penalty    = alpha * (max(0, ret_target - retention_total))^2
-                #   objective  = AUC_filtered -  penalty
-                #
-                # This penalizes overly aggressive filtering (very low retention) while
-                # not rewarding sparse configs purely via 1/retention.
-
-                # Retention regularization parameter (configurable)
-
-                # Calibration-aware risk adjustment on top of retention-adjusted AUC.
-                weighted_brier = None
-                weighted_brier_norm = None
-                ece_norm = None
-                mid_brier = None
-                mid_brier_norm = None
-                calib_combo_value = None
-                rank_calib_score = auc_retention_adjusted
-
-                try:
-                    probs_array = np.asarray(calibrated_probs, dtype=float)
-                    y_calib_vals = np.asarray(binary_labels.values, dtype=float)
-                    mask_calib = np.isfinite(probs_array) & np.isfinite(y_calib_vals)
-                    probs_array = probs_array[mask_calib]
-                    y_calib_vals = y_calib_vals[mask_calib]
-                    n_calib = y_calib_vals.size
-
-                    min_calib_samples = int(config.get("calibration_min_samples", 200))
-                    if n_calib >= min_calib_samples:
-                        p_min = float(config.get("calibration_prob_min_clip", 0.05))
-                        p_max = float(config.get("calibration_prob_max_clip", 0.95))
-                        if p_max <= p_min:
-                            p_max = min(0.99, p_min + 0.05)
-                        probs_clipped = np.clip(probs_array, p_min, p_max)
-
-                        conf_power = float(config.get("calibration_confidence_power", 1.0))
-                        if conf_power != 1.0:
-                            confidence = np.abs(probs_clipped - 0.5) ** conf_power
-                            weights = 1.0 + confidence
-                        else:
-                            weights = np.ones_like(probs_clipped)
-
-                        errors = (y_calib_vals - probs_clipped) ** 2
-                        weighted_brier = float(np.average(errors, weights=weights))
-
-                        brier_target = float(config.get("calibration_brier_target", 0.18))
-                        brier_max = float(config.get("calibration_brier_max", 0.35))
-                        if brier_max <= brier_target:
-                            brier_max = brier_target + 1e-3
-                        excess = max(0.0, weighted_brier - brier_target)
-                        denom = max(brier_max - brier_target, 1e-6)
-                        weighted_brier_norm = min(1.0, excess / denom)
-
-                        n_bins_calib = int(config.get("calibration_bins", 10))
-                        if n_bins_calib <= 0:
-                            n_bins_calib = 10
-                        n_bins_calib = max(2, n_bins_calib)
-                        bin_edges = np.linspace(0.0, 1.0, n_bins_calib + 1)
-                        ece_val = 0.0
-                        for bi in range(n_bins_calib):
-                            mask_bin = (probs_clipped >= bin_edges[bi]) & (probs_clipped < bin_edges[bi + 1])
-                            idx_bin = np.nonzero(mask_bin)[0]
-                            n_bin = idx_bin.size
-                            if n_bin < 20:
-                                continue
-                            p_hat = float(np.mean(probs_clipped[idx_bin]))
-                            y_hat = float(np.mean(y_calib_vals[idx_bin]))
-                            ece_val += (n_bin / float(n_calib)) * abs(p_hat - y_hat)
-                        if ece_val > 0.0:
-                            ece_raw = float(ece_val)
-                            ece_max = float(config.get("calibration_ece_max", 0.25))
-                            if ece_max <= 0.0:
-                                ece_max = 0.25
-                            ece_norm = min(1.0, ece_raw / ece_max)
-
-                        mid_low = float(config.get("calibration_mid_prob_low", 0.3))
-                        mid_high = float(config.get("calibration_mid_prob_high", 0.7))
-                        if mid_high <= mid_low:
-                            mid_high = mid_low + 1e-3
-                        mid_mask = (probs_clipped >= mid_low) & (probs_clipped <= mid_high)
-                        if np.any(mid_mask):
-                            errors_mid = (y_calib_vals[mid_mask] - probs_clipped[mid_mask]) ** 2
-                            if errors_mid.size > 0:
-                                mid_brier = float(np.mean(errors_mid))
-                                mid_target = float(config.get("calibration_mid_brier_target", brier_target))
-                                mid_max = float(config.get("calibration_mid_brier_max", brier_max))
-                                if mid_max <= mid_target:
-                                    mid_max = mid_target + 1e-3
-                                mid_excess = max(0.0, mid_brier - mid_target)
-                                mid_denom = max(mid_max - mid_target, 1e-6)
-                                mid_brier_norm = min(1.0, mid_excess / mid_denom)
-
-                        alpha_calib = float(config.get("calibration_brier_weight", 0.7))
-                        beta_calib = float(config.get("calibration_ece_weight", 0.3))
-                        gamma_calib = float(config.get("calibration_mid_weight", 0.3))
-                        calib_combo = 0.0
-                        if weighted_brier_norm is not None:
-                            calib_combo += alpha_calib * weighted_brier_norm
-                        if ece_norm is not None:
-                            calib_combo += beta_calib * ece_norm
-                        if mid_brier_norm is not None:
-                            calib_combo += gamma_calib * mid_brier_norm
-                        if calib_combo < 0.0:
-                            calib_combo = 0.0
-                        calib_combo_value = float(calib_combo)
-
-                        lambda_calib = float(config.get("calibration_lambda", 0.95))
-                        if lambda_calib < 0.0:
-                            lambda_calib = 0.0
-                        factor = 1.0 - lambda_calib * calib_combo
-                        if factor < 0.0:
-                            factor = 0.0
-
-                        deflation = 0.0
-                        if auc_cv_std is not None and np.isfinite(auc_cv_std):
-                            try:
-                                deflation = 2.0 * float(auc_cv_std)
-                            except Exception:
-                                deflation = 0.0
-                        deflated_auc = max(0.0, float(auc_retention_adjusted) - deflation)
-                        rank_calib_score = deflated_auc * factor
-                except Exception:
-                    weighted_brier = None
-                    weighted_brier_norm = None
-                    ece_norm = None
-                    mid_brier = None
-                    mid_brier_norm = None
-                    calib_combo_value = None
-                    rank_calib_score = auc_retention_adjusted
-
-                # ===== SIMPLIFIED COMBINED OBJECTIVE =====
-                # Primary components:
-                # 1. edge_scaled: Captures profitability AND learnability (via capture ratio)
-                # 2. auc_retention_adjusted: AUC adjusted for retention penalty & range
-                # 3. trades_bonus: Reward healthy trade density
-                # 4. Penalties for extreme density, slow exits, over-aggressive filtering,
-                #    and unrealistic TPSL geometry relative to ATR-based trailing.
-                combined_score = (
-                    edge_scaled * edge_weight
-                    + (rank_calib_score * 100.0)
-                    + (trades_bonus * density_weight)
-                    - (penalty_density * 0.1)
-                    - (tto_penalty * 0.1)
-                    - trail_geom_penalty
-                    - diagnostics_penalty
-                    - robustness_penalty
-                )
 
                 # Store candidate configuration for later persistence
                 candidate_config = {
                     'params': params.copy(),
                     'learnability': float(learnability_score),
                     'mean_auc': float(mean_auc),
-                    'profitability': float(profitability_score),
-                    'edge': float(edge_score),
-                    'edge_scaled': float(edge_scaled),
+                    'profitability': float(pnl_edge), # Tracking raw edge
+                    'edge': float(learnable_pnl),     # Tracking learnable edge
+                    'edge_scaled': float(learnable_pnl * 1000), # Legacy scaling for compat
                     'combined': float(combined_score),
                     'mean_pos': float(mean_pos),
                     'mean_neg': float(mean_neg),
                     'sharpe_pos': float(sharpe_pos),
                     'n_events': int(n_events),
-                    'n_raw_events': int(n_raw_events),
-                    'n_vol_scaled_events': int(n_vol_scaled_events),
                     'balance_score': float(balance_score),
                     'trades_per_day': float(trades_per_day),
-                    'mean_tto': float(mean_tto) if np.isfinite(mean_tto) else float('nan'),
-                    'timeout_rate': float(timeout_rate) if np.isfinite(timeout_rate) else float('nan'),
-                    'tto_penalty': float(tto_penalty),
                     'n_pre_events': int(n_pre_total),
                     'retention_total': float(retention_total),
-                    'retention_pos': float(retention_pos),
-                    'retention_neg': float(retention_neg),
-                    'snr_pre': float(snr_pre),
                     'snr_post': float(snr_post),
-                    'effect_size_pre': float(d_pre) if np.isfinite(d_pre) else 0.0,
-                    'effect_size_post': float(d_post) if np.isfinite(d_post) else 0.0,
-                    'n_required_80pct_power': float(n_required_80),
-                    # CV-based robustness proxy from learnability probe
                     'learnability_worst_fold_auc': float(worst_fold_auc_cv) if worst_fold_auc_cv is not None else None,
                     'learnability_auc_cv_std': float(auc_cv_std) if auc_cv_std is not None else None,
                     'model_complexity': model_complexity,
-                    # NEW: Track trade count control parameters
-                    'cusum_threshold': float(cusum_threshold),
-                    'target_signal_density': float(target_signal_density),
-                    'r_multiple_threshold': float(r_multiple_threshold),
-                    'effective_tx_cost': float(effective_tx_cost),
-                    'label_low_q': float(label_low_q),
-                    'label_high_q': float(label_high_q),
-                    # AUC range tracking (unified into auc_retention_adjusted)
-                    'auc_in_target_range': bool(auc_in_target_range),
-                    'auc_range_adjustment': float(auc_range_adjustment),
-                    'auc_weight_multiplier': float(auc_weight_multiplier),
-                    # NEW: CV fold diagnostics from learnability probe
+                    # HPO objective components
+                    'pnl_edge': float(pnl_edge),
+                    'capture_ratio': float(capture_ratio),
+                    'actual_pos_frac': float(actual_pos_frac),
+                    'target_pos_frac': float(target_pos_frac),
+                    'alignment_penalty': float(alignment_penalty),
+                    'starvation_penalty': float(starvation_penalty),
+                    'robustness_penalty_scaled': float(robustness_penalty_scaled),
+                    # CV fold diagnostics from learnability probe
                     'fold_aucs': fold_aucs.tolist() if isinstance(fold_aucs, np.ndarray) else list(fold_aucs) if fold_aucs is not None else [],
-                    'auc_interpretation': (
-                        'too_noisy' if mean_auc < 0.54 else
-                        'good_edge' if mean_auc <= 0.62 else
-                        'excellent_check_leakage' if mean_auc <= 0.67 else
-                        'suspicious_leakage' if mean_auc > 0.70 else
-                        'above_target'
-                    ),
-                    # Retention regularization (unified objective)
-                    'retention_penalty': float(retention_penalty),
-                    'auc_retention_adjusted': float(auc_retention_adjusted),
-                    'alpha_retention': float(alpha_retention),
-                    'weighted_brier': float(weighted_brier) if weighted_brier is not None else None,
-                    'weighted_brier_norm': float(weighted_brier_norm) if weighted_brier_norm is not None else None,
-                    'ece_norm': float(ece_norm) if ece_norm is not None else None,
-                    'mid_brier': float(mid_brier) if mid_brier is not None else None,
-                    'mid_brier_norm': float(mid_brier_norm) if mid_brier_norm is not None else None,
-                    'calibration_combo': float(calib_combo_value) if calib_combo_value is not None else None,
-                    'rank_calib_score': float(rank_calib_score),
                 }
 
                 # Optional per-regime breakdown using attached HMM regimes, if available.
@@ -5922,7 +5429,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     pool_size_after = len(candidate_pool)
                     tprint_info(
                         f"[CANDIDATE_APPEND] complexity={model_complexity} "
-                        f"edge={edge_score:.6f} combined={combined_score:.6f} "
+                        f"edge={learnable_pnl:.6f} combined={combined_score:.6f} "
                         f"mean_auc={mean_auc:.6f} n_events={n_events} "
                         f"pool_size={pool_size_after}"
                     )
@@ -5932,8 +5439,8 @@ class MetaLabelingHPOExperimentStep(BaseStep):
 
                 return {
                     'learnability': float(learnability_score),
-                    'profitability': float(profitability_score),
-                    'edge': float(edge_score),
+                    'profitability': float(pnl_edge),
+                    'edge': float(learnable_pnl),
                     'combined': float(combined_score),
                 }
 

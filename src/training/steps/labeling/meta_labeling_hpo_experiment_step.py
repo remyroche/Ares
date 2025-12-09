@@ -224,10 +224,17 @@ from src.training.steps.labeling.feature_generation_meta_labeling_step import (
     create_rolling_regime_aware_quantile_labels_from_vol_scaled_returns,
     compute_volatility_normalized_zscore,
     create_conditional_quantile_labels,
-    compute_zscore_gated_triple_barrier_labels,  # NEW: Full pipeline implementation
+    compute_zscore_gated_triple_barrier_labels,  # Full pipeline implementation
     diagnose_quantile_lookahead_bias,
     attach_rolling_hmm_regimes_to_market_data,
     create_regime_aware_quantile_labels_from_vol_scaled_returns,
+    # NEW: Volatility-scaled labeling functions
+    compute_ema_volatility,
+    compute_regime_metrics,
+    compute_target_positive_fraction,
+    compute_dynamic_threshold_k,
+    create_volatility_scaled_labels,
+    create_volatility_scaled_labels_for_events,
 )
 
 from src.utils.ml_common.optimization.hierarchical_parameter_optimizer import (
@@ -3091,29 +3098,36 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 depends_on=["event_geometry"],
                 description="Volatility adaptation baseline and multipliers",
             ),
-            # Group 4: Label Definition (3 params) - Depends on Volatility Adaptation
+            # Group 4: Volatility-Scaled Label Definition
+            # NEW: Uses y = future_return > k_t * rolling_volatility approach
+            # instead of percentile-based quantile thresholds
             create_param_group(
                 name="label_definition",
                 params={
-                    "label_low_q": {
-                        "type": "float",
-                        "low": 0.35,
-                        "high": 0.45,
+                    # Volatility EMA span: 32-64 bars (~8-16h at 15m timeframe)
+                    "volatility_ema_span": {
+                        "type": "int",
+                        "low": 32,
+                        "high": 64,
+                        "step": 8,
                     },
-                    "label_high_q": {
-                        "type": "float",
-                        "low": 0.65,
-                        "high": 0.75,
+                    # Rolling window for dynamic k threshold: 300-500 bars (~3-5 days)
+                    "rolling_k_window": {
+                        "type": "int",
+                        "low": 300,
+                        "high": 500,
+                        "step": 50,
                     },
+                    # Economic floor (still needed for filtering trivial events)
                     "econ_min_return_multiple": {
                         "type": "float",
                         "low": 1.2,
-                        "high": 1.6,
+                        "high": 1.8,
                     },
                 },
                 priority=4,
                 depends_on=["volatility_adaptation"],
-                description="Quantile-based label definition",
+                description="Volatility-scaled label definition (y = return > k*vol)",
             ),
             # Group 5: Target Engineering (5 params) - Depends on Label Definition
             create_param_group(
@@ -3170,10 +3184,58 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 depends_on=["event_geometry"],
                 description="Kalman smoothing noise parameters",
             ),
+            # Group 6.5: Sigmoid Regime Adaptation Parameters
+            # NEW: Parameters for dynamic threshold adaptation based on market regime
+            create_param_group(
+                name="sigmoid_regime_adaptation",
+                params={
+                    # Minimum target positive fraction (strong downtrend -> p_min)
+                    "p_min": {
+                        "type": "float",
+                        "low": 0.25,
+                        "high": 0.40,
+                    },
+                    # Maximum target positive fraction (strong uptrend -> p_max)
+                    "p_max": {
+                        "type": "float",
+                        "low": 0.60,
+                        "high": 0.75,
+                    },
+                    # Sigmoid slope (sensitivity to regime signal)
+                    "sigmoid_slope": {
+                        "type": "float",
+                        "low": 1.0,
+                        "high": 2.5,
+                    },
+                    # Sigmoid midpoint (center reference point)
+                    "sigmoid_midpoint": {
+                        "type": "float",
+                        "low": -0.5,
+                        "high": 0.5,
+                    },
+                    # Median volatility lookback for vol_ratio (300-500 bars)
+                    "median_vol_lookback": {
+                        "type": "int",
+                        "low": 300,
+                        "high": 500,
+                        "step": 50,
+                    },
+                    # Trend lookback for trend_strength (10-30 bars)
+                    "regime_trend_lookback": {
+                        "type": "int",
+                        "low": 10,
+                        "high": 30,
+                        "step": 5,
+                    },
+                },
+                priority=7,
+                depends_on=["label_definition"],
+                description="Sigmoid-based regime adaptation for dynamic k threshold",
+            ),
         ]
         
         # =====================================================================
-        # NEW GROUPS: Z-Score Gated Triple Barrier Pipeline Parameters
+        # ADDITIONAL GROUPS: Z-Score Gated Triple Barrier Pipeline Parameters
         # =====================================================================
         
         # Group 7: Triple Barrier Base Multipliers
@@ -3266,19 +3328,21 @@ class MetaLabelingHPOExperimentStep(BaseStep):
             )
         )
         
-        # Group 10: Trend Adjustment
-        # trend_alpha: Linear trend factor (0.1–0.4)
-        # trend_lookback: EMA/window size for trend calculation (10–50 bars)
+        # Group 10: Trend Adjustment for Barriers (Independent from vol-scaled labels)
+        # NOTE: This is for barrier adjustment only, NOT for label generation.
+        # The trend in label generation is handled by sigmoid_regime_adaptation.
+        # trend_alpha: Linear trend factor for TP/SL barrier adjustment
+        # trend_lookback: EMA/window size for trend calculation in barrier adjustment
         param_groups.append(
             create_param_group(
                 name="trend_adjustment",
                 params={
-                    "trend_alpha": {
+                    "barrier_trend_alpha": {
                         "type": "float",
                         "low": 0.1,
                         "high": 0.4,
                     },
-                    "trend_lookback": {
+                    "barrier_trend_lookback": {
                         "type": "int",
                         "low": 10,
                         "high": 50,
@@ -3287,7 +3351,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 },
                 priority=10,
                 depends_on=["zscore_scaling"],
-                description="Linear trend adjustment for TP barriers",
+                description="Barrier-specific trend adjustment (independent from vol-scaled labeling)",
             )
         )
         
@@ -3356,28 +3420,23 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 )
             )
         
-        # Group 13: Volatility Lookback
-        # rolling_vol_lookback: Volatility EMA lookback (50–200 bars)
+        # Group 13: Future Return Horizon
+        # future_return_horizon: Horizon for computing future returns (4-8 bars = 1-2h at 15m)
+        # This is independent from the vertical barrier horizon (horizon_bars)
         param_groups.append(
             create_param_group(
-                name="volatility_lookback",
+                name="future_return_horizon",
                 params={
-                    "rolling_vol_lookback": {
+                    "future_return_horizon": {
                         "type": "int",
-                        "low": 50,
-                        "high": 200,
-                        "step": 25,
-                    },
-                    "quantile_lookback_bars": {
-                        "type": "int",
-                        "low": 2000,
-                        "high": 4000,
-                        "step": 500,
+                        "low": 4,
+                        "high": 8,
+                        "step": 1,
                     },
                 },
                 priority=13,
-                depends_on=["volatility_adaptation"],
-                description="Lookback windows for volatility and quantile calculations",
+                depends_on=["label_definition"],
+                description="Horizon for future return computation in volatility-scaled labels",
             )
         )
         
@@ -3634,15 +3693,11 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 if not np.isfinite(econ_min_mult) or econ_min_mult <= 0:
                     econ_min_mult = float(ECON_MIN_RETURN_MULTIPLE)
 
-                # Label quantile thresholds (regime-aware when regimes are present).
-                label_low_q = float(params.get("label_low_q", 0.30))
-                label_high_q = float(params.get("label_high_q", 0.70))
-                # Guard-rail: ensure a proper ordering and keep them away from extremes.
-                # WIDENED bounds to allow denser label configurations
-                label_low_q = max(0.10, min(0.50, label_low_q))
-                label_high_q = max(0.50, min(0.90, label_high_q))
-                if label_high_q <= label_low_q:
-                    label_low_q, label_high_q = 0.30, 0.70
+                # NOTE: label_low_q and label_high_q are no longer used.
+                # Volatility-scaled labeling uses dynamic k threshold instead.
+                # These are kept for backwards compatibility but not used.
+                label_low_q = 0.30  # Legacy, unused
+                label_high_q = 0.70  # Legacy, unused
 
                 # NEW: R-multiple threshold for labeling - controls trade velocity filter
                 r_multiple_threshold = float(params.get("r_multiple_pos_threshold", 0.7))
@@ -3689,11 +3744,9 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 z_magnitude_scale = float(params.get("z_magnitude_scale", 0.3))
                 z_magnitude_scale = max(0.0, min(0.5, z_magnitude_scale))
                 
-                # Trend adjustment (LINEAR, not thresholds)
-                hpo_trend_alpha = float(params.get("trend_alpha", 0.3))
-                hpo_trend_alpha = max(0.1, min(0.4, hpo_trend_alpha))
-                hpo_trend_lookback = int(params.get("trend_lookback", 20))
-                hpo_trend_lookback = max(10, min(50, hpo_trend_lookback))
+                # NOTE: Barrier trend adjustment parameters (barrier_trend_alpha, barrier_trend_lookback)
+                # are extracted later in the barrier calculation section.
+                # These are independent from volatility-scaled labeling.
                 
                 # Clipping bounds (as multiples of base volatility)
                 tp_min_mult = float(params.get("tp_min_mult", 0.5))
@@ -3705,17 +3758,15 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 sl_max_mult = float(params.get("sl_max_mult", 2.0))
                 sl_max_mult = max(1.5, min(3.0, sl_max_mult))
                 
-                # Conditional quantile thresholds
+                # Conditional quantile thresholds (for entry gating, optional)
                 cond_quantile_long = float(params.get("conditional_quantile_long", 0.6))
                 cond_quantile_long = max(0.55, min(0.70, cond_quantile_long))
                 cond_quantile_short = float(params.get("conditional_quantile_short", 0.35))
                 cond_quantile_short = max(0.30, min(0.45, cond_quantile_short))
                 
-                # Volatility lookback parameters
-                rolling_vol_lookback = int(params.get("rolling_vol_lookback", 100))
-                rolling_vol_lookback = max(50, min(200, rolling_vol_lookback))
-                quantile_lookback_bars = int(params.get("quantile_lookback_bars", 3000))
-                quantile_lookback_bars = max(2000, min(4000, quantile_lookback_bars))
+                # Future return horizon (for vol-scaled labeling)
+                future_return_horizon = int(params.get("future_return_horizon", 6))
+                future_return_horizon = max(4, min(8, future_return_horizon))
 
                 # --- Recompute realized returns ---
                 # NO FUTURE LEAKAGE in volatility-based thresholds:
@@ -3729,30 +3780,22 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 low_prices = market_data["low"] if "low" in market_data.columns else market_data["close"]
                 close_prices = market_data["close"]
 
+                # ATR computation for barrier adjustment (independent from vol-scaled labeling)
                 tr1 = high_prices - low_prices
                 tr2 = (high_prices - close_prices.shift(1)).abs()
                 tr3 = (low_prices - close_prices.shift(1)).abs()
                 true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
 
-                trend_atr_window = int(config.get("trend_strength_atr_window", 14))
-                atr_series = true_range.rolling(window=trend_atr_window, min_periods=1).mean()
+                # NOTE: ATR-based TrendStrength is REMOVED from label generation.
+                # It was previously used to adjust labels via profit_factor/stop_factor.
+                # Now we use pure volatility-scaled labeling (y = return > k * vol).
+                # ATR is only kept for barrier adjustment purposes.
+                atr_series = true_range.rolling(window=14, min_periods=1).mean()
 
-                # Use HPO trend_lookback if available
-                trend_delta_lookback = hpo_trend_lookback if "trend_lookback" in params else int(config.get("trend_strength_delta_lookback", 4))
-                price_delta = close_prices.diff(trend_delta_lookback).abs()
-
-                trend_strength = (price_delta / (atr_series + 1e-8)).replace([np.inf, -np.inf], np.nan)
-                trend_strength = trend_strength.clip(
-                    lower=0.0,
-                    upper=float(config.get("trend_strength_clip", 5.0)),
-                ).fillna(0.0)
-
-                # Use HPO trend_alpha if available, otherwise fall back to config
-                trend_alpha_profit = hpo_trend_alpha if "trend_alpha" in params else float(config.get("trend_strength_alpha_profit", 0.5))
-                trend_beta = float(config.get("trend_strength_beta_stop", 0.5))
-
-                profit_factor = 1.0 + trend_alpha_profit * trend_strength
-                stop_factor = 1.0 + trend_beta * trend_strength
+                # Simple profit/stop factors for barrier adjustment only
+                # (these do NOT affect volatility-scaled label generation)
+                profit_factor = pd.Series(1.0, index=market_data.index)
+                stop_factor = pd.Series(1.0, index=market_data.index)
 
                 # =====================================================================
                 # Z-Score Gated Barrier Calculation (when new params are provided)
@@ -3761,16 +3804,21 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 use_zscore_gated_barriers = "k_tp_base" in params or "z_magnitude_scale" in params
                 
                 if use_zscore_gated_barriers:
-                    # NEW: Use rolling volatility with configurable lookback
-                    rolling_vol = volatility_1d.rolling(rolling_vol_lookback, min_periods=10).mean()
+                    # Use rolling volatility with EMA span from vol-scaled labeling params
+                    barrier_vol_span = int(params.get("volatility_ema_span", 48))
+                    log_returns = np.log(close_prices / close_prices.shift(1))
+                    rolling_vol = compute_ema_volatility(log_returns, span=barrier_vol_span, min_periods=10)
                     
                     # Base barriers using new k_tp_base and k_sl_base multipliers
                     tp_base = k_tp_base * rolling_vol
                     sl_base = k_sl_base * rolling_vol
                     
-                    # Z-score magnitude scaling (if we had z-scores)
-                    # For now, use trend_strength as a proxy for signal magnitude
-                    z_proxy = trend_strength.clip(0, 3)
+                    # Z-score magnitude scaling using the vol_z_scores from vol-scaled labeling
+                    # If not available, use simple absolute return magnitude
+                    try:
+                        z_proxy = vol_z_scores.reindex(market_data.index).abs().clip(0, 3).fillna(1.0)
+                    except Exception:
+                        z_proxy = pd.Series(1.0, index=market_data.index)
                     z_scale_factor = 1.0 + z_magnitude_scale * z_proxy
                     
                     # Apply direction-specific multipliers based on consensus signal
@@ -3792,14 +3840,19 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                         adaptive_profit.loc[short_mask] = tp_base.loc[short_mask] * k_tp_short_mult * z_scale_factor.loc[short_mask]
                         adaptive_stop.loc[short_mask] = sl_base.loc[short_mask] * k_sl_short_mult
                     
-                    # Apply trend adjustment (LINEAR formula)
-                    # Normalize trend_strength to [-1, 1] range for adjustment
-                    trend_norm = (trend_strength / (trend_strength.quantile(0.95) + 1e-8)).clip(-1, 1)
+                    # Apply barrier trend adjustment (independent from vol-scaled labeling trend)
+                    # This uses simple returns-based trend, NOT ATR-based TrendStrength
+                    barrier_trend_alpha = float(params.get("barrier_trend_alpha", 0.2))
+                    barrier_trend_lookback = int(params.get("barrier_trend_lookback", 20))
+                    
+                    simple_trend = log_returns.rolling(barrier_trend_lookback, min_periods=5).mean()
+                    simple_trend = simple_trend / (rolling_vol + 1e-8)  # Normalize by vol
+                    simple_trend_norm = simple_trend.clip(-1, 1).fillna(0)
                     
                     # For longs: positive trend → increase TP
-                    trend_adj_long = 1.0 + hpo_trend_alpha * trend_norm
+                    trend_adj_long = 1.0 + barrier_trend_alpha * simple_trend_norm
                     # For shorts: negative trend → increase TP
-                    trend_adj_short = 1.0 - hpo_trend_alpha * trend_norm
+                    trend_adj_short = 1.0 - barrier_trend_alpha * simple_trend_norm
                     
                     if long_mask.any():
                         adaptive_profit.loc[long_mask] = adaptive_profit.loc[long_mask] * trend_adj_long.loc[long_mask]
@@ -3866,79 +3919,82 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     trail_distance_atr_mult=trail_dist,
                 )
 
-                # Basic diagnostics on raw realized returns and labels before
-                # any vol-scaling or quantile-based relabeling.
+                # Basic diagnostics on raw realized returns and labels
                 n_raw_events = len(realized_returns)
                 n_raw_labeled = int((~binary_labels.isna()).sum())
+                
+                # =====================================================================
+                # NEW: Volatility-Scaled Label Generation (y = return > k * volatility)
+                # =====================================================================
+                # Extract new volatility-scaled labeling parameters
+                volatility_ema_span = int(params.get("volatility_ema_span", 48))
+                volatility_ema_span = max(32, min(64, volatility_ema_span))
+                
+                rolling_k_window = int(params.get("rolling_k_window", 400))
+                rolling_k_window = max(300, min(500, rolling_k_window))
+                
+                # Sigmoid regime adaptation parameters
+                p_min = float(params.get("p_min", 0.30))
+                p_min = max(0.25, min(0.40, p_min))
+                p_max = float(params.get("p_max", 0.70))
+                p_max = max(0.60, min(0.75, p_max))
+                
+                sigmoid_slope = float(params.get("sigmoid_slope", 1.5))
+                sigmoid_slope = max(1.0, min(2.5, sigmoid_slope))
+                sigmoid_midpoint = float(params.get("sigmoid_midpoint", 0.0))
+                sigmoid_midpoint = max(-0.5, min(0.5, sigmoid_midpoint))
+                
+                median_vol_lookback = int(params.get("median_vol_lookback", 400))
+                median_vol_lookback = max(300, min(500, median_vol_lookback))
+                regime_trend_lookback = int(params.get("regime_trend_lookback", 20))
+                regime_trend_lookback = max(10, min(30, regime_trend_lookback))
+                
+                # Economic floor
+                econ_floor = DEFAULT_TRANSACTION_COST * econ_min_mult
+                
                 if debug_sample_count < debug_sample_limit:
                     tprint_info(
                         f"[HPO_DEBUG_LABELS] raw_events={n_raw_events}, raw_labeled={n_raw_labeled}, "
-                        f"profit_thr_base={profit_thr_base:.6f}, stop_thr_base={stop_thr_base:.6f}, "
-                        f"econ_min_mult={econ_min_mult:.3f}, label_low_q={label_low_q:.3f}, label_high_q={label_high_q:.3f}",
+                        f"vol_ema_span={volatility_ema_span}, rolling_k_window={rolling_k_window}, "
+                        f"p_min={p_min:.2f}, p_max={p_max:.2f}, sigmoid_slope={sigmoid_slope:.2f}",
                     )
 
-                # Replace legacy R-multiple based labels with quantile-based labels
-                # derived from volatility-scaled realized returns, to improve label
-                # balance and economic relevance in HPO scoring.
-                #
-                # NO FUTURE VOLATILITY LEAKAGE:
-                # - volatility_1d at time T uses only data from T-96 to T-1 (backward-looking)
-                # - realized_returns at time T uses future prices (expected for labeling)
-                # - vol_scaled = realized_returns / past_volatility (no future vol leakage)
-                #
-                # NOTE: Quantile thresholds are computed from ALL training data, which is
-                # acceptable for HPO/training. In production, use expanding/rolling quantiles.
-                vol_scaled_returns = compute_vol_scaled_returns_for_events(
+                # Generate volatility-scaled labels using the new approach
+                # y = future_return > k_t * rolling_volatility
+                # where k_t adapts to regime (trend + volatility ratio)
+                vol_scaled_labels, vol_z_scores, vol_diag = create_volatility_scaled_labels_for_events(
                     realized_returns=realized_returns,
-                    volatility=volatility_1d,
-                    econ_min_return_multiple=econ_min_mult,
+                    market_data=market_data,
+                    volatility_ema_span=volatility_ema_span,
+                    rolling_k_window=rolling_k_window,
+                    median_vol_lookback=median_vol_lookback,
+                    trend_lookback=regime_trend_lookback,
+                    p_min=p_min,
+                    p_max=p_max,
+                    sigmoid_slope=sigmoid_slope,
+                    sigmoid_midpoint=sigmoid_midpoint,
+                    min_periods=100,
+                    clip_zscore=5.0,
+                    econ_floor=econ_floor,
                 )
+                
+                # Use volatility-scaled labels instead of quantile-based
+                binary_labels = vol_scaled_labels
 
-                n_vol_scaled_events = int(vol_scaled_returns.dropna().size)
-                if debug_sample_count < debug_sample_limit:
-                    tprint_info(
-                        f"[HPO_DEBUG_LABELS] vol_scaled_events={n_vol_scaled_events}",
-                    )
-
-                # Decide whether to use regime-aware quantiles based on the
-                # attached HMM regimes (typically 1h) on market_data.
-                regimes_for_labeling = None
-                if config.get("enable_regime_aware_quantiles", True) and "hmm_regime_label_1h" in market_data.columns:
-                    regimes_for_labeling = market_data["hmm_regime_label_1h"]
-
-                def _make_quantile_labels(vol_scaled_series: pd.Series) -> pd.Series:
-                    """Helper to create (regime-aware) quantile labels from a score series."""
-                    if regimes_for_labeling is not None:
-                        return create_regime_aware_quantile_labels_from_vol_scaled_returns(
-                            vol_scaled=vol_scaled_series,
-                            regimes=regimes_for_labeling,
-                            low_q=label_low_q,
-                            high_q=label_high_q,
-                        )
-                    return create_quantile_labels_from_vol_scaled_returns(
-                        vol_scaled=vol_scaled_series,
-                        low_q=label_low_q,
-                        high_q=label_high_q,
-                    )
-
-                # Primary quantile labels on vol-scaled returns with the
-                # HPO-chosen economic floor.
-                quantile_labels = _make_quantile_labels(vol_scaled_returns)
-                binary_labels = quantile_labels
-
-                n_quantile_non_nan = int((~quantile_labels.isna()).sum())
-                unique_quantile_vals: list[int] = []
-                if n_quantile_non_nan > 0:
+                n_vol_scaled_events = int(binary_labels.dropna().size)
+                unique_vol_labels: list[int] = []
+                if n_vol_scaled_events > 0:
                     try:
-                        unique_quantile_vals = sorted(
-                            pd.unique(quantile_labels.dropna().astype(int)).tolist()
+                        unique_vol_labels = sorted(
+                            pd.unique(binary_labels.dropna().astype(int)).tolist()
                         )
                     except Exception:
-                        unique_quantile_vals = []
+                        unique_vol_labels = []
                 if debug_sample_count < debug_sample_limit:
                     tprint_info(
-                        f"[HPO_DEBUG_LABELS] quantile_labels_non_nan={n_quantile_non_nan}, "
-                        f"unique_labels={unique_quantile_vals}",
+                        f"[HPO_DEBUG_LABELS] vol_scaled_labels={n_vol_scaled_events}, "
+                        f"unique_labels={unique_vol_labels}, "
+                        f"positive_ratio={vol_diag.get('positive_ratio', 'N/A'):.2%}" if vol_diag.get('positive_ratio') else "",
                     )
 
                 # Guard: configurations that produce no labeled events at all are
@@ -3962,13 +4018,12 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     if debug_sample_count < debug_sample_limit:
                         tprint_warning(
                             f"[HPO_DEBUG_LABELS] rejecting config with zero labeled events: "
-                            f"raw_labeled={n_raw_labeled}, vol_non_nan={n_vol_scaled_events}, "
-                            f"quantile_non_nan={n_quantile_non_nan}",
+                            f"raw_labeled={n_raw_labeled}, vol_scaled_labels={n_vol_scaled_events}",
                         )
                     tprint_warning(
                         f"[EARLY_EXIT_EVENTS] Zero labeled events: n_events={n_events}, "
                         f"events_per_day={events_per_day:.3f}, raw_labeled={n_raw_labeled}, "
-                        f"vol_non_nan={n_vol_scaled_events}, quantile_non_nan={n_quantile_non_nan}",
+                        f"vol_scaled_labels={n_vol_scaled_events}",
                     )
                     gate_stats["events_zero"] = gate_stats.get("events_zero", 0) + 1
                     return -1e9
@@ -6701,28 +6756,17 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 low_prices = market_data["low"] if "low" in market_data.columns else market_data["close"]
                 close_prices = market_data["close"]
 
+                # ATR for barrier adjustment (independent from volatility-scaled labeling)
                 tr1 = high_prices - low_prices
                 tr2 = (high_prices - close_prices.shift(1)).abs()
                 tr3 = (low_prices - close_prices.shift(1)).abs()
                 true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+                atr_series = true_range.rolling(window=14, min_periods=1).mean()
 
-                trend_atr_window = int(config.get("trend_strength_atr_window", 14))
-                atr_series = true_range.rolling(window=trend_atr_window, min_periods=1).mean()
-
-                trend_delta_lookback = int(config.get("trend_strength_delta_lookback", 4))
-                price_delta = close_prices.diff(trend_delta_lookback).abs()
-
-                trend_strength = (price_delta / (atr_series + 1e-8)).replace([np.inf, -np.inf], np.nan)
-                trend_strength = trend_strength.clip(
-                    lower=0.0,
-                    upper=float(config.get("trend_strength_clip", 5.0)),
-                ).fillna(0.0)
-
-                trend_alpha = float(config.get("trend_strength_alpha_profit", 0.5))
-                trend_beta = float(config.get("trend_strength_beta_stop", 0.5))
-
-                profit_factor = 1.0 + trend_alpha * trend_strength
-                stop_factor = 1.0 + trend_beta * trend_strength
+                # NOTE: ATR-based TrendStrength removed - now using pure volatility-scaled labeling
+                # Simple profit/stop factors for barriers only
+                profit_factor = pd.Series(1.0, index=market_data.index)
+                stop_factor = pd.Series(1.0, index=market_data.index)
 
                 adaptive_profit = profit_thr_base * vol_factor * profit_factor
                 adaptive_stop = stop_thr_base * vol_factor * stop_factor

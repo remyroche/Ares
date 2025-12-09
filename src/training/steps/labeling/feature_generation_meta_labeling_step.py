@@ -2049,6 +2049,581 @@ def create_conditional_quantile_labels(
     return labels, labels_long, labels_short, diagnostics
 
 
+# ==============================================================================
+# VOLATILITY-BASED LABELING SYSTEM
+# ==============================================================================
+# These functions implement the new volatility-scaled labeling approach:
+#   y = future_return > k_t * rolling_volatility
+# Where k_t is a dynamic threshold that adapts to market regimes.
+# ==============================================================================
+
+
+def compute_ema_volatility(
+    returns: pd.Series,
+    span: int = 48,
+    min_periods: int = 10,
+) -> pd.Series:
+    """Compute rolling volatility using EMA of squared returns.
+    
+    Uses the formula: volatility_t = sqrt(EMA(return^2, span=N))
+    
+    This provides a responsive, smooth estimate of recent volatility that:
+    - Avoids excessive lag from simple rolling windows
+    - Responds quickly to volatility regime changes
+    - Is suitable for dynamic threshold calibration
+    
+    Args:
+        returns: Log returns or percentage returns series
+        span: EMA span in bars (recommended: 32-64 bars for 15m data = 8-16h)
+        min_periods: Minimum periods before computing volatility
+    
+    Returns:
+        Series of EMA-based volatility estimates
+    """
+    # Compute squared returns
+    squared_returns = returns ** 2
+    
+    # Compute EMA of squared returns
+    ema_sq_ret = squared_returns.ewm(span=span, min_periods=min_periods, adjust=False).mean()
+    
+    # Take square root to get volatility (standard deviation estimate)
+    ema_volatility = np.sqrt(ema_sq_ret)
+    
+    # Replace zeros and infinities with NaN
+    ema_volatility = ema_volatility.replace([0.0, np.inf, -np.inf], np.nan)
+    
+    return ema_volatility
+
+
+def compute_regime_metrics(
+    volatility: pd.Series,
+    returns: pd.Series,
+    median_lookback_bars: int = 400,
+    trend_lookback_bars: int = 20,
+    min_periods: int = 50,
+) -> Tuple[pd.Series, pd.Series]:
+    """Compute regime metrics for dynamic threshold adaptation.
+    
+    Computes two regime metrics:
+    1. Volatility ratio: current_vol / median_vol_over_window
+       - > 1 means higher than typical volatility
+       - < 1 means lower than typical volatility
+       
+    2. Trend strength: rolling_mean(returns) / rolling_vol
+       - Positive = upward trend
+       - Negative = downward trend
+       - Near zero = mean-reverting / choppy
+    
+    Args:
+        volatility: EMA-based volatility series
+        returns: Returns series
+        median_lookback_bars: Window for computing median volatility (300-500 bars = 3-5 days)
+        trend_lookback_bars: Window for computing trend strength (10-30 bars)
+        min_periods: Minimum periods for rolling calculations
+    
+    Returns:
+        Tuple of (volatility_ratio, trend_strength) series
+    """
+    # Volatility ratio: current_vol / median_vol
+    # Use rolling median for robustness to outliers
+    median_vol = volatility.rolling(
+        window=median_lookback_bars, 
+        min_periods=min_periods
+    ).median()
+    
+    volatility_ratio = volatility / (median_vol + 1e-8)
+    volatility_ratio = volatility_ratio.replace([np.inf, -np.inf], np.nan)
+    
+    # Trend strength: rolling_mean(returns) / rolling_vol
+    rolling_mean_returns = returns.rolling(
+        window=trend_lookback_bars, 
+        min_periods=min_periods // 2
+    ).mean()
+    rolling_vol = volatility.rolling(
+        window=trend_lookback_bars, 
+        min_periods=min_periods // 2
+    ).mean()
+    
+    trend_strength = rolling_mean_returns / (rolling_vol + 1e-8)
+    trend_strength = trend_strength.replace([np.inf, -np.inf], np.nan)
+    
+    # Clip extreme values
+    volatility_ratio = volatility_ratio.clip(0.1, 10.0)
+    trend_strength = trend_strength.clip(-5.0, 5.0)
+    
+    return volatility_ratio, trend_strength
+
+
+def compute_target_positive_fraction(
+    trend_strength: pd.Series,
+    volatility_ratio: pd.Series,
+    p_min: float = 0.30,
+    p_max: float = 0.70,
+    sigmoid_slope: float = 1.5,
+    sigmoid_midpoint: float = 0.0,
+) -> pd.Series:
+    """Compute target positive label fraction using sigmoid function.
+    
+    Uses a sigmoid function combining trend and volatility metrics:
+    
+    p_positive(t) = p_min + (p_max - p_min) / (1 + exp(-a * (trend_t / vol_ratio_t - b)))
+    
+    Where:
+        - p_min, p_max = min/max target positive fraction (e.g., 0.3, 0.7)
+        - a = sigmoid_slope (controls sensitivity, e.g., 1.5)
+        - b = sigmoid_midpoint (central reference point, e.g., 0.0)
+    
+    This creates a dynamic target that:
+        - In strong uptrends → higher positive fraction (up to p_max)
+        - In strong downtrends → lower positive fraction (down to p_min)
+        - In neutral markets → around 0.5 positive fraction
+    
+    Args:
+        trend_strength: Trend strength series (mean returns / vol)
+        volatility_ratio: Volatility ratio series (current_vol / median_vol)
+        p_min: Minimum target positive fraction (default: 0.30)
+        p_max: Maximum target positive fraction (default: 0.70)
+        sigmoid_slope: Slope parameter 'a' (default: 1.5)
+        sigmoid_midpoint: Midpoint parameter 'b' (default: 0.0)
+    
+    Returns:
+        Series of target positive fractions in [p_min, p_max]
+    """
+    # Compute the regime signal: trend / vol_ratio
+    # High trend + low vol_ratio → strong bullish signal
+    # Low trend + high vol_ratio → strong bearish signal
+    regime_signal = trend_strength / (volatility_ratio + 1e-8)
+    
+    # Apply sigmoid function
+    exponent = -sigmoid_slope * (regime_signal - sigmoid_midpoint)
+    
+    # Clip exponent to avoid overflow
+    exponent = exponent.clip(-20, 20)
+    
+    sigmoid_output = 1.0 / (1.0 + np.exp(exponent))
+    
+    # Scale to [p_min, p_max]
+    p_positive = p_min + (p_max - p_min) * sigmoid_output
+    
+    return p_positive
+
+
+def compute_dynamic_threshold_k(
+    z_scores: pd.Series,
+    p_positive: pd.Series,
+    rolling_window: int = 400,
+    min_periods: int = 100,
+) -> pd.Series:
+    """Compute dynamic threshold k_t for volatility-scaled labeling.
+    
+    Computes: k_t = quantile_{1 - p_positive(t)}(z over rolling window)
+    
+    This threshold adapts to:
+    - The target positive label fraction (regime-dependent)
+    - Recent z-score distribution (rolling quantile)
+    
+    The label is then assigned as:
+        y_t = 1 if future_return_t > k_t * rolling_volatility_t
+    
+    Args:
+        z_scores: Volatility-normalized z-scores (future_return / vol)
+        p_positive: Target positive fraction series (from sigmoid function)
+        rolling_window: Rolling window for quantile computation (300-500 bars)
+        min_periods: Minimum periods for rolling quantile
+    
+    Returns:
+        Series of dynamic threshold k values
+    """
+    k_t = pd.Series(index=z_scores.index, dtype=float)
+    k_t[:] = np.nan
+    
+    # We need to compute rolling quantiles at the (1 - p_positive) level
+    # This is done per-timestep with expanding/rolling windows
+    
+    valid_idx = z_scores.dropna().index
+    if len(valid_idx) < min_periods:
+        return k_t
+    
+    # Convert to numpy for efficient computation
+    z_arr = z_scores.to_numpy()
+    p_arr = p_positive.reindex(z_scores.index).to_numpy()
+    
+    # Use rolling window approach
+    for i in range(min_periods, len(z_arr)):
+        if np.isnan(p_arr[i]) or np.isnan(z_arr[i]):
+            continue
+            
+        # Get rolling window of z-scores
+        start_idx = max(0, i - rolling_window)
+        z_window = z_arr[start_idx:i]  # Exclude current (no lookahead)
+        z_window = z_window[~np.isnan(z_window)]
+        
+        if len(z_window) < min_periods // 2:
+            continue
+        
+        # Compute quantile at (1 - p_positive)
+        quantile_level = 1.0 - p_arr[i]
+        quantile_level = np.clip(quantile_level, 0.05, 0.95)  # Safety bounds
+        
+        k_t.iloc[i] = float(np.quantile(z_window, quantile_level))
+    
+    return k_t
+
+
+def create_volatility_scaled_labels(
+    future_returns: pd.Series,
+    close_prices: pd.Series,
+    # Volatility parameters
+    volatility_ema_span: int = 48,
+    # Dynamic threshold parameters
+    rolling_k_window: int = 400,
+    median_vol_lookback: int = 400,
+    trend_lookback: int = 20,
+    # Sigmoid parameters for p_positive
+    p_min: float = 0.30,
+    p_max: float = 0.70,
+    sigmoid_slope: float = 1.5,
+    sigmoid_midpoint: float = 0.0,
+    # General parameters
+    min_periods: int = 100,
+    clip_zscore: float = 5.0,
+    econ_floor: Optional[float] = None,
+) -> Tuple[pd.Series, pd.Series, Dict[str, Any]]:
+    """Create volatility-scaled labels using dynamic threshold k.
+    
+    This implements the full volatility-based labeling pipeline:
+    
+    1. Volatility Estimation: vol_t = sqrt(EMA(return^2, span=N))
+    2. Regime Metrics:
+       - volatility_ratio = current_vol / median_vol
+       - trend_strength = mean(returns) / vol
+    3. Target Positive Fraction via sigmoid:
+       p_positive(t) = p_min + (p_max - p_min) / (1 + exp(-a * (trend/vol_ratio - b)))
+    4. Z-score computation: z_t = future_return_t / vol_t
+    5. Dynamic threshold: k_t = quantile_{1-p_positive}(z over rolling window)
+    6. Label assignment: y_t = 1 if future_return_t > k_t * vol_t
+    
+    Key benefits:
+    - Labels are relative to market volatility (not fixed percentiles)
+    - Threshold adapts to regime (trend + volatility conditions)
+    - Works across different market environments
+    - Z-score preserves trend magnitude while being volatility-aware
+    
+    Args:
+        future_returns: Future returns at each timestamp (the target to predict)
+        close_prices: Close price series for computing returns
+        volatility_ema_span: EMA span for volatility (32-64 bars = 8-16h at 15m)
+        rolling_k_window: Window for dynamic k quantile (300-500 bars = 3-5 days)
+        median_vol_lookback: Window for median volatility (300-500 bars)
+        trend_lookback: Window for trend strength (10-30 bars)
+        p_min: Minimum target positive fraction
+        p_max: Maximum target positive fraction
+        sigmoid_slope: Sigmoid slope parameter
+        sigmoid_midpoint: Sigmoid midpoint parameter
+        min_periods: Minimum periods for rolling calculations
+        clip_zscore: Maximum |z-score| to prevent outliers
+        econ_floor: Optional economic floor for filtering trivial returns
+    
+    Returns:
+        Tuple of (labels, z_scores, diagnostics)
+        - labels: Binary labels (1=positive, 0=negative, NaN=filtered)
+        - z_scores: Volatility-normalized z-scores
+        - diagnostics: Dict with computation diagnostics
+    """
+    labels = pd.Series(index=future_returns.index, dtype=float)
+    labels[:] = np.nan
+    
+    z_scores = pd.Series(index=future_returns.index, dtype=float)
+    z_scores[:] = np.nan
+    
+    diagnostics: Dict[str, Any] = {
+        "n_total": len(future_returns),
+        "n_labeled": 0,
+        "n_positive": 0,
+        "n_negative": 0,
+        "positive_ratio": np.nan,
+        "mean_k_threshold": np.nan,
+        "mean_volatility": np.nan,
+        "mean_vol_ratio": np.nan,
+        "mean_trend_strength": np.nan,
+        "mean_p_positive": np.nan,
+        "mean_z_score": np.nan,
+        "std_z_score": np.nan,
+    }
+    
+    try:
+        # Step 1: Compute returns for volatility estimation
+        log_returns = np.log(close_prices / close_prices.shift(1))
+        log_returns = log_returns.replace([np.inf, -np.inf], np.nan)
+        
+        # Step 2: Compute EMA-based volatility
+        ema_volatility = compute_ema_volatility(
+            returns=log_returns,
+            span=volatility_ema_span,
+            min_periods=min_periods // 4,
+        )
+        
+        # Step 3: Compute regime metrics
+        volatility_ratio, trend_strength = compute_regime_metrics(
+            volatility=ema_volatility,
+            returns=log_returns,
+            median_lookback_bars=median_vol_lookback,
+            trend_lookback_bars=trend_lookback,
+            min_periods=min_periods,
+        )
+        
+        # Step 4: Compute target positive fraction via sigmoid
+        p_positive = compute_target_positive_fraction(
+            trend_strength=trend_strength,
+            volatility_ratio=volatility_ratio,
+            p_min=p_min,
+            p_max=p_max,
+            sigmoid_slope=sigmoid_slope,
+            sigmoid_midpoint=sigmoid_midpoint,
+        )
+        
+        # Step 5: Compute z-scores (future returns normalized by volatility)
+        vol_aligned = ema_volatility.reindex(future_returns.index)
+        z_scores = future_returns / (vol_aligned + 1e-8)
+        z_scores = z_scores.replace([np.inf, -np.inf], np.nan)
+        z_scores = z_scores.clip(lower=-clip_zscore, upper=clip_zscore)
+        
+        # Step 6: Compute dynamic threshold k_t
+        k_t = compute_dynamic_threshold_k(
+            z_scores=z_scores,
+            p_positive=p_positive,
+            rolling_window=rolling_k_window,
+            min_periods=min_periods,
+        )
+        
+        # Step 7: Assign labels: y_t = 1 if future_return > k_t * volatility
+        # Equivalently: y_t = 1 if z_t > k_t
+        valid_mask = (
+            z_scores.notna() & 
+            k_t.notna() & 
+            vol_aligned.notna() &
+            future_returns.notna()
+        )
+        
+        # Apply economic floor if specified
+        if econ_floor is not None and econ_floor > 0:
+            valid_mask = valid_mask & (future_returns.abs() >= econ_floor)
+        
+        # Assign labels based on z-score vs dynamic threshold
+        labels.loc[valid_mask & (z_scores > k_t)] = 1.0
+        labels.loc[valid_mask & (z_scores <= k_t)] = 0.0
+        
+        # Compute diagnostics
+        n_labeled = int(labels.notna().sum())
+        n_positive = int((labels == 1.0).sum())
+        n_negative = int((labels == 0.0).sum())
+        
+        diagnostics.update({
+            "n_labeled": n_labeled,
+            "n_positive": n_positive,
+            "n_negative": n_negative,
+            "positive_ratio": n_positive / n_labeled if n_labeled > 0 else np.nan,
+            "mean_k_threshold": float(k_t.mean()) if k_t.notna().any() else np.nan,
+            "mean_volatility": float(ema_volatility.mean()) if ema_volatility.notna().any() else np.nan,
+            "mean_vol_ratio": float(volatility_ratio.mean()) if volatility_ratio.notna().any() else np.nan,
+            "mean_trend_strength": float(trend_strength.mean()) if trend_strength.notna().any() else np.nan,
+            "mean_p_positive": float(p_positive.mean()) if p_positive.notna().any() else np.nan,
+            "mean_z_score": float(z_scores.mean()) if z_scores.notna().any() else np.nan,
+            "std_z_score": float(z_scores.std()) if z_scores.notna().any() else np.nan,
+        })
+        
+        tprint(
+            f"📊 Volatility-scaled labels: {n_labeled} labeled ({n_positive} pos, {n_negative} neg), "
+            f"ratio={n_positive/n_labeled:.1%}" if n_labeled > 0 else "📊 No labels generated",
+            "INFO"
+        )
+        tprint(
+            f"   Vol: mean={diagnostics['mean_volatility']:.4f}, "
+            f"k: mean={diagnostics['mean_k_threshold']:.3f}, "
+            f"z: mean={diagnostics['mean_z_score']:.3f} std={diagnostics['std_z_score']:.3f}",
+            "INFO"
+        )
+        
+    except Exception as e:
+        tprint(f"⚠️ Volatility-scaled labeling failed: {e}", "WARNING")
+        import traceback
+        traceback.print_exc()
+    
+    return labels, z_scores, diagnostics
+
+
+def create_volatility_scaled_labels_for_events(
+    realized_returns: pd.Series,
+    market_data: pd.DataFrame,
+    # Volatility parameters (HPO tunable)
+    volatility_ema_span: int = 48,
+    # Dynamic threshold parameters (HPO tunable)
+    rolling_k_window: int = 400,
+    median_vol_lookback: int = 400,
+    trend_lookback: int = 20,
+    # Sigmoid parameters (HPO tunable)
+    p_min: float = 0.30,
+    p_max: float = 0.70,
+    sigmoid_slope: float = 1.5,
+    sigmoid_midpoint: float = 0.0,
+    # General parameters
+    min_periods: int = 100,
+    clip_zscore: float = 5.0,
+    econ_floor: Optional[float] = None,
+) -> Tuple[pd.Series, pd.Series, Dict[str, Any]]:
+    """Create volatility-scaled labels for event-based returns.
+    
+    This is a convenience wrapper for create_volatility_scaled_labels that
+    works with event-based realized returns (from triple barrier or similar).
+    
+    The key difference from the base function:
+    - Takes event-based realized_returns (sparse, with NaN for non-events)
+    - Computes volatility from underlying market_data close prices
+    - Aligns all computations to the event timestamps
+    
+    This is the function to use in HPO for label generation.
+    
+    Args:
+        realized_returns: Event-based realized returns (NaN for non-events)
+        market_data: Full market data with 'close' column
+        volatility_ema_span: EMA span for volatility (32-64 bars)
+        rolling_k_window: Window for dynamic k quantile (300-500 bars)
+        median_vol_lookback: Window for median volatility (300-500 bars)
+        trend_lookback: Window for trend strength (10-30 bars)
+        p_min: Minimum target positive fraction
+        p_max: Maximum target positive fraction
+        sigmoid_slope: Sigmoid slope parameter
+        sigmoid_midpoint: Sigmoid midpoint parameter
+        min_periods: Minimum periods for calculations
+        clip_zscore: Maximum |z-score| 
+        econ_floor: Optional economic floor for filtering
+    
+    Returns:
+        Tuple of (labels, z_scores, diagnostics)
+    """
+    # Extract close prices
+    close_col = 'close' if 'close' in market_data.columns else 'Close'
+    if close_col not in market_data.columns:
+        tprint("⚠️ No 'close' column in market_data", "WARNING")
+        return (
+            pd.Series(np.nan, index=realized_returns.index),
+            pd.Series(np.nan, index=realized_returns.index),
+            {"error": "no close column"}
+        )
+    
+    close_prices = market_data[close_col]
+    
+    # Compute returns for volatility estimation (from full market data)
+    log_returns = np.log(close_prices / close_prices.shift(1))
+    log_returns = log_returns.replace([np.inf, -np.inf], np.nan)
+    
+    # Compute EMA-based volatility from market data
+    ema_volatility = compute_ema_volatility(
+        returns=log_returns,
+        span=volatility_ema_span,
+        min_periods=min_periods // 4,
+    )
+    
+    # Compute regime metrics from market data
+    volatility_ratio, trend_strength = compute_regime_metrics(
+        volatility=ema_volatility,
+        returns=log_returns,
+        median_lookback_bars=median_vol_lookback,
+        trend_lookback_bars=trend_lookback,
+        min_periods=min_periods,
+    )
+    
+    # Compute target positive fraction
+    p_positive = compute_target_positive_fraction(
+        trend_strength=trend_strength,
+        volatility_ratio=volatility_ratio,
+        p_min=p_min,
+        p_max=p_max,
+        sigmoid_slope=sigmoid_slope,
+        sigmoid_midpoint=sigmoid_midpoint,
+    )
+    
+    # Align volatility to event timestamps
+    vol_aligned = ema_volatility.reindex(realized_returns.index)
+    p_pos_aligned = p_positive.reindex(realized_returns.index)
+    
+    # Compute z-scores for events
+    z_scores = realized_returns / (vol_aligned + 1e-8)
+    z_scores = z_scores.replace([np.inf, -np.inf], np.nan)
+    z_scores = z_scores.clip(lower=-clip_zscore, upper=clip_zscore)
+    
+    # Compute dynamic threshold k_t
+    # For events, we use the full z-score series but only label at event times
+    full_z_for_quantile = pd.Series(index=market_data.index, dtype=float)
+    full_z_for_quantile[:] = np.nan
+    # Fill with event z-scores at event times
+    full_z_for_quantile.loc[z_scores.index] = z_scores
+    
+    k_t = compute_dynamic_threshold_k(
+        z_scores=full_z_for_quantile,
+        p_positive=p_positive,
+        rolling_window=rolling_k_window,
+        min_periods=min_periods,
+    )
+    
+    # Align k_t to event timestamps
+    k_t_aligned = k_t.reindex(realized_returns.index)
+    
+    # Initialize labels
+    labels = pd.Series(index=realized_returns.index, dtype=float)
+    labels[:] = np.nan
+    
+    # Valid mask
+    valid_mask = (
+        z_scores.notna() &
+        k_t_aligned.notna() &
+        vol_aligned.notna() &
+        realized_returns.notna()
+    )
+    
+    # Apply economic floor if specified
+    if econ_floor is not None and econ_floor > 0:
+        valid_mask = valid_mask & (realized_returns.abs() >= econ_floor)
+    
+    # Assign labels: y = 1 if z > k_t
+    labels.loc[valid_mask & (z_scores > k_t_aligned)] = 1.0
+    labels.loc[valid_mask & (z_scores <= k_t_aligned)] = 0.0
+    
+    # Compute diagnostics
+    n_labeled = int(labels.notna().sum())
+    n_positive = int((labels == 1.0).sum())
+    n_negative = int((labels == 0.0).sum())
+    
+    diagnostics: Dict[str, Any] = {
+        "n_total": len(realized_returns),
+        "n_events": int(realized_returns.notna().sum()),
+        "n_labeled": n_labeled,
+        "n_positive": n_positive,
+        "n_negative": n_negative,
+        "positive_ratio": n_positive / n_labeled if n_labeled > 0 else np.nan,
+        "mean_k_threshold": float(k_t_aligned.mean()) if k_t_aligned.notna().any() else np.nan,
+        "mean_volatility": float(vol_aligned.mean()) if vol_aligned.notna().any() else np.nan,
+        "mean_vol_ratio": float(volatility_ratio.mean()) if volatility_ratio.notna().any() else np.nan,
+        "mean_trend_strength": float(trend_strength.mean()) if trend_strength.notna().any() else np.nan,
+        "mean_p_positive": float(p_pos_aligned.mean()) if p_pos_aligned.notna().any() else np.nan,
+        "mean_z_score": float(z_scores.mean()) if z_scores.notna().any() else np.nan,
+        "std_z_score": float(z_scores.std()) if z_scores.notna().any() else np.nan,
+        "volatility_ema_span": volatility_ema_span,
+        "rolling_k_window": rolling_k_window,
+        "p_min": p_min,
+        "p_max": p_max,
+        "sigmoid_slope": sigmoid_slope,
+    }
+    
+    tprint(
+        f"📊 Vol-scaled event labels: {n_labeled} labeled ({n_positive} pos, {n_negative} neg), "
+        f"ratio={n_positive/n_labeled:.1%}" if n_labeled > 0 else "📊 No event labels generated",
+        "INFO"
+    )
+    
+    return labels, z_scores, diagnostics
+
+
 def compute_zscore_gated_triple_barrier_labels(
     df: pd.DataFrame,
     features: pd.DataFrame,

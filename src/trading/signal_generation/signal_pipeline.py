@@ -32,6 +32,7 @@ from .utils import (
 from src.trading.integration.unified_model_loader import get_unified_model_loader
 from src.trading.integration.regime_detector import HybridRegimeDetector
 from src.feature_generation.shared.feature_engineer import AnalystFeatureEngineer
+from src.trading.model_selection.model_selector_service import ModelSelectionResult
 
 logger = system_logger.getChild('SignalGenerationPipeline')
 
@@ -623,7 +624,7 @@ class SignalGenerationPipeline:
         additional_features: Optional[Dict[str, Any]],
         timestamp: datetime,
         model_selection_result: Optional[ModelSelectionResult] = None
-    ) -> List[AnalystBaseOutput]:
+    ) -> List[AnalystOutput]:
         """Step 2: Run analyst base models sequentially with regime probabilities."""
         base_outputs = []
 
@@ -712,13 +713,11 @@ class SignalGenerationPipeline:
                         'regime_confidence': regime_output.confidence
                     }
 
-                base_output = AnalystBaseOutput(
+                base_output = AnalystOutput(
                     timestamp=timestamp,
-                    market_health={},  # Ignored as requested
-                    volatility_analysis={},
-                    liquidity_analysis={},
-                    stress_analysis={},  # Ignored as requested
-                    base_confidence=confidence,
+                    signal_score=0.0,
+                    signal_confidence=confidence,
+                    uncertainty=0.5,
                     features=features
                 )
 

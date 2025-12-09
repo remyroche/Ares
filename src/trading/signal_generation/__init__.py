@@ -12,10 +12,8 @@ New Features:
 from .signal_pipeline import (
     SignalGenerationPipeline,
     RegimeOutput,
-    AnalystBaseOutput,
-    AnalystMetaOutput,
-    TacticianBaseOutput,
-    TacticianMetaOutput,
+    AnalystOutput,
+    SpecialistOutput,
     SignalGenerationResult,
     setup_signal_generation_pipeline
 )
@@ -35,10 +33,8 @@ from .tactician_signals import (
 __all__ = [
     "SignalGenerationPipeline",
     "RegimeOutput",
-    "AnalystBaseOutput",
-    "AnalystMetaOutput",
-    "TacticianBaseOutput",
-    "TacticianMetaOutput",
+    "AnalystOutput",
+    "SpecialistOutput",
     "SignalGenerationResult",
     "setup_signal_generation_pipeline",
     "SignalCombiner",

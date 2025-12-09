@@ -2078,8 +2078,17 @@ class UnifiedModelsTrainingStep(BaseStep):
                         ld = self._get_artifact(artifact_name_candidate, 'data')
                         if ld is not None and isinstance(ld, pd.DataFrame):
                             tprint_info(f"✅ Found labeled_data artifact '{artifact_name_candidate}': {ld.shape}")
-                            # Prefer fused_target_long for analyst_base
-                            for target_col in ['fused_target_long', 'target_long', 'smoothed_label']:
+                            # Prefer directional binary labels for analyst_base classifiers
+                            priority_targets = []
+                            if direction == 'long':
+                                priority_targets = ['binary_label_long', 'binary_label']
+                            elif direction == 'short':
+                                priority_targets = ['binary_label_short', 'binary_label']
+
+                            # Add regression fallbacks
+                            priority_targets.extend(['fused_target_long', 'target_long', 'smoothed_label'])
+
+                            for target_col in priority_targets:
                                 if target_col in ld.columns:
                                     analyst_targets = ld[target_col]
                                     tprint_success(f"✅ Using '{target_col}' from labeled_data as analyst_targets")

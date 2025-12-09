@@ -686,7 +686,7 @@ class TrainingPipelineOrchestrator:
             incremental_trainer = IncrementalAnalystTrainer(
                 model_id=model_id,
                 execution_mode=execution_mode,
-                task_type='regression',
+                task_type='classification',
                 enable_burnin_hpo=True,  # HPO runs ONCE at burn-in only
                 model_configs=base_models_config
             )

@@ -4745,6 +4745,24 @@ def build_meta_features_for_model(
         pass
 
     meta_features_model = prepare_feature_matrix(meta_features)
+
+    try:
+        direction_sign = np.sign(realized_returns.fillna(0.0)).replace({0.0: np.nan})
+        for base_col in [
+            'risk_score',
+            'smc_predicted',
+            'volatility_1d',
+            'meta_trendiness',
+            'close_minus_vwap',
+        ]:
+            if base_col in meta_features_model.columns:
+                base_vals = pd.to_numeric(meta_features_model[base_col], errors="coerce")
+                long_col = f"{base_col}_long"
+                short_col = f"{base_col}_short"
+                meta_features_model[long_col] = base_vals.where(direction_sign > 0)
+                meta_features_model[short_col] = base_vals.where(direction_sign < 0)
+    except Exception:
+        pass
     n_features_before_forbidden = int(meta_features_model.shape[1])
 
     # Drop high-leakage structural features from the meta-model feature matrix.

@@ -33,6 +33,7 @@ from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_error, tprint_warning, tprint_data_preview, tprint_feature_counts
 from src.utils.ml_common.get_specialist_models_outputs import get_specialist_models_outputs
+from src.utils.ml_common.bagged_probability_aggregator import combine_bags
 
 # Import model training report generator
 from src.training.steps.model_training.model_training_report_generator import create_model_training_report
@@ -921,6 +922,70 @@ class UnifiedModelsTrainingStep(BaseStep):
                                 except Exception:
                                     # If risk adjustment fails for any reason, continue with raw confidence.
                                     pass
+
+                            # Attach bagged LGBM per-bag probabilities and
+                            # aggregate combinations when the incremental
+                            # bagged model is available (analyst base only).
+                            try:
+                                if training_type == 'analyst_base' and model_type == 'analyst':
+                                    models_dict = result.get('models', {}) if isinstance(result, dict) else {}
+                                    bag_entry = models_dict.get('lgbm_bag_lower')
+
+                                    # bag_entry is expected to be a CalibratedModel
+                                    bag_model = getattr(bag_entry, 'base_model', None)
+                                    if bag_model is not None and hasattr(bag_model, 'predict_diversity_defense'):
+                                        # Reconstruct feature columns similar to
+                                        # BaseIncrementalTrainer._get_feature_cols
+                                        feature_cols = [
+                                            c for c in training_data.columns
+                                            if not c.startswith('__')
+                                        ]
+
+                                        # Respect use_specialist_outputs_only if configured
+                                        try:
+                                            analyst_cfg_yaml = (yaml_config.get('analyst_config') or {})
+                                            base_models_cfg = analyst_cfg_yaml.get('base_models', {}) or {}
+                                            bag_cfg = base_models_cfg.get('lgbm_bag_lower', {}) or {}
+                                            use_specialist_only = bool(bag_cfg.get('use_specialist_outputs_only', False))
+                                        except Exception:
+                                            use_specialist_only = False
+
+                                        if use_specialist_only and getattr(self, '_specialist_feature_names', None):
+                                            spec_set = set(self._specialist_feature_names)
+                                            feature_cols = [c for c in feature_cols if c in spec_set]
+
+                                        if feature_cols:
+                                            X_bag_df = ml_scored_data[feature_cols].select_dtypes(include=[np.number])
+                                            X_arr = X_bag_df.to_numpy(dtype=float)
+
+                                            # Adjust feature dimension to match bag model expectation
+                                            n_feat = int(getattr(bag_model, 'n_features', X_arr.shape[1]))
+                                            if X_arr.shape[1] > n_feat:
+                                                X_use = X_arr[:, :n_feat]
+                                            elif X_arr.shape[1] < n_feat:
+                                                pad = np.zeros((X_arr.shape[0], n_feat - X_arr.shape[1]), dtype=X_arr.dtype)
+                                                X_use = np.concatenate([X_arr, pad], axis=1)
+                                            else:
+                                                X_use = X_arr
+
+                                            dd_result = bag_model.predict_diversity_defense(X_use)
+                                            raw_preds = dd_result.get('raw_preds')
+
+                                            if isinstance(raw_preds, np.ndarray) and raw_preds.ndim == 2 and raw_preds.shape[0] == X_use.shape[0]:
+                                                # Per-bag probabilities
+                                                n_bags = raw_preds.shape[1]
+                                                for j in range(n_bags):
+                                                    col_name = f"lgbm_bag_component_{j}"
+                                                    ml_scored_data[col_name] = raw_preds[:, j].astype(float)
+
+                                                # Aggregate combinations using shared utility
+                                                bag_combos = combine_bags(raw_preds)
+                                                for combo_name, combo_vals in bag_combos.items():
+                                                    col_name = f"lgbm_bag_{combo_name}"
+                                                    if len(combo_vals) == len(ml_scored_data):
+                                                        ml_scored_data[col_name] = combo_vals.astype(float)
+                            except Exception as bag_exc:
+                                tprint_warning(f"⚠️ Failed to attach bagged LGBM components to ML-scored data: {bag_exc}")
 
                             # Normalize index and ensure unique timestamps for downstream consumers
                             if isinstance(ml_scored_data.index, pd.DatetimeIndex):
@@ -2930,6 +2995,7 @@ class UnifiedModelsTrainingStep(BaseStep):
             specialist_config = dict(config)
             specialist_config.setdefault("use_canonical_specialist_scalars", True)
             specialist_config.setdefault("enable_risk_hmm_specialist", False)
+            specialist_config.setdefault("enable_mean_reversion_specialist", False)
 
             from src.utils.ml_common.get_specialist_models_outputs import (
                 get_specialist_models_outputs,

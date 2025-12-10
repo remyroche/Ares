@@ -19,6 +19,10 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import pandas as pd
 import numpy as np
 
+from sklearn.ensemble import ExtraTreesRegressor, ExtraTreesClassifier
+
+from src.utils.ml_common.incremental_analyst_trainers import CalibratedModel
+
 try:
     import torch
     import torch.nn as nn
@@ -1515,10 +1519,12 @@ class ModelTrainer(BaseTrainer):
 
             use_goss = (boosting_type_cfg == 'goss') or (data_sample_strategy_cfg == 'goss')
 
+            is_analyst_role = self.config.role == TrainingRole.ANALYST
+
             params = {
                 # Task configuration
-                'objective': 'regression',
-                'metric': 'rmse',
+                'objective': 'binary' if is_analyst_role else 'regression',
+                'metric': 'binary_logloss' if is_analyst_role else 'rmse',
                 # Use gbdt booster and control sampling via data_sample_strategy to
                 # avoid LightGBM's deprecation warnings about boosting='goss'.
                 'boosting_type': 'gbdt',
@@ -1672,6 +1678,39 @@ class ModelTrainer(BaseTrainer):
                 'best_iteration': best_iter
             }
 
+            # Additional classification metrics when target is effectively binary
+            try:
+                unique_vals = np.unique(y_train)
+                if len(unique_vals) <= 2 and set(unique_vals).issubset({0, 1, 0.0, 1.0}):
+                    from sklearn.metrics import (
+                        roc_auc_score,
+                        average_precision_score,
+                        accuracy_score,
+                        precision_score,
+                        recall_score,
+                        f1_score,
+                    )
+
+                    # Use continuous test predictions as scores for AUC / AP
+                    try:
+                        metrics['test_auc'] = float(roc_auc_score(y_test, test_pred))
+                    except Exception:
+                        metrics['test_auc'] = float('nan')
+
+                    try:
+                        metrics['test_avg_precision'] = float(average_precision_score(y_test, test_pred))
+                    except Exception:
+                        metrics['test_avg_precision'] = float('nan')
+
+                    # Threshold at 0.5 for discrete classification metrics
+                    class_preds = (test_pred >= 0.5).astype(int)
+                    metrics['test_accuracy'] = float(accuracy_score(y_test, class_preds))
+                    metrics['test_precision'] = float(precision_score(y_test, class_preds, zero_division=0))
+                    metrics['test_recall'] = float(recall_score(y_test, class_preds, zero_division=0))
+                    metrics['test_f1'] = float(f1_score(y_test, class_preds, zero_division=0))
+            except Exception as _cm_exc:
+                self.logger.debug(f"Failed to compute classification metrics for LightGBM: {_cm_exc}")
+
             if constant_target:
                 metrics['constant_target'] = True
             
@@ -1723,9 +1762,44 @@ class ModelTrainer(BaseTrainer):
             else:
                 tprint_success(f"   ✅ Good generalization (overfitting ratio < 10%)")
 
+            calibrated_model = model
+            if is_analyst_role:
+                # For Analyst role, treat LightGBM as a probabilistic classifier and apply calibration
+                try:
+                    enable_calib = bool(self.config.custom_params.get('enable_calibration', True))
+                except Exception:
+                    enable_calib = True
+
+                if enable_calib:
+                    method_cfg = str(self.config.custom_params.get('calibration_method', 'auto') or 'auto').lower()
+                    if method_cfg == 'auto':
+                        calibration_method = 'auto'
+                    elif method_cfg.startswith('platt'):
+                        calibration_method = 'platt'
+                    elif method_cfg.startswith('isotonic'):
+                        calibration_method = 'isotonic'
+                    else:
+                        calibration_method = 'isotonic'
+
+                    try:
+                        X_val_np = X_val.values if hasattr(X_val, 'values') else X_val
+                        y_val_arr = y_val.values if hasattr(y_val, 'values') else y_val
+                        # Ensure integer labels for calibration
+                        y_val_arr = y_val_arr.astype(int)
+                        calibrated_model = CalibratedModel(
+                            model,
+                            task_type='classification',
+                            calibration_method=calibration_method,
+                        )
+                        calibrated_model.fit_calibration(X_val_np, y_val_arr)
+                    except Exception as calib_exc:
+                        self.logger.warning(
+                            f"LightGBM calibration failed; using uncalibrated model: {calib_exc}"
+                        )
+
             return TrainingResult(
                 success=True,
-                model=model,
+                model=calibrated_model,
                 metrics=metrics,
                 feature_importance=feature_importance,
                 metadata={
@@ -1746,7 +1820,6 @@ class ModelTrainer(BaseTrainer):
     async def _train_extratrees_model(self, model: Any, data: pd.DataFrame, targets: pd.Series) -> TrainingResult:
         """Train ExtraTreesRegressor model with role-specific parameters from YAML config."""
         try:
-            from sklearn.ensemble import ExtraTreesRegressor
             from sklearn.model_selection import train_test_split
             from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
             import os
@@ -1837,9 +1910,15 @@ class ModelTrainer(BaseTrainer):
             tprint_info(f"   Feature columns (first 20): {list(data.columns[:20])}")
             tprint_info(f"   Feature columns (last 10): {list(data.columns[-10:])}")
 
+            is_analyst_role = self.config.role == TrainingRole.ANALYST
+
             # Create and train model
-            model = ExtraTreesRegressor(**params)
-            model.fit(X_train, y_train)
+            if is_analyst_role:
+                model = ExtraTreesClassifier(**params)
+                model.fit(X_train, y_train.astype(int))
+            else:
+                model = ExtraTreesRegressor(**params)
+                model.fit(X_train, y_train)
 
             # CRITICAL FIX: Evaluate on train/val/test splits separately
             train_pred = model.predict(X_train)
@@ -1898,9 +1977,43 @@ class ModelTrainer(BaseTrainer):
             else:
                 tprint_success(f"   ✅ Good generalization (overfitting ratio < 10%)")
 
+            calibrated_model = model
+            if is_analyst_role:
+                # For Analyst role, treat ExtraTrees as classifier and apply calibration
+                try:
+                    enable_calib = bool(self.config.custom_params.get('enable_calibration', True))
+                except Exception:
+                    enable_calib = True
+
+                if enable_calib:
+                    method_cfg = str(self.config.custom_params.get('calibration_method', 'auto') or 'auto').lower()
+                    if method_cfg == 'auto':
+                        calibration_method = 'auto'
+                    elif method_cfg.startswith('platt'):
+                        calibration_method = 'platt'
+                    elif method_cfg.startswith('isotonic'):
+                        calibration_method = 'isotonic'
+                    else:
+                        calibration_method = 'isotonic'
+
+                    try:
+                        X_val_np = X_val.values if hasattr(X_val, 'values') else X_val
+                        y_val_arr = y_val.values if hasattr(y_val, 'values') else y_val
+                        y_val_arr = y_val_arr.astype(int)
+                        calibrated_model = CalibratedModel(
+                            model,
+                            task_type='classification',
+                            calibration_method=calibration_method,
+                        )
+                        calibrated_model.fit_calibration(X_val_np, y_val_arr)
+                    except Exception as calib_exc:
+                        self.logger.warning(
+                            f"ExtraTrees calibration failed; using uncalibrated model: {calib_exc}"
+                        )
+
             return TrainingResult(
                 success=True,
-                model=model,
+                model=calibrated_model,
                 metrics=metrics,
                 feature_importance=feature_importance,
                 metadata={
@@ -2728,7 +2841,7 @@ class ModelTrainer(BaseTrainer):
             if model_type == ModelType.LIGHTGBM:
                 import lightgbm as lgb
                 # Always use Regressor for trading models (predicting continuous values like directional_confidence)
-                return lgb.LGBMRegressor()
+                return lgb.LGBMClassifier()
             elif model_type == ModelType.EXTRATREES:
                 from sklearn.ensemble import ExtraTreesRegressor
                 # ExtraTreesRegressor with bootstrap and sqrt max_features

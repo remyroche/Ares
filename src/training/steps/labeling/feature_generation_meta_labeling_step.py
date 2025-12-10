@@ -61,7 +61,13 @@ from sklearn.calibration import CalibratedClassifierCV
 from sklearn.utils.class_weight import compute_class_weight
 from sklearn.model_selection import cross_val_score
 import lightgbm as lgb
-import xgboost as xgb
+try:
+    import xgboost as xgb
+    XGBOOST_AVAILABLE = True
+except ImportError:
+    XGBOOST_AVAILABLE = False
+    xgb = None
+    warnings.warn("xgboost not available - ensemble will use LightGBM/RF only")
 import hashlib
 import pickle
 
@@ -115,9 +121,14 @@ except ImportError:
 
 # META_FEATURE_COLUMNS for regime-aware feature handling
 try:
-    from src.utils.ml_common.optimization.diversity_defense_objectives import META_FEATURE_COLUMNS
+    from src.utils.ml_common.optimization.diversity_defense_objectives import (
+        META_FEATURE_COLUMNS,
+        generate_regime_meta_features,
+    )
 except ImportError:
     META_FEATURE_COLUMNS = []
+    def generate_regime_meta_features(*args, **kwargs):
+        return pd.DataFrame()
 
 logger = logging.getLogger(__name__)
 
@@ -288,10 +299,10 @@ def create_triple_barrier_from_hpo(
 DEFAULT_PROFIT_THRESHOLD = 0.01  # 1%
 DEFAULT_STOP_THRESHOLD = 0.005   # 0.5%
 DEFAULT_TRANSACTION_COST = 0.003  # 0.30% per trade (increased from 0.15% for more realistic modeling)
-R_MULTIPLE_POS_THRESHOLD = 0.7
+R_MULTIPLE_POS_THRESHOLD = 0.5
 R_MULTIPLE_NEG_THRESHOLD = -0.25
-# Set to 1.5 (balanced between 1.0 and 2.0) for reasonable event filtering
-ECON_MIN_RETURN_MULTIPLE = 1.5
+# Set to 1.2 (slightly more permissive than 1.5) for increased event retention
+ECON_MIN_RETURN_MULTIPLE = 1.2
 TARGET_POWER = 1.5
 # Hard floor for profit targets to ensure viability after transaction costs
 PROFIT_TARGET_FLOOR_BPS = 50  # 0.5% = 50 basis points (must exceed slippage + fees)
@@ -759,6 +770,16 @@ def generate_primary_signals(
     signals['bb_mid'] = bb_mid
     signals['bb_width'] = (bb_upper - bb_lower) / (bb_mid + 1e-8)
 
+    bb_width_mean = signals['bb_width'].rolling(96).mean()
+    bb_width_std = signals['bb_width'].rolling(96).std()
+    bb_width_z = (signals['bb_width'] - bb_width_mean) / (bb_width_std + 1e-8)
+    squeeze_flag = bb_width_z < -1.0
+    signals['bb_squeeze_flag'] = squeeze_flag.astype(int)
+    signals['bb_squeeze_breakout'] = 0
+    squeeze_prev = squeeze_flag.shift(1).fillna(False)
+    signals.loc[squeeze_prev & (df_local['close'] > bb_upper), 'bb_squeeze_breakout'] = 1
+    signals.loc[squeeze_prev & (df_local['close'] < bb_lower), 'bb_squeeze_breakout'] = -1
+
     # ===== NEW SIGNALS: ATR BREAKOUT =====
     atr_raw = (df_local['high'] - df_local['low']).rolling(atr_period).mean()
     close_change = df_local['close'].diff()
@@ -785,6 +806,16 @@ def generate_primary_signals(
     else:
         signals['volume_spike'] = 0
         signals['volume_ratio_signal'] = 1.0
+
+    if 'vwap' in df_local.columns:
+        vwap_dist = (df_local['close'] - df_local['vwap']) / (df_local['vwap'] + 1e-8)
+        signals['vwap_dist'] = vwap_dist
+        signals['vwap_reversion'] = 0
+        signals.loc[vwap_dist < -0.005, 'vwap_reversion'] = 1
+        signals.loc[vwap_dist > 0.005, 'vwap_reversion'] = -1
+    else:
+        signals['vwap_dist'] = 0.0
+        signals['vwap_reversion'] = 0
 
     # ===== NEW SIGNALS: RANGE FADE (Mean-Reversion at Range Extremes) =====
     range_high = df_local['high'].rolling(range_window).max()
@@ -825,8 +856,8 @@ def generate_primary_signals(
 
     # ===== VOL-AWARE DUAL-MODE CONSENSUS =====
     # Separate signal types into momentum and mean-reversion categories
-    momentum_cols = ['rsi', 'rsi_long', 'macd', 'macd_long', 'ma', 'mom', 'atr_breakout', 'volume_spike', 'mtf_trend', 'mtf_confluence']
-    mr_cols = ['bb_fade', 'range_fade', 'rsi_mr']
+    momentum_cols = ['rsi', 'rsi_long', 'macd', 'macd_long', 'ma', 'mom', 'atr_breakout', 'volume_spike', 'mtf_trend', 'mtf_confluence', 'bb_squeeze_breakout']
+    mr_cols = ['bb_fade', 'range_fade', 'rsi_mr', 'vwap_reversion']
 
     # Ensure all columns exist
     for col in momentum_cols + mr_cols:
@@ -1478,7 +1509,8 @@ def create_quantile_labels_from_vol_scaled_returns(
     except Exception:
         labels[:] = np.nan
 
-    return labels
+    labels = _enforce_local_label_balance(vol_scaled, labels, min_ratio=0.10)
+    return drop_initial_single_class_segments(labels)
 
 
 def create_rolling_quantile_labels_from_vol_scaled_returns(
@@ -1511,20 +1543,21 @@ def create_rolling_quantile_labels_from_vol_scaled_returns(
     try:
         # Get non-NaN values and their positions
         valid_mask = ~vol_scaled.isna()
-        if valid_mask.sum() < min_periods:
-            tprint(f"⚠️ Rolling quantiles: insufficient data ({valid_mask.sum()} < {min_periods})", "WARNING")
+        effective_min = max(1, min(int(min_periods), int(lookback_bars)))
+        if valid_mask.sum() < effective_min:
+            tprint(f"⚠️ Rolling quantiles: insufficient data ({valid_mask.sum()} < {effective_min})", "WARNING")
             return labels
         
         # Compute rolling quantiles using only past data
         # Use shift(1) to ensure we don't include the current observation in its own threshold
         if expanding_start:
             # Start with expanding window, switch to rolling after lookback_bars
-            rolling_low = vol_scaled.expanding(min_periods=min_periods).quantile(low_q).shift(1)
-            rolling_high = vol_scaled.expanding(min_periods=min_periods).quantile(high_q).shift(1)
+            rolling_low = vol_scaled.expanding(min_periods=effective_min).quantile(low_q).shift(1)
+            rolling_high = vol_scaled.expanding(min_periods=effective_min).quantile(high_q).shift(1)
             
             # After we have enough data, switch to fixed rolling window
-            rolling_low_fixed = vol_scaled.rolling(window=lookback_bars, min_periods=min_periods).quantile(low_q).shift(1)
-            rolling_high_fixed = vol_scaled.rolling(window=lookback_bars, min_periods=min_periods).quantile(high_q).shift(1)
+            rolling_low_fixed = vol_scaled.rolling(window=lookback_bars, min_periods=effective_min).quantile(low_q).shift(1)
+            rolling_high_fixed = vol_scaled.rolling(window=lookback_bars, min_periods=effective_min).quantile(high_q).shift(1)
             
             # Use fixed rolling where we have enough history
             enough_history = pd.Series(range(len(vol_scaled)), index=vol_scaled.index) >= lookback_bars
@@ -1532,8 +1565,8 @@ def create_rolling_quantile_labels_from_vol_scaled_returns(
             rolling_high = rolling_high.where(~enough_history, rolling_high_fixed)
         else:
             # Pure rolling window (NaN until min_periods reached)
-            rolling_low = vol_scaled.rolling(window=lookback_bars, min_periods=min_periods).quantile(low_q).shift(1)
-            rolling_high = vol_scaled.rolling(window=lookback_bars, min_periods=min_periods).quantile(high_q).shift(1)
+            rolling_low = vol_scaled.rolling(window=lookback_bars, min_periods=effective_min).quantile(low_q).shift(1)
+            rolling_high = vol_scaled.rolling(window=lookback_bars, min_periods=effective_min).quantile(high_q).shift(1)
         
         # Apply thresholds
         valid_thresholds = (
@@ -1561,7 +1594,8 @@ def create_rolling_quantile_labels_from_vol_scaled_returns(
         tprint(f"⚠️ Rolling quantile labeling failed: {e}", "WARNING")
         labels[:] = np.nan
     
-    return labels
+    labels = _enforce_local_label_balance(vol_scaled, labels, min_ratio=0.10)
+    return drop_initial_single_class_segments(labels)
 
 
 def create_rolling_regime_aware_quantile_labels_from_vol_scaled_returns(
@@ -1636,8 +1670,9 @@ def create_rolling_regime_aware_quantile_labels_from_vol_scaled_returns(
                     reg_rolling_low = regime_data.expanding(min_periods=min(min_periods, min_samples_per_regime)).quantile(low_q).shift(1)
                     reg_rolling_high = regime_data.expanding(min_periods=min(min_periods, min_samples_per_regime)).quantile(high_q).shift(1)
                 else:
-                    reg_rolling_low = regime_data.rolling(window=lookback_bars, min_periods=min_periods).quantile(low_q).shift(1)
-                    reg_rolling_high = regime_data.rolling(window=lookback_bars, min_periods=min_periods).quantile(high_q).shift(1)
+                    effective_min_reg = max(1, min(int(min_periods), int(lookback_bars)))
+                    reg_rolling_low = regime_data.rolling(window=lookback_bars, min_periods=effective_min_reg).quantile(low_q).shift(1)
+                    reg_rolling_high = regime_data.rolling(window=lookback_bars, min_periods=effective_min_reg).quantile(high_q).shift(1)
                 
                 # Apply thresholds for this regime
                 valid_regime = (
@@ -1675,6 +1710,9 @@ def create_rolling_regime_aware_quantile_labels_from_vol_scaled_returns(
             "INFO"
         )
         
+        labels = _enforce_local_label_balance(vol_scaled, labels, min_ratio=0.10)
+        labels = drop_initial_single_class_segments(labels)
+        
     except Exception as e:
         tprint(f"⚠️ Rolling regime-aware quantile labeling failed: {e}", "WARNING")
         return create_rolling_quantile_labels_from_vol_scaled_returns(
@@ -1687,6 +1725,128 @@ def create_rolling_regime_aware_quantile_labels_from_vol_scaled_returns(
         )
     
     return labels
+
+
+def drop_initial_single_class_segments(labels: pd.Series) -> pd.Series:
+    if labels is None:
+        return labels
+    if not isinstance(labels, pd.Series):
+        labels = pd.Series(labels)
+    if labels.empty:
+        return labels
+    labels_out = labels.copy()
+    mask_valid = labels_out.isin([0.0, 1.0])
+    if mask_valid.sum() == 0:
+        return labels_out
+    vals = labels_out[mask_valid]
+    unique_vals = pd.unique(vals)
+    if len(unique_vals) < 2:
+        return labels_out
+    try:
+        pos_mask = vals == 1.0
+        neg_mask = vals == 0.0
+        first_pos_idx = int(np.where(pos_mask.to_numpy())[0][0]) if pos_mask.any() else None
+        first_neg_idx = int(np.where(neg_mask.to_numpy())[0][0]) if neg_mask.any() else None
+    except Exception:
+        return labels_out
+    if first_pos_idx is None or first_neg_idx is None:
+        return labels_out
+    cut_pos = max(first_pos_idx, first_neg_idx)
+    keep_index = vals.index[cut_pos:]
+    drop_mask = ~labels_out.index.isin(keep_index)
+    labels_out[drop_mask] = np.nan
+    return labels_out
+
+
+def _enforce_local_label_balance(
+    vol_scaled: pd.Series,
+    labels: pd.Series,
+    min_ratio: float = 0.10,
+    min_bucket_samples: int = 20,
+) -> pd.Series:
+    """Ensure each local time bucket has both label classes when both signs exist.
+    
+    Within each time bucket, if volatility-scaled returns contain both positive
+    and negative values but the labels only contain one class (all 0.0 or all
+    1.0), relax the gate for the missing side by labeling a small set of the
+    largest-magnitude moves of that sign.
+    
+    The target is to give the minority class at least ``min_ratio`` share
+    within that bucket, subject to availability of underlying events.
+    """
+    if labels is None or vol_scaled is None:
+        return labels
+    if not isinstance(labels, pd.Series):
+        labels = pd.Series(labels, index=vol_scaled.index)
+    if labels.empty:
+        return labels
+
+    labels_out = labels.copy()
+    vs = vol_scaled.reindex(labels_out.index)
+    if vs.isna().all():
+        return labels_out
+
+    idx = vs.index
+    mask_non_nan_vs = vs.notna()
+
+    # Define time buckets: use calendar quarters when index is datetime,
+    # otherwise fall back to ~8 equal-sized buckets over the sequence.
+    if isinstance(idx, pd.DatetimeIndex):
+        bucket_ids = pd.Series(idx.to_period("Q"), index=idx)
+    else:
+        n = len(idx)
+        if n == 0:
+            return labels_out
+        bucket_size = max(1, n // 8)
+        bucket_ids = pd.Series(np.arange(n) // bucket_size, index=idx)
+
+    r = float(min_ratio)
+    if not np.isfinite(r):
+        r = 0.10
+    r = max(0.0, min(0.49, r))
+    denom = max(1.0 - r, 1e-6)
+
+    for bucket in pd.unique(bucket_ids):
+        bucket_mask = (bucket_ids == bucket) & mask_non_nan_vs
+        if bucket_mask.sum() < int(min_bucket_samples):
+            continue
+
+        vs_bucket = vs[bucket_mask]
+        raw_pos_mask = vs_bucket > 0
+        raw_neg_mask = vs_bucket < 0
+        raw_pos = int(raw_pos_mask.sum())
+        raw_neg = int(raw_neg_mask.sum())
+        if raw_pos == 0 or raw_neg == 0:
+            # Truly one-sided regime in this bucket; do not fabricate the
+            # missing class.
+            continue
+
+        lab_pos = int(((labels_out == 1.0) & bucket_mask).sum())
+        lab_neg = int(((labels_out == 0.0) & bucket_mask).sum())
+
+        # Rescue positive class if missing but underlying positive moves exist.
+        if lab_pos == 0 and lab_neg > 0:
+            majority = lab_neg
+            # Required minority count so that minority share >= r after rescue:
+            #   n_min >= (r / (1-r)) * n_majority
+            required = int(np.ceil((r / denom) * float(majority)))
+            required = min(raw_pos, max(required, 1))
+            if required > 0:
+                cand = vs_bucket[raw_pos_mask]
+                top_idx = cand.sort_values(ascending=False).index[:required]
+                labels_out.loc[top_idx] = 1.0
+
+        # Rescue negative class if missing but underlying negative moves exist.
+        if lab_neg == 0 and lab_pos > 0:
+            majority = lab_pos
+            required = int(np.ceil((r / denom) * float(majority)))
+            required = min(raw_neg, max(required, 1))
+            if required > 0:
+                cand = vs_bucket[raw_neg_mask]
+                bot_idx = cand.sort_values(ascending=True).index[:required]
+                labels_out.loc[bot_idx] = 0.0
+
+    return labels_out
 
 
 def compute_volatility_normalized_zscore(
@@ -2146,23 +2306,27 @@ def compute_regime_metrics(
         Tuple of (volatility_ratio, trend_strength) series
     """
     # Volatility ratio: current_vol / median_vol
-    # Use rolling median for robustness to outliers
+    # Use rolling median for robustness to outliers. Clamp min_periods so it
+    # never exceeds the chosen rolling window, to avoid ValueError when HPO
+    # selects small median_lookback_bars.
+    effective_min_median = max(1, min(int(min_periods), int(median_lookback_bars)))
     median_vol = volatility.rolling(
-        window=median_lookback_bars, 
-        min_periods=min_periods
+        window=median_lookback_bars,
+        min_periods=effective_min_median,
     ).median()
     
     volatility_ratio = volatility / (median_vol + 1e-8)
     volatility_ratio = volatility_ratio.replace([np.inf, -np.inf], np.nan)
     
     # Trend strength: rolling_mean(returns) / rolling_vol
+    effective_min_trend = max(1, min(int(min_periods // 2), int(trend_lookback_bars)))
     rolling_mean_returns = returns.rolling(
-        window=trend_lookback_bars, 
-        min_periods=min_periods // 2
+        window=trend_lookback_bars,
+        min_periods=effective_min_trend,
     ).mean()
     rolling_vol = volatility.rolling(
-        window=trend_lookback_bars, 
-        min_periods=min_periods // 2
+        window=trend_lookback_bars,
+        min_periods=effective_min_trend,
     ).mean()
     
     trend_strength = rolling_mean_returns / (rolling_vol + 1e-8)
@@ -3348,16 +3512,6 @@ def create_meta_features(
     Returns:
         DataFrame of features for meta-model
     """
-    zigzag_features = None
-    try:
-        labeler = TrendAwareMetaLabeler()
-        zigzag_single = labeler.detect_zigzag_trend(df)
-        mtf_config = MultiTimeframeConfig()
-        zigzag_mtf = labeler.detect_zigzag_multi_timeframe(df, mtf_config=mtf_config, base_zigzag=zigzag_single)
-        zigzag_features = zigzag_single.join(zigzag_mtf, how="outer", rsuffix="_mtf")
-    except Exception:
-        zigzag_features = None
-
     # Hard-align df and signals to a shared tail window to avoid any
     # length mismatch when assigning signal-based features. We align
     # positionally (most recent data) and then construct features on
@@ -3390,26 +3544,24 @@ def create_meta_features(
     if (not df.index.equals(signals.index)) or df.index.has_duplicates or signals.index.has_duplicates:
         df = df.reset_index(drop=True)
         signals = signals.reset_index(drop=True)
-        if zigzag_features is not None:
-            if len(zigzag_features) > len(df):
-                zigzag_features = zigzag_features.iloc[-len(df):, :]
-            zigzag_features = zigzag_features.reset_index(drop=True)
-
     features = pd.DataFrame(index=df.index)
-    n_features = len(features)
-    if zigzag_features is not None:
-        if len(zigzag_features) > n_features:
-            zigzag_features = zigzag_features.iloc[-n_features:, :]
-        elif len(zigzag_features) < n_features:
-            pad = pd.DataFrame(
-                np.nan,
-                index=range(n_features - len(zigzag_features)),
-                columns=zigzag_features.columns,
-            )
-            zigzag_features = pd.concat([pad, zigzag_features], axis=0, ignore_index=True)
-        for col in zigzag_features.columns:
-            if col not in features.columns:
-                features[col] = zigzag_features[col].to_numpy()
+
+    # Attach DDO regime meta-features (meta_volatility_regime, meta_trendiness,
+    # meta_volume_shock) as stable, low-dimensional regime context features.
+    try:
+        regime_meta = generate_regime_meta_features(
+            df=df,
+            close_col='close',
+            high_col='high',
+            low_col='low',
+            volume_col='volume',
+        )
+        for col in META_FEATURE_COLUMNS:
+            if col in regime_meta.columns and col not in features.columns:
+                features[col] = regime_meta[col].to_numpy()
+    except Exception:
+        # Never let regime meta-feature generation break core pipeline
+        pass
 
     # ===== VOLATILITY FEATURES (ENHANCED) =====
 
@@ -3757,6 +3909,18 @@ def create_meta_features(
     else:
         features['range_position'] = range_position_series.to_numpy()
 
+    # Kalman-smoothed range position as a persistent state variable capturing
+    # whether price is persistently hugging highs/lows vs oscillating in the
+    # middle of the recent range.
+    if use_kalman:
+        try:
+            kf_range_pos = KalmanFilter1D(Q=1e-4, R=0.05, initial_value=0.5)
+            kalman_range_position, _ = kf_range_pos.filter_series(range_position_series)
+            features['kalman_range_position'] = _align_to_features(kalman_range_position, n_features)
+        except Exception:
+            # Never let auxiliary Kalman features break core pipeline
+            pass
+
     # VWAP-based mean-reversion distance
     if 'close' in df.columns and 'volume' in df.columns:
         try:
@@ -3768,6 +3932,19 @@ def create_meta_features(
                 features['close_minus_vwap'] = _align_to_features(vwap_diff_series, n_features)
             else:
                 features['close_minus_vwap'] = vwap_diff_series.to_numpy()
+
+            # Kalman-smoothed deviation from VWAP to capture persistent
+            # premium/discount relative to volume-weighted fair value.
+            if use_kalman:
+                try:
+                    kf_vwap = KalmanFilter1D(Q=1e-5, R=0.01, initial_value=0.0)
+                    kalman_close_minus_vwap, _ = kf_vwap.filter_series(vwap_diff_series)
+                    features['kalman_close_minus_vwap'] = _align_to_features(
+                        kalman_close_minus_vwap,
+                        n_features,
+                    )
+                except Exception:
+                    pass
         except Exception:
             pass
 
@@ -3928,6 +4105,36 @@ def create_meta_features(
     if 'range_position' in features.columns and 'vol_ratio' in features.columns:
         features['range_position_x_vol_ratio'] = features['range_position'] * features['vol_ratio']
 
+    # DDO meta-regime interaction features
+    if (
+        'meta_trendiness' in features.columns
+        and 'meta_volatility_regime' in features.columns
+    ):
+        features['meta_trendiness_x_meta_volatility_regime'] = (
+            features['meta_trendiness'] * features['meta_volatility_regime']
+        )
+
+    if 'meta_volume_shock' in features.columns:
+        for proxy_col in [
+            'kalman_trend',
+            'sma_slope',
+            'price_vs_sma20',
+            'momentum_ema',
+        ]:
+            if proxy_col in features.columns:
+                features[f'meta_volume_shock_x_{proxy_col}'] = (
+                    features['meta_volume_shock'] * features[proxy_col]
+                )
+
+        if 'hour_sin' in features.columns:
+            features['meta_volume_shock_x_hour_sin'] = (
+                features['meta_volume_shock'] * features['hour_sin']
+            )
+        if 'hour_cos' in features.columns:
+            features['meta_volume_shock_x_hour_cos'] = (
+                features['meta_volume_shock'] * features['hour_cos']
+            )
+
     if 'consensus' in signals.columns:
         signal_consensus = signals['consensus']
         signal_active = (signal_consensus != 0).astype(int)
@@ -3947,16 +4154,9 @@ def create_meta_features(
             features['bars_since_last_signal'] = _align_to_features(signal_age, n_features)
         else:
             features['bars_since_last_signal'] = signal_age
-
-        density_50 = signal_consensus.abs().rolling(50).sum()
-        if use_kalman:
-            features['signal_density_50'] = _align_to_features(density_50, n_features)
-        else:
-            features['signal_density_50'] = density_50.to_numpy()
     else:
         features['signal_active'] = 0
         features['bars_since_last_signal'] = np.nan
-        features['signal_density_50'] = 0.0
 
     base_signal_cols = [
         col for col in ['rsi', 'rsi_long', 'macd', 'macd_long', 'ma', 'mom']
@@ -4095,14 +4295,17 @@ def create_meta_features(
     for window in [5, 10, 20, 50]:
         # Rolling returns statistics
         ret_mean_series = returns.rolling(window).mean()
-        ret_std_series = returns.rolling(window).std()
+        if window != 50:
+            ret_std_series = returns.rolling(window).std()
 
         if use_kalman:
             features[f'returns_mean_{window}'] = _align_to_features(ret_mean_series, len(features))
-            features[f'returns_std_{window}'] = _align_to_features(ret_std_series, len(features))
+            if window != 50:
+                features[f'returns_std_{window}'] = _align_to_features(ret_std_series, len(features))
         else:
             features[f'returns_mean_{window}'] = ret_mean_series.to_numpy()
-            features[f'returns_std_{window}'] = ret_std_series.to_numpy()
+            if window != 50:
+                features[f'returns_std_{window}'] = ret_std_series.to_numpy()
 
         # Rolling price statistics
         close_min_series = df['close'].rolling(window).min()
@@ -4170,8 +4373,6 @@ def create_meta_features(
 
     # Placeholder for event history features (to be populated from previous runs)
     # These should be computed from historical realized returns, NOT current data
-    features['event_win_rate_last_50'] = 0.0  # Will be updated externally
-    features['event_mean_return_last_50'] = 0.0  # Will be updated externally
     features['bars_since_last_event'] = np.nan  # Will be computed from signals
 
     # Compute bars since last event (non-leaking, based on past signals only)
@@ -4292,7 +4493,8 @@ def select_features_by_importance(
     y: pd.Series,
     max_features: Optional[int] = None,
     correlation_threshold: float = 0.95,
-    method: str = 'tree'
+    method: str = 'tree',
+    pinned_features: Optional[List[str]] = None,
 ) -> List[str]:
     """
     Select important features while removing highly correlated ones.
@@ -4315,6 +4517,10 @@ def select_features_by_importance(
     X_clean = X[clean_mask].fillna(0)
     y_clean = y[clean_mask]
 
+    # Normalise pinned feature list and restrict to columns actually present
+    pinned_features = pinned_features or []
+    pinned_in_X = [f for f in pinned_features if f in X.columns]
+
     if len(y_clean) < 20:
         tprint("⚠️ Too few samples for feature selection, using all features", "WARNING")
         return list(X.columns)
@@ -4325,8 +4531,13 @@ def select_features_by_importance(
     corr_matrix = X_clean.corr().abs()
     upper_tri = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
 
-    # Find features to drop (keep first of each correlated pair)
+    # Find features to drop (keep first of each correlated pair). Pinned
+    # features are always retained even if highly correlated; in such cases we
+    # prefer dropping the non-pinned counterparts so that regime context
+    # (e.g., DDO meta-regimes) remains available for root splits.
     to_drop = [col for col in upper_tri.columns if any(upper_tri[col] > correlation_threshold)]
+    if pinned_in_X:
+        to_drop = [col for col in to_drop if col not in pinned_in_X]
     features_after_corr = [col for col in X.columns if col not in to_drop]
 
     tprint(f"  ✓ Removed {len(to_drop)} highly correlated features (>{correlation_threshold})", "INFO")
@@ -4357,6 +4568,11 @@ def select_features_by_importance(
         # Select top K
         top_indices = np.argsort(importances)[::-1][:max_features]
         selected_features = [features_after_corr[i] for i in top_indices]
+
+        # Ensure pinned features are always kept, even if not in top K.
+        for f in pinned_in_X:
+            if f not in selected_features and f in features_after_corr:
+                selected_features.append(f)
 
         tprint(f"  ✓ Selected top {max_features} features by {method} importance", "INFO")
     else:
@@ -4551,6 +4767,7 @@ def build_meta_features_for_model(
         "swing",
         "renko",
         # Memory-style rolling P&L features
+        "last_",
         "last_50",
         "last_100",
         "cumulative",
@@ -4629,12 +4846,18 @@ def build_meta_features_for_model(
                 max_feats = int(max_feats)
             corr_threshold = float(meta_feature_cfg.get('correlation_threshold', 0.95))
             fs_method = meta_feature_cfg.get('selection_method', 'tree')
+            pinned_meta_features = [
+                col
+                for col in META_FEATURE_COLUMNS
+                if col in meta_features_model_processed.columns
+            ]
             selected_feature_names = select_features_by_importance(
                 X=meta_features_model_processed,
                 y=binary_labels,
                 max_features=max_feats,
                 correlation_threshold=corr_threshold,
                 method=fs_method,
+                pinned_features=pinned_meta_features,
             )
             meta_features_model_processed = meta_features_model_processed[selected_feature_names]
         except Exception as e_fs:
@@ -4659,13 +4882,6 @@ def build_meta_features_for_model(
     except Exception:
         # Never let diagnostics break the main feature pipeline.
         pass
-
-    # Ensure the event-history TTO diagnostic remains available as a model feature
-    critical_tto_feature = 'event_tto_mean_last_50'
-    if critical_tto_feature in meta_features_model.columns and critical_tto_feature not in meta_features_model_processed.columns:
-        meta_features_model_processed[critical_tto_feature] = meta_features_model[critical_tto_feature]
-    if critical_tto_feature in meta_features_model_processed.columns and critical_tto_feature not in selected_feature_names:
-        selected_feature_names.append(critical_tto_feature)
 
     sample_weights: Optional[np.ndarray] = None
     if meta_feature_cfg.get('enable_sample_weighting', False):
@@ -6725,45 +6941,46 @@ def create_base_models(config: Dict[str, Any], use_focal_loss: bool = True) -> D
         models['lgbm']._use_focal = False
 
     # XGBoost: Strong regularization (2025-11-18 update)
-    if use_focal_loss:
-        # Use focal loss custom objective
-        models['xgb'] = xgb.XGBClassifier(
-            objective=focal_loss_xgb,  # Custom focal loss
-            eval_metric='auc',
-            n_estimators=800,
-            max_depth=6,
-            learning_rate=0.01,
-            subsample=0.75,
-            colsample_bytree=0.7,
-            min_child_weight=8,
-            gamma=0.2,
-            reg_alpha=0.1,
-            reg_lambda=0.3,
-            n_jobs=-1,
-            random_state=42,
-            verbosity=0
-        )
-        models['xgb']._use_focal = True
-    else:
-        # Standard binary logistic
-        models['xgb'] = xgb.XGBClassifier(
-            objective='binary:logistic',
-            eval_metric='auc',
-            n_estimators=800,
-            max_depth=6,
-            learning_rate=0.01,
-            subsample=0.75,
-            colsample_bytree=0.7,
-            min_child_weight=8,
-            gamma=0.2,
-            reg_alpha=0.1,
-            reg_lambda=0.3,
-            scale_pos_weight=4.3,  # Handle imbalance
-            n_jobs=-1,
-            random_state=42,
-            verbosity=0
-        )
-        models['xgb']._use_focal = False
+    if XGBOOST_AVAILABLE:
+        if use_focal_loss:
+            # Use focal loss custom objective
+            models['xgb'] = xgb.XGBClassifier(
+                objective=focal_loss_xgb,
+                eval_metric='auc',
+                n_estimators=800,
+                max_depth=6,
+                learning_rate=0.01,
+                subsample=0.75,
+                colsample_bytree=0.7,
+                min_child_weight=8,
+                gamma=0.2,
+                reg_alpha=0.1,
+                reg_lambda=0.3,
+                n_jobs=-1,
+                random_state=42,
+                verbosity=0,
+            )
+            models['xgb']._use_focal = True
+        else:
+            # Standard binary logistic
+            models['xgb'] = xgb.XGBClassifier(
+                objective='binary:logistic',
+                eval_metric='auc',
+                n_estimators=800,
+                max_depth=6,
+                learning_rate=0.01,
+                subsample=0.75,
+                colsample_bytree=0.7,
+                min_child_weight=8,
+                gamma=0.2,
+                reg_alpha=0.1,
+                reg_lambda=0.3,
+                scale_pos_weight=4.3,
+                n_jobs=-1,
+                random_state=42,
+                verbosity=0,
+            )
+            models['xgb']._use_focal = False
 
     # Random Forest: Balanced capacity with regularization (2025-11-18 update)
     models['rf'] = RandomForestClassifier(
@@ -7053,6 +7270,18 @@ def tune_lgbm_hyperparameters_meta(
             X_val_cv = X_clean.iloc[test_idx]
             y_val_cv = y_clean.iloc[test_idx]
 
+            if y_train_cv.nunique() < 2 or y_val_cv.nunique() < 2:
+                tprint(
+                    (
+                        f"[META_LGBM_HPO] Trial {trial + 1}, fold {fold_idx + 1} "
+                        f"skipped: insufficient class diversity "
+                        f"(train_labels={sorted(y_train_cv.unique().tolist())}, "
+                        f"val_labels={sorted(y_val_cv.unique().tolist())})"
+                    ),
+                    "WARNING",
+                )
+                continue
+
             if sw_clean is not None:
                 w_train_cv = sw_clean[train_idx_purged]
             else:
@@ -7189,7 +7418,9 @@ def train_ensemble_with_kfold(
 
     # Initialize storage
     if model_names is None:
-        model_names = ['lgbm', 'xgb', 'rf']
+        model_names = ['lgbm', 'rf']
+        if XGBOOST_AVAILABLE:
+            model_names.insert(1, 'xgb')
 
     trained_models = {name: [] for name in model_names}
     oof_predictions = {
@@ -7197,12 +7428,33 @@ def train_ensemble_with_kfold(
     }
     oof_aucs = {name: [] for name in model_names}
 
-    # Time-series CV
-    tscv = TimeSeriesSplit(n_splits=n_splits)
+    # Time-series CV over LABELED events only to avoid folds dominated by NaNs
+    event_mask_global = ~y.isna()
+    event_idx = np.flatnonzero(event_mask_global.to_numpy())
 
-    for fold_idx, (train_idx, test_idx) in enumerate(tscv.split(X)):
+    effective_splits = n_splits
+    if len(event_idx) <= effective_splits:
+        effective_splits = max(2, len(event_idx) - 1) if len(event_idx) > 2 else 1
+
+    if effective_splits < 2 or len(event_idx) < 2:
         if verbose:
-            tprint(f"  Fold {fold_idx + 1}/{n_splits}...", "INFO")
+            tprint(
+                "  ⚠️ Not enough labeled events for time-series CV; skipping ensemble training",
+                "WARNING",
+            )
+        oof_df_empty = pd.DataFrame(
+            {name: pd.Series(np.nan, index=X.index) for name in model_names},
+            index=X.index,
+        )
+        return {name: [] for name in model_names}, oof_df_empty
+
+    tscv = TimeSeriesSplit(n_splits=effective_splits)
+
+    for fold_idx, (train_sub, test_sub) in enumerate(tscv.split(event_idx)):
+        train_idx = event_idx[train_sub]
+        test_idx = event_idx[test_sub]
+        if verbose:
+            tprint(f"  Fold {fold_idx + 1}/{effective_splits}...", "INFO")
 
         # Purge training indices to avoid lookahead
         train_idx_purged = purge_training_idxs(
@@ -7240,6 +7492,22 @@ def train_ensemble_with_kfold(
         y_train_clean = y_train.iloc[train_mask_arr]
         X_test_clean = X_test.iloc[test_mask_arr].fillna(0)
         y_test_clean = y_test.iloc[test_mask_arr]
+
+        # Guard against single-class folds, which break XGB/RF/LogReg training
+        # and probability outputs. If either side has <2 classes, skip this fold
+        # for all models.
+        if y_train_clean.nunique() < 2 or y_test_clean.nunique() < 2:
+            if verbose:
+                tprint(
+                    (
+                        f"    ⚠️ Skipping fold {fold_idx + 1}: "
+                        f"insufficient class diversity "
+                        f"(train_labels={sorted(y_train_clean.unique().tolist())}, "
+                        f"test_labels={sorted(y_test_clean.unique().tolist())})"
+                    ),
+                    "WARNING",
+                )
+            continue
 
         # Extract sample weights for this fold (if provided)
         if sample_weights is not None:
@@ -7353,6 +7621,110 @@ def train_ensemble_with_kfold(
     return trained_models, oof_df
 
 
+def _normalize_diversity_defense_config(cfg: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """Normalize diversity defense config to the flat dict format expected here.
+
+    Supports both the flat config used by incremental trainers and the nested
+    YAML-style config defined in config/diversity_defense_config.yaml.
+    """
+    if cfg is None:
+        return None
+    if not isinstance(cfg, dict):
+        return None
+
+    flat_keys = {
+        "sharpe_count",
+        "tanh_count",
+        "huber_standard_count",
+        "huber_asymmetric_count",
+        "sharpe_lambdas",
+        "huber_delta",
+        "asymmetric_penalty",
+        "lr_sharpe",
+        "lr_tanh",
+        "lr_huber",
+        "sample_fraction",
+        "colsample_bytree",
+        "z_score_window",
+        "mad_floor",
+        "noise_threshold",
+        "cap_threshold",
+        "run_diversity_sweep",
+        "colsample_settings",
+    }
+
+    # Backward-compatible path: already in flat format
+    if any(k in cfg for k in flat_keys):
+        return dict(cfg)
+
+    normalized: Dict[str, Any] = {}
+
+    # Specialist layer configuration
+    specialist_layers = cfg.get("specialist_layers") or {}
+    sharpe_cfg = specialist_layers.get("sharpe") or {}
+    tanh_cfg = specialist_layers.get("tanh") or {}
+    huber_cfg = specialist_layers.get("huber") or {}
+
+    if "count" in sharpe_cfg:
+        normalized["sharpe_count"] = sharpe_cfg.get("count")
+    if "count" in tanh_cfg:
+        normalized["tanh_count"] = tanh_cfg.get("count")
+    if "standard_count" in huber_cfg:
+        normalized["huber_standard_count"] = huber_cfg.get("standard_count")
+    if "asymmetric_count" in huber_cfg:
+        normalized["huber_asymmetric_count"] = huber_cfg.get("asymmetric_count")
+
+    if "lambdas" in sharpe_cfg:
+        normalized["sharpe_lambdas"] = sharpe_cfg.get("lambdas")
+    if "delta" in huber_cfg:
+        normalized["huber_delta"] = huber_cfg.get("delta")
+    if "asymmetric_penalty" in huber_cfg:
+        normalized["asymmetric_penalty"] = huber_cfg.get("asymmetric_penalty")
+
+    if "learning_rate" in sharpe_cfg:
+        normalized["lr_sharpe"] = sharpe_cfg.get("learning_rate")
+    if "learning_rate" in tanh_cfg:
+        normalized["lr_tanh"] = tanh_cfg.get("learning_rate")
+    if "learning_rate" in huber_cfg:
+        normalized["lr_huber"] = huber_cfg.get("learning_rate")
+
+    # Diversity and base LGBM params
+    diversity_cfg = cfg.get("diversity") or {}
+    if "sample_fraction" in diversity_cfg:
+        normalized["sample_fraction"] = diversity_cfg.get("sample_fraction")
+
+    lgbm_params = cfg.get("lgbm_params") or {}
+    if "colsample_bytree" in lgbm_params:
+        normalized["colsample_bytree"] = lgbm_params.get("colsample_bytree")
+
+    # Aggregation parameters
+    aggregation_cfg = cfg.get("aggregation") or {}
+    z_cfg = aggregation_cfg.get("z_score") or {}
+    if "window" in z_cfg:
+        normalized["z_score_window"] = z_cfg.get("window")
+    consensus_cfg = aggregation_cfg.get("consensus") or {}
+    if "mad_floor" in consensus_cfg:
+        normalized["mad_floor"] = consensus_cfg.get("mad_floor")
+    bucketing_cfg = aggregation_cfg.get("bucketing") or {}
+    if "noise_threshold" in bucketing_cfg:
+        normalized["noise_threshold"] = bucketing_cfg.get("noise_threshold")
+    if "cap_threshold" in bucketing_cfg:
+        normalized["cap_threshold"] = bucketing_cfg.get("cap_threshold")
+
+    # Diversity sweep parameters
+    sweep_cfg = cfg.get("diversity_sweep") or {}
+    if "run_diversity_sweep" in sweep_cfg:
+        normalized["run_diversity_sweep"] = sweep_cfg.get("run_diversity_sweep")
+    if "settings" in sweep_cfg:
+        normalized["colsample_settings"] = sweep_cfg.get("settings")
+
+    # If nothing was recognized, fall back to passing through as-is
+    if not normalized:
+        return dict(cfg)
+
+    return normalized
+
+
 def train_bagged_lgbm_with_kfold(
     X: pd.DataFrame,
     y: pd.Series,
@@ -7362,12 +7734,23 @@ def train_bagged_lgbm_with_kfold(
     n_bags: int = 10,
     lgbm_base_params: Optional[Dict[str, Any]] = None,
     verbose: bool = True,
+    use_diversity_defense: bool = True,
+    diversity_defense_config: Optional[Dict[str, Any]] = None,
 ) -> pd.DataFrame:
     """Train a 10x bagged LGBM meta-model with time-series CV.
 
-    Returns a DataFrame with two columns:
+    Supports "Diversity Defense" mode where specialists have different objectives:
+    - 3x Sharpe models (vol-normalized, risk-adjusted)
+    - 3x Tanh models (directional accuracy)
+    - 4x Huber models (2 standard + 2 asymmetric)
+
+    Returns a DataFrame with columns:
         - 'lgbm_bag_mean': mean probability across bags
         - 'lgbm_bag_lower': mean - 1 * std, clipped to [0, 1]
+
+    When use_diversity_defense=True, additional columns are returned:
+        - 'lgbm_bag_mad': MAD (median absolute deviation) of Z-scores
+        - 'lgbm_bag_consensus': MAD-weighted consensus signal
     """
 
     if not isinstance(X, pd.DataFrame):
@@ -7403,6 +7786,117 @@ def train_bagged_lgbm_with_kfold(
         except Exception:
             sample_weights = None
 
+    diversity_defense_config = _normalize_diversity_defense_config(diversity_defense_config)
+
+    # Import Diversity Defense components if enabled
+    dd_objectives = None
+    dd_aggregator = None
+    dd_config = None
+    optimal_colsample_bytree = 0.5  # Default
+
+    if use_diversity_defense:
+        try:
+            from src.utils.ml_common.optimization.diversity_defense_objectives import (
+                DiversityDefenseConfig,
+                DiversityDefenseObjectives,
+                DiversityDefenseAggregator,
+                DiversitySweep,
+                SpecialistType,
+            )
+
+            # STEP 1: Run DiversitySweep to find optimal colsample_bytree
+            run_diversity_sweep = diversity_defense_config.get('run_diversity_sweep', True) if diversity_defense_config else True
+
+            if run_diversity_sweep and len(X) >= 500:
+                if verbose:
+                    tprint("  [DIVERSITY_SWEEP] Finding optimal colsample_bytree...", "INFO")
+
+                sweep_sample_size = min(5000, len(X))
+                if len(X) > sweep_sample_size:
+                    sweep_indices = np.random.choice(len(X), size=sweep_sample_size, replace=False)
+                    sweep_indices.sort()
+                    X_sweep = X.iloc[sweep_indices]
+                    y_sweep = y.iloc[sweep_indices].values
+                else:
+                    X_sweep = X
+                    y_sweep = y.values
+
+                sweep = DiversitySweep(
+                    X=X_sweep,
+                    y=y_sweep,
+                    colsample_settings=diversity_defense_config.get('colsample_settings', [0.7, 0.6, 0.5, 0.4, 0.3]) if diversity_defense_config else [0.7, 0.6, 0.5, 0.4, 0.3],
+                    n_splits=2,
+                    n_models=5,
+                )
+
+                try:
+                    df_sweep = sweep.run(verbose=verbose)
+                    optimal_colsample_bytree = sweep.get_optimal_fraction()
+                    if verbose:
+                        tprint(f"  [DIVERSITY_SWEEP] ✅ Optimal colsample_bytree: {optimal_colsample_bytree:.2f}", "SUCCESS")
+                        try:
+                            if df_sweep is not None and not df_sweep.empty:
+                                best_idx = df_sweep['ESR_Score'].idxmax()
+                                best_row = df_sweep.loc[best_idx]
+                                frac = float(best_row.get('Fraction', float('nan')))
+                                sharpe_val = float(best_row.get('Sharpe', float('nan')))
+                                avg_corr = float(best_row.get('Avg_Corr', float('nan')))
+                                esr_val = float(best_row.get('ESR_Score', float('nan')))
+                                tprint(
+                                    f"    [DIVERSITY_SWEEP] Summary -> fraction={frac:.2f}, Sharpe={sharpe_val:.4f}, AvgCorr={avg_corr:.4f}, ESR={esr_val:.4f}",
+                                    "INFO",
+                                )
+                        except Exception as e_summary:
+                            tprint(f"    [DIVERSITY_SWEEP] ⚠️ Failed to log summary: {e_summary}", "WARNING")
+                except Exception as e:
+                    if verbose:
+                        tprint(f"  [DIVERSITY_SWEEP] ⚠️ Sweep failed: {e}, using default 0.5", "WARNING")
+                    optimal_colsample_bytree = 0.5
+            else:
+                optimal_colsample_bytree = diversity_defense_config.get('colsample_bytree', 0.5) if diversity_defense_config else 0.5
+                if verbose:
+                    tprint(f"  [DIVERSITY_DEFENSE] Using configured colsample_bytree: {optimal_colsample_bytree}", "INFO")
+
+            # STEP 2: Create config with optimized colsample_bytree
+            if diversity_defense_config is not None:
+                dd_config = DiversityDefenseConfig(
+                    sharpe_count=diversity_defense_config.get('sharpe_count', 3),
+                    tanh_count=diversity_defense_config.get('tanh_count', 3),
+                    huber_standard_count=diversity_defense_config.get('huber_standard_count', 2),
+                    huber_asymmetric_count=diversity_defense_config.get('huber_asymmetric_count', 2),
+                    sharpe_lambdas=diversity_defense_config.get('sharpe_lambdas', [0.5, 2.0, 8.0]),
+                    huber_delta=diversity_defense_config.get('huber_delta', 0.01),
+                    asymmetric_penalty=diversity_defense_config.get('asymmetric_penalty', 3.0),
+                    lr_sharpe=diversity_defense_config.get('lr_sharpe', 0.03),
+                    lr_tanh=diversity_defense_config.get('lr_tanh', 0.03),
+                    lr_huber=diversity_defense_config.get('lr_huber', 0.03),
+                    sample_fraction=diversity_defense_config.get('sample_fraction', 0.7),
+                    colsample_bytree=optimal_colsample_bytree,
+                    z_score_window=diversity_defense_config.get('z_score_window', 1000),
+                    mad_floor=diversity_defense_config.get('mad_floor', 0.25),
+                    noise_threshold=diversity_defense_config.get('noise_threshold', 0.3),
+                    cap_threshold=diversity_defense_config.get('cap_threshold', 0.7),
+                )
+            else:
+                dd_config = DiversityDefenseConfig(colsample_bytree=optimal_colsample_bytree)
+
+            dd_objectives = DiversityDefenseObjectives(dd_config)
+            dd_aggregator = DiversityDefenseAggregator(dd_config)
+
+            if verbose:
+                tprint("  [DIVERSITY_DEFENSE] Enabled - training specialist ensemble", "INFO")
+                tprint(f"    colsample_bytree: {dd_config.colsample_bytree} (optimized)", "INFO")
+                tprint(f"    Sharpe models: {dd_config.sharpe_count} (λ={dd_config.sharpe_lambdas})", "INFO")
+                tprint(f"    Tanh models: {dd_config.tanh_count}", "INFO")
+                tprint(f"    Huber models: {dd_config.huber_standard_count} standard + {dd_config.huber_asymmetric_count} asymmetric", "INFO")
+        except ImportError as e:
+            if verbose:
+                tprint(f"  ⚠️ Diversity Defense not available: {e}, falling back to standard", "WARNING")
+            use_diversity_defense = False
+            dd_objectives = None
+            dd_aggregator = None
+            dd_config = None
+
     # Base LGBM parameters from create_base_models (no focal loss)
     base_models = create_base_models({}, use_focal_loss=False)
     base_lgbm = base_models['lgbm']
@@ -7414,23 +7908,38 @@ def train_bagged_lgbm_with_kfold(
         except Exception:
             pass
 
-    # Force bagging-related parameters
-    base_params.setdefault('n_estimators', 1000)
-    if 'feature_fraction' not in base_params:
-        base_params['feature_fraction'] = 1.0
-    base_params['colsample_bytree'] = base_params.get('colsample_bytree', base_params['feature_fraction'])
-    if 'subsample' not in base_params:
-        base_params['subsample'] = 1.0
-    if 'bagging_fraction' not in base_params:
-        base_params['bagging_fraction'] = 1.0
-    base_params['bagging_freq'] = base_params.get('bagging_freq', 0)
+    base_params.pop("early_stopping_rounds", None)
 
-    external_feature_fraction = 0.7
-    external_sample_fraction = 0.7
+    base_params.setdefault('n_estimators', 300)
+
+    # Feature diversity via colsample_bytree
+    if use_diversity_defense and dd_config is not None:
+        base_params['colsample_bytree'] = dd_config.colsample_bytree
+        external_sample_fraction = dd_config.sample_fraction
+    else:
+        base_params['colsample_bytree'] = 0.5
+        external_sample_fraction = 0.7
+
+    base_params['subsample'] = base_params.get('subsample', 0.7)
+    base_params['feature_fraction'] = base_params.get('colsample_bytree', 0.5)
+    base_params['bagging_fraction'] = base_params.get('bagging_fraction', 0.7)
+    base_params['bagging_freq'] = base_params.get('bagging_freq', 1)
+
+    if verbose:
+        try:
+            tprint(
+                f"  [BAGGED_LGBM] Config -> n_bags={int(max(1, n_bags))}, colsample_bytree={base_params.get('colsample_bytree', 0.0):.2f}, sample_fraction={external_sample_fraction:.2f}, use_diversity_defense={use_diversity_defense}",
+                "INFO",
+            )
+        except Exception:
+            pass
+
     rng = np.random.RandomState(42)
 
     oof_mean = pd.Series(np.nan, index=X.index)
     oof_lower = pd.Series(np.nan, index=X.index)
+    oof_mad = pd.Series(np.nan, index=X.index)
+    oof_consensus = pd.Series(np.nan, index=X.index)
 
     tscv = TimeSeriesSplit(n_splits=n_splits)
 
@@ -7466,12 +7975,14 @@ def train_bagged_lgbm_with_kfold(
         train_mask_arr = train_mask.to_numpy(dtype=bool, copy=False)
         test_mask_arr = test_mask.to_numpy(dtype=bool, copy=False)
 
-        X_train_clean = X_train.iloc[train_mask_arr].fillna(0)
+        X_train_clean = X_train.iloc[train_mask_arr].replace([np.inf, -np.inf], 0).fillna(0)
         y_train_clean = y_train.iloc[train_mask_arr]
-        X_test_clean = X_test.iloc[test_mask_arr].fillna(0)
+        X_test_clean = X_test.iloc[test_mask_arr].replace([np.inf, -np.inf], 0).fillna(0)
 
         if sample_weights is not None:
             weights_train_clean = sample_weights[train_idx_purged][train_mask]
+            if weights_train_clean is not None:
+                weights_train_clean = np.nan_to_num(weights_train_clean, nan=1.0, posinf=1.0, neginf=1.0)
         else:
             weights_train_clean = None
 
@@ -7483,67 +7994,155 @@ def train_bagged_lgbm_with_kfold(
         test_indices_with_labels = test_idx[test_mask]
 
         fold_preds = []
-        for bag_idx in range(int(max(1, n_bags))):
-            params = dict(base_params)
-            params['random_state'] = int(params.get('random_state', 42)) + bag_idx
+        specialist_types: List[Any] = []
 
-            model = lgb.LGBMClassifier(**params)
+        y_train_numeric = y_train_clean.astype(float).values
+        vol_train = pd.Series(y_train_numeric).rolling(window=100, min_periods=10).std().bfill().values
 
-            n_features = X_train_clean.shape[1]
-            n_feat_sub = max(1, int(round(external_feature_fraction * n_features)))
-            feat_indices = rng.choice(n_features, size=n_feat_sub, replace=False)
-            feat_indices.sort()
-            cols_sub = X_train_clean.columns[feat_indices]
+        if use_diversity_defense and dd_objectives is not None and dd_config is not None:
+            specialist_configs = dd_config.get_specialist_configs()
+            for spec_idx, spec_config in enumerate(specialist_configs):
+                params = dict(base_params)
+                params['random_state'] = int(params.get('random_state', 42)) + spec_idx
 
-            X_train_bag = X_train_clean[cols_sub]
-            X_test_bag = X_test_clean[cols_sub]
+                lr = getattr(dd_config, spec_config.learning_rate_key, 0.03)
+                params['learning_rate'] = lr
 
-            n_rows = X_train_bag.shape[0]
-            n_rows_sub = max(10, int(round(external_sample_fraction * n_rows)))
-            n_rows_sub = min(n_rows_sub, n_rows)
-            row_indices = rng.choice(n_rows, size=n_rows_sub, replace=False)
-            row_indices.sort()
+                n_rows = X_train_clean.shape[0]
+                n_rows_sub = max(10, int(round(external_sample_fraction * n_rows)))
+                n_rows_sub = min(n_rows_sub, n_rows)
+                row_indices = rng.choice(n_rows, size=n_rows_sub, replace=False)
+                row_indices.sort()
 
-            X_train_bag_sub = X_train_bag.iloc[row_indices]
-            y_train_bag_sub = y_train_clean.iloc[row_indices]
-            if weights_train_clean is not None:
-                weights_bag_sub = weights_train_clean[row_indices]
-            else:
-                weights_bag_sub = None
+                X_train_bag_sub = X_train_clean.iloc[row_indices]
+                y_train_bag_sub = y_train_clean.iloc[row_indices]
+                vol_train_sub = vol_train[row_indices]
 
-            try:
-                if weights_bag_sub is not None:
-                    model.fit(X_train_bag_sub, y_train_bag_sub, sample_weight=weights_bag_sub)
+                if weights_train_clean is not None:
+                    weights_bag_sub = weights_train_clean[row_indices]
                 else:
-                    model.fit(X_train_bag_sub, y_train_bag_sub)
-                y_pred_proba = model.predict_proba(X_test_bag)[:, 1]
-                fold_preds.append(y_pred_proba)
-            except Exception as e:
-                if verbose:
-                    tprint(f"    ❌ Bag {bag_idx + 1} failed: {e}", "ERROR")
-                continue
+                    weights_bag_sub = None
+
+                try:
+                    fobj = dd_objectives.get_objective_for_specialist(spec_config, vol_train_sub)
+
+                    if fobj is not None:
+                        model = lgb.LGBMRegressor(objective=fobj, **params)
+                        if weights_bag_sub is not None:
+                            model.fit(X_train_bag_sub, y_train_bag_sub.astype(float), sample_weight=weights_bag_sub)
+                        else:
+                            model.fit(X_train_bag_sub, y_train_bag_sub.astype(float))
+                        y_pred = model.predict(X_test_clean)
+                        y_pred_proba = 1.0 / (1.0 + np.exp(-y_pred))
+                    else:
+                        model = lgb.LGBMClassifier(**params)
+                        if weights_bag_sub is not None:
+                            model.fit(X_train_bag_sub, y_train_bag_sub, sample_weight=weights_bag_sub)
+                        else:
+                            model.fit(X_train_bag_sub, y_train_bag_sub)
+                        y_pred_proba = model.predict_proba(X_test_clean)[:, 1]
+
+                    fold_preds.append(y_pred_proba)
+                    specialist_types.append(spec_config.specialist_type)
+                except Exception as e:
+                    if verbose:
+                        tprint(f"    ❌ Specialist {spec_idx + 1} ({spec_config.role_description}) failed: {e}", "ERROR")
+                    continue
+        else:
+            for bag_idx in range(int(max(1, n_bags))):
+                params = dict(base_params)
+                params['random_state'] = int(params.get('random_state', 42)) + bag_idx
+
+                model = lgb.LGBMClassifier(**params)
+
+                n_rows = X_train_clean.shape[0]
+                n_rows_sub = max(10, int(round(external_sample_fraction * n_rows)))
+                n_rows_sub = min(n_rows_sub, n_rows)
+                row_indices = rng.choice(n_rows, size=n_rows_sub, replace=False)
+                row_indices.sort()
+
+                X_train_bag_sub = X_train_clean.iloc[row_indices]
+                y_train_bag_sub = y_train_clean.iloc[row_indices]
+                if weights_train_clean is not None:
+                    weights_bag_sub = weights_train_clean[row_indices]
+                else:
+                    weights_bag_sub = None
+
+                try:
+                    if weights_bag_sub is not None:
+                        model.fit(X_train_bag_sub, y_train_bag_sub, sample_weight=weights_bag_sub)
+                    else:
+                        model.fit(X_train_bag_sub, y_train_bag_sub)
+                    y_pred_proba = model.predict_proba(X_test_clean)[:, 1]
+                    fold_preds.append(y_pred_proba)
+                except Exception as e:
+                    if verbose:
+                        tprint(f"    ❌ Bag {bag_idx + 1} failed: {e}", "ERROR")
+                    continue
 
         if not fold_preds:
+            if verbose:
+                tprint(
+                    "    ❌ No successful bagged models in this fold (all specialists/bags failed)",
+                    "ERROR",
+                )
             continue
 
-        preds_mat = np.vstack(fold_preds).T  # shape: (n_test_clean, n_bags_effective)
-        mu = np.mean(preds_mat, axis=1)
-        sigma = np.std(preds_mat, axis=1)
+        preds_mat = np.vstack(fold_preds).T
 
-        oof_mean.iloc[test_indices_with_labels] = mu
-        lower = np.clip(mu - 1.0 * sigma, 0.0, 1.0)
-        oof_lower.iloc[test_indices_with_labels] = lower
+        if use_diversity_defense and dd_aggregator is not None:
+            preds_matrix_t = preds_mat.T
+            agg_result = dd_aggregator.aggregate(preds_matrix_t, compute_penalty=False)
 
-    oof_mean = oof_mean.fillna(0.5)
-    oof_lower = oof_lower.fillna(0.5)
+            mu = np.median(preds_mat, axis=1)
+            sigma = np.std(preds_mat, axis=1)
 
-    return pd.DataFrame(
+            mad_values = agg_result['mad_z']
+            if len(mad_values) != len(mu):
+                mad_values = np.median(np.abs(preds_mat - mu[:, np.newaxis]), axis=1)
+
+            raw_signal = agg_result.get('raw_signal', mu)
+            if len(raw_signal) != len(mu):
+                raw_signal = mu
+
+            oof_mean.iloc[test_indices_with_labels] = mu
+            lower = np.clip(mu - 1.0 * sigma, 0.0, 1.0)
+            oof_lower.iloc[test_indices_with_labels] = lower
+            oof_mad.iloc[test_indices_with_labels] = mad_values
+            oof_consensus.iloc[test_indices_with_labels] = raw_signal
+        else:
+            mu = np.mean(preds_mat, axis=1)
+            sigma = np.std(preds_mat, axis=1)
+
+            oof_mean.iloc[test_indices_with_labels] = mu
+            lower = np.clip(mu - 1.0 * sigma, 0.0, 1.0)
+            oof_lower.iloc[test_indices_with_labels] = lower
+
+    n_valid_oof = int(oof_mean.notna().sum())
+    if n_valid_oof == 0:
+        msg = (
+            "[BAGGED_LGBM] No valid OOF predictions were produced across all folds. "
+            "All entries are NaN; this usually means every fold was skipped "
+            "(purging / degenerate labels) or all specialists/bags failed."
+        )
+        if verbose:
+            tprint(msg, "ERROR")
+        raise RuntimeError(msg)
+
+    result_df = pd.DataFrame(
         {
             'lgbm_bag_mean': oof_mean,
             'lgbm_bag_lower': oof_lower,
         },
         index=X.index,
     )
+
+    if use_diversity_defense:
+        oof_mad = oof_mad.fillna(0.25)
+        result_df['lgbm_bag_mad'] = oof_mad
+        result_df['lgbm_bag_consensus'] = oof_consensus
+
+    return result_df
 
 
 def calibrate_ensemble(
@@ -8323,6 +8922,7 @@ def attach_rolling_hmm_regimes_to_market_data(
             "regime_timeframe": regime_timeframe,
             "direction": direction,
             "enable_risk_hmm_specialist": False,
+            "enable_mean_reversion_specialist": False,
             # Use canonical per-specialist scalars so downstream consumers
             # (including meta-labeling) see a compact, well-defined set of
             # specialist features instead of raw multi-column blocks.
@@ -8820,6 +9420,111 @@ def monitor_label_density_by_stage(
     return results
 
 
+def run_lgbm_feature_selection_multi_set(
+    meta_features_model: pd.DataFrame,
+    binary_labels: pd.Series,
+    exchange: str,
+    asset: str,
+    correlation_threshold: float = 0.95,
+    force_reselection: bool = False,
+    log_dir: Optional[Path] = None,
+) -> Tuple[Dict[int, List[str]], Dict[str, Any]]:
+    """Run LGBM-based feature selection to generate multiple meta feature sets.
+
+    This helper is dedicated to the meta-labeling pipeline and relies on the
+    meta-labeling-specific LGBM feature selection module. It will:
+
+    1. Check if feature sets already exist for the given exchange/asset.
+    2. If not (or if force_reselection is True), run the full selection
+       pipeline to produce multiple feature sets (e.g., 80/70/60/50).
+    3. Return the feature sets and a selection log.
+    """
+    tprint_info(f" Running LGBM feature selection for {asset} on {exchange}")
+
+    if not LGBM_FEATURE_SELECTION_AVAILABLE:
+        tprint_warning(
+            " LGBM feature selection module not available; "
+            "skipping meta-labeling feature selection pipeline",
+        )
+        return {}, {"error": "lgbm_feature_selection_unavailable"}
+
+    try:
+        feature_sets, selection_log = select_features_lgbm_for_meta_labeling(
+            X=meta_features_model,
+            y=binary_labels,
+            exchange=exchange,
+            asset=asset,
+            correlation_threshold=correlation_threshold,
+            force_reselection=force_reselection,
+            log_dir=log_dir,
+            persist=True,
+        )
+
+        tprint_success(
+            f" Generated {len(feature_sets)} meta feature sets: {list(feature_sets.keys())}"
+        )
+        return feature_sets, selection_log
+
+    except Exception as e:
+        tprint_error(f" LGBM feature selection for meta-labeling failed: {e}")
+        # Fallback to an empty dict so the caller can gracefully degrade.
+        return {}, {"error": str(e)}
+
+
+def save_multi_feature_set_results(
+    results: Dict[int, Dict[str, Any]],
+    exchange: str,
+    asset: str,
+    timeframe: str,
+    output_dir: Optional[Path] = None,
+) -> Path:
+    """Save results from running meta-labeling with multiple feature sets.
+
+    The saved file is used by offline diagnostics (e.g., SNR analysis) and is
+    entirely local to the meta-labeling pipeline.
+    """
+    output_dir = Path(output_dir) if output_dir else Path("outcomes")
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"multi_feature_set_results_{asset}_{timeframe}_{timestamp}.json"
+    output_path = output_dir / filename
+
+    save_data = {
+        "metadata": {
+            "exchange": exchange,
+            "asset": asset,
+            "timeframe": timeframe,
+            "timestamp": timestamp,
+            "datetime_iso": datetime.now().isoformat(),
+        },
+        "results": results,
+    }
+
+    # Lightweight serializer for common numpy/pandas objects
+    def _serialize(obj: Any) -> Any:
+        if isinstance(obj, (np.floating, np.integer)):
+            return float(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        if isinstance(obj, pd.Series):
+            return obj.tolist()
+        if isinstance(obj, pd.DataFrame):
+            return obj.to_dict()
+        if hasattr(obj, "__dict__"):
+            return str(obj)
+        return str(obj)
+
+    try:
+        with open(output_path, "w") as f:
+            json.dump(save_data, f, indent=2, default=_serialize)
+        tprint_success(f" Saved multi-feature-set meta results to {output_path}")
+    except Exception as e:
+        tprint_error(f" Failed to save multi-feature-set results: {e}")
+
+    return output_path
+
+
 class FeatureGenerationMetaLabelingStep(BaseStep):
     """
     Feature Generation Meta-Labeling Step (Enhanced).
@@ -8837,6 +9542,10 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
         """Initialize the meta-labeling step."""
         super().__init__(step_name)
         self.logger = system_logger.getChild('FeatureGenerationMetaLabeling')
+        # Cache for meta-labeling feature sets produced by the dedicated
+        # LGBM-based selection pipeline.
+        self._feature_sets_cache: Dict[int, List[str]] = {}
+        self._feature_selection_log: Dict[str, Any] = {}
 
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -8858,7 +9567,7 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             tprint(f" {error_msg}", "ERROR")
             return {'success': False, 'error': error_msg}
 
-        tprint(f"🚀 [0/13] Starting enhanced meta-labeling for {config['symbol']} ({config.get('timeframe', 'N/A')})", "INFO")
+        tprint(f" Starting enhanced meta-labeling for {config['symbol']} ({config.get('timeframe', 'N/A')})", "INFO")
 
         try:
             self.set_context(
@@ -8909,7 +9618,7 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                     )
                     if latest_path is not None and hpo_params:
                         label_source = params_source or 'params'
-                        tprint(f"🔍 Using labeling HPO {label_source} from {latest_path}", "INFO")
+                        tprint(f" Using labeling HPO {label_source} from {latest_path}", "INFO")
 
                         # Map HPO params → step parameters with safety clamps
                         if 'profit_thr_base' in hpo_params:
@@ -8948,17 +9657,17 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                             stop_mult_min, stop_mult_max = stop_mult_max, stop_mult_min
 
                         tprint(
-                            f"⚙️ HPO overrides → profit={profit_threshold:.3%}, stop={stop_threshold:.3%}, horizon={horizon}, spacing={min_event_spacing}",
+                            f" HPO overrides → profit={profit_threshold:.3%}, stop={stop_threshold:.3%}, horizon={horizon}, spacing={min_event_spacing}",
                             "INFO",
                         )
                         used_hpo_params = True
                     else:
-                        tprint("ℹ️ No HPO best-params file found; using configured/default labeling parameters", "INFO")
+                        tprint(" No HPO best-params file found; using configured/default labeling parameters", "INFO")
                 except Exception as hpo_exc:
-                    tprint(f"⚠️ Failed to load labeling HPO params: {hpo_exc}", "WARNING")
+                    tprint(f" Failed to load labeling HPO params: {hpo_exc}", "WARNING")
 
             # Load market data via BaseStep helpers so execution mode and lookback days are centralized
-            tprint("📊 [prep] Loading market data via BaseStep...", "INFO")
+            tprint(" Loading market data via BaseStep...", "INFO")
             pipeline_state: Dict[str, Any] = {}
             market_data, source = self.load_market_data_or_fail(
                 config,
@@ -8973,34 +9682,34 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             idx = market_data.index
             if isinstance(idx, pd.DatetimeIndex):
                 tprint(
-                    f"🕒 [index] market_data.index tz={idx.tz}, name={idx.name}, len={len(idx)}",
+                    f" market_data.index tz={idx.tz}, name={idx.name}, len={len(idx)}",
                     "INFO",
                 )
                 if idx.tz is not None:
                     try:
                         market_data = market_data.copy()
                         market_data.index = market_data.index.tz_convert("UTC").tz_localize(None)
-                        tprint("🕒 [index] Normalized market_data.index to UTC-naive", "INFO")
+                        tprint(" Normalized market_data.index to UTC-naive", "INFO")
                     except Exception as tz_exc:
-                        tprint(f"⚠️ [index] Failed to normalize market_data.index timezone: {tz_exc}", "WARNING")
+                        tprint(f" Failed to normalize market_data.index timezone: {tz_exc}", "WARNING")
             else:
                 tprint(
-                    f"🕒 [index] market_data.index type={type(idx)}, len={len(idx)}",
+                    f" market_data.index type={type(idx)}, len={len(idx)}",
                     "INFO",
                 )
 
-            tprint(f"📊 Loaded {len(market_data)} samples from {source}", "SUCCESS")
+            tprint(f" Loaded {len(market_data)} samples from {source}", "SUCCESS")
 
             if 'close' not in market_data.columns:
                 raise ValueError("Missing required 'close' column in market data")
 
             # STEP 1: Generate FIXED primary signals
-            tprint("🎯 [1/13] Generating fixed primary signals...", "INFO")
+            tprint(" Generating fixed primary signals...", "INFO")
             primary_signals = generate_primary_signals(market_data)
 
             n_long_signals = int((primary_signals['consensus'] > 0).sum())
             n_short_signals = int((primary_signals['consensus'] < 0).sum())
-            tprint(f"📊 Primary signals: {n_long_signals} long, {n_short_signals} short", "INFO")
+            tprint(f" Primary signals: {n_long_signals} long, {n_short_signals} short", "INFO")
 
             # Surface signal funnel statistics from the signal generator if available
             signal_funnel = {}
@@ -9015,7 +9724,7 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                 final_sf = int(signal_funnel.get('final_signals', n_long_signals + n_short_signals))
                 ratio_sf = float(signal_funnel.get('raw_to_final_ratio', final_sf / max(raw_sf, 1)))
 
-                tprint("📊 Signal funnel summary (from generator):", "INFO")
+                tprint(" Signal funnel summary (from generator):", "INFO")
                 tprint(f"  Bars: {total_bars_sf}, Raw signals: {raw_sf}, Final consensus: {final_sf} (ratio={ratio_sf:.3f})", "INFO")
 
             # Define canonical training index based on primary signals
@@ -9026,14 +9735,14 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             if not market_data.index.equals(train_index):
                 try:
                     tprint(
-                        f"⚠️ [train_index] Aligning market_data (len={len(market_data)}) "
+                        f" Aligning market_data (len={len(market_data)}) "
                         f"to primary_signals index (len={len(train_index)})",
                         "WARNING",
                     )
                     market_data = market_data.reindex(train_index, method="ffill")
                 except Exception as align_exc:
                     tprint(
-                        f"⚠️ [train_index] Failed to align market_data to train_index: {align_exc}",
+                        f" Failed to align market_data to train_index: {align_exc}",
                         "WARNING",
                     )
 
@@ -9043,7 +9752,7 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                     primary_signals = primary_signals.reindex(train_index, method="ffill")
                 except Exception as sig_align_exc:
                     tprint(
-                        f"⚠️ [train_index] Failed to align primary_signals to train_index: {sig_align_exc}",
+                        f" Failed to align primary_signals to train_index: {sig_align_exc}",
                         "WARNING",
                     )
 
@@ -9058,13 +9767,14 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                     config,
                 )
             except Exception as e_reg:
-                tprint(f"⚠️ Failed to attach rolling HMM regimes to market_data: {e_reg}", "WARNING")
+                tprint(f" Failed to attach rolling HMM regimes to market_data: {e_reg}", "WARNING")
 
             # Attach specialist model outputs (liquidity regimes, canonical scalars, etc.)
             # aligned to train_index
             try:
                 specialist_config = dict(config)
                 specialist_config.setdefault("enable_risk_hmm_specialist", False)
+                specialist_config.setdefault("enable_mean_reversion_specialist", False)
                 specialist_config.setdefault("use_canonical_specialist_scalars", True)
                 specialist_df = get_specialist_models_outputs(
                     artifact_router=self.artifact_router,
@@ -9084,7 +9794,7 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                         for col in liquidity_features.columns:
                             market_data[f'liquidity_{col}'] = liquidity_features[col]
                         tprint(
-                            f"✅ Added {len(prob_cols)} liquidity regime probability features to market_data via specialist loader",
+                            f" Added {len(prob_cols)} liquidity regime probability features to market_data via specialist loader",
                             "SUCCESS",
                         )
 
@@ -9134,14 +9844,14 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                                 market_data[col] = specialist_df[col]
                     except Exception as e_spec_scalars:
                         tprint(
-                            f"⚠️ Failed to attach canonical specialist scalars to market_data: {e_spec_scalars}",
+                            f" Failed to attach canonical specialist scalars to market_data: {e_spec_scalars}",
                             "WARNING",
                         )
             except Exception as e_liquidity:
-                tprint(f"⚠️ Failed to attach specialist liquidity regime probabilities: {e_liquidity}", "WARNING")
+                tprint(f" Failed to attach specialist liquidity regime probabilities: {e_liquidity}", "WARNING")
 
             # STEP 2: Compute volatility for adaptive thresholds
-            tprint("📊 [2/13] Computing volatility for adaptive thresholds...", "INFO")
+            tprint(" Computing volatility for adaptive thresholds...", "INFO")
             log_ret = np.log(market_data['close']).diff()
             volatility_1d = log_ret.rolling(96).std()  # Short volatility estimate
 
@@ -9197,13 +9907,13 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             # Log if any targets were floored
             n_floored = (adaptive_profit_threshold <= profit_floor * 1.001).sum()
             if n_floored > 0:
-                tprint(f"  ⚠️ Enforced profit floor (0.5%) on {n_floored}/{len(adaptive_profit_threshold)} bars", "WARNING")
+                tprint(f"  Enforced profit floor (0.5%) on {n_floored}/{len(adaptive_profit_threshold)} bars", "WARNING")
 
-            tprint(f"📊 Adaptive thresholds: Profit {adaptive_profit_threshold.mean():.2%} ± {adaptive_profit_threshold.std():.2%} (floor: {profit_floor:.2%})", "INFO")
-            tprint(f"📊 Adaptive thresholds: Stop {adaptive_stop_threshold.mean():.2%} ± {adaptive_stop_threshold.std():.2%}", "INFO")
+            tprint(f" Adaptive thresholds: Profit {adaptive_profit_threshold.mean():.2%} ± {adaptive_profit_threshold.std():.2%} (floor: {profit_floor:.2%})", "INFO")
+            tprint(f" Adaptive thresholds: Stop {adaptive_stop_threshold.mean():.2%} ± {adaptive_stop_threshold.std():.2%}", "INFO")
 
             # STEP 3: Compute realized returns (continuous) and binary labels with adaptive thresholds
-            tprint("💰 [3/13] Computing realized returns with adaptive thresholds and transaction costs...", "INFO")
+            tprint(" Computing realized returns with adaptive thresholds and transaction costs...", "INFO")
 
             # ATR series for trailing stops (aligned with HPO behaviour). We use a
             # True Range based ATR so trailing distance is comparable across steps.
@@ -9259,14 +9969,16 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
 
             # NEW: Volatility-scaled returns and quantile-based labels to improve
             # balance and focus labels on economically meaningful moves.
-            tprint("📊 [3b/13] Computing volatility-scaled returns and quantile-based labels...", "INFO")
+            tprint(" Computing volatility-scaled returns and quantile-based labels...", "INFO")
+            econ_min_mult_meta = float(config.get("econ_min_return_multiple_meta", 1.2))
             vol_scaled_returns = compute_vol_scaled_returns_for_events(
                 realized_returns=realized_returns,
                 volatility=volatility_1d,
+                econ_min_return_multiple=econ_min_mult_meta,
             )
 
-            quantile_low_q = float(config.get("quantile_low_q", 0.3))
-            quantile_high_q = float(config.get("quantile_high_q", 0.7))
+            quantile_low_q = float(config.get("quantile_low_q", 0.35))
+            quantile_high_q = float(config.get("quantile_high_q", 0.65))
             
             # Labeling method selection:
             # - "rolling": Rolling quantiles with fixed thresholds (default, no look-ahead bias)
@@ -9286,7 +9998,7 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             use_zscore_gated_pipeline = labeling_method == "zscore_gated"
             # Asymmetric quantiles for crypto (longs more selective, shorts less selective)
             conditional_quantile_long = float(config.get("conditional_quantile_long", 0.6))  # Q_0.6(z|X) for longs
-            conditional_quantile_short = float(config.get("conditional_quantile_short", 0.35))  # Q_0.35(z|X) for shorts
+            conditional_quantile_short = float(config.get("conditional_quantile_short", 0.4))  # Slightly more symmetric short tail
             conditional_asymmetric = bool(config.get("conditional_asymmetric_crypto", True))  # Use crypto-optimized asymmetry
             conditional_retrain_freq = int(config.get("conditional_retrain_frequency", 500))
             conditional_min_train = int(config.get("conditional_min_train_samples", 500))
@@ -9313,7 +10025,7 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             
             # Run look-ahead bias diagnostic if enabled
             if config.get("diagnose_quantile_bias", False):
-                tprint("🔍 Running quantile look-ahead bias diagnostic...", "INFO")
+                tprint(" Running quantile look-ahead bias diagnostic...", "INFO")
                 bias_diag = diagnose_quantile_lookahead_bias(
                     vol_scaled=vol_scaled_returns,
                     low_q=quantile_low_q,
@@ -9322,7 +10034,7 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                 )
                 if bias_diag.get("bias_detected", False) and labeling_method == "global":
                     tprint(
-                        f"⚠️ Look-ahead bias detected ({bias_diag.get('bias_severity', 'unknown')}) "
+                        f" Look-ahead bias detected ({bias_diag.get('bias_severity', 'unknown')}) "
                         "with global quantiles. Consider using labeling_method='rolling', 'conditional', or 'zscore_gated'",
                         "WARNING"
                     )
@@ -9350,7 +10062,7 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                 #    Final Supervised Target
                 # =====================================================================
                 tprint(
-                    f"📊 Using Z-SCORE GATED TRIPLE BARRIER PIPELINE:\n"
+                    f" Using Z-SCORE GATED TRIPLE BARRIER PIPELINE:\n"
                     f"   - Quantile filter: Q_long={conditional_quantile_long}, Q_short={conditional_quantile_short}\n"
                     f"   - Barrier scaling: k_TP={zg_k_tp_base}, k_SL={zg_k_sl_base}\n"
                     f"   - Z-score magnitude scale: {zg_z_magnitude_scale}\n"
@@ -9443,7 +10155,7 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                 n_gated_short = zscore_gated_diagnostics.get('n_gated_short', 0)
                 
                 tprint(
-                    f"📊 Z-Score Gated Pipeline Results:\n"
+                    f" Z-Score Gated Pipeline Results:\n"
                     f"   - Gated entries: {n_gated_long} longs, {n_gated_short} shorts\n"
                     f"   - Trades executed: {n_trades}, Win rate: {win_rate:.1%}, Mean return: {mean_ret:.4f}",
                     "INFO"
@@ -9463,7 +10175,7 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                 # ADVANCED: Conditional quantile regression with asymmetric tails
                 # Predicts Q_long(z|X) and Q_short(z|X) separately for crypto markets
                 tprint(
-                    f"📊 Using CONDITIONAL quantile regression: "
+                    f" Using CONDITIONAL quantile regression: "
                     f"Q_long={conditional_quantile_long}, Q_short={conditional_quantile_short}, "
                     f"asymmetric={conditional_asymmetric}",
                     "INFO"
@@ -9520,7 +10232,7 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                     cov_long = conditional_quantile_diagnostics.get('coverage_long', np.nan)
                     cov_short = conditional_quantile_diagnostics.get('coverage_short', np.nan)
                     tprint(
-                        f"📊 Conditional quantile results: {n_long} longs, {n_short} shorts",
+                        f" Conditional quantile results: {n_long} longs, {n_short} shorts",
                         "INFO"
                     )
                     if np.isfinite(cov_long) and np.isfinite(cov_short):
@@ -9532,7 +10244,7 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                     
             elif use_rolling_quantiles:
                 # Use rolling quantiles to eliminate look-ahead bias
-                tprint(f"📊 Using ROLLING quantiles (lookback={rolling_lookback_bars} bars) to prevent look-ahead bias", "INFO")
+                tprint(f" Using ROLLING quantiles (lookback={rolling_lookback_bars} bars) to prevent look-ahead bias", "INFO")
                 if regimes_for_labeling is not None:
                     quantile_labels = create_rolling_regime_aware_quantile_labels_from_vol_scaled_returns(
                         vol_scaled=vol_scaled_returns,
@@ -9552,7 +10264,7 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                     )
             else:
                 # Legacy: global quantiles (has look-ahead bias)
-                tprint("⚠️ Using GLOBAL quantiles (may have look-ahead bias)", "WARNING")
+                tprint(" Using GLOBAL quantiles (may have look-ahead bias)", "WARNING")
                 if regimes_for_labeling is not None:
                     quantile_labels = create_regime_aware_quantile_labels_from_vol_scaled_returns(
                         vol_scaled=vol_scaled_returns,
@@ -9581,6 +10293,20 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                 except Exception:
                     pass
 
+            econ_min_return_soft = float(config.get("econ_min_return_multiple_soft", ECON_MIN_RETURN_MULTIPLE))
+            try:
+                tx_cost_local = float(config.get('transaction_cost', DEFAULT_TRANSACTION_COST))
+            except Exception:
+                tx_cost_local = float(DEFAULT_TRANSACTION_COST)
+            econ_floor_soft = econ_min_return_soft * tx_cost_local
+
+            if isinstance(quantile_labels, pd.Series):
+                ql = quantile_labels.copy()
+                unlabeled_mask = ql.isna() & realized_returns.notna()
+                non_trivial_mask = unlabeled_mask & (realized_returns.abs() >= econ_floor_soft)
+                ql.loc[non_trivial_mask] = 0.0
+                quantile_labels = ql
+
             # Always use quantile-based labels for meta-labeling. If they are
             # very sparse, downstream diagnostics will reflect that directly.
             binary_labels = quantile_labels
@@ -9596,27 +10322,101 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                 median_return = realized_returns[labeled_mask].median()
                 win_rate = n_positive / n_labeled
 
-                tprint(f"📊 Events: {n_labeled} total ({n_positive} wins, {n_negative} losses)", "INFO")
-                tprint(f"📈 Win rate: {win_rate:.1%}, Mean return: {mean_return:.2%}, Median: {median_return:.2%}", "INFO")
+                tprint(f" Events: {n_labeled} total ({n_positive} wins, {n_negative} losses)", "INFO")
+                tprint(f" Win rate: {win_rate:.1%}, Mean return: {mean_return:.2%}, Median: {median_return:.2%}", "INFO")
+
+                try:
+                    idx = binary_labels.index
+                    if isinstance(idx, pd.DatetimeIndex):
+                        events = binary_labels[labeled_mask].copy()
+                        years = events.index.year
+                        yearly_stats = []
+                        for year in sorted(pd.unique(years)):
+                            mask_y = years == year
+                            ev_y = events[mask_y]
+                            n_ev = int(ev_y.shape[0])
+                            if n_ev == 0:
+                                continue
+                            n_pos_y = int((ev_y == 1.0).sum())
+                            n_neg_y = int((ev_y == 0.0).sum())
+                            win_y = n_pos_y / n_ev if n_ev > 0 else 0.0
+                            yearly_stats.append((year, n_ev, n_pos_y, n_neg_y, win_y))
+
+                        for year, n_ev, n_pos_y, n_neg_y, win_y in yearly_stats:
+                            tprint(
+                                f"[META_LABEL_DIST] Year {year}: n={n_ev}, wins={n_pos_y}, "
+                                f"losses={n_neg_y}, win_rate={win_y:.1%}",
+                                "INFO",
+                            )
+
+                        months = events.index.to_period("M")
+                        monthly_stats = []
+                        for period in sorted(pd.unique(months)):
+                            mask_m = months == period
+                            ev_m = events[mask_m]
+                            n_ev_m = int(ev_m.shape[0])
+                            if n_ev_m == 0:
+                                continue
+                            n_pos_m = int((ev_m == 1.0).sum())
+                            n_neg_m = int((ev_m == 0.0).sum())
+                            win_m = n_pos_m / n_ev_m if n_ev_m > 0 else 0.0
+                            monthly_stats.append((str(period), n_ev_m, n_pos_m, n_neg_m, win_m))
+
+                        for period_str, n_ev_m, n_pos_m, n_neg_m, win_m in monthly_stats:
+                            tprint(
+                                f"[META_LABEL_DIST] Month {period_str}: n={n_ev_m}, "
+                                f"wins={n_pos_m}, losses={n_neg_m}, win_rate={win_m:.1%}",
+                                "INFO",
+                            )
+                except Exception as dist_exc:
+                    tprint(f" Label distribution diagnostics failed: {dist_exc}", "WARNING")
             else:
-                tprint("⚠️ Warning: No labeled events found", "WARNING")
+                tprint(" Warning: No labeled events found", "WARNING")
                 mean_return = 0.0
                 median_return = 0.0
                 win_rate = 0.0
 
             # STEP 4: Apply Kalman smoothing to binary labels
-            tprint("📈 [4/13] Applying Kalman smoothing to binary labels...", "INFO")
+            tprint(" Applying Kalman smoothing to binary labels...", "INFO")
             smoothed_labels, label_uncertainty = kalman_smooth_labels(
                 binary_labels,
                 Q=kalman_Q,
                 R=kalman_R,
                 volatility=volatility_1d
             )
-            tprint(f"📊 Smoothed labels: Mean={smoothed_labels[labeled_mask].mean():.3f}, Std={smoothed_labels[labeled_mask].std():.3f}", "INFO")
+            tprint(
+                f" Smoothed labels: Mean={smoothed_labels[labeled_mask].mean():.3f}, "
+                f"Std={smoothed_labels[labeled_mask].std():.3f}",
+                "INFO",
+            )
 
             meta_feature_cfg_raw = config.get('meta_feature_engineering', {})
             meta_feature_cfg = dict(meta_feature_cfg_raw) if isinstance(meta_feature_cfg_raw, dict) else {}
             meta_feature_cfg["_label_uncertainty"] = label_uncertainty
+
+            # Meta-labeling specific LGBM feature selection configuration. When
+            # enabled, the dedicated LGBM pipeline will generate a set of
+            # meta-features for this symbol/exchange, completely decoupled from
+            # the global final_feature_selection_step artifacts.
+            use_lgbm_feature_selection = bool(
+                config.get('use_lgbm_feature_selection', LGBM_FEATURE_SELECTION_AVAILABLE)
+            )
+            force_feature_reselection = bool(config.get('force_feature_reselection', False))
+
+            if use_lgbm_feature_selection and not LGBM_FEATURE_SELECTION_AVAILABLE:
+                tprint(
+                    " LGBM feature selection requested but not available; "
+                    "falling back to in-step feature selection",
+                    "WARNING",
+                )
+                use_lgbm_feature_selection = False
+
+            if use_lgbm_feature_selection:
+                # Disable generic feature selection inside build_meta_features_for_model.
+                # The dedicated LGBM meta-labeling pipeline will handle
+                # selection/persistence of the final feature list.
+                meta_feature_cfg['enable_feature_selection'] = False
+                meta_feature_cfg['selection_method'] = 'lgbm'
 
             meta_features, meta_features_model_processed, selected_feature_names, sample_weights = build_meta_features_for_model(
                 market_data=market_data,
@@ -9632,8 +10432,72 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                 meta_feature_cfg=meta_feature_cfg,
             )
 
+            # Optional: run dedicated LGBM feature selection pipeline for
+            # meta-labeling to derive a persistent set of features fully owned
+            # by this step.
+            multi_feature_sets: Dict[int, List[str]] = {}
+            feature_selection_log: Dict[str, Any] = {}
+
+            if use_lgbm_feature_selection:
+                try:
+                    exchange = config.get('exchange', 'binance')
+                    symbol = config.get('symbol', 'UNKNOWN')
+                    log_dir = Path("outcomes") / "feature_selection_logs"
+                    try:
+                        log_dir.mkdir(parents=True, exist_ok=True)
+                    except Exception:
+                        pass
+
+                    meta_features_full = meta_features_model_processed
+                    meta_regime_cols_present = [
+                        c for c in META_FEATURE_COLUMNS if c in meta_features_full.columns
+                    ]
+
+                    multi_feature_sets, feature_selection_log = run_lgbm_feature_selection_multi_set(
+                        meta_features_model=meta_features_full,
+                        binary_labels=binary_labels,
+                        exchange=exchange,
+                        asset=symbol,
+                        correlation_threshold=float(meta_feature_cfg.get('correlation_threshold', 0.95)),
+                        force_reselection=force_feature_reselection,
+                        log_dir=log_dir,
+                    )
+
+                    # Cache for downstream consumers/diagnostics
+                    self._feature_sets_cache = multi_feature_sets
+                    self._feature_selection_log = feature_selection_log
+
+                    base_selected: List[str] = []
+                    if 60 in multi_feature_sets and multi_feature_sets[60]:
+                        base_selected = multi_feature_sets[60]
+                    elif multi_feature_sets:
+                        largest = max(multi_feature_sets.keys())
+                        base_selected = multi_feature_sets[largest]
+
+                    if base_selected:
+                        if meta_regime_cols_present:
+                            selected_set = set(base_selected)
+                            selected_set.update(meta_regime_cols_present)
+                            selected_feature_names = sorted(selected_set)
+                        else:
+                            selected_feature_names = base_selected
+
+                        meta_features_model_processed = meta_features_full[selected_feature_names]
+                        tprint(
+                            f"   Using LGBM-selected meta feature set "
+                            f"({len(selected_feature_names)} features; primary size={len(base_selected)})",
+                            "INFO",
+                        )
+                except Exception as e_lgbm:
+                    tprint(
+                        f" LGBM feature selection for meta-labeling failed, "
+                        f"falling back to in-step feature selection: {e_lgbm}",
+                        "WARNING",
+                    )
+                    multi_feature_sets = {}
+
             # STEP 6: Train ensemble meta-models with K-fold cross-fitting
-            tprint("🎓 [6/13] Training ensemble meta-models (LGBM + LogReg + RF) with purged K-fold CV...", "INFO")
+            tprint(" Training ensemble meta-models (LGBM + LogReg + RF) with purged K-fold CV...", "INFO")
 
             # Train ensemble and get OOF predictions
             lgbm_params_override: Optional[Dict[str, Any]] = None
@@ -9673,8 +10537,46 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
 
             if meta_model_family in ('all', 'lgbm_bag_mean', 'lgbm_bag_lower'):
                 try:
+                    # By default, use the same processed feature set as the
+                    # main ensemble. When LGBM feature selection is enabled
+                    # and multi-feature sets are available, prefer the 80-
+                    # feature set for the bagged LGBM meta-model to give the
+                    # bagged ensemble a slightly wider, more robust feature
+                    # surface.
+                    X_bag = meta_features_model_processed
+                    try:
+                        if use_lgbm_feature_selection and isinstance(multi_feature_sets, dict) and multi_feature_sets:
+                            if 80 in multi_feature_sets and multi_feature_sets[80]:
+                                bag_cols = list(multi_feature_sets[80])
+                            else:
+                                # Fallback: use the largest available set
+                                largest_key = max(multi_feature_sets.keys())
+                                bag_cols = list(multi_feature_sets[largest_key])
+
+                            # Use the pre-selection, processed matrix as the
+                            # column source if available; otherwise fall back
+                            # to the current processed matrix.
+                            bag_source = meta_features_full if 'meta_features_full' in locals() else meta_features_model_processed
+
+                            # Ensure DDO meta-regime triplet is always
+                            # present on the bagged feature surface when
+                            # available.
+                            bag_meta_regime_cols = [
+                                c for c in META_FEATURE_COLUMNS if c in bag_source.columns
+                            ]
+                            bag_col_set = set(bag_cols)
+                            bag_col_set.update(bag_meta_regime_cols)
+                            final_bag_cols = [c for c in bag_source.columns if c in bag_col_set]
+                            if final_bag_cols:
+                                X_bag = bag_source[final_bag_cols]
+                    except Exception as e_bag_cols:
+                        tprint(
+                            f"⚠️ Failed to construct 80-feature bagged meta set, using default features: {e_bag_cols}",
+                            "WARNING",
+                        )
+
                     bagged_oof_df = train_bagged_lgbm_with_kfold(
-                        X=meta_features_model_processed,
+                        X=X_bag,
                         y=binary_labels,
                         horizon=horizon,
                         n_splits=5,
@@ -9799,9 +10701,9 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
 
             try:
                 try:
-                    enable_fs60_comparison = bool(config.get('enable_fs60_comparison', True))
+                    enable_fs60_comparison = False
                 except Exception:
-                    enable_fs60_comparison = True
+                    enable_fs60_comparison = False
 
                 date_range_days: Optional[float]
                 try:
@@ -9942,6 +10844,14 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                 meta_ensemble_auc = _compute_auc_series(y_eval, ens_meta_series) if ens_meta_series is not None else None
                 meta_bag_mean_auc = _compute_auc_series(y_eval, bagged_mean_series) if isinstance(bagged_mean_series, pd.Series) else None
                 meta_bag_lower_auc = _compute_auc_series(y_eval, bagged_lower_series) if isinstance(bagged_lower_series, pd.Series) else None
+
+                if isinstance(oof_predictions_df, pd.DataFrame) and not oof_predictions_df.empty:
+                    for base_model_name in oof_predictions_df.columns:
+                        base_series = oof_predictions_df.get(base_model_name)
+                        if isinstance(base_series, pd.Series):
+                            row = _compute_metrics_row('meta_features', base_model_name, y_eval, base_series)
+                            if row is not None:
+                                comparison_rows.append(row)
 
                 row = _compute_metrics_row('meta_features', 'ensemble', y_eval, ens_meta_series) if ens_meta_series is not None else None
                 if row is not None:
@@ -10903,7 +11813,7 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
             }
 
             tprint(f"✅ [done] Enhanced meta-labeling completed in {elapsed_time:.1f}s", "SUCCESS")
-            tprint(f"📊 Performance: AUC={avg_auc:.3f}, Win Rate={win_rate:.1%}, Mean Return={mean_return:.2%}", "SUCCESS")
+            tprint(f"📊 Performance: AUC={avg_auc:.3f}, Win Rate={win_rate:.1%}", "SUCCESS")
 
             return result
 

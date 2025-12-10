@@ -11,7 +11,7 @@ from typing import Dict, List, Optional, Tuple, Any, Union
 from dataclasses import dataclass
 import logging
 import warnings
-from sklearn.base import BaseEstimator, RegressorMixin, ClassifierMixin
+from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.model_selection import cross_val_predict
 from sklearn.metrics import log_loss, brier_score_loss
@@ -42,7 +42,7 @@ class StackerLGBMCalibratedConfig:
     n_jobs: int = -1
     verbose: int = -1
 
-class StackerLGBMCalibrated(BaseEstimator, RegressorMixin):
+class StackerLGBMCalibrated(BaseEstimator, ClassifierMixin):
     """
     Stacker LGBM Calibrated Meta-Learner.
 
@@ -192,7 +192,7 @@ class StackerLGBMCalibrated(BaseEstimator, RegressorMixin):
             X_scaled = self.scaler.fit_transform(X_combined)
 
             # Create LightGBM model
-            self.lgbm_model = lgb.LGBMRegressor(
+            self.lgbm_model = lgb.LGBMClassifier(
                 max_depth=self.config.max_depth,
                 num_leaves=self.config.num_leaves,
                 min_child_samples=self.config.min_child_samples,
@@ -214,14 +214,18 @@ class StackerLGBMCalibrated(BaseEstimator, RegressorMixin):
             # Apply calibration
             if self.config.calibration_method in ["isotonic", "sigmoid"]:
                 # Get out-of-fold predictions for calibration
-                oof_predictions = cross_val_predict(
+                oof_proba = cross_val_predict(
                     self.lgbm_model, X_scaled, y,
-                    cv=self.config.cv_folds, method='predict'
+                    cv=self.config.cv_folds, method='predict_proba'
                 )
 
                 # Expose OOF predictions for downstream consumers (e.g. unified training pipeline)
                 # Shape: (n_samples,)
-                self.meta_oof_predictions = oof_predictions
+                self.meta_oof_predictions = (
+                    oof_proba[:, 1]
+                    if oof_proba.ndim == 2 and oof_proba.shape[1] > 1
+                    else oof_proba.ravel()
+                )
 
                 # Create a dummy classifier for calibration
                 from sklearn.base import BaseEstimator, ClassifierMixin
@@ -243,7 +247,7 @@ class StackerLGBMCalibrated(BaseEstimator, RegressorMixin):
 
                 # Apply calibration
                 self.calibrated_model = CalibratedClassifierCV(
-                    dummy_classifier,
+                    self.lgbm_model,
                     method=self.config.calibration_method,
                     cv=self.config.cv_folds
                 )
@@ -288,10 +292,15 @@ class StackerLGBMCalibrated(BaseEstimator, RegressorMixin):
             if self.calibrated_model is not None:
                 # Use calibrated predictions
                 proba = self.calibrated_model.predict_proba(X_scaled)
-                predictions = proba[:, 1]  # Get positive class probability
+                predictions = proba[:, 1]
             else:
-                # Use raw LGBM predictions
-                predictions = self.lgbm_model.predict(X_scaled)
+                # Use raw LGBM classifier probabilities
+                proba = self.lgbm_model.predict_proba(X_scaled)
+                predictions = (
+                    proba[:, 1]
+                    if proba.ndim == 2 and proba.shape[1] > 1
+                    else proba.ravel()
+                )
 
             return predictions
 
@@ -325,10 +334,8 @@ class StackerLGBMCalibrated(BaseEstimator, RegressorMixin):
                 # Use calibrated probabilities
                 proba = self.calibrated_model.predict_proba(X_scaled)
             else:
-                # Convert regression predictions to probabilities
-                predictions = self.lgbm_model.predict(X_scaled)
-                predictions = np.clip(predictions, 0, 1)
-                proba = np.column_stack([1 - predictions, predictions])
+                # Use raw LGBM classifier probabilities
+                proba = self.lgbm_model.predict_proba(X_scaled)
 
             return proba
 

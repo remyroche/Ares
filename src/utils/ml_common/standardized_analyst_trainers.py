@@ -71,6 +71,13 @@ import numpy as np
 import pandas as pd
 from scipy import sparse
 
+# Calibration utilities
+from src.utils.ml_common.oof_probability_calibration import (
+    OOFProbabilityCalibrator,
+    OOFCalibrationConfig,
+    get_recommended_calibration_method,
+)
+
 # Import retraining scheduler
 from .retraining_scheduler import (
     OOFPredictionGenerator,
@@ -153,6 +160,9 @@ class AnalystTrainingConfig:
     
     # Task type
     task_type: str = "classification"  # "classification" or "regression"
+    # Probability calibration for classification outputs
+    enable_calibration: bool = True
+    calibration_method: str = "auto"  # "isotonic", "platt", "auto"
     
     # HPO configuration
     hpo_n_trials: int = 50
@@ -182,6 +192,7 @@ class AnalystTrainingResults:
     metadata: List[Dict[str, Any]]  # Metadata for each training window
     hpo_history: Optional[Dict[str, Any]] = None
     training_windows: Optional[List[Dict[str, Any]]] = None
+    calibration_metrics: Optional[Dict[str, Any]] = None
 
 
 # ============================================================================
@@ -382,6 +393,58 @@ class BaseAnalystTrainer(ABC):
             oof_predictions = pd.concat(all_predictions, axis=0).sort_index()
         else:
             oof_predictions = pd.DataFrame()
+
+        calibration_metrics: Optional[Dict[str, Any]] = None
+
+        # Apply OOF probability calibration for classification tasks
+        if (
+            self.config.task_type == "classification"
+            and getattr(self.config, "enable_calibration", False)
+            and not oof_predictions.empty
+        ):
+            try:
+                method_cfg = getattr(self.config, "calibration_method", "auto") or "auto"
+                if method_cfg == "auto":
+                    n_samples = len(oof_predictions)
+                    try:
+                        recommended = get_recommended_calibration_method(n_samples)
+                    except Exception:
+                        recommended = "isotonic"
+                    # Restrict to platt / isotonic as requested
+                    if recommended == "platt":
+                        method = "platt"
+                    else:
+                        method = "isotonic"
+                else:
+                    # Map any alias to our supported set
+                    if method_cfg.lower().startswith("platt"):
+                        method = "platt"
+                    else:
+                        method = "isotonic"
+
+                calib_config = OOFCalibrationConfig(method=method)
+                calibrator = OOFProbabilityCalibrator(calib_config)
+
+                calibrated = calibrator.fit_transform(
+                    oof_predictions=oof_predictions,
+                    y_true=aligned_data["__target__"],
+                    data_index=oof_predictions.index,
+                )
+                metrics = calibrator.get_calibration_metrics() or {}
+
+                # Attach calibrated probabilities alongside original ones
+                if "probability" in oof_predictions.columns:
+                    oof_predictions["probability_calibrated"] = calibrated.reindex(
+                        oof_predictions.index
+                    )
+                else:
+                    oof_predictions["calibrated_probability"] = calibrated.reindex(
+                        oof_predictions.index
+                    )
+
+                calibration_metrics = {"method": method, **metrics}
+            except Exception as calib_exc:
+                logger.warning(f"OOF calibration failed; using uncalibrated probabilities: {calib_exc}")
         
         total_time = time.time() - start_time
         
@@ -403,7 +466,8 @@ class BaseAnalystTrainer(ABC):
                 'training_end': w.training_end.isoformat(),
                 'prediction_start': w.prediction_start.isoformat(),
                 'prediction_end': w.prediction_end.isoformat()
-            } for w in oof_generator.windows]
+            } for w in oof_generator.windows],
+            calibration_metrics=calibration_metrics,
         )
     
     @abstractmethod

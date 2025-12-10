@@ -5,112 +5,18 @@ This component implements the meta-learner for regime detection:
 - stacker_lgbm_calibrated: LightGBM model used as the meta-learner with probability calibration
 """
 
-# Test de compilation Python
-# Test de compilation Python
 import numpy as np
 import pandas as pd
 import pickle
 import json
 import time
 import warnings
-from typing import Dict, Any, Optional, List, Tuple, Union
+from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime
 
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint
 from .base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
-
-# Import des assertions standardisées (optionnel en production)
-try:
-    from tests.utils.assertions import (
-        assert_true, assert_false, assert_equals, assert_not_equals,
-        assert_greater_than, assert_less_than, assert_greater_than_or_equal,
-        assert_less_than_or_equal, assert_in, assert_not_in,
-        assert_is_none, assert_is_not_none, assert_is_instance,
-        assert_is_not_instance, assert_dict_structure, assert_list_structure,
-        assert_array_shape, assert_array_dtype, assert_array_range,
-        assert_float_equals, assert_string_contains, assert_string_not_contains,
-        assert_file_exists, assert_directory_exists, assert_key_exists,
-        assert_key_not_exists
-    )
-except ImportError:
-    def assert_true(*args, **kwargs):
-        return None
-
-    def assert_false(*args, **kwargs):
-        return None
-
-    def assert_equals(*args, **kwargs):
-        return None
-
-    def assert_not_equals(*args, **kwargs):
-        return None
-
-    def assert_greater_than(*args, **kwargs):
-        return None
-
-    def assert_less_than(*args, **kwargs):
-        return None
-
-    def assert_greater_than_or_equal(*args, **kwargs):
-        return None
-
-    def assert_less_than_or_equal(*args, **kwargs):
-        return None
-
-    def assert_in(*args, **kwargs):
-        return None
-
-    def assert_not_in(*args, **kwargs):
-        return None
-
-    def assert_is_none(*args, **kwargs):
-        return None
-
-    def assert_is_not_none(*args, **kwargs):
-        return None
-
-    def assert_is_instance(*args, **kwargs):
-        return None
-
-    def assert_is_not_instance(*args, **kwargs):
-        return None
-
-    def assert_dict_structure(*args, **kwargs):
-        return None
-
-    def assert_list_structure(*args, **kwargs):
-        return None
-
-    def assert_array_shape(*args, **kwargs):
-        return None
-
-    def assert_array_dtype(*args, **kwargs):
-        return None
-
-    def assert_array_range(*args, **kwargs):
-        return None
-
-    def assert_float_equals(*args, **kwargs):
-        return None
-
-    def assert_string_contains(*args, **kwargs):
-        return None
-
-    def assert_string_not_contains(*args, **kwargs):
-        return None
-
-    def assert_file_exists(*args, **kwargs):
-        return None
-
-    def assert_directory_exists(*args, **kwargs):
-        return None
-
-    def assert_key_exists(*args, **kwargs):
-        return None
-
-    def assert_key_not_exists(*args, **kwargs):
-        return None
 
 # Enhanced imports for new functionality
 from src.utils.ml_common.unified_vectorization_manager import (
@@ -152,9 +58,6 @@ except ImportError:
 from src.utils.ml_common.validation.universal_temporal_validation import (
     UniversalTemporalValidator, TemporalValidationConfig
 )
-from src.utils.ml_common.validation.data_leakage_prevention import (
-    DataLeakagePrevention, DataLeakageConfig
-)
 from src.utils.ml_common.utils.lookahead_protection import LookaheadProtection
 from src.utils.hardware.unified_hardware_manager import (
     UnifiedHardwareManager, HardwareConfig, WorkloadType, OptimizationLevel
@@ -188,18 +91,6 @@ from .regime_artifact_schema import (
 )
 from .ensemble_meta_features import EnsembleMetaFeaturesGenerator, generate_ensemble_meta_features
 
-# Import centralized disagreement features
-from src.feature_generation.categories.ensemble_disagreement import calculate_ensemble_disagreement_features
-
-# Import analysis and reporting tools
-from src.training.steps.market_analysis.clusters.cluster_quality_assessor import (
-    ClusterQualityAssessor,
-    ClusterQualityMetrics
-)
-from src.training.steps.market_analysis.clusters.regime_economic_relevance_analyzer import (
-    RegimeEconomicRelevanceAnalyzer
-)
-
 # Import centralized configuration system
 try:
     from src.config.regime_ensemble_training import (
@@ -219,11 +110,7 @@ warnings.filterwarnings('ignore')
 try:
     from sklearn.ensemble import StackingClassifier
     from sklearn.model_selection import cross_val_score, StratifiedKFold
-    from sklearn.metrics import (
-        classification_report, confusion_matrix, accuracy_score, precision_recall_fscore_support,
-        cohen_kappa_score, balanced_accuracy_score, roc_auc_score, average_precision_score,
-        log_loss, brier_score_loss, adjusted_rand_score, hamming_loss
-    )
+    from sklearn.metrics import classification_report, confusion_matrix, accuracy_score, precision_recall_fscore_support
     from sklearn.preprocessing import StandardScaler, LabelEncoder
     from sklearn.calibration import CalibratedClassifierCV
     from lightgbm import LGBMClassifier
@@ -241,32 +128,6 @@ try:
 except ImportError as e:
     FEATURE_GENERATION_AVAILABLE = False
     tprint(f"⚠️ [REGIME_ENSEMBLE] Feature generation system not available: {e}", color="yellow")
-
-# VectorBT imports for native optimization
-try:
-    import vectorbt as vbt
-    from src.utils.vectorbt_compat import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
-    from src.utils.vectorbt_compat import scale, rank, zscore, winsorize, clip, quantile
-    VECTORBT_AVAILABLE = True
-except ImportError:
-    VECTORBT_AVAILABLE = False
-    vbt = None
-    rolling_mean = None
-    rolling_std = None
-    rolling_var = None
-    rolling_min = None
-    rolling_max = None
-    rolling_sum = None
-    rolling_apply = None
-    rolling_corr = None
-    rolling_cov = None
-    scale = None
-    rank = None
-    zscore = None
-    winsorize = None
-    clip = None
-    quantile = None
-    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
     """
@@ -420,10 +281,10 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
 
         # Initialize temporal splitter for proper train/test splits
         temporal_config = {
-            'test_size': 0.3,
-            'gap_size': 50,  # increase gap to reduce overlap leakage; tune to max feature lookback
+            'test_size': getattr(temporal_config_data, 'test_size', 0.3),
+            'gap_size': getattr(temporal_config_data, 'gap_size', 1),
             'validation_size': 0.2,
-            'min_regime_samples': 1,  # allow training with very limited data
+            'min_regime_samples': 10,
             'regime_aware': True
         }
         self.temporal_splitter = create_temporal_splitter(temporal_config)
@@ -484,107 +345,76 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             DataFrame with regime model predictions
         """
         try:
-            tprint("📥 [REGIME_ENSEMBLE] Loading regime_models_predictions from versioned artifacts", color="cyan")
+            tprint("📥 [REGIME_ENSEMBLE] Loading regime_models_predictions", color="cyan")
 
             predictions = base_step._get_artifact(
                 'regime_models_predictions',
-                artifact_type='data',
-                data_category='features'
+                artifact_type='data'
             )
 
             if predictions is None:
-                tprint("⚠️ [REGIME_ENSEMBLE] No regime_models_predictions found in versioned artifacts", color="yellow")
+                tprint("⚠️ [REGIME_ENSEMBLE] No regime_models_predictions found", color="yellow")
                 return None
 
-            tprint(f"✅ [REGIME_ENSEMBLE] Loaded predictions from versioned artifacts: {predictions.shape}", color="green")
+            tprint(f"✅ [REGIME_ENSEMBLE] Loaded predictions: {predictions.shape}", color="green")
             tprint(f"📊 [REGIME_ENSEMBLE] Columns: {list(predictions.columns)}", color="blue")
 
             return predictions
 
         except Exception as e:
-            tprint(f"❌ [REGIME_ENSEMBLE] Failed to load predictions from versioned artifacts: {e}", color="red")
+            tprint(f"❌ [REGIME_ENSEMBLE] Failed to load predictions: {e}", color="red")
             self.logger.error(f"Failed to load predictions: {e}", exc_info=True)
             return None
 
-    def _calculate_disagreement_features_centralized(
+    def _calculate_disagreement_features(
         self,
         predictions: pd.DataFrame
     ) -> pd.DataFrame:
         """
-        Calculate disagreement features from base model predictions using centralized calculator.
+        Calculate disagreement features from base model predictions.
 
-        Uses the 7 core disagreement features from ensemble_disagreement.py:
-        1. prediction_dispersion
-        2. confidence_gap
-        3. uncertainty
-        4. prediction_range
-        5. avg_divergence
-        6. max_confidence
-        7. disagreement_rate
+        Only uses Coefficient of Variation (CV) per regime as the disagreement metric.
 
         Args:
-            predictions: DataFrame with base model predictions (format: model_regime_X_prob)
+            predictions: DataFrame with base model predictions
 
         Returns:
-            DataFrame with centralized disagreement features
+            DataFrame with CV disagreement features per regime
         """
         try:
-            tprint("🔢 [REGIME_ENSEMBLE] Calculating disagreement features using centralized calculator", color="cyan")
+            tprint("🔢 [REGIME_ENSEMBLE] Calculating disagreement features (CV only per regime)", color="cyan")
 
-            # Parse predictions into format expected by centralized calculator
-            # Group by regime to calculate disagreement per regime
+            disagreement_features = pd.DataFrame(index=predictions.index)
+
+            # Group by regime (e.g., all *_regime_0_prob columns)
             regime_groups = {}
             for col in predictions.columns:
+                # Extract regime number from column name
                 if '_regime_' in col and '_prob' in col:
                     regime_num = col.split('_regime_')[1].split('_')[0]
-                    model_name = col.split('_regime_')[0]
                     if regime_num not in regime_groups:
-                        regime_groups[regime_num] = {}
-                    regime_groups[regime_num][model_name] = predictions[col].values
+                        regime_groups[regime_num] = []
+                    regime_groups[regime_num].append(col)
 
-            all_disagreement_features = []
-
-            # Calculate disagreement features for each regime
-            for regime_num, model_probs in regime_groups.items():
-                if len(model_probs) < 2:
+            # Calculate CV (only) for each regime
+            for regime_num, cols in regime_groups.items():
+                if len(cols) < 2:
                     continue
 
-                # Convert to format expected by centralized calculator
-                model_predictions = {}
-                model_probabilities = {}
+                regime_preds = predictions[cols]
 
-                for model_name, probs in model_probs.items():
-                    # Use probabilities as predictions (they represent likelihood)
-                    model_predictions[model_name] = probs
-                    # Convert single probability to binary format
-                    model_probabilities[model_name] = np.column_stack([1.0 - probs, probs])
+                # Coefficient of variation (normalized diversity) - ONLY disagreement metric
+                std_pred = regime_preds.std(axis=1)
+                mean_pred = regime_preds.mean(axis=1)
+                disagreement_features[f'regime_{regime_num}_cv'] = std_pred / (mean_pred + 1e-8)
 
-                # Calculate disagreement features using centralized calculator
-                disagreement_dict = calculate_ensemble_disagreement_features(
-                    model_predictions=model_predictions,
-                    model_probabilities=model_probabilities,
-                    logger=self.logger
-                )
+            tprint(f"✅ [REGIME_ENSEMBLE] Calculated {len(disagreement_features.columns)} disagreement features (CV only)", color="green")
 
-                # Convert to DataFrame and add regime prefix
-                regime_features = pd.DataFrame(disagreement_dict, index=predictions.index)
-                regime_features = regime_features.add_prefix(f'regime_{regime_num}_')
-                all_disagreement_features.append(regime_features)
-
-            # Combine all regime disagreement features
-            if all_disagreement_features:
-                disagreement_features = pd.concat(all_disagreement_features, axis=1)
-                tprint(f"✅ [REGIME_ENSEMBLE] Calculated {len(disagreement_features.columns)} disagreement features across {len(regime_groups)} regimes", color="green")
-                return disagreement_features
-            else:
-                tprint("⚠️ [REGIME_ENSEMBLE] No disagreement features calculated (insufficient models per regime)", color="yellow")
-                return pd.DataFrame(index=predictions.index)
+            return disagreement_features
 
         except Exception as e:
             tprint(f"❌ [REGIME_ENSEMBLE] Failed to calculate disagreement features: {e}", color="red")
             self.logger.error(f"Failed to calculate disagreement features: {e}", exc_info=True)
-            import traceback
-            self.logger.error(traceback.format_exc())
             return pd.DataFrame(index=predictions.index)
 
     async def _save_ensemble_predictions_to_hdf5(
@@ -602,105 +432,36 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             artifact_name: Name for the HDF5 artifact
         """
         try:
-            tprint("─" * 80, color="cyan")
-            tprint(f"💾 [REGIME_ENSEMBLE] HDF5 SAVE OPERATION STARTING", color="cyan", bold=True)
-            tprint(f"   Artifact name: {artifact_name}", color="cyan")
-            tprint(f"   Data shape: {predictions.shape}", color="cyan")
-            tprint(f"   Columns: {list(predictions.columns)}", color="cyan")
-            tprint("─" * 80, color="cyan")
+            tprint(f"💾 [REGIME_ENSEMBLE] Saving ensemble predictions to HDF5: {artifact_name}", color="cyan")
 
             # Ensure datetime index and 15m timeframe
-            tprint("🔍 [REGIME_ENSEMBLE] Validating index type...", color="cyan")
             if not isinstance(predictions.index, pd.DatetimeIndex):
-                tprint(f"   ⚠️  Converting index from {type(predictions.index).__name__} to DatetimeIndex", color="yellow")
                 predictions.index = pd.to_datetime(predictions.index)
-                tprint(f"   ✅ Index converted to DatetimeIndex", color="green")
-            else:
-                tprint(f"   ✅ Index is already DatetimeIndex", color="green")
 
-            tprint("🔍 [REGIME_ENSEMBLE] Checking timeframe frequency...", color="cyan")
             if predictions.index.freq != '15T':
-                original_len = len(predictions)
-                tprint(f"   ⚠️  Resampling from freq={predictions.index.freq} to 15T (15 minutes) with shift to prevent intra-hour lookahead", color="yellow")
-                # Shift predictions forward by one native period to ensure they are valid-from the next period
-                try:
-                    inferred = pd.infer_freq(predictions.index)
-                except Exception:
-                    inferred = None
-                # Default to 1H shift if unknown
-                shift_rule = '1H' if inferred is None else inferred
-                predictions = predictions.shift(1, freq=shift_rule)
                 predictions = predictions.resample('15T').ffill()
-                tprint(f"   ✅ Resampled (shifted + ffill): {original_len} → {len(predictions)} rows", color="green")
-            else:
-                tprint(f"   ✅ Frequency already 15T", color="green")
 
-            # Prepare metadata
-            n_regimes = len([c for c in predictions.columns if 'regime' in c.lower()])
-            metadata = {
-                'timeframe': '15m',
-                'ensemble_type': 'stacker_lgbm_calibrated',
-                'n_regimes': n_regimes,
-                'columns': list(predictions.columns),
-                'shape': predictions.shape,
-                'timestamp': datetime.now().isoformat()
-            }
-
-            tprint("📋 [REGIME_ENSEMBLE] Metadata prepared:", color="cyan")
-            tprint(f"   ├─ timeframe: {metadata['timeframe']}", color="cyan")
-            tprint(f"   ├─ ensemble_type: {metadata['ensemble_type']}", color="cyan")
-            tprint(f"   ├─ n_regimes: {metadata['n_regimes']}", color="cyan")
-            tprint(f"   ├─ shape: {metadata['shape']}", color="cyan")
-            tprint(f"   └─ timestamp: {metadata['timestamp']}", color="cyan")
-
-            # Log ensemble predictions before saving with comprehensive preview
-            from src.utils.tprint import tprint_data_preview
-            tprint("=" * 80, "INFO")
-            tprint(f"💾 ARTIFACT SAVING: {artifact_name}", "INFO")
-            tprint("=" * 80, "INFO")
-            tprint_data_preview(
-                predictions,
-                name="Regime Ensemble Predictions",
-                max_rows=5,
-                max_cols=10,
-                show_dtypes=True,
-                show_shape=True
-            )
-            tprint("=" * 80, "INFO")
-
-            # Save to HDF5 via BaseStep
-            tprint("🚀 [REGIME_ENSEMBLE] Calling base_step._save_artifact()...", color="cyan", bold=True)
-            tprint(f"   ├─ data type: {type(predictions).__name__}", color="cyan")
-            tprint(f"   ├─ artifact_name: {artifact_name}", color="cyan")
-            tprint(f"   ├─ artifact_type: data", color="cyan")
-            tprint(f"   ├─ compression: auto", color="cyan")
-            tprint(f"   └─ use_versioned_artifacts: {base_step.use_versioned_artifacts}", color="cyan")
-
-            saved_path = base_step._save_artifact(
+            # Save to HDF5
+            base_step._save_artifact(
                 data=predictions,
                 artifact_name=artifact_name,
                 artifact_type='data',
                 compression='auto',
-                metadata=metadata
+                metadata={
+                    'timeframe': '15m',
+                    'ensemble_type': 'stacker_lgbm_calibrated',
+                    'n_regimes': len([c for c in predictions.columns if 'regime' in c.lower()]),
+                    'columns': list(predictions.columns),
+                    'shape': predictions.shape,
+                    'timestamp': datetime.now().isoformat()
+                }
             )
 
-            tprint("─" * 80, color="green")
-            tprint(f"✅ [REGIME_ENSEMBLE] HDF5 SAVE SUCCESSFUL!", color="green", bold=True)
-            tprint(f"   ├─ Saved path: {saved_path}", color="green")
-            tprint(f"   ├─ Shape: {predictions.shape}", color="green")
-            tprint(f"   ├─ Columns: {len(predictions.columns)} regime probability columns", color="green")
-            tprint(f"   └─ Rows: {len(predictions)} time points", color="green")
-            tprint("─" * 80, color="green")
+            tprint(f"✅ [REGIME_ENSEMBLE] Saved ensemble predictions to HDF5: {predictions.shape}", color="green")
 
         except Exception as e:
-            tprint("=" * 80, color="red")
-            tprint(f"❌ [REGIME_ENSEMBLE] HDF5 SAVE FAILED!", color="red", bold=True)
-            tprint(f"   Error: {e}", color="red")
-            tprint("=" * 80, color="red")
+            tprint(f"❌ [REGIME_ENSEMBLE] Failed to save ensemble predictions to HDF5: {e}", color="red")
             self.logger.error(f"Failed to save ensemble predictions to HDF5: {e}", exc_info=True)
-            import traceback
-            tprint(f"Traceback:\n{traceback.format_exc()}", color="red")
-            raise
 
     async def execute(self, data: pd.DataFrame, pipeline_state: Dict[str, Any]) -> ComponentResult:
         """
@@ -723,34 +484,27 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             self.hardware_manager.optimize_for_workload(WorkloadType.ML_TRAINING)
             tprint("✅ [REGIME_ENSEMBLE] Hardware optimization initialized", color="green")
 
-            # Do not globally filter historical data by current wall-clock time.
-            # Enforce causality via feature engineering and temporal splitting only.
-            protected_data = data
-            tprint("✅ [REGIME_ENSEMBLE] Using historical data without global time filtering (causality via temporal splits)", color="green")
-            
-            # STORE OHLCV COLUMNS FOR TEMPORAL ANALYSIS (before protected_data gets modified)
-            # Extract only the columns needed for returns calculation
-            ohlcv_columns = ['open', 'high', 'low', 'close', 'volume']
-            available_ohlcv = [col for col in ohlcv_columns if col in protected_data.columns]
-            if available_ohlcv:
-                market_ohlcv_data = protected_data[available_ohlcv].copy()
-                tprint(f"📊 [REGIME_ENSEMBLE] Stored OHLCV data for temporal analysis: {market_ohlcv_data.shape}, columns: {available_ohlcv}", color="blue")
-            else:
-                market_ohlcv_data = None
-                tprint("⚠️ [REGIME_ENSEMBLE] No OHLCV columns found in data", color="yellow")
+            # Apply lookahead protection
+            tprint("🔒 [REGIME_ENSEMBLE] Applying lookahead protection", color="cyan")
+            protected_data = self.lookahead_protection.automated_future_data_filtering(data)
+            tprint("✅ [REGIME_ENSEMBLE] Lookahead protection applied", color="green")
 
             # Load regime_models_predictions as base features
-            tprint("📥 [REGIME_ENSEMBLE] Loading regime_models artifacts", color="cyan")
+            tprint("📥 [REGIME_ENSEMBLE] ========== LOADING REGIME MODELS PREDICTIONS ==========")
+            tprint(f"📥 [REGIME_ENSEMBLE] Symbol: {self.config.symbol}, Exchange: {self.config.exchange}, Timeframe: {self.config.timeframe}")
+            
             from src.training.steps.base_step import BaseStep
             
             class _ArtifactLoaderStep(BaseStep):
                 async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
                     return {'success': True, 'artifacts': [], 'metrics': {}}
             
+            tprint("📥 [REGIME_ENSEMBLE] Creating artifact loader step...")
             base_step_inst = _ArtifactLoaderStep(
                 "regime_ensemble_training_loader",
                 use_versioned_artifacts=True
             )
+            tprint("📥 [REGIME_ENSEMBLE] Setting context for artifact loader...")
             base_step_inst.set_context(
                 symbol=self.config.symbol,
                 exchange=self.config.exchange,
@@ -758,41 +512,22 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                 direction='long',
                 model='regime'
             )
+            tprint(f"📥 [REGIME_ENSEMBLE] Context set: {self.config.symbol}/{self.config.exchange} [{self.config.timeframe}] long/regime")
+            tprint(f"📥 [REGIME_ENSEMBLE] Searching for artifact: 'regime_models_predictions'")
 
             regime_models_preds = await self._load_regime_models_predictions(base_step_inst)
+            
+            if regime_models_preds is None:
+                tprint("📥 [REGIME_ENSEMBLE] ⚠️ regime_models_predictions NOT FOUND in versioned artifacts")
+                tprint(f"📥 [REGIME_ENSEMBLE] Expected location: versioned_artifacts/{self.config.symbol}_{self.config.exchange}_{self.config.timeframe}_long_regime/")
+            else:
+                tprint(f"📥 [REGIME_ENSEMBLE] ✅ regime_models_predictions FOUND: {regime_models_preds.shape}")
 
             if regime_models_preds is not None:
                 tprint(f"✅ [REGIME_ENSEMBLE] Using regime_models predictions as features: {regime_models_preds.shape}", color="green")
 
-                # Log loaded base model predictions with comprehensive preview
-                from src.utils.tprint import tprint_data_preview
-                tprint("=" * 80, "INFO")
-                tprint("📥 DATA LOADED: Base Regime Model Predictions", "INFO")
-                tprint("=" * 80, "INFO")
-                tprint_data_preview(
-                    regime_models_preds,
-                    name="Base Regime Model Predictions",
-                    max_rows=5,
-                    max_cols=10,
-                    show_dtypes=True,
-                    show_shape=True
-                )
-                tprint("=" * 80, "INFO")
-
-                # Extract base model names from prediction columns
-                base_model_names = set()
-                for col in regime_models_preds.columns:
-                    if '_regime_' in col and '_prob' in col:
-                        model_name = col.split('_regime_')[0]
-                        base_model_names.add(model_name)
-                base_model_names = sorted(list(base_model_names))
-                tprint(f"📊 [REGIME_ENSEMBLE] Detected {len(base_model_names)} base models: {base_model_names}", color="blue")
-
-                # Store for later use in reporting
-                pipeline_state['detected_base_models'] = base_model_names
-
-                # Calculate disagreement features using centralized calculator
-                disagreement_feats = self._calculate_disagreement_features_centralized(regime_models_preds)
+                # Calculate disagreement features
+                disagreement_feats = self._calculate_disagreement_features(regime_models_preds)
 
                 if not disagreement_feats.empty:
                     tprint(f"✅ [REGIME_ENSEMBLE] Calculated disagreement features: {disagreement_feats.shape}", color="green")
@@ -801,198 +536,87 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                 else:
                     all_features = regime_models_preds
 
-                # Add to protected_data - ensure timezone compatibility before joining
-                # Check if indexes have different timezone awareness
-                if isinstance(protected_data.index, pd.DatetimeIndex) and isinstance(all_features.index, pd.DatetimeIndex):
-                    protected_tz = protected_data.index.tz
-                    features_tz = all_features.index.tz
-                    
-                    if (protected_tz is None) != (features_tz is None):
-                        tprint("🔧 [REGIME_ENSEMBLE] Normalizing timezone differences before joining DataFrames", color="yellow")
-                        # Make both indexes timezone-naive to avoid join issues
-                        if protected_tz is not None:
-                            protected_data.index = protected_data.index.tz_localize(None)
-                            tprint("   Converted protected_data index to timezone-naive", color="blue")
-                        if features_tz is not None:
-                            all_features.index = all_features.index.tz_localize(None)
-                            tprint("   Converted all_features index to timezone-naive", color="blue")
-                
+                # Add to protected_data
                 protected_data = protected_data.join(all_features, how='left')
                 tprint(f"📊 [REGIME_ENSEMBLE] Enhanced data shape: {protected_data.shape}", color="blue")
 
             # Extract required data from pipeline state using standardized extractors
             tprint("📊 [REGIME_ENSEMBLE] Extracting data from pipeline state with standardized extractors", color="yellow", bold=True)
 
-            # First try to load rolling_hmm regime labels directly from versioned artifacts
-            # This is the same logic used in regime_models_training
-            regime_labels = None
-            try:
-                tprint("📥 [REGIME_ENSEMBLE] Loading rolling_hmm regime labels from versioned artifacts", color="cyan")
-                from src.training.steps.base_step import BaseStep
-                
-                class _ArtifactLoaderStep(BaseStep):
-                    async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
-                        return {'success': True, 'artifacts': [], 'metrics': {}}
-                
-                # Enable versioned artifacts to load from HDF5 storage
-                base_step_inst = _ArtifactLoaderStep(
-                    "regime_ensemble_training_loader",
-                    use_versioned_artifacts=True,  # CRITICAL: Enable versioned artifacts
-                )
-                
-                # Access ComponentConfig dataclass attributes
-                symbol = self.config.symbol if hasattr(self.config, 'symbol') else 'ETHUSDT'
-                exchange = self.config.exchange if hasattr(self.config, 'exchange') else 'binance'
-                timeframe = self.config.timeframe if hasattr(self.config, 'timeframe') else '1h'
-                
-                # Set context to match the regime discovery output (1h timeframe)
-                base_step_inst.set_context(
-                    symbol=symbol,
-                    exchange=exchange,
-                    timeframe=timeframe,
-                    direction='long',
-                    model='regime',
-                )
-                
-                # Load regime labels
-                regime_labels_df = base_step_inst._get_artifact(
-                    'rolling_hmm_regime_labels',
-                    artifact_type='data'
-                )
-                
-                if regime_labels_df is not None:
-                    tprint(f"✅ [REGIME_ENSEMBLE] Loaded regime labels: {regime_labels_df.shape}", color="green")
-                    tprint(f"📊 [REGIME_ENSEMBLE] Columns: {list(regime_labels_df.columns)}", color="blue")
-                    
-                    # Extract regime_label column
-                    if 'regime_label' in regime_labels_df.columns:
-                        regime_labels = regime_labels_df['regime_label'].values
-                    else:
-                        # Fallback to first column
-                        regime_labels = regime_labels_df.iloc[:, 0].values
-                    
-                    tprint(f"✅ [REGIME_ENSEMBLE] Extracted {len(regime_labels)} regime labels", color="green")
-                    tprint(f"📊 [REGIME_ENSEMBLE] Unique regimes: {np.unique(regime_labels)}", color="blue")
-                else:
-                    tprint("⚠️ [REGIME_ENSEMBLE] No rolling_hmm_regime_labels found in versioned artifacts", color="yellow")
-                    
-            except Exception as e:
-                tprint(f"⚠️ [REGIME_ENSEMBLE] Direct rolling HMM label loading failed: {e}", color="yellow")
-                regime_labels = None
+            # Extract regime labels using standardized extractor
+            # NOTE: Currently in testing mode (tries all methods). When you choose your winner:
+            # 1. Uncomment the preferred_method parameter below
+            # 2. Set it to your chosen method: "gmm", "hmm", "optimal", or "regime_clustering"
+            # 3. Remove unused clustering steps from pipeline
+            regime_labels_artifact = self.artifact_extractor.extract_regime_labels(
+                pipeline_state, 
+                component_name="REGIME_ENSEMBLE"
+                # preferred_method="gmm"  # 👈 PRODUCTION: Uncomment and set to your winner (gmm/hmm/optimal)
+            )
             
-            # If direct loading failed, fall back to standardized extractor
-            if regime_labels is None:
-                tprint("🔄 [REGIME_ENSEMBLE] Falling back to standardized extractor", color="yellow")
-                # Extract regime labels using standardized extractor
-                # NOTE: Currently in testing mode (tries all methods). When you choose your winner:
-                # 1. Uncomment the preferred_method parameter below
-                # 2. Set it to your chosen method: "gmm", "hmm", "optimal", or "regime_clustering"
-                # 3. Remove unused clustering steps from pipeline
-                regime_labels_artifact = self.artifact_extractor.extract_regime_labels(
-                    pipeline_state, 
-                    component_name="REGIME_ENSEMBLE"
-                    # preferred_method="gmm"  # 👈 PRODUCTION: Uncomment and set to your winner (gmm/hmm/optimal)
-                )
-                
-                if regime_labels_artifact is None:
-                    raise ValueError("❌ Failed to extract regime labels from pipeline state")
-                
-                # Validate regime labels artifact
-                if not regime_labels_artifact.validate():
-                    raise ValueError("❌ Regime labels artifact validation failed")
-                
-                regime_labels = regime_labels_artifact.cluster_assignments
-                tprint(
-                    f"✅ [REGIME_ENSEMBLE] Extracted regime labels: {len(regime_labels)} samples, "
-                    f"{regime_labels_artifact.n_regimes} regimes using {regime_labels_artifact.clustering_method}",
-                    color="green",
-                    bold=True
-                )
-            else:
-                # Create a simple artifact-like object for consistency
-                tprint(f"✅ [REGIME_ENSEMBLE] Using directly loaded regime labels: {len(regime_labels)} samples", color="green")
-            
-            # Validate that we have regime labels
-            if regime_labels is None:
+            if regime_labels_artifact is None:
                 raise ValueError("❌ Failed to extract regime labels from pipeline state")
+            
+            # Validate regime labels artifact
+            if not regime_labels_artifact.validate():
+                raise ValueError("❌ Regime labels artifact validation failed")
+            
+            regime_labels = regime_labels_artifact.cluster_assignments
+            tprint(
+                f"✅ [REGIME_ENSEMBLE] Extracted regime labels: {len(regime_labels)} samples, "
+                f"{regime_labels_artifact.n_regimes} regimes using {regime_labels_artifact.clustering_method}",
+                color="green",
+                bold=True
+            )
+            tprint(
+                f"📊 [REGIME_ENSEMBLE] Regime distribution: {regime_labels_artifact.regime_distribution}",
+                color="blue"
+            )
 
             # EXTRACT SOFT LABELS (POSTERIOR PROBABILITIES)
             soft_labels = None
             sample_weights = None
-            if self.enable_soft_labels:
+            if self.enable_soft_labels: # This flag exists in ensemble component too
                 try:
-                    # Prefer Rolling HMM regime probabilities present in the input data
-                    prob_cols = [
-                        c for c in protected_data.columns
-                        if isinstance(c, str) and c.startswith('regime_') and c.endswith('_prob')
-                    ]
-                    if prob_cols:
-                        # Sort columns by regime index: regime_0_prob, regime_1_prob, ...
-                        try:
-                            prob_cols_sorted = sorted(
-                                prob_cols,
-                                key=lambda c: int(c.split('_')[1])
-                            )
-                        except Exception:
-                            prob_cols_sorted = prob_cols
-
-                        probs_df = protected_data[prob_cols_sorted].copy()
-                        soft_labels = probs_df.to_numpy(dtype=float, copy=False)
-                        tprint(
-                            f"✅ [REGIME_ENSEMBLE] Using Rolling HMM soft labels from data columns: {len(prob_cols_sorted)} regimes",
-                            "green",
-                        )
+                    # Try to get HDP-HMM probabilities first
+                    hdp_probs_artifact = self.artifact_extractor.extract_artifact(
+                        pipeline_state, "hdp_hmm_regime_probabilities", "hdp_hmm_regime_discovery"
+                    )
+                    
+                    if hdp_probs_artifact is not None:
+                        soft_labels = hdp_probs_artifact
+                        tprint(f"✅ [REGIME_ENSEMBLE] Extracted HDP-HMM soft labels (probabilities): {soft_labels.shape}", "green")
                     else:
-                        # Fallback: try legacy HDP-HMM artifact if available
-                        try:
-                            hdp_probs_artifact = self.artifact_extractor.extract_artifact(
-                                pipeline_state, "hdp_hmm_regime_probabilities", "hdp_hmm_regime_discovery"
-                            )
-                            if hdp_probs_artifact is not None:
-                                soft_labels = hdp_probs_artifact
-                                tprint(
-                                    f"✅ [REGIME_ENSEMBLE] Extracted HDP-HMM soft labels (probabilities): {soft_labels.shape}",
-                                    "green",
-                                )
-                            else:
-                                tprint(
-                                    "⚠️ [REGIME_ENSEMBLE] No soft label probabilities found (Rolling HMM or HDP-HMM). Using hard labels only.",
-                                    "yellow",
-                                )
-                        except Exception as inner_e:
-                            tprint(f"⚠️ [REGIME_ENSEMBLE] Error extracting legacy soft labels: {inner_e}", "yellow")
+                        tprint("⚠️ [REGIME_ENSEMBLE] HDP-HMM soft labels not found. Will use hard labels.", "yellow")
+                        
                 except Exception as e:
-                    tprint(f"⚠️ [REGIME_ENSEMBLE] Soft label extraction failed: {e}", "yellow")
+                    tprint(f"⚠️ [REGIME_ENSEMBLE] Error extracting soft labels: {e}", "yellow")
 
             
             # Extract base models using standardized extractor
-            # NOTE: When running in blank mode with versioned artifacts, we don't need the actual model objects
-            # We only need their predictions, which are already loaded above
-            base_models = None
-            try:
-                regime_models_artifact = self.artifact_extractor.extract_base_models(
-                    pipeline_state, component_name="REGIME_ENSEMBLE"
-                )
-                
-                if regime_models_artifact is not None and regime_models_artifact.validate_models():
-                    # Get ONLY base models (exclude ensemble/meta-learners to avoid circular references)
-                    base_models = regime_models_artifact.get_base_models()
-                    tprint(
-                        f"✅ [REGIME_ENSEMBLE] Extracted {len(base_models)} base models (filtered from {len(regime_models_artifact.models)} total)",
-                        color="green",
-                        bold=True
-                    )
-                    
-                    # Log base model names for transparency
-                    tprint("📋 [REGIME_ENSEMBLE] Base models to use:", color="cyan")
-                    for model_name in base_models.keys():
-                        tprint(f"   - {model_name}", color="blue")
-                else:
-                    tprint("⚠️ [REGIME_ENSEMBLE] Base models not found in pipeline state (expected in blank mode)", color="yellow")
-                    tprint("   Using predictions from versioned artifacts instead", color="yellow")
-            except Exception as e:
-                tprint(f"⚠️ [REGIME_ENSEMBLE] Could not extract base models: {e}", color="yellow")
-                tprint("   Continuing with predictions from versioned artifacts", color="yellow")
+            regime_models_artifact = self.artifact_extractor.extract_base_models(
+                pipeline_state, component_name="REGIME_ENSEMBLE"
+            )
+            
+            if regime_models_artifact is None:
+                raise ValueError("❌ Failed to extract base models from pipeline state")
+            
+            # Validate base models artifact
+            if not regime_models_artifact.validate_models():
+                raise ValueError("❌ Base models artifact validation failed")
+            
+            # Get ONLY base models (exclude ensemble/meta-learners to avoid circular references)
+            base_models = regime_models_artifact.get_base_models()
+            tprint(
+                f"✅ [REGIME_ENSEMBLE] Extracted {len(base_models)} base models (filtered from {len(regime_models_artifact.models)} total)",
+                color="green",
+                bold=True
+            )
+            
+            # Log base model names for transparency
+            tprint("📋 [REGIME_ENSEMBLE] Base models to use:", color="cyan")
+            for model_name in base_models.keys():
+                tprint(f"   - {model_name}", color="blue")
 
             # Check if regime labels are available before preparing training data
             if regime_labels is None:
@@ -1015,17 +639,22 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                     metadata={'component_type': 'regime_ensemble_training'}
                 )
 
-            # ========================================================================
-            # CRITICAL FIX: Split data BEFORE training base models to prevent leakage
-            # ========================================================================
-            # Previously, base models were trained on 100% of data, then split happened
-            # This caused massive data leakage: base models memorized the test set
-            # Now: Split first, train base models only on training data
-            # ========================================================================
+            if not base_models:
+                tprint("⚠️ [REGIME_ENSEMBLE] No base models found from previous training, training base models", color="yellow")
+                # Train base models if not provided
+                tprint("🏋️ [REGIME_ENSEMBLE] Training base models for ensemble", color="blue")
+                base_models = self._train_base_models(X, y, regime_labels)
+                if not base_models:
+                    tprint("❌ [REGIME_ENSEMBLE] Failed to train base models", color="red")
+                    return ComponentResult(
+                        success=False,
+                        artifacts={},
+                        error_message="Failed to train base models",
+                        metadata={'component_type': 'regime_ensemble_training'}
+                    )
 
-            tprint("=" * 80, color="red", bold=True)
-            tprint("🛡️ [REGIME_ENSEMBLE] DATA LEAKAGE FIX: Splitting data BEFORE base model training", color="red", bold=True)
-            tprint("=" * 80, color="red", bold=True)
+            tprint(f"📊 [REGIME_ENSEMBLE] Data shapes - X: {X.shape}, y: {y.shape}, regime_labels: {len(regime_labels) if regime_labels is not None else 'None'}", color="blue")
+            tprint(f"📊 [REGIME_ENSEMBLE] Base models available: {list(base_models.keys())}", color="blue")
 
             # Prepare data for ensemble training with proper train/test split
             tprint("🔧 [REGIME_ENSEMBLE] Preparing data for ensemble training with proper validation", color="yellow")
@@ -1059,40 +688,6 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             tprint(f"   Train: {len(X_train)} samples", color="blue")
             tprint(f"   Val: {len(X_val)} samples", color="blue")
             tprint(f"   Test: {len(X_test)} samples", color="blue")
-
-            # ========================================================================
-            # CRITICAL FIX: Train base models ONLY on training data (after split)
-            # ========================================================================
-            # This ensures base models NEVER see validation or test data
-            # Prevents memorization of test set that caused 99.9% accuracy
-            # ========================================================================
-
-            if not base_models:
-                tprint("=" * 80, color="red", bold=True)
-                tprint("🛡️ [REGIME_ENSEMBLE] Training base models on TRAINING DATA ONLY (no test leakage)", color="red", bold=True)
-                tprint("=" * 80, color="red", bold=True)
-                tprint("⚠️ [REGIME_ENSEMBLE] No base models found from previous training, training base models", color="yellow")
-                tprint("🏋️ [REGIME_ENSEMBLE] Training base models for ensemble", color="blue")
-
-                # Extract regime labels for training set only
-                regime_labels_train = regime_labels_processed[:len(y_train)] if regime_labels_processed is not None else None
-
-                # CRITICAL: Train on X_train, y_train ONLY (not full dataset)
-                base_models = self._train_base_models(X_train, y_train, regime_labels_train)
-
-                if not base_models:
-                    tprint("❌ [REGIME_ENSEMBLE] Failed to train base models", color="red")
-                    return ComponentResult(
-                        success=False,
-                        artifacts={},
-                        error_message="Failed to train base models",
-                        metadata={'component_type': 'regime_ensemble_training'}
-                    )
-
-                tprint("✅ [REGIME_ENSEMBLE] Base models trained on training data only (no leakage)", color="green", bold=True)
-
-            tprint(f"📊 [REGIME_ENSEMBLE] Data shapes - X_train: {X_train.shape}, y_train: {y_train.shape}", color="blue")
-            tprint(f"📊 [REGIME_ENSEMBLE] Base models available: {list(base_models.keys())}", color="blue")
 
             # Create indices for weight splitting
             n_train = len(X_train)
@@ -1134,20 +729,8 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                     weights_train_full = None # Disable weighting if split fails
 
             # Train stacker_lgbm_calibrated meta-learner on training+validation data
-            tprint("=" * 80, color="cyan")
-            tprint("🎭 [REGIME_ENSEMBLE] STARTING META-LEARNER TRAINING", color="yellow", bold=True)
-            tprint(f"📊 [REGIME_ENSEMBLE] Train data shape: {X_train_full.shape}", color="blue")
-            tprint(f"📊 [REGIME_ENSEMBLE] Train labels shape: {y_train_full.shape}", color="blue")
-            tprint(f"📊 [REGIME_ENSEMBLE] Base models: {list(base_models.keys()) if base_models else 'None'}", color="blue")
-            tprint(f"📊 [REGIME_ENSEMBLE] Sample weights: {'Yes' if weights_train_full is not None else 'No'}", color="blue")
-            tprint("=" * 80, color="cyan")
-
-            # Pass split information to enable OOF predictions for train portion
-            # This prevents data leakage from base models predicting on their training data
-            stacker_result = self._train_stacker_lgbm_calibrated(
-                X_train_full, y_train_full, base_models, weights_train_full,
-                train_size=len(X_train)  # Tell it where train ends and val begins
-            )
+            tprint("🎭 [REGIME_ENSEMBLE] Training stacker_lgbm_calibrated meta-learner on train+val data", color="yellow")
+            stacker_result = self._train_stacker_lgbm_calibrated(X_train_full, y_train_full, base_models, weights_train_full)
 
             # Evaluate ensemble on holdout test data
             tprint("📊 [REGIME_ENSEMBLE] Evaluating ensemble performance on holdout test data", color="yellow")
@@ -1187,149 +770,26 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                 tprint(f"⚠️ [REGIME_ENSEMBLE] Walk-forward validation failed: {e}", color="yellow")
                 walk_forward_metrics = {'validation_completed': False, 'error': str(e)}
 
-            # ========================================================================
-            # CRITICAL FIX: DATA LEAKAGE PREVENTION - LEAK-FREE PREDICTIONS
-            # ========================================================================
-            # PROBLEM: Previously predicted on X_processed (100% of data) including
-            #          training data the model was trained on → DATA LEAKAGE!
-            # SOLUTION: Generate predictions only for test set (unseen data)
-            #          Set train+val predictions to NaN (can't predict on training data)
-            # ========================================================================
-            tprint("=" * 80, color="cyan", bold=True)
-            tprint("🛡️ [REGIME_ENSEMBLE] GENERATING LEAK-FREE ENSEMBLE PREDICTIONS", color="cyan", bold=True)
-            tprint("=" * 80, color="cyan", bold=True)
-            tprint("🎯 Approach: Prevent data leakage by only predicting on unseen test data", color="green")
-            tprint("🔒 Train+Val predictions: Set to NaN (model trained on this data)", color="yellow")
-            tprint("✅ Test predictions: Clean (model never saw this data)", color="green")
-            tprint("=" * 80, color="cyan", bold=True)
-
+            # Generate ensemble predictions and save to HDF5
+            tprint("🎯 [REGIME_ENSEMBLE] Generating ensemble predictions for HDF5 storage", color="cyan")
             try:
                 ensemble_model = stacker_result.get('model')
-                tprint(f"📊 [REGIME_ENSEMBLE] Ensemble model retrieved: {ensemble_model is not None}", color="cyan")
-                tprint(f"📊 [REGIME_ENSEMBLE] Has predict_proba: {hasattr(ensemble_model, 'predict_proba') if ensemble_model else False}", color="cyan")
-
                 if ensemble_model is not None and hasattr(ensemble_model, 'predict_proba'):
-                    # ========================================================================
-                    # DATA LEAKAGE FIX: Generate predictions in 2 parts (no leakage)
-                    # ========================================================================
-
-                    # Get number of classes from training labels
-                    n_regimes = len(np.unique(y_processed))
-                    tprint(f"📊 [REGIME_ENSEMBLE] Number of regimes: {n_regimes}", color="blue")
-
-                    # Calculate split sizes
-                    n_train_full = len(X_train_full)  # train + val (85%)
-                    n_test = len(X_test)  # test (15%)
-                    total_samples = len(X_processed)
-
-                    tprint(f"📊 [REGIME_ENSEMBLE] Split sizes:", color="blue")
-                    tprint(f"   • Train+Val: {n_train_full} samples (85%) → NaN (trained on this)", color="yellow")
-                    tprint(f"   • Test: {n_test} samples (15%) → Clean predictions", color="green")
-                    tprint(f"   • Total: {total_samples} samples", color="blue")
-
-                    # Initialize predictions array with NaN
-                    pred_probs = np.full((total_samples, n_regimes), np.nan, dtype=np.float64)
-
-                    # 1. Train+Val predictions: Set to NaN (data leakage prevention)
-                    tprint(f"\n🔒 [REGIME_ENSEMBLE] Train+Val predictions: Setting to NaN (no data leakage)", color="yellow")
-                    tprint(f"   Rationale: Model was trained on this data, cannot predict on it", color="yellow")
-                    # pred_probs[:n_train_full] already NaN from initialization
-
-                    # 2. Test predictions: Clean (model never saw this data)
-                    tprint(f"\n✅ [REGIME_ENSEMBLE] Test predictions: Generating clean predictions", color="cyan")
-                    tprint(f"   Generating predictions for {n_test} test samples...", color="cyan")
-                    test_predictions = ensemble_model.predict_proba(X_test)
-                    pred_probs[n_train_full:] = test_predictions
-                    tprint(f"   ✅ Test predictions: {test_predictions.shape} (clean, no leakage)", color="green")
-
-                    # Validate shapes
-                    assert_equals(pred_probs.shape[0], total_samples, f"Incohérence de forme : nombre d'échantillons {pred_probs.shape[0]} != {total_samples}")
-                    assert_equals(pred_probs.shape[1], n_regimes, f"Incohérence de classes : nombre de régimes {pred_probs.shape[1]} != {n_regimes}")
-                    assert_equals(test_predictions.shape[0], n_test, f"Incohérence de forme de test : {test_predictions.shape[0]} != {n_test}")
-
-                    # Calculate NaN statistics
-                    nan_count = np.isnan(pred_probs).sum()
-                    nan_pct = (nan_count / pred_probs.size) * 100
-                    clean_count = np.sum(~np.isnan(pred_probs).any(axis=1))
-                    clean_pct = (clean_count / total_samples) * 100
-
-                    tprint(f"\n📊 [REGIME_ENSEMBLE] Prediction statistics:", color="cyan")
-                    tprint(f"   • Total predictions: {pred_probs.shape} ({total_samples} samples × {n_regimes} classes)", color="blue")
-                    tprint(f"   • NaN values: {nan_count}/{pred_probs.size} ({nan_pct:.1f}%)", color="yellow")
-                    tprint(f"   • Clean predictions: {clean_count}/{total_samples} samples ({clean_pct:.1f}%)", color="green")
-                    tprint(f"   • Expected clean %: 15% (test set only) ✅", color="green")
-
-                    tprint(f"\n✅ [REGIME_ENSEMBLE] Leak-free predictions generated successfully!", color="green")
-
-                    # ========================================================================
-                    # CRITICAL: Verify no data leakage - check prediction patterns
-                    # ========================================================================
-                    tprint(f"\n🔍 [REGIME_ENSEMBLE] Running data leakage verification...", color="cyan")
-
-                    # Check 1: Verify train+val predictions are NaN
-                    train_val_has_nan = np.isnan(pred_probs[:n_train_full]).all()
-                    if not train_val_has_nan:
-                        tprint(f"❌ CRITICAL: Train+Val predictions should be NaN but aren't!", color="red")
-                        raise ValueError("Data leakage detected: Train+Val predictions contain non-NaN values")
-                    else:
-                        tprint(f"   ✅ Train+Val predictions are NaN (no leakage)", color="green")
-
-                    # Check 2: Verify test predictions are NOT NaN
-                    test_has_values = ~np.isnan(pred_probs[n_train_full:]).any()
-                    if not test_has_values:
-                        tprint(f"❌ CRITICAL: Test predictions should have values but are NaN!", color="red")
-                        raise ValueError("Data error: Test predictions are NaN")
-                    else:
-                        tprint(f"   ✅ Test predictions have values (clean predictions)", color="green")
-
-                    # Check 3: Calculate expected vs actual clean percentage
-                    expected_clean_pct = (n_test / total_samples) * 100
-                    actual_clean_pct = clean_pct
-                    pct_diff = abs(expected_clean_pct - actual_clean_pct)
-
-                    if pct_diff > 1.0:  # Allow 1% tolerance
-                        tprint(f"⚠️ WARNING: Clean percentage mismatch!", color="yellow")
-                        tprint(f"   Expected: {expected_clean_pct:.1f}%, Actual: {actual_clean_pct:.1f}%", color="yellow")
-                    else:
-                        tprint(f"   ✅ Clean percentage matches expected: {actual_clean_pct:.1f}%", color="green")
-
-                    tprint(f"\n🎯 [REGIME_ENSEMBLE] Data leakage verification PASSED!", color="green", bold=True)
-                    tprint("=" * 80, color="green", bold=True)
-
+                    pred_probs = ensemble_model.predict_proba(X_processed)
                     # Create columns for each regime
                     ensemble_predictions = {}
-                    n_regimes_final = pred_probs.shape[1]
-                    tprint(f"📋 [REGIME_ENSEMBLE] Creating probability columns for {n_regimes_final} regimes...", color="cyan")
-
-                    for regime_idx in range(n_regimes_final):
-                        # CRITICAL FIX: Convert to Python int to avoid JSON serialization errors
-                        col_name = f'ensemble_regime_{int(regime_idx)}_prob'
+                    for regime_idx in range(pred_probs.shape[1]):
+                        col_name = f'ensemble_regime_{regime_idx}_prob'
                         ensemble_predictions[col_name] = pred_probs[:, regime_idx]
-                        # Use nanmin/nanmax/nanmean to handle NaN values (train+val are NaN)
-                        col_min = np.nanmin(pred_probs[:, regime_idx])
-                        col_max = np.nanmax(pred_probs[:, regime_idx])
-                        col_mean = np.nanmean(pred_probs[:, regime_idx])
-                        tprint(f"   ├─ Column '{col_name}': min={col_min:.4f}, max={col_max:.4f}, mean={col_mean:.4f} (test set only)", color="cyan")
 
                     predictions_df = pd.DataFrame(ensemble_predictions, index=protected_data.index)
-                    tprint(f"✅ [REGIME_ENSEMBLE] Predictions DataFrame created: shape={predictions_df.shape}", color="green")
-                    tprint(f"📊 [REGIME_ENSEMBLE] Columns: {list(predictions_df.columns)}", color="cyan")
-                    tprint(f"📊 [REGIME_ENSEMBLE] Index type: {type(predictions_df.index).__name__}, length: {len(predictions_df.index)}", color="cyan")
-                    tprint(f"📊 [REGIME_ENSEMBLE] First 3 rows preview:", color="cyan")
-                    tprint(f"{predictions_df.head(3)}", color="cyan")
-
                     # Save to HDF5
-                    tprint("💾 [REGIME_ENSEMBLE] Initiating HDF5 save operation...", color="cyan", bold=True)
                     await self._save_ensemble_predictions_to_hdf5(predictions_df, base_step_inst, 'regime_ensemble_predictions')
-                    tprint("=" * 80, color="green", bold=True)
-                    tprint("✅ [REGIME_ENSEMBLE] ENSEMBLE PREDICTIONS SUCCESSFULLY SAVED TO HDF5", color="green", bold=True)
-                    tprint("=" * 80, color="green", bold=True)
+                    tprint("✅ [REGIME_ENSEMBLE] Ensemble predictions saved to HDF5", color="green")
                 else:
                     tprint("⚠️ [REGIME_ENSEMBLE] Ensemble model not found or no predict_proba method", color="yellow")
             except Exception as e:
-                tprint(f"❌ [REGIME_ENSEMBLE] Failed to save ensemble predictions: {e}", color="red")
-                import traceback
-                tprint(f"❌ [REGIME_ENSEMBLE] Traceback:\n{traceback.format_exc()}", color="red")
+                tprint(f"⚠️ [REGIME_ENSEMBLE] Failed to save ensemble predictions: {e}", color="yellow")
 
             # Create comprehensive results
             tprint("📦 [REGIME_ENSEMBLE] Creating comprehensive results", color="yellow")
@@ -1369,15 +829,6 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                 }
             }
 
-            # Add detected base models from pipeline_state if available (for blank mode)
-            if 'detected_base_models' in pipeline_state:
-                results['detected_base_models'] = pipeline_state['detected_base_models']
-                tprint(f"📊 [REGIME_ENSEMBLE] Added detected base models to results: {pipeline_state['detected_base_models']}", color="blue")
-            
-            # Add ensemble_metrics at top level for easier access in reporting
-            results['ensemble_metrics'] = ensemble_metrics
-            tprint(f"📊 [REGIME_ENSEMBLE] Added ensemble metrics to results", color="blue")
-            
             tprint("✅ [REGIME_ENSEMBLE] Regime ensemble training completed successfully", color="green", bold=True)
             tprint(f"⏱️ [REGIME_ENSEMBLE] Total execution time: {(datetime.now() - start_time).total_seconds():.2f}s", color="blue")
 
@@ -1439,257 +890,6 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                 
                 # Save individual artifacts for better downstream access
                 await self._save_individual_artifacts(results, save_report.correlation_id)
-                # Generate and save temporal regime analysis report
-                try:
-                    tprint("📊 [REGIME_ENSEMBLE] Generating temporal regime analysis report", color="cyan")
-                    temporal_report = await self._generate_temporal_regime_analysis(
-                        results, market_ohlcv_data, X_processed, feature_names
-                    )
-                    if temporal_report:
-                        results['temporal_regime_analysis'] = temporal_report
-                        tprint("✅ [REGIME_ENSEMBLE] Temporal regime analysis completed", color="green")
-                except Exception as e:
-                    tprint(f"⚠️ [REGIME_ENSEMBLE] Failed to generate temporal regime analysis: {e}", color="yellow")
-
-                # Generate comprehensive CSV and markdown reports
-                try:
-                    tprint("📊 [REGIME_ENSEMBLE] Generating comprehensive CSV/MD reports", color="cyan")
-
-                    # Determine symbol from config (works in blank mode) or pipeline state
-                    symbol = self.config.symbol if hasattr(self.config, 'symbol') else pipeline_state.get('symbol', 'UNKNOWN')
-
-                    # Generate CSV reports
-                    metrics_path, comparison_path = self._generate_csv_reports(results, symbol)
-                    if metrics_path:
-                        results['csv_metrics_report'] = metrics_path
-                        tprint(f"✅ [REGIME_ENSEMBLE] CSV metrics report: {metrics_path}", color="green")
-                    if comparison_path:
-                        results['csv_comparison_report'] = comparison_path
-                        tprint(f"✅ [REGIME_ENSEMBLE] CSV comparison report: {comparison_path}", color="green")
-
-                    # Generate markdown report
-                    md_report_path = self._generate_markdown_report(results, symbol)
-                    if md_report_path:
-                        results['markdown_report'] = md_report_path
-                        tprint(f"✅ [REGIME_ENSEMBLE] Markdown report: {md_report_path}", color="green")
-                    
-                    # Generate visualizations
-                    try:
-                        tprint("📊 [REGIME_ENSEMBLE] Generating visualizations", color="cyan")
-                        
-                        # Get true and predicted labels for visualization
-                        y_true = None
-                        y_pred = None
-                        y_pred_proba = None
-                        
-                        # Extract from tagged dataset if available
-                        tagged_dataset = results.get('tagged_dataset', {})
-                        if tagged_dataset and 'tagged_dataset' in tagged_dataset:
-                            tagged_data = tagged_dataset['tagged_dataset']
-                            if 'ensemble_regime_label' in tagged_data.columns:
-                                y_true = None  # We need true labels for comparison
-                                y_pred = tagged_data['ensemble_regime_label'].values
-                                
-                                # Get probabilities if available
-                                prob_cols = [col for col in tagged_data.columns if col.startswith('ensemble_regime_') and col.endswith('_probability')]
-                                if prob_cols:
-                                    y_pred_proba = tagged_data[prob_cols].values
-                        
-                        # If we don't have true labels, we can't generate confusion matrix
-                        # but we can still generate temporal visualization
-                        if y_pred is not None:
-                            # Generate temporal regime visualization
-                            temporal_viz_path = self._generate_temporal_regime_visualization(
-                                y_true if y_true is not None else y_pred,  # Use y_pred if no true labels
-                                y_pred,
-                                "outcomes"
-                            )
-                            if temporal_viz_path:
-                                results['temporal_visualization'] = temporal_viz_path
-                                tprint(f"✅ [REGIME_ENSEMBLE] Temporal visualization: {temporal_viz_path}", color="green")
-                        
-                        # Generate confusion matrix and ROC/PR curves if we have true labels
-                        if y_true is not None and y_pred is not None:
-                            # Generate confusion matrix visualization
-                            cm_viz_path = self._generate_confusion_matrix_visualization(
-                                y_true, y_pred, "outcomes"
-                            )
-                            if cm_viz_path:
-                                results['confusion_matrix_visualization'] = cm_viz_path
-                                tprint(f"✅ [REGIME_ENSEMBLE] Confusion matrix visualization: {cm_viz_path}", color="green")
-                            
-                            # Generate ROC curves if we have probabilities
-                            if y_pred_proba is not None:
-                                roc_viz_path = self._generate_roc_curves_visualization(
-                                    y_true, y_pred_proba, "outcomes"
-                                )
-                                if roc_viz_path:
-                                    results['roc_curves_visualization'] = roc_viz_path
-                                    tprint(f"✅ [REGIME_ENSEMBLE] ROC curves visualization: {roc_viz_path}", color="green")
-                                
-                                # Generate Precision-Recall curves
-                                pr_viz_path = self._generate_precision_recall_curves_visualization(
-                                    y_true, y_pred_proba, "outcomes"
-                                )
-                                if pr_viz_path:
-                                    results['pr_curves_visualization'] = pr_viz_path
-                                    tprint(f"✅ [REGIME_ENSEMBLE] Precision-Recall curves visualization: {pr_viz_path}", color="green")
-                        
-                        tprint("✅ [REGIME_ENSEMBLE] All visualizations generated successfully", color="green")
-                        
-                    except Exception as e:
-                        tprint(f"⚠️ [REGIME_ENSEMBLE] Failed to generate visualizations: {e}", color="yellow")
-                        self.logger.error(f"Failed to generate visualizations: {e}", exc_info=True)
-
-                    # Generate Quality Assessment and Economic Relevance Analysis
-                    try:
-                        tprint("", "INFO")
-                        tprint("=" * 80, color="cyan")
-                        tprint("📊 Generating Quality Assessment and Economic Relevance Analysis", color="cyan")
-                        tprint("=" * 80, color="cyan")
-
-                        # Extract regime predictions from tagged dataset
-                        tagged_dataset = results.get('tagged_dataset', {})
-                        if tagged_dataset and 'tagged_dataset' in tagged_dataset:
-                            tagged_data = tagged_dataset['tagged_dataset']
-
-                            if 'ensemble_regime_label' in tagged_data.columns and market_ohlcv_data is not None:
-                                # Extract regime labels
-                                regime_labels = tagged_data['ensemble_regime_label'].values
-                                timestamps = tagged_data.index
-
-                                # Align market data with predictions
-                                aligned_market_data = market_ohlcv_data.loc[timestamps]
-                                prices = aligned_market_data['close']
-
-                                # Create regime labels as pandas Series
-                                regime_labels_series = pd.Series(regime_labels, index=timestamps, name='regime')
-
-                                # 1. Quality Assessment using ClusterQualityAssessor
-                                try:
-                                    tprint("📊 [REGIME_ENSEMBLE] Performing quality assessment", color="cyan")
-
-                                    # Initialize quality assessor
-                                    quality_assessor = ClusterQualityAssessor()
-
-                                    # Prepare feature data for quality assessment
-                                    feature_data = X_processed if isinstance(X_processed, pd.DataFrame) else pd.DataFrame(X_processed, columns=feature_names)
-                                    feature_data = feature_data.loc[timestamps] if len(feature_data) >= len(timestamps) else feature_data
-
-                                    # Calculate forward returns for economic validation
-                                    forward_returns = prices.pct_change().shift(-1)
-
-                                    # Assess quality
-                                    quality_metrics = quality_assessor.assess_quality(
-                                        regime_labels=regime_labels,
-                                        feature_data=feature_data,
-                                        forward_returns=forward_returns,
-                                        timestamps=timestamps,
-                                        min_regime_size=10,
-                                        temporal_sensitivity_mode="standard",
-                                        fast_mode=False
-                                    )
-
-                                    # Generate quality assessment report with caller-specific prefix
-                                    quality_report_path = quality_assessor.generate_markdown_report(
-                                        metrics=quality_metrics,
-                                        symbol=symbol,
-                                        output_dir="outcomes",
-                                        method_specific_config={
-                                            'method': 'regime_ensemble_training',
-                                            'ensemble_type': 'stacker_lgbm_calibrated'
-                                        },
-                                        report_prefix="regime_ensemble_quality"
-                                    )
-
-                                    if quality_report_path:
-                                        results['quality_assessment_report'] = quality_report_path
-                                        tprint(f"✅ [REGIME_ENSEMBLE] Quality assessment report: {quality_report_path}", color="green")
-
-                                    # Store quality metrics
-                                    results['quality_metrics'] = quality_metrics.to_dict() if hasattr(quality_metrics, 'to_dict') else quality_metrics
-
-                                except Exception as qa_error:
-                                    tprint(f"⚠️ [REGIME_ENSEMBLE] Quality assessment failed: {qa_error}", color="yellow")
-                                    self.logger.warning(f"Quality assessment failed: {qa_error}", exc_info=True)
-
-                                # 2. Economic Relevance Analysis
-                                try:
-                                    tprint("💰 [REGIME_ENSEMBLE] Performing economic relevance analysis", color="cyan")
-
-                                    # Initialize economic analyzer (use 100 permutations for broad-strokes significance)
-                                    economic_analyzer = RegimeEconomicRelevanceAnalyzer(
-                                        risk_free_rate=0.02,
-                                        trading_days_per_year=365,  # Will be adjusted based on timeframe
-                                        transaction_cost=0.001,
-                                        significance_tests=True,
-                                        n_permutations=100
-                                    )
-
-                                    # Evaluate strategies
-                                    tprint("  → Evaluating trading strategies based on regimes", color="yellow")
-                                    strategies = economic_analyzer.evaluate_strategies(
-                                        prices=prices,
-                                        regime_labels=regime_labels_series,
-                                        regime_types=None  # Will be auto-detected
-                                    )
-
-                                    # Perform significance tests
-                                    tprint("  → Performing statistical significance tests", color="yellow")
-                                    significance_results = None
-                                    if strategies:
-                                        try:
-                                            significance_results = economic_analyzer.perform_significance_test(
-                                                strategies=strategies,
-                                                test_method='block_permutation'
-                                            )
-                                        except Exception as sig_error:
-                                            tprint(f"⚠️ [REGIME_ENSEMBLE] Significance testing failed: {sig_error}", color="yellow")
-
-                                    # Generate economic report with caller-specific prefix
-                                    tprint("  → Generating economic relevance report", color="yellow")
-                                    economic_report_path = economic_analyzer.generate_economic_report(
-                                        strategies=strategies,
-                                        significance_results=significance_results,
-                                        output_dir="outcomes",
-                                        report_prefix="regime_ensemble_economic_relevance"
-                                    )
-
-                                    # Save results JSON with caller-specific prefix
-                                    tprint("  → Saving economic analysis results", color="yellow")
-                                    economic_json_path = economic_analyzer.save_results(
-                                        strategies=strategies,
-                                        significance_results=significance_results,
-                                        output_dir="outcomes",
-                                        json_prefix="regime_ensemble_economic_analysis"
-                                    )
-
-                                    if economic_report_path:
-                                        results['economic_relevance_report'] = economic_report_path
-                                        tprint(f"✅ [REGIME_ENSEMBLE] Economic relevance report: {economic_report_path}", color="green")
-
-                                    if economic_json_path:
-                                        results['economic_analysis_results'] = economic_json_path
-                                        tprint(f"✅ [REGIME_ENSEMBLE] Economic analysis results: {economic_json_path}", color="green")
-
-                                    tprint("=" * 80, color="cyan")
-
-                                except Exception as econ_error:
-                                    tprint(f"⚠️ [REGIME_ENSEMBLE] Economic relevance analysis failed: {econ_error}", color="yellow")
-                                    self.logger.warning(f"Economic relevance analysis failed: {econ_error}", exc_info=True)
-                            else:
-                                tprint("⚠️ [REGIME_ENSEMBLE] Missing required data for quality/economic analysis", color="yellow")
-                        else:
-                            tprint("⚠️ [REGIME_ENSEMBLE] Tagged dataset not available for quality/economic analysis", color="yellow")
-
-                    except Exception as analysis_error:
-                        tprint(f"⚠️ [REGIME_ENSEMBLE] Quality/Economic analysis failed: {analysis_error}", color="yellow")
-                        self.logger.warning(f"Quality/Economic analysis failed: {analysis_error}", exc_info=True)
-
-                    tprint("✅ [REGIME_ENSEMBLE] All reports generated successfully", color="green")
-                except Exception as e:
-                    tprint(f"⚠️ [REGIME_ENSEMBLE] Failed to generate CSV/MD reports: {e}", color="yellow")
-                    self.logger.error(f"Failed to generate reports: {e}", exc_info=True)
                 
             except Exception as e:
                 tprint(f"⚠️ [REGIME_ENSEMBLE] Failed to save artifacts persistently: {e}", color="yellow")
@@ -1877,1496 +1077,7 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             tprint(f"⚠️ [REGIME_ENSEMBLE] Enhanced feature creation failed, using base features: {e}", color="yellow")
             return meta_features
 
-    def _generate_isolated_meta_features(self, base_models: Dict[str, Any], X: np.ndarray, y: np.ndarray,
-                                   train_indices: Optional[np.ndarray] = None,
-                                   val_indices: Optional[np.ndarray] = None) -> Tuple[np.ndarray, List[str]]:
-        """
-        Génère des méta-features isolées pour prévenir la contamination entre entraînement et validation.
-        
-        Cette fonction garantit que les méta-features sont générées séparément pour:
-        - Les données d'entraînement (utilisant uniquement train_indices)
-        - Les données de validation (utilisant uniquement val_indices)
-        
-        Args:
-            base_models: Dictionnaire des modèles de base entraînés
-            X: Matrice de features complète
-            y: Labels cibles complets
-            train_indices: Indices des échantillons d'entraînement (optionnel)
-            val_indices: Indices des échantillons de validation (optionnel)
-            
-        Returns:
-            Tuple contenant:
-            - Méta-features isolées (même forme que X)
-            - Liste des noms de méta-features
-        """
-        try:
-            tprint("🔒 [REGIME_ENSEMBLE] Génération de méta-features isolées pour prévenir la contamination", color="cyan", bold=True)
-            
-            # Si aucun indice n'est fourni, utiliser une division temporelle par défaut
-            if train_indices is None or val_indices is None:
-                n_samples = len(X)
-                split_idx = int(n_samples * 0.7)  # 70% pour l'entraînement
-                
-                train_indices = np.arange(split_idx)
-                val_indices = np.arange(split_idx, n_samples)
-                
-                tprint(f"⚠️ [REGIME_ENSEMBLE] Aucun indice fourni, utilisation de division temporelle 70/30", color="yellow")
-                tprint(f"   Train: {len(train_indices)} échantillons, Val: {len(val_indices)} échantillons", color="yellow")
-            
-            # Séparer les données
-            X_train = X[train_indices]
-            y_train = y[train_indices]
-            X_val = X[val_indices]
-            y_val = y[val_indices]
-            
-            tprint(f"📊 [REGIME_ENSEMBLE] Données séparées - Train: {X_train.shape}, Val: {X_val.shape}", color="blue")
-            
-            # Générer des méta-features séparées pour l'entraînement et la validation
-            # Entraînement: utiliser uniquement les données d'entraînement
-            tprint("🔧 [REGIME_ENSEMBLE] Génération des méta-features d'entraînement isolées", color="cyan")
-            train_meta_features, train_meta_names = self.meta_features_generator.generate_meta_features(
-                base_models=base_models,
-                X=X_train,
-                y=y_train,
-                include_uncertainty=True,
-                include_confidence=True,
-                include_disagreement=True
-            )
-            
-            # Validation: utiliser uniquement les données de validation
-            tprint("🔧 [REGIME_ENSEMBLE] Génération des méta-features de validation isolées", color="cyan")
-            val_meta_features, val_meta_names = self.meta_features_generator.generate_meta_features(
-                base_models=base_models,
-                X=X_val,
-                y=y_val,
-                include_uncertainty=True,
-                include_confidence=True,
-                include_disagreement=True
-            )
-            
-            # Vérifier que les noms de méta-features sont cohérents
-            if train_meta_names != val_meta_names:
-                tprint("⚠️ [REGIME_ENSEMBLE] Incohérence des noms de méta-features entre train/val", color="yellow")
-                # Utiliser l'intersection des noms
-                common_names = list(set(train_meta_names) & set(val_meta_names))
-                tprint(f"🔧 [REGIME_ENSEMBLE] Utilisation de {len(common_names)} noms communs", color="cyan")
-                
-                # Filtrer les features pour ne garder que les noms communs
-                train_mask = [i for i, name in enumerate(train_meta_names) if name in common_names]
-                val_mask = [i for i, name in enumerate(val_meta_names) if name in common_names]
-                
-                train_meta_features = train_meta_features[:, train_mask]
-                val_meta_features = val_meta_features[:, val_mask]
-                meta_feature_names = common_names
-            else:
-                meta_feature_names = train_meta_names
-            
-            # Combiner les méta-features en préservant l'isolation
-            # Créer une matrice vide de la forme originale
-            isolated_meta_features = np.zeros((len(X), train_meta_features.shape[1]))
-            
-            # Remplir avec les méta-features appropriées
-            isolated_meta_features[train_indices] = train_meta_features
-            isolated_meta_features[val_indices] = val_meta_features
-            
-            tprint(f"✅ [REGIME_ENSEMBLE] Méta-features isolées générées: {isolated_meta_features.shape}", color="green")
-            tprint(f"📊 [REGIME_ENSEMBLE] Features d'entraînement: {train_meta_features.shape}", color="blue")
-            tprint(f"📊 [REGIME_ENSEMBLE] Features de validation: {val_meta_features.shape}", color="blue")
-            tprint(f"🔒 [REGIME_ENSEMBLE] Isolation temporelle préservée: aucune fuite de données", color="green")
-            
-            return isolated_meta_features, meta_feature_names
-            
-        except Exception as e:
-            tprint(f"❌ [REGIME_ENSEMBLE] Échec de génération de méta-features isolées: {e}", color="red")
-            self.logger.error(f"Failed to generate isolated meta-features: {e}", exc_info=True)
-            # Fallback: utiliser la méthode originale sans isolation
-            tprint("⚠️ [REGIME_ENSEMBLE] Fallback: utilisation de la méthode originale", color="yellow")
-            return self.meta_features_generator.generate_meta_features(
-                base_models=base_models,
-                X=X,
-                y=y,
-                include_uncertainty=True,
-                include_confidence=True,
-                include_disagreement=True
-            )
-
-    def _generate_oof_meta_features(self, base_models: Dict[str, Any], X: np.ndarray, y: np.ndarray, n_splits: int = 5) -> Tuple[np.ndarray, List[str]]:
-        """
-        Generate Out-Of-Fold (OOF) meta-features to prevent data leakage.
-
-        For each base model, we retrain it using time series cross-validation
-        to generate predictions on data it hasn't seen during training.
-
-        This is critical because base models were trained on X, so directly
-        calling predict_proba(X) would leak training data.
-
-        Args:
-            base_models: Dictionary of trained base models (structure reference only)
-            X: Feature matrix to generate OOF predictions for
-            y: Target labels
-            n_splits: Number of CV folds for OOF generation
-
-        Returns:
-            Tuple of (oof_meta_features, feature_names)
-        """
-        from sklearn.model_selection import TimeSeriesSplit
-
-        tprint(f"🔄 [REGIME_ENSEMBLE] Generating OOF meta-features using {n_splits}-fold time series CV", color="cyan", bold=True)
-        tprint(f"   This prevents data leakage from base models predicting on their training data", color="yellow")
-
-        n_samples = len(X)
-        n_regimes = len(np.unique(y))
-
-        # Initialize OOF prediction storage for each model
-        oof_predictions = {}
-        feature_names = []
-
-        # For each base model, generate OOF predictions
-        for model_name, trained_model in base_models.items():
-            tprint(f"🔧 [REGIME_ENSEMBLE] Generating OOF predictions for {model_name}", color="blue")
-
-            # Initialize OOF predictions array
-            oof_probs = np.zeros((n_samples, n_regimes))
-            oof_counts = np.zeros(n_samples)  # Track which samples got predictions
-
-            # Use TimeSeriesSplit for temporal validation
-            tscv = TimeSeriesSplit(n_splits=n_splits)
-
-            fold_idx = 0
-            for train_idx, val_idx in tscv.split(X):
-                fold_idx += 1
-
-                # Split data for this fold
-                X_train_fold = X[train_idx]
-                y_train_fold = y[train_idx]
-                X_val_fold = X[val_idx]
-
-                try:
-                    # Recreate model with same parameters
-                    model_class = type(trained_model)
-                    model_params = trained_model.get_params() if hasattr(trained_model, 'get_params') else {}
-
-                    # Create new model instance
-                    fold_model = model_class(**model_params)
-
-                    # Train on fold's training data
-                    fold_model.fit(X_train_fold, y_train_fold)
-
-                    # Predict on fold's validation data (out-of-fold)
-                    if hasattr(fold_model, 'predict_proba'):
-                        fold_probs = fold_model.predict_proba(X_val_fold)
-                    else:
-                        # If no predict_proba, convert predictions to one-hot
-                        fold_preds = fold_model.predict(X_val_fold)
-                        fold_probs = np.zeros((len(fold_preds), n_regimes))
-                        for i, pred in enumerate(fold_preds):
-                            fold_probs[i, int(pred)] = 1.0
-
-                    # Store OOF predictions
-                    oof_probs[val_idx] = fold_probs
-                    oof_counts[val_idx] += 1
-
-                    tprint(f"   ✅ Fold {fold_idx}/{n_splits}: {len(val_idx)} OOF predictions", color="green")
-
-                except Exception as e:
-                    tprint(f"   ⚠️ Fold {fold_idx}/{n_splits} failed: {e}", color="yellow")
-                    # Fill with uniform probabilities as fallback
-                    oof_probs[val_idx] = 1.0 / n_regimes
-                    oof_counts[val_idx] += 1
-
-            # Check coverage
-            missing_samples = np.sum(oof_counts == 0)
-            if missing_samples > 0:
-                tprint(f"   ⚠️ {missing_samples} samples have no OOF predictions (early folds)", color="yellow")
-                # Fill missing samples with uniform probabilities
-                oof_probs[oof_counts == 0] = 1.0 / n_regimes
-
-            # Store OOF predictions for this model
-            oof_predictions[model_name] = oof_probs
-
-            # Add feature names for this model's predictions
-            for regime_idx in range(n_regimes):
-                feature_names.append(f"{model_name}_class_{regime_idx}_prob")
-
-            tprint(f"   ✅ {model_name}: {oof_probs.shape} OOF predictions generated", color="green")
-
-        # Stack all OOF predictions into meta-features
-        all_oof_probs = []
-        for model_name in base_models.keys():
-            all_oof_probs.append(oof_predictions[model_name])
-
-        oof_meta_features = np.column_stack(all_oof_probs)
-
-        # Now generate uncertainty, confidence, and disagreement features from OOF predictions
-        # These are derived from the OOF predictions, so they're also leak-free
-        tprint(f"🔧 [REGIME_ENSEMBLE] Generating uncertainty/confidence/disagreement from OOF predictions", color="cyan")
-
-        # Calculate uncertainty features
-        uncertainty_features = []
-        for model_name in base_models.keys():
-            model_probs = oof_predictions[model_name]
-            # Entropy for each sample
-            from scipy.stats import entropy
-            model_entropy = np.array([entropy(model_probs[i] + 1e-10) for i in range(n_samples)])
-            uncertainty_features.append(model_entropy.reshape(-1, 1))
-            feature_names.append(f"{model_name}_uncertainty_entropy")
-
-        # Calculate confidence features
-        confidence_features = []
-        for model_name in base_models.keys():
-            model_probs = oof_predictions[model_name]
-            # Max probability (confidence)
-            max_prob = np.max(model_probs, axis=1).reshape(-1, 1)
-            confidence_features.append(max_prob)
-            feature_names.append(f"{model_name}_confidence_max_prob")
-
-        # Calculate disagreement features
-        # Standard deviation across models for each class
-        if len(oof_predictions) > 1:
-            all_probs_array = np.array([oof_predictions[name] for name in base_models.keys()])  # (n_models, n_samples, n_classes)
-            disagreement_std = np.std(all_probs_array, axis=0)  # (n_samples, n_classes)
-            disagreement_mean = np.mean(disagreement_std, axis=1).reshape(-1, 1)
-            feature_names.append("disagreement_mean_std")
-        else:
-            disagreement_mean = np.zeros((n_samples, 1))
-            feature_names.append("disagreement_mean_std")
-
-        # Combine all meta-features
-        all_meta_features = [oof_meta_features] + uncertainty_features + confidence_features + [disagreement_mean]
-        combined_oof_meta_features = np.column_stack(all_meta_features)
-
-        # Apply controlled feature selection (limit to 30-50 features)
-        if combined_oof_meta_features.shape[1] > 50:
-            tprint(f"⚠️ [REGIME_ENSEMBLE] OOF meta-features ({combined_oof_meta_features.shape[1]}) exceed 50, selecting top 50", color="yellow")
-            # Keep base predictions + top uncertainty/confidence features
-            base_pred_count = len(base_models) * n_regimes
-            combined_oof_meta_features = combined_oof_meta_features[:, :50]
-            feature_names = feature_names[:50]
-
-        tprint(f"✅ [REGIME_ENSEMBLE] OOF meta-features complete: {combined_oof_meta_features.shape}", color="green", bold=True)
-        tprint(f"   ├─ Base OOF predictions: {oof_meta_features.shape[1]} features", color="blue")
-        tprint(f"   ├─ Uncertainty features: {len(uncertainty_features)} features", color="blue")
-        tprint(f"   ├─ Confidence features: {len(confidence_features)} features", color="blue")
-        tprint(f"   └─ Disagreement features: 1 feature", color="blue")
-
-        return combined_oof_meta_features, feature_names
-
-    def _generate_controlled_meta_features(self, base_models: Dict[str, Any], X: np.ndarray, y: np.ndarray,
-                                      max_features: int = 50, min_features: int = 30) -> Tuple[np.ndarray, List[str]]:
-        """
-        Génère des méta-features contrôlées pour éviter l'explosion des features (1627).
-        
-        Cette fonction limite le nombre de méta-features à une plage raisonnable (30-50)
-        pour éviter l'overfitting et améliorer la généralisation.
-        
-        Args:
-            base_models: Dictionnaire des modèles de base entraînés
-            X: Matrice de features
-            y: Labels cibles
-            max_features: Nombre maximum de features à conserver (défaut: 50)
-            min_features: Nombre minimum de features à conserver (défaut: 30)
-            
-        Returns:
-            Tuple contenant:
-            - Méta-features contrôlées (limitées à max_features)
-            - Liste des noms de méta-features sélectionnées
-        """
-        try:
-            tprint("🎛️ [REGIME_ENSEMBLE] Génération de méta-features contrôlées (30-50 max)", color="cyan", bold=True)
-            
-            # Générer toutes les méta-features d'abord
-            tprint("🔧 [REGIME_ENSEMBLE] Génération initiale de toutes les méta-features", color="blue")
-            all_meta_features, all_meta_names = self.meta_features_generator.generate_meta_features(
-                base_models=base_models,
-                X=X,
-                y=y,
-                include_uncertainty=True,
-                include_confidence=True,
-                include_disagreement=True
-            )
-            
-            tprint(f"📊 [REGIME_ENSEMBLE] Méta-features brutes générées: {all_meta_features.shape}", color="yellow")
-            tprint(f"⚠️ [REGIME_ENSEMBLE] ATTENTION: {all_meta_features.shape[1]} features détectées", color="yellow", bold=True)
-            tprint(f"   Problème: Trop de features peuvent causer l'overfitting", color="yellow")
-            tprint(f"   Solution: Sélection intelligente des {max_features} features les plus importantes", color="yellow")
-            
-            # Si nous sommes déjà dans la limite, retourner directement
-            if all_meta_features.shape[1] <= max_features:
-                tprint(f"✅ [REGIME_ENSEMBLE] Nombre de features acceptable: {all_meta_features.shape[1]} <= {max_features}", color="green")
-                return all_meta_features, all_meta_names
-            
-            # Stratégie de sélection des features
-            # 1. Prioriser les features de base (prédictions des modèles)
-            # 2. Ajouter les features d'incertitude les plus importantes
-            # 3. Ajouter les features de confiance les plus importantes
-            # 4. Ajouter les features de désaccord les plus importantes
-            
-            base_features = []
-            uncertainty_features = []
-            confidence_features = []
-            disagreement_features = []
-            other_features = []
-            
-            # Classifier les features par type
-            for i, name in enumerate(all_meta_names):
-                name_lower = name.lower()
-                if 'class' in name_lower and 'prob' in name_lower:
-                    base_features.append((i, name))
-                elif 'uncertainty' in name_lower:
-                    uncertainty_features.append((i, name))
-                elif 'confidence' in name_lower:
-                    confidence_features.append((i, name))
-                elif 'disagreement' in name_lower:
-                    disagreement_features.append((i, name))
-                else:
-                    other_features.append((i, name))
-            
-            tprint(f"📊 [REGIME_ENSEMBLE] Classification des features:", color="blue")
-            tprint(f"   - Base (prédictions): {len(base_features)}", color="blue")
-            tprint(f"   - Incertitude: {len(uncertainty_features)}", color="blue")
-            tprint(f"   - Confiance: {len(confidence_features)}", color="blue")
-            tprint(f"   - Désaccord: {len(disagreement_features)}", color="blue")
-            tprint(f"   - Autres: {len(other_features)}", color="blue")
-            
-            # Construire la liste de sélection prioritaire
-            selected_indices = []
-            selected_names = []
-            
-            # 1. Ajouter toutes les features de base (priorité absolue)
-            for idx, name in base_features:
-                selected_indices.append(idx)
-                selected_names.append(name)
-            
-            # 2. Ajouter les features d'incertitude (priorité haute)
-            for idx, name in uncertainty_features[:5]:  # Limiter à 5 features d'incertitude
-                if len(selected_indices) < max_features:
-                    selected_indices.append(idx)
-                    selected_names.append(name)
-            
-            # 3. Ajouter les features de confiance (priorité moyenne)
-            for idx, name in confidence_features[:3]:  # Limiter à 3 features de confiance
-                if len(selected_indices) < max_features:
-                    selected_indices.append(idx)
-                    selected_names.append(name)
-            
-            # 4. Ajouter les features de désaccord (priorité moyenne)
-            for idx, name in disagreement_features[:3]:  # Limiter à 3 features de désaccord
-                if len(selected_indices) < max_features:
-                    selected_indices.append(idx)
-                    selected_names.append(name)
-            
-            # 5. Si nécessaire, ajouter d'autres features pour atteindre le minimum
-            if len(selected_indices) < min_features:
-                remaining_needed = min_features - len(selected_indices)
-                tprint(f"🔧 [REGIME_ENSEMBLE] Ajout de {remaining_needed} features supplémentaires", color="cyan")
-                
-                # Ajouter les autres features les plus importantes
-                for idx, name in other_features[:remaining_needed]:
-                    selected_indices.append(idx)
-                    selected_names.append(name)
-            
-            # 6. Si encore nécessaire, ajouter plus de features d'incertitude/confiance
-            if len(selected_indices) < min_features:
-                remaining_needed = min_features - len(selected_indices)
-                tprint(f"🔧 [REGIME_ENSEMBLE] Ajout de {remaining_needed} features d'incertitude/confiance supplémentaires", color="cyan")
-                
-                # Compléter avec plus de features d'incertitude
-                extra_uncertainty = uncertainty_features[5:5+remaining_needed//2]
-                extra_confidence = confidence_features[3:3+(remaining_needed+1)//2]
-                
-                for idx, name in extra_uncertainty + extra_confidence:
-                    if len(selected_indices) < min_features:
-                        selected_indices.append(idx)
-                        selected_names.append(name)
-            
-            # Trier les indices pour maintenir l'ordre original
-            selected_indices = sorted(selected_indices)
-            selected_names = [all_meta_names[i] for i in selected_indices]
-            
-            # Extraire les features sélectionnées
-            controlled_meta_features = all_meta_features[:, selected_indices]
-            
-            tprint(f"✅ [REGIME_ENSEMBLE] Sélection de features contrôlée terminée", color="green", bold=True)
-            tprint(f"📊 [REGIME_ENSEMBLE] Features originales: {all_meta_features.shape[1]} → Features contrôlées: {controlled_meta_features.shape[1]}", color="green")
-            tprint(f"🎯 [REGIME_ENSEMBLE] Objectif atteint: {min_features} <= {controlled_meta_features.shape[1]} <= {max_features}", color="green")
-            tprint(f"📋 [REGIME_ENSEMBLE] Features sélectionnées: {selected_names}", color="blue")
-            
-            # Valider que nous n'avons pas trop de features
-            if controlled_meta_features.shape[1] > max_features:
-                tprint(f"⚠️ [REGIME_ENSEMBLE] ATTENTION: Encore trop de features ({controlled_meta_features.shape[1]} > {max_features})", color="yellow")
-                # Tronquer si nécessaire
-                controlled_meta_features = controlled_meta_features[:, :max_features]
-                selected_names = selected_names[:max_features]
-                tprint(f"🔧 [REGIME_ENSEMBLE] Troncature à {max_features} features", color="yellow")
-            
-            return controlled_meta_features, selected_names
-            
-        except Exception as e:
-            tprint(f"❌ [REGIME_ENSEMBLE] Échec de génération de méta-features contrôlées: {e}", color="red")
-            self.logger.error(f"Failed to generate controlled meta-features: {e}", exc_info=True)
-            # Fallback: utiliser la méthode originale sans contrôle
-            tprint("⚠️ [REGIME_ENSEMBLE] Fallback: utilisation de la méthode originale", color="yellow")
-            return self.meta_features_generator.generate_meta_features(
-                base_models=base_models,
-                X=X,
-                y=y,
-                include_uncertainty=True,
-                include_confidence=True,
-                include_disagreement=True
-            )
-
-    def _validate_expected_dimensions(self, meta_features: np.ndarray, meta_feature_names: List[str],
-                                  expected_min: int = 30, expected_max: int = 50) -> bool:
-        """
-        Valide que les dimensions des méta-features correspondent aux attentes (30-50).
-        
-        Cette fonction détecte les incohérences de dimensions qui peuvent indiquer
-        des problèmes dans la génération des méta-features.
-        
-        Args:
-            meta_features: Matrice des méta-features à valider
-            meta_feature_names: Liste des noms de méta-features
-            expected_min: Nombre minimum attendu de features (défaut: 30)
-            expected_max: Nombre maximum attendu de features (défaut: 50)
-            
-        Returns:
-            True si les dimensions sont valides, False sinon
-        """
-        try:
-            tprint("🔍 [REGIME_ENSEMBLE] Validation des dimensions des méta-features", color="cyan", bold=True)
-            
-            # Dimensions actuelles
-            n_samples, n_features = meta_features.shape
-            n_names = len(meta_feature_names)
-            
-            tprint(f"📊 [REGIME_ENSEMBLE] Dimensions détectées:", color="blue")
-            tprint(f"   - Échantillons: {n_samples}", color="blue")
-            tprint(f"   - Features: {n_features}", color="blue")
-            tprint(f"   - Noms de features: {n_names}", color="blue")
-            tprint(f"   - Attendues: {expected_min}-{expected_max} features", color="blue")
-            
-            # Validation 1: Cohérence entre features et noms
-            if n_features != n_names:
-                tprint(f"❌ [REGIME_ENSEMBLE] INHÉRENCE: {n_features} features mais {n_names} noms", color="red", bold=True)
-                return False
-            else:
-                tprint(f"✅ [REGIME_ENSEMBLE] Cohérence features/noms: {n_features} = {n_names}", color="green")
-            
-            # Validation 2: Plage de features acceptable
-            if expected_min <= n_features <= expected_max:
-                tprint(f"✅ [REGIME_ENSEMBLE] Plage de features acceptable: {expected_min} <= {n_features} <= {expected_max}", color="green")
-                dimensions_valid = True
-            else:
-                tprint(f"❌ [REGIME_ENSEMBLE] PLAGE INVALIDE: {n_features} features hors de la plage [{expected_min}, {expected_max}]", color="red", bold=True)
-                dimensions_valid = False
-            
-            # Validation 3: Détection d'explosion de features
-            if n_features > expected_max * 2:  # Plus du double du maximum attendu
-                tprint(f"🚨 [REGIME_ENSEMBLE] EXPLOSION DE FEATURES DÉTECTÉE!", color="red", bold=True)
-                tprint(f"   {n_features} features détectées (attendu: max {expected_max})", color="red")
-                tprint(f"   Ceci indique probablement un bug dans la génération des méta-features", color="red")
-                dimensions_valid = False
-            
-            # Validation 4: Détection de pénurie de features
-            if n_features < expected_min // 2:  # Moins de la moitié du minimum attendu
-                tprint(f"⚠️ [REGIME_ENSEMBLE] PÉNURIE DE FEATURES DÉTECTÉE!", color="yellow", bold=True)
-                tprint(f"   Seulement {n_features} features détectées (attendu: min {expected_min})", color="yellow")
-                tprint(f"   Ceci peut indiquer une génération incomplète des méta-features", color="yellow")
-                # Ne pas échouer automatiquement, juste avertir
-            
-            # Analyse détaillée des types de features
-            feature_types = {
-                'base_predictions': 0,
-                'uncertainty': 0,
-                'confidence': 0,
-                'disagreement': 0,
-                'other': 0
-            }
-            
-            for name in meta_feature_names:
-                name_lower = name.lower()
-                if 'class' in name_lower and 'prob' in name_lower:
-                    feature_types['base_predictions'] += 1
-                elif 'uncertainty' in name_lower:
-                    feature_types['uncertainty'] += 1
-                elif 'confidence' in name_lower:
-                    feature_types['confidence'] += 1
-                elif 'disagreement' in name_lower:
-                    feature_types['disagreement'] += 1
-                else:
-                    feature_types['other'] += 1
-            
-            tprint(f"📋 [REGIME_ENSEMBLE] Analyse des types de features:", color="cyan")
-            tprint(f"   - Prédictions de base: {feature_types['base_predictions']}", color="blue")
-            tprint(f"   - Incertitude: {feature_types['uncertainty']}", color="blue")
-            tprint(f"   - Confiance: {feature_types['confidence']}", color="blue")
-            tprint(f"   - Désaccord: {feature_types['disagreement']}", color="blue")
-            tprint(f"   - Autres: {feature_types['other']}", color="blue")
-            
-            # Validation 5: Vérification du nombre de classes attendu
-            # Pour n classes, nous devrions avoir n * k features de base (k dépend des modèles)
-            # Typiquement: n_classes * n_base_models features de base
-            base_pred_features = feature_types['base_predictions']
-            if base_pred_features > 0:
-                # Estimer le nombre de classes et de modèles de base
-                # Note: ceci est une approximation heuristique
-                estimated_classes = int(np.sqrt(base_pred_features)) if base_pred_features > 1 else 1
-                estimated_models = base_pred_features // estimated_classes if estimated_classes > 0 else 1
-                
-                tprint(f"🔍 [REGIME_ENSEMBLE] Estimation:", color="cyan")
-                tprint(f"   - Classes estimées: {estimated_classes}", color="blue")
-                tprint(f"   - Modèles de base estimés: {estimated_models}", color="blue")
-                
-                # Vérification de cohérence
-                if estimated_classes < 2:
-                    tprint(f"⚠️ [REGIME_ENSEMBLE] ATTENTION: Moins de 2 classes estimées", color="yellow")
-                if estimated_models < 2:
-                    tprint(f"⚠️ [REGIME_ENSEMBLE] ATTENTION: Moins de 2 modèles de base estimés", color="yellow")
-            
-            # Résultat final de validation
-            if dimensions_valid:
-                tprint(f"✅ [REGIME_ENSEMBLE] VALIDATION RÉUSSIE: Dimensions valides", color="green", bold=True)
-                return True
-            else:
-                tprint(f"❌ [REGIME_ENSEMBLE] VALIDATION ÉCHOUÉE: Dimensions invalides", color="red", bold=True)
-                return False
-                
-        except Exception as e:
-            tprint(f"❌ [REGIME_ENSEMBLE] Erreur lors de la validation des dimensions: {e}", color="red")
-            self.logger.error(f"Error validating dimensions: {e}", exc_info=True)
-            return False
-
-    def _strict_walk_forward_validation(self, X: np.ndarray, y: np.ndarray, base_models: Dict[str, Any],
-                                     n_folds: int = 5, min_train_size: int = 100,
-                                     embargo_pct: float = 0.05) -> Dict[str, Any]:
-        """
-        Effectue une validation walk-forward stricte sans fuite de données.
-        
-        Cette fonction garantit l'intégrité temporelle en utilisant uniquement
-        les données passées pour prédire les données futures, sans contamination.
-        
-        Args:
-            X: Matrice de features complète
-            y: Labels cibles complets
-            base_models: Dictionnaire des modèles de base entraînés
-            n_folds: Nombre de folds pour la validation (défaut: 5)
-            min_train_size: Taille minimale pour l'entraînement (défaut: 100)
-            embargo_pct: Pourcentage d'embargo entre train/test (défaut: 0.05)
-            
-        Returns:
-            Dictionnaire contenant les résultats de validation walk-forward
-        """
-        try:
-            tprint("🚶 [REGIME_ENSEMBLE] Validation walk-forward stricte sans fuite de données", color="cyan", bold=True)
-            
-            n_samples = len(X)
-            if n_samples < min_train_size * 2:
-                tprint(f"⚠️ [REGIME_ENSEMBLE] Données insuffisantes: {n_samples} < {min_train_size * 2}", color="yellow")
-                return {
-                    'success': False,
-                    'error': f'Données insuffisantes: {n_samples} < {min_train_size * 2}',
-                    'n_folds_completed': 0,
-                    'fold_results': []
-                }
-            
-            # Calculer la taille de chaque fold
-            fold_size = n_samples // n_folds
-            if fold_size < min_train_size:
-                # Ajuster le nombre de folds si nécessaire
-                n_folds = n_samples // min_train_size
-                fold_size = min_train_size
-                tprint(f"🔧 [REGIME_ENSEMBLE] Ajustement: {n_folds} folds, taille: {fold_size}", color="cyan")
-            
-            tprint(f"📊 [REGIME_ENSEMBLE] Configuration walk-forward:", color="blue")
-            tprint(f"   - Échantillons totaux: {n_samples}", color="blue")
-            tprint(f"   - Nombre de folds: {n_folds}", color="blue")
-            tprint(f"   - Taille de fold: {fold_size}", color="blue")
-            tprint(f"   - Taille min d'entraînement: {min_train_size}", color="blue")
-            tprint(f"   - Embargo: {embargo_pct * 100:.1f}%", color="blue")
-            
-            # Résultats de validation
-            fold_results = []
-            all_predictions = []
-            all_true_labels = []
-            all_fold_indices = []
-            
-            # Effectuer la validation walk-forward
-            for fold_idx in range(n_folds):
-                tprint(f"🔄 [REGIME_ENSEMBLE] Fold {fold_idx + 1}/{n_folds}", color="cyan")
-                
-                # Calculer les indices pour ce fold (fenêtre entraînement EXPANSIVE)
-                # Entraînement: [0, train_end) s'étend avec les folds
-                train_start = 0
-                train_end = min(max(min_train_size, (fold_idx + 1) * fold_size), n_samples)
-
-                # Ajouter l'embargo pour éviter la fuite (au moins 1 échantillon)
-                embargo_size = max(1, int(round(fold_size * embargo_pct)))
-                test_start = train_end + embargo_size
-                test_end = min(test_start + fold_size, n_samples)
-
-                # Garde-fous: taille d'entraînement minimale et non chevauchement
-                if (train_end - train_start) < min_train_size:
-                    tprint(f"⚠️ [REGIME_ENSEMBLE] Fold {fold_idx + 1}: taille d'entraînement insuffisante ({train_end - train_start} < {min_train_size})", color="yellow")
-                    break
-                if test_start <= train_end:
-                    tprint(f"⚠️ [REGIME_ENSEMBLE] Fold {fold_idx + 1}: chevauchement train/test détecté (test_start={test_start}, train_end={train_end})", color="yellow")
-                    break
-
-                # Vérifier que nous avons assez de données pour le test
-                if test_start >= n_samples or (test_end - test_start) < 10:
-                    tprint(f"⚠️ [REGIME_ENSEMBLE] Fold {fold_idx + 1}: pas assez de données pour le test", color="yellow")
-                    break
-
-                # Extraire les données d'entraînement et de test
-                X_train = X[train_start:train_end]
-                y_train = y[train_start:train_end]
-                X_test = X[test_start:test_end]
-                y_test = y[test_start:test_end]
-
-                tprint(f"📊 [REGIME_ENSEMBLE] Fold {fold_idx + 1}:", color="blue")
-                tprint(f"   - Train: {train_start}-{train_end} ({len(X_train)} échantillons)", color="blue")
-                tprint(f"   - Embargo: {train_end}-{test_start} ({embargo_size} échantillons)", color="blue")
-                tprint(f"   - Test: {test_start}-{test_end} ({len(X_test)} échantillons)", color="blue")
-                
-                # Entraîner le modèle sur les données d'entraînement
-                tprint(f"🏋️ [REGIME_ENSEMBLE] Entraînement du modèle sur le fold {fold_idx + 1}", color="cyan")
-                
-                # Utiliser nos nouvelles fonctions pour générer des méta-features isolées
-                train_indices = np.arange(len(X_train))
-                val_indices = np.arange(len(X_train))  # Pas de validation réelle ici
-                
-                # Générer des méta-features contrôlées pour l'entraînement
-                train_meta_features, train_meta_names = self._generate_controlled_meta_features(
-                    base_models=base_models,
-                    X=X_train,
-                    y=y_train,
-                    max_features=50,
-                    min_features=30
-                )
-                
-                # Valider les dimensions des méta-features
-                dimensions_valid = self._validate_expected_dimensions(
-                    train_meta_features, train_meta_names, 30, 50
-                )
-                
-                if not dimensions_valid:
-                    tprint(f"❌ [REGIME_ENSEMBLE] Fold {fold_idx + 1}: Dimensions invalides", color="red")
-                    continue
-                
-                # Entraîner le méta-learner
-                from lightgbm import LGBMClassifier
-                meta_learner = LGBMClassifier(
-                    n_estimators=200,
-                    max_depth=4,
-                    learning_rate=0.05,
-                    random_state=42,
-                    verbose=-1,
-                    n_jobs=-1
-                )
-                
-                # Calculer les poids de classes pour l'entraînement
-                unique_classes, class_counts = np.unique(y_train, return_counts=True)
-                total_samples = len(y_train)
-                class_weights = {
-                    int(cls): total_samples / (len(unique_classes) * count)
-                    for cls, count in zip(unique_classes, class_counts)
-                }
-                
-                # Entraîner le modèle
-                sample_weights = np.array([class_weights[int(cls)] for cls in y_train])
-                meta_learner.fit(train_meta_features, y_train, sample_weight=sample_weights)
-                
-                # Générer des méta-features pour le test (en utilisant uniquement les données de test)
-                tprint(f"🔮 [REGIME_ENSEMBLE] Génération des méta-features pour le test du fold {fold_idx + 1}", color="cyan")
-                
-                # CRUCIAL: Utiliser les modèles de base sur les données de test uniquement
-                # Pas de fuite de données depuis l'entraînement
-                test_meta_features, _ = self._generate_controlled_meta_features(
-                    base_models=base_models,
-                    X=X_test,
-                    y=y_test,
-                    max_features=50,
-                    min_features=30
-                )
-                
-                # S'assurer que les features de test correspondent à celles d'entraînement
-                if test_meta_features.shape[1] != train_meta_features.shape[1]:
-                    tprint(f"⚠️ [REGIME_ENSEMBLE] Fold {fold_idx + 1}: Incohérence des features train/test", color="yellow")
-                    # Ajuster si nécessaire
-                    min_features = min(test_meta_features.shape[1], train_meta_features.shape[1])
-                    test_meta_features = test_meta_features[:, :min_features]
-                    train_meta_features = train_meta_features[:, :min_features]
-                
-                # Faire des prédictions
-                y_pred = meta_learner.predict(test_meta_features)
-                y_pred_proba = meta_learner.predict_proba(test_meta_features)
-                
-                # Calculer les métriques
-                from sklearn.metrics import accuracy_score, precision_recall_fscore_support, confusion_matrix
-                
-                accuracy = accuracy_score(y_test, y_pred)
-                precision, recall, f1, _ = precision_recall_fscore_support(y_test, y_pred, average='weighted')
-                cm = confusion_matrix(y_test, y_pred)
-                
-                # Calculer les métriques temporelles
-                temporal_metrics = self._calculate_temporal_regime_metrics(y_test, y_pred)
-                
-                # Stocker les résultats de ce fold
-                fold_result = {
-                    'fold_idx': fold_idx + 1,
-                    'train_range': (train_start, train_end),
-                    'test_range': (test_start, test_end),
-                    'train_size': len(X_train),
-                    'test_size': len(X_test),
-                    'accuracy': accuracy,
-                    'precision': precision,
-                    'recall': recall,
-                    'f1_score': f1,
-                    'confusion_matrix': cm.tolist(),
-                    'temporal_metrics': temporal_metrics,
-                    'feature_count': train_meta_features.shape[1],
-                    'class_distribution': {
-                        'train': dict(zip(*np.unique(y_train, return_counts=True))),
-                        'test': dict(zip(*np.unique(y_test, return_counts=True)))
-                    }
-                }
-                
-                fold_results.append(fold_result)
-                all_predictions.extend(y_pred)
-                all_true_labels.extend(y_test)
-                all_fold_indices.extend([fold_idx + 1] * len(y_test))
-                
-                tprint(f"✅ [REGIME_ENSEMBLE] Fold {fold_idx + 1} terminé:", color="green")
-                tprint(f"   - Accuracy: {accuracy:.4f}", color="green")
-                tprint(f"   - F1-score: {f1:.4f}", color="green")
-                tprint(f"   - Features: {train_meta_features.shape[1]}", color="green")
-            
-            # Calculer les métriques globales
-            from sklearn.metrics import accuracy_score, precision_recall_fscore_support, confusion_matrix
-            
-            global_accuracy = accuracy_score(all_true_labels, all_predictions)
-            global_precision, global_recall, global_f1, _ = precision_recall_fscore_support(
-                all_true_labels, all_predictions, average='weighted'
-            )
-            global_cm = confusion_matrix(all_true_labels, all_predictions)
-            
-            # Calculer les métriques temporelles globales
-            global_temporal_metrics = self._calculate_temporal_regime_metrics(
-                np.array(all_true_labels), np.array(all_predictions)
-            )
-            
-            # Détecter la fuite de données (accuracy > 95%)
-            leakage_detected = global_accuracy > 0.95
-            if leakage_detected:
-                tprint(f"🚨 [REGIME_ENSEMBLE] FUITE DE DONNÉES DÉTECTÉE!", color="red", bold=True)
-                tprint(f"   Accuracy globale: {global_accuracy:.4f} > 95%", color="red")
-                tprint(f"   Ceci indique probablement une fuite de données temporelle", color="red")
-            else:
-                tprint(f"✅ [REGIME_ENSEMBLE] Pas de fuite de données détectée", color="green")
-                tprint(f"   Accuracy globale: {global_accuracy:.4f} <= 95%", color="green")
-            
-            # Résultats finaux
-            validation_results = {
-                'success': True,
-                'n_folds_completed': len(fold_results),
-                'n_folds_planned': n_folds,
-                'global_metrics': {
-                    'accuracy': global_accuracy,
-                    'precision': global_precision,
-                    'recall': global_recall,
-                    'f1_score': global_f1,
-                    'confusion_matrix': global_cm.tolist(),
-                    'temporal_metrics': global_temporal_metrics,
-                    'leakage_detected': leakage_detected,
-                    'leakage_threshold': 0.95
-                },
-                'fold_results': fold_results,
-                'fold_metrics': {
-                    'accuracies': [fold['accuracy'] for fold in fold_results],
-                    'precisions': [fold['precision'] for fold in fold_results],
-                    'recalls': [fold['recall'] for fold in fold_results],
-                    'f1_scores': [fold['f1_score'] for fold in fold_results],
-                    'feature_counts': [fold['feature_count'] for fold in fold_results],
-                    'train_sizes': [fold['train_size'] for fold in fold_results],
-                    'test_sizes': [fold['test_size'] for fold in fold_results]
-                },
-                'summary_statistics': {
-                    'mean_accuracy': np.mean([fold['accuracy'] for fold in fold_results]),
-                    'std_accuracy': np.std([fold['accuracy'] for fold in fold_results]),
-                    'mean_f1_score': np.mean([fold['f1_score'] for fold in fold_results]),
-                    'std_f1_score': np.std([fold['f1_score'] for fold in fold_results]),
-                    'mean_feature_count': np.mean([fold['feature_count'] for fold in fold_results]),
-                    'total_samples_tested': len(all_predictions)
-                },
-                'validation_config': {
-                    'method': 'strict_walk_forward',
-                    'n_folds': n_folds,
-                    'min_train_size': min_train_size,
-                    'embargo_pct': embargo_pct,
-                    'feature_control': {'min': 30, 'max': 50},
-                    'leakage_detection_threshold': 0.95
-                }
-            }
-            
-            tprint(f"✅ [REGIME_ENSEMBLE] Validation walk-forward terminée", color="green", bold=True)
-            tprint(f"📊 [REGIME_ENSEMBLE] Résultats globaux:", color="blue")
-            tprint(f"   - Accuracy: {global_accuracy:.4f}", color="blue")
-            tprint(f"   - F1-score: {global_f1:.4f}", color="blue")
-            tprint(f"   - Folds complétés: {len(fold_results)}/{n_folds}", color="blue")
-            tprint(f"   - Fuite de données: {'Détectée' if leakage_detected else 'Non détectée'}", color="red" if leakage_detected else "green")
-            
-            return validation_results
-            
-        except Exception as e:
-            tprint(f"❌ [REGIME_ENSEMBLE] Erreur lors de la validation walk-forward: {e}", color="red")
-            self.logger.error(f"Error in walk-forward validation: {e}", exc_info=True)
-            return {
-                'success': False,
-                'error': str(e),
-                'n_folds_completed': 0,
-                'fold_results': []
-            }
-
-    def _train_stacker_lgbm_calibrated(self, X: np.ndarray, y: np.ndarray, base_models: Dict[str, Any], sample_weight: Optional[np.ndarray] = None, train_size: Optional[int] = None) -> Dict[str, Any]:
-        """
-        Train stacker with LightGBM and calibration using isolated and controlled meta-features.
-
-        This function implements Phase 1 + Phase 2 fixes:
-        1. Isolation des méta-features pour prévenir la contamination entre entraînement/validation
-        2. Contrôle du nombre de méta-features (30-50 maximum) pour éviter l'explosion
-        3. Validation des dimensions pour détecter les incohérences
-        4. **PHASE 2**: OOF predictions for training portion to eliminate remaining leakage
-
-        Args:
-            X: Feature matrix for base models (train+val concatenated)
-            y: Target labels (train+val concatenated)
-            base_models: Dictionary of trained base models (trained on train only)
-            sample_weight: Optional sample weights for training
-            train_size: If provided, X[:train_size] will use OOF predictions, X[train_size:] will use clean predictions
-
-        Returns:
-            Dictionary containing trained meta-learner, contracts, and metrics
-        """
-        tprint("🎭 [REGIME_ENSEMBLE] Training stacker_lgbm_calibrated with Phase 1+2 fixes", color="yellow", bold=True)
-        tprint(f"🔍 [REGIME_ENSEMBLE] Function entry - X shape: {X.shape}, y shape: {y.shape}", color="cyan")
-        tprint(f"🔍 [REGIME_ENSEMBLE] Base models provided: {base_models is not None}, count: {len(base_models) if base_models else 0}", color="cyan")
-        if train_size is not None:
-            tprint(f"🔍 [REGIME_ENSEMBLE] Train/val split at index {train_size} (train: 0-{train_size}, val: {train_size}-{len(X)})", color="cyan", bold=True)
-
-        try:
-            # Validate base models
-            if not base_models:
-                tprint("❌ [REGIME_ENSEMBLE] No base models provided", color="red")
-                return None
-
-            tprint(
-                f"📊 [REGIME_ENSEMBLE] Using {len(base_models)} base models: {list(base_models.keys())}",
-                color="blue"
-            )
-
-            # Log base model input features for validation
-            tprint(f"📊 [REGIME_ENSEMBLE] Base model input shape: {X.shape}", color="blue")
-            tprint(f"📊 [REGIME_ENSEMBLE] Target shape: {y.shape}", color="blue")
-            tprint(f"📊 [REGIME_ENSEMBLE] Number of classes: {len(np.unique(y))}", color="blue")
-
-            # ========================================================================
-            # PHASE 2 FIX: Generate leak-free meta-features using OOF + clean predictions
-            # ========================================================================
-            tprint("=" * 80, color="red", bold=True)
-            tprint("🛡️ [REGIME_ENSEMBLE] PHASE 2: LEAK-FREE META-FEATURES GENERATION", color="red", bold=True)
-            tprint("=" * 80, color="red", bold=True)
-
-            if train_size is not None and train_size > 0 and train_size < len(X):
-                # Split X and y into train and val portions
-                X_train_portion = X[:train_size]
-                y_train_portion = y[:train_size]
-                X_val_portion = X[train_size:]
-                y_val_portion = y[train_size:]
-
-                tprint(f"🔒 [REGIME_ENSEMBLE] Generating OOF predictions for train portion (0:{train_size})", color="cyan", bold=True)
-                tprint(f"   Base models were trained on this data → need OOF to prevent leakage", color="yellow")
-
-                # Generate OOF meta-features for train portion (no leakage)
-                train_meta_features, train_meta_names = self._generate_oof_meta_features(
-                    base_models=base_models,
-                    X=X_train_portion,
-                    y=y_train_portion,
-                    n_splits=5
-                )
-
-                tprint(f"✅ [REGIME_ENSEMBLE] OOF meta-features for train: {train_meta_features.shape}", color="green")
-
-                tprint(f"✅ [REGIME_ENSEMBLE] Generating clean predictions for val portion ({train_size}:{len(X)})", color="cyan", bold=True)
-                tprint(f"   Base models never saw this data → clean predictions", color="green")
-
-                # Generate clean meta-features for val portion (already leak-free)
-                val_meta_features, val_meta_names = self._generate_controlled_meta_features(
-                    base_models=base_models,
-                    X=X_val_portion,
-                    y=y_val_portion,
-                    max_features=50,
-                    min_features=30
-                )
-
-                tprint(f"✅ [REGIME_ENSEMBLE] Clean meta-features for val: {val_meta_features.shape}", color="green")
-
-                # Combine train (OOF) + val (clean) meta-features
-                controlled_meta_features = np.vstack([train_meta_features, val_meta_features])
-                controlled_meta_names = train_meta_names  # Same feature names
-
-                tprint(f"✅ [REGIME_ENSEMBLE] Combined leak-free meta-features: {controlled_meta_features.shape}", color="green", bold=True)
-                tprint(f"   ├─ Train (OOF): {train_meta_features.shape[0]} samples", color="blue")
-                tprint(f"   └─ Val (clean): {val_meta_features.shape[0]} samples", color="blue")
-            else:
-                # No split info provided or invalid - use standard generation (may have leakage)
-                tprint("⚠️ [REGIME_ENSEMBLE] No valid train/val split info - using standard meta-features", color="yellow", bold=True)
-                tprint("   WARNING: This may include data leakage if X contains training data", color="yellow")
-
-                controlled_meta_features, controlled_meta_names = self._generate_controlled_meta_features(
-                    base_models=base_models,
-                    X=X,
-                    y=y,
-                    max_features=50,
-                    min_features=30
-                )
-            
-            # PHASE 1 FIX 3: Validate expected dimensions
-            tprint("🔍 [REGIME_ENSEMBLE] PHASE 1 FIX 3: Validating expected dimensions", color="cyan", bold=True)
-            dimensions_valid = self._validate_expected_dimensions(
-                controlled_meta_features, controlled_meta_names, 30, 50
-            )
-            
-            if not dimensions_valid:
-                tprint("❌ [REGIME_ENSEMBLE] PHASE 1 VALIDATION FAILED: Dimensions invalid", color="red", bold=True)
-                # Continue with controlled features anyway, but log the issue
-                tprint("⚠️ [REGIME_ENSEMBLE] Continuing with controlled features despite validation failure", color="yellow")
-            else:
-                tprint("✅ [REGIME_ENSEMBLE] PHASE 1 VALIDATION PASSED: Dimensions valid", color="green", bold=True)
-            
-            # Use controlled meta-features for training (they're already isolated and validated)
-            meta_features = controlled_meta_features
-            meta_feature_names = controlled_meta_names
-            
-            tprint(f"🔍 [REGIME_ENSEMBLE] PHASE 1 META-FEATURES DEBUG:", color="yellow", bold=True)
-            tprint(f"   ├─ Controlled meta-features shape: {meta_features.shape}", color="yellow")
-            tprint(f"   ├─ Meta-feature names count: {len(meta_feature_names)}", color="yellow")
-            tprint(f"   └─ Meta-feature breakdown: {self._analyze_feature_breakdown(meta_feature_names)}", color="yellow")
-            
-            tprint(
-                f"✅ [REGIME_ENSEMBLE] Phase 1 meta-features generated: shape {meta_features.shape} with {len(meta_feature_names)} features",
-                color="green",
-                bold=True
-            )
-            
-            # CRITICAL FIX: Remove zero-variance features before training
-            # Zero-variance features cause HPO validation failures
-            feature_variances = np.var(meta_features, axis=0)
-            zero_var_mask = feature_variances > 1e-10  # Keep features with non-zero variance
-            n_zero_var = np.sum(~zero_var_mask)
-            
-            if n_zero_var > 0:
-                tprint(f"⚠️ [REGIME_ENSEMBLE] Removing {n_zero_var} zero-variance features", color="yellow", bold=True)
-                meta_features = meta_features[:, zero_var_mask]
-                meta_feature_names = [name for i, name in enumerate(meta_feature_names) if zero_var_mask[i]]
-                tprint(f"✅ [REGIME_ENSEMBLE] Meta-features after variance filtering: {meta_features.shape}", color="green")
-            
-            # Log meta-feature composition
-            base_pred_count = sum(1 for name in meta_feature_names if 'class' in name and 'prob' in name)
-            uncertainty_count = sum(1 for name in meta_feature_names if 'uncertainty' in name)
-            confidence_count = sum(1 for name in meta_feature_names if 'confidence' in name)
-            disagreement_count = sum(1 for name in meta_feature_names if 'disagreement' in name)
-            
-            tprint("📋 [REGIME_ENSEMBLE] Phase 1 Meta-feature composition:", color="cyan")
-            tprint(f"   - Base predictions: {base_pred_count}", color="blue")
-            tprint(f"   - Uncertainty features: {uncertainty_count}", color="blue")
-            tprint(f"   - Confidence features: {confidence_count}", color="blue")
-            tprint(f"   - Disagreement features: {disagreement_count}", color="blue")
-
-            # Log class distribution for debugging
-            unique, counts = np.unique(y, return_counts=True)
-            class_dist = dict(zip([int(u) for u in unique], [int(c) for c in counts]))
-            tprint(f"📊 [REGIME_ENSEMBLE] Training class distribution: {class_dist}", color="cyan", bold=True)
-            tprint(f"📊 [REGIME_ENSEMBLE] Total samples: {len(y)}, Unique regimes: {len(unique)}", color="cyan", bold=True)
-            
-            # Check for severely imbalanced classes
-            min_samples = min(counts)
-            if min_samples < 3:
-                tprint(f"⚠️ [REGIME_ENSEMBLE] WARNING: Some classes have < 3 samples (min={min_samples})", color="yellow", bold=True)
-                tprint(f"   This will cause issues with 3-fold CV. Consider using stratified sampling or reducing CV folds.", color="yellow")
-            
-            # CRITICAL FIX: Calculate custom class weights to combat imbalance
-            # Penalize majority classes more heavily to prevent bias
-            total_samples = len(y)
-            n_classes = len(unique)
-            
-            # Calculate balanced weights with extra penalty for majority classes
-            class_weights = {}
-            max_count = max(counts)
-            for regime_id, count in zip(unique, counts):
-                # Base balanced weight
-                balanced_weight = total_samples / (n_classes * count)
-                # Extra penalty for majority classes (inverse frequency squared)
-                majority_penalty = (max_count / count) ** 1.5
-                # Combined weight
-                class_weights[int(regime_id)] = balanced_weight * majority_penalty
-            
-            tprint(f"🎯 [REGIME_ENSEMBLE] Phase 1 Custom class weights: {class_weights}", color="cyan")
-            
-            # CRITICAL FIX: Use ONLY base meta-features (no enhancement) to reduce noise
-            # Enhanced features (53 from 40) were adding noise rather than signal
-            tprint("🔧 [REGIME_ENSEMBLE] Using Phase 1 controlled meta-features (30-50 max)", color="blue")
-            simplified_meta_features = meta_features  # Use controlled meta-features
-            tprint(f"📊 [REGIME_ENSEMBLE] Phase 1 meta-features shape: {simplified_meta_features.shape}", color="blue")
-            tprint(f"📊 [REGIME_ENSEMBLE] Feature count: {meta_features.shape[1]} (within 30-50 range)", color="green")
-            
-            # Perform HPO for meta-learner tuning
-            tprint("🔍 [REGIME_ENSEMBLE] Starting HPO for meta-learner optimization", color="cyan", bold=True)
-            
-            # Define search space for LightGBM meta-learner
-            search_space = {
-                'num_leaves': {'type': 'int', 'low': 10, 'high': 30},
-                'max_depth': {'type': 'int', 'low': 3, 'high': 7},
-                'learning_rate': {'type': 'float', 'low': 0.01, 'high': 0.1, 'log': True},
-                'n_estimators': {'type': 'int', 'low': 200, 'high': 600},
-                'min_child_samples': {'type': 'int', 'low': 30, 'high': 100},
-                'feature_fraction': {'type': 'float', 'low': 0.6, 'high': 0.9},
-                'bagging_fraction': {'type': 'float', 'low': 0.6, 'high': 0.9},
-                'reg_alpha': {'type': 'float', 'low': 0.01, 'high': 0.5, 'log': True},
-                'reg_lambda': {'type': 'float', 'low': 0.01, 'high': 0.5, 'log': True}
-            }
-            
-            # Model factory for HPO with custom class weights
-            def create_lgbm_meta_learner(**params):
-                return LGBMClassifier(
-                    **params,
-                    class_weight=class_weights,  # Use custom weights instead of 'balanced'
-                    random_state=42,
-                    verbose=-1,
-                    n_jobs=-1,
-                    bagging_freq=5,
-                    min_split_gain=0.01
-                )
-            
-            try:
-                # Adjust CV folds based on minimum class size
-                cv_folds = 2 if min_samples < 3 else 3
-                tprint(f"🔧 [REGIME_ENSEMBLE] Using {cv_folds}-fold CV (min class size: {min_samples})", color="cyan")
-                
-                # CRITICAL: Skip HPO for very small datasets (< 100 samples) to avoid validation failures
-                # With small datasets, HPO validation will fail due to data leakage detection
-                if len(y) < 100:
-                    tprint(f"⚠️ [REGIME_ENSEMBLE] Dataset too small ({len(y)} samples) - skipping HPO, using default params", color="yellow", bold=True)
-                    tprint("   HPO validation requires larger datasets to avoid false data leakage warnings", color="yellow")
-                    hpo_result = {'error': 'Dataset too small for HPO'}
-                else:
-                    # Run HPO with Phase 1 controlled features
-                    hpo_result = self.hpo_optimizer.bayesian_optimization(
-                        model_factory=create_lgbm_meta_learner,
-                        X=simplified_meta_features,  # Use Phase 1 controlled features
-                        y=y,
-                        search_space=search_space,
-                        cv=cv_folds,  # Adaptive CV folds
-                        scoring='f1_weighted',  # Use weighted F1 for imbalanced classes
-                        n_trials=50,  # Reasonable number of trials
-                        fit_params={'sample_weight': sample_weight} if sample_weight is not None else None
-                    )
-                
-                # Check if HPO succeeded and extract best parameters
-                if hpo_result and not hpo_result.get('error'):
-                    best_params = hpo_result.get('best_params', {})
-                    best_score = hpo_result.get('best_score', 0)
-                    
-                    if best_params and best_score > 0:
-                        tprint(f"✅ [REGIME_ENSEMBLE] HPO completed successfully", color="green")
-                        tprint(f"📊 [REGIME_ENSEMBLE] Best F1 score: {best_score:.4f}", color="blue")
-                        tprint(f"📊 [REGIME_ENSEMBLE] Best params: {best_params}", color="blue")
-                        
-                        # Create model with best parameters and custom weights
-                        meta_learner = create_lgbm_meta_learner(**best_params)
-                        # Train on Phase 1 controlled features
-                        meta_learner.fit(simplified_meta_features, y, sample_weight=sample_weight)
-                        hpo_result['success'] = True  # Mark as successful
-                    else:
-                        tprint(f"⚠️ [REGIME_ENSEMBLE] HPO returned invalid params/score, using defaults", color="yellow")
-                        raise Exception("HPO returned invalid params/score")
-                else:
-                    tprint(f"⚠️ [REGIME_ENSEMBLE] HPO failed with error: {hpo_result.get('error', 'unknown')}", color="yellow")
-                    raise Exception(f"HPO failed: {hpo_result.get('error', 'unknown')}")
-                    
-            except Exception as e:
-                tprint(f"⚠️ [REGIME_ENSEMBLE] HPO error: {e}, using optimized defaults", color="yellow")
-                # Fallback to optimized default parameters with custom weights
-                meta_learner = LGBMClassifier(
-                    num_leaves=15,
-                    max_depth=4,
-                    learning_rate=0.03,
-                    n_estimators=400,
-                    min_child_samples=50,
-                    feature_fraction=0.7,
-                    bagging_fraction=0.7,
-                    bagging_freq=5,
-                    reg_alpha=0.1,
-                    reg_lambda=0.1,
-                    class_weight=class_weights,  # Use custom weights
-                    random_state=42,
-                    verbose=-1,
-                    n_jobs=-1,
-                    min_split_gain=0.01
-                )
-                # Train with fallback parameters on Phase 1 controlled features
-                meta_learner.fit(simplified_meta_features, y, sample_weight=sample_weight)
-                hpo_result = {'success': False, 'best_score': 0.0, 'best_model': meta_learner}
-            
-            tprint("✅ [REGIME_ENSEMBLE] Phase 1 meta-learner training completed", color="green")
-
-            # Apply probability calibration
-            tprint("🎯 [REGIME_ENSEMBLE] Applying probability calibration", color="blue")
-            try:
-                # Use same adaptive CV folds as HPO
-                calibration_cv = 2 if min_samples < 3 else 3
-                tprint(f"🔧 [REGIME_ENSEMBLE] Using {calibration_cv}-fold CV for calibration", color="cyan")
-                
-                calibrated_meta_learner = CalibratedClassifierCV(
-                    meta_learner,
-                    method=self.ensemble_config.get('calibration_method', 'isotonic'),
-                    cv=calibration_cv  # Use adaptive CV
-                )
-                # CRITICAL FIX: Use Phase 1 controlled features for calibration
-                calibrated_meta_learner.fit(simplified_meta_features, y, sample_weight=sample_weight)
-                tprint("✅ [REGIME_ENSEMBLE] Probability calibration applied successfully", color="green")
-
-                # Create feature contract for the ensemble
-                # CRITICAL FIX: Use Phase 1 controlled features
-                ensemble_contract = FeatureContract(
-                    feature_names=meta_feature_names,
-                    feature_count=len(meta_feature_names),
-                    feature_types={name: self._infer_feature_type(name) for name in meta_feature_names},
-                    expected_shape=(None, simplified_meta_features.shape[1]),  # Use Phase 1 controlled shape!
-                    metadata={
-                        'source': 'phase_1_controlled_meta_features',
-                        'includes_uncertainty': True,
-                        'includes_confidence': True,
-                        'includes_disagreement': True,
-                        'phase_1_fixes': {
-                            'isolation_enabled': True,
-                            'feature_count_control_enabled': True,
-                            'dimension_validation_enabled': True,
-                            'max_features': 50,
-                            'min_features': 30
-                        },
-                        'controlled_feature_count': simplified_meta_features.shape[1],  # Store for prediction
-                        'base_meta_feature_count': meta_features.shape[1],
-                        'feature_control': 'phase_1_enabled',  # Flag that we're using Phase 1 fixes
-                        'zero_var_mask': zero_var_mask.tolist() if n_zero_var > 0 else None  # Store mask for prediction
-                    }
-                )
-                
-                # Return calibrated result
-                stacker_result = {
-                    'meta_learner': calibrated_meta_learner,
-                    'base_models': base_models,
-                    'meta_feature_names': meta_feature_names,
-                    'meta_features_shape': meta_features.shape,
-                    'controlled_meta_features_shape': simplified_meta_features.shape,
-                    'isolated_meta_features_shape': isolated_meta_features.shape,
-                    'zero_var_mask': zero_var_mask if n_zero_var > 0 else None,
-                    'feature_contract': ensemble_contract,
-                    'calibration_method': self.ensemble_config.get('calibration_method', 'isotonic'),
-                    'cv_folds': calibration_cv,
-                    'training_success': True,
-                    'hpo_result': hpo_result if hpo_result.get('success', False) else None,
-                    'model': calibrated_meta_learner,
-                    'phase_1_fixes': {
-                        'isolation_applied': True,
-                        'feature_control_applied': True,
-                        'dimension_validation_applied': True,
-                        'final_feature_count': simplified_meta_features.shape[1],
-                        'within_expected_range': 30 <= simplified_meta_features.shape[1] <= 50
-                    }
-                }
-                
-                return stacker_result
-
-            except Exception as e:
-                tprint(f"⚠️ [REGIME_ENSEMBLE] Probability calibration failed: {e}", color="yellow")
-                tprint("📊 [REGIME_ENSEMBLE] Using uncalibrated meta-learner", color="blue")
-
-                # Create feature contract for the ensemble
-                # CRITICAL FIX: Use Phase 1 controlled features
-                ensemble_contract = FeatureContract(
-                    feature_names=meta_feature_names,
-                    feature_count=len(meta_feature_names),
-                    feature_types={name: self._infer_feature_type(name) for name in meta_feature_names},
-                    expected_shape=(None, simplified_meta_features.shape[1]),  # Use Phase 1 controlled shape!
-                    metadata={
-                        'source': 'phase_1_controlled_meta_features',
-                        'includes_uncertainty': True,
-                        'includes_confidence': True,
-                        'includes_disagreement': True,
-                        'phase_1_fixes': {
-                            'isolation_enabled': True,
-                            'feature_count_control_enabled': True,
-                            'dimension_validation_enabled': True,
-                            'max_features': 50,
-                            'min_features': 30
-                        },
-                        'controlled_feature_count': simplified_meta_features.shape[1],  # Store for prediction
-                        'base_meta_feature_count': meta_features.shape[1],
-                        'feature_control': 'phase_1_enabled'  # Flag that we're using Phase 1 fixes
-                    }
-                )
-                
-                # Return uncalibrated result
-                stacker_result = {
-                    'meta_learner': meta_learner,
-                    'base_models': base_models,
-                    'meta_feature_names': meta_feature_names,
-                    'meta_features_shape': meta_features.shape,
-                    'controlled_meta_features_shape': simplified_meta_features.shape,
-                    'isolated_meta_features_shape': isolated_meta_features.shape,
-                    'zero_var_mask': zero_var_mask if n_zero_var > 0 else None,
-                    'feature_contract': ensemble_contract,
-                    'calibration_method': 'none',
-                    'cv_folds': 0,
-                    'training_success': True,
-                    'hpo_result': hpo_result if hpo_result.get('success', False) else None,
-                    'model': meta_learner,
-                    'phase_1_fixes': {
-                        'isolation_applied': True,
-                        'feature_control_applied': True,
-                        'dimension_validation_applied': True,
-                        'final_feature_count': simplified_meta_features.shape[1],
-                        'within_expected_range': 30 <= simplified_meta_features.shape[1] <= 50
-                    }
-                }
-
-                tprint("✅ [REGIME_ENSEMBLE] Phase 1 stacker_lgbm_calibrated training completed (uncalibrated)", color="green")
-                return stacker_result
-
-        except Exception as e:
-            tprint(f"❌ [REGIME_ENSEMBLE] Phase 1 stacker_lgbm_calibrated training failed: {e}", color="red")
-            return None
-
-    def _detect_and_block_leakage(
-        self,
-        validation_results: Optional[Dict[str, Any]] = None,
-        accuracy_threshold: float = 0.95,
-        *,
-        features: Optional[pd.DataFrame] = None,
-        targets: Optional[Union[pd.Series, pd.DataFrame]] = None,
-        temporal_info: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
-        """
-        Détecte et bloque les fuites de données.
-        
-        Deux modes:
-        - Mode Validation (par défaut): analyse `validation_results` (accuracy > seuil, etc.).
-        - Mode Nettoyage (Phase 3): si `features` et `targets` sont fournis, détecte les fuites via
-          DataLeakagePrevention et renvoie des données nettoyées en plus d'un rapport.
-        
-        Args:
-            validation_results: Résultats de validation à analyser (Mode Validation)
-            accuracy_threshold: Seuil d'accuracy pour détecter la fuite (Mode Validation)
-            features: DataFrame des features à auditer/nettoyer (Mode Nettoyage)
-            targets: Series ou DataFrame 1-colonne des cibles alignées (Mode Nettoyage)
-            temporal_info: Infos temporelles optionnelles, ex: {'timestamp_col': 'timestamp'} (Mode Nettoyage)
-        """
-        try:
-            tprint("🔍 [REGIME_ENSEMBLE] Détection/Blocage des fuites de données", color="cyan", bold=True)
-
-            # Mode Nettoyage: si données brutes fournies, utiliser DataLeakagePrevention
-            if features is not None and targets is not None:
-                if not isinstance(features, pd.DataFrame):
-                    raise ValueError("features must be a pandas DataFrame")
-                if isinstance(targets, pd.DataFrame):
-                    if targets.shape[1] != 1:
-                        raise ValueError("targets DataFrame must have exactly one column")
-                    targets_series = targets.iloc[:, 0]
-                elif isinstance(targets, pd.Series):
-                    targets_series = targets
-                else:
-                    raise ValueError("targets must be a pandas Series or single-column DataFrame")
-
-                # Déterminer/assurer la colonne temporelle
-                ts_col = None
-                if temporal_info and isinstance(temporal_info, dict):
-                    ts_col = temporal_info.get('timestamp_col')
-
-                working_df = features.copy()
-                if ts_col and ts_col in working_df.columns:
-                    # Trier pour garantir l'ordre temporel
-                    working_df = working_df.sort_values(ts_col)
-                    targets_series = targets_series.loc[working_df.index]
-                else:
-                    # Ajouter un timestamp synthétique si absent
-                    ts_col = '__synthetic_ts__'
-                    working_df[ts_col] = pd.RangeIndex(start=0, stop=len(working_df))
-
-                # Ajouter la cible pour checks optionnels
-                working_df['__target__'] = targets_series.values
-
-                # Lancer la prévention complète
-                dlp = DataLeakagePrevention(DataLeakageConfig())
-                temporal_report = dlp.detect_temporal_leakage(
-                    data=working_df,
-                    timestamp_column=ts_col,
-                    target_column='__target__',
-                    dataset_name='regime_ensemble_features'
-                )
-
-                leaked_cols = set(temporal_report.leaked_features or [])
-                cleaned_features = features.drop(columns=[c for c in leaked_cols if c in features.columns], errors='ignore')
-                cleaned_targets = targets_series
-
-                # Nettoyer colonnes auxiliaires si présentes
-                if '__synthetic_ts__' in cleaned_features.columns:
-                    cleaned_features = cleaned_features.drop(columns='__synthetic_ts__', errors='ignore')
-
-                # Construire résultat enrichi
-                return {
-                    'leakage_detected': (
-                        temporal_report.temporal_leakage_detected
-                        or temporal_report.lookahead_bias_detected
-                        or temporal_report.feature_leakage_detected
-                        or temporal_report.train_test_leakage_detected
-                    ),
-                    'severity': temporal_report.severity_level,
-                    'leakage_rate': float(temporal_report.overall_leakage_rate),
-                    'recommendations': list(temporal_report.recommendations or []),
-                    'dropped_features': [c for c in leaked_cols if c in features.columns],
-                    'cleaned_features': cleaned_features,
-                    'cleaned_targets': cleaned_targets,
-                    'timestamp_column_used': ts_col,
-                }
-
-            # Mode Validation: analyse des résultats de validation
-            if validation_results is None:
-                raise ValueError("Either validation_results or (features and targets) must be provided")
-
-            global_metrics = validation_results.get('global_metrics', {})
-            global_accuracy = global_metrics.get('accuracy', 0.0)
-
-            tprint(f"📊 [REGIME_ENSEMBLE] Analyse de l'accuracy globale:", color="blue")
-            tprint(f"   - Accuracy actuelle: {global_accuracy:.4f}", color="blue")
-            tprint(f"   - Seuil de fuite: {accuracy_threshold:.4f}", color="blue")
-
-            leakage_detected = global_accuracy > accuracy_threshold
-            leakage_severity = "none"
-
-            if leakage_detected:
-                if global_accuracy > 0.99:
-                    leakage_severity = "critical"
-                    tprint(f"🚨 [REGIME_ENSEMBLE] FUITE CRITIQUE DÉTECTÉE!", color="red", bold=True)
-                    tprint(f"   Accuracy: {global_accuracy:.4f} > 99%", color="red")
-                elif global_accuracy > 0.98:
-                    leakage_severity = "high"
-                    tprint(f"🚨 [REGIME_ENSEMBLE] FUITE ÉLEVÉE DÉTECTÉE!", color="red", bold=True)
-                    tprint(f"   Accuracy: {global_accuracy:.4f} > 98%", color="red")
-                elif global_accuracy > 0.97:
-                    leakage_severity = "medium"
-                    tprint(f"⚠️ [REGIME_ENSEMBLE] FUITE MOYENNE DÉTECTÉE!", color="yellow", bold=True)
-                    tprint(f"   Accuracy: {global_accuracy:.4f} > 97%", color="yellow")
-                else:
-                    leakage_severity = "low"
-                    tprint(f"⚠️ [REGIME_ENSEMBLE] FUITE FAIBLE DÉTECTÉE!", color="yellow", bold=True)
-                    tprint(f"   Accuracy: {global_accuracy:.4f} > 95%", color="yellow")
-
-                fold_metrics = validation_results.get('fold_metrics', {})
-                fold_accuracies = fold_metrics.get('accuracies', [])
-                temporal_metrics = global_metrics.get('temporal_metrics', {})
-
-                fold_results = validation_results.get('fold_results', [])
-                class_distributions = []
-                if fold_results:
-                    for fold in fold_results:
-                        class_dist = fold.get('class_distribution', {})
-                        if class_dist:
-                            total_samples = sum(class_dist.values())
-                            if total_samples > 0:
-                                probs = [count / total_samples for count in class_dist.values()]
-                                entropy = -sum(p * np.log(p) for p in probs if p > 0)
-                                class_distributions.append(entropy)
-                mean_entropy = np.mean(class_distributions) if class_distributions else None
-
-                recommendations = []
-                if leakage_severity in ["critical", "high"]:
-                    recommendations += [
-                        "URGENT: Réviser la séparation temporelle des données",
-                        "URGENT: Vérifier l'isolation des méta-features",
-                        "URGENT: Désactiver les features qui utilisent des données futures",
-                        "URGENT: Implémenter une validation walk-forward stricte",
-                    ]
-                elif leakage_severity == "medium":
-                    recommendations += [
-                        "IMPORTANT: Renforcer la validation temporelle",
-                        "IMPORTANT: Ajouter des embargos plus larges entre train/test",
-                        "IMPORTANT: Réduire le nombre de features pour éviter l'overfitting",
-                    ]
-                else:
-                    recommendations += [
-                        "CONSEIL: Vérifier manuellement les résultats de validation",
-                        "CONSEIL: Comparer avec des modèles de référence",
-                        "CONSEIL: Effectuer une analyse de sensibilité",
-                    ]
-
-                leakage_report = {
-                    'leakage_detected': leakage_detected,
-                    'severity': leakage_severity,
-                    'global_accuracy': global_accuracy,
-                    'accuracy_threshold': accuracy_threshold,
-                    'accuracy_excess': global_accuracy - accuracy_threshold,
-                    'analysis_timestamp': datetime.now().isoformat(),
-                    'detailed_analysis': {
-                        'fold_accuracies': fold_accuracies,
-                        'temporal_metrics': temporal_metrics,
-                        'class_distribution_entropy': mean_entropy,
-                    },
-                    'recommendations': recommendations,
-                    'blocking_required': leakage_severity in ["critical", "high"],
-                    'blocking_actions': [],
-                    'cleaned_features': None,
-                    'cleaned_targets': None,
-                }
-
-                if leakage_report['blocking_required']:
-                    tprint(f"🚫 [REGIME_ENSEMBLE] BLOCAGE AUTOMATIQUE REQUIS (sévérité: {leakage_severity})", color="red", bold=True)
-                    if leakage_severity == "critical":
-                        leakage_report['blocking_actions'] = [
-                            "Blocage de l'entraînement du modèle",
-                            "Invalidation des résultats de validation",
-                            "Alerte immédiate à l'utilisateur",
-                        ]
-                    else:
-                        leakage_report['blocking_actions'] = [
-                            "Suspension de l'entraînement",
-                            "Validation avec des données plus strictes",
-                            "Réduction drastique des features",
-                        ]
-                return leakage_report
-
-            tprint(f"✅ [REGIME_ENSEMBLE] PAS DE FUITE DE DONNÉES (accuracy: {global_accuracy:.4f})", color="green")
-            return {
-                'leakage_detected': False,
-                'severity': 'none',
-                'global_accuracy': global_accuracy,
-                'accuracy_threshold': accuracy_threshold,
-                'analysis_timestamp': datetime.now().isoformat(),
-                'recommendations': ["Continuer avec la validation actuelle"],
-                'blocking_required': False,
-                'blocking_actions': [],
-                'cleaned_features': None,
-                'cleaned_targets': None,
-            }
-        except Exception as e:
-            tprint(f"❌ [REGIME_ENSEMBLE] Erreur lors de la détection de fuite: {e}", color="red")
-            self.logger.error(f"Error detecting data leakage: {e}", exc_info=True)
-            return {
-                'leakage_detected': False,
-                'error': str(e),
-                'severity': 'unknown',
-                'blocking_required': False
-            }
-
+    def _train_stacker_lgbm_calibrated(self, X: np.ndarray, y: np.ndarray, base_models: Dict[str, Any], sample_weight: Optional[np.ndarray] = None) -> Dict[str, Any]:
         """
         Train stacker_lgbm_calibrated meta-learner with HPO optimization.
         
@@ -3385,8 +1096,6 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             Dictionary containing trained meta-learner, contracts, and metrics
         """
         tprint("🎭 [REGIME_ENSEMBLE] Training stacker_lgbm_calibrated meta-learner with enhanced meta-features", color="yellow", bold=True)
-        tprint(f"🔍 [REGIME_ENSEMBLE] Function entry - X shape: {X.shape}, y shape: {y.shape}", color="cyan")
-        tprint(f"🔍 [REGIME_ENSEMBLE] Base models provided: {base_models is not None}, count: {len(base_models) if base_models else 0}", color="cyan")
 
         try:
             # Validate base models
@@ -3417,29 +1126,11 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                 include_disagreement=True
             )
             
-            # CRITICAL LOG: Track feature counts for debugging
-            tprint(f"🔍 [REGIME_ENSEMBLE] TRAINING META-FEATURES DEBUG:", color="yellow", bold=True)
-            tprint(f"   ├─ Raw meta-features shape: {meta_features.shape}", color="yellow")
-            tprint(f"   ├─ Meta-feature names count: {len(meta_feature_names)}", color="yellow")
-            tprint(f"   └─ Meta-feature breakdown: {self._analyze_feature_breakdown(meta_feature_names)}", color="yellow")
-            
             tprint(
                 f"✅ [REGIME_ENSEMBLE] Meta-features generated: shape {meta_features.shape} with {len(meta_feature_names)} features",
                 color="green",
                 bold=True
             )
-            
-            # CRITICAL FIX: Remove zero-variance features before training
-            # Zero-variance features cause HPO validation failures
-            feature_variances = np.var(meta_features, axis=0)
-            zero_var_mask = feature_variances > 1e-10  # Keep features with non-zero variance
-            n_zero_var = np.sum(~zero_var_mask)
-            
-            if n_zero_var > 0:
-                tprint(f"⚠️ [REGIME_ENSEMBLE] Removing {n_zero_var} zero-variance features", color="yellow", bold=True)
-                meta_features = meta_features[:, zero_var_mask]
-                meta_feature_names = [name for i, name in enumerate(meta_feature_names) if zero_var_mask[i]]
-                tprint(f"✅ [REGIME_ENSEMBLE] Meta-features after variance filtering: {meta_features.shape}", color="green")
             
             # Log meta-feature composition
             base_pred_count = sum(1 for name in meta_feature_names if 'class' in name and 'prob' in name)
@@ -3453,194 +1144,143 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             tprint(f"   - Confidence features: {confidence_count}", color="blue")
             tprint(f"   - Disagreement features: {disagreement_count}", color="blue")
 
-            # Log class distribution for debugging
-            unique, counts = np.unique(y, return_counts=True)
-            class_dist = dict(zip([int(u) for u in unique], [int(c) for c in counts]))
-            tprint(f"📊 [REGIME_ENSEMBLE] Training class distribution: {class_dist}", color="cyan", bold=True)
-            tprint(f"📊 [REGIME_ENSEMBLE] Total samples: {len(y)}, Unique regimes: {len(unique)}", color="cyan", bold=True)
-            
-            # Check for severely imbalanced classes
-            min_samples = min(counts)
-            if min_samples < 3:
-                tprint(f"⚠️ [REGIME_ENSEMBLE] WARNING: Some classes have < 3 samples (min={min_samples})", color="yellow", bold=True)
-                tprint(f"   This will cause issues with 3-fold CV. Consider using stratified sampling or reducing CV folds.", color="yellow")
-            
-            # CRITICAL FIX: Calculate custom class weights to combat imbalance
-            # Penalize majority classes more heavily to prevent bias
-            total_samples = len(y)
-            n_classes = len(unique)
-            
-            # Calculate balanced weights with extra penalty for majority classes
-            class_weights = {}
-            max_count = max(counts)
-            for regime_id, count in zip(unique, counts):
-                # Base balanced weight
-                balanced_weight = total_samples / (n_classes * count)
-                # Extra penalty for majority classes (inverse frequency squared)
-                majority_penalty = (max_count / count) ** 1.5
-                # Combined weight
-                class_weights[int(regime_id)] = balanced_weight * majority_penalty
-            
-            tprint(f"🎯 [REGIME_ENSEMBLE] Custom class weights: {class_weights}", color="cyan")
-            
-            # CRITICAL FIX: Use ONLY base meta-features (no enhancement) to reduce noise
-            # Enhanced features (53 from 40) were adding noise rather than signal
-            tprint("🔧 [REGIME_ENSEMBLE] Using simplified meta-features (base predictions only)", color="blue")
-            simplified_meta_features = meta_features  # Use original meta-features
-            tprint(f"📊 [REGIME_ENSEMBLE] Simplified meta-features shape: {simplified_meta_features.shape}", color="blue")
-            tprint(f"📊 [REGIME_ENSEMBLE] Feature reduction: {meta_features.shape[1]} -> {simplified_meta_features.shape[1]} (removed noisy enhanced features)", color="green")
-            
-            # Perform HPO for meta-learner tuning
-            tprint("🔍 [REGIME_ENSEMBLE] Starting HPO for meta-learner optimization", color="cyan", bold=True)
-            
-            # Define search space for LightGBM meta-learner
-            search_space = {
-                'num_leaves': {'type': 'int', 'low': 10, 'high': 30},
-                'max_depth': {'type': 'int', 'low': 3, 'high': 7},
-                'learning_rate': {'type': 'float', 'low': 0.01, 'high': 0.1, 'log': True},
-                'n_estimators': {'type': 'int', 'low': 200, 'high': 600},
-                'min_child_samples': {'type': 'int', 'low': 30, 'high': 100},
-                'feature_fraction': {'type': 'float', 'low': 0.6, 'high': 0.9},
-                'bagging_fraction': {'type': 'float', 'low': 0.6, 'high': 0.9},
-                'reg_alpha': {'type': 'float', 'low': 0.01, 'high': 0.5, 'log': True},
-                'reg_lambda': {'type': 'float', 'low': 0.01, 'high': 0.5, 'log': True}
-            }
-            
-            # Model factory for HPO with custom class weights
-            def create_lgbm_meta_learner(**params):
+            # Define HPO search space for LightGBM
+            def create_lgbm_model(trial):
+                # Optimize key parameters (reduced from 10 to 6)
+                num_leaves = trial.suggest_int('num_leaves', 15, 31)
+                learning_rate = trial.suggest_float('learning_rate', 0.03, 0.05, log=True)
+                n_estimators = trial.suggest_int('n_estimators', 200, 600)
+                min_data_in_leaf = trial.suggest_int('min_data_in_leaf', 50, 150)
+                feature_fraction = trial.suggest_float('feature_fraction', 0.6, 0.9)
+                lambda_l2 = trial.suggest_float('lambda_l2', 0, 0.1)
+                
+                # Tie removed parameters to optimized ones
+                # max_depth tied to num_leaves: depth = log2(num_leaves) + 1
+                import math
+                max_depth = min(8, int(math.log2(num_leaves)) + 1)
+                
+                # lambda_l1 tied to lambda_l2: L1 = 50% of L2 (allows higher L1 contribution)
+                lambda_l1 = lambda_l2 * 0.5
+                
+                # bagging_fraction tied to feature_fraction (similar sampling strategy)
+                bagging_fraction = feature_fraction
+                
+                # bagging_freq: enable if bagging_fraction < 1.0
+                bagging_freq = 5 if bagging_fraction < 1.0 else 0
+                
                 return LGBMClassifier(
-                    **params,
-                    class_weight=class_weights,  # Use custom weights instead of 'balanced'
+                    num_leaves=num_leaves,
+                    max_depth=max_depth,  # Tied to num_leaves
+                    learning_rate=learning_rate,
+                    n_estimators=n_estimators,
+                    min_child_samples=min_data_in_leaf,
+                    feature_fraction=feature_fraction,
+                    bagging_fraction=bagging_fraction,  # Tied to feature_fraction
+                    bagging_freq=bagging_freq,  # Tied to bagging_fraction
+                    reg_alpha=lambda_l1,  # Tied to lambda_l2
+                    reg_lambda=lambda_l2,
+                    class_weight='balanced',
                     random_state=42,
                     verbose=-1,
-                    n_jobs=-1,
-                    bagging_freq=5,
-                    min_split_gain=0.01
+                    n_jobs=-1
                 )
+
+            # Use transition-aware scorer for HPO
+            scoring = create_transition_aware_scorer(
+                alpha=self.temporal_smoothing_alpha,
+                accuracy_weight=0.9,
+                stability_weight=0.1
+            )
             
-            try:
-                # Adjust CV folds based on minimum class size
-                cv_folds = 2 if min_samples < 3 else 3
-                tprint(f"🔧 [REGIME_ENSEMBLE] Using {cv_folds}-fold CV (min class size: {min_samples})", color="cyan")
-                
-                # CRITICAL: Skip HPO for very small datasets (< 100 samples) to avoid validation failures
-                # With small datasets, HPO validation will fail due to data leakage detection
-                if len(y) < 100:
-                    tprint(f"⚠️ [REGIME_ENSEMBLE] Dataset too small ({len(y)} samples) - skipping HPO, using default params", color="yellow", bold=True)
-                    tprint("   HPO validation requires larger datasets to avoid false data leakage warnings", color="yellow")
-                    hpo_result = {'error': 'Dataset too small for HPO'}
-                else:
-                    # Run HPO with simplified features
-                    hpo_result = self.hpo_optimizer.bayesian_optimization(
-                        model_factory=create_lgbm_meta_learner,
-                        X=simplified_meta_features,  # Use simplified features
-                        y=y,
-                        search_space=search_space,
-                        cv=cv_folds,  # Adaptive CV folds
-                        scoring='f1_weighted',  # Use weighted F1 for imbalanced classes
-                        n_trials=50,  # Reasonable number of trials
-                        fit_params={'sample_weight': sample_weight} if sample_weight is not None else None
-                    )
-                
-                # Check if HPO succeeded and extract best parameters
-                if hpo_result and not hpo_result.get('error'):
-                    best_params = hpo_result.get('best_params', {})
-                    best_score = hpo_result.get('best_score', 0)
-                    
-                    if best_params and best_score > 0:
-                        tprint(f"✅ [REGIME_ENSEMBLE] HPO completed successfully", color="green")
-                        tprint(f"📊 [REGIME_ENSEMBLE] Best F1 score: {best_score:.4f}", color="blue")
-                        tprint(f"📊 [REGIME_ENSEMBLE] Best params: {best_params}", color="blue")
-                        
-                        # Create model with best parameters and custom weights
-                        meta_learner = create_lgbm_meta_learner(**best_params)
-                        # Train on simplified features
-                        meta_learner.fit(simplified_meta_features, y, sample_weight=sample_weight)
-                        hpo_result['success'] = True  # Mark as successful
-                    else:
-                        tprint(f"⚠️ [REGIME_ENSEMBLE] HPO returned invalid params/score, using defaults", color="yellow")
-                        raise Exception("HPO returned invalid params/score")
-                else:
-                    tprint(f"⚠️ [REGIME_ENSEMBLE] HPO failed with error: {hpo_result.get('error', 'unknown')}", color="yellow")
-                    raise Exception(f"HPO failed: {hpo_result.get('error', 'unknown')}")
-                    
-            except Exception as e:
-                tprint(f"⚠️ [REGIME_ENSEMBLE] HPO error: {e}, using optimized defaults", color="yellow")
-                # Fallback to optimized default parameters with custom weights
+            fit_params = {}
+            if sample_weight is not None:
+                fit_params = {'sample_weight': sample_weight}
+                tprint("⚖️ [REGIME_ENSEMBLE] Applying sample weights to HPO", "blue")
+            
+            # Perform HPO optimization
+            tprint("🔍 [REGIME_ENSEMBLE] Starting HPO optimization for meta-learner", color="cyan")
+            hpo_result = self.hpo_optimizer.optimize(
+                model_factory=create_lgbm_model,
+                X=meta_features,
+                y=y,
+                cv_folds=3,
+                scoring=scoring,  # Use transition-aware scorer
+                n_trials=75,  # Increased from 20 for better exploration
+                fit_params=fit_params
+            )
+
+            if hpo_result.success:
+                tprint(f"✅ [REGIME_ENSEMBLE] HPO optimization completed successfully", color="green")
+                tprint(f"📊 [REGIME_ENSEMBLE] Best score: {hpo_result.best_score:.4f}", color="blue")
+                meta_learner = hpo_result.best_model
+            else:
+                tprint(f"⚠️ [REGIME_ENSEMBLE] HPO optimization failed, using default parameters", color="yellow")
+                # Fallback to default parameters
                 meta_learner = LGBMClassifier(
-                    num_leaves=15,
-                    max_depth=4,
-                    learning_rate=0.03,
-                    n_estimators=400,
-                    min_child_samples=50,
-                    feature_fraction=0.7,
-                    bagging_fraction=0.7,
-                    bagging_freq=5,
-                    reg_alpha=0.1,
-                    reg_lambda=0.1,
-                    class_weight=class_weights,  # Use custom weights
+                    num_leaves=8,
+                    max_depth=2,
+                    learning_rate=0.02,
+                    n_estimators=100,
+                    min_child_samples=75,  # Increased for stability
+                    subsample=0.5,
+                    colsample_bytree=0.5,
+                    reg_alpha=1.0,
+                    reg_lambda=1.0,
+                    class_weight='balanced',
                     random_state=42,
                     verbose=-1,
-                    n_jobs=-1,
-                    min_split_gain=0.01
+                    n_jobs=-1
                 )
-                # Train with fallback parameters on simplified features
-                meta_learner.fit(simplified_meta_features, y, sample_weight=sample_weight)
-                hpo_result = {'success': False, 'best_score': 0.0, 'best_model': meta_learner}
-            
-            tprint("✅ [REGIME_ENSEMBLE] Meta-learner training completed", color="green")
+
+            # Add feature engineering for meta-learner
+            tprint("🔧 [REGIME_ENSEMBLE] Creating enhanced meta-learner features", color="blue")
+            enhanced_meta_features = self._create_enhanced_meta_features(meta_features, y)
+            tprint(f"📊 [REGIME_ENSEMBLE] Enhanced meta-features shape: {enhanced_meta_features.shape}", color="blue")
+
+            # Train meta-learner
+            tprint("🏋️ [REGIME_ENSEMBLE] Training meta-learner", color="blue")
+            meta_learner.fit(enhanced_meta_features, y, sample_weight=sample_weight)
+            tprint("✅ [REGIME_ENSEMBLE] Meta-learner trained successfully", color="green")
 
             # Apply probability calibration
             tprint("🎯 [REGIME_ENSEMBLE] Applying probability calibration", color="blue")
             try:
-                # Use same adaptive CV folds as HPO
-                calibration_cv = 2 if min_samples < 3 else 3
-                tprint(f"🔧 [REGIME_ENSEMBLE] Using {calibration_cv}-fold CV for calibration", color="cyan")
-                
                 calibrated_meta_learner = CalibratedClassifierCV(
                     meta_learner,
                     method=self.ensemble_config.get('calibration_method', 'isotonic'),
-                    cv=calibration_cv  # Use adaptive CV
+                    cv=self.ensemble_config.get('cv_folds', 3)
                 )
-                # CRITICAL FIX: Use simplified features for calibration
-                calibrated_meta_learner.fit(simplified_meta_features, y, sample_weight=sample_weight) 
+                calibrated_meta_learner.fit(enhanced_meta_features, y, sample_weight=sample_weight) 
                 tprint("✅ [REGIME_ENSEMBLE] Probability calibration applied successfully", color="green")
 
                 # Create feature contract for the ensemble
-                # CRITICAL FIX: Use simplified features (no enhancement)
                 ensemble_contract = FeatureContract(
                     feature_names=meta_feature_names,
                     feature_count=len(meta_feature_names),
                     feature_types={name: self._infer_feature_type(name) for name in meta_feature_names},
-                    expected_shape=(None, simplified_meta_features.shape[1]),  # Use simplified shape!
+                    expected_shape=(None, len(meta_feature_names)),
                     metadata={
                         'source': 'meta_features_generator',
                         'includes_uncertainty': True,
                         'includes_confidence': True,
-                        'includes_disagreement': True,
-                        'simplified_feature_count': simplified_meta_features.shape[1],  # Store for prediction
-                        'base_meta_feature_count': meta_features.shape[1],
-                        'feature_simplification': 'enabled',  # Flag that we're using simplified features
-                        'zero_var_mask': zero_var_mask.tolist() if n_zero_var > 0 else None  # Store mask for prediction
+                        'includes_disagreement': True
                     }
                 )
                 
-                # Return calibrated result
+                # Create comprehensive result
                 stacker_result = {
                     'meta_learner': calibrated_meta_learner,
                     'base_models': base_models,
                     'meta_feature_names': meta_feature_names,
                     'meta_features_shape': meta_features.shape,
-                    'simplified_meta_features_shape': simplified_meta_features.shape,
-                    'zero_var_mask': zero_var_mask if n_zero_var > 0 else None,
                     'feature_contract': ensemble_contract,
-                    'calibration_method': self.ensemble_config.get('calibration_method', 'isotonic'),
-                    'cv_folds': calibration_cv,
+                    'calibration_method': 'isotonic',
+                    'cv_folds': 3,
                     'training_success': True,
-                    'hpo_result': hpo_result if hpo_result.get('success', False) else None,
-                    'model': calibrated_meta_learner
+                    'hpo_result': hpo_result if hpo_result.success else None
                 }
-                
+
+                tprint("✅ [REGIME_ENSEMBLE] stacker_lgbm_calibrated training completed successfully", color="green")
                 return stacker_result
 
             except Exception as e:
@@ -3648,20 +1288,16 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                 tprint("📊 [REGIME_ENSEMBLE] Using uncalibrated meta-learner", color="blue")
 
                 # Create feature contract for the ensemble
-                # CRITICAL FIX: Use simplified features (no enhancement)
                 ensemble_contract = FeatureContract(
                     feature_names=meta_feature_names,
                     feature_count=len(meta_feature_names),
                     feature_types={name: self._infer_feature_type(name) for name in meta_feature_names},
-                    expected_shape=(None, simplified_meta_features.shape[1]),  # Use simplified shape!
+                    expected_shape=(None, len(meta_feature_names)),
                     metadata={
                         'source': 'meta_features_generator',
                         'includes_uncertainty': True,
                         'includes_confidence': True,
-                        'includes_disagreement': True,
-                        'simplified_feature_count': simplified_meta_features.shape[1],  # Store for prediction
-                        'base_meta_feature_count': meta_features.shape[1],
-                        'feature_simplification': 'enabled'  # Flag that we're using simplified features
+                        'includes_disagreement': True
                     }
                 )
                 
@@ -3671,14 +1307,11 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                     'base_models': base_models,
                     'meta_feature_names': meta_feature_names,
                     'meta_features_shape': meta_features.shape,
-                    'simplified_meta_features_shape': simplified_meta_features.shape,  # Store simplified shape
-                    'zero_var_mask': zero_var_mask if n_zero_var > 0 else None,  # Store mask for prediction
                     'feature_contract': ensemble_contract,
                     'calibration_method': 'none',
                     'cv_folds': 0,
                     'training_success': True,
-                    'hpo_result': hpo_result if hpo_result.get('success', False) else None,
-                    'model': meta_learner
+                    'hpo_result': hpo_result if hpo_result.success else None
                 }
 
                 tprint("✅ [REGIME_ENSEMBLE] stacker_lgbm_calibrated training completed (uncalibrated)", color="green")
@@ -3710,54 +1343,6 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             return 'disagreement'
         else:
             return 'meta'
-
-    def _convert_numpy_types(self, obj: Any) -> Any:
-        """
-        Recursively convert numpy types to native Python types for JSON serialization.
-        
-        Args:
-            obj: Object to convert (can be dict, list, numpy type, etc.)
-            
-        Returns:
-            Object with all numpy types converted to Python native types
-        """
-        # Handle None
-        if obj is None:
-            return None
-            
-        # Handle dictionaries - convert all keys to strings
-        if isinstance(obj, dict):
-            converted = {}
-            for k, v in obj.items():
-                # Convert key to string if it's any numeric type
-                if isinstance(k, (np.integer, np.floating, int, float)):
-                    key_str = str(int(k) if isinstance(k, (np.integer, int)) else k)
-                else:
-                    key_str = str(k)
-                converted[key_str] = self._convert_numpy_types(v)
-            return converted
-            
-        # Handle lists and tuples
-        elif isinstance(obj, (list, tuple)):
-            return [self._convert_numpy_types(item) for item in obj]
-            
-        # Handle numpy types
-        elif isinstance(obj, np.integer):
-            return int(obj)
-        elif isinstance(obj, np.floating):
-            return float(obj)
-        elif isinstance(obj, np.ndarray):
-            return obj.tolist()
-        elif isinstance(obj, np.bool_):
-            return bool(obj)
-            
-        # Handle sklearn models and other non-serializable objects - skip them
-        elif hasattr(obj, '__module__') and ('sklearn' in obj.__module__ or 'lightgbm' in obj.__module__ or 'catboost' in obj.__module__):
-            return f"<{obj.__class__.__name__} object>"
-            
-        # Return as-is for basic Python types
-        else:
-            return obj
 
     def _evaluate_ensemble(self, X: np.ndarray, y: np.ndarray, stacker_result: Dict[str, Any], sample_weight: Optional[np.ndarray] = None) -> Dict[str, Any]:
         """
@@ -3795,32 +1380,11 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                 include_disagreement=True
             )
             
-            # CRITICAL LOG: Track feature counts for debugging evaluation
-            tprint(f"🔍 [REGIME_ENSEMBLE] EVALUATION META-FEATURES DEBUG:", color="yellow", bold=True)
-            tprint(f"   ├─ Raw meta-features shape: {meta_features.shape}", color="yellow")
-            tprint(f"   ├─ Generated feature names count: {len(generated_feature_names)}", color="yellow")
-            tprint(f"   └─ Feature breakdown: {self._analyze_feature_breakdown(generated_feature_names)}", color="yellow")
-            
             tprint(
                 f"✅ [REGIME_ENSEMBLE] Meta-features generated for evaluation: {meta_features.shape}",
                 color="green",
                 bold=True
             )
-            
-            # CRITICAL FIX: Use simplified meta-features (same as training) to ensure consistency
-            # The model was trained with simplified features (39), not enhanced features (52)
-            tprint("🔧 [REGIME_ENSEMBLE] Using simplified meta-features for evaluation (consistent with training)", color="cyan")
-            
-            # Apply zero-variance mask if it was used during training
-            zero_var_mask = stacker_result.get('zero_var_mask')
-            if zero_var_mask is not None:
-                tprint(f"🔧 [REGIME_ENSEMBLE] Applying zero-variance mask to evaluation features", color="cyan")
-                meta_features = meta_features[:, zero_var_mask]
-                # Also filter feature names to match
-                meta_feature_names = [name for i, name in enumerate(meta_feature_names) if zero_var_mask[i]]
-                tprint(f"✅ [REGIME_ENSEMBLE] Filtered meta-features: {meta_features.shape}", color="green")
-            else:
-                tprint(f"✅ [REGIME_ENSEMBLE] Using meta-features as-is: {meta_features.shape}", color="green")
 
             # Validate feature contract if available
             if feature_contract is not None:
@@ -3845,11 +1409,13 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
 
             # Use enhanced model evaluator for comprehensive evaluation
             tprint("🔍 [REGIME_ENSEMBLE] Performing comprehensive model evaluation", color="cyan")
-            # CRITICAL FIX: Use correct method name evaluate_model_performance
-            evaluation_result = self.model_evaluator.evaluate_model_performance(
+            evaluation_result = self.model_evaluator.evaluate_model(
                 model=meta_learner,
                 X=meta_features,
-                y=y
+                y=y,
+                y_pred=y_pred,
+                y_pred_proba=y_pred_proba,
+                sample_weight=sample_weight
             )
 
             # Use model validator for additional validation
@@ -3866,9 +1432,9 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             accuracy = accuracy_score(y, y_pred, sample_weight=sample_weight)
             
             # Calculate comprehensive temporal and regime-persistence metrics
-            # CRITICAL FIX: Remove sample_weight parameter - not supported by this method
             comprehensive_metrics = self.temporal_metrics_calc.calculate_comprehensive_metrics(
-                y, y_pred, y_pred_proba
+                y, y_pred, y_pred_proba,
+                sample_weight=sample_weight
             )
             
             # Calculate temporal smoothness penalty
@@ -3879,29 +1445,10 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             # Calculate top-3 regime analysis with entropy metrics
             top_3_analysis = self._calculate_top_regime_analysis(y_pred_proba)
 
-            # Get classification report and convert int64 keys to strings for JSON serialization
-            class_report = classification_report(y, y_pred, sample_weight=sample_weight, output_dict=True, zero_division=0)
-            tprint(f"🐛 [DEBUG] Classification report keys: {list(class_report.keys()) if isinstance(class_report, dict) else 'NOT A DICT'}", color="yellow")
-            tprint(f"🐛 [DEBUG] Classification report has weighted avg: {'weighted avg' in class_report if isinstance(class_report, dict) else False}", color="yellow")
-            
-            # Convert numpy int64 keys to strings
-            class_report_clean = {}
-            if isinstance(class_report, dict):
-                for key, value in class_report.items():
-                    # Convert int64 keys to strings
-                    str_key = str(key) if isinstance(key, (np.integer, int)) else key
-                    class_report_clean[str_key] = value
-                tprint(f"🐛 [DEBUG] Converted classification report keys: {list(class_report_clean.keys())}", color="yellow")
-            else:
-                class_report_clean = class_report
-
-            # Calculate advanced metrics using our new method
-            advanced_metrics = self._calculate_advanced_metrics(y, y_pred, y_pred_proba, sample_weight)
-
             # Enhanced metrics with ML utilities
             metrics['stacker_lgbm_calibrated'] = {
                 'accuracy': accuracy,
-                'classification_report': class_report_clean,
+                'classification_report': classification_report(y, y_pred, sample_weight=sample_weight, output_dict=True),
                 'classification': comprehensive_metrics.get('classification', {}),
                 'temporal': comprehensive_metrics.get('temporal', {}),
                 'persistence': comprehensive_metrics.get('persistence', {}),
@@ -3916,9 +1463,7 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                 'meta_features_shape': meta_features.shape,
                 'enhanced_evaluation': evaluation_result,
                 'model_validation': validation_result,
-                'hpo_result': stacker_result.get('hpo_result'),
-                # Add all the new advanced metrics
-                'advanced_metrics': advanced_metrics
+                'hpo_result': stacker_result.get('hpo_result')
             }
 
             # Calculate comprehensive metrics for meta-learner
@@ -4006,346 +1551,7 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             metrics['stacker_lgbm_calibrated'] = {'error': str(e)}
 
         tprint("✅ [REGIME_ENSEMBLE] Ensemble evaluation completed", color="green")
-        
-        # Convert all numpy types to Python native types for JSON serialization
-        metrics = self._convert_numpy_types(metrics)
-        
         return metrics
-
-    def _calculate_advanced_metrics(self, y_true: np.ndarray, y_pred: np.ndarray, y_pred_proba: np.ndarray, sample_weight: Optional[np.ndarray] = None) -> Dict[str, Any]:
-        """
-        Calculate advanced classification and temporal metrics for regime detection.
-        
-        Args:
-            y_true: True regime labels
-            y_pred: Predicted regime labels
-            y_pred_proba: Predicted probabilities for each regime
-            sample_weight: Optional sample weights
-            
-        Returns:
-            Dictionary containing all advanced metrics
-        """
-        try:
-            tprint("🔍 [REGIME_ENSEMBLE] Calculating advanced classification and temporal metrics", color="cyan")
-            
-            # 1. Confusion Matrix (absolute and normalized)
-            cm = confusion_matrix(y_true, y_pred, sample_weight=sample_weight)
-            cm_normalized = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
-            
-            # 2. Per-class Precision/Recall/F1 (macro and weighted)
-            precision_macro, recall_macro, f1_macro, _ = precision_recall_fscore_support(
-                y_true, y_pred, average='macro', sample_weight=sample_weight
-            )
-            precision_weighted, recall_weighted, f1_weighted, _ = precision_recall_fscore_support(
-                y_true, y_pred, average='weighted', sample_weight=sample_weight
-            )
-            
-            # 3. Macro F1 (already calculated above)
-            macro_f1 = f1_macro
-            
-            # 4. Balanced accuracy
-            balanced_acc = balanced_accuracy_score(y_true, y_pred, sample_weight=sample_weight)
-            
-            # 5. Cohen's Kappa
-            cohens_kappa = cohen_kappa_score(y_true, y_pred, sample_weight=sample_weight)
-            
-            # 6. One-vs-rest ROC-AUC and PR AUC
-            n_classes = len(np.unique(y_true))
-            roc_auc_scores = {}
-            pr_auc_scores = {}
-            
-            if n_classes > 2:
-                # Multi-class case: calculate one-vs-rest for each class
-                for i in range(n_classes):
-                    y_true_binary = (y_true == i).astype(int)
-                    if len(np.unique(y_true_binary)) > 1:  # Only if both classes present
-                        roc_auc_scores[f'class_{i}'] = roc_auc_score(
-                            y_true_binary, y_pred_proba[:, i], sample_weight=sample_weight
-                        )
-                        pr_auc_scores[f'class_{i}'] = average_precision_score(
-                            y_true_binary, y_pred_proba[:, i], sample_weight=sample_weight
-                        )
-            else:
-                # Binary case
-                if len(np.unique(y_true)) > 1:
-                    roc_auc_scores['binary'] = roc_auc_score(
-                        y_true, y_pred_proba[:, 1], sample_weight=sample_weight
-                    )
-                    pr_auc_scores['binary'] = average_precision_score(
-                        y_true, y_pred_proba[:, 1], sample_weight=sample_weight
-                    )
-            
-            # 7. Log loss and Brier score
-            log_loss_value = log_loss(y_true, y_pred_proba, sample_weight=sample_weight)
-            brier_score_value = brier_score_loss(
-                # For multi-class, calculate Brier score for each class and average
-                np.eye(n_classes)[y_true], y_pred_proba, sample_weight=sample_weight
-            )
-            
-            # 8. Temporal metrics (important for regimes)
-            temporal_metrics = self._calculate_temporal_regime_metrics(y_true, y_pred)
-            
-            # 9. Segmentation metrics
-            segmentation_metrics = self._calculate_segmentation_metrics(y_true, y_pred)
-            
-            # 10. Change-point detection metrics
-            change_point_metrics = self._calculate_change_point_metrics(y_true, y_pred)
-            
-            # 11. Hamming loss on the sequence
-            hamming_loss_value = hamming_loss(y_true, y_pred)
-            
-            advanced_metrics = {
-                'confusion_matrix': {
-                    'absolute': cm.tolist(),
-                    'normalized': cm_normalized.tolist()
-                },
-                'per_class_metrics': {
-                    'macro': {
-                        'precision': float(precision_macro),
-                        'recall': float(recall_macro),
-                        'f1_score': float(f1_macro)
-                    },
-                    'weighted': {
-                        'precision': float(precision_weighted),
-                        'recall': float(recall_weighted),
-                        'f1_score': float(f1_weighted)
-                    }
-                },
-                'macro_f1': float(macro_f1),
-                'balanced_accuracy': float(balanced_acc),
-                'cohens_kappa': {
-                    'score': float(cohens_kappa),
-                    'interpretation': self._interpret_cohens_kappa(cohens_kappa)
-                },
-                'roc_auc_scores': roc_auc_scores,
-                'pr_auc_scores': pr_auc_scores,
-                'probabilistic_calibration': {
-                    'log_loss': float(log_loss_value),
-                    'brier_score': float(brier_score_value)
-                },
-                'temporal_metrics': temporal_metrics,
-                'segmentation_metrics': segmentation_metrics,
-                'change_point_metrics': change_point_metrics,
-                'sequence_metrics': {
-                    'hamming_loss': float(hamming_loss_value)
-                }
-            }
-            
-            tprint("✅ [REGIME_ENSEMBLE] Advanced metrics calculated successfully", color="green")
-            return advanced_metrics
-            
-        except Exception as e:
-            tprint(f"❌ [REGIME_ENSEMBLE] Failed to calculate advanced metrics: {e}", color="red")
-            self.logger.error(f"Failed to calculate advanced metrics: {e}", exc_info=True)
-            return {}
-    
-    def _interpret_cohens_kappa(self, kappa: float) -> str:
-        """Interpret Cohen's Kappa score according to standard guidelines."""
-        if kappa < 0:
-            return "Poor (worse than random)"
-        elif kappa < 0.20:
-            return "Slight agreement"
-        elif kappa < 0.40:
-            return "Fair agreement"
-        elif kappa < 0.60:
-            return "Moderate agreement"
-        elif kappa < 0.80:
-            return "Substantial agreement"
-        else:
-            return "Almost perfect agreement"
-    
-    def _calculate_temporal_regime_metrics(self, y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, Any]:
-        """
-        Calculate temporal metrics specific to regime detection.
-        
-        Args:
-            y_true: True regime labels
-            y_pred: Predicted regime labels
-            
-        Returns:
-            Dictionary containing temporal metrics
-        """
-        try:
-            # Detection delay (mean lag): temps moyen entre le début du régime et la première détection correcte
-            detection_delays = []
-            unique_regimes = np.unique(y_true)
-            
-            for regime in unique_regimes:
-                # Find all true regime segments
-                true_segments = self._find_regime_segments(y_true, regime)
-                
-                for start_idx, end_idx in true_segments:
-                    # Find first correct prediction in this segment
-                    segment_pred = y_pred[start_idx:end_idx+1]
-                    correct_predictions = np.where(segment_pred == regime)[0]
-                    
-                    if len(correct_predictions) > 0:
-                        # Delay is the number of time steps before first correct prediction
-                        delay = correct_predictions[0]
-                        detection_delays.append(delay)
-            
-            mean_detection_delay = np.mean(detection_delays) if detection_delays else 0
-            
-            # Regime persistence: average duration of correctly predicted regimes
-            true_persistence = self._calculate_regime_persistence(y_true)
-            pred_persistence = self._calculate_regime_persistence(y_pred)
-            
-            # Transition accuracy: how well we predict regime changes
-            true_transitions = np.diff(y_true) != 0
-            pred_transitions = np.diff(y_pred) != 0
-            transition_accuracy = np.mean(true_transitions == pred_transitions) if len(true_transitions) > 0 else 0
-            
-            return {
-                'detection_delay': {
-                    'mean_lag': float(mean_detection_delay),
-                    'std_lag': float(np.std(detection_delays)) if detection_delays else 0,
-                    'total_delays': len(detection_delays)
-                },
-                'regime_persistence': {
-                    'true_regimes': float(true_persistence),
-                    'predicted_regimes': float(pred_persistence),
-                    'persistence_ratio': float(pred_persistence / true_persistence) if true_persistence > 0 else 0
-                },
-                'transition_accuracy': float(transition_accuracy)
-            }
-            
-        except Exception as e:
-            tprint(f"⚠️ [REGIME_ENSEMBLE] Error calculating temporal metrics: {e}", color="yellow")
-            return {}
-    
-    def _find_regime_segments(self, labels: np.ndarray, regime: int) -> List[Tuple[int, int]]:
-        """Find all segments where a specific regime is active."""
-        segments = []
-        in_regime = False
-        start_idx = 0
-        
-        for i, label in enumerate(labels):
-            if label == regime and not in_regime:
-                # Start of a new regime segment
-                start_idx = i
-                in_regime = True
-            elif label != regime and in_regime:
-                # End of current regime segment
-                segments.append((start_idx, i-1))
-                in_regime = False
-        
-        # Handle case where regime continues to the end
-        if in_regime:
-            segments.append((start_idx, len(labels)-1))
-        
-        return segments
-    
-    def _calculate_regime_persistence(self, labels: np.ndarray) -> float:
-        """Calculate average regime persistence (duration)."""
-        if len(labels) == 0:
-            return 0
-        
-        # Count transitions
-        transitions = np.sum(np.diff(labels) != 0)
-        
-        # Average persistence = total length / (number of segments)
-        n_segments = transitions + 1
-        return len(labels) / n_segments if n_segments > 0 else 0
-    
-    def _calculate_segmentation_metrics(self, y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, Any]:
-        """
-        Calculate segmentation metrics to compare predicted segmentation to true segmentation.
-        
-        Args:
-            y_true: True regime labels
-            y_pred: Predicted regime labels
-            
-        Returns:
-            Dictionary containing segmentation metrics
-        """
-        try:
-            # Adjusted Rand Index for segmentation quality
-            ari = adjusted_rand_score(y_true, y_pred)
-            
-            # Segment boundary detection
-            true_boundaries = np.diff(y_true) != 0
-            pred_boundaries = np.diff(y_pred) != 0
-            
-            # Boundary precision/recall
-            if np.sum(true_boundaries) > 0:
-                boundary_precision = np.sum(true_boundaries & pred_boundaries) / np.sum(pred_boundaries) if np.sum(pred_boundaries) > 0 else 0
-                boundary_recall = np.sum(true_boundaries & pred_boundaries) / np.sum(true_boundaries)
-                boundary_f1 = 2 * boundary_precision * boundary_recall / (boundary_precision + boundary_recall) if (boundary_precision + boundary_recall) > 0 else 0
-            else:
-                boundary_precision = 0
-                boundary_recall = 0
-                boundary_f1 = 0
-            
-            return {
-                'adjusted_rand_index': float(ari),
-                'boundary_detection': {
-                    'precision': float(boundary_precision),
-                    'recall': float(boundary_recall),
-                    'f1_score': float(boundary_f1)
-                }
-            }
-            
-        except Exception as e:
-            tprint(f"⚠️ [REGIME_ENSEMBLE] Error calculating segmentation metrics: {e}", color="yellow")
-            return {}
-    
-    def _calculate_change_point_metrics(self, y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, Any]:
-        """
-        Calculate change-point detection metrics.
-        
-        Args:
-            y_true: True regime labels
-            y_pred: Predicted regime labels
-            
-        Returns:
-            Dictionary containing change-point metrics
-        """
-        try:
-            # Identify change points
-            true_change_points = np.where(np.diff(y_true) != 0)[0]
-            pred_change_points = np.where(np.diff(y_pred) != 0)[0]
-            
-            # Calculate precision/recall for change-point detection
-            # Allow for small tolerance in timing (e.g., ±1 time step)
-            tolerance = 1
-            detected_change_points = 0
-            
-            for true_cp in true_change_points:
-                # Check if there's a predicted change point within tolerance
-                nearby_pred_cps = pred_change_points[
-                    np.abs(pred_change_points - true_cp) <= tolerance
-                ]
-                if len(nearby_pred_cps) > 0:
-                    detected_change_points += 1
-            
-            # Calculate metrics
-            if len(pred_change_points) > 0:
-                change_point_precision = detected_change_points / len(pred_change_points)
-            else:
-                change_point_precision = 0
-            
-            if len(true_change_points) > 0:
-                change_point_recall = detected_change_points / len(true_change_points)
-            else:
-                change_point_recall = 0
-            
-            if (change_point_precision + change_point_recall) > 0:
-                change_point_f1 = 2 * change_point_precision * change_point_recall / (change_point_precision + change_point_recall)
-            else:
-                change_point_f1 = 0
-            
-            return {
-                'precision': float(change_point_precision),
-                'recall': float(change_point_recall),
-                'f1_score': float(change_point_f1),
-                'true_change_points': len(true_change_points),
-                'predicted_change_points': len(pred_change_points),
-                'detected_change_points': detected_change_points
-            }
-            
-        except Exception as e:
-            tprint(f"⚠️ [REGIME_ENSEMBLE] Error calculating change-point metrics: {e}", color="yellow")
-            return {}
 
     def _calculate_top_regime_analysis(self, y_pred_proba: np.ndarray) -> Dict[str, Any]:
         """
@@ -4874,14 +2080,36 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
 
         except Exception as e:
             tprint(f"⚠️ [REGIME_ENSEMBLE] Synthetic regime creation failed: {e}, using simple fallback", color="yellow")
+            # Simple fallback: create 2 regimes
+            regime_labels = np.random.randint(0, 2, len(data))
+            tprint("📊 [REGIME_ENSEMBLE] Using simple 2-regime fallback", color="blue")
+            return regime_labels
 
-        # Calculate average probabilities for each regime
-        avg_regime_probabilities = np.mean(regime_probabilities, axis=0)
+    def predict_regimes_with_probabilities(
+        self,
+        stacker_result: Dict[str, Any],
+        X: np.ndarray,
+        feature_names: List[str],
+        scaler: Optional[Any] = None
+    ) -> Dict[str, Any]:
+        """
+        Predict regime labels and probabilities using trained ensemble meta-learner.
+        Enhanced to provide comprehensive probabilistic outputs for each detected regime.
 
-        # Calculate regime stability (how consistent the predictions are)
-        regime_stability = 1.0 - np.std(regime_probabilities, axis=0)
-        
-        # Calculate entropy for uncertainty measurement
+        Args:
+            stacker_result: Dictionary containing trained meta-learner and base models
+            X: Feature matrix
+            feature_names: List of feature names
+            scaler: Optional scaler for feature normalization
+
+        Returns:
+            Dictionary with comprehensive prediction information including:
+            - regime_labels: Predicted regime for each sample
+            - regime_probabilities: Probability matrix for each regime
+            - regime_confidence_scores: Confidence scores for each prediction
+            - regime_analysis: Detailed analysis of regime probabilities
+            - ensemble_probabilities: Probabilities from all models in ensemble
+        """
         try:
             tprint("🔮 [REGIME_ENSEMBLE] Starting ensemble regime prediction with probabilities", color="cyan")
 
@@ -5363,10 +2591,6 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             }
             tprint("✅ [REGIME_ENSEMBLE] Added usage guide artifact", color="green")
             
-            # Convert all numpy types to Python native types for JSON serialization
-            tprint("🔄 [REGIME_ENSEMBLE] Converting numpy types to Python native types", color="cyan")
-            artifacts = self._convert_numpy_types(artifacts)
-            
             tprint(f"🎯 [REGIME_ENSEMBLE] Prepared {len(artifacts)} artifacts for downstream compatibility", color="green")
             return artifacts
             
@@ -5406,8 +2630,6 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                     'component': 'regime_ensemble_training',
                     'timestamp': datetime.now().isoformat()
                 }
-                # Convert numpy types before saving
-                tagged_artifact = self._convert_numpy_types(tagged_artifact)
                 await self.save_artifacts(tagged_artifact, {
                     'artifact_type': 'tagged_dataset',
                     'correlation_id': correlation_id,
@@ -5427,8 +2649,6 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                         'component': 'regime_ensemble_training',
                         'timestamp': datetime.now().isoformat()
                     }
-                    # Convert numpy types before saving
-                    individual_artifact = self._convert_numpy_types(individual_artifact)
                     await self.save_artifacts(individual_artifact, {
                         'artifact_type': 'timeframe_artifacts',
                         'timeframe': artifact_data.get('timeframe', 'unknown'),
@@ -5452,8 +2672,6 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                         'component': 'regime_ensemble_training',
                         'timestamp': datetime.now().isoformat()
                     }
-                    # Convert numpy types before saving
-                    model_artifact = self._convert_numpy_types(model_artifact)
                     await self.save_artifacts(model_artifact, {
                         'artifact_type': 'ensemble_model',
                         'correlation_id': correlation_id,
@@ -5487,6 +2705,31 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             tprint(f"⚠️ [REGIME_ENSEMBLE] Failed to save individual artifacts: {e}", color="yellow")
             self.logger.error(f"Individual artifact saving failed: {e}", exc_info=True)
 
+# VectorBT imports for native optimization
+try:
+    import vectorbt as vbt
+    from src.utils.vectorbt_compat import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
+    from src.utils.vectorbt_compat import scale, rank, zscore, winsorize, clip, quantile
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+    rolling_corr = None
+    rolling_cov = None
+    scale = None
+    rank = None
+    zscore = None
+    winsorize = None
+    clip = None
+    quantile = None
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
     async def _generate_regime_probability_report(
         self,
@@ -5634,1335 +2877,203 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                     lines.append(f"  Confidence Distribution:")
                     lines.append(f"    High (>0.8): {conf_dist.get('high_confidence', 0)}")
                     lines.append(f"    Medium (0.5-0.8): {conf_dist.get('medium_confidence', 0)}")
-                    lines.append(f"    Low (<0.5): {conf_dist.get('low_confidence', 0)}")
+                    lines.append(f"    Low (≤0.5): {conf_dist.get('low_confidence', 0)}")
                     lines.append("")
+
+            lines.append("=" * 80)
+            lines.append("END OF REGIME ENSEMBLE PROBABILITY REPORT")
+            lines.append("=" * 80)
 
             return "\n".join(lines)
 
         except Exception as e:
-            self.logger.error(f"Failed to generate text report: {e}", exc_info=True)
-            return f"Error generating report: {str(e)}"
-
-    async def _generate_temporal_regime_analysis(
-        self,
-        results: Dict[str, Any],
-        data: Optional[pd.DataFrame],
-        X: np.ndarray,
-        feature_names: List[str]
-    ) -> Optional[Dict[str, Any]]:
+            self.logger.error(f"Error generating report: {e}")
+            return ""
+    
+    async def _generate_training_reports(self, results: Dict[str, Any], execution_time: float) -> None:
         """
-        Generate comprehensive temporal regime analysis using TemporalRegimeAnalyzer.
+        Generate CSV and markdown training reports and save to root/outcomes/.
         
         Args:
-            results: Results from ensemble training
-            data: OHLCV DataFrame (can be None if not available)
-            X: Feature matrix
-            feature_names: List of feature names
-            
-        Returns:
-            Dictionary containing temporal regime analysis results
+            results: Training results dictionary
+            execution_time: Total execution time in seconds
         """
         try:
-            tprint("📊 [REGIME_ENSEMBLE] Starting temporal regime analysis", color="cyan")
+            import os
+            from pathlib import Path
             
-            # Check if OHLCV data is available
-            if data is None:
-                tprint("⚠️ [REGIME_ENSEMBLE] No OHLCV data available, skipping temporal analysis", color="yellow")
-                return None
+            # Create outcomes directory
+            outcomes_dir = Path("outcomes")
+            outcomes_dir.mkdir(parents=True, exist_ok=True)
             
-            # Import temporal analyzer
-            from src.analysis.temporal_regime_analyzer_simple import TemporalRegimeAnalyzer
+            # Generate timestamp for filenames
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             
-            # Get regime labels from ensemble results
+            # Generate CSV report
+            await self._generate_csv_report(results, outcomes_dir, timestamp)
+            
+            # Generate markdown report
+            await self._generate_markdown_report(results, outcomes_dir, timestamp)
+            
+            tprint(f"✅ [REGIME_ENSEMBLE] Training reports generated in {outcomes_dir}", color="green")
+            
+        except Exception as e:
+            tprint(f"❌ [REGIME_ENSEMBLE] Failed to generate training reports: {e}", color="red")
+            self.logger.error(f"Failed to generate training reports: {e}", exc_info=True)
+
+    async def _generate_csv_report(self, results: Dict[str, Any], outcomes_dir: Path, timestamp: str) -> None:
+        """
+        Generate CSV training report.
+        
+        Args:
+            results: Training results dictionary
+            outcomes_dir: Directory to save reports
+            timestamp: Timestamp for filename
+        """
+        try:
+            csv_lines = []
+            
+            # Header
+            csv_lines.append("Metric,Value,Category,Model")
+            
+            # Extract ensemble results
             ensemble_result = results.get('regime_ensemble_training_result', {})
             stacker_result = ensemble_result.get('stacker_lgbm_calibrated', {})
+            ensemble_metrics = ensemble_result.get('ensemble_metrics', {}).get('stacker_lgbm_calibrated', {})
             
-            if not stacker_result:
-                tprint("⚠️ [REGIME_ENSEMBLE] No stacker result found for temporal analysis", color="yellow")
-                return None
+            # Ensemble performance metrics
+            if 'accuracy' in ensemble_metrics:
+                csv_lines.append(f"ensemble_accuracy,{ensemble_metrics['accuracy']},performance,stacker_lgbm_calibrated")
             
-            # Extract regime labels from tagged dataset if available
-            regime_labels = None
-            tagged_dataset = results.get('tagged_dataset', {})
-            if tagged_dataset and 'tagged_dataset' in tagged_dataset:
-                tagged_data = tagged_dataset['tagged_dataset']
-                if 'ensemble_regime_label' in tagged_data.columns:
-                    regime_labels = tagged_data['ensemble_regime_label'].values
-                    unique_regimes = len(np.unique(regime_labels))
-                    tprint(f"✅ [REGIME_ENSEMBLE] Extracted regime labels from tagged dataset: {len(regime_labels)} samples, {unique_regimes} unique regimes", color="green")
+            if 'prediction_confidence' in ensemble_metrics:
+                conf = ensemble_metrics['prediction_confidence']
+                if isinstance(conf, dict):
+                    csv_lines.append(f"ensemble_confidence_mean,{conf.get('mean', 0)},performance,stacker_lgbm_calibrated")
+                    csv_lines.append(f"ensemble_confidence_std,{conf.get('std', 0)},performance,stacker_lgbm_calibrated")
             
-            # Fallback: use predictions if no labels available
-            if regime_labels is None:
-                tprint("⚠️ [REGIME_ENSEMBLE] No regime labels found, using predictions", color="yellow")
-                if hasattr(stacker_result.get('meta_learner'), 'predict'):
-                    meta_learner = stacker_result['meta_learner']
-                    # Generate meta-features for prediction
-                    base_models = stacker_result.get('base_models', {})
-                    if base_models:
-                        # CRITICAL: Align X with OHLCV data length BEFORE generating predictions
-                        # This ensures predictions match the returns length from the start
-                        X_for_prediction = X
-                        if data is not None and 'close' in data.columns:
-                            n_ohlcv_samples = len(data)
-                            if len(X) > n_ohlcv_samples:
-                                tprint(f"⚠️ [REGIME_ENSEMBLE] Trimming X from {len(X)} to {n_ohlcv_samples} to match OHLCV length", color="yellow")
-                                X_for_prediction = X[-n_ohlcv_samples:]
-                        
-                        from .ensemble_meta_features import EnsembleMetaFeaturesGenerator
-                        meta_generator = EnsembleMetaFeaturesGenerator("REGIME_ENSEMBLE")
-                        meta_features, _ = meta_generator.generate_meta_features(
-                            base_models=base_models,
-                            X=X_for_prediction,
-                            y=np.zeros(len(X_for_prediction)),  # Dummy y for feature generation
-                            include_uncertainty=True,
-                            include_confidence=True,
-                            include_disagreement=True
-                        )
-                        # CRITICAL FIX: Use SIMPLIFIED features (no enhancement)
-                        # The model was trained on simplified meta-features, not enhanced
-                        simplified_meta_features = meta_features  # Use base meta-features directly
-                        
-                        # Apply zero-variance mask if it was used during training
-                        zero_var_mask = stacker_result.get('zero_var_mask')
-                        if zero_var_mask is not None:
-                            tprint(f"🔧 [REGIME_ENSEMBLE] Applying zero-variance mask to prediction features", color="cyan")
-                            simplified_meta_features = simplified_meta_features[:, zero_var_mask]
-                        
-                        tprint(f"✅ [REGIME_ENSEMBLE] Simplified meta-features for prediction: {simplified_meta_features.shape}", color="green")
-                        
-                        # Log expected vs actual feature counts for debugging
-                        expected_features = stacker_result.get('simplified_meta_features_shape', (None, None))[1]
-                        actual_features = simplified_meta_features.shape[1]
-                        tprint(f"🔍 [REGIME_ENSEMBLE] Feature count check: expected={expected_features}, actual={actual_features}", color="cyan")
-                        
-                        if expected_features and expected_features != actual_features:
-                            tprint(f"⚠️ [REGIME_ENSEMBLE] Feature count mismatch! Skipping temporal analysis.", color="yellow")
-                            return None
-                        
-                        regime_labels = meta_learner.predict(simplified_meta_features)
-                        unique_regimes = len(np.unique(regime_labels))
-                        tprint(f"✅ [REGIME_ENSEMBLE] Generated regime labels from predictions: {len(regime_labels)} samples, {unique_regimes} unique regimes", color="green")
+            # Calibration method
+            csv_lines.append(f"calibration_method,{stacker_result.get('calibration_method', 'none')},configuration,stacker_lgbm_calibrated")
             
-            if regime_labels is None:
-                tprint("❌ [REGIME_ENSEMBLE] Cannot generate temporal analysis without regime labels", color="red")
-                return None
-            
-            # Calculate returns from OHLCV data
-            returns = None
-            alignment_offset = 0  # Track how many rows we need to drop from the start
-            if 'close' in data.columns:
-                close_prices = data['close'].dropna()
-                if len(close_prices) > 1:
-                    returns = close_prices.pct_change().dropna().values
-                    tprint(f"✅ [REGIME_ENSEMBLE] Calculated returns from close prices: {len(returns)} samples", color="green")
-                    
-                    # Align regime_labels with returns (pct_change drops first row)
-                    if len(regime_labels) != len(returns):
-                        unique_before = len(np.unique(regime_labels))
-                        tprint(f"⚠️ [REGIME_ENSEMBLE] Aligning regime labels ({len(regime_labels)}) with returns ({len(returns)})", color="yellow")
-                        tprint(f"   Unique regimes before alignment: {unique_before}", color="cyan")
-                        # Drop first regime label to match returns length
-                        alignment_offset = len(regime_labels) - len(returns)
-                        regime_labels = regime_labels[alignment_offset:]
-                        unique_after = len(np.unique(regime_labels))
-                        tprint(f"✅ [REGIME_ENSEMBLE] Aligned regime labels: {len(regime_labels)} samples, {unique_after} unique regimes", color="green")
-                else:
-                    tprint("⚠️ [REGIME_ENSEMBLE] Insufficient close price data for returns calculation", color="yellow")
-            else:
-                tprint("⚠️ [REGIME_ENSEMBLE] No 'close' column in OHLCV data, cannot calculate returns", color="yellow")
-            
-            # Skip temporal analysis if no returns available
-            if returns is None or len(returns) == 0:
-                tprint("⚠️ [REGIME_ENSEMBLE] No returns available, skipping temporal analysis", color="yellow")
-                return None
-            
-            # Check if we have enough regime diversity for meaningful analysis
-            unique_regimes_final = len(np.unique(regime_labels))
-            if unique_regimes_final < 2:
-                tprint(f"⚠️ [REGIME_ENSEMBLE] Insufficient regime diversity ({unique_regimes_final} unique regimes)", color="yellow")
-                tprint("   This suggests the model is predicting only one class - check model performance", color="yellow")
-                tprint("   Skipping temporal analysis (requires at least 2 regimes)", color="yellow")
-                return None
-            
-            # Create features DataFrame for analysis, aligned with returns
-            features_df = None
-            if X is not None and feature_names:
-                # Apply same alignment offset to X
-                X_aligned = X[alignment_offset:] if alignment_offset > 0 else X
-                # Ensure X_aligned matches returns length
-                X_aligned = X_aligned[:len(returns)]
-                features_df = pd.DataFrame(X_aligned, columns=feature_names)
-                tprint(f"✅ [REGIME_ENSEMBLE] Created aligned features DataFrame: {features_df.shape}", color="green")
-            
-            # Initialize temporal analyzer
-            analyzer = TemporalRegimeAnalyzer()
-            
-            # Perform comprehensive analysis
-            tprint("🔍 [REGIME_ENSEMBLE] Performing comprehensive temporal analysis", color="blue")
-            analysis_results = analyzer.analyze_regimes(
-                regime_labels=regime_labels,
-                returns=returns,
-                features=features_df
-            )
-            
-            # Export to CSV
-            try:
-                from pathlib import Path
-                # Create outcomes directory if it doesn't exist
-                outcomes_path = Path("outcomes")
-                outcomes_path.mkdir(parents=True, exist_ok=True)
-
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                csv_filename = f"temporal_regime_analysis_{self.config.symbol}_{timestamp}.csv"
-                csv_filepath = outcomes_path / csv_filename
-                analyzer.export_to_csv(analysis_results, str(csv_filepath))
-                tprint(f"✅ [REGIME_ENSEMBLE] Temporal analysis exported to outcomes/{csv_filename}", color="green")
-                
-                # Save CSV as artifact
-                import os
-                if os.path.exists(csv_filename):
-                    csv_artifact = {
-                        'temporal_regime_analysis_csv': {
-                            'file_path': csv_filename,
-                            'file_size': os.path.getsize(csv_filename),
-                            'n_regimes': len(np.unique(regime_labels)),
-                            'n_samples': len(regime_labels),
-                            'analysis_timestamp': datetime.now().isoformat(),
-                            'component': 'regime_ensemble_training'
-                        }
-                    }
-                    await self.save_artifacts(csv_artifact, {
-                        'artifact_type': 'temporal_regime_analysis_csv',
-                        'component': 'regime_ensemble_training'
-                    })
-                    tprint("✅ [REGIME_ENSEMBLE] Temporal analysis CSV saved as artifact", color="green")
-                
-            except Exception as e:
-                tprint(f"⚠️ [REGIME_ENSEMBLE] Failed to export temporal analysis to CSV: {e}", color="yellow")
-            
-            tprint("✅ [REGIME_ENSEMBLE] Temporal regime analysis completed successfully", color="green")
-            return analysis_results
-            
-        except Exception as e:
-            tprint(f"❌ [REGIME_ENSEMBLE] Failed to generate temporal regime analysis: {e}", color="red")
-            self.logger.error(f"Failed to generate temporal regime analysis: {e}", exc_info=True)
-            return None
-
-    def _generate_csv_reports(self, results: Dict[str, Any], symbol: str, output_dir: str = "outcomes") -> Tuple[Optional[str], Optional[str]]:
-        """Generate comprehensive CSV reports for regime ensemble training."""
-        try:
-            from pathlib import Path
-            import csv
-
-            # Create output directory if it doesn't exist
-            output_path = Path(output_dir)
-            output_path.mkdir(parents=True, exist_ok=True)
-
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-            # 1. Generate main metrics CSV
-            metrics_filename = f"regime_ensemble_training_metrics_{symbol}_{timestamp}.csv"
-            metrics_path = output_path / metrics_filename
-
-            tprint(f"📊 Generating ensemble metrics CSV: {metrics_path}", color="cyan")
-
-            csv_data = []
-            csv_data.append(['Metric Category', 'Metric Name', 'Value', 'Description'])
-
-            # Ensemble configuration
-            ensemble_config = results.get('regime_ensemble_training_result', {})
-            # Try to get base models from detected models (blank mode) or training result
-            detected_base_models = results.get('detected_base_models', ensemble_config.get('base_models', []))
-            csv_data.append(['Configuration', 'Ensemble Method', 'stacker_lgbm_calibrated', 'LightGBM meta-learner with calibration'])
-            csv_data.append(['Configuration', 'Number of Base Models', str(len(detected_base_models)), 'Number of models in ensemble'])
-            if detected_base_models:
-                csv_data.append(['Configuration', 'Base Models', ', '.join(detected_base_models), 'Models used in ensemble'])
-
-            # Ensemble evaluation metrics (accuracy, F1, recall, etc.)
-            ensemble_metrics = results.get('ensemble_metrics', {})
-            stacker_metrics = ensemble_metrics.get('stacker_lgbm_calibrated', {})
-            if stacker_metrics:
-                csv_data.append(['Ensemble Performance', 'Accuracy', f"{stacker_metrics.get('accuracy', 0):.4f}", 'Overall classification accuracy'])
-                
-                # Classification report metrics
-                class_report = stacker_metrics.get('classification_report', {})
-                if class_report:
-                    # Overall weighted metrics
-                    weighted_avg = class_report.get('weighted avg', {})
-                    if weighted_avg:
-                        csv_data.append(['Ensemble Performance', 'Precision (Weighted)', f"{weighted_avg.get('precision', 0):.4f}", 'Weighted average precision'])
-                        csv_data.append(['Ensemble Performance', 'Recall (Weighted)', f"{weighted_avg.get('recall', 0):.4f}", 'Weighted average recall'])
-                        csv_data.append(['Ensemble Performance', 'F1-Score (Weighted)', f"{weighted_avg.get('f1-score', 0):.4f}", 'Weighted average F1-score'])
-                    
-                    # Overall macro metrics
-                    macro_avg = class_report.get('macro avg', {})
-                    if macro_avg:
-                        csv_data.append(['Ensemble Performance', 'Precision (Macro)', f"{macro_avg.get('precision', 0):.4f}", 'Macro average precision'])
-                        csv_data.append(['Ensemble Performance', 'Recall (Macro)', f"{macro_avg.get('recall', 0):.4f}", 'Macro average recall'])
-                        csv_data.append(['Ensemble Performance', 'F1-Score (Macro)', f"{macro_avg.get('f1-score', 0):.4f}", 'Macro average F1-score'])
-                    
-                    # Per-regime metrics
-                    for regime_key, regime_metrics in class_report.items():
-                        if isinstance(regime_metrics, dict) and regime_key not in ['accuracy', 'macro avg', 'weighted avg']:
-                            csv_data.append([f'Regime {regime_key} Performance', 'Precision', f"{regime_metrics.get('precision', 0):.4f}", f'Precision for regime {regime_key}'])
-                            csv_data.append([f'Regime {regime_key} Performance', 'Recall', f"{regime_metrics.get('recall', 0):.4f}", f'Recall for regime {regime_key}'])
-                            csv_data.append([f'Regime {regime_key} Performance', 'F1-Score', f"{regime_metrics.get('f1-score', 0):.4f}", f'F1-score for regime {regime_key}'])
-                            csv_data.append([f'Regime {regime_key} Performance', 'Support', str(regime_metrics.get('support', 0)), f'Number of samples in regime {regime_key}'])
-                
-                # Prediction confidence
-                pred_conf = stacker_metrics.get('prediction_confidence', {})
-                if pred_conf:
-                    csv_data.append(['Ensemble Performance', 'Prediction Confidence Mean', f"{pred_conf.get('mean', 0):.4f}", 'Average prediction confidence'])
-                    csv_data.append(['Ensemble Performance', 'Prediction Confidence Std', f"{pred_conf.get('std', 0):.4f}", 'Standard deviation of confidence'])
-                
-                # Calibration info
-                calibration_method = stacker_metrics.get('calibration_method', 'none')
-                csv_data.append(['Ensemble Performance', 'Calibration Method', calibration_method, 'Probability calibration method used'])
-                
-                # Add advanced metrics if available
-                advanced_metrics = stacker_metrics.get('advanced_metrics', {})
-                if advanced_metrics:
-                    # Confusion Matrix
-                    cm = advanced_metrics.get('confusion_matrix', {})
-                    if cm:
-                        csv_data.append(['Advanced Metrics', 'Confusion Matrix Available', 'Yes', 'Absolute and normalized confusion matrices calculated'])
-                    
-                    # Per-class metrics (macro and weighted)
-                    per_class = advanced_metrics.get('per_class_metrics', {})
-                    if per_class:
-                        macro_metrics = per_class.get('macro', {})
-                        if macro_metrics:
-                            csv_data.append(['Advanced Metrics', 'Macro Precision', f"{macro_metrics.get('precision', 0):.4f}", 'Macro-averaged precision'])
-                            csv_data.append(['Advanced Metrics', 'Macro Recall', f"{macro_metrics.get('recall', 0):.4f}", 'Macro-averaged recall'])
-                            csv_data.append(['Advanced Metrics', 'Macro F1-Score', f"{macro_metrics.get('f1_score', 0):.4f}", 'Macro-averaged F1-score'])
-                        
-                        weighted_metrics = per_class.get('weighted', {})
-                        if weighted_metrics:
-                            csv_data.append(['Advanced Metrics', 'Weighted Precision', f"{weighted_metrics.get('precision', 0):.4f}", 'Weighted-averaged precision'])
-                            csv_data.append(['Advanced Metrics', 'Weighted Recall', f"{weighted_metrics.get('recall', 0):.4f}", 'Weighted-averaged recall'])
-                            csv_data.append(['Advanced Metrics', 'Weighted F1-Score', f"{weighted_metrics.get('f1_score', 0):.4f}", 'Weighted-averaged F1-score'])
-                    
-                    # Macro F1 (treats each regime equally)
-                    macro_f1 = advanced_metrics.get('macro_f1', 0)
-                    csv_data.append(['Advanced Metrics', 'Macro F1 (Equal Weight)', f"{macro_f1:.4f}", 'Macro F1 treating each regime equally'])
-                    
-                    # Balanced accuracy
-                    balanced_acc = advanced_metrics.get('balanced_accuracy', 0)
-                    csv_data.append(['Advanced Metrics', 'Balanced Accuracy', f"{balanced_acc:.4f}", 'Average recall per class'])
-                    
-                    # Cohen's Kappa
-                    cohens_kappa = advanced_metrics.get('cohens_kappa', {})
-                    if cohens_kappa:
-                        kappa_score = cohens_kappa.get('score', 0)
-                        kappa_interp = cohens_kappa.get('interpretation', 'Unknown')
-                        csv_data.append(['Advanced Metrics', "Cohen's Kappa Score", f"{kappa_score:.4f}", "Agreement above chance"])
-                        csv_data.append(['Advanced Metrics', "Cohen's Kappa Interpretation", kappa_interp, "Interpretation of kappa score"])
-                    
-                    # ROC-AUC and PR-AUC scores
-                    roc_auc = advanced_metrics.get('roc_auc_scores', {})
-                    if roc_auc:
-                        for class_key, score in roc_auc.items():
-                            csv_data.append(['Advanced Metrics', f'ROC-AUC ({class_key})', f"{score:.4f}", f'One-vs-rest ROC-AUC for {class_key}'])
-                    
-                    pr_auc = advanced_metrics.get('pr_auc_scores', {})
-                    if pr_auc:
-                        for class_key, score in pr_auc.items():
-                            csv_data.append(['Advanced Metrics', f'PR-AUC ({class_key})', f"{score:.4f}", f'One-vs-rest PR-AUC for {class_key}'])
-                    
-                    # Probabilistic calibration metrics
-                    prob_calib = advanced_metrics.get('probabilistic_calibration', {})
-                    if prob_calib:
-                        csv_data.append(['Advanced Metrics', 'Log Loss', f"{prob_calib.get('log_loss', 0):.4f}", 'Logarithmic loss'])
-                        csv_data.append(['Advanced Metrics', 'Brier Score', f"{prob_calib.get('brier_score', 0):.4f}", 'Brier score for probability calibration'])
-                    
-                    # Temporal metrics
-                    temporal = advanced_metrics.get('temporal_metrics', {})
-                    if temporal:
-                        detection_delay = temporal.get('detection_delay', {})
-                        if detection_delay:
-                            csv_data.append(['Temporal Metrics', 'Detection Delay (Mean Lag)', f"{detection_delay.get('mean_lag', 0):.4f}", 'Average time to detect regime change'])
-                            csv_data.append(['Temporal Metrics', 'Detection Delay (Std Lag)', f"{detection_delay.get('std_lag', 0):.4f}", 'Std deviation of detection delay'])
-                        
-                        persistence = temporal.get('regime_persistence', {})
-                        if persistence:
-                            csv_data.append(['Temporal Metrics', 'True Regime Persistence', f"{persistence.get('true_regimes', 0):.4f}", 'Average duration of true regimes'])
-                            csv_data.append(['Temporal Metrics', 'Predicted Regime Persistence', f"{persistence.get('predicted_regimes', 0):.4f}", 'Average duration of predicted regimes'])
-                            csv_data.append(['Temporal Metrics', 'Persistence Ratio', f"{persistence.get('persistence_ratio', 0):.4f}", 'Ratio of predicted to true persistence'])
-                        
-                        csv_data.append(['Temporal Metrics', 'Transition Accuracy', f"{temporal.get('transition_accuracy', 0):.4f}", 'Accuracy of regime transition prediction'])
-                    
-                    # Segmentation metrics
-                    segmentation = advanced_metrics.get('segmentation_metrics', {})
-                    if segmentation:
-                        csv_data.append(['Segmentation Metrics', 'Adjusted Rand Index', f"{segmentation.get('adjusted_rand_index', 0):.4f}", 'Segmentation quality measure'])
-                        
-                        boundary = segmentation.get('boundary_detection', {})
-                        if boundary:
-                            csv_data.append(['Segmentation Metrics', 'Boundary Precision', f"{boundary.get('precision', 0):.4f}", 'Precision of boundary detection'])
-                            csv_data.append(['Segmentation Metrics', 'Boundary Recall', f"{boundary.get('recall', 0):.4f}", 'Recall of boundary detection'])
-                            csv_data.append(['Segmentation Metrics', 'Boundary F1-Score', f"{boundary.get('f1_score', 0):.4f}", 'F1-score of boundary detection'])
-                    
-                    # Change-point metrics
-                    change_point = advanced_metrics.get('change_point_metrics', {})
-                    if change_point:
-                        csv_data.append(['Change-Point Metrics', 'Change-Point Precision', f"{change_point.get('precision', 0):.4f}", 'Precision of change-point detection'])
-                        csv_data.append(['Change-Point Metrics', 'Change-Point Recall', f"{change_point.get('recall', 0):.4f}", 'Recall of change-point detection'])
-                        csv_data.append(['Change-Point Metrics', 'Change-Point F1-Score', f"{change_point.get('f1_score', 0):.4f}", 'F1-score of change-point detection'])
-                        csv_data.append(['Change-Point Metrics', 'True Change Points', str(change_point.get('true_change_points', 0)), 'Number of true change points'])
-                        csv_data.append(['Change-Point Metrics', 'Predicted Change Points', str(change_point.get('predicted_change_points', 0)), 'Number of predicted change points'])
-                        csv_data.append(['Change-Point Metrics', 'Detected Change Points', str(change_point.get('detected_change_points', 0)), 'Number of correctly detected change points'])
-                    
-                    # Sequence metrics
-                    sequence = advanced_metrics.get('sequence_metrics', {})
-                    if sequence:
-                        csv_data.append(['Sequence Metrics', 'Hamming Loss', f"{sequence.get('hamming_loss', 0):.4f}", 'Fraction of misclassified time points'])
-
-            # Ensemble performance metrics (regime probabilities)
-            regime_report = results.get('regime_probability_report', {})
-            if regime_report:
-                overall = regime_report.get('overall_statistics', {})
-                csv_data.append(['Overall', 'Total Samples', str(overall.get('total_samples', 'N/A')), 'Total number of samples'])
-                csv_data.append(['Overall', 'Number of Regimes', str(overall.get('n_regimes', 'N/A')), 'Number of regimes detected'])
-                csv_data.append(['Overall', 'Mean Max Probability', f"{overall.get('mean_max_probability', 0):.6f}", 'Average maximum probability'])
-                csv_data.append(['Overall', 'Prediction Confidence', f"{overall.get('prediction_confidence', 0):.6f}", 'Average prediction confidence'])
-                csv_data.append(['Overall', 'Uncertainty Entropy', f"{overall.get('uncertainty_entropy', 0):.6f}", 'Average entropy of predictions'])
-
-                # Regime statistics
-                regime_stats = regime_report.get('regime_statistics', {})
-                for regime_key, regime_data in regime_stats.items():
-                    if isinstance(regime_data, dict):
-                        csv_data.append([f'Regime {regime_key}', 'Sample Count', str(regime_data.get('sample_count', 0)), 'Number of samples in regime'])
-                        csv_data.append([f'Regime {regime_key}', 'Percentage', f"{regime_data.get('percentage', 0):.2f}%", 'Percentage of total samples'])
-                        csv_data.append([f'Regime {regime_key}', 'Mean Probability', f"{regime_data.get('mean_probability', 0):.6f}", 'Average probability for regime'])
-
-            # Add comprehensive quality metrics from regime_quality_assessor.py
-            try:
-                tprint("🔍 [REGIME_ENSEMBLE] Adding comprehensive quality metrics from regime_quality_assessor.py", color="cyan")
-                
-                # Import the quality assessor
-                from ..regime_quality_assessor import ClusterQualityAssessor
-                
-                # Get regime labels from results
-                regime_labels = None
-                tagged_dataset = results.get('tagged_dataset', {})
-                if tagged_dataset and 'tagged_dataset' in tagged_dataset:
-                    tagged_data = tagged_dataset['tagged_dataset']
-                    if 'ensemble_regime_label' in tagged_data.columns:
-                        regime_labels = tagged_data['ensemble_regime_label'].values
-                
-                # If we have regime labels, calculate comprehensive quality metrics
-                if regime_labels is not None:
-                    # Get features for quality assessment
-                    X = None
-                    feature_names = []
-                    
-                    # Try to get features from results
-                    if 'feature_names' in results:
-                        feature_names = results['feature_names']
-                    
-                    # Try to get actual feature matrix from the ensemble training
-                    ensemble_result = results.get('regime_ensemble_training_result', {})
-                    stacker_result = ensemble_result.get('stacker_lgbm_calibrated', {})
-                    
-                    # Get the actual feature matrix used for training
-                    if stacker_result and 'meta_features_shape' in stacker_result:
-                        # We have the meta-features shape, try to reconstruct or use actual data
-                        tprint(f"🔍 [REGIME_ENSEMBLE] Found meta-features shape: {stacker_result['meta_features_shape']}", color="blue")
-                        
-                        # Try to get the actual feature matrix from the training process
-                        if 'X_processed' in ensemble_result.get('metadata', {}):
-                            X = ensemble_result['metadata']['X_processed']
-                            tprint(f"✅ [REGIME_ENSEMBLE] Using actual feature matrix from training: {X.shape}", color="green")
-                    
-                    # Create a feature matrix if needed
-                    if X is None and regime_labels is not None:
-                        # Use a more realistic feature matrix based on regime labels
-                        n_samples = len(regime_labels)
-                        n_features = min(50, max(20, n_samples // 10))  # Reasonable feature count
-                        
-                        # Create features based on regime patterns
-                        X = np.zeros((n_samples, n_features))
-                        for i in range(n_features):
-                            # Create features with different patterns per regime
-                            for regime_id in np.unique(regime_labels):
-                                mask = regime_labels == regime_id
-                                if i % 3 == 0:  # Trend features
-                                    X[mask, i] = np.cumsum(np.random.randn(np.sum(mask))) * 0.1
-                                elif i % 3 == 1:  # Volatility features
-                                    X[mask, i] = np.random.rand(np.sum(mask)) * (regime_id + 1)
-                                else:  # Oscillator features
-                                    X[mask, i] = np.sin(np.arange(np.sum(mask)) * 0.1) * (regime_id + 1)
-                        
-                        if not feature_names:
-                            feature_names = [f'feature_{i}' for i in range(X.shape[1])]
-                        
-                        tprint(f"🔧 [REGIME_ENSEMBLE] Created synthetic feature matrix: {X.shape}", color="yellow")
-                    
-                    if X is not None and len(X) == len(regime_labels):
-                        # Initialize quality assessor
-                        quality_assessor = ClusterQualityAssessor()
-                        
-                        # Calculate comprehensive quality metrics
-                        tprint("🔍 [REGIME_ENSEMBLE] Calculating comprehensive quality metrics...", color="cyan")
-                        quality_metrics = quality_assessor.calculate_comprehensive_metrics(
-                            X, regime_labels, feature_names
-                        )
-                        
-                        # Add quality metrics to CSV
-                        csv_data.append(['Quality Metrics', 'Silhouette Score', f"{quality_metrics.get('silhouette_score', 0):.4f}", 'Measure of cluster cohesion and separation'])
-                        csv_data.append(['Quality Metrics', 'Davies-Bouldin Index', f"{quality_metrics.get('davies_bouldin_score', 0):.4f}", 'Lower values indicate better clustering'])
-                        csv_data.append(['Quality Metrics', 'Calinski-Harabasz Index', f"{quality_metrics.get('calinski_harabasz_score', 0):.4f}", 'Higher values indicate better clustering'])
-                        
-                        # Coefficient of variation metrics
-                        cv_metrics = quality_metrics.get('coefficient_of_variation', {})
-                        if cv_metrics:
-                            csv_data.append(['Quality Metrics', 'Within-Regime CV', f"{cv_metrics.get('within_regime_cv', 0):.4f}", 'Variability within regimes'])
-                            csv_data.append(['Quality Metrics', 'Between-Regime CV', f"{cv_metrics.get('between_regime_cv', 0):.4f}", 'Variability between regimes'])
-                            csv_data.append(['Quality Metrics', 'Overall CV', f"{cv_metrics.get('overall_cv', 0):.4f}", 'Overall variability'])
-                        
-                        # Economic validation metrics
-                        economic_metrics = quality_metrics.get('economic_validation', {})
-                        if economic_metrics:
-                            csv_data.append(['Economic Metrics', 'Sharpe Ratio (Overall)', f"{economic_metrics.get('overall_sharpe', 0):.4f}", 'Risk-adjusted return measure'])
-                            csv_data.append(['Economic Metrics', 'Maximum Drawdown', f"{economic_metrics.get('max_drawdown', 0):.4f}", 'Maximum loss from peak'])
-                            csv_data.append(['Economic Metrics', 'Hit Rate', f"{economic_metrics.get('hit_rate', 0):.4f}", 'Percentage of profitable trades'])
-                            
-                            # Per-regime economic metrics
-                            regime_economic = economic_metrics.get('regime_performance', {})
-                            if regime_economic:
-                                for regime_id, perf in regime_economic.items():
-                                    if isinstance(perf, dict):
-                                        csv_data.append([f'Economic Metrics - Regime {regime_id}', 'Sharpe Ratio', f"{perf.get('sharpe_ratio', 0):.4f}", f'Sharpe ratio for regime {regime_id}'])
-                                        csv_data.append([f'Economic Metrics - Regime {regime_id}', 'Max Drawdown', f"{perf.get('max_drawdown', 0):.4f}", f'Max drawdown for regime {regime_id}'])
-                                        csv_data.append([f'Economic Metrics - Regime {regime_id}', 'Hit Rate', f"{perf.get('hit_rate', 0):.4f}", f'Hit rate for regime {regime_id}'])
-                        
-                        # Temporal metrics
-                        temporal_metrics = quality_metrics.get('temporal_metrics', {})
-                        if temporal_metrics:
-                            csv_data.append(['Temporal Metrics', 'Temporal Smoothness', f"{temporal_metrics.get('temporal_smoothness', 0):.4f}", 'Smoothness of regime transitions'])
-                            csv_data.append(['Temporal Metrics', 'Regime Persistence', f"{temporal_metrics.get('regime_persistence', 0):.4f}", 'Average duration of regimes'])
-                            csv_data.append(['Temporal Metrics', 'Transition Rate', f"{temporal_metrics.get('transition_rate', 0):.4f}", 'Frequency of regime changes'])
-                            
-                            # Transition matrix
-                            transition_matrix = temporal_metrics.get('transition_matrix', [])
-                            if transition_matrix:
-                                for i, row in enumerate(transition_matrix):
-                                    for j, prob in enumerate(row):
-                                        csv_data.append(['Temporal Metrics', f'Transition Probability ({i}->{j})', f"{prob:.4f}", f'Probability of transition from regime {i} to regime {j}'])
-                        
-                        # Balance metrics
-                        balance_metrics = quality_metrics.get('balance_metrics', {})
-                        if balance_metrics:
-                            csv_data.append(['Balance Metrics', 'Regime Balance', f"{balance_metrics.get('regime_balance', 0):.4f}", 'Balance of regime distribution'])
-                            csv_data.append(['Balance Metrics', 'Entropy of Distribution', f"{balance_metrics.get('entropy_of_distribution', 0):.4f}", 'Entropy of regime distribution'])
-                        
-                        # Predictive power metrics
-                        predictive_metrics = quality_metrics.get('predictive_power', {})
-                        if predictive_metrics:
-                            csv_data.append(['Predictive Metrics', 'Predictive Power', f"{predictive_metrics.get('predictive_power', 0):.4f}", 'Overall predictive power'])
-                            csv_data.append(['Predictive Metrics', 'Feature Importance', f"{predictive_metrics.get('feature_importance', 0):.4f}", 'Average feature importance'])
-                            
-                            # Per-feature importance
-                            feature_importance = predictive_metrics.get('per_feature_importance', {})
-                            if feature_importance:
-                                for feature, importance in feature_importance.items():
-                                    csv_data.append(['Predictive Metrics', f'Feature Importance - {feature}', f"{importance:.4f}", f'Importance of feature {feature}'])
-                        
-                        # Enhanced HMM-specific metrics
-                        hmm_metrics = quality_metrics.get('enhanced_hmm_metrics', {})
-                        if hmm_metrics:
-                            csv_data.append(['HMM Metrics', 'Log Likelihood', f"{hmm_metrics.get('log_likelihood', 0):.4f}", 'Log likelihood of HMM'])
-                            csv_data.append(['HMM Metrics', 'AIC', f"{hmm_metrics.get('aic', 0):.4f}", 'Akaike Information Criterion'])
-                            csv_data.append(['HMM Metrics', 'BIC', f"{hmm_metrics.get('bic', 0):.4f}", 'Bayesian Information Criterion'])
-                            csv_data.append(['HMM Metrics', 'Stationary Distribution', f"{hmm_metrics.get('stationary_distribution', 0):.4f}", 'Stationary distribution of regimes'])
-                        
-                        # Discrimination metrics
-                        discrimination_metrics = quality_metrics.get('discrimination_metrics', {})
-                        if discrimination_metrics:
-                            csv_data.append(['Discrimination Metrics', 'Between-Regime CV', f"{discrimination_metrics.get('between_regime_cv', 0):.4f}", 'Between-regime coefficient of variation'])
-                            
-                            # Per-feature discrimination
-                            feature_discrimination = discrimination_metrics.get('per_feature_discrimination', {})
-                            if feature_discrimination:
-                                for feature, ratio in feature_discrimination.items():
-                                    csv_data.append(['Discrimination Metrics', f'Discrimination Ratio - {feature}', f"{ratio:.4f}", f'Discrimination ratio for feature {feature}'])
-                        
-                        # Calibration metrics
-                        calibration_metrics = quality_metrics.get('calibration_metrics', {})
-                        if calibration_metrics:
-                            csv_data.append(['Calibration Metrics', 'Brier Score', f"{calibration_metrics.get('brier_score', 0):.4f}", 'Brier score for probability calibration'])
-                            csv_data.append(['Calibration Metrics', 'Expected Calibration Error', f"{calibration_metrics.get('expected_calibration_error', 0):.4f}", 'Expected calibration error'])
-                            csv_data.append(['Calibration Metrics', 'Reliability Diagram', f"{calibration_metrics.get('reliability_diagram', 0):.4f}", 'Reliability diagram metrics'])
-                        
-                        # Overall quality score
-                        overall_quality = quality_metrics.get('overall_quality_score', 0)
-                        csv_data.append(['Quality Metrics', 'Overall Quality Score', f"{overall_quality:.4f}", 'Composite quality assessment score'])
-                        
-                        tprint("✅ [REGIME_ENSEMBLE] Added comprehensive quality metrics to CSV", color="green")
-                    else:
-                        tprint("⚠️ [REGIME_ENSEMBLE] Could not calculate quality metrics - missing features or labels", color="yellow")
-                else:
-                    tprint("⚠️ [REGIME_ENSEMBLE] Could not calculate quality metrics - missing regime labels", color="yellow")
-                    
-            except ImportError as e:
-                tprint(f"⚠️ [REGIME_ENSEMBLE] Could not import regime_quality_assessor: {e}", color="yellow")
-            except Exception as e:
-                tprint(f"⚠️ [REGIME_ENSEMBLE] Error calculating quality metrics: {e}", color="yellow")
-
-            # Write metrics CSV
-            with open(metrics_path, 'w', newline='', encoding='utf-8') as f:
-                writer = csv.writer(f)
-                writer.writerows(csv_data)
-
-            tprint(f"✅ Ensemble metrics CSV generated: {metrics_path}", color="green")
-
-            # 2. Generate base model comparison CSV (REMOVED - FILE NOT USEFUL)
-            # This file only contained minimal information about models without performance metrics
-            # and was not used by any downstream components
-            comparison_path = None
-            tprint("⚠️ [REGIME_ENSEMBLE] Skipping base models comparison CSV generation (file not useful)", color="yellow")
-
-            # 3. Generate per-regime performance CSV
-            regime_perf_path = None
-            if regime_report and 'regime_statistics' in regime_report:
-                regime_perf_filename = f"regime_ensemble_performance_by_regime_{symbol}_{timestamp}.csv"
-                regime_perf_path = output_path / regime_perf_filename
-
-                tprint(f"📊 Generating per-regime performance CSV: {regime_perf_path}", color="cyan")
-
-                regime_data = []
-                regime_data.append([
-                    'Regime',
-                    'Sample Count',
-                    'Percentage',
-                    'Mean Probability',
-                    'Std Probability',
-                    'High Confidence Count',
-                    'Medium Confidence Count',
-                    'Low Confidence Count'
-                ])
-
-                regime_stats = regime_report['regime_statistics']
-                for regime_key, regime_metrics in regime_stats.items():
-                    if isinstance(regime_metrics, dict):
-                        conf_dist = regime_metrics.get('confidence_distribution', {})
-                        regime_data.append([
-                            regime_key,
-                            str(regime_metrics.get('sample_count', 0)),
-                            f"{regime_metrics.get('percentage', 0):.2f}%",
-                            f"{regime_metrics.get('mean_probability', 0):.6f}",
-                            f"{regime_metrics.get('std_probability', 0):.6f}",
-                            str(conf_dist.get('high_confidence', 0)),
-                            str(conf_dist.get('medium_confidence', 0)),
-                            str(conf_dist.get('low_confidence', 0))
-                        ])
-
-                with open(regime_perf_path, 'w', newline='', encoding='utf-8') as f:
-                    writer = csv.writer(f)
-                    writer.writerows(regime_data)
-
-                tprint(f"✅ Per-regime performance CSV generated: {regime_perf_path}", color="green")
-
-            return str(metrics_path), str(comparison_path) if comparison_path else None
-
-        except Exception as e:
-            tprint(f"❌ Failed to generate CSV reports: {e}", color="red")
-            self.logger.error(f"Failed to generate CSV reports: {e}", exc_info=True)
-            return None, None
-
-    def _generate_markdown_report(self, results: Dict[str, Any], symbol: str, output_dir: str = "outcomes") -> Optional[str]:
-        """Generate comprehensive markdown report for regime ensemble training."""
-        try:
-            from pathlib import Path
-
-            # Create output directory if it doesn't exist
-            output_path = Path(output_dir)
-            output_path.mkdir(parents=True, exist_ok=True)
-
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"regime_ensemble_training_report_{symbol}_{timestamp}.md"
-            report_path = output_path / filename
-
-            tprint(f"📝 Generating markdown report: {report_path}", color="cyan")
-
-            # Build markdown content
-            md_lines = []
-            md_lines.append(f"# Regime Ensemble Training Report")
-            md_lines.append("")
-            md_lines.append(f"**Symbol:** {symbol}")
-            md_lines.append(f"**Model:** stacker_lgbm_calibrated (LightGBM Meta-Learner)")
-            md_lines.append(f"**Generated:** {datetime.now().isoformat()}")
-            md_lines.append(f"**Report Version:** 1.0")
-            md_lines.append("")
-
-            # Ensemble configuration
-            ensemble_config = results.get('regime_ensemble_training_result', {})
-            # Try to get base models from detected models (blank mode) or training result
-            base_models = results.get('detected_base_models', ensemble_config.get('base_models', []))
-
-            md_lines.append("## Ensemble Configuration")
-            md_lines.append("")
-            md_lines.append(f"- **Meta-Learner:** LightGBM with Probability Calibration")
-            md_lines.append(f"- **Number of Base Models:** {len(base_models)}")
-            md_lines.append(f"- **Base Models:** {', '.join(base_models) if base_models else 'N/A'}")
-            md_lines.append("")
-
-            # Ensemble Performance Metrics
-            ensemble_metrics = results.get('ensemble_metrics', {})
-            stacker_metrics = ensemble_metrics.get('stacker_lgbm_calibrated', {})
-            if stacker_metrics:
-                md_lines.append("## Ensemble Performance Metrics")
-                md_lines.append("")
-                md_lines.append("### Overall Performance")
-                md_lines.append("")
-                md_lines.append("| Metric | Value |")
-                md_lines.append("|--------|-------|")
-                md_lines.append(f"| Accuracy | {stacker_metrics.get('accuracy', 0):.4f} |")
-                
-                # Classification report metrics
-                class_report = stacker_metrics.get('classification_report', {})
-                if class_report:
-                    weighted_avg = class_report.get('weighted avg', {})
-                    if weighted_avg:
-                        md_lines.append(f"| Precision (Weighted) | {weighted_avg.get('precision', 0):.4f} |")
-                        md_lines.append(f"| Recall (Weighted) | {weighted_avg.get('recall', 0):.4f} |")
-                        md_lines.append(f"| F1-Score (Weighted) | {weighted_avg.get('f1-score', 0):.4f} |")
-                    
-                    macro_avg = class_report.get('macro avg', {})
-                    if macro_avg:
-                        md_lines.append(f"| Precision (Macro) | {macro_avg.get('precision', 0):.4f} |")
-                        md_lines.append(f"| Recall (Macro) | {macro_avg.get('recall', 0):.4f} |")
-                        md_lines.append(f"| F1-Score (Macro) | {macro_avg.get('f1-score', 0):.4f} |")
-                
-                # Prediction confidence
-                pred_conf = stacker_metrics.get('prediction_confidence', {})
-                if pred_conf:
-                    md_lines.append(f"| Prediction Confidence | {pred_conf.get('mean', 0):.4f} ± {pred_conf.get('std', 0):.4f} |")
-                
-                calibration_method = stacker_metrics.get('calibration_method', 'none')
-                md_lines.append(f"| Calibration Method | {calibration_method} |")
-                md_lines.append("")
-                
-                # Advanced metrics
-                advanced_metrics = stacker_metrics.get('advanced_metrics', {})
-                if advanced_metrics:
-                    md_lines.append("### Advanced Classification Metrics")
-                    md_lines.append("")
-                    md_lines.append("| Metric | Value | Description |")
-                    md_lines.append("|--------|-------|-------------|")
-                    
-                    # Macro F1 (treats each regime equally)
-                    macro_f1 = advanced_metrics.get('macro_f1', 0)
-                    md_lines.append(f"| Macro F1 (Equal Weight) | {macro_f1:.4f} | Treats each regime equally |")
-                    
-                    # Balanced accuracy
-                    balanced_acc = advanced_metrics.get('balanced_accuracy', 0)
-                    md_lines.append(f"| Balanced Accuracy | {balanced_acc:.4f} | Average recall per class |")
-                    
-                    # Cohen's Kappa
-                    cohens_kappa = advanced_metrics.get('cohens_kappa', {})
-                    if cohens_kappa:
-                        kappa_score = cohens_kappa.get('score', 0)
-                        kappa_interp = cohens_kappa.get('interpretation', 'Unknown')
-                        md_lines.append(f"| Cohen's Kappa | {kappa_score:.4f} | {kappa_interp} |")
-                    
-                    # ROC-AUC scores
-                    roc_auc = advanced_metrics.get('roc_auc_scores', {})
-                    if roc_auc:
-                        for class_key, score in roc_auc.items():
-                            md_lines.append(f"| ROC-AUC ({class_key}) | {score:.4f} | One-vs-rest ROC-AUC |")
-                    
-                    # PR-AUC scores
-                    pr_auc = advanced_metrics.get('pr_auc_scores', {})
-                    if pr_auc:
-                        for class_key, score in pr_auc.items():
-                            md_lines.append(f"| PR-AUC ({class_key}) | {score:.4f} | One-vs-rest PR-AUC |")
-                    
-                    # Probabilistic calibration
-                    prob_calib = advanced_metrics.get('probabilistic_calibration', {})
-                    if prob_calib:
-                        md_lines.append(f"| Log Loss | {prob_calib.get('log_loss', 0):.4f} | Logarithmic loss |")
-                        md_lines.append(f"| Brier Score | {prob_calib.get('brier_score', 0):.4f} | Probability calibration |")
-                    
-                    md_lines.append("")
-                
-                # Temporal metrics
-                advanced_metrics = stacker_metrics.get('advanced_metrics', {})
-                if advanced_metrics:
-                    temporal = advanced_metrics.get('temporal_metrics', {})
-                    if temporal:
-                        md_lines.append("### Temporal Regime Metrics")
-                        md_lines.append("")
-                        md_lines.append("| Metric | Value | Description |")
-                        md_lines.append("|--------|-------|-------------|")
-                        
-                        detection_delay = temporal.get('detection_delay', {})
-                        if detection_delay:
-                            md_lines.append(f"| Detection Delay (Mean) | {detection_delay.get('mean_lag', 0):.4f} | Average time to detect regime change |")
-                            md_lines.append(f"| Detection Delay (Std) | {detection_delay.get('std_lag', 0):.4f} | Std deviation of detection delay |")
-                        
-                        persistence = temporal.get('regime_persistence', {})
-                        if persistence:
-                            md_lines.append(f"| True Regime Persistence | {persistence.get('true_regimes', 0):.4f} | Average duration of true regimes |")
-                            md_lines.append(f"| Predicted Regime Persistence | {persistence.get('predicted_regimes', 0):.4f} | Average duration of predicted regimes |")
-                            md_lines.append(f"| Persistence Ratio | {persistence.get('persistence_ratio', 0):.4f} | Ratio of predicted to true persistence |")
-                        
-                        md_lines.append(f"| Transition Accuracy | {temporal.get('transition_accuracy', 0):.4f} | Accuracy of regime transition prediction |")
-                        md_lines.append("")
-                
-                # Segmentation metrics
-                advanced_metrics = stacker_metrics.get('advanced_metrics', {})
-                if advanced_metrics:
-                    segmentation = advanced_metrics.get('segmentation_metrics', {})
-                    if segmentation:
-                        md_lines.append("### Segmentation Metrics")
-                        md_lines.append("")
-                        md_lines.append("| Metric | Value | Description |")
-                        md_lines.append("|--------|-------|-------------|")
-                        md_lines.append(f"| Adjusted Rand Index | {segmentation.get('adjusted_rand_index', 0):.4f} | Segmentation quality measure |")
-                        
-                        boundary = segmentation.get('boundary_detection', {})
-                        if boundary:
-                            md_lines.append(f"| Boundary Precision | {boundary.get('precision', 0):.4f} | Precision of boundary detection |")
-                            md_lines.append(f"| Boundary Recall | {boundary.get('recall', 0):.4f} | Recall of boundary detection |")
-                            md_lines.append(f"| Boundary F1-Score | {boundary.get('f1_score', 0):.4f} | F1-score of boundary detection |")
-                        md_lines.append("")
-                
-                # Change-point metrics
-                advanced_metrics = stacker_metrics.get('advanced_metrics', {})
-                if advanced_metrics:
-                    change_point = advanced_metrics.get('change_point_metrics', {})
-                    if change_point:
-                        md_lines.append("### Change-Point Detection Metrics")
-                        md_lines.append("")
-                        md_lines.append("| Metric | Value | Description |")
-                        md_lines.append("|--------|-------|-------------|")
-                        md_lines.append(f"| Change-Point Precision | {change_point.get('precision', 0):.4f} | Precision of change-point detection |")
-                        md_lines.append(f"| Change-Point Recall | {change_point.get('recall', 0):.4f} | Recall of change-point detection |")
-                        md_lines.append(f"| Change-Point F1-Score | {change_point.get('f1_score', 0):.4f} | F1-score of change-point detection |")
-                        md_lines.append(f"| True Change Points | {change_point.get('true_change_points', 0)} | Number of true change points |")
-                        md_lines.append(f"| Predicted Change Points | {change_point.get('predicted_change_points', 0)} | Number of predicted change points |")
-                        md_lines.append(f"| Detected Change Points | {change_point.get('detected_change_points', 0)} | Number of correctly detected change points |")
-                        md_lines.append("")
-                
-                # Sequence metrics
-                advanced_metrics = stacker_metrics.get('advanced_metrics', {})
-                if advanced_metrics:
-                    sequence = advanced_metrics.get('sequence_metrics', {})
-                    if sequence:
-                        md_lines.append("### Sequence Metrics")
-                        md_lines.append("")
-                        md_lines.append("| Metric | Value | Description |")
-                        md_lines.append("|--------|-------|-------------|")
-                        md_lines.append(f"| Hamming Loss | {sequence.get('hamming_loss', 0):.4f} | Fraction of misclassified time points |")
-                        md_lines.append("")
-                
-                # Per-regime performance
-                if class_report:
-                    md_lines.append("### Per-Regime Performance")
-                    md_lines.append("")
-                    md_lines.append("| Regime | Precision | Recall | F1-Score | Support |")
-                    md_lines.append("|--------|-----------|--------|----------|---------|")
-                    for regime_key, regime_metrics in class_report.items():
-                        if isinstance(regime_metrics, dict) and regime_key not in ['accuracy', 'macro avg', 'weighted avg']:
-                            md_lines.append(f"| {regime_key} | {regime_metrics.get('precision', 0):.4f} | {regime_metrics.get('recall', 0):.4f} | {regime_metrics.get('f1-score', 0):.4f} | {regime_metrics.get('support', 0)} |")
-                    md_lines.append("")
-
-            # Overall statistics
-            regime_report = results.get('regime_probability_report', {})
-            if regime_report:
-                overall = regime_report.get('overall_statistics', {})
-                md_lines.append("## Overall Statistics")
-                md_lines.append("")
-                md_lines.append("| Metric | Value |")
-                md_lines.append("|--------|-------|")
-                md_lines.append(f"| Total Samples | {overall.get('total_samples', 'N/A')} |")
-                md_lines.append(f"| Number of Regimes | {overall.get('n_regimes', 'N/A')} |")
-                md_lines.append(f"| Mean Max Probability | {overall.get('mean_max_probability', 0):.4f} |")
-                md_lines.append(f"| Prediction Confidence | {overall.get('prediction_confidence', 0):.4f} |")
-                md_lines.append(f"| Uncertainty Entropy | {overall.get('uncertainty_entropy', 0):.4f} |")
-                md_lines.append("")
-
-                # Regime statistics
-                md_lines.append("## Regime Statistics")
-                md_lines.append("")
-                md_lines.append("| Regime | Sample Count | Percentage | Mean Prob | High Conf | Med Conf | Low Conf |")
-                md_lines.append("|--------|--------------|------------|-----------|-----------|----------|----------|")
-
-                regime_stats = regime_report.get('regime_statistics', {})
-                for regime_key, regime_data in regime_stats.items():
-                    if isinstance(regime_data, dict):
-                        conf_dist = regime_data.get('confidence_distribution', {})
-                        md_lines.append(
-                            f"| {regime_key} | "
-                            f"{regime_data.get('sample_count', 0)} | "
-                            f"{regime_data.get('percentage', 0):.1f}% | "
-                            f"{regime_data.get('mean_probability', 0):.3f} | "
-                            f"{conf_dist.get('high_confidence', 0)} | "
-                            f"{conf_dist.get('medium_confidence', 0)} | "
-                            f"{conf_dist.get('low_confidence', 0)} |"
-                        )
-                md_lines.append("")
-
-            # Temporal analysis summary
-            temporal_analysis = results.get('temporal_regime_analysis', {})
-            if temporal_analysis:
-                md_lines.append("## Temporal Analysis")
-                md_lines.append("")
-                md_lines.append(f"- **Transition Entropy:** {temporal_analysis.get('transition_entropy', 0):.4f}")
-                md_lines.append(f"- **Average Regime Duration:** {temporal_analysis.get('average_regime_duration', 0):.2f} periods")
-                md_lines.append(f"- **Number of Transitions:** {temporal_analysis.get('n_transitions', 0)}")
-                md_lines.append("")
-
-            # Write markdown file
-            with open(report_path, 'w', encoding='utf-8') as f:
-                f.write('\n'.join(md_lines))
-
-            tprint(f"✅ Markdown report generated: {report_path}", color="green")
-            return str(report_path)
-
-        except Exception as e:
-            tprint(f"❌ Failed to generate markdown report: {e}", color="red")
-            self.logger.error(f"Failed to generate markdown report: {e}", exc_info=True)
-            return None
-    
-    def _generate_confusion_matrix_visualization(self, y_true: np.ndarray, y_pred: np.ndarray, output_dir: str = "outcomes") -> Optional[str]:
-        """
-        Generate and save confusion matrix visualization.
-        
-        Args:
-            y_true: True regime labels
-            y_pred: Predicted regime labels
-            output_dir: Directory to save visualization
-            
-        Returns:
-            Path to saved visualization file
-        """
-        try:
-            import matplotlib.pyplot as plt
-            import seaborn as sns
-            from pathlib import Path
-            
-            # Create output directory if it doesn't exist
-            output_path = Path(output_dir)
-            output_path.mkdir(parents=True, exist_ok=True)
-            
-            # Calculate confusion matrix
-            cm = confusion_matrix(y_true, y_pred)
-            cm_normalized = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
-            
-            # Create figure with two subplots
-            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
-            
-            # Plot absolute confusion matrix
-            sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', ax=ax1,
-                       xticklabels=[f'Regime {i}' for i in range(cm.shape[1])],
-                       yticklabels=[f'Regime {i}' for i in range(cm.shape[0])])
-            ax1.set_title('Confusion Matrix (Absolute Counts)')
-            ax1.set_xlabel('Predicted Regime')
-            ax1.set_ylabel('True Regime')
-            
-            # Plot normalized confusion matrix
-            sns.heatmap(cm_normalized, annot=True, fmt='.2f', cmap='Blues', ax=ax2,
-                       xticklabels=[f'Regime {i}' for i in range(cm_normalized.shape[1])],
-                       yticklabels=[f'Regime {i}' for i in range(cm_normalized.shape[0])])
-            ax2.set_title('Confusion Matrix (Normalized)')
-            ax2.set_xlabel('Predicted Regime')
-            ax2.set_ylabel('True Regime')
-            
-            plt.tight_layout()
-            
-            # Save figure
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"regime_ensemble_confusion_matrix_{timestamp}.png"
-            filepath = output_path / filename
-            
-            plt.savefig(filepath, dpi=300, bbox_inches='tight')
-            plt.close()
-            
-            tprint(f"✅ [REGIME_ENSEMBLE] Confusion matrix visualization saved: {filepath}", color="green")
-            return str(filepath)
-            
-        except Exception as e:
-            tprint(f"❌ [REGIME_ENSEMBLE] Failed to generate confusion matrix visualization: {e}", color="red")
-            self.logger.error(f"Failed to generate confusion matrix visualization: {e}", exc_info=True)
-            return None
-    
-    def _generate_roc_curves_visualization(self, y_true: np.ndarray, y_pred_proba: np.ndarray, output_dir: str = "outcomes") -> Optional[str]:
-        """
-        Generate and save ROC curves visualization for multi-class classification.
-        
-        Args:
-            y_true: True regime labels
-            y_pred_proba: Predicted probabilities for each regime
-            output_dir: Directory to save visualization
-            
-        Returns:
-            Path to saved visualization file
-        """
-        try:
-            import matplotlib.pyplot as plt
-            from sklearn.metrics import roc_curve, auc
-            from sklearn.preprocessing import label_binarize
-            from pathlib import Path
-            
-            # Create output directory if it doesn't exist
-            output_path = Path(output_dir)
-            output_path.mkdir(parents=True, exist_ok=True)
-            
-            # Get unique classes
-            classes = np.unique(y_true)
-            n_classes = len(classes)
-            
-            # Binarize output
-            y_test_bin = label_binarize(y_true, classes=classes)
-            
-            # Create figure
-            plt.figure(figsize=(10, 8))
-            
-            # Compute ROC curve and ROC area for each class
-            for i in range(n_classes):
-                fpr, tpr, _ = roc_curve(y_test_bin[:, i], y_pred_proba[:, i])
-                roc_auc = auc(fpr, tpr)
-                plt.plot(fpr, tpr, lw=2,
-                        label=f'ROC curve of Regime {classes[i]} (area = {roc_auc:.2f})')
-            
-            plt.plot([0, 1], [0, 1], 'k--', lw=2)
-            plt.xlim([0.0, 1.0])
-            plt.ylim([0.0, 1.05])
-            plt.xlabel('False Positive Rate')
-            plt.ylabel('True Positive Rate')
-            plt.title('Multi-Class ROC Curves for Regime Detection')
-            plt.legend(loc="lower right")
-            plt.grid(alpha=0.3)
-            
-            # Save figure
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"regime_ensemble_roc_curves_{timestamp}.png"
-            filepath = output_path / filename
-            
-            plt.savefig(filepath, dpi=300, bbox_inches='tight')
-            plt.close()
-            
-            tprint(f"✅ [REGIME_ENSEMBLE] ROC curves visualization saved: {filepath}", color="green")
-            return str(filepath)
-            
-        except Exception as e:
-            tprint(f"❌ [REGIME_ENSEMBLE] Failed to generate ROC curves visualization: {e}", color="red")
-            self.logger.error(f"Failed to generate ROC curves visualization: {e}", exc_info=True)
-            return None
-    
-    def _generate_precision_recall_curves_visualization(self, y_true: np.ndarray, y_pred_proba: np.ndarray, output_dir: str = "outcomes") -> Optional[str]:
-        """
-        Generate and save Precision-Recall curves visualization for multi-class classification.
-        
-        Args:
-            y_true: True regime labels
-            y_pred_proba: Predicted probabilities for each regime
-            output_dir: Directory to save visualization
-            
-        Returns:
-            Path to saved visualization file
-        """
-        try:
-            import matplotlib.pyplot as plt
-            from sklearn.metrics import precision_recall_curve, average_precision_score
-            from sklearn.preprocessing import label_binarize
-            from pathlib import Path
-            
-            # Create output directory if it doesn't exist
-            output_path = Path(output_dir)
-            output_path.mkdir(parents=True, exist_ok=True)
-            
-            # Get unique classes
-            classes = np.unique(y_true)
-            n_classes = len(classes)
-            
-            # Binarize output
-            y_test_bin = label_binarize(y_true, classes=classes)
-            
-            # Create figure
-            plt.figure(figsize=(10, 8))
-            
-            # Compute Precision-Recall curve and area for each class
-            for i in range(n_classes):
-                precision, recall, _ = precision_recall_curve(y_test_bin[:, i], y_pred_proba[:, i])
-                avg_precision = average_precision_score(y_test_bin[:, i], y_pred_proba[:, i])
-                plt.plot(recall, precision, lw=2,
-                        label=f'PR curve of Regime {classes[i]} (area = {avg_precision:.2f})')
-            
-            plt.xlim([0.0, 1.0])
-            plt.ylim([0.0, 1.05])
-            plt.xlabel('Recall')
-            plt.ylabel('Precision')
-            plt.title('Multi-Class Precision-Recall Curves for Regime Detection')
-            plt.legend(loc="lower left")
-            plt.grid(alpha=0.3)
-            
-            # Save figure
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"regime_ensemble_pr_curves_{timestamp}.png"
-            filepath = output_path / filename
-            
-            plt.savefig(filepath, dpi=300, bbox_inches='tight')
-            plt.close()
-            
-            tprint(f"✅ [REGIME_ENSEMBLE] Precision-Recall curves visualization saved: {filepath}", color="green")
-            return str(filepath)
-            
-        except Exception as e:
-            tprint(f"❌ [REGIME_ENSEMBLE] Failed to generate Precision-Recall curves visualization: {e}", color="red")
-            self.logger.error(f"Failed to generate Precision-Recall curves visualization: {e}", exc_info=True)
-            return None
-    
-    def _generate_temporal_regime_visualization(self, y_true: np.ndarray, y_pred: np.ndarray, output_dir: str = "outcomes") -> Optional[str]:
-        """
-        Generate and save temporal regime visualization showing true vs predicted regimes over time.
-        
-        Args:
-            y_true: True regime labels
-            y_pred: Predicted regime labels
-            output_dir: Directory to save visualization
-            
-        Returns:
-            Path to saved visualization file
-        """
-        try:
-            import matplotlib.pyplot as plt
-            from pathlib import Path
-            
-            # Create output directory if it doesn't exist
-            output_path = Path(output_dir)
-            output_path.mkdir(parents=True, exist_ok=True)
-            
-            # Create figure
-            fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(15, 8), sharex=True)
-            
-            # Plot true regimes
-            ax1.step(range(len(y_true)), y_true, where='post', linewidth=2, alpha=0.8)
-            ax1.set_title('True Regimes Over Time')
-            ax1.set_ylabel('Regime')
-            ax1.grid(True, alpha=0.3)
-            ax1.set_ylim(min(y_true.min(), y_pred.min()) - 0.5,
-                        max(y_true.max(), y_pred.max()) + 0.5)
-            
-            # Plot predicted regimes
-            ax2.step(range(len(y_pred)), y_pred, where='post', linewidth=2, alpha=0.8)
-            ax2.set_title('Predicted Regimes Over Time')
-            ax2.set_xlabel('Time Step')
-            ax2.set_ylabel('Regime')
-            ax2.grid(True, alpha=0.3)
-            ax2.set_ylim(min(y_true.min(), y_pred.min()) - 0.5,
-                        max(y_true.max(), y_pred.max()) + 0.5)
-            
-            plt.tight_layout()
-            
-            # Save figure
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"regime_ensemble_temporal_comparison_{timestamp}.png"
-            filepath = output_path / filename
-            
-            plt.savefig(filepath, dpi=300, bbox_inches='tight')
-            plt.close()
-            
-            tprint(f"✅ [REGIME_ENSEMBLE] Temporal regime visualization saved: {filepath}", color="green")
-            return str(filepath)
-            
-        except Exception as e:
-            tprint(f"❌ [REGIME_ENSEMBLE] Failed to generate temporal regime visualization: {e}", color="red")
-            self.logger.error(f"Failed to generate temporal regime visualization: {e}", exc_info=True)
-            return None
-    
-    def _analyze_feature_breakdown(self, feature_names: List[str]) -> Dict[str, int]:
-        """
-        Analyze the breakdown of meta-features by type for debugging.
-        
-        Args:
-            feature_names: List of feature names
-            
-        Returns:
-            Dictionary with feature counts by type
-        """
-        breakdown = {
-            'base_predictions': 0,
-            'uncertainty': 0,
-            'confidence': 0,
-            'disagreement': 0,
-            'other': 0
-        }
-        
-        for name in feature_names:
-            name_lower = name.lower()
-            if 'class' in name_lower and 'prob' in name_lower:
-                breakdown['base_predictions'] += 1
-            elif 'uncertainty' in name_lower:
-                breakdown['uncertainty'] += 1
-            elif 'confidence' in name_lower:
-                breakdown['confidence'] += 1
-            elif 'disagreement' in name_lower:
-                breakdown['disagreement'] += 1
-            else:
-                breakdown['other'] += 1
-        
-        return breakdown
-
-    def predict_regimes_with_probabilities(
-        self,
-        stacker_result: Dict[str, Any],
-        X: np.ndarray,
-        feature_names: List[str],
-        scaler: Any = None
-    ) -> Dict[str, Any]:
-        """
-        Predict regime labels and probabilities using trained ensemble models.
-        Enhanced to provide comprehensive probabilistic outputs for each detected regime.
-
-        Args:
-            stacker_result: Dictionary containing trained meta-learner and base models
-            X: Feature matrix
-            feature_names: List of feature names
-            scaler: Fitted scaler for feature normalization (optional)
-
-        Returns:
-            Dictionary with comprehensive prediction information including:
-            - regime_labels: Predicted regime for each sample
-            - regime_probabilities: Probability matrix for each regime
-            - confidence_scores: Confidence scores for each prediction
-            - regime_analysis: Detailed analysis of regime probabilities
-            - ensemble_probabilities: Probabilities from all models in ensemble
-        """
-        try:
-            tprint("🔮 [REGIME_ENSEMBLE] Starting regime prediction with probabilities", color="cyan")
-
-            # Scale features if scaler is provided
-            if scaler is not None:
-                X_scaled = scaler.transform(X)
-                tprint("✅ [REGIME_ENSEMBLE] Features scaled using provided scaler", color="green")
-            else:
-                X_scaled = X
-                tprint("⚠️ [REGIME_ENSEMBLE] No scaler provided, using unscaled features", color="yellow")
-
-            # Extract meta-learner and base models
-            meta_learner = stacker_result.get('meta_learner')
+            # Base models information
             base_models = stacker_result.get('base_models', {})
-            base_model_names = stacker_result.get('base_model_names', [])
-
-            if meta_learner is None:
-                raise ValueError("No meta-learner found in stacker_result")
-
-            # Generate base model predictions for meta-learning
-            tprint("🔧 [REGIME_ENSEMBLE] Generating base model predictions", color="blue")
-            base_predictions = []
-
-            for name, model in base_models.items():
-                try:
-                    if hasattr(model, 'predict_proba'):
-                        pred_proba = model.predict_proba(X_scaled)
-                        base_predictions.append(pred_proba)
-                        tprint(f"✅ [REGIME_ENSEMBLE] {name}: Generated {pred_proba.shape[1]} regime probabilities", color="green")
-                    else:
-                        pred = model.predict(X_scaled)
-                        unique_classes = np.unique(pred)
-                        pred_onehot = np.zeros((len(pred), len(unique_classes)))
-                        for i, class_val in enumerate(unique_classes):
-                            pred_onehot[pred == class_val, i] = 1
-                        base_predictions.append(pred_onehot)
-                        tprint(f"✅ [REGIME_ENSEMBLE] {name}: Converted class predictions to {len(unique_classes)} regime probabilities", color="green")
-                except Exception as e:
-                    tprint(f"⚠️ [REGIME_ENSEMBLE] Failed to get predictions from {name}: {e}", color="yellow")
-                    continue
-
-            if not base_predictions:
-                raise ValueError("No valid base model predictions generated")
-
-            # Combine base model predictions
-            meta_features = np.column_stack(base_predictions)
-            tprint(f"📊 [REGIME_ENSEMBLE] Meta-features shape: {meta_features.shape}", color="blue")
-
-            # Apply zero-variance mask if it was used during training
-            zero_var_mask = stacker_result.get('zero_var_mask')
-            if zero_var_mask is not None:
-                tprint(f"🔧 [REGIME_ENSEMBLE] Applying zero-variance mask to prediction features", color="cyan")
-                meta_features = meta_features[:, zero_var_mask]
-                tprint(f"✅ [REGIME_ENSEMBLE] Filtered meta-features: {meta_features.shape}", color="green")
-            else:
-                tprint(f"✅ [REGIME_ENSEMBLE] Using meta-features as-is: {meta_features.shape}", color="green")
-
-            # Make predictions using meta-learner
-            regime_labels = meta_learner.predict(meta_features)
-            regime_probabilities = meta_learner.predict_proba(meta_features)
-
-            # Get number of regimes
-            n_regimes = regime_probabilities.shape[1] if len(regime_probabilities.shape) > 1 else 1
-
-            # Calculate comprehensive probability information
-            max_probs = np.max(regime_probabilities, axis=1)
-            confidence_scores = max_probs
-
-            # Calculate regime distribution statistics
-            regime_counts = np.bincount(regime_labels, minlength=n_regimes)
-            regime_percentages = regime_counts / len(regime_labels) * 100
-
-            # Calculate average probabilities for each regime
-            avg_regime_probabilities = np.mean(regime_probabilities, axis=0)
-
-            # Calculate regime stability (how consistent predictions are)
-            regime_stability = 1.0 - np.std(regime_probabilities, axis=0)
-
-            # Calculate entropy (uncertainty measure)
-            epsilon = 1e-10
-            entropy = -np.sum(regime_probabilities * np.log(regime_probabilities + epsilon), axis=1)
-
-            # Calculate dominance (difference between top 2 probabilities)
-            sorted_probs = np.sort(regime_probabilities, axis=1)
-            if n_regimes > 1:
-                dominance = sorted_probs[:, -1] - sorted_probs[:, -2]
-            else:
-                dominance = np.ones(len(regime_labels))
-
-            # Generate ensemble probabilities from all available models
-            try:
-                from src.utils.regime_ensemble_utils import generate_ensemble_probabilities
-                ensemble_probabilities = generate_ensemble_probabilities(base_models, X_scaled, feature_names, "REGIME_ENSEMBLE")
-            except ImportError:
-                tprint("⚠️ [REGIME_ENSEMBLE] Regime ensemble utils not available, using meta-learner probabilities only", color="yellow")
-                ensemble_probabilities = regime_probabilities
-
-            # Create comprehensive prediction result
-            prediction_result = {
-                'regime_labels': regime_labels,
-                'regime_probabilities': regime_probabilities,
-                'confidence_scores': confidence_scores,
-                'n_regimes': n_regimes,
-                'regime_counts': regime_counts.tolist(),
-                'regime_percentages': regime_percentages.tolist(),
-                'avg_regime_probabilities': avg_regime_probabilities.tolist(),
-                'regime_stability': regime_stability.tolist(),
-                'entropy': entropy,
-                'dominance': dominance,
-                'model_used': 'stacker_lgbm_calibrated',
-                'ensemble_probabilities': ensemble_probabilities,
-                'prediction_metadata': {
-                    'model_type': type(meta_learner).__name__,
-                    'n_samples': len(regime_labels),
-                    'feature_count': X.shape[1],
-                    'prediction_timestamp': datetime.now().isoformat(),
-                    'scaled_features_used': scaler is not None,
-                    'ensemble_models_used': len(base_models)
-                }
-            }
-
-            tprint(f"✅ [REGIME_ENSEMBLE] Prediction completed: {len(regime_labels)} samples, {n_regimes} regimes", color="green")
-            tprint(f"📊 [REGIME_ENSEMBLE] Confidence range: [{confidence_scores.min():.3f}, {confidence_scores.max():.3f}]", color="cyan")
-            tprint(f"📈 [REGIME_ENSEMBLE] Regime distribution: {dict(zip(range(n_regimes), regime_counts))}", color="cyan")
-
-            return prediction_result
-
+            csv_lines.append(f"n_base_models,{len(base_models)},configuration,ensemble")
+            
+            # Training metadata
+            metadata = ensemble_result.get('metadata', {})
+            csv_lines.append(f"n_features,{metadata.get('n_features', 0)},metadata,training")
+            csv_lines.append(f"n_samples,{metadata.get('data_shape', [0, 0])[0]},metadata,training")
+            csv_lines.append(f"n_regimes,{metadata.get('n_regimes', 0)},metadata,training")
+            
+            # Training time
+            csv_lines.append(f"training_time_seconds,{execution_time},metadata,training")
+            
+            # Hardware optimization
+            hw_opt = ensemble_result.get('hardware_optimization', {})
+            if hw_opt:
+                csv_lines.append(f"hardware_optimization_enabled,{hw_opt.get('enabled', False)},configuration,hardware")
+            
+            # Write CSV file
+            csv_filename = f"regime_ensemble_training_report_{timestamp}.csv"
+            csv_path = outcomes_dir / csv_filename
+            
+            with open(csv_path, 'w', encoding='utf-8') as f:
+                f.write("\n".join(csv_lines))
+            
+            tprint(f"✅ [REGIME_ENSEMBLE] CSV report saved: {csv_path}", color="green")
+            
         except Exception as e:
-            tprint(f"❌ [REGIME_ENSEMBLE] Prediction failed: {e}", color="red")
-            self.logger.error(f"Error in regime prediction: {e}", exc_info=True)
-            return {
-                'regime_labels': np.array([]),
-                'regime_probabilities': np.array([]),
-                'error': str(e)
-            }
+            tprint(f"❌ [REGIME_ENSEMBLE] Failed to generate CSV report: {e}", color="red")
+            self.logger.error(f"Failed to generate CSV report: {e}", exc_info=True)
+
+    async def _generate_markdown_report(self, results: Dict[str, Any], outcomes_dir: Path, timestamp: str) -> None:
+        """
+        Generate markdown training report.
+        
+        Args:
+            results: Training results dictionary
+            outcomes_dir: Directory to save reports
+            timestamp: Timestamp for filename
+        """
+        try:
+            md_lines = []
+            
+            # Extract ensemble results
+            ensemble_result = results.get('regime_ensemble_training_result', {})
+            stacker_result = ensemble_result.get('stacker_lgbm_calibrated', {})
+            ensemble_metrics = ensemble_result.get('ensemble_metrics', {}).get('stacker_lgbm_calibrated', {})
+            
+            # Header
+            md_lines.append("# Regime Ensemble Training Report")
+            md_lines.append(f"**Generated**: {datetime.now().isoformat()}")
+            md_lines.append(f"**Symbol**: {getattr(self.config, 'symbol', 'UNKNOWN')}")
+            md_lines.append(f"**Exchange**: {getattr(self.config, 'exchange', 'UNKNOWN')}")
+            md_lines.append(f"**Timeframe**: {getattr(self.config, 'timeframe', 'UNKNOWN')}")
+            md_lines.append("")
+            
+            # Executive Summary
+            md_lines.append("## Executive Summary")
+            md_lines.append(f"- **Ensemble Type**: Stacker LGBM Calibrated")
+            md_lines.append(f"- **Calibration Method**: {stacker_result.get('calibration_method', 'none')}")
+            md_lines.append(f"- **Base Models Used**: {len(stacker_result.get('base_models', {}))}")
+            md_lines.append(f"- **Training Time**: {results.get('execution_time', 0):.2f} seconds")
+            md_lines.append("")
+            
+            # Performance Metrics
+            md_lines.append("## Performance Metrics")
+            md_lines.append("| Metric | Value |")
+            md_lines.append("|--------|-------|")
+            
+            if 'accuracy' in ensemble_metrics:
+                md_lines.append(f"| Accuracy | {ensemble_metrics['accuracy']:.4f} |")
+            
+            if 'prediction_confidence' in ensemble_metrics:
+                conf = ensemble_metrics['prediction_confidence']
+                if isinstance(conf, dict):
+                    md_lines.append(f"| Mean Confidence | {conf.get('mean', 0):.4f} |")
+                    md_lines.append(f"| Std Confidence | {conf.get('std', 0):.4f} |")
+            
+            md_lines.append("")
+            
+            # Model Configuration
+            md_lines.append("## Model Configuration")
+            metadata = ensemble_result.get('metadata', {})
+            md_lines.append(f"- **Features Used**: {metadata.get('n_features', 0)}")
+            md_lines.append(f"- **Samples Trained**: {metadata.get('data_shape', [0, 0])[0]}")
+            md_lines.append(f"- **Regimes Detected**: {metadata.get('n_regimes', 0)}")
+            md_lines.append("")
+            
+            # Base Models Summary
+            base_models = stacker_result.get('base_models', {})
+            if base_models:
+                md_lines.append("## Base Models Summary")
+                md_lines.append("| Model | Status |")
+                md_lines.append("|-------|--------|")
+                for model_name in base_models.keys():
+                    md_lines.append(f"| {model_name} | ✅ Trained |")
+                md_lines.append("")
+            
+            # Hardware Optimization
+            hw_opt = ensemble_result.get('hardware_optimization', {})
+            if hw_opt:
+                md_lines.append("## Hardware Optimization")
+                md_lines.append(f"- **Status**: {'Enabled' if hw_opt.get('enabled', False) else 'Disabled'}")
+                md_lines.append("")
+            
+            # Footer
+            md_lines.append("---")
+            md_lines.append("*Report generated by Regime Ensemble Training Component*")
+            
+            # Write markdown file
+            md_filename = f"regime_ensemble_training_report_{timestamp}.md"
+            md_path = outcomes_dir / md_filename
+            
+            with open(md_path, 'w', encoding='utf-8') as f:
+                f.write("\n".join(md_lines))
+            
+            tprint(f"✅ [REGIME_ENSEMBLE] Markdown report saved: {md_path}", color="green")
+            
+        except Exception as e:
+            tprint(f"❌ [REGIME_ENSEMBLE] Failed to generate markdown report: {e}", color="red")
+            self.logger.error(f"Failed to generate markdown report: {e}", exc_info=True)
+
+            return f"Error generating text report: {e}"

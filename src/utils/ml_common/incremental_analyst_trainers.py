@@ -46,6 +46,7 @@ import numpy as np
 import pandas as pd
 from scipy import sparse
 from scipy.special import expit
+from src.utils.ml_common.oof_probability_calibration import get_recommended_calibration_method
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +77,7 @@ except ImportError:
 
 try:
     from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
-    from sklearn.linear_model import BayesianRidge, RidgeClassifier
+    from sklearn.linear_model import BayesianRidge, RidgeClassifier, LogisticRegression
     from sklearn.preprocessing import StandardScaler
     from sklearn.isotonic import IsotonicRegression
     from sklearn.base import BaseEstimator, RegressorMixin, ClassifierMixin, clone
@@ -88,6 +89,7 @@ except ImportError:
     KNeighborsRegressor = None
     BayesianRidge = None
     RidgeClassifier = None
+    LogisticRegression = None
     StandardScaler = None
     IsotonicRegression = None
     BaseEstimator = None
@@ -140,6 +142,7 @@ class IncrementalTrainingConfig:
     
     # Task type
     task_type: str = "classification"  # Defaulting to classification as per request
+    calibration_method: str = "isotonic"  # "isotonic", "platt", "auto"
     
     # HPO configuration - runs ONCE at burn-in only (NOT during incremental windows)
     # This finds good hyperparameters on the initial data, then warm-starts from there
@@ -246,12 +249,14 @@ class CalibratedModel(BaseEstimator, RegressorMixin):
     Handles both regression and classification (via probability).
     """
 
-    def __init__(self, base_model, task_type='classification'):
+    def __init__(self, base_model, task_type='classification', calibration_method='isotonic'):
         self.base_model = base_model
         self.task_type = task_type
-        self.calibrator = IsotonicRegression(out_of_bounds='clip', increasing='auto')
+        self.calibration_method = calibration_method
+        self.calibrator = None
         self.is_calibrated = False
         self._fitted_scaler = None  # For models that need scaling inside
+        self._resolved_method = None
 
     def fit_calibration(self, X_val, y_val):
         """Fit the calibrator using validation data."""
@@ -262,15 +267,12 @@ class CalibratedModel(BaseEstimator, RegressorMixin):
         try:
             if self.task_type == 'classification':
                 if hasattr(self.base_model, 'predict_proba'):
-                    # Use probability of positive class
                     raw_preds = self.base_model.predict_proba(X_val)[:, 1]
                 elif hasattr(self.base_model, 'decision_function'):
-                    # For RidgeClassifier etc, map decision function to 0-1 via sigmoid
-                    # or just rely on isotonic to map decision score -> probability
                     raw_preds = self.base_model.decision_function(X_val)
-                    if raw_preds.ndim > 1: raw_preds = raw_preds[:, 0]
+                    if raw_preds.ndim > 1:
+                        raw_preds = raw_preds[:, 0]
                 else:
-                    # Fallback to binary pred if nothing else (poor calibration source)
                     raw_preds = self.base_model.predict(X_val)
             else:
                 raw_preds = self.base_model.predict(X_val)
@@ -278,10 +280,34 @@ class CalibratedModel(BaseEstimator, RegressorMixin):
             logger.warning(f"Failed to get base predictions for calibration: {e}")
             return
 
-        # Fit calibrator (maps raw_preds -> y_val)
+        method = self.calibration_method or 'isotonic'
+        if method == 'auto':
+            try:
+                recommended = get_recommended_calibration_method(len(X_val))
+            except Exception:
+                recommended = 'isotonic'
+            if recommended == 'platt':
+                method = 'platt'
+            else:
+                method = 'isotonic'
+
+        if self.task_type != 'classification':
+            method = 'isotonic'
+
         try:
-            self.calibrator.fit(raw_preds, y_val)
-            self.is_calibrated = True
+            if method == 'platt' and SKLEARN_AVAILABLE and LogisticRegression is not None:
+                self.calibrator = LogisticRegression(C=1.0, solver='lbfgs', max_iter=1000)
+                self.calibrator.fit(np.asarray(raw_preds).reshape(-1, 1), y_val)
+                self._resolved_method = 'platt'
+                self.is_calibrated = True
+            else:
+                if IsotonicRegression is None:
+                    self.is_calibrated = False
+                    return
+                self.calibrator = IsotonicRegression(out_of_bounds='clip', increasing='auto')
+                self.calibrator.fit(raw_preds, y_val)
+                self._resolved_method = 'isotonic'
+                self.is_calibrated = True
         except Exception as e:
             logger.warning(f"Calibration failed: {e}")
             self.is_calibrated = False
@@ -304,7 +330,12 @@ class CalibratedModel(BaseEstimator, RegressorMixin):
             logger.error(f"Prediction failed in wrapper: {e}")
             return np.zeros(len(X))
 
-        if self.is_calibrated:
+        if self.is_calibrated and self.calibrator is not None:
+            if getattr(self, '_resolved_method', None) == 'platt' and hasattr(self.calibrator, 'predict_proba'):
+                try:
+                    return self.calibrator.predict_proba(np.asarray(raw_preds).reshape(-1, 1))[:, 1]
+                except Exception:
+                    pass
             return self.calibrator.predict(raw_preds)
 
         # If not calibrated and it's classification decision function,
@@ -664,7 +695,7 @@ class IncrementalLGBMTrainer(BaseIncrementalTrainer):
         )
         
         # Wrap and calibrate
-        calibrated_model = CalibratedModel(model, self.config.task_type)
+        calibrated_model = CalibratedModel(model, self.config.task_type, self.config.calibration_method)
         calibrated_model.fit_calibration(X_val, y_val)
 
         if verbose:
@@ -711,7 +742,7 @@ class IncrementalLGBMTrainer(BaseIncrementalTrainer):
             callbacks=[lgb.early_stopping(early_stopping_rounds), lgb.log_evaluation(0)]
         )
         
-        calibrated_model = CalibratedModel(model, self.config.task_type)
+        calibrated_model = CalibratedModel(model, self.config.task_type, self.config.calibration_method)
         calibrated_model.fit_calibration(X_val, y_val)
         
         return calibrated_model
@@ -796,20 +827,30 @@ class IncrementalLGBMTrainer(BaseIncrementalTrainer):
         return {'best_params': study.best_params, 'best_value': study.best_value}
 
 
+"""Incremental bagged LightGBM classifier utilities.
+
+This section defines the bagged meta-model used by the Analyst incremental
+trainer. Historically the wrapper was named ``BaggedLGBMRegressor`` even
+though it operates in a classification setting (probabilities for class 1).
+
+To make the intent clearer we now expose it as ``BaggedLGBMClassifier`` while
+keeping a thin alias ``BaggedLGBMRegressor`` for backward compatibility so
+that any persisted artifacts or older code paths continue to function.
+"""
+
 # ============================================================================
 # Incremental Bagged LGBM Trainer (Bag-Lower)
 # ============================================================================
 
-class BaggedLGBMRegressor:
-    """
-    Bagged LGBM regressor/classifier with Diversity Defense support.
 
-    Supports mean/std/lower predictions, and when diversity defense is enabled,
-    also provides MAD-based consensus predictions using specialist models with
-    different objectives (Sharpe, Tanh, Huber).
+class BaggedLGBMClassifier:
+    """Bagged LightGBM classifier with Diversity Defense support.
 
-    Feature diversity is controlled via colsample_bytree (NOT external feature loops).
-    All models use the full feature set, with LightGBM internally selecting subsets.
+    All underlying models are expected to behave like ``LGBMClassifier``
+    instances and return class-1 probabilities via ``predict_proba``. The
+    wrapper exposes several aggregation views over the per-bag probabilities
+    (mean/std/lower and, when Diversity Defense is enabled, MAD-based
+    consensus signals).
     """
 
     def __init__(
@@ -1018,7 +1059,9 @@ class BaggedLGBMRegressor:
                 mad_floor = getattr(self.diversity_defense_config, 'mad_floor', 0.25)
             mad_eff = np.maximum(mad, mad_floor)
             # Use signal-space median
-            consensus = median_signal / (1.0 + mad_eff)
+            signal_strength = np.abs(median_signal)
+            raw_score = signal_strength - 1.1 * mad_eff
+            consensus = np.clip(raw_score, 0.0, 1.0)
 
         return {
             'mean': mean,
@@ -1031,12 +1074,21 @@ class BaggedLGBMRegressor:
         }
 
     def predict(self, X: np.ndarray) -> np.ndarray:
-        """Return consensus signal or bagging score."""
+        """Return consensus signal or bagging score.
+
+        This mirrors the scikit-learn ``predict`` API, but instead of hard
+        class labels we return a continuous score in ``[0, 1]`` that can be
+        interpreted as a probability-like meta-signal (class-1 propensity).
+        """
         if self.use_diversity_defense:
             result = self.predict_diversity_defense(X)
             return result['consensus']
         _, _, score = self.predict_components(X)
         return score
+
+
+# Backward-compatible alias (old name used in some artifacts / configs)
+BaggedLGBMRegressor = BaggedLGBMClassifier
 
 
 class IncrementalLGBMBaggedTrainer(BaseIncrementalTrainer):
@@ -1198,10 +1250,10 @@ class IncrementalLGBMBaggedTrainer(BaseIncrementalTrainer):
             params.update(self.model_config['params'])
         return params
 
-    def _train_bagged_model(self, X: np.ndarray, y: np.ndarray, sample_weight: Optional[np.ndarray], verbose: bool) -> BaggedLGBMRegressor:
+    def _train_bagged_model(self, X: np.ndarray, y: np.ndarray, sample_weight: Optional[np.ndarray], verbose: bool) -> BaggedLGBMClassifier:
         n_samples, n_features = X.shape
         if n_samples == 0 or n_features == 0:
-            return BaggedLGBMRegressor([], n_features)
+            return BaggedLGBMClassifier([], n_features)
 
         base_params = self._get_default_params()
         base_params.update(self._best_params)
@@ -1480,7 +1532,7 @@ class IncrementalLGBMBaggedTrainer(BaseIncrementalTrainer):
         if len(new_boosters) == len(models):
             self._bagged_boosters = new_boosters
 
-        return BaggedLGBMRegressor(
+        return BaggedLGBMClassifier(
             models=models,
             n_features=n_features,
             specialist_types=specialist_types if self._use_diversity_defense else None,
@@ -1552,7 +1604,7 @@ class IncrementalNGBoostTrainer(BaseIncrementalTrainer):
 
         model.fit(X_train, y_train, X_val=X_val, Y_val=y_val, sample_weight=sw_train, early_stopping_rounds=early_stopping_rounds)
         
-        calibrated_model = CalibratedModel(model, self.config.task_type)
+        calibrated_model = CalibratedModel(model, self.config.task_type, self.config.calibration_method)
         calibrated_model.fit_calibration(X_val, y_val)
         
         if verbose:
@@ -1699,7 +1751,7 @@ class IncrementalKNNTrainer(BaseIncrementalTrainer):
             def predict_proba(self, X):
                 return self.model.predict_proba(self.scaler.transform(X))
 
-        calibrated_model = CalibratedModel(ScaledModel(model, self._scaler), self.config.task_type)
+        calibrated_model = CalibratedModel(ScaledModel(model, self._scaler), self.config.task_type, self.config.calibration_method)
         calibrated_model.fit_calibration(X_val, y_val)
         
         return calibrated_model
@@ -1840,8 +1892,8 @@ class IncrementalBayesianRidgeTrainer(BaseIncrementalTrainer):
                 if hasattr(self.model, 'decision_function'):
                     return self.model.decision_function(self.scaler.transform(X))
                 return self.model.predict(self.scaler.transform(X))
-        
-        calibrated_model = CalibratedModel(ScaledModel(model, self._scaler), self.config.task_type)
+
+        calibrated_model = CalibratedModel(ScaledModel(model, self._scaler), self.config.task_type, self.config.calibration_method)
         calibrated_model.fit_calibration(X_va, y_va)
         
         return calibrated_model

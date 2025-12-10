@@ -551,10 +551,7 @@ class EnhancedModelFactory:
         params = {**default_params, **model_config.model_params}
 
         # Create base model
-        if model_config.model_type == ModelType.LIGHTGBM:
-            base_model = lgb.LGBMRegressor(**params)
-        else:
-            base_model = lgb.LGBMClassifier(**params)
+        base_model = lgb.LGBMClassifier(**params)
 
         model = base_model
         self.logger.info("✅ LightGBM model created")

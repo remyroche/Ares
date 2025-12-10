@@ -5,14 +5,14 @@
   "direction": "long",
   "model_family": "analyst_meta",
   "meta_gating": {
-    "version": "2025-12-07T14:04:40",
+    "version": "2025-12-09T22:51:12",
     "transaction_cost": 0.003,
     "entry": {
-      "prob_threshold": 0.55,
+      "prob_threshold": 0.6,
       "use_expected_return": false,
       "expected_return_threshold": 0.0,
       "expected_return_unit": "fraction",
-      "min_trades": 1094
+      "min_trades": 675
     },
     "calibration": {
       "iso_regressor_artifact": "artifacts/iso_regressor_analyst_meta.pkl",
@@ -25,69 +25,69 @@
       "min_event_spacing": 3
     },
     "backtest_metrics": {
-      "mean_return_gated": 0.0037922548514626488,
-      "sharpe_gated": 10.089459754085864,
-      "trades_gated": 1094,
-      "trades_per_day_gated": 0.7482900136798906,
-      "pnl_per_day_pct": 0.2837706434678617,
-      "max_drawdown_pct": -24.92116521253634,
-      "final_equity": 57.790519625732564,
+      "mean_return_gated": 0.005062561432832898,
+      "sharpe_gated": 9.65695715583366,
+      "trades_gated": 675,
+      "trades_per_day_gated": 0.46169630642954856,
+      "pnl_per_day_pct": 0.2337365914611632,
+      "max_drawdown_pct": -31.4041628714905,
+      "final_equity": 28.40160567571755,
       "auc_oof": 0.7368327133331553
     },
     "regime_specific": {
       "hmm_2.0": {
         "prob_threshold": 0.6,
         "expected_return_threshold": 0.0,
-        "mean_return": 0.003168012381746174,
-        "sharpe": 2.075249540184698,
-        "n_trades": 79,
-        "trades_per_day": 0.2200557103064067,
-        "score": 18.445221377606376
+        "mean_return": 0.002478636432157835,
+        "sharpe": 1.4101119644309197,
+        "n_trades": 72,
+        "trades_per_day": 0.20055710306406685,
+        "score": 11.965196787376643
       },
       "hmm_4.0": {
-        "prob_threshold": 0.75,
-        "expected_return_threshold": 0.0,
-        "mean_return": 0.00556846624778404,
-        "sharpe": 8.072355656006389,
-        "n_trades": 309,
-        "trades_per_day": 0.8607242339832869,
-        "score": 141.89906301188543
-      },
-      "hmm_0.0": {
         "prob_threshold": 0.55,
         "expected_return_threshold": 0.0,
-        "mean_return": 0.006388059861867167,
-        "sharpe": 6.049285915009198,
-        "n_trades": 104,
-        "trades_per_day": 0.3076923076923077,
-        "score": 61.69085384786777
+        "mean_return": 0.004452510895027336,
+        "sharpe": 5.55357247108384,
+        "n_trades": 299,
+        "trades_per_day": 0.8328690807799443,
+        "score": 96.03024518495462
+      },
+      "hmm_0.0": {
+        "prob_threshold": 0.75,
+        "expected_return_threshold": 0.0,
+        "mean_return": 0.011880792628879326,
+        "sharpe": 9.682814381491484,
+        "n_trades": 45,
+        "trades_per_day": 0.13313609467455623,
+        "score": 64.95429351158262
       },
       "hmm_3.0": {
         "prob_threshold": 0.8,
         "expected_return_threshold": 0.0,
-        "mean_return": 0.0020776791153828337,
-        "sharpe": 1.5217973165163394,
-        "n_trades": 79,
-        "trades_per_day": 0.2344213649851632,
-        "score": 13.526030412946373
+        "mean_return": 0.008587957394468848,
+        "sharpe": 4.799896871703328,
+        "n_trades": 33,
+        "trades_per_day": 0.09792284866468842,
+        "score": 27.573308276421674
       },
       "hmm_1.0": {
         "prob_threshold": 0.55,
         "expected_return_threshold": 0.0,
-        "mean_return": 0.003715876437667051,
-        "sharpe": 5.4480422991229185,
-        "n_trades": 315,
-        "trades_per_day": 0.9347181008902077,
-        "score": 96.69315870993795
+        "mean_return": 0.005486830655304658,
+        "sharpe": 5.682653759379239,
+        "n_trades": 195,
+        "trades_per_day": 0.5786350148367952,
+        "score": 79.35394118159768
       },
       "hmm_-1.0": {
-        "prob_threshold": 0.65,
+        "prob_threshold": 0.6,
         "expected_return_threshold": 0.0,
-        "mean_return": 0.00959528934154069,
-        "sharpe": 4.950130970935202,
-        "n_trades": 35,
-        "trades_per_day": 0.10355029585798817,
-        "score": 29.285369760845022
+        "mean_return": 0.009604548399752076,
+        "sharpe": 3.7688899862001524,
+        "n_trades": 23,
+        "trades_per_day": 0.06804733727810651,
+        "score": 18.07496140371633
       }
     }
   }

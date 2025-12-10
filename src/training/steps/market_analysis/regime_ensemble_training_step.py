@@ -113,79 +113,9 @@ class RegimeEnsembleTrainingStep(BaseStep):
                 }
             
             tprint(f"✅ Loaded regime probabilities: {regime_probs.shape}", "SUCCESS")
-
-            # Log loaded regime probabilities with comprehensive preview
-            from src.utils.tprint import tprint_data_preview
-            tprint("=" * 80, "INFO")
-            tprint("📥 DATA LOADED: Regime Probabilities from HMM Discovery", "INFO")
-            tprint("=" * 80, "INFO")
-            tprint_data_preview(
-                regime_probs,
-                name="Regime Probabilities",
-                max_rows=5,
-                max_cols=10,
-                show_dtypes=True,
-                show_shape=True
-            )
-            tprint("=" * 80, "INFO")
-
-            # Load OHLCV data for temporal analysis (returns calculation)
-            tprint("📥 Loading OHLCV data from versioned artifacts for temporal analysis", "INFO")
-            ohlcv_data = self._get_artifact(
-                'ohlcv_data',
-                artifact_type='data',
-                data_category='raw'
-            )
-
-            # Combine regime probabilities with OHLCV data
-            if ohlcv_data is not None:
-                tprint(f"✅ Loaded OHLCV data: {ohlcv_data.shape}", "SUCCESS")
-
-                # Align indices: regime_probs has integer index, OHLCV has datetime index
-                # Use the last N rows of OHLCV to match regime_probs length
-                n_regime_samples = len(regime_probs)
-                ohlcv_aligned = ohlcv_data.tail(n_regime_samples).reset_index(drop=True)
-                regime_probs_aligned = regime_probs.reset_index(drop=True)
-
-                # Alignment diagnostics (no ffill path here)
-                try:
-                    tprint(f"   Index types → regime_probs: {type(regime_probs.index).__name__}, ohlcv: {type(ohlcv_data.index).__name__}", "INFO")
-                    tprint(f"   Using tail()+reset_index(drop=True) for index alignment (no forward-fill)", "INFO")
-                except Exception:
-                    pass
-
-                tprint(f"   Aligned OHLCV to last {n_regime_samples} samples", "INFO")
-                tprint(f"   OHLCV close sample (aligned): {ohlcv_aligned['close'].head(3).tolist() if 'close' in ohlcv_aligned.columns else 'N/A'}", "INFO")
-
-                # Merge on aligned integer index
-                market_data = regime_probs_aligned.join(ohlcv_aligned[['open', 'high', 'low', 'close', 'volume']], how='left')
-                tprint(f"✅ Combined regime probabilities with OHLCV: {market_data.shape}", "SUCCESS")
-                # NaN diagnostics across OHLCV columns
-                try:
-                    if all(c in market_data.columns for c in ['open','high','low','close','volume']):
-                        nan_counts = {c: int(market_data[c].isna().sum()) for c in ['open','high','low','close','volume']}
-                        tprint(f"   NaN counts (OHLCV after join): {nan_counts}", "INFO")
-                except Exception:
-                    pass
-                tprint(f"   Combined close sample: {market_data['close'].head(3).tolist() if 'close' in market_data.columns else 'N/A'}", "INFO")
-                tprint(f"   Close NaN count: {market_data['close'].isna().sum() if 'close' in market_data.columns else 'N/A'}", "INFO")
-
-                # Log combined market data with comprehensive preview
-                tprint("=" * 80, "INFO")
-                tprint("🔗 DATA MODIFICATION: Combined Regime Probabilities with OHLCV", "INFO")
-                tprint("=" * 80, "INFO")
-                tprint_data_preview(
-                    market_data,
-                    name="Combined Regime + OHLCV Data",
-                    max_rows=5,
-                    max_cols=10,
-                    show_dtypes=True,
-                    show_shape=True
-                )
-                tprint("=" * 80, "INFO")
-            else:
-                tprint("⚠️ No OHLCV data found, temporal analysis will be skipped", "WARNING")
-                market_data = regime_probs
+            
+            # Use regime probabilities as the data input for the component
+            market_data = regime_probs
 
             tprint(f"📊 Market data shape: {market_data.shape}", "INFO")
             tprint(f"📊 Market data columns: {list(market_data.columns)}", "INFO")

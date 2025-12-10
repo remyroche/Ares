@@ -165,7 +165,7 @@ class TacticianTrainer:
         if not LIGHTGBM_AVAILABLE:
             raise ImportError("LightGBM not available")
 
-        model = lgb.LGBMRegressor(
+        model = lgb.LGBMClassifier(
             n_estimators=100,
             max_depth=6,
             random_state=42,

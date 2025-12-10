@@ -38,6 +38,7 @@ from src.training.steps.labeling.labeled_data_schema import (
     validate_labeled_data_schema,
 )
 from src.utils.ml_common.get_specialist_models_outputs import get_specialist_models_outputs
+from src.utils.ml_common.bagged_probability_aggregator import evaluate_prob_variants
 
 
 logger = logging.getLogger(__name__)
@@ -125,6 +126,7 @@ class MetaGatedBacktestStep(BaseStep):
                 specialist_config = dict(config)
                 specialist_config.setdefault("use_canonical_specialist_scalars", True)
                 specialist_config.setdefault("enable_risk_hmm_specialist", False)
+                specialist_config.setdefault("enable_mean_reversion_specialist", False)
 
                 specialist_df = get_specialist_models_outputs(
                     artifact_router=self.artifact_router,
@@ -312,6 +314,72 @@ class MetaGatedBacktestStep(BaseStep):
                 base_q95 = float(event_returns.quantile(0.95))
             except Exception:
                 base_q05 = base_q25 = base_q50 = base_q75 = base_q95 = 0.0
+
+            # ------------------------------------------------------------------
+            # 3a) Compare different meta-probability variants at fixed 0.6 gate
+            # ------------------------------------------------------------------
+            variant_probs: Dict[str, pd.Series] = {}
+
+            try:
+                # Canonical meta probability used for live gating
+                variant_probs["meta_probability"] = meta_prob.loc[eval_mask]
+
+                # Ensemble OOF-based probability (if present)
+                if "meta_probability_ensemble" in df.columns:
+                    variant_probs["ensemble"] = df["meta_probability_ensemble"].loc[eval_mask]
+
+                # Bagged LGBM variants from meta-labeling step
+                if "meta_probability_lgbm_bag_mean" in df.columns:
+                    variant_probs["lgbm_bag_mean"] = df["meta_probability_lgbm_bag_mean"].loc[eval_mask]
+
+                if "meta_probability_lgbm_bag_lower" in df.columns:
+                    variant_probs["lgbm_bag_lower"] = df["meta_probability_lgbm_bag_lower"].loc[eval_mask]
+
+                # Optional consensus variant if/when available
+                if "meta_probability_lgbm_bag_consensus" in df.columns:
+                    variant_probs["lgbm_bag_consensus"] = df["meta_probability_lgbm_bag_consensus"].loc[eval_mask]
+
+                if variant_probs:
+                    tprint_info("🔍 Evaluating meta-probability variants at fixed threshold=0.60")
+                    comparison_df = evaluate_prob_variants(
+                        returns=event_returns,
+                        prob_variants=variant_probs,
+                        threshold=0.6,
+                    )
+
+                    if not comparison_df.empty:
+                        # Log compact summary
+                        for _, row in comparison_df.iterrows():
+                            tprint_info(
+                                "   ↪ Variant='{}' | trades={} | mean_ret={:.4%} | Sharpe={:.3f} | maxDD={:.2%} | hit={:.2%}".format(
+                                    row["variant"],
+                                    int(row["n_trades"]),
+                                    float(row["mean_return"]),
+                                    float(row["sharpe_trade"]),
+                                    float(row["max_drawdown"]),
+                                    float(row["hit_rate"]),
+                                )
+                            )
+
+                        # Save CSV under outcomes/
+                        try:
+                            outcomes_dir = Path("outcomes")
+                            outcomes_dir.mkdir(parents=True, exist_ok=True)
+                            ts_str = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+                            csv_name = (
+                                f"meta_model_variant_comparison_"
+                                f"{symbol}_{timeframe}_{direction}_{ts_str}.csv"
+                            )
+                            csv_path = outcomes_dir / csv_name
+                            comparison_df.to_csv(csv_path, index=False)
+                            tprint_success(f"✅ Saved meta-model variant comparison CSV to {csv_path}")
+                        except Exception as csv_exc:
+                            tprint_warning(f"⚠️ Failed to save meta-model comparison CSV: {csv_exc}")
+
+                    else:
+                        tprint_warning("⚠️ No valid rows in meta-probability variant comparison (empty result)")
+            except Exception as comp_exc:
+                tprint_warning(f"⚠️ Meta-probability variant comparison skipped due to error: {comp_exc}")
 
             gate_mask = event_probs >= prob_threshold
             expected_returns = None

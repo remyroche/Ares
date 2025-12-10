@@ -25,6 +25,7 @@ from src.utils.ml_common.trading_grid_backtester import (
 )
 from src.utils.ml_common.confidence_metrics import apply_risk_adjusted_confidence
 from src.utils.versioned_artifacts.temporal_splits import TemporalSplitConfig
+from src.utils.ml_common.bagged_probability_aggregator import evaluate_prob_variants, combine_bags
 
 
 logger = logging.getLogger(__name__)
@@ -462,6 +463,104 @@ class AnalystBaseBacktestStep(BaseStep):
                 "avg_loss": avg_loss,
                 "approx_trades": approx_trades,
             }
+
+            # ------------------------------------------------------------------
+            # Probability-variant comparison at fixed threshold=0.6
+            # ------------------------------------------------------------------
+            try:
+                prob_variants: Dict[str, pd.Series] = {}
+
+                # Variant 1: analyst confidence (risk-adjusted when available)
+                prob_variants["confidence"] = confidence.astype(float).clip(0.0, 1.0)
+
+                # Variant 2: abs(prediction) rescaled to [0, 1] as a proxy probability
+                try:
+                    pred_abs = predictions.abs().astype(float)
+                    pred_min = float(pred_abs.min()) if len(pred_abs) > 0 else 0.0
+                    pred_max = float(pred_abs.max()) if len(pred_abs) > pred_min else pred_min
+                    if pred_max > pred_min:
+                        pred_scaled = (pred_abs - pred_min) / (pred_max - pred_min)
+                    else:
+                        pred_scaled = pd.Series(0.5, index=predictions.index)
+                    prob_variants["abs_prediction_rescaled"] = pred_scaled.clip(0.0, 1.0)
+                except Exception:
+                    pass
+
+                # Variants 3+: true bagged LGBM combinations when per-bag
+                # probabilities are available from incremental training.
+                try:
+                    bag_component_cols = [
+                        c for c in ml_df.columns if c.startswith("lgbm_bag_component_")
+                    ]
+                    if bag_component_cols:
+                        # Sort by numeric suffix to keep bag order stable
+                        def _bag_index(name: str) -> int:
+                            try:
+                                return int(name.split("_")[-1])
+                            except Exception:
+                                return 0
+
+                        bag_component_cols = sorted(bag_component_cols, key=_bag_index)
+                        raw_bags = ml_df[bag_component_cols].to_numpy(dtype=float)
+
+                        bag_combos = combine_bags(raw_bags)
+                        for combo_name, combo_vals in bag_combos.items():
+                            try:
+                                series = pd.Series(combo_vals, index=ml_df.index).clip(0.0, 1.0)
+                                prob_variants[f"bag_{combo_name}"] = series
+                            except Exception:
+                                continue
+                except Exception:
+                    # Bag-based variants are purely diagnostic; never break backtest.
+                    pass
+
+                if prob_variants:
+                    tprint_info(
+                        "🔍 Evaluating analyst probability variants at fixed threshold=0.60 (bar-level strategy returns)",
+                    )
+                    base_prob_comparison = evaluate_prob_variants(
+                        returns=strategy_returns,
+                        prob_variants=prob_variants,
+                        threshold=0.6,
+                    )
+
+                    if not base_prob_comparison.empty:
+                        for _, row in base_prob_comparison.iterrows():
+                            tprint_info(
+                                "   ↪ Variant='{}' | trades={} | mean_ret={:.4%} | Sharpe={:.3f} | maxDD={:.2%} | hit={:.2%}".format(
+                                    row["variant"],
+                                    int(row["n_trades"]),
+                                    float(row["mean_return"]),
+                                    float(row["sharpe_trade"]),
+                                    float(row["max_drawdown"]),
+                                    float(row["hit_rate"]),
+                                )
+                            )
+
+                        # Save CSV with analyst base probability-variant comparison
+                        try:
+                            outcomes_dir = Path("outcomes")
+                            outcomes_dir.mkdir(parents=True, exist_ok=True)
+                            ts_str = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+                            csv_name = (
+                                f"analyst_base_prob_variant_comparison_"
+                                f"{symbol}_{timeframe}_{direction}_{ts_str}.csv"
+                            )
+                            csv_path = outcomes_dir / csv_name
+                            base_prob_comparison.to_csv(csv_path, index=False)
+                            tprint_success(f"✅ Saved analyst base probability-variant comparison CSV to {csv_path}")
+                        except Exception as csv_exc:
+                            tprint_info(f"⚠️ Failed to save analyst base probability-variant comparison CSV: {csv_exc}")
+
+                        # Surface in metrics for programmatic access
+                        try:
+                            metrics["probability_variant_comparison"] = base_prob_comparison.to_dict(orient="records")
+                        except Exception:
+                            pass
+                    else:
+                        tprint_info("⚠️ Analyst base probability-variant comparison returned empty result")
+            except Exception as comp_exc:
+                tprint_info(f"⚠️ Analyst base probability-variant comparison skipped due to error: {comp_exc}")
 
             # Compute gated bar-level metrics when gate decisions are available
             if gated_strategy_returns is not None and gated_position is not None:

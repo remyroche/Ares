@@ -23,7 +23,7 @@ import torch.nn as nn
 from sklearn.decomposition import PCA
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.preprocessing import StandardScaler
-from sklearn.base import BaseEstimator, RegressorMixin, ClassifierMixin
+from sklearn.base import BaseEstimator, ClassifierMixin
 
 from src.training.utils.embedding_postprocessing import filter_embedding_features
 
@@ -97,7 +97,7 @@ class SimpleGRU(nn.Module):
 
         return last_hidden
 
-class LGBMGRUEmbedding(BaseEstimator, RegressorMixin):
+class LGBMGRUEmbedding(BaseEstimator, ClassifierMixin):
     """
     LGBM + Small GRU Embedding Model for Tactician.
 
@@ -433,7 +433,7 @@ class LGBMGRUEmbedding(BaseEstimator, RegressorMixin):
             # Train LightGBM
             import lightgbm as lgb
 
-            self.lgbm_model = lgb.LGBMRegressor(
+            self.lgbm_model = lgb.LGBMClassifier(
                 max_depth=self.config.max_depth,
                 num_leaves=self.config.num_leaves,
                 min_child_samples=self.config.min_child_samples,
@@ -491,8 +491,12 @@ class LGBMGRUEmbedding(BaseEstimator, RegressorMixin):
             # Combine features
             X_combined = self._combine_features(X, gru_embeddings_filtered)
 
-            # Make predictions
-            predictions = self.lgbm_model.predict(X_combined)
+            # Make predictions (return positive class probability)
+            proba = self.lgbm_model.predict_proba(X_combined)
+            if proba.ndim == 2 and proba.shape[1] > 1:
+                predictions = proba[:, 1]
+            else:
+                predictions = proba.ravel()
 
             return predictions
 

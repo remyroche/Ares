@@ -1,0 +1,136 @@
+{
+  "metadata": {
+    "symbol": "ETHUSDT",
+    "exchange": "binance",
+    "timeframe": "15m",
+    "direction": "long",
+    "model": "analyst",
+    "prefix": "snr_label_quality",
+    "timestamp_utc": "20251210_002624"
+  },
+  "section": "label_quality",
+  "n_samples": 140354,
+  "n_labeled": 21177,
+  "coverage": 0.15088276785841515,
+  "n_positive": 4228,
+  "n_negative": 16949,
+  "positive_rate": 0.19965056429144826,
+  "pre": {
+    "n_total": 43471,
+    "n_positive": 10614,
+    "n_negative": 32857,
+    "mean_pos_return": 0.01339840944313285,
+    "mean_neg_return": -0.008066044259556227,
+    "cohens_d": 5.275559748344056,
+    "snr_pos": 2.668479902761087
+  },
+  "post": {
+    "n_total": 21177,
+    "n_positive": 4228,
+    "n_negative": 16949,
+    "mean_pos_return": 0.01432005351865952,
+    "mean_neg_return": -0.007224654311001228,
+    "cohens_d": 4.2762479683649826,
+    "snr_pos": 3.399033401689028
+  },
+  "retention": {
+    "total": 0.487152354443192,
+    "positive": 0.3983418127002073,
+    "negative": 0.5158413732233619
+  },
+  "overlap": {
+    "pct_overlap": 0.09373376776691694
+  },
+  "cost_metrics": {
+    "tx_cost": 0.003,
+    "unconditional_mean_return": -0.002923241235315075,
+    "mean_pos_minus_cost": 0.011320053518659522,
+    "frac_small_vs_cost": 0.11224441611181943
+  },
+  "probability_buckets": {
+    "top_5": {
+      "frac": 0.05,
+      "threshold": 0.9449028046485292,
+      "n_events": 1059,
+      "win_rate": 0.24268177525967893,
+      "mean_expected_return": 0.020909773448708254,
+      "sharpe_expected": 10.873851140254414
+    },
+    "top_10": {
+      "frac": 0.1,
+      "threshold": 0.9082254173252599,
+      "n_events": 2118,
+      "win_rate": 0.2412653446647781,
+      "mean_expected_return": 0.02094154722217365,
+      "sharpe_expected": 10.670552639810213
+    },
+    "top_20": {
+      "frac": 0.2,
+      "threshold": 0.8241021750418052,
+      "n_events": 4236,
+      "win_rate": 0.23890462700661,
+      "mean_expected_return": 0.021066530986861603,
+      "sharpe_expected": 11.037755847405771
+    },
+    "top_30": {
+      "frac": 0.3,
+      "threshold": 0.7161538509221531,
+      "n_events": 6353,
+      "win_rate": 0.24004407366598457,
+      "mean_expected_return": 0.021130369741652524,
+      "sharpe_expected": 11.139339718113858
+    },
+    "top_40": {
+      "frac": 0.4,
+      "threshold": 0.5760910390684082,
+      "n_events": 8471,
+      "win_rate": 0.24141187581159249,
+      "mean_expected_return": 0.021160300383417225,
+      "sharpe_expected": 11.22348164847397
+    }
+  },
+  "probability_variance_warning": null,
+  "volatility_buckets": {
+    "low": {
+      "n_events": 7055,
+      "n_positive": 1137,
+      "n_negative": 5918,
+      "positive_rate": 0.16116229624379871,
+      "mean_return": -0.002822622764048131,
+      "sharpe": -0.30165920285578457,
+      "low_threshold": 0.0023934160362831663,
+      "high_threshold": 0.0035607367045986937
+    },
+    "mid": {
+      "n_events": 7054,
+      "n_positive": 1496,
+      "n_negative": 5558,
+      "positive_rate": 0.2120782534732067,
+      "mean_return": -0.002984756727408891,
+      "sharpe": -0.2906698097475747,
+      "low_threshold": 0.0023934160362831663,
+      "high_threshold": 0.0035607367045986937
+    },
+    "high": {
+      "n_events": 7055,
+      "n_positive": 1591,
+      "n_negative": 5464,
+      "positive_rate": 0.22551381998582565,
+      "mean_return": -0.0029679372497078147,
+      "sharpe": -0.28870638765260026,
+      "low_threshold": 0.0023934160362831663,
+      "high_threshold": 0.0035607367045986937
+    }
+  },
+  "advanced": {
+    "aleatoric_uncertainty_fraction": 0.11224441611181943,
+    "aleatoric_comment": "Aleatoric fraction < 40%: most error is model/feature-driven; improvement is possible.",
+    "noise_ceiling": null,
+    "noise_ceiling_comment": "Noise ceiling requires multiple labelers or repeated labels; not available in current artifacts."
+  },
+  "summary_score": {
+    "score": 0.8477108923311487,
+    "rating": "Great",
+    "comment": "Strong label quality with good coverage, separation and economic margins."
+  }
+}

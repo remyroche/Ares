@@ -2898,106 +2898,195 @@ def shrink_search_space(
     return new_space
 
 
-def compute_realistic_pnl_edge(
-    mean_return_positive: float,
-    mean_auc: float,
-    transaction_cost: float = DEFAULT_TRANSACTION_COST,
-    n_trades: int | None = None,
-    reference_trades: float | None = None,
-    days_span: float | None = None,
-    target_trades_per_day: float = 2.0,
-    prob_range: float | None = None,
+def compute_economic_auc(
+    y_true: np.ndarray,
+    y_prob: np.ndarray,
+    returns: np.ndarray
 ) -> float:
-    """Compute realistic P&L edge using the capture ratio formula.
+    """Helper: Weighted AUC based on log-return magnitude."""
+    if len(np.unique(y_true)) < 2:
+        return 0.5
+    # Weight by log-magnitude of returns to prioritize economically significant events
+    weights = np.log1p(np.abs(returns))
+    try:
+        return roc_auc_score(y_true, y_prob, sample_weight=weights)
+    except Exception:
+        return 0.5
 
-    Edge_base = (Mean_Return_Label1 - Cost) × max(0, 2×AUC - 1)
 
-    When ``n_trades`` and ``reference_trades`` are provided, apply a
-    Sharpe-like scaling so that configurations with more high-quality
-    trades are rewarded, while extremely sparse or excessively dense
-    configurations do not dominate purely by count:
+def sigmoid_gate(x: float, threshold: float, sharpness: float = 10.0, lower_bound: float = 0.0) -> float:
+    """Helper: Smooth transition from lower_bound to 1.0."""
+    try:
+        sigmoid = 1.0 / (1.0 + np.exp(-sharpness * (x - threshold)))
+    except OverflowError:
+        sigmoid = 0.0 if x < threshold else 1.0
+    return lower_bound + (1.0 - lower_bound) * sigmoid
 
-        Edge = Edge_base × sqrt(min(n_trades, 4×reference_trades) / reference_trades)
 
-    ENHANCED: When days_span is provided, add an explicit density bonus
-    for configurations achieving the target trades/day range (1-3/day),
-    to help HPO escape local minima of very sparse configurations.
-
-    ENHANCED: When prob_range is provided, apply a penalty for degenerate
-    probability distributions (range < 0.1) to avoid collapsed models.
+def compute_robust_expectancy(returns: np.ndarray, cap_quantile: float = 0.95) -> float:
+    """Calculates the Edge in a way that works for BOTH Trend (Skewed) and Mean Reversion (Normal) strategies.
 
     Args:
-        mean_return_positive: Mean return of positive-labeled events
-        mean_auc: Cross-validated AUC of the model
-        transaction_cost: Transaction cost per trade
-        n_trades: Number of labeled events/trades used for this edge
-        reference_trades: Reference trade count for scaling (e.g. days_span × target_trades_per_day)
-        days_span: Number of days in the dataset (for density bonus)
-        target_trades_per_day: Target trades/day for density bonus calculation
-        prob_range: Range of predicted probabilities (max - min); used to penalize degenerate models
+        returns: Array of trade returns (floats, e.g., 0.01 for 1%).
+        cap_quantile: The boundary for 'Lucky' trades (default 95th percentile).
+    """
+    if len(returns) == 0:
+        return 0.0
+
+    returns = np.asarray(returns, dtype=float)
+
+    # 1. Determine Dynamic Caps (Winsorization Limits)
+    # We define 'Extreme' based on the distribution of THIS strategy.
+    # If the strategy naturally has huge wins, the cap will be higher.
+    try:
+        win_cap = np.percentile(returns, cap_quantile * 100)
+        loss_cap = np.percentile(returns, (1 - cap_quantile) * 100)
+    except Exception:
+        return float(np.mean(returns))
+
+    # 2. Apply Caps (Winsorize)
+    # Instead of deleting outliers (Trimming), we clamp them.
+    # A +50% trade becomes a +Win_Cap% trade.
+    # This preserves the "Win" signal but limits the magnitude impact.
+    capped_returns = np.clip(returns, loss_cap, win_cap)
+
+    # 3. Calculate Expectancy
+    # This is the "True" mathematical edge, cleaned of luck.
+    robust_edge = float(np.mean(capped_returns))
+
+    return robust_edge
+
+
+def compute_robust_hpo_objective(
+    stats: Dict[str, Any],
+    df_results: pd.DataFrame,
+    regime_col: str = 'regime',
+) -> float:
+    """Optimizes for ROBUSTNESS.
+
+    Args:
+        stats: Dict with 'num_trades', 'trades_per_day', 'sharpe_ratio', etc.
+        df_results: DataFrame containing per-trade results:
+                    ['y_true', 'y_prob', 'ret_bps', 'regime']
+                    Note: 'ret_bps' here is expected to be raw return float (e.g. 0.01)
+        regime_col: Column name for regime labels
+    """
+    if df_results.empty or 'ret_bps' not in df_results.columns:
+        return 0.0
+
+    # --- 1. Robust Edge Calculation (Winsorised Expectancy) ---
+    # Replace 'median_ret * sqrt(N)' with:
+    returns_arr = df_results['ret_bps'].to_numpy(dtype=float)
+    robust_edge_val = compute_robust_expectancy(returns_arr)
+    # Scale by sqrt(N) to reward sample size (t-stat like scaling)
+    robust_score = robust_edge_val * np.sqrt(stats.get('num_trades', 0))
+
+    # --- 2. Regime-Based Learnability Gate (The "Min-Max" Logic) ---
+    # We compute EconAUC for each regime separately.
+    regime_aucs = []
+    if regime_col in df_results.columns:
+        regimes = df_results[regime_col].unique()
+        for r in regimes:
+            mask = df_results[regime_col] == r
+            # Safety check: Ignore regimes with statistically insignificant sample size
+            if mask.sum() < 20:
+                continue
+
+            try:
+                r_auc = compute_economic_auc(
+                    df_results.loc[mask, 'y_true'].to_numpy(dtype=float),
+                    df_results.loc[mask, 'y_prob'].to_numpy(dtype=float),
+                    df_results.loc[mask, 'ret_bps'].to_numpy(dtype=float)
+                )
+                regime_aucs.append(r_auc)
+            except Exception:
+                pass
+
+    # CRITICAL: We gate based on the WORST performing regime.
+    # If it fails in "Low Vol", the whole strategy is penalized.
+    # Default to 0.5 if no valid regimes found.
+    worst_case_auc = np.min(regime_aucs) if regime_aucs else 0.5
+
+    # Gate opens at 0.52 (better than random), closes hard below that.
+    gate_auc = sigmoid_gate(worst_case_auc, threshold=0.52, sharpness=15.0)
+
+    # --- 3. Stability Gates (Sharpe & Freq) ---
+    # Standard Sharpe gate
+    sharpe_val = stats.get('sharpe_ratio', 0.0)
+    gate_sharpe = sigmoid_gate(sharpe_val, threshold=1.0, sharpness=2.0)
+
+    # Frequency gate (Soft penalty for starvation)
+    trades_per_day = stats.get('trades_per_day', 0.0)
+    gate_freq = sigmoid_gate(trades_per_day, threshold=1.5, sharpness=0.5)
+
+    # --- 4. Final Robust Score ---
+    final_score = robust_score * gate_auc * gate_sharpe * gate_freq
+
+    return final_score
+
+
+def simulate_concurrent_trades(
+    events_df: pd.DataFrame,
+    max_concurrency: int = 1,
+    transaction_cost: float = 0.003,
+) -> pd.DataFrame:
+    """Simulate trades with concurrency constraint (FIFO slot blocking).
+
+    Logic: If Active_Trades >= Max_Concurrent_Positions, ignore new signals until a slot frees up.
+    Bet Sizing: Size = 1.0 * CalibratedProb.
+
+    Args:
+        events_df: DataFrame with columns ['entry_time', 'exit_time', 'prob', 'realized_return', 'y_true', 'regime']
+                   Must be sorted by entry_time.
+        max_concurrency: Max simultaneous positions (Hardcoded to 1 for this task).
+        transaction_cost: Transaction cost to ensure net returns are correct.
 
     Returns:
-        Realistic P&L edge score
+        DataFrame of executed trades.
     """
-    # Capture ratio: how much of theoretical profit we actually capture
-    # Clamped to [0, 1] to prevent negative edge from AUC < 0.5
-    if mean_auc <= 0.5:
-        capture_ratio = 0.0
-    else:
-        delta_auc = float(mean_auc - 0.5)
-        tau = 0.10
-        capture_ratio = 1.0 - float(np.exp(-delta_auc / tau))
-        capture_ratio = float(np.clip(capture_ratio, 0.0, 1.0))
+    if events_df.empty:
+        return pd.DataFrame()
 
-    # Net profitability after costs
-    net_profit = mean_return_positive - transaction_cost
+    # Ensure sorted by entry time
+    events_sorted = events_df.sort_values('entry_time').reset_index(drop=True)
 
-    # Base edge = net profit × capture ratio
-    edge = net_profit * capture_ratio
+    executed_indices = []
+    # Track end times of active trades. For concurrency=1, this is just a scalar or single-element list.
+    # We use a min-heap or sorted list to track earliest exit if concurrency > 1.
+    # Since concurrency is hardcoded to 1, a simple scalar variable suffices.
+    active_trade_end_time = pd.Timestamp.min
 
-    # Optional Sharpe-like scaling by number of trades when a
-    # reasonable reference count is provided. This nudges the
-    # optimizer towards configurations that generate a healthy number
-    # of good trades, without letting sheer trade count dominate.
-    if (
-        n_trades is not None
-        and reference_trades is not None
-        and reference_trades > 0
-        and n_trades > 0
-    ):
-        # Cap effective trade count at 4× reference to avoid runaway
-        # scaling for extremely dense configurations.
-        effective_trades = min(float(n_trades), float(reference_trades) * 4.0)
-        trade_factor = float(np.sqrt(effective_trades / float(reference_trades)))
-        edge *= trade_factor
+    for idx, row in events_sorted.iterrows():
+        entry_t = row['entry_time']
 
-    # NEW: Explicit density bonus to encourage configurations with
-    # healthy trade counts in the target range (1-3 trades/day).
-    # This helps HPO escape local minima of very sparse configs.
-    if days_span is not None and days_span > 0 and n_trades is not None and n_trades > 0:
-        trades_per_day = float(n_trades) / float(days_span)
+        # Check if slot is free
+        # For concurrency=1: if current entry time < last accepted trade's exit time, BLOCK.
+        if entry_t < active_trade_end_time:
+            continue
 
-        # Density bonus: reward configurations in the sweet spot (1-3 trades/day)
-        # Peak bonus at target_trades_per_day, with gentle falloff outside range
-        if trades_per_day < target_trades_per_day:
-            # Quadratic penalty as trades_per_day moves below target
-            factor = max(0.0, trades_per_day / max(target_trades_per_day, 1e-6))
-            edge *= factor * factor
+        # Take trade
+        executed_indices.append(idx)
+        active_trade_end_time = row['exit_time']
 
-    # Penalty for degenerate probability distributions (collapsed model)
-    # If prob_range < 0.1, the model is essentially predicting a constant
-    if prob_range is not None:
-        if prob_range < 0.01:
-            # Severe penalty: nearly constant predictions
-            edge *= 0.1
-        elif prob_range < 0.05:
-            # Strong penalty: very narrow range
-            edge *= 0.3 + 0.7 * (prob_range / 0.05)
-        elif prob_range < 0.1:
-            # Moderate penalty: narrow range
-            edge *= 0.7 + 0.3 * ((prob_range - 0.05) / 0.05)
+    if not executed_indices:
+        return pd.DataFrame()
 
-    return edge
+    executed_df = events_sorted.iloc[executed_indices].copy()
+
+    # Bet Sizing: Size = 1.0 * CalibratedProb
+    # Apply sizing to return: Adjusted_Return = Size * Realized_Return
+    # Note: Realized_Return in input is already net of costs per unit.
+    # We assume 'realized_return' column holds the unit return.
+
+    base_size = 1.0
+    sizes = base_size * executed_df['prob']
+    executed_df['position_size'] = sizes
+
+    # Scale return by position size.
+    # Logic: If we bet 0.6 units and get 10% return, PnL impact is 0.06 units (6%).
+    executed_df['ret_bps'] = executed_df['realized_return'] * sizes
+
+    return executed_df
 
 
 class MetaLabelingHPOExperimentStep(BaseStep):
@@ -5102,37 +5191,115 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 target_trades_per_day = float(config.get("edge_target_trades_per_day", 2.0))
                 reference_trades = max(1.0, float(effective_days_span) * target_trades_per_day)
 
-                # ===== REALISTIC P&L EDGE METRIC =====
-                # Edge = (Mean Return - Cost) × max(0, 2×AUC - 1)
-                # This penalizes "profitable but unlearnable" strategies more realistically
-                # ENHANCED: Pass days_span for density bonus to encourage healthy trade counts
-                # ENHANCED: Pass prob_range to penalize degenerate probability distributions
-                prob_range_for_edge = None
-                try:
-                    if calibrated_probs is not None and len(calibrated_probs) > 0:
-                        probs_finite = calibrated_probs[np.isfinite(calibrated_probs)]
-                        if len(probs_finite) > 0:
-                            prob_range_for_edge = float(np.max(probs_finite) - np.min(probs_finite))
-                except Exception:
-                    pass
+                # ===== ROBUST HPO OBJECTIVE (Simulated Trading) =====
+                # 1. Simulate trades with concurrency=1 and probability sizing
+                # Need event data: entry_time, exit_time (derived from duration), prob, realized_return, y_true
+                # y_true is labels_labeled, y_prob is calibrated_probs
 
-                edge_score = compute_realistic_pnl_edge(
-                    mean_return_positive=mean_pos,
-                    mean_auc=mean_auc,
-                    transaction_cost=tx,
-                    n_trades=n_events,
-                    reference_trades=reference_trades,
-                    days_span=float(effective_days_span),
-                    target_trades_per_day=target_trades_per_day,
-                    prob_range=prob_range_for_edge,
-                )
-                # Tie temporal instability to edge: softly down-weight edge when
-                # rolling-window AUC variance is high.
-                if auc_variance > 0.0:
-                    # For typical auc_variance in [0, ~0.02], this yields a modest
-                    # 0–20% down-weighting for unstable configurations.
-                    instability = min(1.0, auc_variance / 0.02)
-                    edge_score *= (1.0 - 0.3 * instability)
+                sim_score = 0.0
+                try:
+                    # Align data for simulation
+                    sim_indices = labels_labeled.index
+                    if len(sim_indices) > 0:
+                        # Reconstruct exit times from durations (assuming 15m bars for simplicity if index is datetime)
+                        # If index is just integer, exit_time is index + duration
+                        if isinstance(sim_indices, pd.DatetimeIndex):
+                            # duration is in bars. Approx 15 min per bar.
+                            durations = event_durations.reindex(sim_indices).fillna(1).astype(int)
+                            exit_times = sim_indices + pd.to_timedelta(durations * 15, unit='min')
+                        else:
+                            # Use integer indices if not datetime
+                            durations = event_durations.reindex(sim_indices).fillna(1).astype(int)
+                            exit_times = sim_indices + durations
+
+                        # Filter calibrated probs to match labeled set
+                        # calibrated_probs is aligned to X_clean which should match labels_labeled
+                        # (X_clean is derived from valid_mask which matches y_clean/labels_labeled)
+
+                        # Note: 'calibrated_probs' passed here comes from 'compute_learnability_with_calibration'
+                        # which returns an array aligned with X_clean/y_clean.
+
+                        # Build DataFrame for simulation
+                        sim_df = pd.DataFrame({
+                            'entry_time': sim_indices,
+                            'exit_time': exit_times,
+                            'prob': calibrated_probs if len(calibrated_probs) == len(sim_indices) else np.full(len(sim_indices), 0.5),
+                            'realized_return': returns_labeled.values, # This is net return per unit
+                            'y_true': labels_labeled.values,
+                            'regime': np.zeros(len(sim_indices), dtype=int)
+                        })
+
+                        # Add real regime data derived from volatility
+                        # This enables the regime-based gating in the objective function
+                        if volatility_1d is not None:
+                            try:
+                                # Align volatility to event times
+                                vol_events = volatility_1d.reindex(sim_indices).fillna(0.0)
+
+                                # Calculate thresholds from global volatility (to keep regimes consistent)
+                                # 33rd and 67th percentiles define Low, Medium, High
+                                v_low = float(volatility_1d.quantile(0.33))
+                                v_high = float(volatility_1d.quantile(0.67))
+
+                                # Assign regimes: 0=Low, 1=Med, 2=High
+                                # Default is 0 (Low) from initialization
+                                regime_arr = sim_df['regime'].values
+                                vol_arr = vol_events.values
+
+                                mask_med = (vol_arr > v_low) & (vol_arr <= v_high)
+                                mask_high = (vol_arr > v_high)
+
+                                regime_arr[mask_med] = 1
+                                regime_arr[mask_high] = 2
+
+                                sim_df['regime'] = regime_arr
+                            except Exception:
+                                pass # Keep default regimes if calculation fails
+
+                        # Run Simulation
+                        executed_trades = simulate_concurrent_trades(
+                            sim_df,
+                            max_concurrency=1,
+                            transaction_cost=tx
+                        )
+
+                        if not executed_trades.empty:
+                            # Calculate stats for objective function
+                            n_exec = len(executed_trades)
+
+                            # Calculate Sharpe on simulated PnL (ret_bps)
+                            pnl_series = executed_trades['ret_bps']
+                            mean_pnl = pnl_series.mean()
+                            std_pnl = pnl_series.std()
+                            sim_sharpe = mean_pnl / (std_pnl + 1e-9) if std_pnl > 0 else 0.0
+
+                            sim_trades_per_day = n_exec / max(effective_days_span, 1.0)
+
+                            sim_stats = {
+                                'num_trades': n_exec,
+                                'trades_per_day': sim_trades_per_day,
+                                'sharpe_ratio': sim_sharpe
+                            }
+
+                            # Compute final robust score
+                            # df_results needs ['y_true', 'y_prob', 'ret_bps', 'regime']
+                            # executed_trades has these (from sim_df + 'ret_bps')
+                            # Map 'prob' -> 'y_prob'
+                            executed_trades['y_prob'] = executed_trades['prob']
+
+                            sim_score = compute_robust_hpo_objective(
+                                stats=sim_stats,
+                                df_results=executed_trades,
+                                regime_col='regime'
+                            )
+                        else:
+                            sim_score = 0.0
+                    else:
+                        sim_score = 0.0
+                except Exception:
+                    sim_score = 0.0
+
+                edge_score = sim_score
 
                 # ===== CALIBRATION-AWARE ADJUSTMENT OF EDGE =====
                 # Use calibration diagnostics (weighted Brier and ECE) to softly

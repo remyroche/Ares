@@ -26,6 +26,7 @@ from datetime import datetime, timedelta
 from scipy.stats import spearmanr
 import lightgbm as lgb
 from sklearn.model_selection import TimeSeriesSplit
+from sklearn.isotonic import IsotonicRegression
 from sklearn.metrics import (
     roc_auc_score,
     log_loss,
@@ -61,38 +62,6 @@ def sigmoid_gate(x, threshold, sharpness=10.0, reverse=False):
     exponent = np.clip(-sharpness * (x - threshold), -50, 50)
     val = 1.0 / (1.0 + np.exp(exponent))
     return (1.0 - val) if reverse else val
-
-def magnitude_aware_spearman(weights, returns, magnitude_func=np.log1p):
-    """
-    Vectorized magnitude-aware Spearman correlation.
-    Checks if weights rank-order the *magnitude* of returns correctly.
-    """
-    # 1. Transform returns to magnitude
-    abs_rets = np.abs(returns)
-    mag_rets = magnitude_func(abs_rets)
-    
-    # 2. Compute Ranks
-    n = len(weights)
-    if n < 2:
-        return 0.0
-
-    rank_weights = np.argsort(np.argsort(weights)).astype(np.float64)
-    rank_mag = np.argsort(np.argsort(mag_rets)).astype(np.float64)
-    
-    # 3. Center Ranks
-    rank_weights -= rank_weights.mean()
-    rank_mag -= rank_mag.mean()
-    
-    # 4. Weighted Covariance
-    weighted_cov = np.sum(rank_weights * rank_mag * mag_rets) / (np.sum(mag_rets) + 1e-12)
-    
-    # 5. Normalize
-    std_prod = np.std(rank_weights) * np.std(rank_mag)
-    if std_prod == 0:
-        return 0.0
-
-    corr = weighted_cov / (std_prod + 1e-12)
-    return np.clip(corr, -1.0, 1.0)
 
 # -------------------------------------------------------------------------
 # 2. Metric Computation Helpers (Uniqueness, Consistency)
@@ -261,8 +230,6 @@ def generate_weights_per_label(
 def calculate_sharpe_ratio(preds, returns, threshold=0.5):
     """Calculate Sharpe Ratio of a strategy trading on predictions > threshold."""
     signals = (preds > threshold).astype(int)
-    # Shift signals? No, preds align with returns in this context (X_test -> y_test)
-    # y_test corresponds to future return of that row
 
     strategy_returns = signals * returns
 
@@ -275,13 +242,37 @@ def calculate_sharpe_ratio(preds, returns, threshold=0.5):
     if std_ret == 0:
         return 0.0
 
-    # Annualized (assuming 15m bars, but just relative comparison is enough)
     # Just raw sharpe per trade for comparison
     return mean_ret / std_ret
+
+def compute_ece(y_true, y_prob, n_bins=10):
+    """Compute Expected Calibration Error."""
+    bin_boundaries = np.linspace(0, 1, n_bins + 1)
+    ece = 0.0
+    for i in range(n_bins):
+        bin_lower = bin_boundaries[i]
+        bin_upper = bin_boundaries[i + 1]
+
+        # Include 1.0 in the last bin
+        if i == n_bins - 1:
+            mask = (y_prob >= bin_lower) & (y_prob <= bin_upper)
+        else:
+            mask = (y_prob >= bin_lower) & (y_prob < bin_upper)
+
+        if np.sum(mask) > 0:
+            bin_prob = np.mean(y_prob[mask])
+            bin_true = np.mean(y_true[mask])
+            bin_weight = np.sum(mask) / len(y_prob)
+            ece += bin_weight * np.abs(bin_prob - bin_true)
+
+    return ece
 
 def assess_label_quality_ml(X, y, weights, returns=None, n_splits=3):
     """
     Train a probe model with the given weights and evaluate its performance.
+
+    Includes calibration (Isotonic Regression) on an inner split to ensure
+    Brier Score and ECE are meaningful.
     """
     # Prepare data
     if returns is None:
@@ -292,10 +283,10 @@ def assess_label_quality_ml(X, y, weights, returns=None, n_splits=3):
     y_clean = y[valid_mask]
     w_clean = weights[valid_mask]
     r_clean = returns[valid_mask]
-    
+
     if len(y_clean) < 100:
         return {
-            'auc': 0.5, 'log_loss': 1.0, 'brier_score': 0.25,
+            'auc': 0.5, 'log_loss': 1.0, 'brier_score': 0.25, 'ece': 0.0,
             'precision': 0.0, 'recall': 0.0, 'f1': 0.0,
             'sharpe_ratio': 0.0, 'information_coefficient': 0.0
         }
@@ -305,6 +296,7 @@ def assess_label_quality_ml(X, y, weights, returns=None, n_splits=3):
         'auc': [],
         'log_loss': [],
         'brier_score': [],
+        'ece': [],
         'precision': [],
         'recall': [],
         'f1': [],
@@ -321,31 +313,69 @@ def assess_label_quality_ml(X, y, weights, returns=None, n_splits=3):
     )
 
     for train_idx, test_idx in tscv.split(X_clean):
-        X_train, X_test = X_clean.iloc[train_idx], X_clean.iloc[test_idx]
-        y_train, y_test = y_clean.iloc[train_idx], y_clean.iloc[test_idx]
-        w_train = w_clean[train_idx]
+        # Time-series safe internal split for calibration
+        # Split train_idx into fit (70%) and calib (30%)
+        n_train = len(train_idx)
+        split_point = int(n_train * 0.7)
+
+        # If too small, skip calibration split and just use raw (fallback)
+        if split_point < 20 or (n_train - split_point) < 20:
+            fit_idx = train_idx
+            calib_idx = None
+        else:
+            fit_idx = train_idx[:split_point]
+            calib_idx = train_idx[split_point:]
+
+        X_fit = X_clean.iloc[fit_idx]
+        y_fit = y_clean.iloc[fit_idx]
+        w_fit = w_clean[fit_idx]
+
+        X_test = X_clean.iloc[test_idx]
+        y_test = y_clean.iloc[test_idx]
         r_test = r_clean[test_idx]
 
         try:
-            # Train WITH weights
-            model.fit(X_train, y_train, sample_weight=w_train)
+            # 1. Train base model on fit set
+            model.fit(X_fit, y_fit, sample_weight=w_fit)
 
-            # Evaluate WITHOUT weights (we want to know if it learned the ground truth better)
-            preds = model.predict_proba(X_test)[:, 1]
-            preds_binary = (preds > 0.5).astype(int)
+            # 2. Calibrate
+            iso_reg = None
+            if calib_idx is not None:
+                X_cal = X_clean.iloc[calib_idx]
+                y_cal = y_clean.iloc[calib_idx]
 
-            metrics['auc'].append(roc_auc_score(y_test, preds))
-            metrics['log_loss'].append(log_loss(y_test, preds))
-            metrics['brier_score'].append(brier_score_loss(y_test, preds))
+                # Get raw probabilities on calibration set
+                probs_cal = model.predict_proba(X_cal)[:, 1]
+
+                # Fit Isotonic Regression
+                iso_reg = IsotonicRegression(out_of_bounds='clip')
+                iso_reg.fit(probs_cal, y_cal) # Isotonic doesn't support sample_weight in older sklearn, skipping w for calib
+
+            # 3. Predict on Test
+            preds_raw = model.predict_proba(X_test)[:, 1]
+
+            if iso_reg:
+                preds_calibrated = iso_reg.predict(preds_raw)
+            else:
+                preds_calibrated = preds_raw
+
+            # 4. Compute Metrics on Calibrated Probabilities
+            preds_binary = (preds_calibrated > 0.5).astype(int)
+
+            metrics['auc'].append(roc_auc_score(y_test, preds_calibrated))
+            metrics['log_loss'].append(log_loss(y_test, preds_calibrated))
+            metrics['brier_score'].append(brier_score_loss(y_test, preds_calibrated))
+            metrics['ece'].append(compute_ece(y_test, preds_calibrated))
+
             metrics['precision'].append(precision_score(y_test, preds_binary, zero_division=0))
             metrics['recall'].append(recall_score(y_test, preds_binary, zero_division=0))
             metrics['f1'].append(f1_score(y_test, preds_binary, zero_division=0))
 
             # Financial Metrics
-            metrics['sharpe_ratio'].append(calculate_sharpe_ratio(preds, r_test))
+            metrics['sharpe_ratio'].append(calculate_sharpe_ratio(preds_calibrated, r_test))
 
             # Information Coefficient (Rank correlation between prob and return)
-            ic, _ = spearmanr(preds, r_test)
+            ic, _ = spearmanr(preds_calibrated, r_test)
             metrics['information_coefficient'].append(ic if np.isfinite(ic) else 0.0)
 
         except Exception:
@@ -502,7 +532,7 @@ def main():
     df['generated_sample_weight'] = weights
     
     # 5. Assess with ML
-    print("Assessing weights with ML probe...")
+    print("Assessing weights with ML probe (with calibration)...")
     # Prepare features: exclude targets and leaks
     drop_cols = [c for c in df.columns if 'target' in c or 'label' in c or 'return' in c or 'weight' in c or 'future' in c]
     X = df.drop(columns=drop_cols).select_dtypes(include=[np.number])
@@ -541,11 +571,13 @@ def main():
         f.write(f"- Max: {np.max(weights):.4f}\n\n")
 
         f.write("## 2. Comprehensive ML Assessment (Probe Model)\n")
+        f.write("*Note: Probabilities are calibrated via Isotonic Regression on an inner temporal split before computing Brier/ECE.*\n\n")
         f.write("| Metric | Baseline (Uniform) | Weighted | Delta |\n")
         f.write("|---|---|---|---|\n")
         f.write(f"| **AUC** | {res_base['auc']:.4f} | {res_weighted['auc']:.4f} | **{auc_imp:+.4f}** |\n")
         f.write(f"| **Log Loss** | {res_base['log_loss']:.4f} | {res_weighted['log_loss']:.4f} | {(res_weighted['log_loss'] - res_base['log_loss']):+.4f} |\n")
         f.write(f"| **Brier Score** | {res_base['brier_score']:.4f} | {res_weighted['brier_score']:.4f} | {(res_weighted['brier_score'] - res_base['brier_score']):+.4f} |\n")
+        f.write(f"| **ECE** | {res_base['ece']:.4f} | {res_weighted['ece']:.4f} | {(res_weighted['ece'] - res_base['ece']):+.4f} |\n")
         f.write(f"| **Sharpe Ratio** | {res_base['sharpe_ratio']:.4f} | {res_weighted['sharpe_ratio']:.4f} | **{sharpe_imp:+.4f}** |\n")
         f.write(f"| **Info. Coeff.** | {res_base['information_coefficient']:.4f} | {res_weighted['information_coefficient']:.4f} | {ic_imp:+.4f} |\n")
         f.write(f"| Precision | {res_base['precision']:.4f} | {res_weighted['precision']:.4f} | {(res_weighted['precision'] - res_base['precision']):+.4f} |\n")

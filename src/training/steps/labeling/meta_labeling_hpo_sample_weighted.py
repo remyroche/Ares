@@ -2961,25 +2961,122 @@ def compute_robust_hpo_objective(
     stats: Dict[str, Any],
     df_results: pd.DataFrame,
     regime_col: str = 'regime',
+    min_trades_per_day: float = 0.5,
+    target_trades_per_day: float = 2.5,
+    max_trades_per_day: float = 8.0,
 ) -> float:
-    """Optimizes for ROBUSTNESS.
+    """Comprehensive HPO objective optimizing for ROBUSTNESS, EDGE, and TRADE QUALITY.
+
+    This is the CANONICAL HPO objective function that combines:
+    1. P&L Edge (calibration-adjusted position sizing via probability weighting)
+    2. Minimum trades/day hard gate (reject if below threshold)
+    3. Trade density bonus (reward 1.5-5 trades/day sweet spot)
+    4. Sharpe ratio component (risk-adjusted returns)
+    5. AUC component when y_true/y_prob available (learnability)
+    6. Robust expectancy (winsorized to remove outlier luck)
+
+    Formula:
+        score = robust_edge * sqrt(N) * trade_density_factor * sharpe_factor * auc_bonus
 
     Args:
-        stats: Dict with 'num_trades', 'trades_per_day', 'sharpe_ratio', etc.
+        stats: Dict with 'num_trades', 'trades_per_day', 'sharpe_ratio', 'mean_auc' (optional).
         df_results: DataFrame containing per-trade results:
                     ['y_true', 'y_prob', 'ret_bps', 'regime']
-                    Note: 'ret_bps' here is expected to be raw return float (e.g. 0.01)
+                    - y_true: Binary label (0/1)
+                    - y_prob: Model predicted probability (used for position sizing)
+                    - ret_bps: Realized return as float (e.g., 0.01 = 1%)
+                    - regime: Optional regime label for stratified analysis
         regime_col: Column name for regime labels
+        min_trades_per_day: Hard minimum (default 0.5) - reject if below
+        target_trades_per_day: Optimal trades/day for bonus (default 2.5)
+        max_trades_per_day: Upper bound for density penalty (default 8.0)
+
+    Returns:
+        Comprehensive objective score (higher is better)
     """
     if df_results.empty or 'ret_bps' not in df_results.columns:
         return 0.0
 
+    # Extract core stats
+    num_trades = stats.get('num_trades', len(df_results))
+    trades_per_day = stats.get('trades_per_day', 0.0)
+    sharpe_ratio = stats.get('sharpe_ratio', 0.0)
+    mean_auc = stats.get('mean_auc', None)
+
+    # --- HARD GATE: Minimum trades per day ---
+    # Reject configurations that don't generate enough trading opportunities
+    if trades_per_day < min_trades_per_day:
+        return -1e6  # Strong penalty to ensure rejection
+
     # --- 1. Robust Edge Calculation (Winsorised Expectancy) ---
-    # Replace 'median_ret * sqrt(N)' with:
     returns_arr = df_results['ret_bps'].to_numpy(dtype=float)
     robust_edge_val = compute_robust_expectancy(returns_arr)
-    # Scale by sqrt(N) to reward sample size (t-stat like scaling)
-    robust_score = robust_edge_val * np.sqrt(stats.get('num_trades', 0))
+
+    # --- 2. Calibration-Adjusted P&L (Position Sizing by Probability) ---
+    # If y_prob available, compute probability-weighted returns
+    calib_adjusted_edge = robust_edge_val
+    if 'y_prob' in df_results.columns:
+        try:
+            probs = df_results['y_prob'].to_numpy(dtype=float)
+            # Position size = probability (Kelly-like sizing)
+            # Calibration-adjusted return = prob * actual_return
+            valid_mask = np.isfinite(probs) & np.isfinite(returns_arr)
+            if valid_mask.sum() > 10:
+                calib_returns = probs[valid_mask] * returns_arr[valid_mask]
+                calib_adjusted_edge = compute_robust_expectancy(calib_returns)
+        except Exception:
+            pass
+
+    # --- 3. Trade Density Factor ---
+    # Reward trades in sweet spot (1.5-5/day), penalize extremes
+    density_factor = 1.0
+    if trades_per_day < 1.5:
+        # Below sweet spot: linear ramp from min_trades to 1.5
+        density_factor = 0.5 + 0.5 * (trades_per_day - min_trades_per_day) / max(1.5 - min_trades_per_day, 0.1)
+    elif trades_per_day > 5.0:
+        # Above sweet spot: gradual penalty
+        excess = (trades_per_day - 5.0) / max(max_trades_per_day - 5.0, 1.0)
+        density_factor = max(0.5, 1.0 - 0.5 * min(1.0, excess))
+    else:
+        # In sweet spot: bonus for being near target
+        proximity = 1.0 - abs(trades_per_day - target_trades_per_day) / 3.5
+        density_factor = 1.0 + 0.2 * max(0, proximity)
+
+    # --- 4. Sharpe Ratio Factor ---
+    # Reward positive Sharpe, penalize negative
+    sharpe_factor = 1.0
+    if sharpe_ratio is not None and np.isfinite(sharpe_ratio):
+        if sharpe_ratio > 0:
+            # Bonus for positive Sharpe (up to 50% boost at Sharpe=2)
+            sharpe_factor = 1.0 + min(0.5, sharpe_ratio * 0.25)
+        else:
+            # Penalty for negative Sharpe
+            sharpe_factor = max(0.3, 1.0 + sharpe_ratio * 0.3)
+
+    # --- 5. AUC Bonus (Learnability) ---
+    # If AUC available, reward AUC > 0.55, penalize AUC < 0.52
+    auc_bonus = 1.0
+    if mean_auc is not None and np.isfinite(mean_auc):
+        if mean_auc >= 0.55:
+            # Bonus: up to 30% for AUC approaching 0.70
+            auc_bonus = 1.0 + min(0.3, (mean_auc - 0.55) * 2.0)
+        elif mean_auc < 0.52:
+            # Penalty for near-random AUC
+            auc_bonus = max(0.5, 1.0 - (0.52 - mean_auc) * 5.0)
+
+    # --- 6. Sample Size Scaling (t-stat like) ---
+    # Reward more samples for statistical significance
+    sample_factor = np.sqrt(max(1, num_trades))
+
+    # --- FINAL COMPOSITE SCORE ---
+    # Combine all components multiplicatively
+    robust_score = (
+        calib_adjusted_edge 
+        * sample_factor 
+        * density_factor 
+        * sharpe_factor 
+        * auc_bonus
+    )
 
     return robust_score
 
@@ -3378,7 +3475,18 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
         # 0. SETUP & PRE-CALCULATION
         # ------------------------------------------------------------------
         close_series = market_data["close"]
+        close_prices = close_series  # Alias for compatibility
         returns_series = close_series.pct_change().fillna(0.0)
+
+        # Compute log-returns and volatility for later use
+        log_ret = np.log(close_series).diff()
+        volatility_1d = log_ret.rolling(96).std()
+
+        # Calculate days span from market data
+        try:
+            days_span = max(1, (market_data.index.max() - market_data.index.min()).days)
+        except Exception:
+            days_span = max(1, len(market_data) // 96)  # Assume ~96 bars per day as fallback
 
         # Heavy Lifting: Pre-calculate bar-level features for weighting
         tprint_info("🏗️ Pre-calculating bar-level features...")
@@ -3813,19 +3921,19 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
 
             try:
                 nonlocal debug_sample_count, gate_stats
-                # Enforce profit >= 1.5x stop constraint. During stages that do not
+                # Enforce profit >= 2x stop constraint. During stages that do not
                 # actively optimize profit_thr_base/stop_to_profit_ratio, fall back
                 # to conservative defaults.
                 profit_thr_base = float(params.get("profit_thr_base", 0.012))
                 stop_ratio = float(params.get("stop_to_profit_ratio", 0.5))
                 trail_dist = float(params.get("trail_distance", 0.0))
 
-                # CONSTRAINT: Ensure profit is at least 1.5x stop
+                # CONSTRAINT: Ensure profit is at least 2x stop (RR >= 2:1)
                 stop_thr_base = max(0.0005, profit_thr_base * stop_ratio)
-                if profit_thr_base < 1.5 * stop_thr_base:
+                if profit_thr_base < 2.0 * stop_thr_base:
                     # Early exit: invalid RR geometry
                     tprint_warning(
-                        f"[EARLY_EXIT_RR] Config rejected: profit {profit_thr_base:.4f} < 1.5x stop {stop_thr_base:.4f}"
+                        f"[EARLY_EXIT_RR] Config rejected: profit {profit_thr_base:.4f} < 2x stop {stop_thr_base:.4f}"
                     )
                     gate_stats["rr_profit_vs_stop"] = gate_stats.get("rr_profit_vs_stop", 0) + 1
                     return {
@@ -3876,12 +3984,12 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                     stop_mult_min, stop_mult_max = stop_mult_max, stop_mult_min
 
                 # Hard RR constraint: even in the worst-case (smallest profit, largest stop),
-                # require a minimum RR ~1.2 (≈1.05 net after fees).
+                # require a minimum RR ~1.5 (after adaptive multipliers, ensures net positive expectancy).
                 worst_rr = (profit_thr_base * profit_mult_min) / max(stop_thr_base * stop_mult_max, 1e-8)
-                if worst_rr < 1.2:
+                if worst_rr < 1.5:
                     if debug_sample_count < debug_sample_limit:
                         tprint_warning(
-                            f"[EARLY_EXIT_RR] Rejecting config due to worst_rr={worst_rr:.3f} < 1.2 "
+                            f"[EARLY_EXIT_RR] Rejecting config due to worst_rr={worst_rr:.3f} < 1.5 "
                             f"(profit_thr_base={profit_thr_base:.4f}, stop_thr_base={stop_thr_base:.4f}, "
                             f"profit_mult_min={profit_mult_min:.3f}, stop_mult_max={stop_mult_max:.3f})"
                         )
@@ -4113,6 +4221,17 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 # HPO-chosen economic floor.
                 quantile_labels = _make_quantile_labels(vol_scaled_returns)
                 binary_labels = quantile_labels
+
+            except Exception as quantile_exc:
+                # Handle quantile label generation errors gracefully
+                tprint_warning(f"[QUANTILE_LABEL_ERROR] {quantile_exc}")
+                gate_stats["quantile_error"] = gate_stats.get("quantile_error", 0) + 1
+                return {
+                    'learnability': 0.0,
+                    'profitability': -1e9,
+                    'edge': -1e9,
+                    'combined': -1e9,
+                }
 
         def kalman_objective(params: Dict[str, Any]) -> float:
             # 1. Generate Smoothed Signals (Primary)
@@ -4489,786 +4608,12 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             "layer0_ic": kalman_result.get("best_value", 0),
             "layer2_score": best_l2_score,
             "layer3_auc": l3_result.get("best_value", 0),
-            "best_params": full_best_params
-                        # Run Simulation
-                        executed_trades = simulate_concurrent_trades(
-                            sim_df,
-                            max_concurrency=1,
-                            transaction_cost=tx
-                        )
-
-                        if not executed_trades.empty:
-                            # Calculate stats for objective function
-                            n_exec = len(executed_trades)
-
-                            # Calculate Sharpe on simulated PnL (ret_bps)
-                            pnl_series = executed_trades['ret_bps']
-                            mean_pnl = pnl_series.mean()
-                            std_pnl = pnl_series.std()
-                            sim_sharpe = mean_pnl / (std_pnl + 1e-9) if std_pnl > 0 else 0.0
-
-                            sim_trades_per_day = n_exec / max(effective_days_span, 1.0)
-
-                            sim_stats = {
-                                'num_trades': n_exec,
-                                'trades_per_day': sim_trades_per_day,
-                                'sharpe_ratio': sim_sharpe
-                            }
-
-                            # Compute final robust score
-                            # df_results needs ['y_true', 'y_prob', 'ret_bps', 'regime']
-                            # executed_trades has these (from sim_df + 'ret_bps')
-                            # Map 'prob' -> 'y_prob'
-                            executed_trades['y_prob'] = executed_trades['prob']
-
-                            sim_score = compute_robust_hpo_objective(
-                                stats=sim_stats,
-                                df_results=executed_trades,
-                                regime_col='regime'
-                            )
-                        else:
-                            sim_score = 0.0
-                    else:
-                        sim_score = 0.0
-                except Exception:
-                    sim_score = 0.0
-
-                edge_score = sim_score
-
-                # ===== CALIBRATION-AWARE ADJUSTMENT OF EDGE =====
-                # Use calibration diagnostics (weighted Brier and ECE) to softly
-                # down-weight edge for miscalibrated models. We do this *after*
-                # temporal stability but before scaling and combining with AUC.
-                try:
-                    calib_edge_penalty = 1.0
-                    if weighted_brier is not None:
-                        # Map weighted_brier in [brier_target, brier_max] to a factor in [1.0, 0.5]
-                        brier_target = float(config.get("calibration_brier_target", 0.18))
-                        brier_max = float(config.get("calibration_brier_max", 0.35))
-                        if brier_max <= brier_target:
-                            brier_max = brier_target + 1e-3
-                        brier_excess = max(0.0, float(weighted_brier) - brier_target)
-                        brier_span = max(brier_max - brier_target, 1e-6)
-                        brier_ratio = min(1.0, brier_excess / brier_span)
-                        # Linearly shrink edge to 50% at the worst Brier in the band.
-                        calib_edge_penalty *= (1.0 - 0.5 * brier_ratio)
-
-                    if ece_norm is not None:
-                        # ece_norm already in [0, 1]; shrink edge up to another 30% at ece_norm=1.
-                        calib_edge_penalty *= (1.0 - 0.3 * float(ece_norm))
-
-                    # Ensure non-negative factor
-                    calib_edge_penalty = max(0.0, calib_edge_penalty)
-                    edge_score *= calib_edge_penalty
-                except Exception:
-                    # If anything goes wrong in calibration-based adjustment, keep raw edge_score.
-                    pass
-
-                # Scale edge for combined metric (multiply by 1000 to make comparable)
-                edge_scaled = edge_score * 1000.0
-
-                # Additional hard penalties for pathological configurations (no positive
-                # or negative bucket), while still keeping them in the candidate pool
-                # for diagnostics.
-                if len(r_pos) == 0 or len(r_neg) == 0:
-                    profitability_score = -1e9
-
-                # ===== COMBINED OBJECTIVE WITH RETENTION REGULARIZATION =====
-                # New formulation: objective adjusts the filtered AUC based on how far
-                # the retention rate falls below a soft target.
-                #
-                #   ret_target = 0.35  (35% of pre-events retained)
-                #   penalty    = alpha * (max(0, ret_target - retention_total))^2
-                #   objective  = AUC_filtered -  penalty
-                #
-                # This penalizes overly aggressive filtering (very low retention) while
-                # not rewarding sparse configs purely via 1/retention.
-
-                # Retention regularization parameter (configurable)
-                alpha_retention = float(config.get("retention_regularization_alpha", 0.05))
-                alpha_retention = max(0.01, min(0.10, alpha_retention))  # Clamp to [0.01, 0.10]
-
-                # Soft target for overall retention (fraction of pre-events kept)
-                retention_target = float(config.get("retention_target", 0.35))
-                retention_target = max(0.05, min(0.80, retention_target))
-
-                # Compute nonlinear shortfall penalty relative to the target
-                # retention_total is already computed above as n_post_total / n_pre_total
-                if retention_total > 0:
-                    retention_shortfall = max(0.0, retention_target - float(retention_total))
-                    # Quadratic penalty so that very low retention is punished more strongly
-                    retention_penalty = alpha_retention * (retention_shortfall ** 2)
-                else:
-                    # If no events survive, apply maximal penalty against the target
-                    retention_penalty = alpha_retention * retention_target
-
-                # Cap retention penalty to avoid dominating the objective
-                retention_penalty = min(retention_penalty, 0.5)
-
-                # ===== UNIFIED AUC ADJUSTMENT =====
-                # Combine AUC range penalties directly into adjusted AUC instead of
-                # having separate auc_penalty and learnability_bonus terms.
-                # This simplifies the objective and avoids double-counting.
-
-                auc_range_adjustment = 0.0
-                if mean_auc < 0.54:
-                    # Too noisy: heavy penalty incorporated into AUC
-                    auc_range_adjustment = -(0.54 - mean_auc) * 0.5
-                elif mean_auc > 0.70:
-                    # Suspicious (likely leakage): heavy penalty
-                    auc_range_adjustment = -(mean_auc - 0.70) * 1.0
-                elif mean_auc > 0.67:
-                    # Above excellent range: moderate penalty
-                    auc_range_adjustment = -(mean_auc - 0.67) * 0.3
-                elif auc_in_target_range:
-                    # In target range [0.55, 0.67]: small bonus for 0.60-0.62 sweet spot
-                    if mean_auc >= 0.58 and mean_auc <= 0.64:
-                        auc_range_adjustment = 0.02  # Small bonus for ideal range
-
-                # Final retention-adjusted AUC (unified primary signal)
-                auc_ret_raw = mean_auc + auc_range_adjustment - retention_penalty
-                auc_cap = 0.65
-                auc_retention_adjusted = min(auc_ret_raw, auc_cap)
-
-                # Trade density bonus: stronger when AUC is outside target range
-                # This gives edge/pnl/trades more influence when AUC is penalized
-                # User Request (Step 451): Reduce importance of pure edge by ~30% to favor robustness
-                base_edge_multiplier = 0.7
-                edge_weight = (1.0 + (1.0 - auc_weight_multiplier) * 0.5) * base_edge_multiplier
-                density_weight = 1.0 + (1.0 - auc_weight_multiplier) * 1.0  # Up to 2x density weight
-
-                balance_weight = float(config.get("balance_score_weight", 0.15))
-                if balance_weight < 0.0:
-                    balance_weight = 0.0
-                if balance_weight > 0.3:
-                    balance_weight = 0.3
-                balance_term = balance_weight * 10.0 * (balance_score - 0.5)
-
-                retention_asym_weight = float(config.get("retention_asym_weight", 5.0))
-                if retention_asym_weight < 0.0:
-                    retention_asym_weight = 0.0
-
-                # Trades/day bonus for being in sweet spot (1.5-5 trades/day)
-                trades_bonus = 0.0
-                if trades_per_day >= 1.5 and trades_per_day <= 5.0:
-                    # Peak bonus at 2.5 trades/day (midpoint)
-                    trades_bonus = max(0, 1.0 - abs(trades_per_day - 2.5) / 2.5) * 50.0
-
-                # Geometry penalty: if profit threshold is unrealistically large
-                # relative to the average trailing stop distance (ATR-based) while
-                # overall retention is below target, down-weight the configuration.
-                trail_geom_penalty = 0.0
-                try:
-                    if trail_dist > 0.0 and isinstance(atr_series, pd.Series) and "close" in market_data.columns:
-                        atr_events = atr_series[labeled_mask]
-                        price_events = market_data["close"][labeled_mask]
-                        denom = price_events.abs().replace(0.0, np.nan)
-                        avg_trail_pct = float(((trail_dist * atr_events) / (denom + 1e-8)).replace([np.inf, -np.inf], np.nan).mean())
-
-                        if np.isfinite(avg_trail_pct) and avg_trail_pct > 0:
-                            k_trail = float(config.get("trail_profit_ratio_k", 3.5))
-                            # Only activate when retention is below target (over-selection regime)
-                            if float(retention_total) < retention_target:
-                                threshold = k_trail * avg_trail_pct
-                                if profit_thr_base > threshold:
-                                    excess_ratio = (profit_thr_base / max(threshold, 1e-8)) - 1.0
-                                    weight = float(config.get("trail_penalty_weight", 80.0))
-                                    trail_geom_penalty = max(0.0, excess_ratio) * weight
-                except Exception:
-                    trail_geom_penalty = 0.0
-
-                # Diagnostic penalties: when aggressive filtering or ultra-easy
-                # problems are detected (only computed when compute_diagnostics
-                # is True to keep HPO runtime manageable).
-                diagnostics_penalty = 0.0
-                if compute_diagnostics:
-                    try:
-                        econ_floor_local = econ_min_mult * effective_tx_cost
-                        y_full_local = pd.Series(np.nan, index=realized_returns.index)
-                        full_mask_local = ~realized_returns.isna() & (realized_returns.abs() >= econ_floor_local)
-                        y_full_local[full_mask_local & (realized_returns > 0)] = 1.0
-                        y_full_local[full_mask_local & (realized_returns <= 0)] = 0.0
-
-                        filtering_diag_local = compute_filtering_inflation_diagnostics(
-                            X=meta_features_model_processed,
-                            y_full=y_full_local,
-                            y_filtered=binary_labels,
-                            realized_returns=realized_returns,
-                            volatility=volatility_1d,
-                            probabilities=calibrated_probs,
-                            cv_splits=3,
-                            time_aware_cv=True,
-                        )
-
-                        easy_problem_flag = False
-                        try:
-                            overlap_diag_local = compute_class_overlap_features(
-                                X=meta_features_model_processed,
-                                retained_mask=labeled_mask,
-                                top_k_features=5,
-                            )
-                            easy_problem_flag = bool(overlap_diag_local.get("easy_problem_detected", False))
-                        except Exception:
-                            overlap_diag_local = {}
-                            easy_problem_flag = False
-
-                        if (
-                            filtering_diag_local.get("filtering_is_major_contributor")
-                            or filtering_diag_local.get("precision_collapse_detected")
-                            or easy_problem_flag
-                        ):
-                            diagnostics_penalty = float(config.get("diagnostic_penalty_weight", 150.0))
-                    except Exception:
-                        diagnostics_penalty = 0.0
-
-                # ===== COMBINED OBJECTIVE WITH RETENTION REGULARIZATION =====
-                # New formulation: objective adjusts the filtered AUC based on how far
-                # the retention rate falls below a soft target.
-                #
-                #   ret_target = 0.35  (35% of pre-events retained)
-                #   penalty    = alpha * (max(0, ret_target - retention_total))^2
-                #   objective  = AUC_filtered -  penalty
-                #
-                # This penalizes overly aggressive filtering (very low retention) while
-                # not rewarding sparse configs purely via 1/retention.
-
-                # Retention regularization parameter (configurable)
-
-                # Calibration-aware risk adjustment on top of retention-adjusted AUC.
-                weighted_brier = None
-                weighted_brier_norm = None
-                ece_norm = None
-                mid_brier = None
-                mid_brier_norm = None
-                calib_combo_value = None
-                rank_calib_score = auc_retention_adjusted
-
-                try:
-                    probs_array = np.asarray(calibrated_probs, dtype=float)
-                    y_calib_vals = np.asarray(binary_labels.values, dtype=float)
-                    mask_calib = np.isfinite(probs_array) & np.isfinite(y_calib_vals)
-                    probs_array = probs_array[mask_calib]
-                    y_calib_vals = y_calib_vals[mask_calib]
-                    n_calib = y_calib_vals.size
-
-                    min_calib_samples = int(config.get("calibration_min_samples", 200))
-                    if n_calib >= min_calib_samples:
-                        p_min = float(config.get("calibration_prob_min_clip", 0.05))
-                        p_max = float(config.get("calibration_prob_max_clip", 0.95))
-                        if p_max <= p_min:
-                            p_max = min(0.99, p_min + 0.05)
-                        probs_clipped = np.clip(probs_array, p_min, p_max)
-
-                        conf_power = float(config.get("calibration_confidence_power", 1.0))
-                        if conf_power != 1.0:
-                            confidence = np.abs(probs_clipped - 0.5) ** conf_power
-                            weights = 1.0 + confidence
-                        else:
-                            weights = np.ones_like(probs_clipped)
-
-                        errors = (y_calib_vals - probs_clipped) ** 2
-                        weighted_brier = float(np.average(errors, weights=weights))
-
-                        brier_target = float(config.get("calibration_brier_target", 0.18))
-                        brier_max = float(config.get("calibration_brier_max", 0.35))
-                        if brier_max <= brier_target:
-                            brier_max = brier_target + 1e-3
-                        excess = max(0.0, weighted_brier - brier_target)
-                        denom = max(brier_max - brier_target, 1e-6)
-                        weighted_brier_norm = min(1.0, excess / denom)
-
-                        n_bins_calib = int(config.get("calibration_bins", 10))
-                        if n_bins_calib <= 0:
-                            n_bins_calib = 10
-                        n_bins_calib = max(2, n_bins_calib)
-                        bin_edges = np.linspace(0.0, 1.0, n_bins_calib + 1)
-                        ece_val = 0.0
-                        for bi in range(n_bins_calib):
-                            mask_bin = (probs_clipped >= bin_edges[bi]) & (probs_clipped < bin_edges[bi + 1])
-                            idx_bin = np.nonzero(mask_bin)[0]
-                            n_bin = idx_bin.size
-                            if n_bin < 20:
-                                continue
-                            p_hat = float(np.mean(probs_clipped[idx_bin]))
-                            y_hat = float(np.mean(y_calib_vals[idx_bin]))
-                            ece_val += (n_bin / float(n_calib)) * abs(p_hat - y_hat)
-                        if ece_val > 0.0:
-                            ece_raw = float(ece_val)
-                            ece_max = float(config.get("calibration_ece_max", 0.25))
-                            if ece_max <= 0.0:
-                                ece_max = 0.25
-                            ece_norm = min(1.0, ece_raw / ece_max)
-
-                        mid_low = float(config.get("calibration_mid_prob_low", 0.3))
-                        mid_high = float(config.get("calibration_mid_prob_high", 0.7))
-                        if mid_high <= mid_low:
-                            mid_high = mid_low + 1e-3
-                        mid_mask = (probs_clipped >= mid_low) & (probs_clipped <= mid_high)
-                        if np.any(mid_mask):
-                            errors_mid = (y_calib_vals[mid_mask] - probs_clipped[mid_mask]) ** 2
-                            if errors_mid.size > 0:
-                                mid_brier = float(np.mean(errors_mid))
-                                mid_target = float(config.get("calibration_mid_brier_target", brier_target))
-                                mid_max = float(config.get("calibration_mid_brier_max", brier_max))
-                                if mid_max <= mid_target:
-                                    mid_max = mid_target + 1e-3
-                                mid_excess = max(0.0, mid_brier - mid_target)
-                                mid_denom = max(mid_max - mid_target, 1e-6)
-                                mid_brier_norm = min(1.0, mid_excess / mid_denom)
-
-                        # New logic: Discrete tiers for calibration impact
-                        calib_score = weighted_brier if weighted_brier is not None else 0.25
-
-                        calib_factor = 1.0
-                        if calib_score > 0.25:
-                            # "Minimum requirement" failed: harsh linear penalty
-                            # 0.25 -> 1.0x, 0.35 -> 0.0x
-                            penalty = (calib_score - 0.25) / 0.10
-                            calib_factor = max(0.0, 1.0 - penalty * 10.0) # Very steep drop
-                        elif calib_score <= 0.18:
-                            # "Excellent" bonus
-                            calib_factor = 1.1
-
-                        calib_combo_value = float(calib_score)
-
-                        factor = calib_factor
-
-                        deflation = 0.0
-                        if auc_cv_std is not None and np.isfinite(auc_cv_std):
-                            try:
-                                deflation = 2.0 * float(auc_cv_std)
-                            except Exception:
-                                deflation = 0.0
-                        deflated_auc = max(0.0, float(auc_retention_adjusted) - deflation)
-                        rank_calib_score = deflated_auc * factor
-
-                        # ===== P&L CALIBRATION-CURVE SANITY TERM =====
-                        # If available from diagnostics, use the P&L calibration curve
-                        # (probability → expected net return) to detect configurations
-                        # where no probability region is economically positive or where
-                        # high-probability regions underperform.
-                        try:
-                            pnl_curve = None
-                            if isinstance(best_config_diagnostics.get("calibration_diagnostics"), dict):
-                                pnl_curve = best_config_diagnostics["calibration_diagnostics"].get("pnl_calibration_curve")
-
-                            if isinstance(pnl_curve, dict):
-                                prob_grid = np.asarray(pnl_curve.get("prob_grid", []), dtype=float)
-                                exp_net = np.asarray(pnl_curve.get("expected_net_return", []), dtype=float)
-                                if prob_grid.size == exp_net.size and prob_grid.size >= 3:
-                                    # 1) Check if any region has positive expected net return.
-                                    if not np.any(exp_net > 0.0):
-                                        # Strong penalty: no economically positive region.
-                                        rank_calib_score *= 0.7
-
-                                    # 2) Check monotonicity in upper half of probability grid.
-                                    mid_idx = prob_grid.size // 2
-                                    high_probs = prob_grid[mid_idx:]
-                                    high_exp = exp_net[mid_idx:]
-                                    if high_probs.size >= 3:
-                                        violations = 0
-                                        for i in range(high_exp.size - 1):
-                                            if high_exp[i + 1] < high_exp[i] - 1e-8:
-                                                violations += 1
-                                        if violations > 0:
-                                            # Soft penalty proportional to fraction of violations.
-                                            frac_viols = violations / max(high_exp.size - 1, 1)
-                                            rank_calib_score *= (1.0 - 0.3 * min(1.0, frac_viols))
-                        except Exception:
-                            # If anything fails in P&L calibration sanity checks, do not alter rank_calib_score.
-                            pass
-                except Exception:
-                    weighted_brier = None
-                    weighted_brier_norm = None
-                    ece_norm = None
-                    mid_brier = None
-                    mid_brier_norm = None
-                    calib_combo_value = None
-                    rank_calib_score = auc_retention_adjusted
-
-                # ===== SIMPLIFIED COMBINED OBJECTIVE =====
-                # Primary components:
-                # 1. edge_scaled: Captures profitability AND learnability (via capture ratio)
-                # 2. auc_retention_adjusted: AUC adjusted for retention penalty & range
-                # 3. trades_bonus: Reward healthy trade density
-                # 4. Penalties for extreme density, slow exits, over-aggressive filtering,
-                #    and unrealistic TPSL geometry relative to ATR-based trailing.
-                # 5. NEW: sample_count_bonus for Phase 1 (prioritize configs with enough samples)
-                # 6. NEW: regime_coverage_penalty for stratified regime sampling
-
-                # ===== TWO-PHASE HPO: SAMPLE COUNT BONUS =====
-                # In Phase 1, heavily reward configurations that achieve minimum sample counts
-                sample_count_bonus = 0.0
-                if n_events >= MIN_EVENTS_PHASE2:
-                    sample_count_bonus = 100.0  # Strong bonus for achieving Phase 2 threshold
-                elif n_events >= MIN_EVENTS_PHASE1:
-                    sample_count_bonus = 50.0  # Moderate bonus for achieving Phase 1 threshold
-                elif n_events >= 100:
-                    sample_count_bonus = 20.0  # Small bonus for reasonable sample count
-
-                # ===== SIGNAL FIDELITY METRICS (NEW OBJECTIVE) =====
-                # 1. Information Coefficient (IC) - Weighted Rank Correlation
-                ic = 0.0
-                try:
-                    if calibrated_probs is not None and len(calibrated_probs) > 50:
-                         # Align masks
-                         valid_mask_ic = np.isfinite(calibrated_probs) & np.isfinite(realized_return_clean)
-                         if valid_mask_ic.sum() > 50:
-                             p_clean = calibrated_probs[valid_mask_ic]
-                             r_clean = realized_return_clean[valid_mask_ic]
-
-                             # Calculate confidence-based weights for IC
-                             # Weight = 1.0 + |prob - 0.5| (Higher weight for confident predictions)
-                             ic_weights = 1.0 + np.abs(p_clean - 0.5)
-
-                             # Compute Ranks
-                             from scipy.stats import rankdata
-                             p_ranks = rankdata(p_clean)
-                             r_ranks = rankdata(r_clean)
-
-                             # Weighted Pearson on Ranks (Weighted Spearman)
-                             # np.cov(..., aweights=...) returns covariance matrix
-                             cov_mat = np.cov(p_ranks, r_ranks, aweights=ic_weights)
-                             if cov_mat.shape == (2, 2):
-                                 cov_xy = cov_mat[0, 1]
-                                 var_x = cov_mat[0, 0]
-                                 var_y = cov_mat[1, 1]
-                                 if var_x > 0 and var_y > 0:
-                                     val_ic = cov_xy / np.sqrt(var_x * var_y)
-                                     if np.isfinite(val_ic):
-                                         ic = float(val_ic)
-                except Exception:
-                    ic = 0.0
-
-                # 2. Density Score (Logarithmic)
-                density_score = 0.0
-                if events_per_day > 0:
-                    density_score = min(1.0, np.log10(events_per_day + 1.0) / 1.0)
-
-                # 3. Effect Size (Cohen's d) - Reusing d_post
-                # d_post is already calculated above
-                snr_metric = max(0.0, float(d_post)) if np.isfinite(d_post) else 0.0
-
-                # ===== CALIBRATION SCORE =====
-                # Derived from weighted_brier_norm (0=perfect, 1=bad)
-                # If unavailable, assume neutral/poor (0.0 score) to encourage calibration availability
-                score_calibration = 0.0
-                if weighted_brier_norm is not None:
-                    score_calibration = max(0.0, 1.0 - float(weighted_brier_norm))
-                elif ece_norm is not None:
-                     score_calibration = max(0.0, 1.0 - float(ece_norm))
-
-                # ===== NEW COMBINED SCORE FORMULA =====
-                # Weights: AUC(30%), IC(20%), Calib(20%), SNR(15%), Density(15%)
-
-                # User Request: Modulate AUC by stability (std dev)
-                # If auc_cv_std is high (unstable), discount the AUC contribution.
-                # Threshold: 0.10 (if std > 0.10, AUC score becomes 0)
-                stability_factor = 1.0
-                if auc_cv_std is not None and np.isfinite(auc_cv_std):
-                    stability_factor = max(0.0, 1.0 - (float(auc_cv_std) / 0.10))
-
-                score_auc = max(0.0, (mean_auc - 0.50) * 2.0) * stability_factor
-                # User Request (Refined): Penalize negative IC and clip upside
-                score_ic = np.clip(ic * 5.0, -1.0, 1.0)
-                score_snr = min(1.0, snr_metric / 2.0)
-                score_density = density_score
-
-                # Base score [0, 1] mapped to [0, 100] scale
-                fidelity_score = (
-                    0.30 * score_auc +
-                    0.20 * score_ic +
-                    0.20 * score_calibration +
-                    0.15 * score_snr +
-                    0.15 * score_density
-                ) * 100.0
-
-                combined_score = (
-                    fidelity_score
-                    + sample_count_bonus
-                    + (edge_scaled * edge_weight * 0.5) # Reduced edge weight
-                    + balance_term
-                    - (penalty_density * 0.1)
-                    - (tto_penalty * 0.1)
-                    - (retention_asym_weight * retention_asym_penalty)
-                    - trail_geom_penalty
-                    - diagnostics_penalty
-                    - robustness_penalty
-                )
-
-                try:
-                    label_cfg = build_label_config(
-                        symbol=symbol,
-                        exchange=exchange,
-                        timeframe=timeframe,
-                        direction=direction,
-                        params=params,
-                        extra=None,
-                    )
-                    config_id = compute_label_config_id(label_cfg)
-                except Exception:
-                    config_id = None
-
-                # ===== DETAILED P&L STATS (NEW) =====
-                pnl_win_rate = 0.0
-                pnl_avg_win = 0.0
-                pnl_avg_loss = 0.0
-                pnl_profit_factor = 0.0
-                pnl_total_return = 0.0
-
-                try:
-                    # 'labeled_mask' is defined earlier as ~binary_labels.isna()
-                    if 'labeled_mask' in locals() and isinstance(realized_returns, pd.Series):
-                        valid_ret = realized_returns[labeled_mask]
-                        if len(valid_ret) > 0:
-                            pnl_total_return = float(valid_ret.sum())
-                            wins = valid_ret[valid_ret > 0]
-                            losses = valid_ret[valid_ret < 0]
-
-                            pnl_win_rate = float(len(wins) / len(valid_ret))
-
-                            if len(wins) > 0:
-                                pnl_avg_win = float(wins.mean())
-
-                            if len(losses) > 0:
-                                pnl_avg_loss = float(losses.mean())
-
-                            # NEW: Average return per trade (wins & losses)
-                            pnl_avg_ret = float(valid_ret.mean())
-
-                            loss_sum = abs(float(losses.sum()))
-                            if loss_sum > 1e-9:
-                                pnl_profit_factor = float(wins.sum()) / loss_sum
-                            elif len(wins) > 0:
-                                pnl_profit_factor = 100.0 # Capped infinite profit factor
-                except Exception:
-                    pass
-
-                # Store candidate configuration for later persistence
-                candidate_config = {
-                    'config_id': config_id,
-                    'params': params.copy(),
-                    'learnability': float(learnability_score),
-                    'mean_auc': float(mean_auc),
-                    'profitability': float(profitability_score),
-                    'edge': float(edge_score),
-                    'edge_scaled': float(edge_scaled),
-                    'combined': float(combined_score),
-                    'fidelity_score': float(fidelity_score), # NEW
-                    'ic': float(ic), # NEW
-                    'calibration_score': float(score_calibration), # NEW
-                    'mean_pos': float(mean_pos),
-                    'mean_neg': float(mean_neg),
-                    'sharpe_pos': float(sharpe_pos),
-                    'n_events': int(n_events),
-                    'n_raw_events': int(n_raw_events),
-                    'n_vol_scaled_events': int(n_vol_scaled_events),
-                    'balance_score': float(balance_score),
-                    'trades_per_day': float(trades_per_day),
-                    'mean_tto': float(mean_tto) if np.isfinite(mean_tto) else float('nan'),
-                    'timeout_rate': float(timeout_rate) if np.isfinite(timeout_rate) else float('nan'),
-                    'tto_penalty': float(tto_penalty),
-                    'n_pre_events': int(n_pre_total),
-                    'retention_total': float(retention_total),
-                    'retention_pos': float(retention_pos),
-                    'retention_neg': float(retention_neg),
-                    'snr_pre': float(snr_pre),
-                    'snr_post': float(snr_post),
-                    'effect_size_pre': float(d_pre) if np.isfinite(d_pre) else 0.0,
-                    'effect_size_post': float(d_post) if np.isfinite(d_post) else 0.0,
-                    'n_required_80pct_power': float(n_required_80),
-                    # CV-based robustness proxy from learnability probe
-                    'learnability_worst_fold_auc': float(worst_fold_auc_cv) if worst_fold_auc_cv is not None else None,
-                    'learnability_auc_cv_std': float(auc_cv_std) if auc_cv_std is not None else None,
-                    'model_complexity': model_complexity,
-                    # NEW: Track trade count control parameters
-                    'cusum_threshold': float(cusum_threshold),
-                    'target_signal_density': float(target_signal_density),
-                    'r_multiple_threshold': float(r_multiple_threshold),
-                    'effective_tx_cost': float(effective_tx_cost),
-                    'label_low_q': float(label_low_q),
-                    # NEW: Detailed P&L Stats
-                    'pnl_win_rate': float(pnl_win_rate),
-                    'pnl_avg_win': float(pnl_avg_win),
-                    'pnl_avg_loss': float(pnl_avg_loss),
-                    'pnl_profit_factor': float(pnl_profit_factor),
-                    'pnl_profit_factor': float(pnl_profit_factor),
-                    'pnl_total_return': float(pnl_total_return),
-                    'pnl_avg_ret_per_trade': float(pnl_avg_ret) if 'pnl_avg_ret' in locals() else 0.0,
-                    'pnl_per_day': float(pnl_total_return) / max(days_span, 1.0) if 'days_span' in locals() else 0.0,
-                    'label_high_q': float(label_high_q),
-                    # AUC range tracking (unified into auc_retention_adjusted)
-                    'auc_in_target_range': bool(auc_in_target_range),
-                    'auc_range_adjustment': float(auc_range_adjustment),
-                    'auc_weight_multiplier': float(auc_weight_multiplier),
-                    # NEW: CV fold diagnostics from learnability probe
-                    'fold_aucs': fold_aucs.tolist() if isinstance(fold_aucs, np.ndarray) else list(fold_aucs) if fold_aucs is not None else [],
-                    'auc_interpretation': (
-                        'too_noisy' if mean_auc < 0.54 else
-                        'good_edge' if mean_auc <= 0.62 else
-                        'excellent_check_leakage' if mean_auc <= 0.67 else
-                        'suspicious_leakage' if mean_auc > 0.70 else
-                        'above_target'
-                    ),
-                    # Retention regularization (unified objective)
-                    'retention_penalty': float(retention_penalty),
-                    'retention_asym_penalty': float(retention_asym_penalty),
-                    'auc_retention_adjusted': float(auc_retention_adjusted),
-                    'alpha_retention': float(alpha_retention),
-                    'weighted_brier': float(weighted_brier) if weighted_brier is not None else None,
-                    'weighted_brier_norm': float(weighted_brier_norm) if weighted_brier_norm is not None else None,
-                    'ece_norm': float(ece_norm) if ece_norm is not None else None,
-                    'mid_brier': float(mid_brier) if mid_brier is not None else None,
-                    'mid_brier_norm': float(mid_brier_norm) if mid_brier_norm is not None else None,
-                    'calibration_combo': float(calib_combo_value) if calib_combo_value is not None else None,
-                    'rank_calib_score': float(rank_calib_score),
-                    # NEW: Two-phase HPO and diagnostic gates
-                    'sample_count_bonus': float(sample_count_bonus),
-                    'mi_value': float(mi_value),
-                    'mi_penalty': float(mi_penalty),
-                    'prob_std': float(prob_std),
-                    'prob_variance_penalty': float(prob_variance_penalty),
-                    'single_bin_penalty': float(single_bin_penalty),
-                }
-
-                # Optional per-regime breakdown using attached HMM regimes, if available.
-                per_regime_metrics: Dict[str, Any] = {}
-                regime_coverage_penalty = 0.0  # NEW: Penalty for poor regime coverage
-                n_regimes_with_events = 0
-                try:
-                    if "hmm_regime_label_1h" in market_data.columns:
-                        regimes_all = market_data["hmm_regime_label_1h"]
-                        regimes_events = regimes_all[labeled_mask]
-
-                        # Align calibrated probabilities with labeled events
-                        try:
-                            probs_series_full = pd.Series(calibrated_probs, index=binary_labels.index)
-                            probs_events = probs_series_full[labeled_mask]
-                        except Exception:
-                            probs_events = None
-
-                        from sklearn.metrics import roc_auc_score as _roc_auc_score_reg
-
-                        unique_regs = pd.unique(regimes_events.dropna())
-
-                        # ===== NEW: STRATIFIED REGIME SAMPLING CHECK =====
-                        # Penalize configurations that have poor regime coverage
-                        min_events_per_regime = int(config.get("min_events_per_regime", 20))
-                        expected_n_regimes = int(config.get("expected_n_regimes", 5))
-
-                        for reg_val in unique_regs:
-                            reg_mask = regimes_events == reg_val
-                            n_reg = int(reg_mask.sum())
-                            if n_reg >= min_events_per_regime:
-                                n_regimes_with_events += 1
-
-                        # Penalty for missing regimes
-                        if n_regimes_with_events < expected_n_regimes:
-                            missing_regimes = expected_n_regimes - n_regimes_with_events
-                            regime_coverage_penalty = missing_regimes * 50.0  # 50 points per missing regime
-                            if debug_sample_count < debug_sample_limit:
-                                tprint_warning(
-                                    f"[REGIME_COVERAGE] Only {n_regimes_with_events}/{expected_n_regimes} regimes "
-                                    f"have >= {min_events_per_regime} events. Penalty={regime_coverage_penalty:.1f}"
-                                )
-                        for reg_val in unique_regs:
-                            try:
-                                reg_mask = regimes_events == reg_val
-                                n_reg = int(reg_mask.sum())
-                                if n_reg < 20:
-                                    continue
-
-                                returns_reg = returns_labeled[reg_mask]
-                                labels_reg = labels_labeled[reg_mask]
-
-                                r_pos_reg = returns_reg[labels_reg == 1]
-                                r_neg_reg = returns_reg[labels_reg == 0]
-
-                                mean_pos_reg = float(r_pos_reg.mean()) if len(r_pos_reg) > 0 else 0.0
-                                mean_neg_reg = float(r_neg_reg.mean()) if len(r_neg_reg) > 0 else 0.0
-
-                                # Realized AUC within this regime (diagnostic only)
-                                auc_reg_local = float("nan")
-                                if probs_events is not None:
-                                    try:
-                                        probs_reg = probs_events[reg_mask]
-                                        if len(labels_reg.unique()) >= 2:
-                                            auc_reg_local = float(_roc_auc_score_reg(labels_reg, probs_reg))
-                                    except Exception:
-                                        auc_reg_local = float("nan")
-
-                                # For edge, use the same cross-validated mean_auc and
-                                # Sharpe-like trade-count scaling as the global metric,
-                                # so that regime-level edges are directly comparable to
-                                # the reported best_edge.
-                                auc_for_edge = float(mean_auc)
-
-                                edge_reg = compute_realistic_pnl_edge(
-                                    mean_return_positive=mean_pos_reg,
-                                    mean_auc=auc_for_edge,
-                                    transaction_cost=tx,
-                                    n_trades=n_reg,
-                                    reference_trades=reference_trades,
-                                )
-
-                                trades_per_day_reg = float(n_reg) / max(days_span, 1)
-
-                                per_regime_metrics[str(reg_val)] = {
-                                    'n_events': n_reg,
-                                    'trades_per_day': trades_per_day_reg,
-                                    'mean_pos': mean_pos_reg,
-                                    'mean_neg': mean_neg_reg,
-                                    # Expose the aligned AUC used for edge, and keep the
-                                    # local realized AUC as an auxiliary diagnostic field.
-                                    'auc': auc_for_edge,
-                                    'auc_local': auc_reg_local,
-                                    'edge': edge_reg,
-                                }
-                            except Exception:
-                                continue
-                except Exception:
-                    per_regime_metrics = {}
-
-                # Attach per-regime metrics and optional regression diagnostics
-                if per_regime_metrics:
-                    candidate_config['per_regime_metrics'] = per_regime_metrics
-                    candidate_config['n_regimes_with_events'] = n_regimes_with_events
-                    candidate_config['regime_coverage_penalty'] = float(regime_coverage_penalty)
-                if reg_target_stats is not None:
-                    candidate_config['regression_target_stats'] = reg_target_stats
-
-                # Apply regime coverage penalty to combined score (after per-regime metrics computed)
-                combined_score -= regime_coverage_penalty
-                candidate_config['combined'] = float(combined_score)
-
-                # Append to candidate pool and log a concise summary for debugging
-                candidate_pool.append(candidate_config)
-                try:
-                    pool_size_after = len(candidate_pool)
-                    tprint_info(
-                        f"[CANDIDATE_APPEND] complexity={model_complexity} "
-                        f"edge={edge_score:.6f} combined={combined_score:.6f} "
-                        f"mean_auc={mean_auc:.6f} n_events={n_events} "
-                        f"pool_size={pool_size_after}"
-                    )
-                except Exception:
-                    # Logging must not interfere with HPO; ignore any formatting errors
-                    pass
-
-                return {
-                    'learnability': float(learnability_score),
-                    'profitability': float(profitability_score),
-                    'edge': float(edge_score),
-                    'combined': float(combined_score),
-                }
-
-            except Exception as exc:  # Defensive: never crash HPO on one config
-                tprint_warning(f"[EARLY_EXIT_EXCEPTION] Labeling objective failed: {exc}")
-                gate_stats["exception"] = gate_stats.get("exception", 0) + 1
-                gate_stats["last_exception"] = str(exc)
-                import traceback
-                traceback.print_exc()
-                return {'learnability': 0.0, 'profitability': -1e9, 'edge': -1e9, 'combined': -1e9}
+            "best_params": full_best_params,
+        }
+
+        tprint_success(f"✅ Multi-Layer HPO Complete. Final metrics: {metrics}")
+        # Multi-layer HPO returns early with its results
+        return {"success": True, "metrics": metrics, "artifacts": {"best_params_json": str(json_path)}}
 
         # ------------------------------------------------------------------
         # 4) Multi-objective wrapper for single-objective optimizers
@@ -8053,12 +7398,27 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
         return {"success": True, "metrics": metrics, "artifacts": artifacts}
 
 def register_meta_labeling_hpo_sample_weighted_step() -> None:
-    """Register the meta-labeling HPO sample weighted step in the registry."""
+    """Register the meta-labeling HPO sample weighted step in the registry.
+    
+    This is the CANONICAL HPO entry point for meta-labeling. All HPO step aliases
+    route to MetaLabelingHPOSampleWeightedStep for consistency.
+    """
     from src.training.steps.base_step import step_registry
 
+    # Primary registration
     step_registry.register("meta_labeling_hpo_sample_weighted", MetaLabelingHPOSampleWeightedStep)
+    
+    # Backward compatibility aliases - route old names to weighted version
+    step_registry.register("meta_labeling_hpo_experiment", MetaLabelingHPOSampleWeightedStep)
+    step_registry.register("sr_labeling_xgb", MetaLabelingHPOSampleWeightedStep)
     step_registry.register("sr_labeling_xgb_weighted", MetaLabelingHPOSampleWeightedStep)
-    tprint("✅ Meta-labeling HPO sample weighted step registered (aliases: meta_labeling_hpo_sample_weighted, sr_labeling_xgb_weighted)", "SUCCESS")
+    
+    tprint(
+        "✅ Meta-labeling HPO sample weighted step registered as CANONICAL entry point "
+        "(aliases: meta_labeling_hpo_sample_weighted, meta_labeling_hpo_experiment, "
+        "sr_labeling_xgb, sr_labeling_xgb_weighted)",
+        "SUCCESS"
+    )
 
 
 # Auto-register when module is imported

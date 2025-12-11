@@ -5,6 +5,7 @@ import pandas as pd
 from scipy.stats import spearmanr
 import optuna
 
+
 # -------------------------------------------------------------------------
 # 1. Mathematical Helpers
 # -------------------------------------------------------------------------
@@ -48,69 +49,149 @@ def compute_horizon_consistency(close_series, horizon=12):
     """
     Calculates the Efficiency Ratio (Kaufman) as a proxy for trend consistency.
     ER = |Change| / Sum(|Changes|)
-
-    Returns a Series aligned with close_series index.
     """
-    # Net change over horizon
-    change = close_series.diff(horizon).abs()
+    # 1. Net change over horizon
+    net_change = close_series.diff(horizon).abs()
+    
+    # 2. Path length (Sum of absolute period-to-period changes)
+    path_length = close_series.diff().abs().rolling(window=horizon).sum()
+    
+    # 3. Efficiency Ratio (Noise-dampened)
+    # If path_length is 0 (flat line), ER is 0 (or 1? Usually 0 for trading).
+    efficiency_ratio = net_change / (path_length + 1e-12)
+    
+    return efficiency_ratio.fillna(0.0)
 
-    # Sum of absolute changes (path length)
-    path = close_series.diff().abs().rolling(window=horizon).sum()
-
-    # Efficiency Ratio
-    er = change / (path + 1e-12)
-    return er.fillna(0.0)
-
-def compute_uniqueness(t_events, price_index, lookahead=12):
+def compute_uniqueness(t_events, price_index):
     """
-    Calculates label uniqueness based on concurrency.
-    Assumes a fixed horizon 'lookahead' for each event if t1 is not available.
-
-    t_events: Index of event start times.
-    price_index: The full DatetimeIndex of the price series.
-    lookahead: The duration of the label in bars.
-
-    Returns: Array of uniqueness scores aligned with t_events.
+    Calculates average uniqueness using the Fast Algorithm (Integral Image).
+    Complexity: O(N) instead of O(N * Horizon).
+    
+    Args:
+        t_events (pd.Series): Index=Start Time, Values=End Time.
+        price_index (pd.Index): Full timeline of bars.
     """
-    # map t_events to integer indices in price_index
-    # We need to find the integer locations of t_events in price_index
-    # This can be slow if not optimized, but robust:
-
-    # Create a Series to represent the timeline
-    timeline = pd.Series(0, index=price_index)
-
-    # We need to know where each event starts and ends (conceptually)
-    # Since we work with timestamps, let's use searchsorted if monotonic
-    # or just reindexing.
-
-    # Optimization: Use integer indexing on the full array
-    n_bars = len(price_index)
-    concurrency = np.zeros(n_bars)
-
-    # Get integer locations of start times
-    # Assuming t_events is a subset of price_index
-    # We can use searchsorted if sorted
+    if t_events.empty:
+        return pd.Series(index=t_events.index, dtype=float)
+        
+    # 1. Map timestamps to integer locations in the price_index
+    # This allows us to work with fast numpy arrays
     if not price_index.is_monotonic_increasing:
-         # Fallback for unsorted index (unlikely for time series)
-         # This is slow, but safe
-         idxs = [price_index.get_loc(t) for t in t_events]
-    else:
-         idxs = price_index.searchsorted(t_events)
+        price_index = price_index.sort_values()
+        
+    n_bars = len(price_index)
+    
+    # Find start and end indices
+    # searchsorted matches the timestamp to the array index
+    start_idxs = price_index.searchsorted(t_events.index)
+    
+    # For end times, we want the event to cover the range [t_start, t_end].
+    # 'side=right' gives the index *after* t_end, which is perfect for python slicing.
+    end_idxs = price_index.searchsorted(t_events.values, side='right')
+    
+    # Clip to bounds
+    end_idxs = np.minimum(end_idxs, n_bars)
+    
+    # 2. Compute Concurrency (How many trades active at each bar?)
+    concurrency = np.zeros(n_bars + 1) # +1 for safe indexing
+    
+    # Add +1 at start, Subtract -1 at end
+    np.add.at(concurrency, start_idxs, 1)
+    np.add.at(concurrency, end_idxs, -1)
+    
+    # Cumsum fills the gaps
+    concurrency = np.cumsum(concurrency)[:n_bars]
+    
+    # Avoid division by zero (0 concurrency -> 1 for math safety)
+    concurrency[concurrency == 0] = 1.0
+    
+    # 3. Compute Uniqueness (Average of 1/Concurrency)
+    inv_concurrency = 1.0 / concurrency
+    
+    # Integral Image (Cumulative Sum of the Inverse)
+    # cumsum[i] = sum(0..i)
+    inv_cumsum = np.cumsum(inv_concurrency)
+    inv_cumsum = np.insert(inv_cumsum, 0, 0.0) # Prepend 0 for subtraction logic
+    
+    # Sum over [start, end) = cumsum[end] - cumsum[start]
+    sums = inv_cumsum[end_idxs] - inv_cumsum[start_idxs]
+    lengths = end_idxs - start_idxs
+    
+    # Handle instantaneous events (length 0)
+    lengths[lengths == 0] = 1.0
+    
+    means = sums / lengths
+    
+    return pd.Series(means, index=t_events.index).fillna(1.0)
 
-    # Increment concurrency counter
-    for start_idx in idxs:
-        end_idx = min(start_idx + lookahead, n_bars)
-        concurrency[start_idx:end_idx] += 1
+def generate_weights_per_label(
+    returns,
+    t_events,
+    close_series,
+    consistency_scores,
+    uniqueness_scores,
+    y=None,                 # NEW: Class labels
+    vol_proxy=None,
+    
+    # Layer 1 HPO parameters
+    mag_compression=0.8,
+    learn_slope=10.0,
+    learn_center=0.4,
+    uniq_intensity=1.0,
+    
+    # Exponents
+    exp_mag=1.0,
+    exp_learn=1.0,
+    exp_uniq=1.0,
+    
+    # Class Balance
+    class_balance_rate=1.0, # Gamma
+    
+    downside_multiplier=1.0,
+    floor_weight=1e-4,
+    cap_weight=50.0
+):
+    """
+    Vectorized weighting generator including Class Balancing.
+    """
+    # --- 0. Data Hygiene ---
+    returns = np.nan_to_num(returns, nan=0.0)
+    consistency_scores = np.nan_to_num(consistency_scores, nan=0.0)
+    uniqueness_scores = np.nan_to_num(uniqueness_scores, nan=1.0)
+    if vol_proxy is None: vol_proxy = np.ones_like(returns)
+    vol_proxy = np.maximum(vol_proxy, 1e-8)
 
-    # Average concurrency per event
-    uniqueness = []
-    for start_idx in idxs:
-        end_idx = min(start_idx + lookahead, n_bars)
-        # uniqueness = 1 / average_concurrency_over_lifespan
-        avg_conc = concurrency[start_idx:end_idx].mean() if start_idx < end_idx else 1.0
-        uniqueness.append(1.0 / (avg_conc + 1e-12))
+    # --- 1. Magnitude (Risk Adjusted) ---
+    w_mag = np.power(np.abs(returns / vol_proxy), mag_compression)
+    if downside_multiplier != 1.0:
+        w_mag = np.where(returns < 0, w_mag * downside_multiplier, w_mag)
 
-    return np.array(uniqueness)
+    # --- 2. Learnability (Consistency Gate) ---
+    w_learn = 1 / (1 + np.exp(-learn_slope * (consistency_scores - learn_center)))
+
+    # --- 3. Uniqueness ---
+    w_uniq = np.power(uniqueness_scores, uniq_intensity)
+
+    # --- 4. Class Balancing ---
+    w_class = np.ones_like(returns)
+    if y is not None and class_balance_rate > 0:
+        classes = np.unique(y)
+        n_samples = len(y)
+        n_classes = len(classes)
+        for c in classes:
+            n_j = np.sum(y == c)
+            if n_j > 0:
+                base_w = n_samples / (n_classes * n_j)
+                w_class[y == c] = np.power(base_w, class_balance_rate)
+
+    # --- 5. Synthesis ---
+    w_final = (w_mag**exp_mag) * (w_learn**exp_learn) * (w_uniq**exp_uniq) * w_class
+
+    # --- 6. Bounds & Norm ---
+    w_final = np.clip(w_final, floor_weight, cap_weight)
+    w_final /= (np.mean(w_final) + 1e-12)
+
+    return w_final
 
 # -------------------------------------------------------------------------
 # 2. The Weight Generator

@@ -589,7 +589,7 @@ def generate_primary_signals(
     macd_signal_long: int = 36,  # 4x longer
     macd_threshold: float = 0.02,  # LOOSER difference threshold
     momentum_threshold: Optional[float] = None,  # If None, will be auto-tuned
-    target_trades_per_day: float = 4.0,  # Target signal density (increased from 2.0 for more signals)
+    target_trades_per_day: float = 20.0,  # Target signal density (increased from 4.0 for more signals)
     enable_dynamic_tuning: bool = True,  # Enable auto-tuning of momentum threshold
     use_cusum_filter: bool = True,  # Use CUSUM filter instead of momentum threshold
     cusum_threshold: float = 0.015,  # CUSUM threshold for event detection
@@ -1518,7 +1518,6 @@ def create_quantile_labels_from_vol_scaled_returns(
     except Exception:
         labels[:] = np.nan
 
-    labels = _enforce_local_label_balance(vol_scaled, labels, min_ratio=0.10)
     return drop_initial_single_class_segments(labels)
 
 
@@ -1613,7 +1612,6 @@ def create_rolling_quantile_labels_from_vol_scaled_returns(
         tprint(f"⚠️ Rolling quantile labeling failed: {e}", "WARNING")
         labels[:] = np.nan
     
-    labels = _enforce_local_label_balance(vol_scaled, labels, min_ratio=0.10)
     return drop_initial_single_class_segments(labels)
 
 
@@ -1745,7 +1743,6 @@ def create_rolling_regime_aware_quantile_labels_from_vol_scaled_returns(
             "INFO"
         )
         
-        labels = _enforce_local_label_balance(vol_scaled, labels, min_ratio=0.10)
         labels = drop_initial_single_class_segments(labels)
         
     except Exception as e:
@@ -1792,97 +1789,6 @@ def drop_initial_single_class_segments(labels: pd.Series) -> pd.Series:
     keep_index = vals.index[cut_pos:]
     drop_mask = ~labels_out.index.isin(keep_index)
     labels_out[drop_mask] = np.nan
-    return labels_out
-
-
-def _enforce_local_label_balance(
-    vol_scaled: pd.Series,
-    labels: pd.Series,
-    min_ratio: float = 0.10,
-    min_bucket_samples: int = 20,
-) -> pd.Series:
-    """Ensure each local time bucket has both label classes when both signs exist.
-    
-    Within each time bucket, if volatility-scaled returns contain both positive
-    and negative values but the labels only contain one class (all 0.0 or all
-    1.0), relax the gate for the missing side by labeling a small set of the
-    largest-magnitude moves of that sign.
-    
-    The target is to give the minority class at least ``min_ratio`` share
-    within that bucket, subject to availability of underlying events.
-    """
-    if labels is None or vol_scaled is None:
-        return labels
-    if not isinstance(labels, pd.Series):
-        labels = pd.Series(labels, index=vol_scaled.index)
-    if labels.empty:
-        return labels
-
-    labels_out = labels.copy()
-    vs = vol_scaled.reindex(labels_out.index)
-    if vs.isna().all():
-        return labels_out
-
-    idx = vs.index
-    mask_non_nan_vs = vs.notna()
-
-    # Define time buckets: use calendar quarters when index is datetime,
-    # otherwise fall back to ~8 equal-sized buckets over the sequence.
-    if isinstance(idx, pd.DatetimeIndex):
-        bucket_ids = pd.Series(idx.to_period("Q"), index=idx)
-    else:
-        n = len(idx)
-        if n == 0:
-            return labels_out
-        bucket_size = max(1, n // 8)
-        bucket_ids = pd.Series(np.arange(n) // bucket_size, index=idx)
-
-    r = float(min_ratio)
-    if not np.isfinite(r):
-        r = 0.10
-    r = max(0.0, min(0.49, r))
-    denom = max(1.0 - r, 1e-6)
-
-    for bucket in pd.unique(bucket_ids):
-        bucket_mask = (bucket_ids == bucket) & mask_non_nan_vs
-        if bucket_mask.sum() < int(min_bucket_samples):
-            continue
-
-        vs_bucket = vs[bucket_mask]
-        raw_pos_mask = vs_bucket > 0
-        raw_neg_mask = vs_bucket < 0
-        raw_pos = int(raw_pos_mask.sum())
-        raw_neg = int(raw_neg_mask.sum())
-        if raw_pos == 0 or raw_neg == 0:
-            # Truly one-sided regime in this bucket; do not fabricate the
-            # missing class.
-            continue
-
-        lab_pos = int(((labels_out == 1.0) & bucket_mask).sum())
-        lab_neg = int(((labels_out == 0.0) & bucket_mask).sum())
-
-        # Rescue positive class if missing but underlying positive moves exist.
-        if lab_pos == 0 and lab_neg > 0:
-            majority = lab_neg
-            # Required minority count so that minority share >= r after rescue:
-            #   n_min >= (r / (1-r)) * n_majority
-            required = int(np.ceil((r / denom) * float(majority)))
-            required = min(raw_pos, max(required, 1))
-            if required > 0:
-                cand = vs_bucket[raw_pos_mask]
-                top_idx = cand.sort_values(ascending=False).index[:required]
-                labels_out.loc[top_idx] = 1.0
-
-        # Rescue negative class if missing but underlying negative moves exist.
-        if lab_neg == 0 and lab_pos > 0:
-            majority = lab_pos
-            required = int(np.ceil((r / denom) * float(majority)))
-            required = min(raw_neg, max(required, 1))
-            if required > 0:
-                cand = vs_bucket[raw_neg_mask]
-                bot_idx = cand.sort_values(ascending=True).index[:required]
-                labels_out.loc[bot_idx] = 0.0
-
     return labels_out
 
 
@@ -4750,6 +4656,42 @@ def build_meta_features_for_model(
         )
         static_cache[cache_key] = meta_features.copy()
 
+    # --- ENFORCE MANDATORY FEATURES FOR MONOTONIC CONSTRAINTS ---
+    # Ensure specific features exist for monotonic constraints
+    # ATR_14 (decreasing), Momentum_30 (increasing), Rolling Sharpe (increasing), KER (increasing)
+    try:
+        # ATR_14
+        if 'atr_14' not in meta_features.columns:
+            high = market_data['high']
+            low = market_data['low']
+            close = market_data['close']
+            tr1 = high - low
+            tr2 = (high - close.shift(1)).abs()
+            tr3 = (low - close.shift(1)).abs()
+            tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+            meta_features['atr_14'] = tr.rolling(14).mean()
+
+        # Momentum_30
+        if 'momentum_30' not in meta_features.columns:
+            meta_features['momentum_30'] = market_data['close'].pct_change(30)
+
+        # Rolling Sharpe (50-period)
+        if 'rolling_sharpe' not in meta_features.columns:
+            rets = market_data['close'].pct_change()
+            roll_mean = rets.rolling(50).mean()
+            roll_std = rets.rolling(50).std()
+            meta_features['rolling_sharpe'] = (roll_mean / (roll_std + 1e-9)).fillna(0)
+
+        # Kaufman Efficiency Ratio (30-period)
+        if 'kaufman_efficiency_ratio' not in meta_features.columns:
+            diff = market_data['close'].diff().abs()
+            signal_abs = (market_data['close'] - market_data['close'].shift(30)).abs()
+            noise = diff.rolling(30).sum()
+            meta_features['kaufman_efficiency_ratio'] = (signal_abs / (noise + 1e-9)).fillna(0)
+
+    except Exception as e:
+        tprint(f"⚠️ Failed to generate mandatory monotonic features: {e}", "WARNING")
+
     # Attach event-centric and label-history features
     event_meta_features = pd.DataFrame(index=market_data.index)
     event_meta_features['bars_since_last_event'] = bars_since_last_event
@@ -7292,26 +7234,53 @@ def tune_lgbm_hyperparameters_meta(
     best_params: Dict[str, Any] = {}
 
     for trial in range(int(max_trials)):
-        max_depth = int(rng.choice([4, 5, 6, 8]))
-        min_child_samples = int(rng.choice([20, 50]))
-        learning_rate = float(rng.choice([0.01, 0.03, 0.05]))
-        feature_fraction = float(rng.choice([0.6, 0.7, 0.8]))
-        bagging_fraction = float(rng.choice([0.7, 0.8, 0.9]))
-        reg_alpha = float(rng.choice([0.0, 0.1, 0.3]))
-        reg_lambda = float(rng.choice([0.0, 0.2, 0.7, 1.0]))
+        # --- 1. Structure (Capacity) ---
+        max_depth = int(rng.randint(3, 7))  # 3 to 6 (inclusive of 3, 4, 5, 6)
+        # num_leaves: 8 to 2^max_depth
+        max_leaves = 2 ** max_depth
+        num_leaves = int(rng.randint(8, max_leaves + 1))
 
-        num_leaves = int(min(255, 2 ** (max_depth + 1)))
+        # --- 2. Regularization (Skepticism) ---
+        # Log-uniform sampling for lambda (0.5 to 10.0)
+        lambda_l1 = float(np.exp(rng.uniform(np.log(0.5), np.log(10.0))))
+        lambda_l2 = float(np.exp(rng.uniform(np.log(0.5), np.log(10.0))))
+        min_gain_to_split = float(rng.uniform(0.0, 1.0))
+
+        # --- 3. Robustness (Safety Net) ---
+        # Log-uniform for hessian (1e-3 to 1.0)
+        min_sum_hessian_in_leaf = float(np.exp(rng.uniform(np.log(1e-3), np.log(1.0))))
+        min_data_in_leaf = int(rng.randint(50, 301))  # 50 to 300
+
+        # --- 4. Sampling (Diversity) ---
+        bagging_fraction = float(rng.uniform(0.4, 0.9))
+        bagging_freq = int(rng.randint(1, 8)) # 1 to 7
+        feature_fraction = float(rng.uniform(0.4, 0.9))
+
+        # --- 5. Learning Speed ---
+        learning_rate = float(np.exp(rng.uniform(np.log(0.005), np.log(0.05))))
 
         params: Dict[str, Any] = {
             "max_depth": max_depth,
-            "min_child_samples": min_child_samples,
-            "learning_rate": learning_rate,
-            "feature_fraction": feature_fraction,
-            "bagging_fraction": bagging_fraction,
-            "reg_alpha": reg_alpha,
-            "reg_lambda": reg_lambda,
             "num_leaves": num_leaves,
+            "lambda_l1": lambda_l1,
+            "lambda_l2": lambda_l2,
+            "min_gain_to_split": min_gain_to_split,
+            "min_sum_hessian_in_leaf": min_sum_hessian_in_leaf,
+            "min_data_in_leaf": min_data_in_leaf,
+            "bagging_fraction": bagging_fraction,
+            "bagging_freq": bagging_freq,
+            "feature_fraction": feature_fraction,
+            "learning_rate": learning_rate,
             "n_estimators": 1000,
+            # Static params
+            "objective": 'binary',
+            "metric": 'auc',
+            "boosting_type": 'gbdt',
+            "verbosity": -1,
+            "n_jobs": -1,
+            "seed": 42,
+            "is_unbalance": False,
+            "scale_pos_weight": 1.0,
         }
 
         fold_aucs: List[float] = []
@@ -7348,6 +7317,7 @@ def tune_lgbm_hyperparameters_meta(
             else:
                 w_train_cv = None
 
+            # Map params to LGBM sklearn API arguments where aliases might be ambiguous
             model = lgb.LGBMClassifier(
                 boosting_type="gbdt",
                 objective="binary",
@@ -7355,15 +7325,19 @@ def tune_lgbm_hyperparameters_meta(
                 max_depth=params["max_depth"],
                 num_leaves=params["num_leaves"],
                 learning_rate=params["learning_rate"],
-                min_child_samples=params["min_child_samples"],
+                min_child_samples=params["min_data_in_leaf"],
                 feature_fraction=params["feature_fraction"],
                 bagging_fraction=params["bagging_fraction"],
-                bagging_freq=1,
-                reg_alpha=params["reg_alpha"],
-                reg_lambda=params["reg_lambda"],
+                bagging_freq=params["bagging_freq"],
+                reg_alpha=params["lambda_l1"],
+                reg_lambda=params["lambda_l2"],
+                min_split_gain=params["min_gain_to_split"],
+                min_child_weight=params["min_sum_hessian_in_leaf"],
                 n_jobs=-1,
                 verbose=-1,
                 random_state=int(rng.randint(0, 1_000_000)),
+                is_unbalance=False,
+                scale_pos_weight=1.0,
             )
 
             fit_kwargs: Dict[str, Any] = {}
@@ -7573,8 +7547,11 @@ def train_ensemble_with_kfold(
         # Extract sample weights for this fold (if provided)
         if sample_weights is not None:
             weights_train_clean = sample_weights[train_idx_purged][train_mask]
+            # Weights for validation set (for early stopping)
+            weights_test_clean = sample_weights[test_idx][test_mask]
         else:
             weights_train_clean = None
+            weights_test_clean = None
 
         try:
             fold_start = X.index[test_idx[0]]
@@ -7627,7 +7604,39 @@ def train_ensemble_with_kfold(
         # Optionally override LGBM hyperparameters from meta-model HPO
         if lgbm_params_override is not None and 'lgbm' in base_models:
             try:
-                base_models['lgbm'].set_params(**lgbm_params_override)
+                # Use overrides if provided (from HPO), otherwise default static params
+                final_params = lgbm_params_override.copy()
+
+                # Build monotonic constraints
+                # ATR_14: decreasing (-1)
+                # Momentum_30, Rolling Sharpe, Kaufman Efficiency Ratio: increasing (1)
+                monotone_constraints = []
+                # Check column names in X_train_clean (pandas dataframe)
+                if isinstance(X_train_clean, pd.DataFrame):
+                    for col in X_train_clean.columns:
+                        c_name = str(col)
+                        if 'atr_14' in c_name:
+                            monotone_constraints.append(-1)
+                        elif 'momentum_30' in c_name:
+                            monotone_constraints.append(1)
+                        elif 'rolling_sharpe' in c_name:
+                            monotone_constraints.append(1)
+                        elif 'kaufman_efficiency_ratio' in c_name:
+                            monotone_constraints.append(1)
+                        else:
+                            monotone_constraints.append(0)
+
+                # If constraints found, add to params
+                if any(x != 0 for x in monotone_constraints):
+                    final_params['monotone_constraints'] = monotone_constraints
+
+                # Re-initialize model with params to ensure everything is set correctly
+                # (set_params might not handle list args like monotone_constraints correctly in all sklearn wrappers)
+                # But here we are using lgb.LGBMClassifier which is sklearn wrapper.
+                base_models['lgbm'].set_params(**final_params)
+
+            except Exception as e:
+                tprint(f"    ⚠️ Failed to set LGBM params: {e}", "WARNING")
             except ValueError:
                 # If any params are incompatible, ignore override gracefully
                 tprint("⚠️ LGBM param override incompatible; using default base LGBM params", "WARNING")
@@ -7635,11 +7644,37 @@ def train_ensemble_with_kfold(
         for model_name in model_names:
             model = base_models[model_name]
             try:
-                # Train with sample weights
-                if weights_train_clean is not None:
-                    model.fit(X_train_clean, y_train_clean, sample_weight=weights_train_clean)
+                # Special handling for LGBM with early stopping and eval weights
+                if model_name == 'lgbm' and isinstance(model, lgb.LGBMClassifier):
+                    fit_params = {}
+                    if weights_train_clean is not None:
+                        fit_params['sample_weight'] = weights_train_clean
+
+                    # Prepare validation set for early stopping
+                    eval_set = [(X_test_clean, y_test_clean)]
+                    eval_weight = [weights_test_clean] if weights_test_clean is not None else None
+
+                    if eval_weight is not None:
+                        fit_params['eval_sample_weight'] = eval_weight
+
+                    model.fit(
+                        X_train_clean,
+                        y_train_clean,
+                        eval_set=eval_set,
+                        eval_metric='auc',
+                        callbacks=[
+                            lgb.early_stopping(stopping_rounds=50),
+                            lgb.log_evaluation(0) # Silence logs
+                        ],
+                        **fit_params
+                    )
                 else:
-                    model.fit(X_train_clean, y_train_clean)
+                    # Standard fit for other models
+                    if weights_train_clean is not None:
+                        model.fit(X_train_clean, y_train_clean, sample_weight=weights_train_clean)
+                    else:
+                        model.fit(X_train_clean, y_train_clean)
+
                 trained_models[model_name].append(model)
 
                 # Predict on test fold
@@ -10544,17 +10579,25 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                         base_selected = multi_feature_sets[largest]
 
                     if base_selected:
+                        # MANDATORY BYPASS: Ensure monotonic constraint features are always included
+                        mandatory_feats = ['atr_14', 'momentum_30', 'rolling_sharpe', 'kaufman_efficiency_ratio']
+
+                        selected_set = set(base_selected)
                         if meta_regime_cols_present:
-                            selected_set = set(base_selected)
                             selected_set.update(meta_regime_cols_present)
-                            selected_feature_names = sorted(selected_set)
-                        else:
-                            selected_feature_names = base_selected
+
+                        # Force include mandatory features if they exist in the full set
+                        for feat in mandatory_feats:
+                            if feat in meta_features_full.columns:
+                                selected_set.add(feat)
+
+                        selected_feature_names = sorted(selected_set)
 
                         meta_features_model_processed = meta_features_full[selected_feature_names]
                         tprint(
                             f"   Using LGBM-selected meta feature set "
-                            f"({len(selected_feature_names)} features; primary size={len(base_selected)})",
+                            f"({len(selected_feature_names)} features; primary size={len(base_selected)}). "
+                            f"Forced inclusion of monotonic constraint features.",
                             "INFO",
                         )
                 except Exception as e_lgbm:

@@ -39,6 +39,7 @@ from src.training.steps.labeling.labeled_data_schema import (
 )
 from src.utils.ml_common.get_specialist_models_outputs import get_specialist_models_outputs
 from src.utils.ml_common.bagged_probability_aggregator import evaluate_prob_variants
+from src.training.steps.labeling.snr_diagnostics import run_full
 
 
 logger = logging.getLogger(__name__)
@@ -878,6 +879,25 @@ class MetaGatedBacktestStep(BaseStep):
                         f.write(f"- Approximate average trades per day (diagnostics gate): {avg_trades_per_day_diag:.2f}\n")
 
             tprint_success(f"\x0f Meta-gated backtest report saved to: {filepath}")
+
+            # ------------------------------------------------------------------
+            # 5) Run SNR Diagnostics
+            # ------------------------------------------------------------------
+            try:
+                tprint("🔬 Running SNR Diagnostics...", "INFO")
+                run_full(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    direction=direction,
+                    model="analyst",
+                    cv_splits_learn=int(config.get("snr_cv_splits_learn", 3)),
+                    cv_splits_robust=int(config.get("snr_cv_splits_robust", 5)),
+                    prob_thresholds=config.get("snr_prob_thresholds", [0.55, 0.60, 0.65, 0.70, 0.75, 0.80])
+                )
+                tprint_success("✅ SNR Diagnostics completed successfully")
+            except Exception as e_snr:
+                tprint_error(f"⚠️ SNR Diagnostics failed: {e_snr}")
 
             metrics: Dict[str, Any] = {
                 "n_events": n_events,

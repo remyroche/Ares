@@ -2981,48 +2981,7 @@ def compute_robust_hpo_objective(
     # Scale by sqrt(N) to reward sample size (t-stat like scaling)
     robust_score = robust_edge_val * np.sqrt(stats.get('num_trades', 0))
 
-    # --- 2. Regime-Based Learnability Gate (The "Min-Max" Logic) ---
-    # We compute EconAUC for each regime separately.
-    regime_aucs = []
-    if regime_col in df_results.columns:
-        regimes = df_results[regime_col].unique()
-        for r in regimes:
-            mask = df_results[regime_col] == r
-            # Safety check: Ignore regimes with statistically insignificant sample size
-            if mask.sum() < 20:
-                continue
-
-            try:
-                r_auc = compute_economic_auc(
-                    df_results.loc[mask, 'y_true'].to_numpy(dtype=float),
-                    df_results.loc[mask, 'y_prob'].to_numpy(dtype=float),
-                    df_results.loc[mask, 'ret_bps'].to_numpy(dtype=float)
-                )
-                regime_aucs.append(r_auc)
-            except Exception:
-                pass
-
-    # CRITICAL: We gate based on the WORST performing regime.
-    # If it fails in "Low Vol", the whole strategy is penalized.
-    # Default to 0.5 if no valid regimes found.
-    worst_case_auc = np.min(regime_aucs) if regime_aucs else 0.5
-
-    # Gate opens at 0.52 (better than random), closes hard below that.
-    gate_auc = sigmoid_gate(worst_case_auc, threshold=0.52, sharpness=15.0)
-
-    # --- 3. Stability Gates (Sharpe & Freq) ---
-    # Standard Sharpe gate
-    sharpe_val = stats.get('sharpe_ratio', 0.0)
-    gate_sharpe = sigmoid_gate(sharpe_val, threshold=1.0, sharpness=2.0)
-
-    # Frequency gate (Soft penalty for starvation)
-    trades_per_day = stats.get('trades_per_day', 0.0)
-    gate_freq = sigmoid_gate(trades_per_day, threshold=1.5, sharpness=0.5)
-
-    # --- 4. Final Robust Score ---
-    final_score = robust_score * gate_auc * gate_sharpe * gate_freq
-
-    return final_score
+    return robust_score
 
 
 def simulate_concurrent_trades(
@@ -3435,6 +3394,374 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
         true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
         atr_series = true_range.rolling(window=14, min_periods=1).mean()
 
+        stage1_market_data = market_data
+        stage1_primary_signals = primary_signals
+        stage1_volatility_1d = volatility_1d
+        stage1_atr_series = atr_series
+        stage1_days_span = days_span
+
+        if stage1_enable_subsample:
+            try:
+                start_ts = market_data.index.min()
+                end_ts = start_ts + pd.Timedelta(days=stage1_subsample_window_days)
+                mask = (market_data.index >= start_ts) & (market_data.index <= end_ts)
+                if int(mask.sum()) > 0:
+                    stage1_market_data = market_data.loc[mask].copy()
+                    stage1_primary_signals = primary_signals.loc[mask].copy()
+                    stage1_volatility_1d = volatility_1d.loc[mask].copy()
+                    stage1_atr_series = atr_series.loc[mask].copy()
+                    try:
+                        stage1_days_span = max(
+                            1,
+                            (stage1_market_data.index.max() - stage1_market_data.index.min()).days,
+                        )
+                    except Exception:
+                        stage1_days_span = days_span
+                else:
+                    stage1_enable_subsample = False
+            except Exception:
+                stage1_enable_subsample = False
+                stage1_market_data = market_data
+                stage1_primary_signals = primary_signals
+                stage1_volatility_1d = volatility_1d
+                stage1_atr_series = atr_series
+                stage1_days_span = days_span
+
+        # Build simple arrays for the optimizer API (they are not used in
+        # the objective itself but provide shapes/logging)
+        # Build proper feature matrix using production logic
+        # This replaces the dummy placeholder aligned with user request (70+ features vs 1)
+        tprint_info("🔧 Generating production meta-features for HPO...")
+        try:
+            X_features = create_meta_features(
+                df=market_data,
+                signals=primary_signals,
+                volume_available="volume" in market_data.columns,
+                include_raw_signals=False,
+                use_kalman=True
+            )
+            # Ensure index alignment
+            common_idx = X_features.index.intersection(market_data.index)
+            X_dummy = X_features.loc[common_idx]
+            # Ensure float32 for memory efficiency
+            X_dummy = X_dummy.astype("float32")
+            tprint_success(f"✅ Generated {X_dummy.shape[1]} features (rows={len(X_dummy)})")
+        except Exception as feat_e:
+            tprint_warning(f"⚠️ Feature generation failed: {feat_e}. Using fallback.")
+            X_dummy = market_data[["close"]].dropna()
+
+        y_dummy = np.zeros(len(X_dummy), dtype="float32")
+
+        # ------------------------------------------------------------------
+        # 2) Define parameter groups for hierarchical HPO
+        # ------------------------------------------------------------------
+        param_groups = [
+            # Group 1: Signal Structure (3 params)
+            # RELAXED: Lower CUSUM threshold (0.006-0.025) and min_event_spacing (0)
+            # to generate more events and avoid sample starvation
+            create_param_group(
+                name="signal_structure",
+                params={
+                    "cusum_threshold": {
+                        "type": "float",
+                        "low": 0.010,
+                        "high": 0.035,
+                    },
+                    "target_signal_density": {
+                        "type": "float",
+                        "low": 10.0,
+                        "high": 40.0,
+                    },
+                    "min_event_spacing": {
+                        "type": "int",
+                        "low": 0,
+                        "high": 0,
+                    },
+                },
+                priority=1,
+                description="Signal generation and event spacing",
+            ),
+            # Group 2: Event Geometry (4 params) - Depends on Signal Structure
+            create_param_group(
+                name="event_geometry",
+                params={
+                    "horizon_bars": {
+                        "type": "int",
+                        "low": 16,
+                        "high": 28,
+                        "step": 2,
+                    },
+                    "profit_thr_base": {
+                        "type": "float",
+                        "low": 0.010,
+                        "high": 0.025,
+                    },
+                    "stop_to_profit_ratio": {
+                        "type": "float",
+                        "low": 0.3,
+                        "high": 0.67,
+                    },
+                    "trail_distance": {
+                        "type": "float",
+                        "low": 0.6,
+                        "high": 1.2,
+                    },
+                },
+                priority=2,
+                depends_on=["signal_structure"],
+                description="Triple-barrier shape and trailing stop logic",
+            ),
+            # Group 3: Volatility Adaptation (5 params) - Depends on Event Geometry
+            create_param_group(
+                name="volatility_adaptation",
+                params={
+                    "vol_baseline_window": {
+                        "type": "int",
+                        "low": 48,
+                        "high": 192,
+                    },
+                    "profit_mult_min": {
+                        "type": "float",
+                        "low": 0.7,
+                        "high": 1.0,
+                    },
+                    "profit_mult_max": {
+                        "type": "float",
+                        "low": 1.0,
+                        "high": 2.0,
+                    },
+                    "stop_mult_min": {
+                        "type": "float",
+                        "low": 0.5,
+                        "high": 1.0,
+                    },
+                    "stop_mult_max": {
+                        "type": "float",
+                        "low": 1.0,
+                        "high": 1.5,
+                    },
+                },
+                priority=3,
+                depends_on=["event_geometry"],
+                description="Volatility adaptation baseline and multipliers",
+            ),
+            # Group 4: Label Definition (3 params) - Depends on Volatility Adaptation
+            # WIDENED: label quantile ranges to capture more samples (20-80% instead of 25-45/55-80)
+            create_param_group(
+                name="label_definition",
+                params={
+                    "label_low_q": {
+                        "type": "float",
+                        "low": 0.15,  # WIDENED from 0.25 to capture more negative samples
+                        "high": 0.40,  # WIDENED from 0.45
+                    },
+                    "label_high_q": {
+                        "type": "float",
+                        "low": 0.60,  # WIDENED from 0.55
+                        "high": 0.85,  # WIDENED from 0.80 to capture more positive samples
+                    },
+                    "econ_min_return_multiple": {
+                        "type": "float",
+                        "low": 1.0,
+                        "high": 2.0,
+                    },
+                },
+                priority=4,
+                depends_on=["volatility_adaptation"],
+                description="Quantile-based label definition",
+            ),
+            # Group 5: Target Engineering (5 params) - Depends on Label Definition
+            create_param_group(
+                name="target_engineering",
+                params={
+                    "iso_min_prob": {
+                        "type": "float",
+                        "low": 0.05,
+                        "high": 0.15,
+                    },
+                    "target_clip_high_q": {
+                        "type": "float",
+                        "low": 0.90,
+                        "high": 0.98,
+                    },
+                    "signal_strength_scale_max": {
+                        "type": "float",
+                        "low": 1.2,
+                        "high": 2.0,
+                    },
+                    "r_multiple_pos_threshold": {
+                        "type": "float",
+                        "low": 0.3,
+                        "high": 1.0,
+                    },
+                    "transaction_cost_mult": {
+                        "type": "float",
+                        "low": 1.0,
+                        "high": 1.2,
+                    },
+                    "scale_pos_weight": {
+                        "type": "float",
+                        "low": 1.0,
+                        "high": 10.0,
+                    },
+                },
+                priority=5,
+                depends_on=["label_definition"],
+                description="Target transformation and trade filters",
+            ),
+            # Group 6: Smoothing (2 params) - Independent/Late stage
+            create_param_group(
+                name="kalman_smoothing",
+                params={
+                    "kalman_Q": {
+                        "type": "float",
+                        "low": 1e-5,
+                        "high": 1e-3,
+                        "log": True,
+                    },
+                    "kalman_R": {
+                        "type": "float",
+                        "low": 1e-3,
+                        "high": 0.1,
+                        "log": True,
+                    },
+                },
+                priority=6,
+                depends_on=["event_geometry"],
+                description="Kalman smoothing noise parameters",
+            ),
+        ]
+
+        warm_start_best_params: Dict[str, Any] = {}
+        warm_start_candidates_df: Optional[pd.DataFrame] = None
+        outcomes_dir = Path("outcomes")
+        try:
+            json_pattern = f"meta_labeling_hpo_best_params_{symbol}_{timeframe}_{direction}_*.json"
+            json_paths = sorted(outcomes_dir.glob(json_pattern))
+            if json_paths:
+                latest_json = json_paths[-1]
+                with open(latest_json, "r") as f:
+                    data = json.load(f)
+                    if isinstance(data, dict):
+                        best_params_data = data.get("best_params", {})
+                        if isinstance(best_params_data, dict):
+                            warm_start_best_params = best_params_data
+        except Exception:
+            warm_start_best_params = {}
+        try:
+            csv_pattern = f"meta_labeling_hpo_candidate_pool_{symbol}_{timeframe}_{direction}_*.csv"
+            csv_paths = sorted(outcomes_dir.glob(csv_pattern))
+            if csv_paths:
+                latest_csv = csv_paths[-1]
+                warm_start_candidates_df = pd.read_csv(latest_csv)
+        except Exception:
+            warm_start_candidates_df = None
+
+        calibrated_horizon: Optional[int] = None
+        if stage1_enable_subsample:
+            def _evaluate_horizon_candidate(h: int) -> Dict[str, float]:
+                (
+                    realized_returns_h,
+                    binary_labels_h,
+                    exit_reasons_h,
+                    event_durations_h,
+                    mfe_h,
+                    mae_h,
+                    _binary_labels_long_h,  # Not used in HPO scoring
+                    _binary_labels_short_h,  # Not used in HPO scoring
+                ) = compute_realized_returns(
+                    stage1_market_data,
+                    stage1_primary_signals,
+                    profit_threshold=float(warm_start_best_params.get("profit_thr_base", 0.012)),
+                    stop_threshold=float(warm_start_best_params.get("profit_thr_base", 0.012)) * float(warm_start_best_params.get("stop_to_profit_ratio", 0.5)),
+                    horizon=int(h),
+                    transaction_cost=DEFAULT_TRANSACTION_COST,
+                    min_event_spacing=int(warm_start_best_params.get("min_event_spacing", 0)),
+                    atr_series=stage1_atr_series,
+                    trail_distance_atr_mult=float(warm_start_best_params.get("trail_distance", 0.0)),
+                )
+                labeled_mask_h = ~binary_labels_h.isna()
+                n_events_h = int(labeled_mask_h.sum())
+                if n_events_h <= 0 or stage1_days_span <= 0:
+                    return {
+                        "trades_per_day": 0.0,
+                        "risk_reward": 0.0,
+                        "profit_potential": 0.0,
+                    }
+                trades_per_day_h = n_events_h / float(stage1_days_span)
+                returns_labeled_h = realized_returns_h[labeled_mask_h].dropna()
+                if len(returns_labeled_h) == 0:
+                    return {
+                        "trades_per_day": trades_per_day_h,
+                        "risk_reward": 0.0,
+                        "profit_potential": 0.0,
+                    }
+                labels_labeled_h = binary_labels_h[labeled_mask_h]
+                r_pos_h = returns_labeled_h[labels_labeled_h == 1]
+                r_neg_h = returns_labeled_h[labels_labeled_h == 0]
+                mean_pos_h = float(r_pos_h.mean()) if len(r_pos_h) > 0 else 0.0
+                mean_neg_h = float(r_neg_h.mean()) if len(r_neg_h) > 0 else 0.0
+                mean_loss_h = abs(mean_neg_h) if mean_neg_h < 0 else (abs(float(r_neg_h.mean())) if len(r_neg_h) > 0 else 0.0)
+                mean_win_h = mean_pos_h
+                risk_reward_h = mean_win_h / (mean_loss_h + 1e-8) if mean_loss_h > 0 else 0.0
+                mean_return_h = float(returns_labeled_h.mean()) if len(returns_labeled_h) > 0 else 0.0
+                profit_potential_h = trades_per_day_h * mean_return_h
+                return {
+                    "trades_per_day": trades_per_day_h,
+                    "risk_reward": risk_reward_h,
+                    "profit_potential": profit_potential_h,
+                }
+            try:
+                # Use the event_geometry group (index 1) for horizon calibration so that
+                # the calibrated horizon respects the same search-space bounds as HPO.
+                event_group = param_groups[1]
+                horizon_spec = event_group.params.get("horizon_bars", {})
+                h_low = int(horizon_spec.get("low", 8))
+                h_high = int(horizon_spec.get("high", 56))
+                h_step = int(horizon_spec.get("step", 2)) or 1
+                candidate_horizons = list(range(h_low, h_high + 1, h_step))
+                best_h = None
+                best_potential = float("-inf")
+                best_trades = 0.0
+                best_rr = 0.0
+                for h in candidate_horizons:
+                    metrics_h = _evaluate_horizon_candidate(h)
+                    trades_h = metrics_h["trades_per_day"]
+                    rr_h = metrics_h["risk_reward"]
+                    # RELAXED: Allow wider trade density range (0.2 - 6.0/day)
+                    # to avoid prematurely filtering out potentially good horizons
+                    if trades_h < 0.2 or trades_h > 6.0:
+                        continue
+                    # RELAXED: Lower R/R threshold (1.0 instead of 1.2)
+                    # since HPO will refine the TPSL params later
+                    if rr_h < 1.0:
+                        continue
+                    if metrics_h["profit_potential"] > best_potential:
+                        best_potential = metrics_h["profit_potential"]
+                        best_h = h
+                        best_trades = trades_h
+                        best_rr = rr_h
+                if best_h is None and candidate_horizons:
+                    best_h = int(np.median(candidate_horizons))
+                calibrated_horizon = int(best_h) if best_h is not None else None
+                if calibrated_horizon is not None:
+                    tprint_info(
+                        f"📏 Using calibrated horizon_bars={calibrated_horizon} on subsample (trades_per_day≈{best_trades:.3f}, rr≈{best_rr:.3f})"
+                    )
+            except Exception:
+                calibrated_horizon = None
+        else:
+            calibrated_horizon = None
+
+        # Storage for candidate label configurations
+        candidate_pool: List[Dict[str, Any]] = []
+
+        # Lightweight debug sampling for objective diagnostics
+        debug_sample_limit = 50
+        debug_sample_count = 0
+
+        gate_stats: Dict[str, Any] = {}
+
         # ------------------------------------------------------------------
         # STAGE 0: SIGNAL/FEATURE HPO (KALMAN TUNING)
         # ------------------------------------------------------------------
@@ -3444,6 +3771,348 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             "kalman_Q": {"type": "float", "low": 1e-5, "high": 1e-2, "log": True},
             "kalman_R": {"type": "float", "low": 1e-3, "high": 1e-1, "log": True},
         }
+        def labeling_objective(
+            params: Dict[str, Any],
+            X_train: np.ndarray,
+            y_train: np.ndarray,
+            X_val: np.ndarray | None = None,
+            y_val: np.ndarray | None = None,
+            model: Any | None = None,
+            cv_folds: int = 1,
+            scoring_metric: str = "custom_balanced_score",
+            model_complexity: str = "fast",  # NEW: Model complexity level
+            use_ensemble: bool = False,  # NEW: Use ensemble for strong complexity
+            compute_diagnostics: bool = False,  # NEW: Whether to compute underfit diagnostics
+            use_feature_selection: bool = False,
+            use_resampling: bool = False,
+            **kwargs: Any,
+        ) -> Dict[str, float]:
+            """Evaluate one labeling configuration with multi-objective scoring.
+
+            This function:
+            - Recomputes realized returns & binary labels with candidate TPSL parameters
+            - Smooths labels via Kalman filter
+            - Creates meta-features for learnability assessment
+            - Computes learnability score with isotonic calibration (cross-validated AUC)
+            - Computes realistic P&L edge metric
+            - Applies regularization checks (temporal stability, regime consistency)
+            - Optionally computes underfit diagnostics
+            - Returns dict of objectives for Pareto frontier
+
+            Args:
+                model_complexity: "fast", "medium", or "strong" - controls model capacity
+                use_ensemble: Whether to use model ensemble (for strong complexity)
+                compute_diagnostics: Whether to compute underfit diagnostics
+
+            Returns:
+                Dict with keys: 'learnability', 'profitability', 'combined', 'edge'
+            """
+            # Determine CV splits based on model complexity
+            cv_splits_map = {"fast": 3, "medium": 3, "strong": 5}  # Increased strong to 5 to match diagnostics
+            cv_splits = cv_splits_map.get(model_complexity, 3)
+
+            try:
+                nonlocal debug_sample_count, gate_stats
+                # Enforce profit >= 1.5x stop constraint. During stages that do not
+                # actively optimize profit_thr_base/stop_to_profit_ratio, fall back
+                # to conservative defaults.
+                profit_thr_base = float(params.get("profit_thr_base", 0.012))
+                stop_ratio = float(params.get("stop_to_profit_ratio", 0.5))
+                trail_dist = float(params.get("trail_distance", 0.0))
+
+                # CONSTRAINT: Ensure profit is at least 1.5x stop
+                stop_thr_base = max(0.0005, profit_thr_base * stop_ratio)
+                if profit_thr_base < 1.5 * stop_thr_base:
+                    # Early exit: invalid RR geometry
+                    tprint_warning(
+                        f"[EARLY_EXIT_RR] Config rejected: profit {profit_thr_base:.4f} < 1.5x stop {stop_thr_base:.4f}"
+                    )
+                    gate_stats["rr_profit_vs_stop"] = gate_stats.get("rr_profit_vs_stop", 0) + 1
+                    return {
+                        'learnability': 0.0,
+                        'profitability': -1e9,
+                        'edge': -1e9,
+                        'combined': -1e9,
+                    }
+
+                # Extract parameters
+                horizon = int(params["horizon_bars"])
+                min_spacing = int(params["min_event_spacing"])
+
+                if horizon <= 0:
+                    gate_stats["invalid_horizon"] = gate_stats.get("invalid_horizon", 0) + 1
+                    return {
+                        'learnability': 0.0,
+                        'profitability': -1e9,
+                        'edge': -1e9,
+                        'combined': -1e9,
+                    }
+
+                spacing_ratio = float(min_spacing) / float(horizon)
+                max_spacing_ratio = float(config.get("hpo_max_spacing_horizon_ratio", 8.0))
+                if spacing_ratio > max_spacing_ratio:
+                    gate_stats["spacing_vs_horizon"] = gate_stats.get("spacing_vs_horizon", 0) + 1
+                    return {
+                        'learnability': 0.0,
+                        'profitability': -1e9,
+                        'edge': -1e9,
+                        'combined': -1e9,
+                    }
+
+                kalman_Q = float(params.get("kalman_Q", 1e-4))
+                kalman_R = float(params.get("kalman_R", 0.01))
+                vol_baseline_window = int(params.get("vol_baseline_window", 96))
+
+                # TPSL multipliers: use current params if present, otherwise fall back
+                # to broad but reasonable defaults (kept consistent with diagnostics).
+                profit_mult_min = float(params.get("profit_mult_min", 0.5))
+                profit_mult_max = float(params.get("profit_mult_max", 2.0))
+                stop_mult_min = float(params.get("stop_mult_min", 0.5))
+                stop_mult_max = float(params.get("stop_mult_max", 2.0))
+
+                if profit_mult_min > profit_mult_max:
+                    profit_mult_min, profit_mult_max = profit_mult_max, profit_mult_min
+                if stop_mult_min > stop_mult_max:
+                    stop_mult_min, stop_mult_max = stop_mult_max, stop_mult_min
+
+                # Hard RR constraint: even in the worst-case (smallest profit, largest stop),
+                # require a minimum RR ~1.2 (≈1.05 net after fees).
+                worst_rr = (profit_thr_base * profit_mult_min) / max(stop_thr_base * stop_mult_max, 1e-8)
+                if worst_rr < 1.2:
+                    if debug_sample_count < debug_sample_limit:
+                        tprint_warning(
+                            f"[EARLY_EXIT_RR] Rejecting config due to worst_rr={worst_rr:.3f} < 1.2 "
+                            f"(profit_thr_base={profit_thr_base:.4f}, stop_thr_base={stop_thr_base:.4f}, "
+                            f"profit_mult_min={profit_mult_min:.3f}, stop_mult_max={stop_mult_max:.3f})"
+                        )
+                        debug_sample_count += 1
+                    gate_stats["rr_worst_rr"] = gate_stats.get("rr_worst_rr", 0) + 1
+                    return {
+                        'learnability': 0.0,
+                        'profitability': -1e9,
+                        'edge': -1e9,
+                        'combined': -1e9,
+                    }
+
+                # Use safe defaults when target_transform params are not part of the current group
+                iso_min_prob = float(params.get("iso_min_prob", 0.05))
+                # Allow slightly stronger clipping on both tails; keep symmetric band.
+                iso_min_prob = max(0.05, min(0.15, iso_min_prob))
+                iso_max_prob = 1.0 - iso_min_prob
+                iso_max_prob = max(0.85, min(1.0, iso_max_prob))
+
+                q_high = float(params.get("target_clip_high_q", 0.95))
+                q_high = max(0.90, min(0.98, q_high))
+                q_low = max(0.0, min(0.5, 1.0 - q_high))
+
+                # Economic floor multiplier for vol-scaled labels and isotonic mapping
+                econ_min_mult = float(params.get("econ_min_return_multiple", 1.0))
+                if not np.isfinite(econ_min_mult) or econ_min_mult <= 0:
+                    econ_min_mult = 1.0
+                # Clamp economic multiplier to prevent zero-target degeneracy
+                econ_min_mult = max(1.0, min(econ_min_mult, 2.0))
+
+                # Label quantile thresholds (regime-aware when regimes are present).
+                # Default to a slightly denser configuration (~40% positives target):
+                # bottom 40% vs top 40% tails.
+                label_low_q = float(params.get("label_low_q", 0.40))
+                label_high_q = float(params.get("label_high_q", 0.60))
+                # Guard-rail: ensure a proper ordering and keep them away from extremes.
+                label_low_q = max(0.10, min(0.60, label_low_q))
+                label_high_q = max(0.40, min(0.90, label_high_q))
+                if label_high_q <= label_low_q:
+                    label_low_q, label_high_q = 0.40, 0.60
+
+                min_label_band_width = float(config.get("hpo_min_label_band_width", 0.15))
+                if (label_high_q - label_low_q) < min_label_band_width:
+                    gate_stats["label_band_too_narrow"] = gate_stats.get("label_band_too_narrow", 0) + 1
+                    return {
+                        'learnability': 0.0,
+                        'profitability': -1e9,
+                        'edge': -1e9,
+                        'combined': -1e9,
+                    }
+
+                # NEW: R-multiple threshold for labeling - controls trade velocity filter
+                r_multiple_threshold = float(params.get("r_multiple_pos_threshold", 0.5))
+                # Relax lower bound to allow almost no trade-velocity filtering if features are good enough
+                r_multiple_threshold = max(0.01, min(1.2, r_multiple_threshold))
+
+                # NEW: Transaction cost multiplier - allows HPO to explore cost sensitivity
+                tx_cost_mult = float(params.get("transaction_cost_mult", 1.0))
+                tx_cost_mult = max(1.0, min(1.2, tx_cost_mult))
+                effective_tx_cost = DEFAULT_TRANSACTION_COST * tx_cost_mult
+
+                # NEW: Signal generation parameters
+                cusum_threshold = float(params.get("cusum_threshold", 0.015))
+                cusum_threshold = max(0.010, min(0.035, cusum_threshold))
+                target_signal_density = float(params.get("target_signal_density", 20.0))
+                target_signal_density = max(5.0, min(50.0, target_signal_density))
+
+                # --- Recompute realized returns ---
+                # NO FUTURE LEAKAGE in volatility-based thresholds:
+                # - volatility_1d is backward-looking (rolling 96-bar std)
+                # - vol_baseline is backward-looking (rolling mean of past volatility)
+                # - vol_factor at time T uses only volatility from T-vol_baseline_window to T
+                vol_baseline = volatility_1d.rolling(vol_baseline_window).mean()
+                vol_factor = volatility_1d / (vol_baseline + 1e-8)
+
+                high_prices = market_data["high"] if "high" in market_data.columns else market_data["close"]
+                low_prices = market_data["low"] if "low" in market_data.columns else market_data["close"]
+                close_prices = market_data["close"]
+
+                tr1 = high_prices - low_prices
+                tr2 = (high_prices - close_prices.shift(1)).abs()
+                tr3 = (low_prices - close_prices.shift(1)).abs()
+                true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+
+                trend_atr_window = int(config.get("trend_strength_atr_window", 14))
+                atr_series = true_range.rolling(window=trend_atr_window, min_periods=1).mean()
+
+                trend_delta_lookback = int(config.get("trend_strength_delta_lookback", 4))
+                price_delta = close_prices.diff(trend_delta_lookback).abs()
+
+                trend_strength = (price_delta / (atr_series + 1e-8)).replace([np.inf, -np.inf], np.nan)
+                trend_strength = trend_strength.clip(
+                    lower=0.0,
+                    upper=float(config.get("trend_strength_clip", 5.0)),
+                ).fillna(0.0)
+
+                trend_alpha = float(config.get("trend_strength_alpha_profit", 0.5))
+                trend_beta = float(config.get("trend_strength_beta_stop", 0.5))
+
+                profit_factor = 1.0 + trend_alpha * trend_strength
+                stop_factor = 1.0 + trend_beta * trend_strength
+
+                adaptive_profit = profit_thr_base * vol_factor * profit_factor
+                adaptive_stop = stop_thr_base * vol_factor * stop_factor
+                adaptive_profit = adaptive_profit.clip(
+                    lower=profit_thr_base * profit_mult_min,
+                    upper=profit_thr_base * profit_mult_max,
+                )
+                adaptive_stop = adaptive_stop.clip(
+                    lower=stop_thr_base * stop_mult_min,
+                    upper=stop_thr_base * stop_mult_max,
+                )
+
+                # NEW: Regenerate primary signals if cusum_threshold differs from default
+                # This allows HPO to explore different signal densities
+                signals_to_use = primary_signals
+                default_cusum = 0.015
+                if abs(cusum_threshold - default_cusum) > 0.001:
+                    try:
+                        signals_to_use = generate_primary_signals(
+                            market_data.copy(),
+                            cusum_threshold=cusum_threshold,
+                            target_trades_per_day=target_signal_density,
+                        )
+                    except Exception:
+                        signals_to_use = primary_signals  # Fallback if regeneration fails
+
+                (
+                    realized_returns,
+                    binary_labels,
+                    exit_reasons,
+                    event_durations,
+                    mfe_series,
+                    mae_series,
+                    _binary_labels_long,  # Not used in HPO objective function
+                    _binary_labels_short,  # Not used in HPO objective function
+                ) = compute_realized_returns(
+                    market_data,
+                    signals_to_use,
+                    profit_threshold=adaptive_profit,
+                    stop_threshold=adaptive_stop,
+                    horizon=horizon,
+                    transaction_cost=effective_tx_cost,  # Use HPO-tunable tx cost
+                    min_event_spacing=min_spacing,
+                    atr_series=atr_series,
+                    trail_distance_atr_mult=trail_dist,
+                )
+
+                # Basic diagnostics on raw realized returns and labels before
+                # any vol-scaling or quantile-based relabeling.
+                n_raw_events = len(realized_returns)
+                n_raw_labeled = int((~binary_labels.isna()).sum())
+                if debug_sample_count < debug_sample_limit:
+                    tprint_info(
+                        f"[HPO_DEBUG_LABELS] raw_events={n_raw_events}, raw_labeled={n_raw_labeled}, "
+                        f"profit_thr_base={profit_thr_base:.6f}, stop_thr_base={stop_thr_base:.6f}, "
+                        f"econ_min_mult={econ_min_mult:.3f}, label_low_q={label_low_q:.3f}, label_high_q={label_high_q:.3f}",
+                    )
+
+                # Replace legacy R-multiple based labels with quantile-based labels
+                # derived from volatility-scaled realized returns, to improve label
+                # balance and economic relevance in HPO scoring.
+                #
+                # NO FUTURE VOLATILITY LEAKAGE:
+                # - volatility_1d at time T uses only data from T-96 to T-1 (backward-looking)
+                # - realized_returns at time T uses future prices (expected for labeling)
+                # - vol_scaled = realized_returns / past_volatility (no future vol leakage)
+                #
+                # NOTE: Quantile thresholds are computed from ALL training data, which is
+                # acceptable for HPO/training. In production, use expanding/rolling quantiles.
+                vol_scaled_returns = compute_vol_scaled_returns_for_events(
+                    realized_returns=realized_returns,
+                    volatility=volatility_1d,
+                    econ_min_return_multiple=econ_min_mult,
+                )
+
+                n_vol_scaled_events = int(vol_scaled_returns.dropna().size)
+                if debug_sample_count < debug_sample_limit:
+                    tprint_info(
+                        f"[HPO_DEBUG_LABELS] vol_scaled_events={n_vol_scaled_events}",
+                    )
+
+                # Decide whether to use regime-aware quantiles based on the
+                # attached HMM regimes (typically 1h) on market_data.
+                regimes_for_labeling = None
+                if config.get("enable_regime_aware_quantiles", True) and "hmm_regime_label_1h" in market_data.columns:
+                    regimes_for_labeling = market_data["hmm_regime_label_1h"]
+
+                # Use rolling quantiles by default to match production and avoid look-ahead bias
+                use_rolling = config.get("use_rolling_quantiles", True)
+                rolling_lookback = int(config.get("rolling_quantile_lookback_bars", 3000))
+                rolling_min_periods = int(config.get("rolling_quantile_min_periods", 300))
+
+                def _make_quantile_labels(vol_scaled_series: pd.Series) -> pd.Series:
+                    """Helper to create (regime-aware) quantile labels from a score series."""
+                    if use_rolling:
+                        if regimes_for_labeling is not None:
+                            return create_rolling_regime_aware_quantile_labels_from_vol_scaled_returns(
+                                vol_scaled=vol_scaled_series,
+                                regimes=regimes_for_labeling,
+                                low_q=label_low_q,
+                                high_q=label_high_q,
+                                lookback_bars=rolling_lookback,
+                                min_periods=rolling_min_periods,
+                            )
+                        return create_rolling_quantile_labels_from_vol_scaled_returns(
+                            vol_scaled=vol_scaled_series,
+                            low_q=label_low_q,
+                            high_q=label_high_q,
+                            lookback_bars=rolling_lookback,
+                            min_periods=rolling_min_periods,
+                        )
+                    else:
+                        # Legacy global quantiles (has look-ahead bias)
+                        if regimes_for_labeling is not None:
+                            return create_regime_aware_quantile_labels_from_vol_scaled_returns(
+                                vol_scaled=vol_scaled_series,
+                                regimes=regimes_for_labeling,
+                                low_q=label_low_q,
+                                high_q=label_high_q,
+                            )
+                        return create_quantile_labels_from_vol_scaled_returns(
+                            vol_scaled=vol_scaled_series,
+                            low_q=label_low_q,
+                            high_q=label_high_q,
+                        )
+
+                # Primary quantile labels on vol-scaled returns with the
+                # HPO-chosen economic floor.
+                quantile_labels = _make_quantile_labels(vol_scaled_returns)
+                binary_labels = quantile_labels
 
         def kalman_objective(params: Dict[str, Any]) -> float:
             # 1. Generate Smoothed Signals (Primary)
@@ -3821,6 +4490,3561 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             "layer2_score": best_l2_score,
             "layer3_auc": l3_result.get("best_value", 0),
             "best_params": full_best_params
+                        # Run Simulation
+                        executed_trades = simulate_concurrent_trades(
+                            sim_df,
+                            max_concurrency=1,
+                            transaction_cost=tx
+                        )
+
+                        if not executed_trades.empty:
+                            # Calculate stats for objective function
+                            n_exec = len(executed_trades)
+
+                            # Calculate Sharpe on simulated PnL (ret_bps)
+                            pnl_series = executed_trades['ret_bps']
+                            mean_pnl = pnl_series.mean()
+                            std_pnl = pnl_series.std()
+                            sim_sharpe = mean_pnl / (std_pnl + 1e-9) if std_pnl > 0 else 0.0
+
+                            sim_trades_per_day = n_exec / max(effective_days_span, 1.0)
+
+                            sim_stats = {
+                                'num_trades': n_exec,
+                                'trades_per_day': sim_trades_per_day,
+                                'sharpe_ratio': sim_sharpe
+                            }
+
+                            # Compute final robust score
+                            # df_results needs ['y_true', 'y_prob', 'ret_bps', 'regime']
+                            # executed_trades has these (from sim_df + 'ret_bps')
+                            # Map 'prob' -> 'y_prob'
+                            executed_trades['y_prob'] = executed_trades['prob']
+
+                            sim_score = compute_robust_hpo_objective(
+                                stats=sim_stats,
+                                df_results=executed_trades,
+                                regime_col='regime'
+                            )
+                        else:
+                            sim_score = 0.0
+                    else:
+                        sim_score = 0.0
+                except Exception:
+                    sim_score = 0.0
+
+                edge_score = sim_score
+
+                # ===== CALIBRATION-AWARE ADJUSTMENT OF EDGE =====
+                # Use calibration diagnostics (weighted Brier and ECE) to softly
+                # down-weight edge for miscalibrated models. We do this *after*
+                # temporal stability but before scaling and combining with AUC.
+                try:
+                    calib_edge_penalty = 1.0
+                    if weighted_brier is not None:
+                        # Map weighted_brier in [brier_target, brier_max] to a factor in [1.0, 0.5]
+                        brier_target = float(config.get("calibration_brier_target", 0.18))
+                        brier_max = float(config.get("calibration_brier_max", 0.35))
+                        if brier_max <= brier_target:
+                            brier_max = brier_target + 1e-3
+                        brier_excess = max(0.0, float(weighted_brier) - brier_target)
+                        brier_span = max(brier_max - brier_target, 1e-6)
+                        brier_ratio = min(1.0, brier_excess / brier_span)
+                        # Linearly shrink edge to 50% at the worst Brier in the band.
+                        calib_edge_penalty *= (1.0 - 0.5 * brier_ratio)
+
+                    if ece_norm is not None:
+                        # ece_norm already in [0, 1]; shrink edge up to another 30% at ece_norm=1.
+                        calib_edge_penalty *= (1.0 - 0.3 * float(ece_norm))
+
+                    # Ensure non-negative factor
+                    calib_edge_penalty = max(0.0, calib_edge_penalty)
+                    edge_score *= calib_edge_penalty
+                except Exception:
+                    # If anything goes wrong in calibration-based adjustment, keep raw edge_score.
+                    pass
+
+                # Scale edge for combined metric (multiply by 1000 to make comparable)
+                edge_scaled = edge_score * 1000.0
+
+                # Additional hard penalties for pathological configurations (no positive
+                # or negative bucket), while still keeping them in the candidate pool
+                # for diagnostics.
+                if len(r_pos) == 0 or len(r_neg) == 0:
+                    profitability_score = -1e9
+
+                # ===== COMBINED OBJECTIVE WITH RETENTION REGULARIZATION =====
+                # New formulation: objective adjusts the filtered AUC based on how far
+                # the retention rate falls below a soft target.
+                #
+                #   ret_target = 0.35  (35% of pre-events retained)
+                #   penalty    = alpha * (max(0, ret_target - retention_total))^2
+                #   objective  = AUC_filtered -  penalty
+                #
+                # This penalizes overly aggressive filtering (very low retention) while
+                # not rewarding sparse configs purely via 1/retention.
+
+                # Retention regularization parameter (configurable)
+                alpha_retention = float(config.get("retention_regularization_alpha", 0.05))
+                alpha_retention = max(0.01, min(0.10, alpha_retention))  # Clamp to [0.01, 0.10]
+
+                # Soft target for overall retention (fraction of pre-events kept)
+                retention_target = float(config.get("retention_target", 0.35))
+                retention_target = max(0.05, min(0.80, retention_target))
+
+                # Compute nonlinear shortfall penalty relative to the target
+                # retention_total is already computed above as n_post_total / n_pre_total
+                if retention_total > 0:
+                    retention_shortfall = max(0.0, retention_target - float(retention_total))
+                    # Quadratic penalty so that very low retention is punished more strongly
+                    retention_penalty = alpha_retention * (retention_shortfall ** 2)
+                else:
+                    # If no events survive, apply maximal penalty against the target
+                    retention_penalty = alpha_retention * retention_target
+
+                # Cap retention penalty to avoid dominating the objective
+                retention_penalty = min(retention_penalty, 0.5)
+
+                # ===== UNIFIED AUC ADJUSTMENT =====
+                # Combine AUC range penalties directly into adjusted AUC instead of
+                # having separate auc_penalty and learnability_bonus terms.
+                # This simplifies the objective and avoids double-counting.
+
+                auc_range_adjustment = 0.0
+                if mean_auc < 0.54:
+                    # Too noisy: heavy penalty incorporated into AUC
+                    auc_range_adjustment = -(0.54 - mean_auc) * 0.5
+                elif mean_auc > 0.70:
+                    # Suspicious (likely leakage): heavy penalty
+                    auc_range_adjustment = -(mean_auc - 0.70) * 1.0
+                elif mean_auc > 0.67:
+                    # Above excellent range: moderate penalty
+                    auc_range_adjustment = -(mean_auc - 0.67) * 0.3
+                elif auc_in_target_range:
+                    # In target range [0.55, 0.67]: small bonus for 0.60-0.62 sweet spot
+                    if mean_auc >= 0.58 and mean_auc <= 0.64:
+                        auc_range_adjustment = 0.02  # Small bonus for ideal range
+
+                # Final retention-adjusted AUC (unified primary signal)
+                auc_ret_raw = mean_auc + auc_range_adjustment - retention_penalty
+                auc_cap = 0.65
+                auc_retention_adjusted = min(auc_ret_raw, auc_cap)
+
+                # Trade density bonus: stronger when AUC is outside target range
+                # This gives edge/pnl/trades more influence when AUC is penalized
+                # User Request (Step 451): Reduce importance of pure edge by ~30% to favor robustness
+                base_edge_multiplier = 0.7
+                edge_weight = (1.0 + (1.0 - auc_weight_multiplier) * 0.5) * base_edge_multiplier
+                density_weight = 1.0 + (1.0 - auc_weight_multiplier) * 1.0  # Up to 2x density weight
+
+                balance_weight = float(config.get("balance_score_weight", 0.15))
+                if balance_weight < 0.0:
+                    balance_weight = 0.0
+                if balance_weight > 0.3:
+                    balance_weight = 0.3
+                balance_term = balance_weight * 10.0 * (balance_score - 0.5)
+
+                retention_asym_weight = float(config.get("retention_asym_weight", 5.0))
+                if retention_asym_weight < 0.0:
+                    retention_asym_weight = 0.0
+
+                # Trades/day bonus for being in sweet spot (1.5-5 trades/day)
+                trades_bonus = 0.0
+                if trades_per_day >= 1.5 and trades_per_day <= 5.0:
+                    # Peak bonus at 2.5 trades/day (midpoint)
+                    trades_bonus = max(0, 1.0 - abs(trades_per_day - 2.5) / 2.5) * 50.0
+
+                # Geometry penalty: if profit threshold is unrealistically large
+                # relative to the average trailing stop distance (ATR-based) while
+                # overall retention is below target, down-weight the configuration.
+                trail_geom_penalty = 0.0
+                try:
+                    if trail_dist > 0.0 and isinstance(atr_series, pd.Series) and "close" in market_data.columns:
+                        atr_events = atr_series[labeled_mask]
+                        price_events = market_data["close"][labeled_mask]
+                        denom = price_events.abs().replace(0.0, np.nan)
+                        avg_trail_pct = float(((trail_dist * atr_events) / (denom + 1e-8)).replace([np.inf, -np.inf], np.nan).mean())
+
+                        if np.isfinite(avg_trail_pct) and avg_trail_pct > 0:
+                            k_trail = float(config.get("trail_profit_ratio_k", 3.5))
+                            # Only activate when retention is below target (over-selection regime)
+                            if float(retention_total) < retention_target:
+                                threshold = k_trail * avg_trail_pct
+                                if profit_thr_base > threshold:
+                                    excess_ratio = (profit_thr_base / max(threshold, 1e-8)) - 1.0
+                                    weight = float(config.get("trail_penalty_weight", 80.0))
+                                    trail_geom_penalty = max(0.0, excess_ratio) * weight
+                except Exception:
+                    trail_geom_penalty = 0.0
+
+                # Diagnostic penalties: when aggressive filtering or ultra-easy
+                # problems are detected (only computed when compute_diagnostics
+                # is True to keep HPO runtime manageable).
+                diagnostics_penalty = 0.0
+                if compute_diagnostics:
+                    try:
+                        econ_floor_local = econ_min_mult * effective_tx_cost
+                        y_full_local = pd.Series(np.nan, index=realized_returns.index)
+                        full_mask_local = ~realized_returns.isna() & (realized_returns.abs() >= econ_floor_local)
+                        y_full_local[full_mask_local & (realized_returns > 0)] = 1.0
+                        y_full_local[full_mask_local & (realized_returns <= 0)] = 0.0
+
+                        filtering_diag_local = compute_filtering_inflation_diagnostics(
+                            X=meta_features_model_processed,
+                            y_full=y_full_local,
+                            y_filtered=binary_labels,
+                            realized_returns=realized_returns,
+                            volatility=volatility_1d,
+                            probabilities=calibrated_probs,
+                            cv_splits=3,
+                            time_aware_cv=True,
+                        )
+
+                        easy_problem_flag = False
+                        try:
+                            overlap_diag_local = compute_class_overlap_features(
+                                X=meta_features_model_processed,
+                                retained_mask=labeled_mask,
+                                top_k_features=5,
+                            )
+                            easy_problem_flag = bool(overlap_diag_local.get("easy_problem_detected", False))
+                        except Exception:
+                            overlap_diag_local = {}
+                            easy_problem_flag = False
+
+                        if (
+                            filtering_diag_local.get("filtering_is_major_contributor")
+                            or filtering_diag_local.get("precision_collapse_detected")
+                            or easy_problem_flag
+                        ):
+                            diagnostics_penalty = float(config.get("diagnostic_penalty_weight", 150.0))
+                    except Exception:
+                        diagnostics_penalty = 0.0
+
+                # ===== COMBINED OBJECTIVE WITH RETENTION REGULARIZATION =====
+                # New formulation: objective adjusts the filtered AUC based on how far
+                # the retention rate falls below a soft target.
+                #
+                #   ret_target = 0.35  (35% of pre-events retained)
+                #   penalty    = alpha * (max(0, ret_target - retention_total))^2
+                #   objective  = AUC_filtered -  penalty
+                #
+                # This penalizes overly aggressive filtering (very low retention) while
+                # not rewarding sparse configs purely via 1/retention.
+
+                # Retention regularization parameter (configurable)
+
+                # Calibration-aware risk adjustment on top of retention-adjusted AUC.
+                weighted_brier = None
+                weighted_brier_norm = None
+                ece_norm = None
+                mid_brier = None
+                mid_brier_norm = None
+                calib_combo_value = None
+                rank_calib_score = auc_retention_adjusted
+
+                try:
+                    probs_array = np.asarray(calibrated_probs, dtype=float)
+                    y_calib_vals = np.asarray(binary_labels.values, dtype=float)
+                    mask_calib = np.isfinite(probs_array) & np.isfinite(y_calib_vals)
+                    probs_array = probs_array[mask_calib]
+                    y_calib_vals = y_calib_vals[mask_calib]
+                    n_calib = y_calib_vals.size
+
+                    min_calib_samples = int(config.get("calibration_min_samples", 200))
+                    if n_calib >= min_calib_samples:
+                        p_min = float(config.get("calibration_prob_min_clip", 0.05))
+                        p_max = float(config.get("calibration_prob_max_clip", 0.95))
+                        if p_max <= p_min:
+                            p_max = min(0.99, p_min + 0.05)
+                        probs_clipped = np.clip(probs_array, p_min, p_max)
+
+                        conf_power = float(config.get("calibration_confidence_power", 1.0))
+                        if conf_power != 1.0:
+                            confidence = np.abs(probs_clipped - 0.5) ** conf_power
+                            weights = 1.0 + confidence
+                        else:
+                            weights = np.ones_like(probs_clipped)
+
+                        errors = (y_calib_vals - probs_clipped) ** 2
+                        weighted_brier = float(np.average(errors, weights=weights))
+
+                        brier_target = float(config.get("calibration_brier_target", 0.18))
+                        brier_max = float(config.get("calibration_brier_max", 0.35))
+                        if brier_max <= brier_target:
+                            brier_max = brier_target + 1e-3
+                        excess = max(0.0, weighted_brier - brier_target)
+                        denom = max(brier_max - brier_target, 1e-6)
+                        weighted_brier_norm = min(1.0, excess / denom)
+
+                        n_bins_calib = int(config.get("calibration_bins", 10))
+                        if n_bins_calib <= 0:
+                            n_bins_calib = 10
+                        n_bins_calib = max(2, n_bins_calib)
+                        bin_edges = np.linspace(0.0, 1.0, n_bins_calib + 1)
+                        ece_val = 0.0
+                        for bi in range(n_bins_calib):
+                            mask_bin = (probs_clipped >= bin_edges[bi]) & (probs_clipped < bin_edges[bi + 1])
+                            idx_bin = np.nonzero(mask_bin)[0]
+                            n_bin = idx_bin.size
+                            if n_bin < 20:
+                                continue
+                            p_hat = float(np.mean(probs_clipped[idx_bin]))
+                            y_hat = float(np.mean(y_calib_vals[idx_bin]))
+                            ece_val += (n_bin / float(n_calib)) * abs(p_hat - y_hat)
+                        if ece_val > 0.0:
+                            ece_raw = float(ece_val)
+                            ece_max = float(config.get("calibration_ece_max", 0.25))
+                            if ece_max <= 0.0:
+                                ece_max = 0.25
+                            ece_norm = min(1.0, ece_raw / ece_max)
+
+                        mid_low = float(config.get("calibration_mid_prob_low", 0.3))
+                        mid_high = float(config.get("calibration_mid_prob_high", 0.7))
+                        if mid_high <= mid_low:
+                            mid_high = mid_low + 1e-3
+                        mid_mask = (probs_clipped >= mid_low) & (probs_clipped <= mid_high)
+                        if np.any(mid_mask):
+                            errors_mid = (y_calib_vals[mid_mask] - probs_clipped[mid_mask]) ** 2
+                            if errors_mid.size > 0:
+                                mid_brier = float(np.mean(errors_mid))
+                                mid_target = float(config.get("calibration_mid_brier_target", brier_target))
+                                mid_max = float(config.get("calibration_mid_brier_max", brier_max))
+                                if mid_max <= mid_target:
+                                    mid_max = mid_target + 1e-3
+                                mid_excess = max(0.0, mid_brier - mid_target)
+                                mid_denom = max(mid_max - mid_target, 1e-6)
+                                mid_brier_norm = min(1.0, mid_excess / mid_denom)
+
+                        # New logic: Discrete tiers for calibration impact
+                        calib_score = weighted_brier if weighted_brier is not None else 0.25
+
+                        calib_factor = 1.0
+                        if calib_score > 0.25:
+                            # "Minimum requirement" failed: harsh linear penalty
+                            # 0.25 -> 1.0x, 0.35 -> 0.0x
+                            penalty = (calib_score - 0.25) / 0.10
+                            calib_factor = max(0.0, 1.0 - penalty * 10.0) # Very steep drop
+                        elif calib_score <= 0.18:
+                            # "Excellent" bonus
+                            calib_factor = 1.1
+
+                        calib_combo_value = float(calib_score)
+
+                        factor = calib_factor
+
+                        deflation = 0.0
+                        if auc_cv_std is not None and np.isfinite(auc_cv_std):
+                            try:
+                                deflation = 2.0 * float(auc_cv_std)
+                            except Exception:
+                                deflation = 0.0
+                        deflated_auc = max(0.0, float(auc_retention_adjusted) - deflation)
+                        rank_calib_score = deflated_auc * factor
+
+                        # ===== P&L CALIBRATION-CURVE SANITY TERM =====
+                        # If available from diagnostics, use the P&L calibration curve
+                        # (probability → expected net return) to detect configurations
+                        # where no probability region is economically positive or where
+                        # high-probability regions underperform.
+                        try:
+                            pnl_curve = None
+                            if isinstance(best_config_diagnostics.get("calibration_diagnostics"), dict):
+                                pnl_curve = best_config_diagnostics["calibration_diagnostics"].get("pnl_calibration_curve")
+
+                            if isinstance(pnl_curve, dict):
+                                prob_grid = np.asarray(pnl_curve.get("prob_grid", []), dtype=float)
+                                exp_net = np.asarray(pnl_curve.get("expected_net_return", []), dtype=float)
+                                if prob_grid.size == exp_net.size and prob_grid.size >= 3:
+                                    # 1) Check if any region has positive expected net return.
+                                    if not np.any(exp_net > 0.0):
+                                        # Strong penalty: no economically positive region.
+                                        rank_calib_score *= 0.7
+
+                                    # 2) Check monotonicity in upper half of probability grid.
+                                    mid_idx = prob_grid.size // 2
+                                    high_probs = prob_grid[mid_idx:]
+                                    high_exp = exp_net[mid_idx:]
+                                    if high_probs.size >= 3:
+                                        violations = 0
+                                        for i in range(high_exp.size - 1):
+                                            if high_exp[i + 1] < high_exp[i] - 1e-8:
+                                                violations += 1
+                                        if violations > 0:
+                                            # Soft penalty proportional to fraction of violations.
+                                            frac_viols = violations / max(high_exp.size - 1, 1)
+                                            rank_calib_score *= (1.0 - 0.3 * min(1.0, frac_viols))
+                        except Exception:
+                            # If anything fails in P&L calibration sanity checks, do not alter rank_calib_score.
+                            pass
+                except Exception:
+                    weighted_brier = None
+                    weighted_brier_norm = None
+                    ece_norm = None
+                    mid_brier = None
+                    mid_brier_norm = None
+                    calib_combo_value = None
+                    rank_calib_score = auc_retention_adjusted
+
+                # ===== SIMPLIFIED COMBINED OBJECTIVE =====
+                # Primary components:
+                # 1. edge_scaled: Captures profitability AND learnability (via capture ratio)
+                # 2. auc_retention_adjusted: AUC adjusted for retention penalty & range
+                # 3. trades_bonus: Reward healthy trade density
+                # 4. Penalties for extreme density, slow exits, over-aggressive filtering,
+                #    and unrealistic TPSL geometry relative to ATR-based trailing.
+                # 5. NEW: sample_count_bonus for Phase 1 (prioritize configs with enough samples)
+                # 6. NEW: regime_coverage_penalty for stratified regime sampling
+
+                # ===== TWO-PHASE HPO: SAMPLE COUNT BONUS =====
+                # In Phase 1, heavily reward configurations that achieve minimum sample counts
+                sample_count_bonus = 0.0
+                if n_events >= MIN_EVENTS_PHASE2:
+                    sample_count_bonus = 100.0  # Strong bonus for achieving Phase 2 threshold
+                elif n_events >= MIN_EVENTS_PHASE1:
+                    sample_count_bonus = 50.0  # Moderate bonus for achieving Phase 1 threshold
+                elif n_events >= 100:
+                    sample_count_bonus = 20.0  # Small bonus for reasonable sample count
+
+                # ===== SIGNAL FIDELITY METRICS (NEW OBJECTIVE) =====
+                # 1. Information Coefficient (IC) - Weighted Rank Correlation
+                ic = 0.0
+                try:
+                    if calibrated_probs is not None and len(calibrated_probs) > 50:
+                         # Align masks
+                         valid_mask_ic = np.isfinite(calibrated_probs) & np.isfinite(realized_return_clean)
+                         if valid_mask_ic.sum() > 50:
+                             p_clean = calibrated_probs[valid_mask_ic]
+                             r_clean = realized_return_clean[valid_mask_ic]
+
+                             # Calculate confidence-based weights for IC
+                             # Weight = 1.0 + |prob - 0.5| (Higher weight for confident predictions)
+                             ic_weights = 1.0 + np.abs(p_clean - 0.5)
+
+                             # Compute Ranks
+                             from scipy.stats import rankdata
+                             p_ranks = rankdata(p_clean)
+                             r_ranks = rankdata(r_clean)
+
+                             # Weighted Pearson on Ranks (Weighted Spearman)
+                             # np.cov(..., aweights=...) returns covariance matrix
+                             cov_mat = np.cov(p_ranks, r_ranks, aweights=ic_weights)
+                             if cov_mat.shape == (2, 2):
+                                 cov_xy = cov_mat[0, 1]
+                                 var_x = cov_mat[0, 0]
+                                 var_y = cov_mat[1, 1]
+                                 if var_x > 0 and var_y > 0:
+                                     val_ic = cov_xy / np.sqrt(var_x * var_y)
+                                     if np.isfinite(val_ic):
+                                         ic = float(val_ic)
+                except Exception:
+                    ic = 0.0
+
+                # 2. Density Score (Logarithmic)
+                density_score = 0.0
+                if events_per_day > 0:
+                    density_score = min(1.0, np.log10(events_per_day + 1.0) / 1.0)
+
+                # 3. Effect Size (Cohen's d) - Reusing d_post
+                # d_post is already calculated above
+                snr_metric = max(0.0, float(d_post)) if np.isfinite(d_post) else 0.0
+
+                # ===== CALIBRATION SCORE =====
+                # Derived from weighted_brier_norm (0=perfect, 1=bad)
+                # If unavailable, assume neutral/poor (0.0 score) to encourage calibration availability
+                score_calibration = 0.0
+                if weighted_brier_norm is not None:
+                    score_calibration = max(0.0, 1.0 - float(weighted_brier_norm))
+                elif ece_norm is not None:
+                     score_calibration = max(0.0, 1.0 - float(ece_norm))
+
+                # ===== NEW COMBINED SCORE FORMULA =====
+                # Weights: AUC(30%), IC(20%), Calib(20%), SNR(15%), Density(15%)
+
+                # User Request: Modulate AUC by stability (std dev)
+                # If auc_cv_std is high (unstable), discount the AUC contribution.
+                # Threshold: 0.10 (if std > 0.10, AUC score becomes 0)
+                stability_factor = 1.0
+                if auc_cv_std is not None and np.isfinite(auc_cv_std):
+                    stability_factor = max(0.0, 1.0 - (float(auc_cv_std) / 0.10))
+
+                score_auc = max(0.0, (mean_auc - 0.50) * 2.0) * stability_factor
+                # User Request (Refined): Penalize negative IC and clip upside
+                score_ic = np.clip(ic * 5.0, -1.0, 1.0)
+                score_snr = min(1.0, snr_metric / 2.0)
+                score_density = density_score
+
+                # Base score [0, 1] mapped to [0, 100] scale
+                fidelity_score = (
+                    0.30 * score_auc +
+                    0.20 * score_ic +
+                    0.20 * score_calibration +
+                    0.15 * score_snr +
+                    0.15 * score_density
+                ) * 100.0
+
+                combined_score = (
+                    fidelity_score
+                    + sample_count_bonus
+                    + (edge_scaled * edge_weight * 0.5) # Reduced edge weight
+                    + balance_term
+                    - (penalty_density * 0.1)
+                    - (tto_penalty * 0.1)
+                    - (retention_asym_weight * retention_asym_penalty)
+                    - trail_geom_penalty
+                    - diagnostics_penalty
+                    - robustness_penalty
+                )
+
+                try:
+                    label_cfg = build_label_config(
+                        symbol=symbol,
+                        exchange=exchange,
+                        timeframe=timeframe,
+                        direction=direction,
+                        params=params,
+                        extra=None,
+                    )
+                    config_id = compute_label_config_id(label_cfg)
+                except Exception:
+                    config_id = None
+
+                # ===== DETAILED P&L STATS (NEW) =====
+                pnl_win_rate = 0.0
+                pnl_avg_win = 0.0
+                pnl_avg_loss = 0.0
+                pnl_profit_factor = 0.0
+                pnl_total_return = 0.0
+
+                try:
+                    # 'labeled_mask' is defined earlier as ~binary_labels.isna()
+                    if 'labeled_mask' in locals() and isinstance(realized_returns, pd.Series):
+                        valid_ret = realized_returns[labeled_mask]
+                        if len(valid_ret) > 0:
+                            pnl_total_return = float(valid_ret.sum())
+                            wins = valid_ret[valid_ret > 0]
+                            losses = valid_ret[valid_ret < 0]
+
+                            pnl_win_rate = float(len(wins) / len(valid_ret))
+
+                            if len(wins) > 0:
+                                pnl_avg_win = float(wins.mean())
+
+                            if len(losses) > 0:
+                                pnl_avg_loss = float(losses.mean())
+
+                            # NEW: Average return per trade (wins & losses)
+                            pnl_avg_ret = float(valid_ret.mean())
+
+                            loss_sum = abs(float(losses.sum()))
+                            if loss_sum > 1e-9:
+                                pnl_profit_factor = float(wins.sum()) / loss_sum
+                            elif len(wins) > 0:
+                                pnl_profit_factor = 100.0 # Capped infinite profit factor
+                except Exception:
+                    pass
+
+                # Store candidate configuration for later persistence
+                candidate_config = {
+                    'config_id': config_id,
+                    'params': params.copy(),
+                    'learnability': float(learnability_score),
+                    'mean_auc': float(mean_auc),
+                    'profitability': float(profitability_score),
+                    'edge': float(edge_score),
+                    'edge_scaled': float(edge_scaled),
+                    'combined': float(combined_score),
+                    'fidelity_score': float(fidelity_score), # NEW
+                    'ic': float(ic), # NEW
+                    'calibration_score': float(score_calibration), # NEW
+                    'mean_pos': float(mean_pos),
+                    'mean_neg': float(mean_neg),
+                    'sharpe_pos': float(sharpe_pos),
+                    'n_events': int(n_events),
+                    'n_raw_events': int(n_raw_events),
+                    'n_vol_scaled_events': int(n_vol_scaled_events),
+                    'balance_score': float(balance_score),
+                    'trades_per_day': float(trades_per_day),
+                    'mean_tto': float(mean_tto) if np.isfinite(mean_tto) else float('nan'),
+                    'timeout_rate': float(timeout_rate) if np.isfinite(timeout_rate) else float('nan'),
+                    'tto_penalty': float(tto_penalty),
+                    'n_pre_events': int(n_pre_total),
+                    'retention_total': float(retention_total),
+                    'retention_pos': float(retention_pos),
+                    'retention_neg': float(retention_neg),
+                    'snr_pre': float(snr_pre),
+                    'snr_post': float(snr_post),
+                    'effect_size_pre': float(d_pre) if np.isfinite(d_pre) else 0.0,
+                    'effect_size_post': float(d_post) if np.isfinite(d_post) else 0.0,
+                    'n_required_80pct_power': float(n_required_80),
+                    # CV-based robustness proxy from learnability probe
+                    'learnability_worst_fold_auc': float(worst_fold_auc_cv) if worst_fold_auc_cv is not None else None,
+                    'learnability_auc_cv_std': float(auc_cv_std) if auc_cv_std is not None else None,
+                    'model_complexity': model_complexity,
+                    # NEW: Track trade count control parameters
+                    'cusum_threshold': float(cusum_threshold),
+                    'target_signal_density': float(target_signal_density),
+                    'r_multiple_threshold': float(r_multiple_threshold),
+                    'effective_tx_cost': float(effective_tx_cost),
+                    'label_low_q': float(label_low_q),
+                    # NEW: Detailed P&L Stats
+                    'pnl_win_rate': float(pnl_win_rate),
+                    'pnl_avg_win': float(pnl_avg_win),
+                    'pnl_avg_loss': float(pnl_avg_loss),
+                    'pnl_profit_factor': float(pnl_profit_factor),
+                    'pnl_profit_factor': float(pnl_profit_factor),
+                    'pnl_total_return': float(pnl_total_return),
+                    'pnl_avg_ret_per_trade': float(pnl_avg_ret) if 'pnl_avg_ret' in locals() else 0.0,
+                    'pnl_per_day': float(pnl_total_return) / max(days_span, 1.0) if 'days_span' in locals() else 0.0,
+                    'label_high_q': float(label_high_q),
+                    # AUC range tracking (unified into auc_retention_adjusted)
+                    'auc_in_target_range': bool(auc_in_target_range),
+                    'auc_range_adjustment': float(auc_range_adjustment),
+                    'auc_weight_multiplier': float(auc_weight_multiplier),
+                    # NEW: CV fold diagnostics from learnability probe
+                    'fold_aucs': fold_aucs.tolist() if isinstance(fold_aucs, np.ndarray) else list(fold_aucs) if fold_aucs is not None else [],
+                    'auc_interpretation': (
+                        'too_noisy' if mean_auc < 0.54 else
+                        'good_edge' if mean_auc <= 0.62 else
+                        'excellent_check_leakage' if mean_auc <= 0.67 else
+                        'suspicious_leakage' if mean_auc > 0.70 else
+                        'above_target'
+                    ),
+                    # Retention regularization (unified objective)
+                    'retention_penalty': float(retention_penalty),
+                    'retention_asym_penalty': float(retention_asym_penalty),
+                    'auc_retention_adjusted': float(auc_retention_adjusted),
+                    'alpha_retention': float(alpha_retention),
+                    'weighted_brier': float(weighted_brier) if weighted_brier is not None else None,
+                    'weighted_brier_norm': float(weighted_brier_norm) if weighted_brier_norm is not None else None,
+                    'ece_norm': float(ece_norm) if ece_norm is not None else None,
+                    'mid_brier': float(mid_brier) if mid_brier is not None else None,
+                    'mid_brier_norm': float(mid_brier_norm) if mid_brier_norm is not None else None,
+                    'calibration_combo': float(calib_combo_value) if calib_combo_value is not None else None,
+                    'rank_calib_score': float(rank_calib_score),
+                    # NEW: Two-phase HPO and diagnostic gates
+                    'sample_count_bonus': float(sample_count_bonus),
+                    'mi_value': float(mi_value),
+                    'mi_penalty': float(mi_penalty),
+                    'prob_std': float(prob_std),
+                    'prob_variance_penalty': float(prob_variance_penalty),
+                    'single_bin_penalty': float(single_bin_penalty),
+                }
+
+                # Optional per-regime breakdown using attached HMM regimes, if available.
+                per_regime_metrics: Dict[str, Any] = {}
+                regime_coverage_penalty = 0.0  # NEW: Penalty for poor regime coverage
+                n_regimes_with_events = 0
+                try:
+                    if "hmm_regime_label_1h" in market_data.columns:
+                        regimes_all = market_data["hmm_regime_label_1h"]
+                        regimes_events = regimes_all[labeled_mask]
+
+                        # Align calibrated probabilities with labeled events
+                        try:
+                            probs_series_full = pd.Series(calibrated_probs, index=binary_labels.index)
+                            probs_events = probs_series_full[labeled_mask]
+                        except Exception:
+                            probs_events = None
+
+                        from sklearn.metrics import roc_auc_score as _roc_auc_score_reg
+
+                        unique_regs = pd.unique(regimes_events.dropna())
+
+                        # ===== NEW: STRATIFIED REGIME SAMPLING CHECK =====
+                        # Penalize configurations that have poor regime coverage
+                        min_events_per_regime = int(config.get("min_events_per_regime", 20))
+                        expected_n_regimes = int(config.get("expected_n_regimes", 5))
+
+                        for reg_val in unique_regs:
+                            reg_mask = regimes_events == reg_val
+                            n_reg = int(reg_mask.sum())
+                            if n_reg >= min_events_per_regime:
+                                n_regimes_with_events += 1
+
+                        # Penalty for missing regimes
+                        if n_regimes_with_events < expected_n_regimes:
+                            missing_regimes = expected_n_regimes - n_regimes_with_events
+                            regime_coverage_penalty = missing_regimes * 50.0  # 50 points per missing regime
+                            if debug_sample_count < debug_sample_limit:
+                                tprint_warning(
+                                    f"[REGIME_COVERAGE] Only {n_regimes_with_events}/{expected_n_regimes} regimes "
+                                    f"have >= {min_events_per_regime} events. Penalty={regime_coverage_penalty:.1f}"
+                                )
+                        for reg_val in unique_regs:
+                            try:
+                                reg_mask = regimes_events == reg_val
+                                n_reg = int(reg_mask.sum())
+                                if n_reg < 20:
+                                    continue
+
+                                returns_reg = returns_labeled[reg_mask]
+                                labels_reg = labels_labeled[reg_mask]
+
+                                r_pos_reg = returns_reg[labels_reg == 1]
+                                r_neg_reg = returns_reg[labels_reg == 0]
+
+                                mean_pos_reg = float(r_pos_reg.mean()) if len(r_pos_reg) > 0 else 0.0
+                                mean_neg_reg = float(r_neg_reg.mean()) if len(r_neg_reg) > 0 else 0.0
+
+                                # Realized AUC within this regime (diagnostic only)
+                                auc_reg_local = float("nan")
+                                if probs_events is not None:
+                                    try:
+                                        probs_reg = probs_events[reg_mask]
+                                        if len(labels_reg.unique()) >= 2:
+                                            auc_reg_local = float(_roc_auc_score_reg(labels_reg, probs_reg))
+                                    except Exception:
+                                        auc_reg_local = float("nan")
+
+                                # For edge, use the same cross-validated mean_auc and
+                                # Sharpe-like trade-count scaling as the global metric,
+                                # so that regime-level edges are directly comparable to
+                                # the reported best_edge.
+                                auc_for_edge = float(mean_auc)
+
+                                edge_reg = compute_realistic_pnl_edge(
+                                    mean_return_positive=mean_pos_reg,
+                                    mean_auc=auc_for_edge,
+                                    transaction_cost=tx,
+                                    n_trades=n_reg,
+                                    reference_trades=reference_trades,
+                                )
+
+                                trades_per_day_reg = float(n_reg) / max(days_span, 1)
+
+                                per_regime_metrics[str(reg_val)] = {
+                                    'n_events': n_reg,
+                                    'trades_per_day': trades_per_day_reg,
+                                    'mean_pos': mean_pos_reg,
+                                    'mean_neg': mean_neg_reg,
+                                    # Expose the aligned AUC used for edge, and keep the
+                                    # local realized AUC as an auxiliary diagnostic field.
+                                    'auc': auc_for_edge,
+                                    'auc_local': auc_reg_local,
+                                    'edge': edge_reg,
+                                }
+                            except Exception:
+                                continue
+                except Exception:
+                    per_regime_metrics = {}
+
+                # Attach per-regime metrics and optional regression diagnostics
+                if per_regime_metrics:
+                    candidate_config['per_regime_metrics'] = per_regime_metrics
+                    candidate_config['n_regimes_with_events'] = n_regimes_with_events
+                    candidate_config['regime_coverage_penalty'] = float(regime_coverage_penalty)
+                if reg_target_stats is not None:
+                    candidate_config['regression_target_stats'] = reg_target_stats
+
+                # Apply regime coverage penalty to combined score (after per-regime metrics computed)
+                combined_score -= regime_coverage_penalty
+                candidate_config['combined'] = float(combined_score)
+
+                # Append to candidate pool and log a concise summary for debugging
+                candidate_pool.append(candidate_config)
+                try:
+                    pool_size_after = len(candidate_pool)
+                    tprint_info(
+                        f"[CANDIDATE_APPEND] complexity={model_complexity} "
+                        f"edge={edge_score:.6f} combined={combined_score:.6f} "
+                        f"mean_auc={mean_auc:.6f} n_events={n_events} "
+                        f"pool_size={pool_size_after}"
+                    )
+                except Exception:
+                    # Logging must not interfere with HPO; ignore any formatting errors
+                    pass
+
+                return {
+                    'learnability': float(learnability_score),
+                    'profitability': float(profitability_score),
+                    'edge': float(edge_score),
+                    'combined': float(combined_score),
+                }
+
+            except Exception as exc:  # Defensive: never crash HPO on one config
+                tprint_warning(f"[EARLY_EXIT_EXCEPTION] Labeling objective failed: {exc}")
+                gate_stats["exception"] = gate_stats.get("exception", 0) + 1
+                gate_stats["last_exception"] = str(exc)
+                import traceback
+                traceback.print_exc()
+                return {'learnability': 0.0, 'profitability': -1e9, 'edge': -1e9, 'combined': -1e9}
+
+        # ------------------------------------------------------------------
+        # 4) Multi-objective wrapper for single-objective optimizers
+        # ------------------------------------------------------------------
+        def create_scalar_objective_wrapper(
+            model_complexity: str = "fast",
+            use_ensemble: bool = False,
+            compute_diagnostics: bool = False,
+        ) -> callable:
+            """Create a wrapper with specific complexity settings.
+
+            BayesianTPEOptimizer always calls the objective as objective(params), so
+            we close over X_dummy / y_dummy and complexity settings.
+            """
+            def wrapper(params: Dict[str, Any]) -> float:
+                result = labeling_objective(
+                    params, X_dummy, y_dummy,
+                    model_complexity=model_complexity,
+                    use_ensemble=use_ensemble,
+                    compute_diagnostics=compute_diagnostics,
+                )
+                if isinstance(result, dict):
+                    return float(result.get('edge', result.get('combined', 0.0)))
+                return float(result)
+            return wrapper
+
+        # ------------------------------------------------------------------
+        # 5) Convert param_groups to search space
+        # ------------------------------------------------------------------
+        tprint_info("🚀 Using Multi-Stage Bayesian TPE optimization")
+
+        # Convert param_groups (ParameterGroup instances) to a flat Optuna-style search space
+        initial_search_space: Dict[str, Dict[str, Any]] = {}
+        for group in param_groups:
+            for param_name, param_spec in group.params.items():
+                initial_search_space[param_name] = param_spec
+
+        if warm_start_candidates_df is not None and not warm_start_candidates_df.empty:
+            try:
+                shrinkable_params = [
+                    "profit_thr_base",
+                    "stop_to_profit_ratio",
+                    "horizon_bars",
+                    "min_event_spacing",
+                    "vol_baseline_window",
+                    "profit_mult_min",
+                    "profit_mult_max",
+                    "stop_mult_min",
+                    "stop_mult_max",
+                    "iso_min_prob",
+                    "target_clip_high_q",
+                    "econ_min_return_multiple",
+                    "label_low_q",
+                    "label_high_q",
+                    "signal_strength_scale_max",
+                    # NEW parameters for trade count control
+                    "cusum_threshold",
+                    "target_signal_density",
+                    "r_multiple_pos_threshold",
+                    "transaction_cost_mult",
+                    "kalman_Q",
+                    "kalman_R",
+                ]
+                for p in shrinkable_params:
+                    if p not in initial_search_space:
+                        continue
+                    if p not in warm_start_candidates_df.columns:
+                        continue
+                    spec = initial_search_space.get(p, {})
+                    if not isinstance(spec, dict):
+                        continue
+                    ptype = spec.get("type", "float")
+                    if ptype not in ["float", "int"]:
+                        continue
+                    series = warm_start_candidates_df[p].dropna()
+                    if series.empty or len(series) < 20:
+                        continue
+                    try:
+                        q_low = float(series.quantile(0.10))
+                        q_high = float(series.quantile(0.90))
+                    except Exception:
+                        continue
+                    low = spec.get("low")
+                    high = spec.get("high")
+                    if low is None or high is None:
+                        continue
+                    new_low = max(float(low), q_low)
+                    new_high = min(float(high), q_high)
+                    if new_high <= new_low:
+                        continue
+                    new_spec = spec.copy()
+                    if ptype == "int":
+                        new_spec["low"] = int(new_low)
+                        new_spec["high"] = int(max(new_high, new_low + 1))
+                    else:
+                        new_spec["low"] = float(new_low)
+                        new_spec["high"] = float(new_high)
+                    initial_search_space[p] = new_spec
+                tprint_info("📌 Warm-start: narrowed search space around previous candidate quantiles")
+            except Exception:
+                pass
+
+        # ------------------------------------------------------------------
+        # 6) Multi-Stage HPO Execution Loop
+        # ------------------------------------------------------------------
+        # Parameters optimized per stage:
+        # Stage 1: horizon_bars, min_event_spacing, target_transform (iso/clipping,
+        #          econ_min_return_multiple, label quantiles, signal strength
+        #          scaling) + kalman_Q, kalman_R, vol_baseline_window,
+        #          profit_mult_min/max, stop_mult_min/max
+        # Stage 2: kalman_Q, kalman_R, vol_baseline_window, profit_mult_min/max,
+        #          stop_mult_min/max
+        # Stage 3: All parameters (profit_thr_base, stop_to_profit_ratio,
+        #          iso_min_prob, target_transform refinements, etc.)
+        # Stage 4: Filtering parameters only (label_low_q, label_high_q, econ_min_return_multiple, etc.)
+        #          with fixed structural parameters.
+        #
+        # The multi-stage process progressively increases model complexity to find
+        # configurations that are both profitable AND learnable by production models.
+
+        # Define which parameters to optimize at each stage
+        if calibrated_horizon is not None:
+            stage_1_params = [
+                'min_event_spacing',
+                'cusum_threshold', 'target_signal_density',
+                'profit_thr_base', 'stop_to_profit_ratio', 'trail_distance',
+                'iso_min_prob', 'target_clip_high_q',
+                'econ_min_return_multiple', 'label_low_q', 'label_high_q',
+                'signal_strength_scale_max',
+                'r_multiple_pos_threshold', 'transaction_cost_mult',
+                'kalman_Q', 'kalman_R', 'vol_baseline_window',
+                'profit_mult_min', 'profit_mult_max', 'stop_mult_min', 'stop_mult_max',
+            ]
+            stage_2_params = [
+                'kalman_Q', 'kalman_R', 'vol_baseline_window',
+                'profit_mult_min', 'profit_mult_max', 'stop_mult_min', 'stop_mult_max'
+            ]
+        else:
+            stage_1_params = [
+                'horizon_bars', 'min_event_spacing',
+                'cusum_threshold', 'target_signal_density',
+                'profit_thr_base', 'stop_to_profit_ratio', 'trail_distance',
+                'iso_min_prob', 'target_clip_high_q',
+                'econ_min_return_multiple', 'label_low_q', 'label_high_q',
+                'signal_strength_scale_max',
+                'r_multiple_pos_threshold', 'transaction_cost_mult',
+                'kalman_Q', 'kalman_R', 'vol_baseline_window',
+                'profit_mult_min', 'profit_mult_max', 'stop_mult_min', 'stop_mult_max',
+            ]
+            stage_2_params = [
+                'kalman_Q', 'kalman_R', 'vol_baseline_window',
+                'profit_mult_min', 'profit_mult_max', 'stop_mult_min', 'stop_mult_max'
+            ]
+
+        # Stage 4 specific params (filtering/labeling only)
+        # ENHANCED: Include all trade count-affecting parameters for final refinement
+        stage_4_params = [
+            'label_low_q', 'label_high_q',
+            'econ_min_return_multiple',
+            'iso_min_prob', 'target_clip_high_q',
+            'signal_strength_scale_max',
+            'r_multiple_pos_threshold',  # NEW: R-multiple threshold
+            'transaction_cost_mult',  # NEW: transaction cost sensitivity
+            'cusum_threshold', 'target_signal_density',  # NEW: signal density
+        ]
+
+        # Stage 3 uses all parameters (optionally treating horizon_bars as fixed when calibrated)
+
+        stages = STAGE_CONFIGS
+        stage_results: List[Dict[str, Any]] = []
+        all_trials_count = 0
+        best_overall_score = float('-inf')
+        best_overall_params = {}
+
+        # Track best params from each stage to use as defaults for fixed params
+        accumulated_best_params: Dict[str, Any] = {}
+        if calibrated_horizon is not None:
+            accumulated_best_params["horizon_bars"] = int(calibrated_horizon)
+
+        for stage_idx, stage in enumerate(stages):
+            tprint_info(f"🚀 Starting {stage['name']} with complexity={stage['complexity']}...")
+
+            # Determine which parameters to optimize in this stage
+            if stage_idx == 0:  # Stage 1
+                active_params = stage_1_params
+            elif stage_idx == 1:  # Stage 2
+                active_params = stage_2_params
+            elif stage_idx == 2:  # Stage 3 - all parameters
+                if calibrated_horizon is not None:
+                    active_params = [
+                        k for k in initial_search_space.keys()
+                        if k != 'horizon_bars'
+                    ]
+                else:
+                    active_params = list(initial_search_space.keys())
+            else:  # Stage 4 - Labeling Refinement
+                active_params = stage_4_params
+
+            # Create stage-specific search space
+            current_search_space = {
+                k: v for k, v in initial_search_space.items()
+                if k in active_params
+            }
+
+            tprint_info(f"   Optimizing parameters: {list(current_search_space.keys())}")
+
+            # Create objective wrapper that merges optimized params with fixed params from previous stages
+            def create_stage_objective_wrapper(
+                model_complexity: str,
+                use_ensemble: bool,
+                compute_diagnostics: bool,
+                fixed_params: Dict[str, Any],
+                use_stage1_subsample: bool,
+                stage_name: str,
+            ) -> callable:
+                """Create a wrapper that injects fixed params from previous stages."""
+                def wrapper(params: Dict[str, Any]) -> float:
+                    nonlocal market_data, primary_signals, volatility_1d, days_span, atr_series
+                    # Track candidate_pool length before/after to detect append vs skip
+                    pool_size_before = len(candidate_pool)
+                    if use_stage1_subsample and model_complexity == "fast" and stage1_enable_subsample:
+                        md_backup = market_data
+                        ps_backup = primary_signals
+                        vol_backup = volatility_1d
+                        atr_backup = atr_series
+                        days_backup = days_span
+                        try:
+                            market_data = stage1_market_data
+                            primary_signals = stage1_primary_signals
+                            volatility_1d = stage1_volatility_1d
+                            atr_series = stage1_atr_series
+                            days_span = stage1_days_span
+                            full_params = {**fixed_params, **params}
+                            result = labeling_objective(
+                                full_params, X_dummy, y_dummy,
+                                model_complexity=model_complexity,
+                                use_ensemble=use_ensemble,
+                                compute_diagnostics=compute_diagnostics,
+                            )
+                        finally:
+                            market_data = md_backup
+                            primary_signals = ps_backup
+                            volatility_1d = vol_backup
+                            atr_series = atr_backup
+                            days_span = days_backup
+                    else:
+                        full_params = {**fixed_params, **params}
+                        result = labeling_objective(
+                            full_params, X_dummy, y_dummy,
+                            model_complexity=model_complexity,
+                            use_ensemble=use_ensemble,
+                            compute_diagnostics=compute_diagnostics,
+                        )
+
+                    # Derive scalar objective value (edge-first, fallback to combined)
+                    if isinstance(result, dict):
+                        edge_val = float(result.get('edge', result.get('combined', 0.0)))
+                        combined_val = float(result.get('combined', edge_val))
+                    else:
+                        edge_val = float(result)
+                        combined_val = float('nan')
+
+                    # Inspect candidate_pool to see if this trial produced a candidate
+                    pool_size_after = len(candidate_pool)
+                    if pool_size_after > pool_size_before:
+                        # Last entry should correspond to this trial
+                        last_cand = candidate_pool[-1]
+                        mean_auc_cand = last_cand.get('mean_auc')
+                        n_events_cand = last_cand.get('n_events')
+                        tprint_info(
+                            f"[HPO_TRIAL] stage={stage_name} complexity={model_complexity} "
+                            f"decision=APPEND edge={edge_val:.6f} combined={combined_val:.6f} "
+                            f"mean_auc={mean_auc_cand:.6f} n_events={n_events_cand} "
+                            f"pool_size={pool_size_after}"
+                        )
+                    else:
+                        tprint_info(
+                            f"[HPO_TRIAL] stage={stage_name} complexity={model_complexity} "
+                            f"decision=SKIP edge={edge_val:.6f} combined={combined_val:.6f} "
+                            f"pool_size={pool_size_after}"
+                        )
+
+                    return edge_val
+                return wrapper
+
+            if stage_idx in (0, 1):
+                stage_param_groups: list[list[str]] = []
+                if stage_idx == 0:
+                    # Stage 1 (fast model, subsampled data):
+                    # Group A – event shape / density + signal generation
+                    if calibrated_horizon is not None:
+                        stage_param_groups.append(['min_event_spacing', 'cusum_threshold', 'target_signal_density', 'trail_distance'])
+                    else:
+                        stage_param_groups.append(['horizon_bars', 'min_event_spacing', 'cusum_threshold', 'target_signal_density', 'trail_distance'])
+                    # Group B – TPSL geometry
+                    stage_param_groups.append(['profit_mult_min', 'profit_mult_max', 'stop_mult_min', 'stop_mult_max'])
+                    # Group C – smoothing
+                    stage_param_groups.append(['kalman_Q', 'kalman_R'])
+                    # Group D – target transform (clipping, econ floor, label quantiles,
+                    # and signal-strength weighting strength) + trade filters
+                    stage_param_groups.append([
+                        'iso_min_prob', 'target_clip_high_q',
+                        'econ_min_return_multiple', 'label_low_q', 'label_high_q',
+                        'signal_strength_scale_max',
+                        'r_multiple_pos_threshold', 'transaction_cost_mult',  # NEW
+                    ])
+                else:
+                    # Stage 2 (medium model, full data): smoothing + TPSL/vol
+                    stage_param_groups.append(['kalman_Q', 'kalman_R'])
+                    stage_param_groups.append(['vol_baseline_window', 'profit_mult_min', 'profit_mult_max', 'stop_mult_min', 'stop_mult_max'])
+
+                stage_best_score = float('-inf')
+                stage_best_params: Dict[str, Any] = {}
+                stage_trials_total = 0
+
+                n_groups = max(1, len(stage_param_groups))
+
+                for group_idx, group_params in enumerate(stage_param_groups):
+                    group_search_space = {
+                        k: v for k, v in current_search_space.items()
+                        if k in group_params
+                    }
+                    if not group_search_space:
+                        continue
+
+                    # Fixed params: best from previous stages and previous groups in this stage
+                    group_fixed_params = {
+                        k: v for k, v in accumulated_best_params.items()
+                        if k not in group_search_space
+                    }
+
+                    group_objective = create_stage_objective_wrapper(
+                        model_complexity=stage["complexity"],
+                        use_ensemble=(stage["complexity"] == "strong"),
+                        compute_diagnostics=(stage_idx == len(stages) - 1 and group_idx == len(stage_param_groups) - 1),
+                        fixed_params=group_fixed_params,
+                        use_stage1_subsample=(stage_idx == 0),
+                        stage_name=stage["name"],
+                    )
+
+                    group_n_trials = max(5, stage["n_trials"] // n_groups)
+
+                    group_config = OptimizationConfig(
+                        n_trials=group_n_trials,
+                        execution_mode=config.get("execution_mode", "full"),
+                        direction='maximize',
+                        # For small groups, use direct TPE (no internal grid) for speed
+                        enable_staged_optimization=False,
+                        coarse_grid_trials=0,
+                        fine_grid_trials=0,
+                        tpe_trials=group_n_trials,
+                        enable_hardware_optimization=False,
+                        enable_vectorbt_optimization=False,
+                        early_stopping_patience=max(5, group_n_trials // 3),
+                        early_stopping_threshold=None,
+                        seed=42 + stage_idx * 10 + group_idx,
+                    )
+
+                    group_optimizer = BayesianTPEOptimizer(config=group_config)
+
+                    tprint_info(
+                        f"   → Group {group_idx + 1}/{len(stage_param_groups)} params={list(group_search_space.keys())}, "
+                        f"trials={group_n_trials}"
+                    )
+
+                    try:
+                        group_result = group_optimizer.optimize(
+                            objective=group_objective,
+                            search_space=group_search_space,
+                        )
+                        group_best_params = group_result.get('best_params', {})
+                        group_best_score = group_result.get('best_value', 0.0)
+                        group_trials = int(group_result.get('n_trials', group_n_trials))
+
+                        stage_trials_total += group_trials
+
+                        if group_best_score > stage_best_score:
+                            stage_best_score = group_best_score
+
+                        # Accumulate params from this group
+                        accumulated_best_params.update(group_best_params)
+                        stage_best_params.update(group_best_params)
+
+                        tprint_success(
+                            f"   ✅ Group {group_idx + 1}/{len(stage_param_groups)} complete: "
+                            f"best_score={group_best_score:.4f}, trials={group_trials}"
+                        )
+
+                    except Exception as group_exc:
+                        tprint_warning(
+                            f"   ⚠️ Stage {stage['name']} group {group_idx + 1} failed: {group_exc}"
+                        )
+                        import traceback
+                        traceback.print_exc()
+                        continue
+
+                if stage_best_score == float('-inf'):
+                    # No successful groups; fall back to next stage
+                    continue
+
+                all_trials_count += stage_trials_total
+
+                if stage_best_score > best_overall_score:
+                    best_overall_score = stage_best_score
+                    best_overall_params = stage_best_params.copy()
+
+                stage_results.append({
+                    'stage': stage['name'],
+                    'complexity': stage['complexity'],
+                    'best_score': stage_best_score,
+                    'best_params': stage_best_params,
+                    'trials': stage_trials_total,
+                })
+
+                # For Stage 1 (index 0), shrink Stage 2 search space using fast-model candidates
+                if stage_idx == 0:
+                    stage_candidates_fast = [
+                        c for c in candidate_pool
+                        if c.get('model_complexity') == stage['complexity']
+                    ]
+                    if stage_candidates_fast:
+                        try:
+                            initial_search_space = shrink_search_space(
+                                original_space=initial_search_space,
+                                previous_results=stage_candidates_fast,
+                                top_k=stage['top_k_to_pass'],
+                            )
+                            tprint_info(
+                                f"   📉 Narrowed Stage 2 search space based on "
+                                f"Top {min(len(stage_candidates_fast), stage['top_k_to_pass'])} candidates"
+                            )
+                        except Exception:
+                            pass
+
+                # For Stage 2 (index 1), shrink Stage 3 search space using medium-model candidates
+                if stage_idx == 1:
+                    stage_candidates = [
+                        c for c in candidate_pool
+                        if c.get('model_complexity') == stage['complexity']
+                    ]
+                    if stage_candidates:
+                        try:
+                            initial_search_space = shrink_search_space(
+                                original_space=initial_search_space,
+                                previous_results=stage_candidates,
+                                top_k=stage['top_k_to_pass'],
+                            )
+                            tprint_info(
+                                f"   📉 Narrowed Stage 3 search space based on "
+                                f"Top {min(len(stage_candidates), stage['top_k_to_pass'])} candidates"
+                            )
+                        except Exception:
+                            pass
+
+                tprint_success(
+                    f"   ✅ {stage['name']} complete (hierarchical groups): "
+                    f"best_score={stage_best_score:.4f}, trials={stage_trials_total}"
+                )
+
+                # Done with this stage; move to next global stage
+                continue
+
+            # Get fixed params: best values from previous stages for params not being optimized
+            fixed_params = {
+                k: v for k, v in accumulated_best_params.items()
+                if k not in current_search_space
+            }
+
+            # Create stage-level objective for non-grouped stages
+            stage_objective = create_stage_objective_wrapper(
+                model_complexity=stage["complexity"],
+                use_ensemble=(stage["complexity"] == "strong"),
+                compute_diagnostics=(stage_idx == len(stages) - 1),
+                fixed_params=fixed_params,
+                use_stage1_subsample=False,
+                stage_name=stage["name"],
+            )
+
+            bayesian_config = OptimizationConfig(
+                n_trials=stage["n_trials"],
+                execution_mode=config.get("execution_mode", "full"),
+                direction='maximize',
+                # Staged optimization settings (use TPE directly for speed)
+                enable_staged_optimization=(stage_idx == 0),  # Only use grid in first stage
+                coarse_grid_trials=min(15, stage["n_trials"] // 5) if stage_idx == 0 else 0,
+                fine_grid_trials=min(10, stage["n_trials"] // 10) if stage_idx == 0 else 0,
+                tpe_trials=stage["n_trials"] - (25 if stage_idx == 0 else 0),
+                # Disable hardware/VectorBT-specific acceleration
+                enable_hardware_optimization=False,
+                enable_vectorbt_optimization=False,
+                # Early stopping per trial
+                early_stopping_patience=max(5, stage["n_trials"] // 5),
+                early_stopping_threshold=None,
+                # Reproducibility
+                seed=42 + stage_idx,
+            )
+
+            optimizer = BayesianTPEOptimizer(config=bayesian_config)
+
+            # Run optimization for this stage
+            tprint_info(f"   Running {stage['n_trials']} trials with {stage['complexity']} model...")
+
+            try:
+                result = optimizer.optimize(
+                    objective=stage_objective,
+                    search_space=current_search_space,
+                )
+
+                stage_best_params = result.get('best_params', {})
+                stage_best_score = result.get('best_value', 0.0)
+                stage_trials = result.get('total_trials', stage["n_trials"])
+
+                all_trials_count += stage_trials
+
+                # Track best overall
+                if stage_best_score > best_overall_score:
+                    best_overall_score = stage_best_score
+                    best_overall_params = stage_best_params.copy()
+
+                # Accumulate best params from this stage for use in subsequent stages
+                accumulated_best_params.update(stage_best_params)
+
+                tprint_success(
+                    f"   ✅ {stage['name']} complete: "
+                    f"best_score={stage_best_score:.4f}, trials={stage_trials}"
+                )
+
+                # Store stage results
+                stage_results.append({
+                    'stage': stage['name'],
+                    'complexity': stage['complexity'],
+                    'best_score': stage_best_score,
+                    'best_params': stage_best_params,
+                    'trials': stage_trials,
+                })
+
+                # Get candidates from this stage
+                stage_candidates = [
+                    c for c in candidate_pool
+                    if c.get('model_complexity') == stage['complexity']
+                ]
+
+                # Identify best candidate from this stage for explicit reporting
+                if stage_candidates:
+                    best_cand = max(stage_candidates, key=lambda x: x.get('edge', x.get('combined', 0)))
+                    tprint_info(
+                        f"   🏆 Best candidate {stage['name']}: "
+                        f"Edge={best_cand.get('edge', 0):.4f}, "
+                        f"AUC={best_cand.get('mean_auc', 0):.3f}, "
+                        f"Trades/Day={best_cand.get('trades_per_day', 0):.2f}, "
+                        f"Raw={best_cand.get('n_raw_events', 0)} → Vol={best_cand.get('n_vol_scaled_events', 0)} → Final={best_cand.get('n_events', 0)}"
+                    )
+
+                # For 4-stage setup:
+                # - After Stage 1 (index 0): Shrink space for Stage 2 using fast-model candidates.
+                # - After Stage 2 (index 1): Shrink space for Stage 3 (handled above in group block or here if not group)
+                # - After Stage 3 (index 2): No shrinking needed for Stage 4 because Stage 4 uses a specific subset
+                #   of parameters (labeling only), and structural params are fixed via accumulated_best_params.
+                if stage_idx == 0 and stage_candidates:
+                    try:
+                        initial_search_space = shrink_search_space(
+                            original_space=initial_search_space,
+                            previous_results=stage_candidates,
+                            top_k=stage['top_k_to_pass'],
+                        )
+                        tprint_info(
+                            f"   📉 Narrowed Stage 2 search space based on "
+                            f"Top {min(len(stage_candidates), stage['top_k_to_pass'])} candidates"
+                        )
+                    except Exception:
+                        pass
+
+                if stage_idx == 1 and stage_candidates:
+                    try:
+                        initial_search_space = shrink_search_space(
+                            original_space=initial_search_space,
+                            previous_results=stage_candidates,
+                            top_k=stage['top_k_to_pass'],
+                        )
+                        tprint_info(
+                            f"   📉 Narrowed Stage 3 search space based on "
+                            f"Top {min(len(stage_candidates), stage['top_k_to_pass'])} candidates"
+                        )
+                    except Exception:
+                        pass
+
+                # Per-stage early stopping: if no improvement in this stage, move to next
+                # (This is handled by the optimizer's early_stopping_patience setting)
+
+            except Exception as stage_exc:
+                tprint_warning(f"   ⚠️ Stage {stage['name']} failed: {stage_exc}")
+                import traceback
+                traceback.print_exc()
+                # Continue to next stage or use best so far
+                continue
+
+        # Final best from all stages
+        best_params = best_overall_params
+        best_score = best_overall_score
+
+        tprint_info(f"   Total trials across all stages: {all_trials_count}")
+
+        tprint_success(f"✅ Labeling HPO completed. Best edge={best_score:.6f}")
+        tprint_info(f"Best parameters: {best_params}")
+
+        # Extract best candidate's detailed metrics for summary
+        best_candidate_metrics = {}
+        try:
+            if candidate_pool:
+                best_candidate = None
+
+                for cand in candidate_pool:
+                    cand_params = cand.get("params", {})
+                    if cand_params == best_params:
+                        best_candidate = cand
+                        break
+
+                if best_candidate is None:
+                    try:
+                        target_edge = float(best_score)
+                        tol = max(1e-9, abs(target_edge) * 1e-6)
+                        for cand in candidate_pool:
+                            edge_val = float(cand.get("edge", float("nan")))
+                            if np.isfinite(edge_val) and abs(edge_val - target_edge) <= tol:
+                                best_candidate = cand
+                                break
+                    except Exception:
+                        best_candidate = None
+
+                if best_candidate is None:
+                    try:
+                        best_candidate = max(
+                            candidate_pool,
+                            key=lambda c: c.get("edge", c.get("combined", float("-inf"))),
+                        )
+                    except Exception:
+                        best_candidate = None
+
+                if best_candidate is not None:
+                    best_candidate_metrics = {
+                        "mean_auc": float(best_candidate.get("mean_auc", 0.5)),
+                        "trades_per_day": float(best_candidate.get("trades_per_day", 0.0)),
+                        "learnability": float(best_candidate.get("learnability", 0.0)),
+                        "profitability": float(best_candidate.get("profitability", 0.0)),
+                        "sharpe_pos": float(best_candidate.get("sharpe_pos", 0.0)),
+                        "balance_score": float(best_candidate.get("balance_score", 0.0)),
+                        "n_events": int(best_candidate.get("n_events", 0)),
+                    }
+        except Exception as metric_exc:
+            tprint_warning(f"⚠️ Failed to extract best candidate metrics: {metric_exc}")
+            best_candidate_metrics = {}
+
+        # ------------------------------------------------------------------
+        # HPO METRIC CORRELATION ANALYSIS (User Request)
+        # ------------------------------------------------------------------
+        try:
+            if len(candidate_pool) >= 10:
+                tprint_info("📊 Computing HPO Metric Correlations (Fidelity vs Downstream Proxy)...")
+                # Extract key metrics
+                corr_data = []
+                for c in candidate_pool:
+                    c_metrics = {
+                        'IC': float(c.get('ic', 0.0)),
+                        'Fidelity': float(c.get('fidelity_score', 0.0)),
+                        'AUC': float(c.get('mean_auc', 0.5)),
+                        'Calibration': float(c.get('calibration_score', 0.0)),
+                        'Edge': float(c.get('edge', 0.0)),
+                        'Profit': float(c.get('profitability', 0.0)),
+                        'Learnability': float(c.get('learnability', 0.0)),
+                        'Combined': float(c.get('combined', 0.0)),
+                    }
+                    corr_data.append(c_metrics)
+
+                df_corr = pd.DataFrame(corr_data)
+                # Compute correlation matrix
+                corr_matrix = df_corr.corr()
+
+                tprint_info("\n" + "="*50)
+                tprint_info("🎯 HPO OBJECTIVE CORRELATION MATRIX")
+                tprint_info("="*50)
+                tprint_info(str(corr_matrix.round(3)))
+
+                # Highlight key relationships
+                ic_edge = corr_matrix.loc['IC', 'Edge']
+                auc_edge = corr_matrix.loc['AUC', 'Edge']
+                calib_edge = corr_matrix.loc['Calibration', 'Edge']
+
+                tprint_info("-" * 40)
+                tprint_info(f"Does Fidelity predict Profitability (Edge)?")
+                tprint_info(f"  • IC vs Edge:          {ic_edge:.3f} " + ("✅ Strong positive" if ic_edge > 0.3 else "⚠️ Weak/Negative" if ic_edge < 0 else ""))
+                tprint_info(f"  • AUC vs Edge:         {auc_edge:.3f}")
+                tprint_info(f"  • Calibration vs Edge: {calib_edge:.3f}")
+                tprint_info("-" * 40 + "\n")
+        except Exception as corr_exc:
+            tprint_warning(f"⚠️ Correlation analysis failed: {corr_exc}")
+
+        # ------------------------------------------------------------------
+        # SAVE FULL TRIALS REPORT (User Request)
+        # ------------------------------------------------------------------
+        try:
+            if candidate_pool:
+                tprint_info("💾 Saving full HPO trials report...")
+                # Flatten params into columns
+                report_data = []
+                for c in candidate_pool:
+                    row = c.copy()
+                    # Flatten params dict
+                    if 'params' in row:
+                        p_dict = row.pop('params')
+                        for k, v in p_dict.items():
+                            row[k] = v
+                    report_data.append(row)
+
+                df_report = pd.DataFrame(report_data)
+
+                # Timestamped filename
+                timestamp_str = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+                report_path = outcomes_dir / f"meta_labeling_hpo_trials_{symbol}_{timestamp_str}.csv"
+                df_report.to_csv(report_path, index=False)
+                tprint_success(f"✅ Saved HPO trials report to: {report_path}")
+        except Exception as report_exc:
+            tprint_warning(f"⚠️ Failed to save trials report: {report_exc}")
+
+        # ------------------------------------------------------------------
+        # 7) COMPREHENSIVE DIAGNOSTICS FOR BEST CONFIG
+        # ------------------------------------------------------------------
+        # These diagnostics are computed ONLY for the best config, not during HPO
+        tprint_info("🔍 Computing comprehensive diagnostics for best configuration...")
+
+        best_config_diagnostics = {}
+        try:
+            # Re-run labeling with best params to get intermediate data
+            diag_params = best_params.copy()
+
+            # For diagnostics (including two-stage bagged meta-model), prefer the
+            # full lookback window if available, even when HPO itself used a
+            # shorter multi-slice subset.
+            market_data_diag = None
+            try:
+                if "market_data_full_for_diagnostics" in locals() and isinstance(
+                    market_data_full_for_diagnostics, pd.DataFrame
+                ):
+                    market_data_diag = market_data_full_for_diagnostics.copy()
+            except Exception:
+                market_data_diag = None
+
+            if market_data_diag is None:
+                market_data_diag = market_data.copy()
+
+            try:
+                primary_signals_diag = generate_primary_signals(market_data_diag.copy())
+            except Exception:
+                try:
+                    primary_signals_diag = primary_signals.reindex(market_data_diag.index)
+                except Exception:
+                    primary_signals_diag = pd.Series(0, index=market_data_diag.index)
+
+            log_ret_diag = np.log(market_data_diag["close"]).diff()
+            volatility_1d = log_ret_diag.rolling(96).std()
+
+            # Override shared variables so that subsequent diagnostics operate
+            # on the full diagnostics window.
+            market_data = market_data_diag
+            primary_signals = primary_signals_diag
+
+            # Extract parameters
+            profit_thr_base = float(diag_params.get("profit_thr_base", 0.012))
+            stop_ratio = float(diag_params.get("stop_to_profit_ratio", 0.5))
+            stop_thr_base = max(0.0005, profit_thr_base * stop_ratio)
+            horizon = int(diag_params.get("horizon_bars", 24))
+            min_spacing = int(diag_params.get("min_event_spacing", 0))
+            econ_min_mult = float(diag_params.get("econ_min_return_multiple", 1.5))
+            label_low_q = float(diag_params.get("label_low_q", 0.40))
+            label_high_q = float(diag_params.get("label_high_q", 0.60))
+            tx_cost_mult = float(diag_params.get("transaction_cost_mult", 1.0))
+            tx_cost_mult = max(1.0, min(1.2, tx_cost_mult))
+            effective_tx_cost = DEFAULT_TRANSACTION_COST * tx_cost_mult
+            vol_baseline_window = int(diag_params.get("vol_baseline_window", 96))
+            profit_mult_min = float(diag_params.get("profit_mult_min", 0.5))
+            profit_mult_max = float(diag_params.get("profit_mult_max", 2.0))
+            stop_mult_min = float(diag_params.get("stop_mult_min", 0.5))
+            stop_mult_max = float(diag_params.get("stop_mult_max", 2.0))
+
+            # Extract trailing distance if available
+            trail_dist_diag = float(diag_params.get("trail_distance", 0.0))
+
+            # Recompute ATR for diagnostics
+            high_prices = market_data["high"] if "high" in market_data.columns else market_data["close"]
+            low_prices = market_data["low"] if "low" in market_data.columns else market_data["close"]
+            close_prices = market_data["close"]
+            tr1 = high_prices - low_prices
+            tr2 = (high_prices - close_prices.shift(1)).abs()
+            tr3 = (low_prices - close_prices.shift(1)).abs()
+            true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+            atr_series_diag = true_range.rolling(window=14, min_periods=1).mean()
+
+            # Compute adaptive thresholds
+            vol_baseline = volatility_1d.rolling(vol_baseline_window).mean()
+            vol_factor = volatility_1d / (vol_baseline + 1e-8)
+
+            adaptive_profit = profit_thr_base * vol_factor
+            adaptive_stop = stop_thr_base * vol_factor
+            adaptive_profit = adaptive_profit.clip(
+                lower=profit_thr_base * profit_mult_min,
+                upper=profit_thr_base * profit_mult_max,
+            )
+            adaptive_stop = adaptive_stop.clip(
+                lower=stop_thr_base * stop_mult_min,
+                upper=stop_thr_base * stop_mult_max,
+            )
+
+            # Compute realized returns
+            (
+                realized_returns_diag,
+                binary_labels_raw,
+                exit_reasons_diag,
+                event_durations_diag,
+                mfe_diag,
+                mae_diag,
+                _, _
+            ) = compute_realized_returns(
+                market_data,
+                primary_signals,
+                profit_threshold=adaptive_profit,
+                stop_threshold=adaptive_stop,
+                horizon=horizon,
+                transaction_cost=effective_tx_cost,
+                min_event_spacing=min_spacing,
+                atr_series=atr_series_diag,
+                trail_distance_atr_mult=trail_dist_diag,
+            )
+
+            # Vol-scaled returns and quantile labels
+            vol_scaled_diag = compute_vol_scaled_returns_for_events(
+                realized_returns=realized_returns_diag,
+                volatility=volatility_1d,
+                econ_min_return_multiple=econ_min_mult,
+            )
+
+            regimes_diag = None
+            try:
+                # Prefer causal volatility regimes over HMM regimes for diagnostics
+                if "volatility_regime" in market_data.columns:
+                    regimes_diag = market_data["volatility_regime"]
+                elif "vol_regime_high" in market_data.columns or "vol_regime_medium" in market_data.columns:
+                    # Derive simple categorical regimes from volatility dummies
+                    regime_labels: list[str] = []
+                    has_high = "vol_regime_high" in market_data.columns
+                    has_med = "vol_regime_medium" in market_data.columns
+                    for idx in market_data.index:
+                        if has_high and market_data.at[idx, "vol_regime_high"] == 1:
+                            regime_labels.append("high")
+                        elif has_med and market_data.at[idx, "vol_regime_medium"] == 1:
+                            regime_labels.append("medium")
+                        else:
+                            regime_labels.append("low")
+                    regimes_diag = pd.Series(regime_labels, index=market_data.index)
+                elif "hmm_regime_label_1h" in market_data.columns:
+                    # Fallback to HMM regimes only if volatility regimes are unavailable
+                    regimes_diag = market_data["hmm_regime_label_1h"]
+            except Exception:
+                regimes_diag = None
+
+            if regimes_diag is not None:
+                quantile_labels_diag = create_regime_aware_quantile_labels_from_vol_scaled_returns(
+                    vol_scaled=vol_scaled_diag,
+                    regimes=regimes_diag,
+                    low_q=label_low_q,
+                    high_q=label_high_q,
+                )
+            else:
+                quantile_labels_diag = create_quantile_labels_from_vol_scaled_returns(
+                    vol_scaled=vol_scaled_diag,
+                    low_q=label_low_q,
+                    high_q=label_high_q,
+                )
+
+            # Tail exit-return diagnostics: mean net_return by exit_reason
+            # for positive (label=1) and negative (label=0) quantile tails.
+            try:
+                tail_exit_stats: Dict[str, Any] = {}
+                df_tail = pd.DataFrame(
+                    {
+                        "label": quantile_labels_diag,
+                        "ret": realized_returns_diag,
+                        "exit": exit_reasons_diag,
+                    }
+                )
+                df_tail = df_tail.dropna(subset=["label", "ret", "exit"])
+
+                for tail_label, tail_name in [(1.0, "positive"), (0.0, "negative")]:
+                    mask_tail = df_tail["label"] == tail_label
+                    if not mask_tail.any():
+                        continue
+                    grouped = df_tail.loc[mask_tail].groupby("exit")["ret"].agg(["mean", "count"])
+                    stats: Dict[str, Any] = {}
+                    for exit_reason, row in grouped.iterrows():
+                        stats[str(exit_reason)] = {
+                            "mean": float(row["mean"]),
+                            "n": int(row["count"]),
+                        }
+                    tail_exit_stats[tail_name] = stats
+
+                if tail_exit_stats:
+                    best_config_diagnostics["tail_exit_stats"] = tail_exit_stats
+            except Exception:
+                # Diagnostics are best-effort; ignore failures here.
+                pass
+
+            labeled_mask_diag = ~quantile_labels_diag.isna()
+
+            # Build meta-features
+            meta_feature_cfg = config.get("meta_feature_engineering", {})
+            volume_available = "volume" in market_data.columns
+
+            meta_features_diag, meta_features_processed, _, _ = build_meta_features_for_model(
+                market_data=market_data,
+                primary_signals=primary_signals,
+                realized_returns=realized_returns_diag,
+                binary_labels=quantile_labels_diag,
+                event_durations=event_durations_diag,
+                mfe_series=mfe_diag,
+                mae_series=mae_diag,
+                adaptive_stop_threshold=adaptive_stop,
+                horizon=horizon,
+                volume_available=volume_available,
+                meta_feature_cfg=meta_feature_cfg,
+            )
+
+            # Compute calibrated probabilities with t1-aware CV
+            _, mean_auc_diag, calibrated_probs_diag, _, fold_aucs_diag, oof_probs_diag = compute_learnability_with_calibration(
+                X=meta_features_processed,
+                y=quantile_labels_diag,
+                realized_returns=realized_returns_diag,
+                model_complexity="strong",
+                cv_splits=5,
+                time_aware_cv=True,
+                use_ensemble=False,
+                event_durations=event_durations_diag,
+                market_index=market_data.index,
+                base_horizon_bars=horizon,
+                use_smoothed_brier_objective_lgbm=use_smoothed_brier_objective_lgbm,
+            )
+
+            # Align calibrated probabilities and out-of-fold probabilities to labeled events (non-NaN labels)
+            try:
+                valid_mask_probs = ~quantile_labels_diag.isna()
+                probs_series_diag = None
+                oof_probs_series_diag = None
+                if isinstance(calibrated_probs_diag, np.ndarray) and len(calibrated_probs_diag) == int(valid_mask_probs.sum()):
+                    probs_series_diag = pd.Series(calibrated_probs_diag, index=quantile_labels_diag.index[valid_mask_probs])
+                if isinstance(oof_probs_diag, np.ndarray) and len(oof_probs_diag) == int(valid_mask_probs.sum()):
+                    oof_probs_series_diag = pd.Series(oof_probs_diag, index=quantile_labels_diag.index[valid_mask_probs])
+            except Exception:
+                probs_series_diag = None
+                oof_probs_series_diag = None
+
+            # Create "full" labels (before quantile filtering)
+            econ_floor = econ_min_mult * effective_tx_cost
+            y_full_diag = pd.Series(np.nan, index=realized_returns_diag.index)
+            full_mask = ~realized_returns_diag.isna() & (realized_returns_diag.abs() >= econ_floor)
+            y_full_diag[full_mask & (realized_returns_diag > 0)] = 1.0
+            y_full_diag[full_mask & (realized_returns_diag <= 0)] = 0.0
+
+            # Two-stage bagged meta-model diagnostics (activity gate + direction)
+            tprint_info("  → Training two-stage bagged meta-model (activity + direction)...")
+            try:
+                # Build events DataFrame with realized returns for stop/timeout split
+                events_df_diag = pd.DataFrame(index=realized_returns_diag.index)
+                events_df_diag["ret"] = realized_returns_diag
+
+                # Use raw binary labels from compute_realized_returns (1=profit, 0=loss/timeout)
+                outcomes_binary_diag = binary_labels_raw
+
+                y_trinary_diag = generate_trinary_labels(events_df_diag, outcomes_binary_diag)
+
+                # Restrict to indices where we have both features and trinary labels
+                if isinstance(meta_features_processed, pd.DataFrame):
+                    X_two_stage = meta_features_processed
+                else:
+                    X_two_stage = pd.DataFrame(meta_features_processed, index=realized_returns_diag.index)
+
+                mask_two_stage = (
+                    ~y_trinary_diag.isna()
+                    & ~realized_returns_diag.isna()
+                )
+
+                n_two_stage_events = int(mask_two_stage.sum())
+                if n_two_stage_events >= 50:
+                    X_ts = X_two_stage.loc[mask_two_stage]
+                    y_ts = y_trinary_diag.loc[mask_two_stage]
+
+                    base_lgb_params = {
+                        "boosting_type": "gbdt",
+                        "objective": "binary",
+                        "max_depth": 4,
+                        "n_estimators": 220,
+                        "learning_rate": 0.02,
+                        "subsample": 0.8,
+                        "colsample_bytree": 0.8,
+                        "min_child_samples": 80,
+                        "reg_alpha": 0.3,
+                        "reg_lambda": 0.9,
+                        "n_jobs": -1,
+                        "verbose": -1,
+                        "random_state": 42,
+                    }
+
+                    two_stage_model = TwoStageBaggedMetaModel(
+                        base_params=base_lgb_params,
+                        n_bagging=10,
+                        bagging_fraction=0.7,
+                        random_state=42,
+                    )
+                    two_stage_model.fit(X_ts, y_ts.to_numpy())
+
+                    # Activity AUC: active (profit or stop) vs timeout
+                    y_activity_diag = (y_ts != 0).astype(int)
+                    p_active_diag = two_stage_model.stage1_model.predict_proba(X_ts)[:, 1]
+                    activity_auc = None
+                    activity_brier = None
+                    activity_ece = None
+                    try:
+                        activity_auc = roc_auc_score(y_activity_diag, p_active_diag)
+                        activity_brier, activity_ece = compute_brier_and_ece(y_activity_diag, p_active_diag)
+                    except Exception:
+                        activity_auc = None
+
+                    # Direction AUC: among active events only
+                    direction_auc = None
+                    direction_brier = None
+                    direction_ece = None
+                    mask_active = (y_ts != 0)
+                    if mask_active.sum() >= 10 and two_stage_model.stage2_ensemble is not None:
+                        y_dir_diag = (y_ts[mask_active] == 1).astype(int)
+                        p_win_conditional_diag = two_stage_model.stage2_ensemble.predict_proba(
+                            X_ts.loc[mask_active]
+                        )[:, 1]
+                        try:
+                            direction_auc = roc_auc_score(y_dir_diag, p_win_conditional_diag)
+                            direction_brier, direction_ece = compute_brier_and_ece(
+                                y_dir_diag, p_win_conditional_diag
+                            )
+                        except Exception:
+                            direction_auc = None
+
+                    # Combined AUC: profit vs others using final score
+                    combined_auc = None
+                    global_rank_auc = None
+                    regime_weighted_edge = None
+                    per_regime_edge: Dict[str, Any] = {}
+                    precision_top20 = None
+                    base_rate = None
+                    trades_per_day_two_stage = None
+                    mean_return_all = None
+                    mean_return_win = None
+                    mean_return_loss = None
+
+                    # Final score for two-stage model
+                    if two_stage_model.stage2_ensemble is not None:
+                        p_win_conditional_full = two_stage_model.stage2_ensemble.predict_proba(X_ts)[:, 1]
+                    else:
+                        p_win_conditional_full = np.full(X_ts.shape[0], 0.5, dtype=float)
+                    final_score_diag = p_active_diag * p_win_conditional_full
+                    y_final_diag = (y_ts == 1).astype(int)
+
+                    # Global combined AUC
+                    try:
+                        if np.unique(y_final_diag).size >= 2:
+                            combined_auc = roc_auc_score(y_final_diag, final_score_diag)
+                    except Exception:
+                        combined_auc = None
+
+                    # Global Rank AUC via regime-wise percentile ranks and regime-weighted edge
+                    regimes_events = None
+                    try:
+                        if "regimes_diag" in locals() and regimes_diag is not None:
+                            if isinstance(regimes_diag, pd.Series):
+                                regimes_events = regimes_diag.reindex(X_ts.index)
+                    except Exception:
+                        regimes_events = None
+
+                    if regimes_events is not None:
+                        try:
+                            # Build a regime-wise ranking DataFrame for robust computation
+                            df_rank = pd.DataFrame(
+                                {
+                                    "score": final_score_diag,
+                                    "y": y_final_diag,
+                                    "regime": regimes_events,
+                                },
+                                index=X_ts.index,
+                            ).dropna(subset=["score", "y", "regime"])
+
+                            if not df_rank.empty and df_rank["y"].nunique() >= 2:
+                                # Rank scores within each regime
+                                df_rank["regime_rank"] = df_rank.groupby("regime")["score"].rank(
+                                    pct=True,
+                                    method="average",
+                                )
+
+                                try:
+                                    global_rank_auc = float(
+                                        roc_auc_score(df_rank["y"].values, df_rank["regime_rank"].values)
+                                    )
+                                except Exception:
+                                    global_rank_auc = None
+
+                                # Regime-weighted edge for top 10% per regime using realized returns
+                                total_top = 0
+                                weighted_edge_sum = 0.0
+                                per_regime_edge = {}
+
+                                returns_aligned = realized_returns_diag.reindex(df_rank.index)
+                                for reg_val, g in df_rank.groupby("regime"):
+                                    g_top = g[g["regime_rank"] >= 0.9]
+                                    n_top_reg = int(len(g_top))
+                                    if n_top_reg < 10:
+                                        continue
+
+                                    ret_top = returns_aligned.reindex(g_top.index)
+                                    if ret_top is not None and not ret_top.dropna().empty:
+                                        edge_reg = float(ret_top.mean())
+                                    else:
+                                        edge_reg = 0.0
+
+                                    key = str(reg_val)
+                                    per_regime_edge[key] = {
+                                        "edge_top10": edge_reg,
+                                        "n_top": n_top_reg,
+                                    }
+                                    total_top += n_top_reg
+                                    weighted_edge_sum += edge_reg * n_top_reg
+
+                                if total_top > 0:
+                                    regime_weighted_edge = float(weighted_edge_sum / total_top)
+
+                                # Precision@Top20% and base rate (student quality)
+                                top20_mask = df_rank["regime_rank"] >= 0.8
+                                n_top20 = int(top20_mask.sum())
+                                if n_top20 > 0:
+                                    winners_top20 = int((df_rank.loc[top20_mask, "y"] == 1).sum())
+                                    precision_top20 = float(winners_top20 / n_top20)
+                                base_rate = float((df_rank["y"] == 1).mean())
+                        except Exception:
+                            # Leave global_rank_auc and per_regime_edge as-is on failure
+                            pass
+
+                    # Trades/day and mean returns per trade (for diagnostics context)
+                    try:
+                        # Use ACTIVE events (profit/stop) over the actual event span
+                        if isinstance(realized_returns_diag.index, pd.DatetimeIndex) and n_two_stage_events > 0:
+                            event_idx = realized_returns_diag.index[mask_two_stage]
+                            if len(event_idx) >= 2:
+                                days_span_events = (
+                                    event_idx.max() - event_idx.min()
+                                ).total_seconds() / 86400.0
+                                if days_span_events > 0:
+                                    n_active_events = int((y_ts != 0).sum())
+                                    if n_active_events > 0:
+                                        trades_per_day_two_stage = float(n_active_events / days_span_events)
+                                    else:
+                                        trades_per_day_two_stage = float(n_two_stage_events / days_span_events)
+                    except Exception:
+                        trades_per_day_two_stage = None
+
+                    try:
+                        ret_all = realized_returns_diag.loc[mask_two_stage]
+                        if not ret_all.empty:
+                            mean_return_all = float(ret_all.mean())
+                        ret_win = realized_returns_diag.loc[mask_two_stage & (y_ts == 1)]
+                        if not ret_win.empty:
+                            mean_return_win = float(ret_win.mean())
+                        ret_loss = realized_returns_diag.loc[mask_two_stage & (y_ts != 1)]
+                        if not ret_loss.empty:
+                            mean_return_loss = float(ret_loss.mean())
+                    except Exception:
+                        mean_return_all = mean_return_all
+
+                    two_stage_diag = {
+                        "n_events": n_two_stage_events,
+                        "activity_auc": float(activity_auc) if activity_auc is not None else None,
+                        "direction_auc": float(direction_auc) if direction_auc is not None else None,
+                        "combined_auc": float(combined_auc) if combined_auc is not None else None,
+                        "global_rank_auc": float(global_rank_auc) if global_rank_auc is not None else None,
+                        "regime_weighted_edge": float(regime_weighted_edge) if regime_weighted_edge is not None else None,
+                        "per_regime_edge": per_regime_edge,
+                        "precision_top20": float(precision_top20) if precision_top20 is not None else None,
+                        "base_rate": float(base_rate) if base_rate is not None else None,
+                        "activity_brier": float(activity_brier) if activity_brier is not None else None,
+                        "activity_ece": float(activity_ece) if activity_ece is not None else None,
+                        "direction_brier": float(direction_brier) if direction_brier is not None else None,
+                        "direction_ece": float(direction_ece) if direction_ece is not None else None,
+                        "trades_per_day": float(trades_per_day_two_stage) if trades_per_day_two_stage is not None else None,
+                        "mean_return_all": float(mean_return_all) if mean_return_all is not None else None,
+                        "mean_return_win": float(mean_return_win) if mean_return_win is not None else None,
+                        "mean_return_loss": float(mean_return_loss) if mean_return_loss is not None else None,
+                    }
+                    best_config_diagnostics["two_stage_meta_model"] = two_stage_diag
+
+                    msg_parts: List[str] = []
+                    if activity_auc is not None:
+                        msg_parts.append(f"activity={activity_auc:.3f}")
+                    if direction_auc is not None:
+                        msg_parts.append(f"direction={direction_auc:.3f}")
+                    if combined_auc is not None:
+                        msg_parts.append(f"combined={combined_auc:.3f}")
+                    if global_rank_auc is not None:
+                        msg_parts.append(f"rank={global_rank_auc:.3f}")
+                    if msg_parts:
+                        tprint_info("  → Two-stage meta-model AUCs: " + ", ".join(msg_parts))
+                else:
+                    tprint_warning(
+                        f"  ⚠️ Two-stage meta-model skipped: insufficient events (n={n_two_stage_events})"
+                    )
+            except Exception as e_two_stage:
+                tprint_warning(f"  ⚠️ Two-stage meta-model diagnostics failed: {e_two_stage}")
+
+            # Attach signal funnel statistics from the primary signal generator,
+            # if available, so that HPO diagnostics can inspect raw vs final
+            # signal counts.
+            try:
+                signal_funnel_diag = primary_signals.attrs.get('signal_funnel', {})  # type: ignore[attr-defined]
+            except Exception:
+                signal_funnel_diag = {}
+            if signal_funnel_diag:
+                best_config_diagnostics['signal_funnel'] = signal_funnel_diag
+            # 1. Filtering inflation diagnostics
+            tprint_info("  → Computing filtering inflation diagnostics...")
+            try:
+                probabilities_for_filter = None
+                # Prefer out-of-fold probabilities when available to avoid in-sample optimism
+                source_series_for_filter = oof_probs_series_diag if "oof_probs_series_diag" in locals() and oof_probs_series_diag is not None else probs_series_diag
+                if source_series_for_filter is not None:
+                    probs_full_aligned = pd.Series(np.nan, index=quantile_labels_diag.index, dtype=float)
+                    try:
+                        probs_full_aligned.loc[source_series_for_filter.index] = source_series_for_filter
+                        probabilities_for_filter = probs_full_aligned.to_numpy(dtype=float)
+                    except Exception:
+                        probabilities_for_filter = None
+
+                filtering_diag = compute_filtering_inflation_diagnostics(
+                    X=meta_features_processed,
+                    y_full=y_full_diag,
+                    y_filtered=quantile_labels_diag,
+                    realized_returns=realized_returns_diag,
+                    volatility=volatility_1d,
+                    probabilities=probabilities_for_filter,
+                    cv_splits=5,
+                    time_aware_cv=True,
+                    event_durations=event_durations_diag,
+                    market_index=market_data.index,
+                    base_horizon_bars=horizon,
+                )
+                best_config_diagnostics['filtering_diagnostics'] = filtering_diag
+
+                if filtering_diag.get('filtering_is_major_contributor'):
+                    tprint_warning("  ⚠️ WARNING: Filtering is a major contributor to AUC inflation")
+                if filtering_diag.get('auc_dominated_by_large_moves'):
+                    tprint_warning("  ⚠️ WARNING: AUC dominated by large-move events")
+                if filtering_diag.get('precision_collapse_detected'):
+                    tprint_warning("  ⚠️ WARNING: Precision collapse detected (model only good on easy cases)")
+            except Exception as e:
+                tprint_warning(f"  ⚠️ Filtering diagnostics failed: {e}")
+
+            # 2. Calibration diagnostics + Mutual Information diagnostics
+            tprint_info("  → Computing calibration diagnostics...")
+            try:
+                idx_labeled = quantile_labels_diag.index[labeled_mask_diag]
+                y_calib = quantile_labels_diag.loc[idx_labeled].values
+
+                # Prefer out-of-fold probabilities when available; fall back to full-sample calibrated
+                probs_calib = None
+                if "oof_probs_series_diag" in locals() and oof_probs_series_diag is not None:
+                    try:
+                        probs_calib_series = oof_probs_series_diag.reindex(idx_labeled)
+                        probs_calib = probs_calib_series.to_numpy(dtype=float)
+                    except Exception:
+                        probs_calib = None
+
+                if probs_calib is None and probs_series_diag is not None:
+                    try:
+                        probs_calib_series = probs_series_diag.reindex(idx_labeled)
+                        probs_calib = probs_calib_series.to_numpy(dtype=float)
+                    except Exception:
+                        probs_calib = None
+
+                if probs_calib is None and isinstance(calibrated_probs_diag, np.ndarray) and calibrated_probs_diag.size > 0:
+                    probs_calib = calibrated_probs_diag if len(calibrated_probs_diag) == len(y_calib) else calibrated_probs_diag[: len(y_calib)]
+
+                returns_calib = realized_returns_diag.loc[idx_labeled].values
+
+                calib_diag = compute_calibration_diagnostics(
+                    y_true=y_calib,
+                    probabilities=probs_calib,
+                    realized_returns=returns_calib,
+                    transaction_cost=effective_tx_cost,
+                    n_bins=10,
+                    regime_score=volatility_1d.loc[idx_labeled].values if volatility_1d is not None else None,
+                    use_linear_adaptive_gating=True,
+                )
+                best_config_diagnostics["calibration_diagnostics"] = calib_diag
+
+                if calib_diag.get("brier_score") is not None:
+                    tprint_info(f"  → Brier Score: {calib_diag['brier_score']:.4f}")
+
+                ece_val = calib_diag.get("ece")
+                if ece_val is not None:
+                    tprint_info(f"  → ECE: {ece_val:.4f}")
+
+                # Distinguish between genuine miscalibration and degenerate /
+                # uninformative calibration curves (e.g. all mass in one bin).
+                if not calib_diag.get("is_well_calibrated", True):
+                    if calib_diag.get("degenerate_calibration", False):
+                        tprint_warning(
+                            "  ⚠️ WARNING: Calibration diagnostics are degenerate "
+                            "(probabilities highly concentrated; treating as not well calibrated)"
+                        )
+                    elif ece_val is not None:
+                        tprint_warning(
+                            f"  ⚠️ WARNING: Model is miscalibrated (ECE={ece_val:.4f} ≥ 0.05)"
+                        )
+                    else:
+                        tprint_warning(
+                            "  ⚠️ WARNING: Model is miscalibrated (insufficient calibration data)"
+                        )
+
+                # 2b. Mutual information diagnostics (probability deciles vs label and return sign)
+                tprint_info("  → Computing mutual information diagnostics...")
+                mi_diag: Dict[str, Any] = {}
+                try:
+                    if probs_calib is not None and len(probs_calib) >= 50:
+                        probs_series = pd.Series(probs_calib, index=idx_labeled).clip(0.0, 1.0)
+                        try:
+                            prob_decile = pd.qcut(
+                                probs_series,
+                                q=10,
+                                labels=False,
+                                duplicates="drop",
+                            )
+                            # If qcut collapsed to < 3 bins, fall back to fixed-width bins
+                            if prob_decile is not None and prob_decile.nunique() < 3:
+                                prob_decile = pd.cut(
+                                    probs_series,
+                                    bins=10,
+                                    labels=False,
+                                    include_lowest=True,
+                                )
+                        except Exception:
+                            # Fallback to fixed-width bins if qcut fails entirely
+                            try:
+                                prob_decile = pd.cut(
+                                    probs_series,
+                                    bins=10,
+                                    labels=False,
+                                    include_lowest=True,
+                                )
+                            except Exception:
+                                prob_decile = None
+
+                        if prob_decile is not None:
+                            y_series = pd.Series(y_calib, index=idx_labeled)
+
+                            # Track basic MI input statistics for debugging
+                            try:
+                                mi_diag["n_prob_bins"] = int(pd.Series(prob_decile).nunique(dropna=True))
+                            except Exception:
+                                mi_diag["n_prob_bins"] = None
+                            try:
+                                mi_diag["n_label_classes"] = int(y_series.nunique(dropna=True))
+                            except Exception:
+                                mi_diag["n_label_classes"] = None
+
+                            # MI between probability deciles and label
+                            mi_nats_label = _discrete_mi(prob_decile, y_series)
+                            mi_bits_label = (
+                                mi_nats_label / np.log(2.0)
+                                if np.isfinite(mi_nats_label)
+                                else float("nan")
+                            )
+                            mi_diag["mi_prob_label_nats"] = mi_nats_label
+                            mi_diag["mi_prob_label_bits"] = mi_bits_label
+
+                            # MI between probability deciles and realized return sign
+                            returns_series = pd.Series(returns_calib, index=idx_labeled)
+                            dir_series = (returns_series > 0).astype(int)
+                            try:
+                                mi_diag["n_return_sign_classes"] = int(
+                                    dir_series.nunique(dropna=True)
+                                )
+                            except Exception:
+                                mi_diag["n_return_sign_classes"] = None
+
+                            mi_nats_dir = _discrete_mi(prob_decile, dir_series)
+                            mi_bits_dir = (
+                                mi_nats_dir / np.log(2.0)
+                                if np.isfinite(mi_nats_dir)
+                                else float("nan")
+                            )
+                            mi_diag["mi_prob_return_sign_nats"] = mi_nats_dir
+                            mi_diag["mi_prob_return_sign_bits"] = mi_bits_dir
+
+                    if mi_diag:
+                        best_config_diagnostics["mi_diagnostics"] = mi_diag
+                        if "mi_prob_label_bits" in mi_diag and "mi_prob_return_sign_bits" in mi_diag:
+                            tprint_info(
+                                f"  → MI(bits): prob→label={mi_diag['mi_prob_label_bits']:.4f}, "
+                                f"prob→ret_sign={mi_diag['mi_prob_return_sign_bits']:.4f}"
+                            )
+                            # If MI is numerically ~0 despite a non-trivial number of
+                            # bins/classes, log a hint so we can inspect discretisation
+                            # in future runs.
+                            try:
+                                if (
+                                    mi_diag.get("mi_prob_label_bits") is not None
+                                    and mi_diag.get("mi_prob_return_sign_bits") is not None
+                                ):
+                                    mi_label_abs = abs(float(mi_diag["mi_prob_label_bits"]))
+                                    mi_dir_abs = abs(float(mi_diag["mi_prob_return_sign_bits"]))
+                                    n_bins = mi_diag.get("n_prob_bins") or 0
+                                    n_lbl = mi_diag.get("n_label_classes") or 0
+                                    if (
+                                        mi_label_abs < 1e-4
+                                        and mi_dir_abs < 1e-4
+                                        and n_bins >= 2
+                                        and n_lbl >= 2
+                                    ):
+                                        tprint_warning(
+                                            "  ⚠️ WARNING: MI≈0.0 despite multiple bins/classes; "
+                                            "check probability discretisation or label alignment"
+                                        )
+                            except Exception:
+                                pass
+                except Exception as mi_exc:
+                    tprint_warning(f"  ⚠️ MI diagnostics failed: {mi_exc}")
+
+                regime_rank_diag: Dict[str, Any] = {}
+                try:
+                    if regimes_diag is not None and probs_calib is not None and len(probs_calib) == len(y_calib):
+                        regimes_for_calib = regimes_diag.reindex(idx_labeled)
+                        if isinstance(regimes_for_calib, pd.Series):
+                            valid_reg_mask = ~regimes_for_calib.isna()
+                            valid_reg_mask = valid_reg_mask.to_numpy()
+                            if isinstance(probs_calib, np.ndarray):
+                                valid_reg_mask = valid_reg_mask & np.isfinite(probs_calib)
+
+                            if valid_reg_mask.any():
+                                y_rr = y_calib[valid_reg_mask]
+                                if len(y_rr) >= 50 and np.unique(y_rr).size >= 2:
+                                    probs_rr = probs_calib[valid_reg_mask]
+                                    regs_rr = regimes_for_calib.iloc[valid_reg_mask]
+
+                                    df_rr = pd.DataFrame(
+                                        {"prob": probs_rr, "regime": regs_rr.values, "y": y_rr},
+                                        index=regs_rr.index,
+                                    )
+                                    df_rr = df_rr.dropna(subset=["prob", "regime", "y"])
+
+                                    if not df_rr.empty and df_rr["y"].nunique() >= 2:
+                                        df_rr["regime_rank"] = df_rr.groupby("regime")["prob"].rank(
+                                            pct=True,
+                                            method="average",
+                                        )
+
+                                        try:
+                                            global_auc_raw = float(
+                                                roc_auc_score(df_rr["y"].values, df_rr["prob"].values)
+                                            )
+                                        except Exception:
+                                            global_auc_raw = None
+
+                                        try:
+                                            global_auc_rank = float(
+                                                roc_auc_score(df_rr["y"].values, df_rr["regime_rank"].values)
+                                            )
+                                        except Exception:
+                                            global_auc_rank = None
+
+                                        per_regime_auc_rank: Dict[str, Any] = {}
+                                        for reg_val, g in df_rr.groupby("regime"):
+                                            y_g = g["y"].values
+                                            r_g = g["regime_rank"].values
+                                            auc_g = None
+                                            if len(y_g) >= 30 and np.unique(y_g).size >= 2:
+                                                try:
+                                                    auc_g = float(roc_auc_score(y_g, r_g))
+                                                except Exception:
+                                                    auc_g = None
+                                            per_regime_auc_rank[str(reg_val)] = {
+                                                "auc": auc_g,
+                                                "n_events": int(len(g)),
+                                            }
+
+                                        regime_rank_diag = {
+                                            "global_auc_raw": global_auc_raw,
+                                            "global_auc_regime_rank": global_auc_rank,
+                                            "per_regime_auc_rank": per_regime_auc_rank,
+                                        }
+                                        best_config_diagnostics["regime_rank_diagnostics"] = regime_rank_diag
+
+                                        if global_auc_raw is not None and global_auc_rank is not None:
+                                            tprint_info(
+                                                f"  → Regime-rank AUC: raw={global_auc_raw:.3f}, "
+                                                f"regime_rank={global_auc_rank:.3f}"
+                                            )
+                except Exception as rr_exc:
+                    tprint_warning(f"  ⚠️ Regime-rank diagnostics failed: {rr_exc}")
+
+            except Exception as e:
+                tprint_warning(f"  ⚠️ Calibration diagnostics failed: {e}")
+
+            # 3. Robustness diagnostics
+            tprint_info("  → Computing robustness diagnostics...")
+            try:
+                robust_diag = compute_robustness_diagnostics(
+                    X=meta_features_processed,
+                    y=quantile_labels_diag,
+                    realized_returns=realized_returns_diag,
+                    regimes=regimes_diag,
+                    volatility=volatility_1d,
+                    n_folds=5,
+                    transaction_cost=effective_tx_cost,
+                    time_aware_cv=True,
+                    event_durations=event_durations_diag,
+                    market_index=market_data.index,
+                    base_horizon_bars=horizon,
+                    use_purged_splits=True,
+                )
+                best_config_diagnostics['robustness_diagnostics'] = robust_diag
+
+                if robust_diag.get('worst_fold_auc') is not None:
+                    tprint_info(f"  → Worst-fold AUC: {robust_diag['worst_fold_auc']:.3f}")
+                if robust_diag.get('auc_cv_std') is not None:
+                    tprint_info(f"  → AUC CV Std: {robust_diag['auc_cv_std']:.4f}")
+                # Additional visibility into regime / time sensitivity
+                if robust_diag.get('best_fold_auc') is not None:
+                    tprint_info(f"  → Best-fold AUC: {robust_diag['best_fold_auc']:.3f}")
+                if robust_diag.get('auc_cv_coefficient_of_variation') is not None:
+                    tprint_info(
+                        f"  → AUC CV Coefficient of Variation: "
+                        f"{robust_diag['auc_cv_coefficient_of_variation']:.4f}"
+                    )
+                if robust_diag.get('per_volatility_regime'):
+                    try:
+                        for reg_name, m in robust_diag['per_volatility_regime'].items():
+                            auc_r = m.get('auc')
+                            n_ev = m.get('n_events')
+                            if auc_r is not None and n_ev is not None:
+                                tprint_info(
+                                    f"    · Volatility regime {reg_name}: "
+                                    f"AUC={auc_r:.3f}, n_events={int(n_ev)}"
+                                )
+                    except Exception:
+                        pass
+                if robust_diag.get('per_regime_metrics'):
+                    try:
+                        # Log a compact per-regime summary to highlight any
+                        # particularly weak or strong regime cluster.
+                        for reg_name, m in robust_diag['per_regime_metrics'].items():
+                            auc_r = m.get('auc')
+                            n_ev = m.get('n_events')
+                            net_pnl = m.get('net_pnl_per_trade')
+                            if auc_r is None or n_ev is None:
+                                continue
+                            suffix = (
+                                f", net_pnl_per_trade={net_pnl:.5f}"
+                                if net_pnl is not None
+                                else ""
+                            )
+                            tprint_info(
+                                f"    · Regime {reg_name}: AUC={auc_r:.3f}, "
+                                f"n_events={int(n_ev)}{suffix}"
+                            )
+                    except Exception:
+                        pass
+                if not robust_diag.get('is_robust', True):
+                    tprint_warning("  ⚠️ WARNING: Model not robust (high CV variance or poor worst-fold)")
+            except Exception as e:
+                tprint_warning(f"  ⚠️ Robustness diagnostics failed: {e}")
+
+            # 4. Class overlap diagnostics
+            tprint_info("  → Computing class overlap diagnostics...")
+            try:
+                overlap_diag = compute_class_overlap_features(
+                    X=meta_features_processed,
+                    retained_mask=labeled_mask_diag,
+                    top_k_features=10,
+                )
+                best_config_diagnostics['class_overlap_diagnostics'] = overlap_diag
+                if overlap_diag.get('easy_problem_detected'):
+                    tprint_warning("  ⚠️ WARNING: Easy problem detected (retained events form tight cluster)")
+            except Exception as e:
+                tprint_warning(f"  ⚠️ Class overlap diagnostics failed: {e}")
+
+            # 5. Permutation-importance leakage diagnostics (god feature detection)
+            tprint_info("  → Computing permutation-importance leakage diagnostics...")
+            try:
+                leakage_diag = run_leakage_sanity_check(
+                    X=meta_features_processed,
+                    y=quantile_labels_diag,
+                    random_state=42,
+                    top_k=5,
+                    n_repeats=5,
+                )
+                if leakage_diag:
+                    best_config_diagnostics["leakage_diagnostics"] = leakage_diag
+                    if leakage_diag.get("god_feature_suspected"):
+                        tprint_warning(
+                            "  ⚠️ WARNING: Permutation-importance suggests a god feature (possible leakage)"
+                        )
+                        # Surface the actual feature names and impact so we can
+                        # quickly inspect potential sources of leakage.
+                        try:
+                            top_feats = leakage_diag.get("top_features") or []
+                            top_imps = leakage_diag.get("top_importances") or []
+                            baseline_auc = leakage_diag.get("baseline_auc")
+                            dropped_auc = leakage_diag.get("dropped_auc")
+                            delta_auc = leakage_diag.get("delta_auc")
+
+                            if top_feats:
+                                primary = top_feats[0]
+                                primary_imp = (
+                                    float(top_imps[0])
+                                    if top_imps and top_imps[0] is not None
+                                    else None
+                                )
+                                baseline_str = (
+                                    f"{float(baseline_auc):.4f}"
+                                    if baseline_auc is not None
+                                    else "nan"
+                                )
+                                dropped_str = (
+                                    f"{float(dropped_auc):.4f}"
+                                    if dropped_auc is not None
+                                    else "nan"
+                                )
+                                delta_str = (
+                                    f"{float(delta_auc):.4f}"
+                                    if delta_auc is not None
+                                    else "nan"
+                                )
+                                imp_str = (
+                                    f"{primary_imp:.4f}" if primary_imp is not None else "nan"
+                                )
+                                tprint_warning(
+                                    "    Top leakage candidate: "
+                                    f"{primary} (baseline_auc={baseline_str}, "
+                                    f"dropped_auc={dropped_str}, delta_auc={delta_str}, "
+                                    f"perm_importance={imp_str})"
+                                )
+                                if len(top_feats) > 1:
+                                    others = ", ".join(map(str, top_feats[1:]))
+                                    tprint_info(
+                                        f"    Other high-importance features: {others}"
+                                    )
+                        except Exception:
+                            pass
+            except Exception as e:
+                tprint_warning(f"  ⚠️ Leakage diagnostics failed: {e}")
+
+            # 6. Lag-1 stress test for look-ahead bias
+            tprint_info("  → Computing lag-1 stress test diagnostics...")
+            try:
+                lag_diag = run_lag1_stress_test(
+                    X=meta_features_processed,
+                    y=quantile_labels_diag,
+                    random_state=42,
+                )
+                if lag_diag:
+                    best_config_diagnostics["lag1_stress_test"] = lag_diag
+                    if lag_diag.get("lookahead_suspected"):
+                        tprint_warning(
+                            "  ⚠️ WARNING: Lag-1 stress test suggests look-ahead bias (AUC drops sharply when lagged)"
+                        )
+            except Exception as e:
+                tprint_warning(f"  ⚠️ Lag-1 stress test diagnostics failed: {e}")
+
+            # 7. Dummy-rule volatility baseline AUC
+            tprint_info("  → Computing dummy-rule volatility baseline AUC...")
+            try:
+                dummy_diag = compute_dummy_baseline_auc(
+                    volatility=volatility_1d,
+                    y=quantile_labels_diag,
+                    window=64,
+                )
+                if dummy_diag:
+                    best_config_diagnostics["dummy_baseline_diagnostics"] = dummy_diag
+            except Exception as e:
+                tprint_warning(f"  ⚠️ Dummy baseline diagnostics failed: {e}")
+
+            # 8. Y-shuffle sanity test (labels shuffled, features intact)
+            tprint_info("  → Running Y-shuffle sanity test on meta-features...")
+            try:
+                if isinstance(quantile_labels_diag, pd.Series):
+                    y_vals = quantile_labels_diag.to_numpy(dtype=float)
+                    rng = np.random.RandomState(42)
+                    rng.shuffle(y_vals)
+                    y_shuffled = pd.Series(y_vals, index=quantile_labels_diag.index)
+
+                    _, auc_y_shuffle, _, _, _, _ = compute_learnability_with_calibration(
+                        X=meta_features_processed,
+                        y=y_shuffled,
+                        realized_returns=realized_returns_diag,
+                        model_complexity="strong",
+                        cv_splits=5,
+                        time_aware_cv=True,
+                        use_ensemble=False,
+                        event_durations=event_durations_diag,
+                        market_index=market_data.index,
+                        base_horizon_bars=horizon,
+                        use_smoothed_brier_objective_lgbm=use_smoothed_brier_objective_lgbm,
+                    )
+
+                    best_config_diagnostics["y_shuffle_test"] = {
+                        "auc": float(auc_y_shuffle),
+                    }
+            except Exception as e:
+                tprint_warning(f"  ⚠️ Y-shuffle test failed: {e}")
+
+            # 9. Single-feature baseline: momentum_10_x_regime_high
+            tprint_info("  → Running single-feature baseline with momentum_10_x_regime_high...")
+            try:
+                single_name = "momentum_10_x_regime_high"
+                if isinstance(meta_features_processed, pd.DataFrame) and single_name in meta_features_processed.columns:
+                    X_single = meta_features_processed[[single_name]]
+
+                    _, auc_single, _, _, _, _ = compute_learnability_with_calibration(
+                        X=X_single,
+                        y=quantile_labels_diag,
+                        realized_returns=realized_returns_diag,
+                        model_complexity="strong",
+                        cv_splits=5,
+                        time_aware_cv=True,
+                        use_ensemble=False,
+                        event_durations=event_durations_diag,
+                        market_index=market_data.index,
+                        base_horizon_bars=horizon,
+                        use_smoothed_brier_objective_lgbm=use_smoothed_brier_objective_lgbm,
+                    )
+
+                    best_config_diagnostics["single_feature_momentum_test"] = {
+                        "feature": single_name,
+                        "auc": float(auc_single),
+                    }
+                else:
+                    tprint_warning("  ⚠️ Single-feature test skipped: momentum_10_x_regime_high not in feature set")
+            except Exception as e:
+                tprint_warning(f"  ⚠️ Single-feature momentum test failed: {e}")
+
+            # Nested sr_labeling_xgb XGB HPO diagnostics were previously stubbed
+            # behind the enable_xgb_model_hpo flag. To keep this step focused on
+            # labeling-HPO only and reduce computational overhead, we no longer
+            # invoke or track any nested XGB HPO here.
+
+            tprint_success("✅ Comprehensive diagnostics completed for best configuration")
+
+        except Exception as diag_exc:
+            tprint_warning(f"⚠️ Failed to compute comprehensive diagnostics: {diag_exc}")
+            import traceback
+            traceback.print_exc()
+
+        # ------------------------------------------------------------------
+        # 8) (Disabled) Pareto frontier and knee-point logic
+        # ------------------------------------------------------------------
+        pareto_solutions: list[Solution] = []
+        pareto_front: list[Solution] = []
+        knee_solution = None
+        knee_params = best_params
+
+        try:
+            if candidate_pool:
+                auc_values = [float(c.get("mean_auc", np.nan)) for c in candidate_pool]
+                auc_values_clean = [v for v in auc_values if np.isfinite(v)]
+                auc_median = float(np.median(auc_values_clean)) if auc_values_clean else 0.6
+
+                k_auc = 10.0
+
+                for cand in candidate_pool:
+                    edge_val = float(cand.get("edge", 0.0))
+                    mean_auc_raw = float(cand.get("mean_auc", 0.0))
+                    auc_centered = mean_auc_raw - auc_median
+                    if np.isfinite(auc_centered):
+                        smooth_auc = float(1.0 / (1.0 + np.exp(-k_auc * auc_centered)))
+                    else:
+                        smooth_auc = 0.5
+
+                    metrics = {
+                        "edge": edge_val,
+                        "mean_auc_smooth": smooth_auc,
+                        "mean_auc_raw": mean_auc_raw,
+                        "learnability": float(cand.get("learnability", 0.0)),
+                        "profitability": float(cand.get("profitability", 0.0)),
+                        "sharpe_pos": float(cand.get("sharpe_pos", 0.0)),
+                    }
+                    params_for_sol = cand.get("params") or {}
+                    pareto_solutions.append(Solution(metrics=metrics, params=params_for_sol))
+
+                objectives = {"edge": "max", "mean_auc_smooth": "max"}
+                pareto_front = compute_pareto_front(pareto_solutions, objectives, use_gpu=True, use_vectorbt=True)
+                knee_solution = select_knee_point(pareto_front, objectives)
+                if knee_solution and knee_solution.params:
+                    tmp_params = best_params.copy()
+                    tmp_params.update(knee_solution.params)
+                    knee_params = tmp_params
+        except Exception as pareto_exc:
+            tprint_warning(f"⚠️ Pareto frontier construction failed: {pareto_exc}")
+            pareto_solutions = []
+            pareto_front = []
+            knee_solution = None
+            knee_params = best_params
+
+        # Compact run summary for quick log scanning
+        try:
+            round_results = getattr(optimizer, "round_results", [])
+            n_rounds = len(round_results) if isinstance(round_results, list) else None
+            total_trials = sum(r.get("trials", 0) for r in round_results) if isinstance(round_results, list) else None
+        except Exception:
+            n_rounds = None
+            total_trials = None
+
+        # Build comprehensive summary with key quality metrics
+        mean_auc = best_candidate_metrics.get("mean_auc", 0.5)
+        trades_per_day = best_candidate_metrics.get("trades_per_day", 0.0)
+        learnability = best_candidate_metrics.get("learnability", 0.0)
+        profitability = best_candidate_metrics.get("profitability", 0.0)
+        sharpe_pos = best_candidate_metrics.get("sharpe_pos", 0.0)
+        n_events = best_candidate_metrics.get("n_events", 0)
+
+        tprint_info(
+            "HPO summary → "
+            f"symbol={symbol}, timeframe={timeframe}, "
+            f"best_score(edge)={best_score:.6f}, "
+            f"mean_auc={mean_auc:.4f}, "
+            f"trades_per_day={trades_per_day:.3f}, "
+            f"learnability={learnability:.4f}, "
+            f"profitability={profitability:.4f}, "
+            f"sharpe_pos={sharpe_pos:.4f}, "
+            f"n_events={n_events}, "
+            f"rounds={n_rounds}, trials={total_trials}",
+        )
+
+        # Persist best parameters and candidate pool to outcomes/
+        outcomes_dir = Path("outcomes")
+        outcomes_dir.mkdir(parents=True, exist_ok=True)
+
+        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+
+        # ===== OPTIONAL: Generate diagnostics for recommended configuration =====
+        diagnostics_path: str | None = None
+        try:
+            # Prefer knee point if available, otherwise fall back to best_params
+            diag_params: Dict[str, Any] = knee_params if knee_solution else best_params
+            # Only run diagnostics when explicitly enabled via the module-level
+            # constant to avoid categorical setitem issues in some environments.
+            if diag_params and GENERATE_RECOMMENDED_DIAGNOSTICS:
+                tprint_info("📊 Generating meta-labeling diagnostics for recommended configuration...")
+
+                # Reconstruct labeling parameters (consistent with labeling_objective)
+                profit_thr_base = float(diag_params["profit_thr_base"])
+                stop_ratio = float(diag_params["stop_to_profit_ratio"])
+                stop_thr_base = max(0.0005, profit_thr_base * stop_ratio)
+
+                horizon = int(diag_params["horizon_bars"])
+                # Use safer get() with default 2 if key missing (e.g. older artifact)
+                min_spacing = int(diag_params.get("min_event_spacing", 0))
+
+                kalman_Q = float(diag_params.get("kalman_Q", 1e-4))
+                kalman_R = float(diag_params.get("kalman_R", 0.01))
+                vol_baseline_window = int(diag_params.get("vol_baseline_window", 96))
+                profit_mult_min = float(diag_params.get("profit_mult_min", 0.5))
+                profit_mult_max = float(diag_params.get("profit_mult_max", 2.0))
+                stop_mult_min = float(diag_params.get("stop_mult_min", 0.5))
+                stop_mult_max = float(diag_params.get("stop_mult_max", 2.0))
+
+                # Apply same constraints as HPO objective (short intraday horizons)
+                horizon = max(8, min(32, horizon))
+                if horizon % 2 != 0:
+                    horizon = (horizon // 2) * 2
+                min_spacing = max(1, min(16, min_spacing))
+                vol_baseline_window = max(8, min(512, vol_baseline_window))
+
+                if profit_mult_min > profit_mult_max:
+                    profit_mult_min, profit_mult_max = profit_mult_max, profit_mult_min
+                if stop_mult_min > stop_mult_max:
+                    stop_mult_min, stop_mult_max = stop_mult_max, stop_mult_min
+
+                iso_min_prob = float(diag_params.get("iso_min_prob", 0.05))
+                iso_min_prob = max(0.05, min(0.15, iso_min_prob))
+                iso_max_prob = 1.0 - iso_min_prob
+                iso_max_prob = max(0.85, min(1.0, iso_max_prob))
+
+                q_high = float(diag_params.get("target_clip_high_q", 0.95))
+                q_high = max(0.90, min(0.98, q_high))
+                q_low = max(0.0, min(0.5, 1.0 - q_high))
+
+                econ_min_mult = float(diag_params.get("econ_min_return_multiple", ECON_MIN_RETURN_MULTIPLE))
+                if not np.isfinite(econ_min_mult) or econ_min_mult <= 0:
+                    econ_min_mult = float(ECON_MIN_RETURN_MULTIPLE)
+
+                # Recompute adaptive profit/stop thresholds
+                vol_baseline = volatility_1d.rolling(vol_baseline_window).mean()
+                vol_factor = volatility_1d / (vol_baseline + 1e-8)
+
+                high_prices = market_data["high"] if "high" in market_data.columns else market_data["close"]
+                low_prices = market_data["low"] if "low" in market_data.columns else market_data["close"]
+                close_prices = market_data["close"]
+
+                tr1 = high_prices - low_prices
+                tr2 = (high_prices - close_prices.shift(1)).abs()
+                tr3 = (low_prices - close_prices.shift(1)).abs()
+                true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+
+                trend_atr_window = int(config.get("trend_strength_atr_window", 14))
+                atr_series = true_range.rolling(window=trend_atr_window, min_periods=1).mean()
+
+                trend_delta_lookback = int(config.get("trend_strength_delta_lookback", 4))
+                price_delta = close_prices.diff(trend_delta_lookback).abs()
+
+                trend_strength = (price_delta / (atr_series + 1e-8)).replace([np.inf, -np.inf], np.nan)
+                trend_strength = trend_strength.clip(
+                    lower=0.0,
+                    upper=float(config.get("trend_strength_clip", 5.0)),
+                ).fillna(0.0)
+
+                trend_alpha = float(config.get("trend_strength_alpha_profit", 0.5))
+                trend_beta = float(config.get("trend_strength_beta_stop", 0.5))
+
+                profit_factor = 1.0 + trend_alpha * trend_strength
+                stop_factor = 1.0 + trend_beta * trend_strength
+
+                adaptive_profit = profit_thr_base * vol_factor * profit_factor
+                adaptive_stop = stop_thr_base * vol_factor * stop_factor
+                adaptive_profit = adaptive_profit.clip(
+                    lower=profit_thr_base * profit_mult_min,
+                    upper=profit_thr_base * profit_mult_max,
+                )
+                adaptive_stop = adaptive_stop.clip(
+                    lower=stop_thr_base * stop_mult_min,
+                    upper=stop_thr_base * stop_mult_max,
+                )
+
+                (
+                    realized_returns,
+                    binary_labels,
+                    exit_reasons,
+                    event_durations,
+                    mfe_series_diag,
+                    mae_series_diag,
+                    _binary_labels_long_diag,  # Not used in diagnostics
+                    _binary_labels_short_diag,  # Not used in diagnostics
+                ) = compute_realized_returns(
+                    market_data,
+                    primary_signals,
+                    profit_threshold=adaptive_profit,
+                    stop_threshold=adaptive_stop,
+                    horizon=horizon,
+                    transaction_cost=DEFAULT_TRANSACTION_COST,
+                    min_event_spacing=min_spacing,
+                )
+
+                # Guard: if too few events, skip diagnostics
+                labeled_mask = ~binary_labels.isna()
+                if int(labeled_mask.sum()) < 100:
+                    tprint_warning(
+                        "⚠️ Recommended config produced too few events for diagnostics; skipping report generation",
+                        "WARNING",
+                    )
+                else:
+                    # Kalman smoothing
+                    smoothed_labels, _ = kalman_smooth_labels(
+                        binary_labels,
+                        Q=kalman_Q,
+                        R=kalman_R,
+                        volatility=volatility_1d,
+                    )
+
+                    prob_series = smoothed_labels.clip(0.0, 1.0)
+                    prob_clipped = prob_series.clip(iso_min_prob, iso_max_prob)
+
+                    # Fit probability→expected-return mapping
+                    iso_reg = fit_probability_to_return_mapping(
+                        probabilities=prob_clipped.values,
+                        realized_returns=realized_returns.values,
+                        method="isotonic",
+                        econ_min_return_multiple=econ_min_mult,
+                    )
+
+                    # Translate to long/short targets
+                    target_long, target_short = translate_to_targets_with_isotonic(
+                        realized_returns=realized_returns,
+                        probabilities=prob_clipped.values,
+                        signals=primary_signals,
+                        iso_regressor=iso_reg,
+                    )
+
+                    # Build labeled_data in the same spirit as production step
+                    labeled_data = market_data.copy()
+
+                    # Drop any existing derived columns that might carry categorical dtypes
+                    # so that we can safely assign fresh non-categorical Series
+                    derived_cols = [
+                        "log_ret",
+                        "volatility_1d",
+                        "realized_return",
+                        "binary_label",
+                        "smoothed_label",
+                        "meta_probability",
+                        "exit_reason",
+                        "event_duration_bars",
+                        "target_long",
+                        "target_short",
+                        "primary_signal",
+                    ]
+                    labeled_data = labeled_data.drop(columns=[c for c in derived_cols if c in labeled_data.columns], errors="ignore")
+
+                    log_ret = np.log(market_data["close"]).diff()
+                    labeled_data["log_ret"] = log_ret
+                    labeled_data["volatility_1d"] = volatility_1d
+                    labeled_data["realized_return"] = realized_returns
+                    labeled_data["binary_label"] = binary_labels
+                    labeled_data["smoothed_label"] = smoothed_labels
+                    labeled_data["meta_probability"] = prob_clipped.values
+                    labeled_data["exit_reason"] = exit_reasons
+                    labeled_data["event_duration_bars"] = event_durations
+                    labeled_data["target_long"] = target_long
+                    labeled_data["target_short"] = target_short
+                    labeled_data["primary_signal"] = primary_signals["consensus"]
+
+                    # Meta-features for diagnostics (same helper as production)
+                    meta_feature_cfg = config.get("meta_feature_engineering", {})
+                    volume_available = "volume" in market_data.columns
+
+                    meta_features_diag, meta_features_model_diag, _, _ = build_meta_features_for_model(
+                        market_data=market_data,
+                        primary_signals=primary_signals,
+                        realized_returns=realized_returns,
+                        binary_labels=binary_labels,
+                        event_durations=event_durations,
+                        mfe_series=mfe_series_diag,
+                        mae_series=mae_series_diag,
+                        adaptive_stop_threshold=adaptive_stop,
+                        horizon=horizon,
+                        volume_available=volume_available,
+                        meta_feature_cfg=meta_feature_cfg,
+                    )
+
+                    # Simple RF meta-model for feature importances
+                    X_diag = meta_features_model_diag[labeled_mask].fillna(0)
+                    y_diag = binary_labels[labeled_mask]
+                    final_model = RandomForestClassifier(
+                        n_estimators=200,
+                        max_depth=6,
+                        min_samples_leaf=20,
+                        n_jobs=-1,
+                        random_state=42,
+                    )
+                    if len(y_diag.unique()) >= 2 and len(y_diag) >= 50:
+                        final_model.fit(X_diag, y_diag)
+                    else:
+                        # Fallback: still fit to avoid attribute errors in diagnostics
+                        final_model.fit(X_diag, y_diag)
+
+                    # Slightly enriched config for diagnostics
+                    diag_config = dict(config)
+                    diag_config["horizon"] = horizon
+                    diag_config["profit_thr_base"] = profit_thr_base
+                    diag_config["stop_thr_base"] = stop_thr_base
+
+                    # Sanitize any categorical columns to avoid setitem/category issues
+                    labeled_data_for_diag = labeled_data.copy()
+                    cat_cols = labeled_data_for_diag.select_dtypes(include=["category"]).columns
+                    if len(cat_cols) > 0:
+                        for col in cat_cols:
+                            labeled_data_for_diag[col] = labeled_data_for_diag[col].astype(object)
+
+                    # Also ensure core Series are not categorical
+                    binary_labels_diag = pd.Series(
+                        binary_labels.astype(float).values,
+                        index=binary_labels.index,
+                    )
+                    exit_reasons_diag = None
+                    event_durations_diag = None
+                    if exit_reasons is not None:
+                        exit_reasons_diag = pd.Series(
+                            exit_reasons.astype(object).values,
+                            index=exit_reasons.index,
+                        )
+                    if event_durations is not None:
+                        event_durations_diag = pd.Series(
+                            event_durations.astype(float).values,
+                            index=event_durations.index,
+                        )
+
+                    diagnostics_path_obj = generate_diagnostics_report(
+                        labeled_data=labeled_data_for_diag,
+                        meta_features=meta_features_diag,
+                        binary_labels=binary_labels_diag,
+                        realized_returns=realized_returns,
+                        smoothed_labels=smoothed_labels,
+                        probabilities=prob_clipped.values,
+                        final_model=final_model,
+                        config=diag_config,
+                        output_dir=outcomes_dir,
+                        exit_reasons=exit_reasons_diag,
+                        event_durations=event_durations_diag,
+                        mfe_series=mfe_series_diag,
+                        mae_series=mae_series_diag,
+                        target_long=target_long,
+                        target_short=target_short,
+                        selected_feature_names=selected_feature_names,
+                    )
+                    diagnostics_path = str(diagnostics_path_obj)
+
+                    tprint_success(
+                        f"📊 Saved diagnostics for recommended labeling configuration to {diagnostics_path}",
+                    )
+        except Exception as diag_exc:
+            tprint_warning(f"⚠️ Failed to generate diagnostics for recommended configuration: {diag_exc}")
+
+        # ===== SAVE BEST PARAMS JSON =====
+        json_name = f"meta_labeling_hpo_best_params_{symbol}_{timeframe}_{direction}_{timestamp}.json"
+        json_path = outcomes_dir / json_name
+
+        try:
+            # Get best edge from the best candidate
+            best_candidate_edge = 0.0
+            if candidate_pool:
+                sorted_candidates = sorted(candidate_pool, key=lambda x: x.get('edge', x.get('combined', 0)), reverse=True)
+                if sorted_candidates:
+                    best_candidate_edge = sorted_candidates[0].get('edge', 0.0)
+
+            # Build output dict with diagnostics
+            output_dict = {
+                "symbol": symbol,
+                "exchange": exchange,
+                "timeframe": timeframe,
+                "best_score": best_score,
+                "best_edge": best_candidate_edge,
+                "best_params": best_params,
+                "knee_params": knee_params,
+                "pareto_front_size": len(pareto_front),
+                "total_trials": all_trials_count,
+                "stage_results": [
+                    {
+                        "stage": sr["stage"],
+                        "complexity": sr["complexity"],
+                        "best_score": sr["best_score"],
+                        "trials": sr["trials"],
+                    }
+                    for sr in stage_results
+                ],
+                # Gate usage statistics across all evaluated configs
+                "gate_stats": gate_stats,
+                # Full candidate history for post-hoc analysis (the "matrix")
+                "all_candidates": candidate_pool,
+            }
+
+            try:
+                best_label_config_id = None
+                knee_label_config_id = None
+
+                if isinstance(best_params, dict) and best_params:
+                    best_cfg = build_label_config(
+                        symbol=symbol,
+                        exchange=exchange,
+                        timeframe=timeframe,
+                        direction=direction,
+                        params=best_params,
+                        extra=None,
+                    )
+                    best_label_config_id = compute_label_config_id(best_cfg)
+
+                if isinstance(knee_params, dict) and knee_params:
+                    knee_cfg = build_label_config(
+                        symbol=symbol,
+                        exchange=exchange,
+                        timeframe=timeframe,
+                        direction=direction,
+                        params=knee_params,
+                        extra=None,
+                    )
+                    knee_label_config_id = compute_label_config_id(knee_cfg)
+
+                output_dict["best_label_config_id"] = best_label_config_id
+                output_dict["knee_label_config_id"] = knee_label_config_id
+            except Exception:
+                # If anything goes wrong computing IDs, proceed without them.
+                pass
+
+            # Add comprehensive diagnostics for best config
+            if best_config_diagnostics:
+                output_dict["best_config_diagnostics"] = best_config_diagnostics
+
+                # Add summary warnings as top-level fields
+                filtering_diag = best_config_diagnostics.get("filtering_diagnostics", {})
+                calib_diag = best_config_diagnostics.get("calibration_diagnostics", {})
+                robust_diag = best_config_diagnostics.get("robustness_diagnostics", {})
+                overlap_diag = best_config_diagnostics.get("class_overlap_diagnostics", {})
+                xgb_diag = best_config_diagnostics.get("sr_labeling_xgb", {})
+                mi_diag = best_config_diagnostics.get("mi_diagnostics", {})
+                leakage_diag = best_config_diagnostics.get("leakage_diagnostics", {})
+                lag_diag = best_config_diagnostics.get("lag1_stress_test", {})
+                dummy_diag = best_config_diagnostics.get("dummy_baseline_diagnostics", {})
+
+                output_dict["diagnostics_summary"] = {
+                    # Filtering / label inflation
+                    "filtering_is_major_contributor": filtering_diag.get(
+                        "filtering_is_major_contributor", False
+                    ),
+                    "auc_dominated_by_large_moves": filtering_diag.get(
+                        "auc_dominated_by_large_moves", False
+                    ),
+                    "precision_collapse_detected": filtering_diag.get(
+                        "precision_collapse_detected", False
+                    ),
+                    "auc_full": filtering_diag.get("auc_full"),
+                    "auc_filtered": filtering_diag.get("auc_filtered"),
+                    "auc_inflation": filtering_diag.get("auc_inflation"),
+                    # Calibration metrics
+                    "is_well_calibrated": calib_diag.get("is_well_calibrated", True),
+                    "brier_score": calib_diag.get("brier_score"),
+                    "ece": calib_diag.get("ece"),
+                    "mce": calib_diag.get("mce"),
+                    # Robustness
+                    "is_robust": robust_diag.get("is_robust", True),
+                    "worst_fold_auc": robust_diag.get("worst_fold_auc"),
+                    "auc_cv_std": robust_diag.get("auc_cv_std"),
+                    # Class overlap / problem difficulty
+                    "easy_problem_detected": overlap_diag.get("easy_problem_detected", False),
+                    # Mutual information (bits)
+                    "mi_prob_label_bits": mi_diag.get("mi_prob_label_bits"),
+                    "mi_prob_return_sign_bits": mi_diag.get("mi_prob_return_sign_bits"),
+                    # Permutation-importance leakage diagnostics
+                    "god_feature_suspected": leakage_diag.get("god_feature_suspected", False),
+                    "leakage_baseline_auc": leakage_diag.get("baseline_auc"),
+                    "leakage_delta_auc": leakage_diag.get("delta_auc"),
+                    "leakage_top_feature": (leakage_diag.get("top_features") or [None])[0],
+                    # Lag-1 stress test
+                    "lag1_auc_base": lag_diag.get("auc_base"),
+                    "lag1_auc_lag1": lag_diag.get("auc_lag1"),
+                    "lag1_auc_diff": lag_diag.get("auc_diff"),
+                    "lookahead_suspected": lag_diag.get("lookahead_suspected", False),
+                    # Dummy-rule baseline
+                    "auc_dummy": dummy_diag.get("auc_dummy"),
+                    "auc_dummy_raw": dummy_diag.get("auc_dummy_raw"),
+                    # sr_labeling_xgb meta-model diagnostics are no longer
+                    # populated by this step; keys retained for backward
+                    # compatibility but will typically be None.
+                    "sr_labeling_xgb_best_auc": xgb_diag.get("best_auc"),
+                    "sr_labeling_xgb_auc_improvement": xgb_diag.get("auc_improvement"),
+                }
+
+            with open(json_path, "w") as f:
+                json.dump(output_dict, f, indent=2, default=str)
+            tprint_success(f"💾 Saved best labeling HPO params to {json_path}")
+        except Exception as save_exc:
+            tprint_warning(f"⚠️ Failed to save best_params JSON: {save_exc}")
+            json_path = None
+
+        # ===== SAVE CANDIDATE POOL CSV =====
+        csv_name = f"meta_labeling_hpo_candidate_pool_{symbol}_{timeframe}_{direction}_{timestamp}.csv"
+        csv_path = outcomes_dir / csv_name
+
+        try:
+            if not candidate_pool:
+                tprint_warning("⚠️ Candidate pool is empty; skipping candidate CSV export")
+                csv_path = None
+            else:
+                candidate_df = pd.DataFrame(candidate_pool)
+
+                if 'params' in candidate_df.columns:
+                    params_df = pd.json_normalize(candidate_df['params'])
+                    candidate_df = candidate_df.drop(columns=['params'])
+                    candidate_df = pd.concat([candidate_df, params_df], axis=1)
+
+                if 'edge' in candidate_df.columns:
+                    candidate_df = candidate_df.sort_values('edge', ascending=False)
+                elif 'combined' in candidate_df.columns:
+                    candidate_df = candidate_df.sort_values('combined', ascending=False)
+
+                candidate_df.to_csv(csv_path, index=False, float_format='%.6f')
+                tprint_success(f"💾 Saved {len(candidate_pool)} candidate configs to {csv_path}")
+        except Exception as csv_exc:
+            tprint_warning(f"⚠️ Failed to save candidate pool CSV: {csv_exc}")
+            csv_path = None
+
+        # ===== SAVE PARETO FRONTIER CSV =====
+        pareto_csv_name = f"meta_labeling_hpo_pareto_front_{symbol}_{timeframe}_{direction}_{timestamp}.csv"
+        pareto_csv_path = outcomes_dir / pareto_csv_name
+
+        try:
+            if not pareto_front:
+                pareto_csv_path = None
+            else:
+                pareto_data: list[dict[str, Any]] = []
+                for sol in pareto_front:
+                    row = dict(sol.metrics)
+                    if sol.params:
+                        row.update(sol.params)
+                    pareto_data.append(row)
+
+                pareto_df = pd.DataFrame(pareto_data)
+                if 'edge' in pareto_df.columns:
+                    pareto_df = pareto_df.sort_values('edge', ascending=False)
+                elif 'combined' in pareto_df.columns:
+                    pareto_df = pareto_df.sort_values('combined', ascending=False)
+
+                pareto_df.to_csv(pareto_csv_path, index=False, float_format='%.6f')
+                tprint_success(f"💾 Saved {len(pareto_front)} Pareto solutions to {pareto_csv_path}")
+        except Exception as pareto_exc:
+            tprint_warning(f"⚠️ Failed to save Pareto frontier CSV: {pareto_exc}")
+            pareto_csv_path = None
+
+        # ===== SAVE COMPREHENSIVE MARKDOWN REPORT =====
+        md_name = f"meta_labeling_hpo_report_{symbol}_{timeframe}_{direction}_{timestamp}.md"
+        md_path = outcomes_dir / md_name
+
+        try:
+            with open(md_path, "w") as f:
+                f.write(f"# Meta-Labeling HPO Report\n\n")
+                f.write(f"**Generated:** {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC\n\n")
+                f.write(f"**Symbol:** {symbol} | **Exchange:** {exchange} | **Timeframe:** {timeframe} | **Direction:** {direction}\n\n")
+                f.write(f"---\n\n")
+
+                # Summary
+                f.write(f"## Summary\n\n")
+                f.write(f"- **Total Configurations Evaluated:** {len(candidate_pool)}\n")
+                f.write(f"- **Total Trials:** {all_trials_count}\n")
+                f.write(f"- **Best Edge:** {best_score:.6f}\n")
+                f.write(f"- **Optimization Method:** Multi-Stage Bayesian TPE with Isotonic Calibration\n\n")
+
+                # Multi-Stage Results
+                f.write(f"## Multi-Stage HPO Results\n\n")
+                f.write(f"| Stage | Complexity | Best Score | Trials |\n")
+                f.write(f"|-------|------------|------------|--------|\n")
+                for sr in stage_results:
+                    f.write(f"| {sr['stage']} | {sr['complexity']} | {sr['best_score']:.4f} | {sr['trials']} |\n")
+                f.write(f"\n")
+
+                # Best Parameters
+                f.write(f"## Best Parameters (Highest Edge)\n\n")
+                f.write(f"```json\n")
+                f.write(json.dumps(best_params, indent=2))
+                f.write(f"\n```\n\n")
+
+                # Per-regime metrics for best-edge configuration, if available
+                best_regime_metrics = None
+                try:
+                    if candidate_pool:
+                        best_candidate = max(
+                            candidate_pool,
+                            key=lambda x: x.get('edge', x.get('combined', 0)),
+                        )
+                        best_regime_metrics = best_candidate.get('per_regime_metrics')
+                except Exception:
+                    best_regime_metrics = None
+
+                if best_regime_metrics:
+                    f.write(f"## Per-Regime Metrics (Best Edge Configuration)\n\n")
+                    f.write(f"| Regime | n_events | trades_per_day | mean_pos | mean_neg | edge | AUC |\n")
+                    f.write(f"|--------|----------|----------------|----------|----------|------|-----|\n")
+                    for reg_key, m in best_regime_metrics.items():
+                        try:
+                            f.write(
+                                f"| {reg_key} | {int(m.get('n_events', 0))} | "
+                                f"{float(m.get('trades_per_day', 0.0)):.3f} | "
+                                f"{float(m.get('mean_pos', 0.0)):.5f} | "
+                                f"{float(m.get('mean_neg', 0.0)):.5f} | "
+                                f"{float(m.get('edge', 0.0)):.6f} | "
+                                f"{float(m.get('auc', 0.5)):.3f} |\n"
+                            )
+                        except Exception:
+                            continue
+                    f.write("\n")
+
+                # Knee Point Parameters
+                if knee_solution:
+                    f.write(f"## Recommended Parameters (Pareto Knee Point)\n\n")
+                    f.write(f"Balanced trade-off between learnability and profitability:\n\n")
+                    f.write(f"- **Learnability:** {knee_solution.metrics['learnability']:.4f}\n")
+                    f.write(f"- **Profitability:** {knee_solution.metrics['profitability']:.4f}\n")
+                    f.write(f"- **Mean AUC:** {knee_solution.metrics.get('mean_auc_raw', knee_solution.metrics.get('mean_auc_smooth', 0)):.4f}\n")
+                    f.write(f"- **Sharpe (Winners):** {knee_solution.metrics.get('sharpe_pos', 0):.4f}\n\n")
+                    f.write(f"```json\n")
+                    f.write(json.dumps(knee_params, indent=2))
+                    f.write(f"\n```\n\n")
+
+                # Diagnostics Summary for Best Configuration
+                if best_config_diagnostics:
+                    f.write(f"## Diagnostics Summary (Best Configuration)\n\n")
+
+                    filtering_diag = best_config_diagnostics.get("filtering_diagnostics", {})
+                    calib_diag = best_config_diagnostics.get("calibration_diagnostics", {})
+                    robust_diag = best_config_diagnostics.get("robustness_diagnostics", {})
+                    overlap_diag = best_config_diagnostics.get("class_overlap_diagnostics", {})
+                    mi_diag = best_config_diagnostics.get("mi_diagnostics", {})
+                    xgb_diag = best_config_diagnostics.get("sr_labeling_xgb", {})
+                    leakage_diag = best_config_diagnostics.get("leakage_diagnostics", {})
+                    lag_diag = best_config_diagnostics.get("lag1_stress_test", {})
+                    dummy_diag = best_config_diagnostics.get("dummy_baseline_diagnostics", {})
+                    y_shuffle_diag = best_config_diagnostics.get("y_shuffle_test", {})
+
+                    # Helper formatting
+                    def _fmt_val(val: Any, digits: int = 4) -> str:
+                        if val is None:
+                            return "N/A"
+                        try:
+                            f_val = float(val)
+                            if not np.isfinite(f_val):
+                                return "nan"
+                            return f"{f_val:.{digits}f}"
+                        except Exception:
+                            return "N/A"
+
+                    # Explicit handler for degenerate calibration
+                    def _fmt_calib(val: Any, is_degenerate: bool) -> str:
+                        if is_degenerate and val is None:
+                            return "Degenerate (Single Bin)"
+                        return _fmt_val(val)
+
+                    # Filtering diagnostics
+                    f.write("### Filtering & AUC Inflation\n\n")
+                    f.write("| Metric | Value |\n")
+                    f.write("|--------|-------|\n")
+                    f.write(f"| AUC (full labels) | {_fmt_val(filtering_diag.get('auc_full'))} |\n")
+                    f.write(f"| AUC (filtered labels) | {_fmt_val(filtering_diag.get('auc_filtered'))} |\n")
+                    f.write(f"| AUC inflation (filtered - full) | {_fmt_val(filtering_diag.get('auc_inflation'))} |\n")
+                    f.write(f"| Filtering is major contributor | {bool(filtering_diag.get('filtering_is_major_contributor', False))} |\n")
+                    f.write(f"| AUC dominated by large moves | {bool(filtering_diag.get('auc_dominated_by_large_moves', False))} |\n")
+                    f.write(f"| Precision collapse detected | {bool(filtering_diag.get('precision_collapse_detected', False))} |\n\n")
+
+                    # Leakage diagnostics
+                    if leakage_diag:
+                        f.write("### Permutation-Importance Leakage Diagnostics\n\n")
+                        f.write("| Metric | Value |\n")
+                        f.write("|--------|-------|\n")
+                        f.write(
+                            f"| Baseline AUC (probe) | {_fmt_val(leakage_diag.get('baseline_auc'))} |\n"
+                        )
+                        f.write(
+                            f"| AUC after dropping top-k features | {_fmt_val(leakage_diag.get('dropped_auc'))} |\n"
+                        )
+                        f.write(
+                            f"| Delta AUC (baseline - dropped) | {_fmt_val(leakage_diag.get('delta_auc'))} |\n"
+                        )
+                        f.write(
+                            f"| God feature suspected | {bool(leakage_diag.get('god_feature_suspected', False))} |\n"
+                        )
+                        top_feats = leakage_diag.get('top_features') or []
+                        if top_feats:
+                            f.write(
+                                f"| Top features | {', '.join(map(str, top_feats))} |\n"
+                            )
+                        f.write("\n")
+
+                    # Raw Metrics (Uncalibrated)
+                    f.write("### Raw Metrics (Uncalibrated)\n\n")
+                    f.write("| Metric | Value |\n")
+                    f.write("|--------|-------|\n")
+                    f.write(f"| Raw Probability Range | {_fmt_val(calib_diag.get('prob_range_raw', {}).get('max'))} - {_fmt_val(calib_diag.get('prob_range_raw', {}).get('min'))} |\n")
+                    f.write(f"| Raw Brier Score | {_fmt_val(calib_diag.get('brier_score'))} |\n")
+                    f.write(f"| Degenerate Calibration | {bool(calib_diag.get('degenerate_calibration'))} |\n\n")
+
+                    # Calibration diagnostics
+                    f.write("### Calibration Diagnostics\n\n")
+                    f.write("| Metric | Value |\n")
+                    f.write("|--------|-------|\n")
+                    is_degen = bool(calib_diag.get('degenerate_calibration', False))
+                    f.write(f"| Well calibrated | {bool(calib_diag.get('is_well_calibrated', True))} |\n")
+                    f.write(f"| Brier score | {_fmt_val(calib_diag.get('brier_score'))} |\n")
+                    f.write(f"| Expected Calibration Error (ECE) | {_fmt_calib(calib_diag.get('ece'), is_degen)} |\n")
+                    f.write(f"| Maximum Calibration Error (MCE) | {_fmt_calib(calib_diag.get('mce'), is_degen)} |\n\n")
+
+                    # Mutual information
+                    if mi_diag:
+                        f.write("### Mutual Information (Meta-Score vs Targets)\n\n")
+                        f.write("| Relationship | MI (bits) |\n")
+                        f.write("|--------------|-----------|\n")
+                        f.write(
+                            f"| Probabilities → Label | {_fmt_val(mi_diag.get('mi_prob_label_bits'))} |\n"
+                        )
+                        f.write(
+                            f"| Probabilities → Return sign | {_fmt_val(mi_diag.get('mi_prob_return_sign_bits'))} |\n\n"
+                        )
+
+                    # Robustness and class overlap
+                    f.write("### Robustness & Class Overlap\n\n")
+                    f.write("| Metric | Value |\n")
+                    f.write("|--------|-------|\n")
+                    f.write(f"| Robust across folds | {bool(robust_diag.get('is_robust', True))} |\n")
+                    f.write(f"| Worst fold AUC | {_fmt_val(robust_diag.get('worst_fold_auc'))} |\n")
+                    f.write(f"| AUC CV std | {_fmt_val(robust_diag.get('auc_cv_std'))} |\n")
+                    f.write(f"| Easy problem detected | {bool(overlap_diag.get('easy_problem_detected', False))} |\n\n")
+
+                    # Per-fold AUC summary (if available)
+                    per_fold = robust_diag.get("per_fold_metrics") or []
+                    if per_fold:
+                        try:
+                            f.write("#### Per-Fold AUC Summary\n\n")
+                            f.write("| Fold | AUC | n_test | ECE | Net P&L per trade |\n")
+                            f.write("|------|-----|--------|-----|-------------------|\n")
+                            for fm in per_fold:
+                                try:
+                                    f.write(
+                                        f"| {int(fm.get('fold', 0))} | "
+                                        f"{_fmt_val(fm.get('auc'))} | "
+                                        f"{int(fm.get('n_test', 0))} | "
+                                        f"{_fmt_val(fm.get('ece'))} | "
+                                        f"{_fmt_val(fm.get('net_pnl_per_trade'))} |\n"
+                                    )
+                                except Exception:
+                                    continue
+                            f.write("\n")
+                        except Exception:
+                            pass
+
+                    # Volatility and regime-wise robustness
+                    per_vol = robust_diag.get("per_volatility_regime") or {}
+                    if per_vol:
+                        f.write("#### AUC by Volatility Regime\n\n")
+                        f.write("| Regime | AUC | n_events |\n")
+                        f.write("|--------|-----|----------|\n")
+                        for rname, rm in per_vol.items():
+                            try:
+                                f.write(
+                                    f"| {rname} | {_fmt_val(rm.get('auc'))} | {int(rm.get('n_events', 0))} |\n"
+                                )
+                            except Exception:
+                                continue
+                        f.write("\n")
+
+                    per_reg = robust_diag.get("per_regime_metrics") or {}
+                    if per_reg:
+                        f.write("#### AUC by Regime Label\n\n")
+                        f.write("| Regime | AUC | n_events | Net P&L per trade |\n")
+                        f.write("|--------|-----|----------|-------------------|\n")
+                        for rname, rm in per_reg.items():
+                            try:
+                                f.write(
+                                    f"| {rname} | {_fmt_val(rm.get('auc'))} | "
+                                    f"{int(rm.get('n_events', 0))} | "
+                                    f"{_fmt_val(rm.get('net_pnl_per_trade'))} |\n"
+                                )
+                            except Exception:
+                                continue
+                        f.write("\n")
+
+                    # Y-shuffle sanity check
+                    if y_shuffle_diag:
+                        f.write("### Y-Shuffle Sanity Test\n\n")
+                        f.write("| Metric | Value |\n")
+                        f.write("|--------|-------|\n")
+                        f.write(
+                            f"| AUC with shuffled labels | {_fmt_val(y_shuffle_diag.get('auc'))} |\n"
+                        )
+                        f.write(
+                            "\nA well-behaved model should have AUC≈0.5 under label shuffling; "
+                            "any materially higher value would indicate leakage or mis-specification.\n\n"
+                        )
+
+                    # Lag-1 stress test
+                    if lag_diag:
+                        f.write("### Lag-1 Stress Test (Look-Ahead Bias)\n\n")
+                        f.write("| Metric | Value |\n")
+                        f.write("|--------|-------|\n")
+                        f.write(
+                            f"| AUC (base, t features) | {_fmt_val(lag_diag.get('auc_base'))} |\n"
+                        )
+                        f.write(
+                            f"| AUC (lag-1 features) | {_fmt_val(lag_diag.get('auc_lag1'))} |\n"
+                        )
+                        f.write(
+                            f"| AUC difference (base - lag1) | {_fmt_val(lag_diag.get('auc_diff'))} |\n"
+                        )
+                        f.write(
+                            f"| Look-ahead suspected | {bool(lag_diag.get('lookahead_suspected', False))} |\n\n"
+                        )
+
+                    # Dummy-rule baseline
+                    if dummy_diag:
+                        f.write("### Dummy-Rule Volatility Baseline\n\n")
+                        f.write("| Metric | Value |\n")
+                        f.write("|--------|-------|\n")
+                        f.write(
+                            f"| AUC (raw, signed) | {_fmt_val(dummy_diag.get('auc_dummy_raw'))} |\n"
+                        )
+                        f.write(
+                            f"| AUC (absolute, best side) | {_fmt_val(dummy_diag.get('auc_dummy'))} |\n"
+                        )
+                        f.write(
+                            f"| Samples used | {int(dummy_diag.get('n_samples', 0))} |\n\n"
+                        )
+
+                    # sr_labeling_xgb diagnostics section intentionally omitted to
+                    # avoid nested XGB HPO; downstream reports may still read
+                    # sr_labeling_xgb_* keys from the JSON summary when present.
+
+                # Underfit Diagnostics (if available)
+                final_stage_candidates = [
+                    c for c in candidate_pool
+                    if c.get('model_complexity') == 'strong' and c.get('underfit_diagnostics')
+                ]
+                if final_stage_candidates:
+                    f.write(f"## Underfit Diagnostics (Final Stage)\n\n")
+
+                    # Get diagnostics from best strong candidate
+                    best_strong = sorted(final_stage_candidates, key=lambda x: x['combined'], reverse=True)[0]
+                    diag = best_strong.get('underfit_diagnostics', {})
+
+                    if diag.get('is_underfit'):
+                        f.write(f"**⚠️ Underfit Detected:** The model shows signs of underfitting.\n\n")
+                        f.write(f"Indicators:\n")
+                        for indicator in diag.get('underfit_indicators', []):
+                            f.write(f"- {indicator}\n")
+                        f.write(f"\n")
+                    else:
+                        f.write(f"**✅ No Significant Underfit:** The model appears well-fitted.\n\n")
+
+                    # Learning curves by data fraction
+                    if diag.get('learning_curve_fractions'):
+                        f.write(f"### Learning Curves (Data Fractions)\n\n")
+                        f.write(f"| Data Fraction | AUC |\n")
+                        f.write(f"|---------------|-----|\n")
+                        for frac, auc in sorted(diag['learning_curve_fractions'].items()):
+                            f.write(f"| {frac:.0%} | {auc:.4f} |\n")
+                        f.write(f"\n")
+
+                    # Learning curves by depth
+                    if diag.get('learning_curve_depths'):
+                        f.write(f"### Learning Curves (Model Depths)\n\n")
+                        f.write(f"| Depth | AUC |\n")
+                        f.write(f"|-------|-----|\n")
+                        for depth, auc in sorted(diag['learning_curve_depths'].items()):
+                            f.write(f"| {depth} | {auc:.4f} |\n")
+                        f.write(f"\n")
+
+                    # Feature importance concentration
+                    if diag.get('feature_importance_concentration') is not None:
+                        f.write(f"**Feature Importance Concentration (Top 5):** {diag['feature_importance_concentration']:.1%}\n\n")
+
+                    if diag.get('feature_group_importance'):
+                        groups = diag['feature_group_importance']
+                        f.write("**Feature Group Importance:**\n\n")
+                        for g, share in groups.items():
+                            f.write(f"- {g}: {share:.1%}\n")
+                        f.write("\n")
+
+                    if diag.get('top_feature_importances'):
+                        f.write("**Top Features by Importance:**\n\n")
+                        for item in diag['top_feature_importances'][:10]:
+                            try:
+                                name = item.get('name', '')
+                                imp = float(item.get('importance', 0.0))
+                                f.write(f"- {name}: {imp:.2%}\n")
+                            except Exception:
+                                continue
+                        f.write("\n")
+
+                    # Probe vs deep AUC diff
+                    if diag.get('probe_vs_deep_auc_diff') is not None:
+                        f.write(f"**Probe vs Deep Model AUC Improvement:** {diag['probe_vs_deep_auc_diff']:.1%}\n\n")
+
+                # Regularization Checks Summary
+                f.write(f"## Regularization & Scoring\n\n")
+                f.write(f"### Realistic P&L Edge Metric\n\n")
+                f.write(f"The primary scoring metric is the **Realistic P&L Edge**:\n\n")
+                f.write(f"```\n")
+                f.write(f"Edge = (Mean_Return_Label1 - Transaction_Cost) × max(0, 2×AUC - 1)\n")
+                f.write(f"```\n\n")
+                f.write(f"This metric penalizes 'profitable but unlearnable' strategies more realistically:\n")
+                f.write(f"- If AUC = 0.5 (random), Edge = 0 regardless of profitability\n")
+                f.write(f"- If AUC = 1.0 (perfect), you capture full mean return minus cost\n\n")
+                f.write(f"### Regularization Checks\n\n")
+                f.write(f"All configurations were evaluated with:\n\n")
+                f.write(f"1. **Isotonic Calibration:** Probabilities calibrated to align with real expected returns\n")
+                f.write(f"2. **Temporal Stability:** Rolling window AUC variance penalty\n")
+                f.write(f"3. **Learnability Threshold:** Mean AUC < 0.7 heavily penalized\n")
+                f.write(f"4. **Profit/Stop Constraint:** Profit threshold must be ≥ 1.5× stop threshold\n")
+                f.write(f"5. **Label Balance:** Entropy-based balance scoring\n")
+                f.write(f"6. **Early Stopping:** Per-trial and global early stopping to prevent overfitting\n\n")
+
+                # Gate usage and artifacts
+                if gate_stats:
+                    f.write(f"## Gate Usage & Early-Exit Statistics\n\n")
+                    f.write("| Gate | Count |\n")
+                    f.write("|------|-------|\n")
+                    for k, v in sorted(gate_stats.items()):
+                        if k == "last_exception":
+                            continue
+                        try:
+                            count_val = int(v)
+                        except Exception:
+                            continue
+                        f.write(f"| {k} | {count_val} |\n")
+                    f.write("\n")
+
+                    if gate_stats.get("last_exception"):
+                        f.write(
+                            f"**Last exception (if any):** `{gate_stats['last_exception']}`\n\n"
+                        )
+
+                f.write(f"## Artifacts\n\n")
+                f.write(f"- **Best Params JSON:** `{json_path.name if json_path else 'N/A'}`\n")
+                f.write(f"- Y-shuffle sanity tests to ensure no trivial leakage\n")
+                f.write(f"- Robustness diagnostics across CV folds and volatility regimes\n")
+                f.write(f"- Dummy volatility baseline AUC to benchmark meta-model value-add\n")
+
+                # Recommended next-step validation: meta-gated backtest
+                f.write("\n## Recommended Next Step: Meta-Gated Backtest\n\n")
+                f.write(
+                    "To validate that the meta-labeling AUC and edge translate into tradable "
+                    "performance, run the meta-gated backtest using the meta_gating_config "
+                    "produced by feature_generation_meta_labeling_step. For example:\n\n"
+                )
+                f.write(
+                    "```bash\n"
+                    "python3 src/launcher/ares_launcher.py \\\n"
+                    "  --step meta_gated_backtest \\\n"
+                    f"  --symbol {symbol} --exchange {exchange} --timeframe {timeframe} --direction long --execution-mode full\n"
+                    "```\n\n"
+                )
+                f.write(
+                    "The meta-gated backtest report (meta_gated_backtest_report_*.md) provides "
+                    "event-level P&L, trades-per-day, drawdowns, and cost stress tests for the "
+                    "diagnostic gate implied by the best HPO configuration.\n"
+                )
+
+            tprint_success(f"📄 Saved comprehensive report to {md_path}")
+        except Exception as md_exc:
+            tprint_warning(f"⚠️ Failed to save markdown report: {md_exc}")
+            md_path = None
+
+        # Persist per-round HPO metrics to CSV for analysis
+        csv_path = None
+        try:
+            round_results = getattr(optimizer, "round_results", [])
+            if isinstance(round_results, list) and round_results:
+                rows: list[dict[str, Any]] = []
+                for rr in round_results:
+                    rows.append(
+                        {
+                            "round": rr.get("round"),
+                            "best_score": rr.get("best_score"),
+                            "improvement": rr.get("improvement"),
+                            "time_seconds": rr.get("time"),
+                            "trials": rr.get("trials"),
+                        }
+                    )
+
+                df_rounds = pd.DataFrame(rows)
+                csv_name = (
+                    f"meta_labeling_hpo_round_metrics_{symbol}_{timeframe}_{direction}_{timestamp}.csv"
+                )
+                csv_path = outcomes_dir / csv_name
+                df_rounds.to_csv(csv_path, index=False)
+                tprint_success(f"💾 Saved HPO round metrics to {csv_path}")
+        except Exception as csv_exc:
+            tprint_warning(f"⚠️ Failed to save HPO round metrics CSV: {csv_exc}")
+
+        # Compute best edge from candidate pool
+        best_edge = 0.0
+        if candidate_pool:
+            best_candidate = max(candidate_pool, key=lambda x: x.get('edge', x.get('combined', 0)))
+            best_edge = best_candidate.get('edge', 0.0)
+
+        metrics: Dict[str, Any] = {
+            "best_score": best_score,
+            "best_edge": best_edge,
+            "best_params": best_params,
+            "best_params_json": str(json_path) if json_path is not None else None,
+            "round_metrics_csv": str(csv_path) if csv_path is not None else None,
+            "recommended_diagnostics_path": diagnostics_path,
+            "total_trials": all_trials_count,
+            "stage_results": stage_results,
+            "pareto_frontier_size": len(pareto_front),
+            "candidate_pool_size": len(candidate_pool),
         }
         artifacts = {
             "best_params_json": str(json_path),

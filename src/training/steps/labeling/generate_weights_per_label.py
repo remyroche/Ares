@@ -8,7 +8,7 @@ This script implements logic to generate sample weights based on:
 3. Uniqueness (De Prado's uniqueness score)
 
 It then assesses these weights by training a probe model (LGBM) and checking
-if the weighted training improves learnability (AUC) compared to unweighted.
+if the weighted training improves learnability (AUC, Brier, Sharpe, IC) compared to unweighted.
 
 Usage:
     python src/training/steps/labeling/generate_weights_per_label.py \
@@ -26,7 +26,14 @@ from datetime import datetime, timedelta
 from scipy.stats import spearmanr
 import lightgbm as lgb
 from sklearn.model_selection import TimeSeriesSplit
-from sklearn.metrics import roc_auc_score, log_loss
+from sklearn.metrics import (
+    roc_auc_score,
+    log_loss,
+    brier_score_loss,
+    precision_score,
+    recall_score,
+    f1_score
+)
 
 # Ensure project root is on sys.path
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
@@ -244,29 +251,66 @@ def generate_weights_per_label(
 
     # Safety clip
     final_weights = np.clip(final_weights, 0.01, 10.0)
-    
+
     return final_weights
 
 # -------------------------------------------------------------------------
 # 4. Assessment (ML Probe)
 # -------------------------------------------------------------------------
 
-def assess_label_quality_ml(X, y, weights, n_splits=3):
+def calculate_sharpe_ratio(preds, returns, threshold=0.5):
+    """Calculate Sharpe Ratio of a strategy trading on predictions > threshold."""
+    signals = (preds > threshold).astype(int)
+    # Shift signals? No, preds align with returns in this context (X_test -> y_test)
+    # y_test corresponds to future return of that row
+
+    strategy_returns = signals * returns
+
+    if np.sum(signals) == 0:
+        return 0.0
+
+    mean_ret = np.mean(strategy_returns)
+    std_ret = np.std(strategy_returns)
+
+    if std_ret == 0:
+        return 0.0
+
+    # Annualized (assuming 15m bars, but just relative comparison is enough)
+    # Just raw sharpe per trade for comparison
+    return mean_ret / std_ret
+
+def assess_label_quality_ml(X, y, weights, returns=None, n_splits=3):
     """
     Train a probe model with the given weights and evaluate its performance.
     """
     # Prepare data
+    if returns is None:
+        returns = np.zeros(len(y))
+
     valid_mask = ~y.isna() & ~X.isna().any(axis=1) & np.isfinite(weights)
     X_clean = X[valid_mask]
     y_clean = y[valid_mask]
     w_clean = weights[valid_mask]
+    r_clean = returns[valid_mask]
     
     if len(y_clean) < 100:
-        return {'auc': 0.5, 'log_loss': 1.0}
+        return {
+            'auc': 0.5, 'log_loss': 1.0, 'brier_score': 0.25,
+            'precision': 0.0, 'recall': 0.0, 'f1': 0.0,
+            'sharpe_ratio': 0.0, 'information_coefficient': 0.0
+        }
 
     tscv = TimeSeriesSplit(n_splits=n_splits)
-    aucs = []
-    losses = []
+    metrics = {
+        'auc': [],
+        'log_loss': [],
+        'brier_score': [],
+        'precision': [],
+        'recall': [],
+        'f1': [],
+        'sharpe_ratio': [],
+        'information_coefficient': []
+    }
 
     model = lgb.LGBMClassifier(
         n_estimators=50,
@@ -275,35 +319,46 @@ def assess_label_quality_ml(X, y, weights, n_splits=3):
         verbose=-1,
         random_state=42
     )
-    
+
     for train_idx, test_idx in tscv.split(X_clean):
         X_train, X_test = X_clean.iloc[train_idx], X_clean.iloc[test_idx]
         y_train, y_test = y_clean.iloc[train_idx], y_clean.iloc[test_idx]
         w_train = w_clean[train_idx]
+        r_test = r_clean[test_idx]
 
         try:
             # Train WITH weights
             model.fit(X_train, y_train, sample_weight=w_train)
 
             # Evaluate WITHOUT weights (we want to know if it learned the ground truth better)
-            # Or should we evaluate weighted? Standard practice is evaluating on raw/uniform test set.
             preds = model.predict_proba(X_test)[:, 1]
+            preds_binary = (preds > 0.5).astype(int)
 
-            auc = roc_auc_score(y_test, preds)
-            ll = log_loss(y_test, preds)
-            aucs.append(auc)
-            losses.append(ll)
-        except Exception as e:
+            metrics['auc'].append(roc_auc_score(y_test, preds))
+            metrics['log_loss'].append(log_loss(y_test, preds))
+            metrics['brier_score'].append(brier_score_loss(y_test, preds))
+            metrics['precision'].append(precision_score(y_test, preds_binary, zero_division=0))
+            metrics['recall'].append(recall_score(y_test, preds_binary, zero_division=0))
+            metrics['f1'].append(f1_score(y_test, preds_binary, zero_division=0))
+
+            # Financial Metrics
+            metrics['sharpe_ratio'].append(calculate_sharpe_ratio(preds, r_test))
+
+            # Information Coefficient (Rank correlation between prob and return)
+            ic, _ = spearmanr(preds, r_test)
+            metrics['information_coefficient'].append(ic if np.isfinite(ic) else 0.0)
+
+        except Exception:
             continue
 
-    if not aucs:
-        return {'auc': 0.5, 'log_loss': 1.0}
+    if not metrics['auc']:
+        return {k: 0.0 for k in metrics}
 
-    return {
-        'auc': np.mean(aucs),
-        'auc_std': np.std(aucs),
-        'log_loss': np.mean(losses)
-    }
+    # Aggregate
+    results = {k: np.mean(v) for k, v in metrics.items()}
+    results['auc_std'] = np.std(metrics['auc'])
+
+    return results
 
 # -------------------------------------------------------------------------
 # 5. Test Data Generation
@@ -455,16 +510,17 @@ def main():
     
     # Baseline (Uniform weights)
     uniform_weights = np.ones_like(weights)
-    res_base = assess_label_quality_ml(X, y, uniform_weights)
+    res_base = assess_label_quality_ml(X, y, uniform_weights, returns=returns)
     
     # Weighted
-    res_weighted = assess_label_quality_ml(X, y, weights)
+    res_weighted = assess_label_quality_ml(X, y, weights, returns=returns)
     
-    print(f"Baseline AUC: {res_base['auc']:.4f}")
-    print(f"Weighted AUC: {res_weighted['auc']:.4f}")
+    auc_imp = res_weighted['auc'] - res_base['auc']
+    sharpe_imp = res_weighted['sharpe_ratio'] - res_base['sharpe_ratio']
+    ic_imp = res_weighted['information_coefficient'] - res_base['information_coefficient']
     
-    improvement = res_weighted['auc'] - res_base['auc']
-    print(f"Improvement: {improvement:+.4f}")
+    print(f"Baseline AUC: {res_base['auc']:.4f} | Weighted AUC: {res_weighted['auc']:.4f} ({auc_imp:+.4f})")
+    print(f"Baseline Sharpe: {res_base['sharpe_ratio']:.4f} | Weighted Sharpe: {res_weighted['sharpe_ratio']:.4f} ({sharpe_imp:+.4f})")
     
     # 6. Generate Report
     outcomes_dir = Path("outcomes")
@@ -484,22 +540,31 @@ def main():
         f.write(f"- Min: {np.min(weights):.4f}\n")
         f.write(f"- Max: {np.max(weights):.4f}\n\n")
 
-        f.write("## 2. ML Assessment (Probe Model)\n")
-        f.write("| Metric | Baseline (Uniform) | Weighted |\n")
-        f.write("|---|---|---|\n")
-        f.write(f"| AUC | {res_base['auc']:.4f} | {res_weighted['auc']:.4f} |\n")
-        f.write(f"| Log Loss | {res_base['log_loss']:.4f} | {res_weighted['log_loss']:.4f} |\n\n")
+        f.write("## 2. Comprehensive ML Assessment (Probe Model)\n")
+        f.write("| Metric | Baseline (Uniform) | Weighted | Delta |\n")
+        f.write("|---|---|---|---|\n")
+        f.write(f"| **AUC** | {res_base['auc']:.4f} | {res_weighted['auc']:.4f} | **{auc_imp:+.4f}** |\n")
+        f.write(f"| **Log Loss** | {res_base['log_loss']:.4f} | {res_weighted['log_loss']:.4f} | {(res_weighted['log_loss'] - res_base['log_loss']):+.4f} |\n")
+        f.write(f"| **Brier Score** | {res_base['brier_score']:.4f} | {res_weighted['brier_score']:.4f} | {(res_weighted['brier_score'] - res_base['brier_score']):+.4f} |\n")
+        f.write(f"| **Sharpe Ratio** | {res_base['sharpe_ratio']:.4f} | {res_weighted['sharpe_ratio']:.4f} | **{sharpe_imp:+.4f}** |\n")
+        f.write(f"| **Info. Coeff.** | {res_base['information_coefficient']:.4f} | {res_weighted['information_coefficient']:.4f} | {ic_imp:+.4f} |\n")
+        f.write(f"| Precision | {res_base['precision']:.4f} | {res_weighted['precision']:.4f} | {(res_weighted['precision'] - res_base['precision']):+.4f} |\n")
+        f.write(f"| Recall | {res_base['recall']:.4f} | {res_weighted['recall']:.4f} | {(res_weighted['recall'] - res_base['recall']):+.4f} |\n")
+        f.write(f"| F1-Score | {res_base['f1']:.4f} | {res_weighted['f1']:.4f} | {(res_weighted['f1'] - res_base['f1']):+.4f} |\n\n")
 
         f.write("## 3. Interpretation\n")
-        if improvement > 0.01:
-            f.write(f"✅ **Positive Impact**: Weighted training improved AUC by {improvement:.4f}.\n")
-            f.write("The weighting scheme successfully emphasizes more learnable/reliable events.\n")
-        elif improvement < -0.01:
-            f.write(f"❌ **Negative Impact**: Weighted training degraded AUC by {improvement:.4f}.\n")
-            f.write("The weights might be focusing on noise or filtering out valuable signals.\n")
+
+        if auc_imp > 0.005 and sharpe_imp > 0:
+            f.write(f"✅ **Strong Positive Impact**: Weights improved both Learnability (AUC) and Profitability (Sharpe).\n")
+            f.write("The weighting scheme is effectively highlighting high-quality signal events.\n")
+        elif auc_imp > 0.005:
+            f.write(f"⚠️ **Mixed Impact**: Improved Learnability (AUC) but not Profitability (Sharpe).\n")
+            f.write("The model learns better, but it might be learning economically insignificant events.\n")
+        elif sharpe_imp > 0.05:
+            f.write(f"⚠️ **Economic Impact**: Improved Profitability (Sharpe) despite flat/lower AUC.\n")
+            f.write("The weights are forcing the model to focus on the 'big winners', possibly sacrificing overall accuracy.\n")
         else:
-            f.write(f"⚪ **Neutral Impact**: Minimal change in AUC ({improvement:+.4f}).\n")
-            f.write("The weighting scheme didn't significantly alter learnability.\n")
+            f.write(f"⚪ **Neutral/Negative Impact**: No significant improvement detected.\n")
 
     print(f"Report saved to {report_path}")
 

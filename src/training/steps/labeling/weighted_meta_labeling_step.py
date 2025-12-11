@@ -82,6 +82,12 @@ from src.training.steps.labeling.meta_labeling_hpo_sample_weighted import (
     rts_smoother_1d,
     kalman_filter_1d,
     smooth_prices_rts,
+    # Feature selection functions
+    select_features_with_quality,
+    calculate_feature_quality,
+    calculate_all_feature_qualities,
+    reduce_features_by_correlation,
+    generate_multi_horizon_features,
 )
 
 logger = logging.getLogger(__name__)
@@ -566,12 +572,40 @@ class WeightedMetaLabelingStep(FeatureGenerationMetaLabelingStep):
             
             n_kalman_features = len(kalman_features.columns)
             tprint_success(f"   ✅ Added {n_kalman_features} Kalman features")
-            tprint_info(f"      Features: {list(kalman_features.columns)}")
         except Exception as kf_exc:
             tprint_warning(f"   ⚠️ Kalman feature generation failed: {kf_exc}")
             n_kalman_features = 0
         
-        tprint_info(f"   Total features: {meta_features.shape[1]} ({n_base_features} base + {n_kalman_features} Kalman)")
+        tprint_info(f"   Total raw features: {meta_features.shape[1]} ({n_base_features} base + {n_kalman_features} Kalman)")
+        
+        # ------------------------------------------------------------------
+        # 7c. Quality-based feature selection
+        # ------------------------------------------------------------------
+        # Solves circular dependency: select features using unsupervised
+        # Signal-to-Noise ratio rather than label-dependent metrics.
+        target_feature_count = int(config.get("target_feature_count", 70))
+        feature_correlation_threshold = float(config.get("feature_correlation_threshold", 0.85))
+        enable_multi_horizon = config.get("enable_multi_horizon_features", True)
+        
+        horizon_config = config.get("feature_horizon_config", {
+            "Short": 5,
+            "Medium": 20,
+            "Long": 60,
+        })
+        
+        tprint_info("   Running quality-based feature selection...")
+        try:
+            meta_features, self._feature_quality_scores = select_features_with_quality(
+                df_features=meta_features,
+                target_n=target_feature_count,
+                correlation_threshold=feature_correlation_threshold,
+                generate_horizons=enable_multi_horizon,
+                horizon_config=horizon_config,
+            )
+            tprint_success(f"   ✅ Selected {meta_features.shape[1]} features (target={target_feature_count})")
+        except Exception as fs_exc:
+            tprint_warning(f"   ⚠️ Feature selection failed: {fs_exc}. Using all features.")
+            self._feature_quality_scores = {}
         
         # ------------------------------------------------------------------
         # 8. Train weighted bagged LGBM

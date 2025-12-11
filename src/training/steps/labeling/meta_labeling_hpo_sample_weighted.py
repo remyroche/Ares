@@ -3151,6 +3151,273 @@ def _log_normalize(arr: np.ndarray, epsilon: float = 1e-9) -> np.ndarray:
     return np.sign(arr) * np.log1p(np.abs(arr) + epsilon)
 
 
+# ============================================================================
+# FEATURE QUALITY & SELECTION FUNCTIONS
+# ============================================================================
+
+def calculate_feature_quality(series: np.ndarray) -> float:
+    """
+    Unsupervised Signal-to-Noise Ratio for feature quality assessment.
+    
+    Higher Score = Better Feature (high signal, low noise).
+    
+    Quality = Signal Power (Variance) / Noise Power (Smoothness Error)
+    
+    Logic:
+    - We want features that move a lot (High Variance)
+    - But represent clean trends (Low Wiggle/Smoothness Error)
+    
+    Args:
+        series: Feature values as numpy array
+    
+    Returns:
+        Quality score (higher = better). Returns 0.0 for flat/useless features.
+    """
+    # Handle NaN/Inf
+    clean_series = series[np.isfinite(series)]
+    if len(clean_series) < 10:
+        return 0.0
+    
+    # 1. Signal Power (Standard Deviation)
+    signal_power = np.std(clean_series)
+    
+    if signal_power < 1e-12:
+        return 0.0  # Flatline feature, useless
+    
+    # 2. Noise Estimate (Mean Squared Second Difference)
+    # "How jagged is the curve?"
+    second_diff = np.diff(clean_series, n=2)
+    noise_power = np.mean(second_diff**2)
+    
+    # Avoid division by zero
+    if noise_power < 1e-12:
+        # Very smooth feature - high quality
+        return signal_power * 1e6  # Large but finite
+    
+    # Quality = Signal / Noise
+    return float(signal_power / noise_power)
+
+
+def calculate_all_feature_qualities(df_features: pd.DataFrame) -> Dict[str, float]:
+    """
+    Calculate Signal-to-Noise quality scores for all feature columns.
+    
+    This is a lightweight, unsupervised operation that runs in milliseconds.
+    
+    Args:
+        df_features: DataFrame with feature columns
+    
+    Returns:
+        Dict mapping column name to quality score
+    """
+    quality_map = {}
+    for col in df_features.columns:
+        try:
+            quality_map[col] = calculate_feature_quality(df_features[col].values)
+        except Exception:
+            quality_map[col] = 0.0
+    return quality_map
+
+
+def reduce_features_by_correlation(
+    df_features: pd.DataFrame,
+    quality_scores: Dict[str, float],
+    target_n: int = 70,
+    correlation_threshold: float = 0.85,
+    min_quality_threshold: float = 0.0,
+) -> pd.DataFrame:
+    """
+    Reduce features by removing correlated ones, keeping higher quality features.
+    
+    Algorithm:
+    1. Remove features below minimum quality threshold
+    2. Sort features by quality (descending)
+    3. Iteratively add features if not highly correlated with already selected
+    4. Use quality score as tie-breaker when removing correlated features
+    
+    Args:
+        df_features: DataFrame with all features
+        quality_scores: Dict mapping column name to quality score
+        target_n: Target number of features to keep
+        correlation_threshold: Max allowed correlation between features
+        min_quality_threshold: Minimum quality score to consider
+    
+    Returns:
+        DataFrame with reduced feature set
+    """
+    # 1. Filter out low-quality features first
+    valid_cols = [
+        col for col in df_features.columns 
+        if quality_scores.get(col, 0.0) > min_quality_threshold
+    ]
+    
+    if len(valid_cols) == 0:
+        tprint_warning("⚠️ No features passed quality threshold, using all features")
+        valid_cols = list(df_features.columns)
+    
+    # 2. Sort by quality (descending)
+    sorted_cols = sorted(valid_cols, key=lambda c: quality_scores.get(c, 0.0), reverse=True)
+    
+    # 3. Compute correlation matrix (only for valid columns)
+    df_valid = df_features[sorted_cols].copy()
+    corr_matrix = df_valid.corr().abs()
+    
+    # 4. Greedy selection: add features if not too correlated with selected ones
+    selected_features = []
+    
+    for col in sorted_cols:
+        if len(selected_features) >= target_n:
+            break
+        
+        # Check correlation with already selected features
+        is_correlated = False
+        for selected_col in selected_features:
+            if corr_matrix.loc[col, selected_col] > correlation_threshold:
+                is_correlated = True
+                break
+        
+        if not is_correlated:
+            selected_features.append(col)
+    
+    # If we don't have enough features, lower correlation threshold
+    if len(selected_features) < target_n:
+        # Second pass with relaxed threshold
+        remaining_cols = [c for c in sorted_cols if c not in selected_features]
+        relaxed_threshold = min(0.95, correlation_threshold + 0.1)
+        
+        for col in remaining_cols:
+            if len(selected_features) >= target_n:
+                break
+            
+            is_correlated = False
+            for selected_col in selected_features:
+                if corr_matrix.loc[col, selected_col] > relaxed_threshold:
+                    is_correlated = True
+                    break
+            
+            if not is_correlated:
+                selected_features.append(col)
+    
+    tprint_info(
+        f"   Feature reduction: {len(df_features.columns)} → {len(selected_features)} "
+        f"(target={target_n}, corr_threshold={correlation_threshold})"
+    )
+    
+    return df_features[selected_features]
+
+
+def generate_multi_horizon_features(
+    base_features: pd.DataFrame,
+    horizons: Dict[str, int] = None,
+) -> pd.DataFrame:
+    """
+    Generate multi-horizon versions of features (short, medium, long).
+    
+    For each feature, creates smoothed versions at different lookback windows
+    to capture different time scales of the same signal.
+    
+    Args:
+        base_features: DataFrame with base feature columns
+        horizons: Dict mapping horizon name to lookback bars
+                  Default: {"Short": 5, "Medium": 20, "Long": 60}
+    
+    Returns:
+        DataFrame with multi-horizon features added
+    """
+    if horizons is None:
+        horizons = {
+            "Short": 5,    # ~1.25 hours at 15m
+            "Medium": 20,  # ~5 hours at 15m
+            "Long": 60,    # ~15 hours at 15m
+        }
+    
+    result = base_features.copy()
+    
+    for col in base_features.columns:
+        series = base_features[col]
+        
+        for horizon_name, lookback in horizons.items():
+            # Create smoothed version using EMA
+            smoothed = series.ewm(span=lookback, adjust=False).mean()
+            
+            # Feature: Smoothed value
+            new_col_name = f"{col}_{horizon_name}"
+            result[new_col_name] = smoothed
+            
+            # Feature: Difference from base (momentum at this horizon)
+            diff_col_name = f"{col}_{horizon_name}_Diff"
+            result[diff_col_name] = _log_normalize((series - smoothed).values)
+    
+    return result
+
+
+def select_features_with_quality(
+    df_features: pd.DataFrame,
+    target_n: int = 70,
+    correlation_threshold: float = 0.85,
+    generate_horizons: bool = True,
+    horizon_config: Dict[str, int] = None,
+) -> Tuple[pd.DataFrame, Dict[str, float]]:
+    """
+    Complete feature selection pipeline with quality scoring.
+    
+    Pipeline:
+    1. (Optional) Generate multi-horizon versions of features
+    2. Calculate quality scores for all features
+    3. Reduce features by correlation, using quality as tie-breaker
+    
+    This runs AFTER Layer 0 (Kalman Q/R optimization) but BEFORE the main HPO loop.
+    
+    Args:
+        df_features: DataFrame with raw features
+        target_n: Target number of features to select
+        correlation_threshold: Max correlation between selected features
+        generate_horizons: Whether to create multi-horizon versions
+        horizon_config: Custom horizon configuration
+    
+    Returns:
+        Tuple of (reduced_features_df, quality_scores_dict)
+    """
+    tprint_info("🔍 Starting quality-based feature selection...")
+    
+    # 1. Generate multi-horizon features (if enabled)
+    if generate_horizons:
+        tprint_info(f"   Generating multi-horizon features...")
+        initial_cols = len(df_features.columns)
+        df_expanded = generate_multi_horizon_features(df_features, horizon_config)
+        tprint_info(f"   Expanded: {initial_cols} → {len(df_expanded.columns)} features")
+    else:
+        df_expanded = df_features.copy()
+    
+    # 2. Calculate quality scores for all features
+    tprint_info("   Calculating feature quality scores (Signal/Noise ratio)...")
+    quality_scores = calculate_all_feature_qualities(df_expanded)
+    
+    # Log top/bottom quality features for debugging
+    sorted_by_quality = sorted(quality_scores.items(), key=lambda x: x[1], reverse=True)
+    top_5 = sorted_by_quality[:5]
+    bottom_5 = sorted_by_quality[-5:]
+    
+    tprint_info(f"   Top 5 quality: {[(n, f'{q:.2f}') for n, q in top_5]}")
+    tprint_info(f"   Bottom 5 quality: {[(n, f'{q:.2f}') for n, q in bottom_5]}")
+    
+    # 3. Reduce by correlation with quality tie-breaker
+    tprint_info(f"   Reducing to {target_n} features by correlation...")
+    df_reduced = reduce_features_by_correlation(
+        df_features=df_expanded,
+        quality_scores=quality_scores,
+        target_n=target_n,
+        correlation_threshold=correlation_threshold,
+    )
+    
+    # Return only quality scores for selected features
+    selected_quality = {col: quality_scores[col] for col in df_reduced.columns}
+    
+    tprint_success(f"✅ Feature selection complete: {len(df_reduced.columns)} features selected")
+    
+    return df_reduced, selected_quality
+
+
 def generate_kalman_features(
     market_data: pd.DataFrame,
     kalman_Q: float,
@@ -5075,11 +5342,54 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             for col in kalman_features_aligned.columns:
                 meta_features_full[col] = kalman_features_aligned[col]
             
-            tprint_success(f"✅ Added {len(kalman_features.columns)} Kalman features: {list(kalman_features.columns)}")
+            tprint_success(f"✅ Added {len(kalman_features.columns)} Kalman features")
         except Exception as kf_exc:
             tprint_warning(f"⚠️ Kalman feature generation failed: {kf_exc}. Continuing without Kalman features.")
         
-        tprint_success("✅ Meta-features pre-calculated.")
+        tprint_success(f"✅ Meta-features pre-calculated: {meta_features_full.shape[1]} columns")
+        
+        # ------------------------------------------------------------------
+        # QUALITY-BASED FEATURE SELECTION (After Layer 0, Before HPO Loop)
+        # ------------------------------------------------------------------
+        # This solves the circular dependency: features are selected based on
+        # unsupervised quality metrics (Signal/Noise ratio) rather than labels.
+        #
+        # Pipeline:
+        # 1. Generate multi-horizon versions (Short/Medium/Long) for cross-timeframe
+        # 2. Calculate Signal-to-Noise ratio for all features
+        # 3. Reduce by correlation, keeping highest quality features
+        #
+        target_feature_count = int(config.get("target_feature_count", 70))
+        feature_correlation_threshold = float(config.get("feature_correlation_threshold", 0.85))
+        enable_multi_horizon = config.get("enable_multi_horizon_features", True)
+        
+        # Custom horizon configuration (can be overridden in config)
+        horizon_config = config.get("feature_horizon_config", {
+            "Short": 5,    # ~1.25 hours at 15m (fast signals)
+            "Medium": 20,  # ~5 hours at 15m (medium signals)
+            "Long": 60,    # ~15 hours at 15m (slow signals)
+        })
+        
+        tprint_info("🔬 Running quality-based feature selection...")
+        try:
+            meta_features_full, feature_quality_scores = select_features_with_quality(
+                df_features=meta_features_full,
+                target_n=target_feature_count,
+                correlation_threshold=feature_correlation_threshold,
+                generate_horizons=enable_multi_horizon,
+                horizon_config=horizon_config,
+            )
+            
+            # Store quality scores for potential later use
+            self._feature_quality_scores = feature_quality_scores
+            
+            tprint_success(
+                f"✅ Feature selection complete: {len(meta_features_full.columns)} features "
+                f"(target={target_feature_count})"
+            )
+        except Exception as fs_exc:
+            tprint_warning(f"⚠️ Feature selection failed: {fs_exc}. Using all features.")
+            self._feature_quality_scores = {}
 
         def layer2_objective(trial_params: Dict[str, Any]) -> float:
             """

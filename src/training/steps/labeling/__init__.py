@@ -4,12 +4,13 @@ Labeling Module for Step05.
 This module consolidates all labeling-specific functionality including:
 - Regime-aware triple barrier labeling components
 - Meta-labeling with ensemble models (LGBM + XGBoost + RF)
-- Hyperparameter optimization for labeling parameters
+- Hyperparameter optimization for labeling parameters (weighted and non-weighted)
 - Triple barrier validation framework
 - Data validation for feature generation
 - SNR diagnostics for label quality assessment
 - Meta-gated backtesting for labeling evaluation
 - LGBM-based feature selection for meta-labeling (2025-12-08)
+- Sample weighting for meta-labeling (2025-12-11)
 """
 
 from .labeling_components import (
@@ -45,15 +46,39 @@ from .feature_generation_meta_labeling_step import (
     DEFAULT_TRANSACTION_COST,
 )
 
+# Sample weighting utilities (2025-12-11)
+from .generate_weights_per_label import (
+    generate_weights_per_label,
+    compute_horizon_consistency,
+    compute_uniqueness,
+    run_layer1_optimization,
+)
+
+# Meta-labeling HPO steps
+# CANONICAL: meta_labeling_hpo_sample_weighted is the primary HPO entry point
 try:
-    from .meta_labeling_hpo_experiment_step import (
-        MetaLabelingHPOExperimentStep,
+    from .meta_labeling_hpo_sample_weighted import (
+        MetaLabelingHPOSampleWeightedStep,
+    )
+    # Alias for backward compatibility
+    MetaLabelingHPOExperimentStep = MetaLabelingHPOSampleWeightedStep
+except Exception:
+    MetaLabelingHPOSampleWeightedStep = None
+    # Fallback to original if sample-weighted version fails
+    try:
+        from .meta_labeling_hpo_experiment_step import (
+            MetaLabelingHPOExperimentStep,
+        )
+    except Exception:
+        MetaLabelingHPOExperimentStep = None
+
+# Weighted meta-labeling production step (2025-12-11)
+try:
+    from .weighted_meta_labeling_step import (
+        WeightedMetaLabelingStep,
     )
 except Exception:
-    # If the optional meta-labeling HPO step fails to import (e.g. due to
-    # environment-specific issues), degrade gracefully so that core labeling
-    # and training steps continue to function.
-    MetaLabelingHPOExperimentStep = None
+    WeightedMetaLabelingStep = None
 
 from .triple_barrier_validator import (
     TripleBarrierValidator,
@@ -95,6 +120,8 @@ __all__ = [
     "RegimeAwareLabeling",
     "FeatureGenerationMetaLabelingStep",
     "MetaLabelingHPOExperimentStep",
+    "MetaLabelingHPOSampleWeightedStep",
+    "WeightedMetaLabelingStep",
     "TripleBarrierValidator",
     "ValidationResult",
     "ValidationReport",
@@ -111,14 +138,19 @@ __all__ = [
     "generate_diagnostics_report",
     "compute_vol_scaled_returns_for_events",
     "create_quantile_labels_from_vol_scaled_returns",
-    # NEW: Volatility-scaled labeling functions (2025-12-09)
+    # Sample weighting utilities (2025-12-11)
+    "generate_weights_per_label",
+    "compute_horizon_consistency",
+    "compute_uniqueness",
+    "run_layer1_optimization",
+    # Volatility-scaled labeling functions (2025-12-09)
     "compute_ema_volatility",
     "compute_regime_metrics",
     "compute_target_positive_fraction",
     "compute_dynamic_threshold_k",
     "create_volatility_scaled_labels",
     "create_volatility_scaled_labels_for_events",
-    # NEW: Label generation diagnostics (SNR-based, 2025-12-09)
+    # Label generation diagnostics (SNR-based, 2025-12-09)
     "LabelGenerationReport",
     "compute_label_generation_report",
     "monitor_label_density_by_stage",

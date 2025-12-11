@@ -2923,6 +2923,1174 @@ def sigmoid_gate(x: float, threshold: float, sharpness: float = 10.0, lower_boun
     return lower_bound + (1.0 - lower_bound) * sigmoid
 
 
+# ============================================================================
+# RTS SMOOTHER & KALMAN FILTER FUNCTIONS (For Label & Feature Generation)
+# ============================================================================
+
+def rts_smoother_1d(
+    prices: np.ndarray,
+    Q: float,
+    R: float,
+    init_val: float = None,
+    init_cov: float = 1.0,
+) -> tuple:
+    """
+    Implements a 1D Rauch-Tung-Striebel Smoother (Local Level Model).
+    This is an ACAUSAL (zero-lag) smoother ideal for label generation.
+    
+    Model: x_t = x_{t-1} + w_t  (Process Noise Q)
+           z_t = x_t + v_t      (Measurement Noise R)
+    
+    Args:
+        prices: Raw price series
+        Q: Process noise variance (higher = more responsive, less smooth)
+        R: Measurement noise variance (higher = more smooth)
+        init_val: Initial state value (default: first observation)
+        init_cov: Initial covariance (default: 1.0)
+    
+    Returns:
+        Tuple of (smoothed_state, smoothed_covariance)
+    """
+    n = len(prices)
+    obs = np.asarray(prices, dtype=np.float64)
+    
+    # --- Forward Pass (Standard Kalman Filter) ---
+    m = np.zeros(n)  # State means
+    P = np.zeros(n)  # State covariances
+    
+    # Initialization
+    m[0] = init_val if init_val is not None else obs[0]
+    P[0] = init_cov
+    
+    for t in range(1, n):
+        # Time Update (Prediction)
+        m_minus = m[t-1]
+        P_minus = P[t-1] + Q
+        
+        # Measurement Update (Correction)
+        K = P_minus / (P_minus + R)  # Kalman Gain
+        m[t] = m_minus + K * (obs[t] - m_minus)
+        P[t] = (1 - K) * P_minus
+        
+    # --- Backward Pass (RTS Smoothing) ---
+    s_m = np.zeros(n)  # Smoothed means
+    s_P = np.zeros(n)  # Smoothed covariances
+    
+    # Last step is same as filter
+    s_m[-1] = m[-1]
+    s_P[-1] = P[-1]
+    
+    for t in range(n-2, -1, -1):
+        # Smoothing Gain
+        P_pred = P[t] + Q
+        J = P[t] / P_pred if P_pred > 1e-12 else 0.0
+        
+        # State Update (look-ahead correction)
+        s_m[t] = m[t] + J * (s_m[t+1] - m[t])
+        s_P[t] = P[t] + (J**2) * (s_P[t+1] - P_pred)
+    
+    return s_m, s_P
+
+
+def kalman_filter_1d(
+    prices: np.ndarray,
+    Q: float,
+    R: float,
+    init_val: float = None,
+    init_cov: float = 1.0,
+) -> tuple:
+    """
+    Standard 1D Kalman Filter (CAUSAL) for live feature generation.
+    
+    Model: x_t = x_{t-1} + w_t  (Process Noise Q)
+           z_t = x_t + v_t      (Measurement Noise R)
+    
+    Args:
+        prices: Raw price series
+        Q: Process noise variance
+        R: Measurement noise variance
+        init_val: Initial state value (default: first observation)
+        init_cov: Initial covariance (default: 1.0)
+    
+    Returns:
+        Tuple of (filtered_state, filtered_covariance, kalman_gain)
+    """
+    n = len(prices)
+    obs = np.asarray(prices, dtype=np.float64)
+    
+    m = np.zeros(n)  # State means
+    P = np.zeros(n)  # State covariances
+    K_arr = np.zeros(n)  # Kalman gains
+    
+    # Initialization
+    m[0] = init_val if init_val is not None else obs[0]
+    P[0] = init_cov
+    K_arr[0] = 0.5
+    
+    for t in range(1, n):
+        # Time Update (Prediction)
+        m_minus = m[t-1]
+        P_minus = P[t-1] + Q
+        
+        # Measurement Update (Correction)
+        K = P_minus / (P_minus + R) if (P_minus + R) > 1e-12 else 0.5
+        K_arr[t] = K
+        m[t] = m_minus + K * (obs[t] - m_minus)
+        P[t] = (1 - K) * P_minus
+    
+    return m, P, K_arr
+
+
+def robust_labeling_loss(
+    smoothed: np.ndarray,
+    raw: np.ndarray,
+    alpha: float = 1.0,
+    beta: float = 1.0,
+    gamma: float = 1.0,
+    is_acausal: bool = True,
+) -> tuple:
+    """
+    Compute loss for labeling optimization (RTS Smoother tuning).
+    
+    Optimizes Signal-to-Noise Ratio by balancing:
+    1. Smoothness (minimal wiggle / 2nd derivative)
+    2. Tracking Error (RMSE from raw prices)
+    3. Amplitude Fidelity (preserve ~95% of price volatility)
+    
+    Args:
+        smoothed: Smoothed price series from RTS
+        raw: Raw price series
+        alpha: Weight for smoothness penalty
+        beta: Weight for tracking error penalty
+        gamma: Weight for amplitude error penalty
+        is_acausal: If True (RTS), enforces zero-lag checking
+    
+    Returns:
+        Tuple of (total_loss, details_dict)
+    """
+    s = np.asarray(smoothed, dtype=np.float64)
+    r = np.asarray(raw, dtype=np.float64)
+    
+    # Returns for stationarity
+    s_ret = np.diff(s)
+    r_ret = np.diff(r)
+    raw_vol = np.std(r_ret) + 1e-9
+
+    # --- Component 1: Smoothness (Normalized) ---
+    # Goal: Minimal "wiggle" (2nd derivative)
+    second_diff = np.diff(s, n=2)
+    smooth_error = np.mean(second_diff**2) / (raw_vol**2)
+
+    # --- Component 2: Tracking Error ---
+    if is_acausal:
+        # RTS: Direct RMSE (no lag expected)
+        rmse = np.sqrt(np.mean((s - r)**2))
+        tracking_error = rmse / raw_vol
+    else:
+        # Causal filter: Allow 1-bar lag
+        tau = 1
+        rmse = np.sqrt(np.mean((s[:-tau] - r[tau:])**2))
+        tracking_error = rmse / raw_vol
+
+    # --- Component 3: Amplitude Fidelity ---
+    # CRITICAL FOR LABELS: Ensure we don't "shrink" the events.
+    std_s = np.std(s_ret)
+    std_r = np.std(r_ret)
+    
+    # Target 95% volatility retention
+    # Penalty for over-smoothing (ratio < 0.95) or noise amplification (ratio > 1.05)
+    amp_ratio = std_s / (std_r + 1e-9)
+    amp_error = (amp_ratio - 0.95)**2
+
+    # --- Total Loss ---
+    total_loss = (alpha * smooth_error) + (beta * tracking_error) + (gamma * amp_error)
+    
+    return total_loss, {
+        "loss": total_loss,
+        "smooth": smooth_error,
+        "track": tracking_error,
+        "amp": amp_error,
+        "amp_ratio": amp_ratio,
+    }
+
+
+def smooth_prices_rts(
+    prices: pd.Series,
+    Q: float,
+    R: float,
+) -> pd.Series:
+    """
+    Smooth a price series using RTS Smoother for label generation.
+    
+    RTS is ACAUSAL (uses future data) - only for training labels, NOT live features.
+    For live features, use kalman_filter_1d instead.
+    
+    Args:
+        prices: Raw price series
+        Q: Process noise variance (from Stage 0 optimization)
+        R: Measurement noise variance (from Stage 0 optimization)
+    
+    Returns:
+        Smoothed price series as pandas Series
+    """
+    smoothed, _ = rts_smoother_1d(
+        prices=prices.values,
+        Q=Q,
+        R=R,
+        init_val=None,
+        init_cov=1.0,
+    )
+    return pd.Series(smoothed, index=prices.index, name="rts_smoothed_close")
+
+
+def _log_normalize(arr: np.ndarray, epsilon: float = 1e-9) -> np.ndarray:
+    """
+    Log-normalize an array: sign(x) * log(1 + |x|).
+    Preserves sign while compressing magnitude for better ML performance.
+    """
+    return np.sign(arr) * np.log1p(np.abs(arr) + epsilon)
+
+
+# ============================================================================
+# FEATURE QUALITY & SELECTION FUNCTIONS
+# ============================================================================
+
+def calculate_feature_quality(series: np.ndarray) -> float:
+    """
+    Unsupervised Signal-to-Noise Ratio for feature quality assessment.
+    
+    Higher Score = Better Feature (high signal, low noise).
+    
+    Quality = Signal Power (Variance) / Noise Power (Smoothness Error)
+    
+    Logic:
+    - We want features that move a lot (High Variance)
+    - But represent clean trends (Low Wiggle/Smoothness Error)
+    
+    Args:
+        series: Feature values as numpy array
+    
+    Returns:
+        Quality score (higher = better). Returns 0.0 for flat/useless features.
+    """
+    # Handle NaN/Inf
+    clean_series = series[np.isfinite(series)]
+    if len(clean_series) < 10:
+        return 0.0
+    
+    # 1. Signal Power (Standard Deviation)
+    signal_power = np.std(clean_series)
+    
+    if signal_power < 1e-12:
+        return 0.0  # Flatline feature, useless
+    
+    # 2. Noise Estimate (Mean Squared Second Difference)
+    # "How jagged is the curve?"
+    second_diff = np.diff(clean_series, n=2)
+    noise_power = np.mean(second_diff**2)
+    
+    # Avoid division by zero
+    if noise_power < 1e-12:
+        # Very smooth feature - high quality
+        return signal_power * 1e6  # Large but finite
+    
+    # Quality = Signal / Noise
+    return float(signal_power / noise_power)
+
+
+def calculate_all_feature_qualities(df_features: pd.DataFrame) -> Dict[str, float]:
+    """
+    Calculate Signal-to-Noise quality scores for all feature columns.
+    
+    This is a lightweight, unsupervised operation that runs in milliseconds.
+    
+    Args:
+        df_features: DataFrame with feature columns
+    
+    Returns:
+        Dict mapping column name to quality score
+    """
+    quality_map = {}
+    for col in df_features.columns:
+        try:
+            quality_map[col] = calculate_feature_quality(df_features[col].values)
+        except Exception:
+            quality_map[col] = 0.0
+    return quality_map
+
+
+def reduce_features_by_correlation(
+    df_features: pd.DataFrame,
+    quality_scores: Dict[str, float],
+    target_n: int = 70,
+    correlation_threshold: float = 0.85,
+    min_quality_threshold: float = 0.0,
+) -> pd.DataFrame:
+    """
+    Reduce features by removing correlated ones, keeping higher quality features.
+    
+    RELATIONSHIP BETWEEN CORRELATION THRESHOLD AND QUALITY SCORE:
+    ==============================================================
+    
+    These two parameters serve DIFFERENT, COMPLEMENTARY purposes:
+    
+    1. CORRELATION THRESHOLD (default 0.85):
+       - Determines WHEN features are "redundant"
+       - If |corr(A, B)| > threshold, they carry similar information
+       - At least one must be eliminated to reduce multicollinearity
+       - 0.85 is standard for ML - higher values keep more correlated features
+       
+    2. QUALITY SCORE (Signal/Noise Ratio):
+       - Determines WHICH feature to KEEP when correlated pair is found
+       - Quality = std(series) / mean(second_derivative^2)
+       - High quality = lots of variance (signal) with smooth trends (low noise)
+       - This is NOT a threshold - it's a RANKING for tie-breaking
+       
+    ALGORITHM:
+    ----------
+    1. Sort all features by quality score (highest first)
+    2. For each feature (in quality order):
+       - Check correlation with ALL already-selected features
+       - If corr > threshold with ANY selected: SKIP (inferior duplicate)
+       - Otherwise: ADD to selection
+    3. Continue until target_n features selected
+    
+    KEY INSIGHT: We iterate in quality order, so the FIRST feature 
+    encountered always wins. If RSI_Short and RSI_Medium correlate at 0.90,
+    the one with higher quality score gets selected first, and the other
+    is automatically rejected when we reach it.
+    
+    Args:
+        df_features: DataFrame with all features
+        quality_scores: Dict mapping column name to quality score
+        target_n: Target number of features to keep
+        correlation_threshold: Max allowed |correlation| between features
+        min_quality_threshold: Minimum quality score to consider (hard cutoff)
+    
+    Returns:
+        DataFrame with reduced feature set (target_n columns)
+    """
+    # 1. Filter out low-quality features first
+    valid_cols = [
+        col for col in df_features.columns 
+        if quality_scores.get(col, 0.0) > min_quality_threshold
+    ]
+    
+    if len(valid_cols) == 0:
+        tprint_warning("⚠️ No features passed quality threshold, using all features")
+        valid_cols = list(df_features.columns)
+    
+    # 2. Sort by quality (descending)
+    sorted_cols = sorted(valid_cols, key=lambda c: quality_scores.get(c, 0.0), reverse=True)
+    
+    # 3. Compute correlation matrix (only for valid columns)
+    df_valid = df_features[sorted_cols].copy()
+    corr_matrix = df_valid.corr().abs()
+    
+    # 4. Greedy selection: add features if not too correlated with selected ones
+    selected_features = []
+    
+    for col in sorted_cols:
+        if len(selected_features) >= target_n:
+            break
+        
+        # Check correlation with already selected features
+        is_correlated = False
+        for selected_col in selected_features:
+            if corr_matrix.loc[col, selected_col] > correlation_threshold:
+                is_correlated = True
+                break
+        
+        if not is_correlated:
+            selected_features.append(col)
+    
+    # If we don't have enough features, lower correlation threshold
+    if len(selected_features) < target_n:
+        # Second pass with relaxed threshold
+        remaining_cols = [c for c in sorted_cols if c not in selected_features]
+        relaxed_threshold = min(0.95, correlation_threshold + 0.1)
+        
+        for col in remaining_cols:
+            if len(selected_features) >= target_n:
+                break
+            
+            is_correlated = False
+            for selected_col in selected_features:
+                if corr_matrix.loc[col, selected_col] > relaxed_threshold:
+                    is_correlated = True
+                    break
+            
+            if not is_correlated:
+                selected_features.append(col)
+    
+    tprint_info(
+        f"   Feature reduction: {len(df_features.columns)} → {len(selected_features)} "
+        f"(target={target_n}, corr_threshold={correlation_threshold})"
+    )
+    
+    return df_features[selected_features]
+
+
+def generate_multi_horizon_features(
+    base_features: pd.DataFrame,
+    horizons: Dict[str, int] = None,
+    include_base: bool = True,
+) -> pd.DataFrame:
+    """
+    Generate multi-horizon versions of features (short, medium, long).
+    
+    For each feature, creates smoothed versions at different lookback windows
+    to capture different time scales of the same signal.
+    
+    NOTE: This creates EMA-smoothed versions of ALREADY COMPUTED features.
+    For truly configurable base timeframes, use generate_configurable_features().
+    
+    Args:
+        base_features: DataFrame with base feature columns
+        horizons: Dict mapping horizon name to lookback bars
+                  Default: {"Short": 5, "Medium": 20, "Long": 60}
+        include_base: Whether to include original features (default True)
+    
+    Returns:
+        DataFrame with multi-horizon features added
+        
+    Features created per input column:
+        - {col}_Short: EMA(5) smoothed
+        - {col}_Medium: EMA(20) smoothed
+        - {col}_Long: EMA(60) smoothed
+        - {col}_Short_Diff: Momentum vs short EMA
+        - {col}_Medium_Diff: Momentum vs medium EMA
+        - {col}_Long_Diff: Momentum vs long EMA
+    
+    Total: 6 new columns per input feature (+ original if include_base=True)
+    """
+    if horizons is None:
+        horizons = {
+            "Short": 5,    # ~1.25 hours at 15m
+            "Medium": 20,  # ~5 hours at 15m
+            "Long": 60,    # ~15 hours at 15m
+        }
+    
+    if include_base:
+        result = base_features.copy()
+    else:
+        result = pd.DataFrame(index=base_features.index)
+    
+    for col in base_features.columns:
+        series = base_features[col]
+        
+        for horizon_name, lookback in horizons.items():
+            # Create smoothed version using EMA
+            smoothed = series.ewm(span=lookback, adjust=False).mean()
+            
+            # Feature: Smoothed value
+            new_col_name = f"{col}_{horizon_name}"
+            result[new_col_name] = smoothed
+            
+            # Feature: Difference from base (momentum at this horizon)
+            diff_col_name = f"{col}_{horizon_name}_Diff"
+            result[diff_col_name] = _log_normalize((series - smoothed).values)
+    
+    return result
+
+
+# ============================================================================
+# CONFIGURABLE BASE FEATURE GENERATION (Horizon-Aware)
+# ============================================================================
+
+# Default horizon multipliers for different feature types
+# Base unit is the "Medium" horizon (e.g., 20 bars at 15m = 5 hours)
+HORIZON_MULTIPLIERS = {
+    "Short": 0.25,   # 5 bars at 15m
+    "Medium": 1.0,   # 20 bars at 15m (base)
+    "Long": 3.0,     # 60 bars at 15m
+}
+
+# Features that should NOT be horizon-adjusted (specialist features)
+FIXED_HORIZON_FEATURES = {
+    "volatility_1d",      # Always 1-day (96 bars at 15m)
+    "volatility_1w",      # Always 1-week
+    "daily_range",        # Daily high-low
+    "overnight_gap",      # Session-based
+}
+
+
+def generate_configurable_technical_features(
+    market_data: pd.DataFrame,
+    base_horizon: int = 20,
+    horizons: Dict[str, float] = None,
+) -> pd.DataFrame:
+    """
+    Generate technical features with CONFIGURABLE base timeframes.
+    
+    All lookback windows are derived from `base_horizon` multiplied by
+    horizon multipliers, allowing bulk adjustment of feature timeframes.
+    
+    Args:
+        market_data: DataFrame with OHLCV columns
+        base_horizon: Base lookback in bars (default 20 = ~5 hours at 15m)
+        horizons: Multipliers for Short/Medium/Long (default from HORIZON_MULTIPLIERS)
+    
+    Returns:
+        DataFrame with configurable-horizon technical features
+        
+    Feature List (per horizon):
+        1. RSI_{horizon}: Relative Strength Index
+        2. ATR_{horizon}: Average True Range (normalized)
+        3. BB_Distance_{horizon}: Bollinger Band position
+        4. SMA_Distance_{horizon}: Distance from SMA
+        5. EMA_Distance_{horizon}: Distance from EMA
+        6. ROC_{horizon}: Rate of Change
+        7. Momentum_{horizon}: Price momentum
+        8. Volatility_{horizon}: Rolling volatility
+        9. Volume_SMA_Ratio_{horizon}: Volume vs SMA (if volume available)
+        10. High_Low_Range_{horizon}: Normalized range
+        
+    Total: 10 features x 3 horizons = 30 configurable features
+    Plus fixed features (volatility_1d, etc.)
+    """
+    if horizons is None:
+        horizons = HORIZON_MULTIPLIERS.copy()
+    
+    features = pd.DataFrame(index=market_data.index)
+    
+    close = market_data["close"]
+    high = market_data.get("high", close)
+    low = market_data.get("low", close)
+    volume = market_data.get("volume", None)
+    
+    # Generate features for each horizon
+    for horizon_name, multiplier in horizons.items():
+        lookback = max(2, int(base_horizon * multiplier))
+        suffix = f"_{horizon_name}"
+        
+        # 1. RSI
+        delta = close.diff()
+        gain = delta.where(delta > 0, 0).rolling(lookback).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(lookback).mean()
+        rs = gain / (loss + 1e-9)
+        rsi = 100 - (100 / (1 + rs))
+        features[f"RSI{suffix}"] = (rsi - 50) / 50  # Normalize to [-1, 1]
+        
+        # 2. ATR (normalized by price)
+        tr1 = high - low
+        tr2 = (high - close.shift(1)).abs()
+        tr3 = (low - close.shift(1)).abs()
+        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        atr = tr.rolling(lookback).mean()
+        features[f"ATR{suffix}"] = _log_normalize((atr / close).values)
+        
+        # 3. Bollinger Band Distance
+        sma = close.rolling(lookback).mean()
+        std = close.rolling(lookback).std()
+        bb_upper = sma + 2 * std
+        bb_lower = sma - 2 * std
+        bb_width = bb_upper - bb_lower
+        features[f"BB_Distance{suffix}"] = ((close - sma) / (bb_width / 2 + 1e-9)).values
+        
+        # 4. SMA Distance
+        features[f"SMA_Distance{suffix}"] = _log_normalize(((close - sma) / close).values)
+        
+        # 5. EMA Distance
+        ema = close.ewm(span=lookback, adjust=False).mean()
+        features[f"EMA_Distance{suffix}"] = _log_normalize(((close - ema) / close).values)
+        
+        # 6. Rate of Change (ROC)
+        roc = (close - close.shift(lookback)) / (close.shift(lookback) + 1e-9)
+        features[f"ROC{suffix}"] = _log_normalize(roc.values)
+        
+        # 7. Momentum
+        momentum = close - close.shift(lookback)
+        features[f"Momentum{suffix}"] = _log_normalize((momentum / close).values)
+        
+        # 8. Rolling Volatility
+        returns = close.pct_change()
+        vol = returns.rolling(lookback).std()
+        features[f"Volatility{suffix}"] = _log_normalize(vol.values)
+        
+        # 9. Volume SMA Ratio (if available)
+        if volume is not None:
+            vol_sma = volume.rolling(lookback).mean()
+            vol_ratio = volume / (vol_sma + 1e-9)
+            features[f"Volume_SMA_Ratio{suffix}"] = _log_normalize((vol_ratio - 1).values)
+        
+        # 10. High-Low Range (normalized)
+        hl_range = (high - low) / close
+        hl_range_ma = hl_range.rolling(lookback).mean()
+        features[f"HL_Range{suffix}"] = _log_normalize(hl_range_ma.values)
+    
+    # Add FIXED horizon features (specialist features)
+    # These are NOT adjusted by horizon config
+    
+    # Volatility 1D (always 96 bars at 15m)
+    returns = close.pct_change()
+    features["Volatility_1D"] = _log_normalize(returns.rolling(96).std().values)
+    
+    # Volatility 1W (always 672 bars at 15m)
+    features["Volatility_1W"] = _log_normalize(returns.rolling(672).std().values)
+    
+    # Daily Range (24-hour high-low, 96 bars at 15m)
+    daily_high = high.rolling(96).max()
+    daily_low = low.rolling(96).min()
+    features["Daily_Range"] = _log_normalize(((daily_high - daily_low) / close).values)
+    
+    # Fill NaN and replace infinities
+    features = features.fillna(0).replace([np.inf, -np.inf], 0)
+    
+    return features
+
+
+def get_feature_inventory() -> Dict[str, List[str]]:
+    """
+    Return a complete inventory of features generated by the pipeline.
+    
+    Returns:
+        Dict with categories and their feature lists
+    """
+    inventory = {
+        "configurable_technical": [
+            # Per horizon (Short, Medium, Long) = 3 versions each
+            "RSI",
+            "ATR",
+            "BB_Distance",
+            "SMA_Distance",
+            "EMA_Distance",
+            "ROC",
+            "Momentum",
+            "Volatility",
+            "Volume_SMA_Ratio",
+            "HL_Range",
+        ],
+        "fixed_specialist": [
+            "Volatility_1D",
+            "Volatility_1W",
+            "Daily_Range",
+        ],
+        "kalman_price": [
+            "KF_Close_LogRet",
+            "KF_High_LogRet",
+            "KF_Low_LogRet",
+            "KF_Velocity",
+            "KF_Acceleration",
+            "KF_Slope",
+            "KF_P",
+            "KF_RSI",
+            "KF_BB_Distance",
+            "KF_ATR",
+            "KF_ATR_Ratio",
+        ],
+        "kalman_vwap": [
+            "KF_VWAP_Distance",
+            "KF_VWAP_Slope",
+            "KF_VWAP_Zscore",
+        ],
+        "kalman_volume": [
+            "KF_Volume_Diff",
+            "KF_LogVolume_Slope",
+            "KF_Volume_Zscore",
+            "KF_Volume_Ratio",
+            "KF_Volume_P",
+        ],
+    }
+    
+    # Calculate totals
+    configurable_count = len(inventory["configurable_technical"]) * 3  # 3 horizons
+    fixed_count = len(inventory["fixed_specialist"])
+    kalman_count = (
+        len(inventory["kalman_price"]) + 
+        len(inventory["kalman_vwap"]) + 
+        len(inventory["kalman_volume"])
+    )
+    
+    inventory["_counts"] = {
+        "configurable_technical": configurable_count,
+        "fixed_specialist": fixed_count,
+        "kalman_features": kalman_count,
+        "total_base": configurable_count + fixed_count + kalman_count,
+        "with_multi_horizon": (configurable_count + fixed_count + kalman_count) * 7,  # base + 6 per horizon
+    }
+    
+    return inventory
+
+
+def select_features_with_quality(
+    df_features: pd.DataFrame,
+    target_n: int = 70,
+    correlation_threshold: float = 0.85,
+    generate_horizons: bool = True,
+    horizon_config: Dict[str, int] = None,
+) -> Tuple[pd.DataFrame, Dict[str, float]]:
+    """
+    Complete feature selection pipeline with quality scoring.
+    
+    Pipeline:
+    1. (Optional) Generate multi-horizon versions of features
+    2. Calculate quality scores for all features
+    3. Reduce features by correlation, using quality as tie-breaker
+    
+    This runs AFTER Layer 0 (Kalman Q/R optimization) but BEFORE the main HPO loop.
+    
+    Args:
+        df_features: DataFrame with raw features
+        target_n: Target number of features to select
+        correlation_threshold: Max correlation between selected features
+        generate_horizons: Whether to create multi-horizon versions
+        horizon_config: Custom horizon configuration
+    
+    Returns:
+        Tuple of (reduced_features_df, quality_scores_dict)
+    """
+    tprint_info("🔍 Starting quality-based feature selection...")
+    
+    # 1. Generate multi-horizon features (if enabled)
+    if generate_horizons:
+        tprint_info(f"   Generating multi-horizon features...")
+        initial_cols = len(df_features.columns)
+        df_expanded = generate_multi_horizon_features(df_features, horizon_config)
+        tprint_info(f"   Expanded: {initial_cols} → {len(df_expanded.columns)} features")
+    else:
+        df_expanded = df_features.copy()
+    
+    # 2. Calculate quality scores for all features
+    tprint_info("   Calculating feature quality scores (Signal/Noise ratio)...")
+    quality_scores = calculate_all_feature_qualities(df_expanded)
+    
+    # Log top/bottom quality features for debugging
+    sorted_by_quality = sorted(quality_scores.items(), key=lambda x: x[1], reverse=True)
+    top_5 = sorted_by_quality[:5]
+    bottom_5 = sorted_by_quality[-5:]
+    
+    tprint_info(f"   Top 5 quality: {[(n, f'{q:.2f}') for n, q in top_5]}")
+    tprint_info(f"   Bottom 5 quality: {[(n, f'{q:.2f}') for n, q in bottom_5]}")
+    
+    # 3. Reduce by correlation with quality tie-breaker
+    tprint_info(f"   Reducing to {target_n} features by correlation...")
+    df_reduced = reduce_features_by_correlation(
+        df_features=df_expanded,
+        quality_scores=quality_scores,
+        target_n=target_n,
+        correlation_threshold=correlation_threshold,
+    )
+    
+    # Return only quality scores for selected features
+    selected_quality = {col: quality_scores[col] for col in df_reduced.columns}
+    
+    tprint_success(f"✅ Feature selection complete: {len(df_reduced.columns)} features selected")
+    
+    return df_reduced, selected_quality
+
+
+def generate_kalman_features(
+    market_data: pd.DataFrame,
+    kalman_Q: float,
+    kalman_R: float,
+) -> pd.DataFrame:
+    """
+    Generate Kalman-based features for the weighted pipeline.
+    
+    Uses CAUSAL Kalman Filter (not RTS) for features that can be used in live trading.
+    RTS is only used for label generation (acausal, look-ahead).
+    
+    All price-derivative features are LOG-NORMALIZED for better ML performance.
+    
+    Features generated:
+    - KF_Close, KF_High, KF_Low: Filtered OHLC (log-returns vs raw)
+    - KF_Velocity: 1st derivative of filtered close (log-normalized)
+    - KF_Acceleration: 2nd derivative of filtered close (log-normalized)
+    - KF_Slope: Rolling slope of filtered close (log-normalized)
+    - KF_P: Error covariance (log-normalized)
+    - KF_RSI: RSI computed on filtered close (already bounded 0-100)
+    - KF_BB_Distance: Distance from Kalman Bollinger Band (normalized)
+    - KF_ATR: Kalman-filtered ATR (log-normalized)
+    - KF_VWAP: Kalman-filtered VWAP distance (normalized)
+    - KF_LogVolume: Filtered log volume
+    - KF_LogVolume_Slope: Slope of filtered log volume
+    - KF_Volume_Zscore: Standardized volume innovation
+    - KF_Volume_Ratio: Current vs filtered volume ratio (log-normalized)
+    - KF_Volume_P: Volume error covariance (log-normalized)
+    
+    Args:
+        market_data: DataFrame with OHLCV data
+        kalman_Q: Process noise (from Stage 0 optimization)
+        kalman_R: Measurement noise (from Stage 0 optimization)
+    
+    Returns:
+        DataFrame with Kalman features (log-normalized where appropriate)
+    """
+    features = pd.DataFrame(index=market_data.index)
+    
+    # Extract price series
+    close = market_data["close"].values
+    high = market_data.get("high", market_data["close"]).values
+    low = market_data.get("low", market_data["close"]).values
+    open_price = market_data.get("open", market_data["close"]).values
+    
+    # --- Price-Based Kalman Features ---
+    
+    # 1. Filtered OHLC
+    kf_close, kf_close_P, _ = kalman_filter_1d(close, Q=kalman_Q, R=kalman_R)
+    kf_high, kf_high_P, _ = kalman_filter_1d(high, Q=kalman_Q, R=kalman_R)
+    kf_low, kf_low_P, _ = kalman_filter_1d(low, Q=kalman_Q, R=kalman_R)
+    
+    # Store as log-returns relative to raw (normalized difference)
+    features["KF_Close_LogRet"] = _log_normalize((kf_close - close) / (close + 1e-9))
+    features["KF_High_LogRet"] = _log_normalize((kf_high - high) / (high + 1e-9))
+    features["KF_Low_LogRet"] = _log_normalize((kf_low - low) / (low + 1e-9))
+    
+    # 2. Kalman Velocity (1st derivative) - LOG-NORMALIZED
+    kf_velocity = np.zeros_like(kf_close)
+    kf_velocity[1:] = np.diff(kf_close) / (kf_close[:-1] + 1e-9)  # Percent change
+    features["KF_Velocity"] = _log_normalize(kf_velocity)
+    
+    # 3. Kalman Acceleration (2nd derivative) - LOG-NORMALIZED
+    kf_accel = np.zeros_like(kf_close)
+    kf_accel[2:] = np.diff(kf_velocity[1:])  # Change in velocity
+    features["KF_Acceleration"] = _log_normalize(kf_accel)
+    
+    # 4. Kalman Slope (rolling regression slope) - LOG-NORMALIZED
+    kf_slope = np.zeros_like(kf_close)
+    slope_window = 10
+    for i in range(slope_window, len(kf_close)):
+        y = kf_close[i-slope_window:i]
+        x = np.arange(slope_window)
+        if np.std(y) > 1e-9:
+            slope = np.polyfit(x, y, 1)[0]
+            # Normalize by price level
+            kf_slope[i] = slope / (kf_close[i] + 1e-9)
+    features["KF_Slope"] = _log_normalize(kf_slope)
+    
+    # 5. Kalman P (Error Covariance / Uncertainty) - LOG-NORMALIZED
+    features["KF_P"] = _log_normalize(kf_close_P)
+    
+    # 6. Kalman RSI (RSI on filtered close) - Already bounded 0-100
+    kf_returns = np.diff(kf_close, prepend=kf_close[0])
+    gains = np.where(kf_returns > 0, kf_returns, 0)
+    losses = np.where(kf_returns < 0, -kf_returns, 0)
+    
+    # Exponential moving average for RSI
+    rsi_period = 14
+    avg_gain = pd.Series(gains).ewm(span=rsi_period, adjust=False).mean().values
+    avg_loss = pd.Series(losses).ewm(span=rsi_period, adjust=False).mean().values
+    rs = avg_gain / (avg_loss + 1e-9)
+    kf_rsi = 100 - (100 / (1 + rs))
+    # Normalize RSI to [-1, 1] range for consistency
+    features["KF_RSI"] = (kf_rsi - 50) / 50
+    
+    # 7. KF_Close - KF_Bollinger (distance from Kalman Bollinger Band)
+    bb_window = 20
+    kf_close_series = pd.Series(kf_close)
+    kf_ma = kf_close_series.rolling(bb_window).mean()
+    kf_std = kf_close_series.rolling(bb_window).std()
+    kf_upper_bb = kf_ma + 2 * kf_std
+    kf_lower_bb = kf_ma - 2 * kf_std
+    
+    # Normalized distance from center band (already normalized by band width)
+    bb_width = (kf_upper_bb - kf_lower_bb).replace(0, np.nan)
+    kf_bb_distance = (kf_close_series - kf_ma) / (bb_width / 2 + 1e-9)
+    features["KF_BB_Distance"] = kf_bb_distance.values
+    
+    # --- NEW: Kalman ATR ---
+    # 8. Compute True Range and filter with Kalman
+    tr1 = high - low
+    tr2 = np.abs(high - np.roll(close, 1))
+    tr3 = np.abs(low - np.roll(close, 1))
+    tr2[0] = tr1[0]  # Handle first element
+    tr3[0] = tr1[0]
+    true_range = np.maximum(np.maximum(tr1, tr2), tr3)
+    
+    # Filter True Range with Kalman (use higher R for smoothing)
+    kf_tr, _, _ = kalman_filter_1d(true_range, Q=kalman_Q * 0.5, R=kalman_R * 3.0)
+    
+    # ATR as rolling mean of filtered TR
+    kf_atr = pd.Series(kf_tr).rolling(14).mean().values
+    
+    # Normalize ATR by price level and log-transform
+    kf_atr_normalized = kf_atr / (close + 1e-9)
+    features["KF_ATR"] = _log_normalize(kf_atr_normalized)
+    
+    # Also store raw ATR ratio (KF_ATR vs standard ATR)
+    raw_atr = pd.Series(true_range).rolling(14).mean().values
+    atr_ratio = kf_atr / (raw_atr + 1e-9)
+    features["KF_ATR_Ratio"] = _log_normalize(atr_ratio - 1.0)  # Center around 0
+    
+    # --- NEW: Kalman VWAP ---
+    # 9. Volume-Weighted Average Price with Kalman filtering
+    if "volume" in market_data.columns:
+        volume = market_data["volume"].values
+        
+        # Typical price
+        typical_price = (high + low + close) / 3.0
+        
+        # Cumulative VWAP components
+        cumulative_tp_vol = np.cumsum(typical_price * volume)
+        cumulative_vol = np.cumsum(volume)
+        
+        # Raw VWAP
+        raw_vwap = cumulative_tp_vol / (cumulative_vol + 1e-9)
+        
+        # Filter VWAP with Kalman
+        kf_vwap, kf_vwap_P, _ = kalman_filter_1d(raw_vwap, Q=kalman_Q * 0.3, R=kalman_R * 2.0)
+        
+        # Distance from VWAP (normalized by price)
+        vwap_distance = (close - kf_vwap) / (close + 1e-9)
+        features["KF_VWAP_Distance"] = _log_normalize(vwap_distance)
+        
+        # VWAP slope (momentum of VWAP)
+        kf_vwap_slope = np.zeros_like(kf_vwap)
+        kf_vwap_slope[1:] = np.diff(kf_vwap) / (kf_vwap[:-1] + 1e-9)
+        features["KF_VWAP_Slope"] = _log_normalize(kf_vwap_slope)
+        
+        # Price position relative to VWAP bands
+        vwap_std = pd.Series(close - kf_vwap).rolling(20).std().values
+        vwap_zscore = (close - kf_vwap) / (vwap_std + 1e-9)
+        features["KF_VWAP_Zscore"] = np.clip(vwap_zscore, -5, 5) / 5  # Normalize to [-1, 1]
+    
+    # --- Volume-Based Kalman Features ---
+    if "volume" in market_data.columns:
+        volume = market_data["volume"].values
+        
+        # Transform to log space
+        log_volume = np.log(volume + 1)
+        
+        # Run Kalman Filter on log(Volume + 1)
+        kf_log_vol, kf_vol_P, kf_vol_K = kalman_filter_1d(
+            log_volume, Q=kalman_Q * 0.1, R=kalman_R * 2.0  # Different Q/R for volume
+        )
+        
+        # 10. Smoothed Volume (back to linear space, then log-normalize the ratio)
+        kf_volume_linear = np.exp(kf_log_vol)
+        vol_diff = (kf_volume_linear - volume) / (volume + 1e-9)
+        features["KF_Volume_Diff"] = _log_normalize(vol_diff)
+        
+        # 11. KF_LogVolume_Slope - already in log space
+        kf_log_vol_slope = np.zeros_like(kf_log_vol)
+        kf_log_vol_slope[1:] = np.diff(kf_log_vol)
+        features["KF_LogVolume_Slope"] = kf_log_vol_slope  # Already log-scale
+        
+        # 12. Volume Z-score: (LogVolume - KF_Predicted_LogVolume) / sqrt(KF_Covariance)
+        vol_innovation = log_volume - kf_log_vol
+        vol_zscore = vol_innovation / (np.sqrt(kf_vol_P) + 1e-9)
+        features["KF_Volume_Zscore"] = np.clip(vol_zscore, -5, 5) / 5  # Normalize
+        
+        # 13. Volume Ratio: log of ratio for symmetry
+        vol_ratio = volume / (kf_volume_linear + 1e-9)
+        features["KF_Volume_Ratio"] = _log_normalize(vol_ratio - 1.0)  # Center around 0
+        
+        # 14. Volume Error Covariance - LOG-NORMALIZED
+        features["KF_Volume_P"] = _log_normalize(kf_vol_P)
+    
+    # Fill NaN values
+    features = features.fillna(0)
+    
+    # Final cleanup: replace infinities with 0
+    features = features.replace([np.inf, -np.inf], 0)
+    
+    return features
+
+
+# ============================================================================
+# HPO UTILITY FUNCTIONS (Trapezoidal Gate & Stability-Adjusted Utility)
+# ============================================================================
+
+def trapezoidal_gate(x: float, lower: float, sweet_spot: tuple, upper: float) -> float:
+    """
+    Returns a score [0, 1] based on trapezoidal membership.
+    - Below lower: soft floor (0.01)
+    - Between lower and sweet_spot[0]: Ramp up
+    - Inside sweet_spot: 1.0
+    - Between sweet_spot[1] and upper: Ramp down
+    - Above upper: soft floor (leakage penalty)
+    
+    Args:
+        x: The value to score
+        lower: Lower bound (below this = rejection territory)
+        sweet_spot: Tuple (min, max) for the ideal range
+        upper: Upper bound (above this = leakage/overfit territory)
+    
+    Returns:
+        Score in [0.01, 1.0]
+    """
+    s_min, s_max = sweet_spot
+    
+    if x < lower or x > upper:
+        return 0.01  # Soft floor to avoid log(0) errors if used later
+    elif s_min <= x <= s_max:
+        return 1.0
+    elif lower <= x < s_min:
+        # Ramp up
+        return (x - lower) / (s_min - lower)
+    elif s_max < x <= upper:
+        # Ramp down
+        return (upper - x) / (upper - s_max)
+    return 0.01
+
+
+def calculate_hpo_utility(
+    folds_sharpe: np.ndarray,
+    auc: float,
+    trades_per_day: float,
+    lambda_vol: float = 1.2,
+    w_auc: float = 1.0,
+    w_den: float = 0.5,
+) -> float:
+    """
+    Compute a stable utility for HPO combining Sharpe stability, AUC gate, and trade density.
+    
+    Args:
+        folds_sharpe: Array of per-fold Sharpe ratios
+        auc: Mean AUC across folds
+        trades_per_day: Average trades per day
+        lambda_vol: Penalty weight for Sharpe volatility across folds (default 1.2)
+        w_auc: Weight exponent for AUC gate (default 1.0 = strict)
+        w_den: Weight exponent for density modifier (default 0.5)
+    
+    Returns:
+        Utility score. Returns -1.0 for rejection.
+    """
+    # 1. Stability-adjusted Sharpe (base)
+    avg_sharpe = float(np.mean(folds_sharpe))
+    # Safety check for single-fold runs
+    vol_sharpe = float(np.std(folds_sharpe, ddof=1)) if len(folds_sharpe) > 1 else 0.0
+    
+    # Penalize volatility across folds
+    base_score = avg_sharpe - (lambda_vol * vol_sharpe)
+
+    # Hard early reject for non-positive structural performance
+    if base_score <= 0.0:
+        return -1.0
+
+    # Bound the base score (diminishing returns on super-high Sharpes)
+    base_norm = np.log1p(base_score)
+
+    # 2. Auxiliary modifiers (0..1)
+    
+    # AUC Gate: Returns 0.01 to 1.0
+    # Strict penalty for leakage (AUC > 0.70) or randomness (AUC < 0.54)
+    phi_auc = trapezoidal_gate(auc, lower=0.54, sweet_spot=(0.58, 0.64), upper=0.70)
+
+    # Density: Adjusted Sigmoid
+    # Shifted center to 1.0 so that at 2.0 trades/day, score is ~0.73
+    # At 3.0 trades/day, score is ~0.88. At 5.0, score is ~0.98.
+    phi_density = 1.0 / (1.0 + np.exp(-(trades_per_day - 1.0)))
+
+    # 3. Weighted Geometric Combination
+    # If phi_auc is near 0 (leakage/random), the whole score collapses
+    modifier = (phi_auc ** w_auc) * (phi_density ** w_den)
+
+    utility = float(np.clip(base_norm * modifier, -1.0, 10.0))
+    return utility
+
+
+def linear_size_from_prob(
+    p: float,
+    max_exposure: float = 1.0,
+    min_prob: float = 0.5,
+    scale: float = 1.0,
+) -> float:
+    """
+    Compute long/short signed size in [-max_exposure, +max_exposure] from probability.
+    
+    Args:
+        p: Predicted probability of a positive outcome
+        min_prob: Neutral threshold (default 0.5)
+        scale: Multiplier to control aggressiveness
+        max_exposure: Maximum allowed exposure magnitude
+    
+    Returns:
+        Position size in [-max_exposure, +max_exposure]
+    """
+    # confidence in [-1, 1]: maps 0.5->0, 1.0->1.0, 0.0->-1.0
+    conf = (p - min_prob) / (1.0 - min_prob) if min_prob < 1.0 else 0.0
+    conf = np.clip(conf, -1.0, 1.0)
+    size = scale * conf
+    # clamp to allowed exposure
+    size = np.clip(size, -max_exposure, max_exposure)
+    return float(size)
+
+
+def calibrate_probabilities_isotonic(
+    y_true: np.ndarray,
+    y_prob: np.ndarray,
+    cv_folds: int = 3,
+) -> np.ndarray:
+    """
+    Calibrate probabilities using isotonic regression with cross-validation.
+    
+    Args:
+        y_true: True binary labels
+        y_prob: Uncalibrated predicted probabilities
+        cv_folds: Number of cross-validation folds
+    
+    Returns:
+        Calibrated probabilities
+    """
+    from sklearn.isotonic import IsotonicRegression
+    from sklearn.model_selection import KFold
+    
+    calibrated = np.zeros_like(y_prob, dtype=float)
+    kf = KFold(n_splits=cv_folds, shuffle=False)
+    
+    for train_idx, val_idx in kf.split(y_prob):
+        iso = IsotonicRegression(out_of_bounds='clip')
+        iso.fit(y_prob[train_idx], y_true[train_idx])
+        calibrated[val_idx] = iso.predict(y_prob[val_idx])
+    
+    return calibrated
+
+
+def compute_fold_sharpe_ratios(
+    y_true: np.ndarray,
+    y_prob: np.ndarray,
+    returns: np.ndarray,
+    n_folds: int = 5,
+    use_calibration: bool = True,
+) -> np.ndarray:
+    """
+    Compute per-fold Sharpe ratios for stability assessment.
+    
+    Args:
+        y_true: True binary labels
+        y_prob: Predicted probabilities
+        returns: Realized returns per sample
+        n_folds: Number of folds
+        use_calibration: Whether to calibrate probabilities before sizing
+    
+    Returns:
+        Array of per-fold Sharpe ratios
+    """
+    from sklearn.model_selection import KFold
+    
+    # Pre-calibrate if requested
+    if use_calibration:
+        y_prob_cal = calibrate_probabilities_isotonic(y_true, y_prob, cv_folds=min(3, n_folds))
+    else:
+        y_prob_cal = y_prob
+    
+    fold_sharpes = []
+    kf = KFold(n_splits=n_folds, shuffle=False)
+    
+    for _, fold_idx in kf.split(returns):
+        fold_probs = y_prob_cal[fold_idx]
+        fold_returns = returns[fold_idx]
+        
+        # Compute sized returns: position_size * realized_return
+        sized_returns = []
+        for prob, ret in zip(fold_probs, fold_returns):
+            size = linear_size_from_prob(prob, max_exposure=1.0, min_prob=0.5, scale=1.0)
+            sized_returns.append(size * ret)
+        
+        sized_returns = np.array(sized_returns)
+        
+        if len(sized_returns) > 1 and np.std(sized_returns) > 1e-9:
+            fold_sharpe = np.mean(sized_returns) / np.std(sized_returns)
+        else:
+            fold_sharpe = 0.0
+        
+        fold_sharpes.append(fold_sharpe)
+    
+    return np.array(fold_sharpes)
+
+
 def compute_robust_expectancy(returns: np.ndarray, cap_quantile: float = 0.95) -> float:
     """Calculates the Edge in a way that works for BOTH Trend (Skewed) and Mean Reversion (Normal) strategies.
 
@@ -2961,25 +4129,122 @@ def compute_robust_hpo_objective(
     stats: Dict[str, Any],
     df_results: pd.DataFrame,
     regime_col: str = 'regime',
+    min_trades_per_day: float = 0.5,
+    target_trades_per_day: float = 2.5,
+    max_trades_per_day: float = 8.0,
 ) -> float:
-    """Optimizes for ROBUSTNESS.
+    """Comprehensive HPO objective optimizing for ROBUSTNESS, EDGE, and TRADE QUALITY.
+
+    This is the CANONICAL HPO objective function that combines:
+    1. P&L Edge (calibration-adjusted position sizing via probability weighting)
+    2. Minimum trades/day hard gate (reject if below threshold)
+    3. Trade density bonus (reward 1.5-5 trades/day sweet spot)
+    4. Sharpe ratio component (risk-adjusted returns)
+    5. AUC component when y_true/y_prob available (learnability)
+    6. Robust expectancy (winsorized to remove outlier luck)
+
+    Formula:
+        score = robust_edge * sqrt(N) * trade_density_factor * sharpe_factor * auc_bonus
 
     Args:
-        stats: Dict with 'num_trades', 'trades_per_day', 'sharpe_ratio', etc.
+        stats: Dict with 'num_trades', 'trades_per_day', 'sharpe_ratio', 'mean_auc' (optional).
         df_results: DataFrame containing per-trade results:
                     ['y_true', 'y_prob', 'ret_bps', 'regime']
-                    Note: 'ret_bps' here is expected to be raw return float (e.g. 0.01)
+                    - y_true: Binary label (0/1)
+                    - y_prob: Model predicted probability (used for position sizing)
+                    - ret_bps: Realized return as float (e.g., 0.01 = 1%)
+                    - regime: Optional regime label for stratified analysis
         regime_col: Column name for regime labels
+        min_trades_per_day: Hard minimum (default 0.5) - reject if below
+        target_trades_per_day: Optimal trades/day for bonus (default 2.5)
+        max_trades_per_day: Upper bound for density penalty (default 8.0)
+
+    Returns:
+        Comprehensive objective score (higher is better)
     """
     if df_results.empty or 'ret_bps' not in df_results.columns:
         return 0.0
 
+    # Extract core stats
+    num_trades = stats.get('num_trades', len(df_results))
+    trades_per_day = stats.get('trades_per_day', 0.0)
+    sharpe_ratio = stats.get('sharpe_ratio', 0.0)
+    mean_auc = stats.get('mean_auc', None)
+
+    # --- HARD GATE: Minimum trades per day ---
+    # Reject configurations that don't generate enough trading opportunities
+    if trades_per_day < min_trades_per_day:
+        return -1e6  # Strong penalty to ensure rejection
+
     # --- 1. Robust Edge Calculation (Winsorised Expectancy) ---
-    # Replace 'median_ret * sqrt(N)' with:
     returns_arr = df_results['ret_bps'].to_numpy(dtype=float)
     robust_edge_val = compute_robust_expectancy(returns_arr)
-    # Scale by sqrt(N) to reward sample size (t-stat like scaling)
-    robust_score = robust_edge_val * np.sqrt(stats.get('num_trades', 0))
+
+    # --- 2. Calibration-Adjusted P&L (Position Sizing by Probability) ---
+    # If y_prob available, compute probability-weighted returns
+    calib_adjusted_edge = robust_edge_val
+    if 'y_prob' in df_results.columns:
+        try:
+            probs = df_results['y_prob'].to_numpy(dtype=float)
+            # Position size = probability (Kelly-like sizing)
+            # Calibration-adjusted return = prob * actual_return
+            valid_mask = np.isfinite(probs) & np.isfinite(returns_arr)
+            if valid_mask.sum() > 10:
+                calib_returns = probs[valid_mask] * returns_arr[valid_mask]
+                calib_adjusted_edge = compute_robust_expectancy(calib_returns)
+        except Exception:
+            pass
+
+    # --- 3. Trade Density Factor ---
+    # Reward trades in sweet spot (1.5-5/day), penalize extremes
+    density_factor = 1.0
+    if trades_per_day < 1.5:
+        # Below sweet spot: linear ramp from min_trades to 1.5
+        density_factor = 0.5 + 0.5 * (trades_per_day - min_trades_per_day) / max(1.5 - min_trades_per_day, 0.1)
+    elif trades_per_day > 5.0:
+        # Above sweet spot: gradual penalty
+        excess = (trades_per_day - 5.0) / max(max_trades_per_day - 5.0, 1.0)
+        density_factor = max(0.5, 1.0 - 0.5 * min(1.0, excess))
+    else:
+        # In sweet spot: bonus for being near target
+        proximity = 1.0 - abs(trades_per_day - target_trades_per_day) / 3.5
+        density_factor = 1.0 + 0.2 * max(0, proximity)
+
+    # --- 4. Sharpe Ratio Factor ---
+    # Reward positive Sharpe, penalize negative
+    sharpe_factor = 1.0
+    if sharpe_ratio is not None and np.isfinite(sharpe_ratio):
+        if sharpe_ratio > 0:
+            # Bonus for positive Sharpe (up to 50% boost at Sharpe=2)
+            sharpe_factor = 1.0 + min(0.5, sharpe_ratio * 0.25)
+        else:
+            # Penalty for negative Sharpe
+            sharpe_factor = max(0.3, 1.0 + sharpe_ratio * 0.3)
+
+    # --- 5. AUC Bonus (Learnability) ---
+    # If AUC available, reward AUC > 0.55, penalize AUC < 0.52
+    auc_bonus = 1.0
+    if mean_auc is not None and np.isfinite(mean_auc):
+        if mean_auc >= 0.55:
+            # Bonus: up to 30% for AUC approaching 0.70
+            auc_bonus = 1.0 + min(0.3, (mean_auc - 0.55) * 2.0)
+        elif mean_auc < 0.52:
+            # Penalty for near-random AUC
+            auc_bonus = max(0.5, 1.0 - (0.52 - mean_auc) * 5.0)
+
+    # --- 6. Sample Size Scaling (t-stat like) ---
+    # Reward more samples for statistical significance
+    sample_factor = np.sqrt(max(1, num_trades))
+
+    # --- FINAL COMPOSITE SCORE ---
+    # Combine all components multiplicatively
+    robust_score = (
+        calib_adjusted_edge 
+        * sample_factor 
+        * density_factor 
+        * sharpe_factor 
+        * auc_bonus
+    )
 
     return robust_score
 
@@ -3378,7 +4643,18 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
         # 0. SETUP & PRE-CALCULATION
         # ------------------------------------------------------------------
         close_series = market_data["close"]
+        close_prices = close_series  # Alias for compatibility
         returns_series = close_series.pct_change().fillna(0.0)
+
+        # Compute log-returns and volatility for later use
+        log_ret = np.log(close_series).diff()
+        volatility_1d = log_ret.rolling(96).std()
+
+        # Calculate days span from market data
+        try:
+            days_span = max(1, (market_data.index.max() - market_data.index.min()).days)
+        except Exception:
+            days_span = max(1, len(market_data) // 96)  # Assume ~96 bars per day as fallback
 
         # Heavy Lifting: Pre-calculate bar-level features for weighting
         tprint_info("🏗️ Pre-calculating bar-level features...")
@@ -3813,19 +5089,19 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
 
             try:
                 nonlocal debug_sample_count, gate_stats
-                # Enforce profit >= 1.5x stop constraint. During stages that do not
+                # Enforce profit >= 2x stop constraint. During stages that do not
                 # actively optimize profit_thr_base/stop_to_profit_ratio, fall back
                 # to conservative defaults.
                 profit_thr_base = float(params.get("profit_thr_base", 0.012))
                 stop_ratio = float(params.get("stop_to_profit_ratio", 0.5))
                 trail_dist = float(params.get("trail_distance", 0.0))
 
-                # CONSTRAINT: Ensure profit is at least 1.5x stop
+                # CONSTRAINT: Ensure profit is at least 2x stop (RR >= 2:1)
                 stop_thr_base = max(0.0005, profit_thr_base * stop_ratio)
-                if profit_thr_base < 1.5 * stop_thr_base:
+                if profit_thr_base < 2.0 * stop_thr_base:
                     # Early exit: invalid RR geometry
                     tprint_warning(
-                        f"[EARLY_EXIT_RR] Config rejected: profit {profit_thr_base:.4f} < 1.5x stop {stop_thr_base:.4f}"
+                        f"[EARLY_EXIT_RR] Config rejected: profit {profit_thr_base:.4f} < 2x stop {stop_thr_base:.4f}"
                     )
                     gate_stats["rr_profit_vs_stop"] = gate_stats.get("rr_profit_vs_stop", 0) + 1
                     return {
@@ -3876,12 +5152,12 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                     stop_mult_min, stop_mult_max = stop_mult_max, stop_mult_min
 
                 # Hard RR constraint: even in the worst-case (smallest profit, largest stop),
-                # require a minimum RR ~1.2 (≈1.05 net after fees).
+                # require a minimum RR ~1.5 (after adaptive multipliers, ensures net positive expectancy).
                 worst_rr = (profit_thr_base * profit_mult_min) / max(stop_thr_base * stop_mult_max, 1e-8)
-                if worst_rr < 1.2:
+                if worst_rr < 1.5:
                     if debug_sample_count < debug_sample_limit:
                         tprint_warning(
-                            f"[EARLY_EXIT_RR] Rejecting config due to worst_rr={worst_rr:.3f} < 1.2 "
+                            f"[EARLY_EXIT_RR] Rejecting config due to worst_rr={worst_rr:.3f} < 1.5 "
                             f"(profit_thr_base={profit_thr_base:.4f}, stop_thr_base={stop_thr_base:.4f}, "
                             f"profit_mult_min={profit_mult_min:.3f}, stop_mult_max={stop_mult_max:.3f})"
                         )
@@ -4114,59 +5390,101 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 quantile_labels = _make_quantile_labels(vol_scaled_returns)
                 binary_labels = quantile_labels
 
+            except Exception as quantile_exc:
+                # Handle quantile label generation errors gracefully
+                tprint_warning(f"[QUANTILE_LABEL_ERROR] {quantile_exc}")
+                gate_stats["quantile_error"] = gate_stats.get("quantile_error", 0) + 1
+                return {
+                    'learnability': 0.0,
+                    'profitability': -1e9,
+                    'edge': -1e9,
+                    'combined': -1e9,
+                }
+
         def kalman_objective(params: Dict[str, Any]) -> float:
-            # 1. Generate Smoothed Signals (Primary)
-            # We can't easily re-run generate_primary_signals as it's complex.
-            # Instead, let's optimize a specific feature's predictive power.
-            # "Does this setting make the indicator actually predict price direction?"
+            """
+            Stage 0: RTS Smoother Optimization for Label Generation.
+            
+            Objective: Maximize Signal-to-Noise Ratio (SNR) of the raw price series.
+            Uses RTS (Rauch-Tung-Striebel) smoother which is ACAUSAL (zero-lag) - 
+            ideal for generating training labels.
+            
+            The optimized Q and R values will also be used in the standard (causal)
+            Kalman Filter for live feature generation.
+            
+            Loss components:
+            1. Smoothness: Minimal "wiggle" (2nd derivative)
+            2. Tracking Error: RMSE from raw prices (bias/oversmoothing penalty)
+            3. Amplitude Fidelity: Preserve ~95% of price volatility
+            """
+            Q = params['kalman_Q']
+            R = params['kalman_R']
+            
+            # Get raw close prices
+            raw_close = close_series.values
+            
+            if len(raw_close) < 100:
+                return -10.0  # Reject if insufficient data
+            
+            try:
+                # Run RTS Smoother (acausal, zero-lag)
+                smoothed_close, smoothed_cov = rts_smoother_1d(
+                    prices=raw_close,
+                    Q=Q,
+                    R=R,
+                    init_val=None,
+                    init_cov=1.0,
+                )
+                
+                # Compute robust labeling loss
+                # Loss weights: alpha=smoothness, beta=tracking, gamma=amplitude
+                loss, details = robust_labeling_loss(
+                    smoothed=smoothed_close,
+                    raw=raw_close,
+                    alpha=1.0,   # Smoothness weight
+                    beta=1.0,    # Tracking error weight
+                    gamma=1.0,   # Amplitude fidelity weight
+                    is_acausal=True,  # RTS is acausal
+                )
+                
+                # Optimizer maximizes, so return negative loss
+                # Also add bonus for amplitude ratio being close to 0.95
+                amp_ratio = details.get("amp_ratio", 0.95)
+                amp_bonus = max(0, 0.1 - abs(amp_ratio - 0.95))  # Small bonus for good amplitude
+                
+                score = -loss + amp_bonus
+                
+                return float(score) if np.isfinite(score) else -10.0
+                
+            except Exception as e:
+                tprint_warning(f"[KALMAN_OBJ_ERROR] {e}")
+                return -10.0
 
-            # Use Kalman Smoothed Labels on raw binary labels from a default TBM
-            # This checks if the smoothing improves target alignment.
-
-            # Default TBM for Stage 0
-            def_prof = np.maximum(0.008, atr_series * 2.0)
-            def_stop = np.maximum(0.004, atr_series * 1.0)
-
-            _, stage0_labels, _, _, _, _, _, _ = compute_realized_returns(
-                market_data, primary_signals,
-                profit_threshold=def_prof, stop_threshold=def_stop,
-                horizon=12, transaction_cost=DEFAULT_TRANSACTION_COST
-            )
-
-            valid_mask = ~stage0_labels.isna()
-            if valid_mask.sum() < 50: return -1.0
-
-            y_raw = stage0_labels[valid_mask]
-
-            # Kalman Smooth the Binary Labels
-            smoothed, _ = kalman_smooth_labels(
-                stage0_labels,
-                Q=params['kalman_Q'],
-                R=params['kalman_R'],
-                volatility=full_volatility
-            )
-
-            y_smooth = smoothed[valid_mask]
-
-            # Metric: IC between Smoothed Label and Future Return (forward 12 bars)
-            fwd_ret = returns_series.rolling(12).sum().shift(-12)[valid_mask]
-
-            if len(y_smooth) != len(fwd_ret): return -1.0
-
-            # Clean NaNs
-            mask2 = ~np.isnan(y_smooth) & ~np.isnan(fwd_ret)
-            if mask2.sum() < 20: return -1.0
-
-            ic, _ = spearmanr(y_smooth[mask2], fwd_ret[mask2])
-            return float(ic) if np.isfinite(ic) else -1.0
-
+        # Run Stage 0 optimization
         kalman_optimizer = BayesianTPEOptimizer(
             config=OptimizationConfig(n_trials=30, execution_mode="full", direction="maximize", seed=42)
         )
         kalman_result = kalman_optimizer.optimize(objective=kalman_objective, search_space=kalman_search_space)
         best_kalman_params = kalman_result.get("best_params", {})
-        tprint_success(f"✅ Stage 0 Complete. Best IC: {kalman_result.get('best_value', 0):.4f}")
-        tprint_info(f"   Best Kalman Params: {best_kalman_params}")
+        
+        # Log the results with loss details
+        best_Q = best_kalman_params.get('kalman_Q', 1e-4)
+        best_R = best_kalman_params.get('kalman_R', 0.01)
+        
+        # Compute final loss details for logging
+        try:
+            final_smoothed, _ = rts_smoother_1d(close_series.values, Q=best_Q, R=best_R)
+            final_loss, final_details = robust_labeling_loss(final_smoothed, close_series.values, is_acausal=True)
+            tprint_success(
+                f"✅ Stage 0 Complete. Loss: {final_loss:.4f} "
+                f"(smooth={final_details['smooth']:.4f}, track={final_details['track']:.4f}, "
+                f"amp={final_details['amp']:.4f}, amp_ratio={final_details['amp_ratio']:.3f})"
+            )
+        except Exception:
+            tprint_success(f"✅ Stage 0 Complete. Best Score: {kalman_result.get('best_value', 0):.4f}")
+        
+        tprint_info(f"   Best RTS/Kalman Params: Q={best_Q:.2e}, R={best_R:.2e}")
+        tprint_info("   Note: RTS (acausal) for labels, Kalman (causal) for live features")
 
         # ------------------------------------------------------------------
         # 1. LAYER 1: WEIGHTING OPTIMIZATION
@@ -4260,13 +5578,93 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             volume_available=volume_available,
             meta_feature_cfg=mf_config_opt,
         )
-        tprint_success("✅ Meta-features pre-calculated.")
+        
+        # ------------------------------------------------------------------
+        # WEIGHTED PIPELINE: Add Kalman-based Features
+        # ------------------------------------------------------------------
+        # Uses the optimized Q and R from Stage 0 (RTS) in a CAUSAL Kalman Filter
+        # for features that can be used in live trading.
+        tprint_info("🏗️ Generating Kalman-based features (weighted pipeline)...")
+        
+        kalman_Q_opt = best_kalman_params.get('kalman_Q', 1e-4)
+        kalman_R_opt = best_kalman_params.get('kalman_R', 0.01)
+        
+        try:
+            kalman_features = generate_kalman_features(
+                market_data=market_data,
+                kalman_Q=kalman_Q_opt,
+                kalman_R=kalman_R_opt,
+            )
+            
+            # Merge Kalman features with existing meta features
+            # Align indices and handle any missing data
+            kalman_features_aligned = kalman_features.reindex(meta_features_full.index).fillna(0)
+            
+            # Add Kalman features to meta_features_full
+            for col in kalman_features_aligned.columns:
+                meta_features_full[col] = kalman_features_aligned[col]
+            
+            tprint_success(f"✅ Added {len(kalman_features.columns)} Kalman features")
+        except Exception as kf_exc:
+            tprint_warning(f"⚠️ Kalman feature generation failed: {kf_exc}. Continuing without Kalman features.")
+        
+        tprint_success(f"✅ Meta-features pre-calculated: {meta_features_full.shape[1]} columns")
+        
+        # ------------------------------------------------------------------
+        # QUALITY-BASED FEATURE SELECTION (After Layer 0, Before HPO Loop)
+        # ------------------------------------------------------------------
+        # This solves the circular dependency: features are selected based on
+        # unsupervised quality metrics (Signal/Noise ratio) rather than labels.
+        #
+        # Pipeline:
+        # 1. Generate multi-horizon versions (Short/Medium/Long) for cross-timeframe
+        # 2. Calculate Signal-to-Noise ratio for all features
+        # 3. Reduce by correlation, keeping highest quality features
+        #
+        target_feature_count = int(config.get("target_feature_count", 70))
+        feature_correlation_threshold = float(config.get("feature_correlation_threshold", 0.85))
+        enable_multi_horizon = config.get("enable_multi_horizon_features", True)
+        
+        # Custom horizon configuration (can be overridden in config)
+        horizon_config = config.get("feature_horizon_config", {
+            "Short": 5,    # ~1.25 hours at 15m (fast signals)
+            "Medium": 20,  # ~5 hours at 15m (medium signals)
+            "Long": 60,    # ~15 hours at 15m (slow signals)
+        })
+        
+        tprint_info("🔬 Running quality-based feature selection...")
+        try:
+            meta_features_full, feature_quality_scores = select_features_with_quality(
+                df_features=meta_features_full,
+                target_n=target_feature_count,
+                correlation_threshold=feature_correlation_threshold,
+                generate_horizons=enable_multi_horizon,
+                horizon_config=horizon_config,
+            )
+            
+            # Store quality scores for potential later use
+            self._feature_quality_scores = feature_quality_scores
+            
+            tprint_success(
+                f"✅ Feature selection complete: {len(meta_features_full.columns)} features "
+                f"(target={target_feature_count})"
+            )
+        except Exception as fs_exc:
+            tprint_warning(f"⚠️ Feature selection failed: {fs_exc}. Using all features.")
+            self._feature_quality_scores = {}
 
         def layer2_objective(trial_params: Dict[str, Any]) -> float:
+            """
+            Layer 2 objective using stability-adjusted utility with:
+            - Pre-calibrated probabilities for position sizing
+            - Per-fold Sharpe stability assessment
+            - Trapezoidal AUC gate (penalizes leakage and randomness)
+            - Trade density modifier
+            """
             # A. TBM SIMULATION (Constructive)
             sl_mult = trial_params["sl_atr_mult"]
             rr = trial_params["risk_reward_ratio"]
-            tp_mult = sl_mult * rr # Guarantee: TP >= 2 * SL
+            tp_mult = sl_mult * rr  # Guarantee: TP >= 2 * SL
 
             trail_dist = trial_params.get("trail_distance_atr_mult", 0.0)
 
@@ -4290,11 +5688,12 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 transaction_cost=DEFAULT_TRANSACTION_COST,
                 min_event_spacing=2,
                 trail_distance_atr_mult=trail_dist,
-                atr_series=atr_series # Pass for trailing logic
+                atr_series=atr_series  # Pass for trailing logic
             )
 
             valid_idx = ~l2_labels.isna()
-            if valid_idx.sum() < 50: return -1.0
+            if valid_idx.sum() < 50:
+                return -1.0
 
             l2_t_events = l2_returns.index[valid_idx]
             l2_returns_clean = l2_returns[valid_idx]
@@ -4318,31 +5717,59 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             # C. SUBSET META-FEATURES (Fast)
             X_trial = meta_features_full.loc[valid_idx].fillna(0)
 
-            # D. FAST MODEL TRAINING
+            # D. FAST MODEL TRAINING WITH CV
+            n_cv_folds = 5
             fast_model = lgb.LGBMClassifier(
                 n_estimators=60, max_depth=3, learning_rate=0.1, n_jobs=-1, verbose=-1, random_state=42
             )
 
             try:
                 cv_preds = cross_val_predict(
-                    fast_model, X_trial, l2_labels_clean, cv=3,
+                    fast_model, X_trial, l2_labels_clean, cv=n_cv_folds,
                     method='predict_proba', fit_params={'sample_weight': sample_weights}, n_jobs=-1
                 )[:, 1]
             except Exception:
                 return -1.0
 
-            # E. SCORING (Robust Edge)
-            df_res = pd.DataFrame({
-                'y_true': l2_labels_clean.values,
-                'y_prob': cv_preds,
-                'ret_bps': l2_returns_clean.values
-            })
-            stats = {
-                'num_trades': len(df_res),
-                'sharpe_ratio': df_res['ret_bps'].mean() / (df_res['ret_bps'].std() + 1e-9),
-                'trades_per_day': len(df_res) / (len(market_data)/96.0)
-            }
-            return compute_robust_hpo_objective(stats, df_res, regime_col='none')
+            # E. COMPUTE AUC (for trapezoidal gate)
+            try:
+                mean_auc = roc_auc_score(l2_labels_clean.values, cv_preds)
+            except Exception:
+                mean_auc = 0.5
+
+            # F. COMPUTE FOLD SHARPE RATIOS (with pre-calibration)
+            # Pre-calibrate probabilities using isotonic regression
+            y_true_arr = l2_labels_clean.values.astype(float)
+            y_prob_arr = cv_preds.astype(float)
+            returns_arr = l2_returns_clean.values.astype(float)
+
+            try:
+                folds_sharpe = compute_fold_sharpe_ratios(
+                    y_true=y_true_arr,
+                    y_prob=y_prob_arr,
+                    returns=returns_arr,
+                    n_folds=n_cv_folds,
+                    use_calibration=True,  # Pre-calibrate before sizing
+                )
+            except Exception:
+                # Fallback to simple Sharpe if fold computation fails
+                simple_sharpe = np.mean(returns_arr) / (np.std(returns_arr) + 1e-9)
+                folds_sharpe = np.array([simple_sharpe])
+
+            # G. COMPUTE TRADES PER DAY
+            trades_per_day = len(l2_returns_clean) / max(days_span, 1)
+
+            # H. CALCULATE UTILITY (Trapezoidal Gate + Stability)
+            utility = calculate_hpo_utility(
+                folds_sharpe=folds_sharpe,
+                auc=mean_auc,
+                trades_per_day=trades_per_day,
+                lambda_vol=1.2,   # Penalty for Sharpe volatility across folds
+                w_auc=1.0,        # Strict AUC gate
+                w_den=0.5,        # Moderate density weight
+            )
+
+            return utility
 
         l2_optimizer = BayesianTPEOptimizer(
             config=OptimizationConfig(n_trials=40, execution_mode="full", direction="maximize", seed=42)
@@ -4424,20 +5851,98 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             "colsample_bytree": {"type": "float", "low": 0.5, "high": 1.0},
         }
 
+        # Precompute values needed for Layer 3 utility calculation
+        final_returns_arr = final_returns[valid_final_mask].values.astype(float)
+        final_labels_arr = y_final.values.astype(float)
+
         def layer3_objective(model_params: Dict[str, Any]) -> float:
+            """
+            Layer 3 objective using stability-adjusted utility with:
+            - Pre-calibrated probabilities for position sizing
+            - Per-fold Sharpe stability assessment
+            - Trapezoidal AUC gate (penalizes leakage and randomness)
+            - Trade density modifier
+            """
             model = lgb.LGBMClassifier(n_jobs=-1, verbose=-1, random_state=42, **model_params)
-            cv_scores = []
-            kf = TimeSeriesSplit(n_splits=5)
-            for tr_idx, te_idx in kf.split(X_final):
+            
+            n_cv_folds = 5
+            kf = TimeSeriesSplit(n_splits=n_cv_folds)
+            
+            # Collect per-fold predictions and metrics
+            all_preds = np.full(len(X_final), np.nan)
+            fold_aucs = []
+            fold_sharpes = []
+            
+            for fold_idx, (tr_idx, te_idx) in enumerate(kf.split(X_final)):
                 X_tr, X_te = X_final.iloc[tr_idx], X_final.iloc[te_idx]
                 y_tr, y_te = y_final.iloc[tr_idx], y_final.iloc[te_idx]
                 w_tr = final_weights[tr_idx]
-                if len(np.unique(y_tr)) < 2: continue
+                
+                if len(np.unique(y_tr)) < 2:
+                    continue
+                
+                # Train model
                 model.fit(X_tr, y_tr, sample_weight=w_tr)
                 preds = model.predict_proba(X_te)[:, 1]
-                try: cv_scores.append(roc_auc_score(y_te, preds))
-                except: pass
-            return np.mean(cv_scores) if cv_scores else 0.0
+                all_preds[te_idx] = preds
+                
+                # Compute fold AUC
+                try:
+                    fold_auc = roc_auc_score(y_te, preds)
+                    fold_aucs.append(fold_auc)
+                except Exception:
+                    pass
+                
+                # Calibrate predictions and compute fold Sharpe
+                try:
+                    y_te_arr = y_te.values.astype(float)
+                    preds_arr = preds.astype(float)
+                    ret_te = final_returns_arr[te_idx]
+                    
+                    # Isotonic calibration on this fold (using train data for calibrator)
+                    from sklearn.isotonic import IsotonicRegression
+                    iso = IsotonicRegression(out_of_bounds='clip')
+                    train_preds = model.predict_proba(X_tr)[:, 1]
+                    iso.fit(train_preds, y_tr.values)
+                    preds_cal = iso.predict(preds_arr)
+                    
+                    # Compute sized returns using calibrated probabilities
+                    sized_returns = []
+                    for prob, ret in zip(preds_cal, ret_te):
+                        size = linear_size_from_prob(prob, max_exposure=1.0, min_prob=0.5, scale=1.0)
+                        sized_returns.append(size * ret)
+                    
+                    sized_returns = np.array(sized_returns)
+                    if len(sized_returns) > 1 and np.std(sized_returns) > 1e-9:
+                        fold_sharpe = np.mean(sized_returns) / np.std(sized_returns)
+                    else:
+                        fold_sharpe = 0.0
+                    
+                    fold_sharpes.append(fold_sharpe)
+                except Exception:
+                    pass
+            
+            # Check minimum data quality
+            if len(fold_aucs) < 2 or len(fold_sharpes) < 2:
+                return -1.0
+            
+            # Compute mean AUC
+            mean_auc = float(np.mean(fold_aucs))
+            
+            # Compute trades per day
+            trades_per_day = len(final_returns_arr) / max(days_span, 1)
+            
+            # Calculate utility using trapezoidal gate
+            utility = calculate_hpo_utility(
+                folds_sharpe=np.array(fold_sharpes),
+                auc=mean_auc,
+                trades_per_day=trades_per_day,
+                lambda_vol=1.2,   # Penalty for Sharpe volatility across folds
+                w_auc=1.0,        # Strict AUC gate
+                w_den=0.5,        # Moderate density weight
+            )
+            
+            return utility
 
         l3_optimizer = BayesianTPEOptimizer(
             config=OptimizationConfig(n_trials=30, execution_mode="full", direction="maximize", seed=42)
@@ -4489,786 +5994,12 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             "layer0_ic": kalman_result.get("best_value", 0),
             "layer2_score": best_l2_score,
             "layer3_auc": l3_result.get("best_value", 0),
-            "best_params": full_best_params
-                        # Run Simulation
-                        executed_trades = simulate_concurrent_trades(
-                            sim_df,
-                            max_concurrency=1,
-                            transaction_cost=tx
-                        )
-
-                        if not executed_trades.empty:
-                            # Calculate stats for objective function
-                            n_exec = len(executed_trades)
-
-                            # Calculate Sharpe on simulated PnL (ret_bps)
-                            pnl_series = executed_trades['ret_bps']
-                            mean_pnl = pnl_series.mean()
-                            std_pnl = pnl_series.std()
-                            sim_sharpe = mean_pnl / (std_pnl + 1e-9) if std_pnl > 0 else 0.0
-
-                            sim_trades_per_day = n_exec / max(effective_days_span, 1.0)
-
-                            sim_stats = {
-                                'num_trades': n_exec,
-                                'trades_per_day': sim_trades_per_day,
-                                'sharpe_ratio': sim_sharpe
-                            }
-
-                            # Compute final robust score
-                            # df_results needs ['y_true', 'y_prob', 'ret_bps', 'regime']
-                            # executed_trades has these (from sim_df + 'ret_bps')
-                            # Map 'prob' -> 'y_prob'
-                            executed_trades['y_prob'] = executed_trades['prob']
-
-                            sim_score = compute_robust_hpo_objective(
-                                stats=sim_stats,
-                                df_results=executed_trades,
-                                regime_col='regime'
-                            )
-                        else:
-                            sim_score = 0.0
-                    else:
-                        sim_score = 0.0
-                except Exception:
-                    sim_score = 0.0
-
-                edge_score = sim_score
-
-                # ===== CALIBRATION-AWARE ADJUSTMENT OF EDGE =====
-                # Use calibration diagnostics (weighted Brier and ECE) to softly
-                # down-weight edge for miscalibrated models. We do this *after*
-                # temporal stability but before scaling and combining with AUC.
-                try:
-                    calib_edge_penalty = 1.0
-                    if weighted_brier is not None:
-                        # Map weighted_brier in [brier_target, brier_max] to a factor in [1.0, 0.5]
-                        brier_target = float(config.get("calibration_brier_target", 0.18))
-                        brier_max = float(config.get("calibration_brier_max", 0.35))
-                        if brier_max <= brier_target:
-                            brier_max = brier_target + 1e-3
-                        brier_excess = max(0.0, float(weighted_brier) - brier_target)
-                        brier_span = max(brier_max - brier_target, 1e-6)
-                        brier_ratio = min(1.0, brier_excess / brier_span)
-                        # Linearly shrink edge to 50% at the worst Brier in the band.
-                        calib_edge_penalty *= (1.0 - 0.5 * brier_ratio)
-
-                    if ece_norm is not None:
-                        # ece_norm already in [0, 1]; shrink edge up to another 30% at ece_norm=1.
-                        calib_edge_penalty *= (1.0 - 0.3 * float(ece_norm))
-
-                    # Ensure non-negative factor
-                    calib_edge_penalty = max(0.0, calib_edge_penalty)
-                    edge_score *= calib_edge_penalty
-                except Exception:
-                    # If anything goes wrong in calibration-based adjustment, keep raw edge_score.
-                    pass
-
-                # Scale edge for combined metric (multiply by 1000 to make comparable)
-                edge_scaled = edge_score * 1000.0
-
-                # Additional hard penalties for pathological configurations (no positive
-                # or negative bucket), while still keeping them in the candidate pool
-                # for diagnostics.
-                if len(r_pos) == 0 or len(r_neg) == 0:
-                    profitability_score = -1e9
-
-                # ===== COMBINED OBJECTIVE WITH RETENTION REGULARIZATION =====
-                # New formulation: objective adjusts the filtered AUC based on how far
-                # the retention rate falls below a soft target.
-                #
-                #   ret_target = 0.35  (35% of pre-events retained)
-                #   penalty    = alpha * (max(0, ret_target - retention_total))^2
-                #   objective  = AUC_filtered -  penalty
-                #
-                # This penalizes overly aggressive filtering (very low retention) while
-                # not rewarding sparse configs purely via 1/retention.
-
-                # Retention regularization parameter (configurable)
-                alpha_retention = float(config.get("retention_regularization_alpha", 0.05))
-                alpha_retention = max(0.01, min(0.10, alpha_retention))  # Clamp to [0.01, 0.10]
-
-                # Soft target for overall retention (fraction of pre-events kept)
-                retention_target = float(config.get("retention_target", 0.35))
-                retention_target = max(0.05, min(0.80, retention_target))
-
-                # Compute nonlinear shortfall penalty relative to the target
-                # retention_total is already computed above as n_post_total / n_pre_total
-                if retention_total > 0:
-                    retention_shortfall = max(0.0, retention_target - float(retention_total))
-                    # Quadratic penalty so that very low retention is punished more strongly
-                    retention_penalty = alpha_retention * (retention_shortfall ** 2)
-                else:
-                    # If no events survive, apply maximal penalty against the target
-                    retention_penalty = alpha_retention * retention_target
-
-                # Cap retention penalty to avoid dominating the objective
-                retention_penalty = min(retention_penalty, 0.5)
-
-                # ===== UNIFIED AUC ADJUSTMENT =====
-                # Combine AUC range penalties directly into adjusted AUC instead of
-                # having separate auc_penalty and learnability_bonus terms.
-                # This simplifies the objective and avoids double-counting.
-
-                auc_range_adjustment = 0.0
-                if mean_auc < 0.54:
-                    # Too noisy: heavy penalty incorporated into AUC
-                    auc_range_adjustment = -(0.54 - mean_auc) * 0.5
-                elif mean_auc > 0.70:
-                    # Suspicious (likely leakage): heavy penalty
-                    auc_range_adjustment = -(mean_auc - 0.70) * 1.0
-                elif mean_auc > 0.67:
-                    # Above excellent range: moderate penalty
-                    auc_range_adjustment = -(mean_auc - 0.67) * 0.3
-                elif auc_in_target_range:
-                    # In target range [0.55, 0.67]: small bonus for 0.60-0.62 sweet spot
-                    if mean_auc >= 0.58 and mean_auc <= 0.64:
-                        auc_range_adjustment = 0.02  # Small bonus for ideal range
-
-                # Final retention-adjusted AUC (unified primary signal)
-                auc_ret_raw = mean_auc + auc_range_adjustment - retention_penalty
-                auc_cap = 0.65
-                auc_retention_adjusted = min(auc_ret_raw, auc_cap)
-
-                # Trade density bonus: stronger when AUC is outside target range
-                # This gives edge/pnl/trades more influence when AUC is penalized
-                # User Request (Step 451): Reduce importance of pure edge by ~30% to favor robustness
-                base_edge_multiplier = 0.7
-                edge_weight = (1.0 + (1.0 - auc_weight_multiplier) * 0.5) * base_edge_multiplier
-                density_weight = 1.0 + (1.0 - auc_weight_multiplier) * 1.0  # Up to 2x density weight
-
-                balance_weight = float(config.get("balance_score_weight", 0.15))
-                if balance_weight < 0.0:
-                    balance_weight = 0.0
-                if balance_weight > 0.3:
-                    balance_weight = 0.3
-                balance_term = balance_weight * 10.0 * (balance_score - 0.5)
-
-                retention_asym_weight = float(config.get("retention_asym_weight", 5.0))
-                if retention_asym_weight < 0.0:
-                    retention_asym_weight = 0.0
-
-                # Trades/day bonus for being in sweet spot (1.5-5 trades/day)
-                trades_bonus = 0.0
-                if trades_per_day >= 1.5 and trades_per_day <= 5.0:
-                    # Peak bonus at 2.5 trades/day (midpoint)
-                    trades_bonus = max(0, 1.0 - abs(trades_per_day - 2.5) / 2.5) * 50.0
-
-                # Geometry penalty: if profit threshold is unrealistically large
-                # relative to the average trailing stop distance (ATR-based) while
-                # overall retention is below target, down-weight the configuration.
-                trail_geom_penalty = 0.0
-                try:
-                    if trail_dist > 0.0 and isinstance(atr_series, pd.Series) and "close" in market_data.columns:
-                        atr_events = atr_series[labeled_mask]
-                        price_events = market_data["close"][labeled_mask]
-                        denom = price_events.abs().replace(0.0, np.nan)
-                        avg_trail_pct = float(((trail_dist * atr_events) / (denom + 1e-8)).replace([np.inf, -np.inf], np.nan).mean())
-
-                        if np.isfinite(avg_trail_pct) and avg_trail_pct > 0:
-                            k_trail = float(config.get("trail_profit_ratio_k", 3.5))
-                            # Only activate when retention is below target (over-selection regime)
-                            if float(retention_total) < retention_target:
-                                threshold = k_trail * avg_trail_pct
-                                if profit_thr_base > threshold:
-                                    excess_ratio = (profit_thr_base / max(threshold, 1e-8)) - 1.0
-                                    weight = float(config.get("trail_penalty_weight", 80.0))
-                                    trail_geom_penalty = max(0.0, excess_ratio) * weight
-                except Exception:
-                    trail_geom_penalty = 0.0
-
-                # Diagnostic penalties: when aggressive filtering or ultra-easy
-                # problems are detected (only computed when compute_diagnostics
-                # is True to keep HPO runtime manageable).
-                diagnostics_penalty = 0.0
-                if compute_diagnostics:
-                    try:
-                        econ_floor_local = econ_min_mult * effective_tx_cost
-                        y_full_local = pd.Series(np.nan, index=realized_returns.index)
-                        full_mask_local = ~realized_returns.isna() & (realized_returns.abs() >= econ_floor_local)
-                        y_full_local[full_mask_local & (realized_returns > 0)] = 1.0
-                        y_full_local[full_mask_local & (realized_returns <= 0)] = 0.0
-
-                        filtering_diag_local = compute_filtering_inflation_diagnostics(
-                            X=meta_features_model_processed,
-                            y_full=y_full_local,
-                            y_filtered=binary_labels,
-                            realized_returns=realized_returns,
-                            volatility=volatility_1d,
-                            probabilities=calibrated_probs,
-                            cv_splits=3,
-                            time_aware_cv=True,
-                        )
-
-                        easy_problem_flag = False
-                        try:
-                            overlap_diag_local = compute_class_overlap_features(
-                                X=meta_features_model_processed,
-                                retained_mask=labeled_mask,
-                                top_k_features=5,
-                            )
-                            easy_problem_flag = bool(overlap_diag_local.get("easy_problem_detected", False))
-                        except Exception:
-                            overlap_diag_local = {}
-                            easy_problem_flag = False
-
-                        if (
-                            filtering_diag_local.get("filtering_is_major_contributor")
-                            or filtering_diag_local.get("precision_collapse_detected")
-                            or easy_problem_flag
-                        ):
-                            diagnostics_penalty = float(config.get("diagnostic_penalty_weight", 150.0))
-                    except Exception:
-                        diagnostics_penalty = 0.0
-
-                # ===== COMBINED OBJECTIVE WITH RETENTION REGULARIZATION =====
-                # New formulation: objective adjusts the filtered AUC based on how far
-                # the retention rate falls below a soft target.
-                #
-                #   ret_target = 0.35  (35% of pre-events retained)
-                #   penalty    = alpha * (max(0, ret_target - retention_total))^2
-                #   objective  = AUC_filtered -  penalty
-                #
-                # This penalizes overly aggressive filtering (very low retention) while
-                # not rewarding sparse configs purely via 1/retention.
-
-                # Retention regularization parameter (configurable)
-
-                # Calibration-aware risk adjustment on top of retention-adjusted AUC.
-                weighted_brier = None
-                weighted_brier_norm = None
-                ece_norm = None
-                mid_brier = None
-                mid_brier_norm = None
-                calib_combo_value = None
-                rank_calib_score = auc_retention_adjusted
-
-                try:
-                    probs_array = np.asarray(calibrated_probs, dtype=float)
-                    y_calib_vals = np.asarray(binary_labels.values, dtype=float)
-                    mask_calib = np.isfinite(probs_array) & np.isfinite(y_calib_vals)
-                    probs_array = probs_array[mask_calib]
-                    y_calib_vals = y_calib_vals[mask_calib]
-                    n_calib = y_calib_vals.size
-
-                    min_calib_samples = int(config.get("calibration_min_samples", 200))
-                    if n_calib >= min_calib_samples:
-                        p_min = float(config.get("calibration_prob_min_clip", 0.05))
-                        p_max = float(config.get("calibration_prob_max_clip", 0.95))
-                        if p_max <= p_min:
-                            p_max = min(0.99, p_min + 0.05)
-                        probs_clipped = np.clip(probs_array, p_min, p_max)
-
-                        conf_power = float(config.get("calibration_confidence_power", 1.0))
-                        if conf_power != 1.0:
-                            confidence = np.abs(probs_clipped - 0.5) ** conf_power
-                            weights = 1.0 + confidence
-                        else:
-                            weights = np.ones_like(probs_clipped)
-
-                        errors = (y_calib_vals - probs_clipped) ** 2
-                        weighted_brier = float(np.average(errors, weights=weights))
-
-                        brier_target = float(config.get("calibration_brier_target", 0.18))
-                        brier_max = float(config.get("calibration_brier_max", 0.35))
-                        if brier_max <= brier_target:
-                            brier_max = brier_target + 1e-3
-                        excess = max(0.0, weighted_brier - brier_target)
-                        denom = max(brier_max - brier_target, 1e-6)
-                        weighted_brier_norm = min(1.0, excess / denom)
-
-                        n_bins_calib = int(config.get("calibration_bins", 10))
-                        if n_bins_calib <= 0:
-                            n_bins_calib = 10
-                        n_bins_calib = max(2, n_bins_calib)
-                        bin_edges = np.linspace(0.0, 1.0, n_bins_calib + 1)
-                        ece_val = 0.0
-                        for bi in range(n_bins_calib):
-                            mask_bin = (probs_clipped >= bin_edges[bi]) & (probs_clipped < bin_edges[bi + 1])
-                            idx_bin = np.nonzero(mask_bin)[0]
-                            n_bin = idx_bin.size
-                            if n_bin < 20:
-                                continue
-                            p_hat = float(np.mean(probs_clipped[idx_bin]))
-                            y_hat = float(np.mean(y_calib_vals[idx_bin]))
-                            ece_val += (n_bin / float(n_calib)) * abs(p_hat - y_hat)
-                        if ece_val > 0.0:
-                            ece_raw = float(ece_val)
-                            ece_max = float(config.get("calibration_ece_max", 0.25))
-                            if ece_max <= 0.0:
-                                ece_max = 0.25
-                            ece_norm = min(1.0, ece_raw / ece_max)
-
-                        mid_low = float(config.get("calibration_mid_prob_low", 0.3))
-                        mid_high = float(config.get("calibration_mid_prob_high", 0.7))
-                        if mid_high <= mid_low:
-                            mid_high = mid_low + 1e-3
-                        mid_mask = (probs_clipped >= mid_low) & (probs_clipped <= mid_high)
-                        if np.any(mid_mask):
-                            errors_mid = (y_calib_vals[mid_mask] - probs_clipped[mid_mask]) ** 2
-                            if errors_mid.size > 0:
-                                mid_brier = float(np.mean(errors_mid))
-                                mid_target = float(config.get("calibration_mid_brier_target", brier_target))
-                                mid_max = float(config.get("calibration_mid_brier_max", brier_max))
-                                if mid_max <= mid_target:
-                                    mid_max = mid_target + 1e-3
-                                mid_excess = max(0.0, mid_brier - mid_target)
-                                mid_denom = max(mid_max - mid_target, 1e-6)
-                                mid_brier_norm = min(1.0, mid_excess / mid_denom)
-
-                        # New logic: Discrete tiers for calibration impact
-                        calib_score = weighted_brier if weighted_brier is not None else 0.25
-
-                        calib_factor = 1.0
-                        if calib_score > 0.25:
-                            # "Minimum requirement" failed: harsh linear penalty
-                            # 0.25 -> 1.0x, 0.35 -> 0.0x
-                            penalty = (calib_score - 0.25) / 0.10
-                            calib_factor = max(0.0, 1.0 - penalty * 10.0) # Very steep drop
-                        elif calib_score <= 0.18:
-                            # "Excellent" bonus
-                            calib_factor = 1.1
-
-                        calib_combo_value = float(calib_score)
-
-                        factor = calib_factor
-
-                        deflation = 0.0
-                        if auc_cv_std is not None and np.isfinite(auc_cv_std):
-                            try:
-                                deflation = 2.0 * float(auc_cv_std)
-                            except Exception:
-                                deflation = 0.0
-                        deflated_auc = max(0.0, float(auc_retention_adjusted) - deflation)
-                        rank_calib_score = deflated_auc * factor
-
-                        # ===== P&L CALIBRATION-CURVE SANITY TERM =====
-                        # If available from diagnostics, use the P&L calibration curve
-                        # (probability → expected net return) to detect configurations
-                        # where no probability region is economically positive or where
-                        # high-probability regions underperform.
-                        try:
-                            pnl_curve = None
-                            if isinstance(best_config_diagnostics.get("calibration_diagnostics"), dict):
-                                pnl_curve = best_config_diagnostics["calibration_diagnostics"].get("pnl_calibration_curve")
-
-                            if isinstance(pnl_curve, dict):
-                                prob_grid = np.asarray(pnl_curve.get("prob_grid", []), dtype=float)
-                                exp_net = np.asarray(pnl_curve.get("expected_net_return", []), dtype=float)
-                                if prob_grid.size == exp_net.size and prob_grid.size >= 3:
-                                    # 1) Check if any region has positive expected net return.
-                                    if not np.any(exp_net > 0.0):
-                                        # Strong penalty: no economically positive region.
-                                        rank_calib_score *= 0.7
-
-                                    # 2) Check monotonicity in upper half of probability grid.
-                                    mid_idx = prob_grid.size // 2
-                                    high_probs = prob_grid[mid_idx:]
-                                    high_exp = exp_net[mid_idx:]
-                                    if high_probs.size >= 3:
-                                        violations = 0
-                                        for i in range(high_exp.size - 1):
-                                            if high_exp[i + 1] < high_exp[i] - 1e-8:
-                                                violations += 1
-                                        if violations > 0:
-                                            # Soft penalty proportional to fraction of violations.
-                                            frac_viols = violations / max(high_exp.size - 1, 1)
-                                            rank_calib_score *= (1.0 - 0.3 * min(1.0, frac_viols))
-                        except Exception:
-                            # If anything fails in P&L calibration sanity checks, do not alter rank_calib_score.
-                            pass
-                except Exception:
-                    weighted_brier = None
-                    weighted_brier_norm = None
-                    ece_norm = None
-                    mid_brier = None
-                    mid_brier_norm = None
-                    calib_combo_value = None
-                    rank_calib_score = auc_retention_adjusted
-
-                # ===== SIMPLIFIED COMBINED OBJECTIVE =====
-                # Primary components:
-                # 1. edge_scaled: Captures profitability AND learnability (via capture ratio)
-                # 2. auc_retention_adjusted: AUC adjusted for retention penalty & range
-                # 3. trades_bonus: Reward healthy trade density
-                # 4. Penalties for extreme density, slow exits, over-aggressive filtering,
-                #    and unrealistic TPSL geometry relative to ATR-based trailing.
-                # 5. NEW: sample_count_bonus for Phase 1 (prioritize configs with enough samples)
-                # 6. NEW: regime_coverage_penalty for stratified regime sampling
-
-                # ===== TWO-PHASE HPO: SAMPLE COUNT BONUS =====
-                # In Phase 1, heavily reward configurations that achieve minimum sample counts
-                sample_count_bonus = 0.0
-                if n_events >= MIN_EVENTS_PHASE2:
-                    sample_count_bonus = 100.0  # Strong bonus for achieving Phase 2 threshold
-                elif n_events >= MIN_EVENTS_PHASE1:
-                    sample_count_bonus = 50.0  # Moderate bonus for achieving Phase 1 threshold
-                elif n_events >= 100:
-                    sample_count_bonus = 20.0  # Small bonus for reasonable sample count
-
-                # ===== SIGNAL FIDELITY METRICS (NEW OBJECTIVE) =====
-                # 1. Information Coefficient (IC) - Weighted Rank Correlation
-                ic = 0.0
-                try:
-                    if calibrated_probs is not None and len(calibrated_probs) > 50:
-                         # Align masks
-                         valid_mask_ic = np.isfinite(calibrated_probs) & np.isfinite(realized_return_clean)
-                         if valid_mask_ic.sum() > 50:
-                             p_clean = calibrated_probs[valid_mask_ic]
-                             r_clean = realized_return_clean[valid_mask_ic]
-
-                             # Calculate confidence-based weights for IC
-                             # Weight = 1.0 + |prob - 0.5| (Higher weight for confident predictions)
-                             ic_weights = 1.0 + np.abs(p_clean - 0.5)
-
-                             # Compute Ranks
-                             from scipy.stats import rankdata
-                             p_ranks = rankdata(p_clean)
-                             r_ranks = rankdata(r_clean)
-
-                             # Weighted Pearson on Ranks (Weighted Spearman)
-                             # np.cov(..., aweights=...) returns covariance matrix
-                             cov_mat = np.cov(p_ranks, r_ranks, aweights=ic_weights)
-                             if cov_mat.shape == (2, 2):
-                                 cov_xy = cov_mat[0, 1]
-                                 var_x = cov_mat[0, 0]
-                                 var_y = cov_mat[1, 1]
-                                 if var_x > 0 and var_y > 0:
-                                     val_ic = cov_xy / np.sqrt(var_x * var_y)
-                                     if np.isfinite(val_ic):
-                                         ic = float(val_ic)
-                except Exception:
-                    ic = 0.0
-
-                # 2. Density Score (Logarithmic)
-                density_score = 0.0
-                if events_per_day > 0:
-                    density_score = min(1.0, np.log10(events_per_day + 1.0) / 1.0)
-
-                # 3. Effect Size (Cohen's d) - Reusing d_post
-                # d_post is already calculated above
-                snr_metric = max(0.0, float(d_post)) if np.isfinite(d_post) else 0.0
-
-                # ===== CALIBRATION SCORE =====
-                # Derived from weighted_brier_norm (0=perfect, 1=bad)
-                # If unavailable, assume neutral/poor (0.0 score) to encourage calibration availability
-                score_calibration = 0.0
-                if weighted_brier_norm is not None:
-                    score_calibration = max(0.0, 1.0 - float(weighted_brier_norm))
-                elif ece_norm is not None:
-                     score_calibration = max(0.0, 1.0 - float(ece_norm))
-
-                # ===== NEW COMBINED SCORE FORMULA =====
-                # Weights: AUC(30%), IC(20%), Calib(20%), SNR(15%), Density(15%)
-
-                # User Request: Modulate AUC by stability (std dev)
-                # If auc_cv_std is high (unstable), discount the AUC contribution.
-                # Threshold: 0.10 (if std > 0.10, AUC score becomes 0)
-                stability_factor = 1.0
-                if auc_cv_std is not None and np.isfinite(auc_cv_std):
-                    stability_factor = max(0.0, 1.0 - (float(auc_cv_std) / 0.10))
-
-                score_auc = max(0.0, (mean_auc - 0.50) * 2.0) * stability_factor
-                # User Request (Refined): Penalize negative IC and clip upside
-                score_ic = np.clip(ic * 5.0, -1.0, 1.0)
-                score_snr = min(1.0, snr_metric / 2.0)
-                score_density = density_score
-
-                # Base score [0, 1] mapped to [0, 100] scale
-                fidelity_score = (
-                    0.30 * score_auc +
-                    0.20 * score_ic +
-                    0.20 * score_calibration +
-                    0.15 * score_snr +
-                    0.15 * score_density
-                ) * 100.0
-
-                combined_score = (
-                    fidelity_score
-                    + sample_count_bonus
-                    + (edge_scaled * edge_weight * 0.5) # Reduced edge weight
-                    + balance_term
-                    - (penalty_density * 0.1)
-                    - (tto_penalty * 0.1)
-                    - (retention_asym_weight * retention_asym_penalty)
-                    - trail_geom_penalty
-                    - diagnostics_penalty
-                    - robustness_penalty
-                )
-
-                try:
-                    label_cfg = build_label_config(
-                        symbol=symbol,
-                        exchange=exchange,
-                        timeframe=timeframe,
-                        direction=direction,
-                        params=params,
-                        extra=None,
-                    )
-                    config_id = compute_label_config_id(label_cfg)
-                except Exception:
-                    config_id = None
-
-                # ===== DETAILED P&L STATS (NEW) =====
-                pnl_win_rate = 0.0
-                pnl_avg_win = 0.0
-                pnl_avg_loss = 0.0
-                pnl_profit_factor = 0.0
-                pnl_total_return = 0.0
-
-                try:
-                    # 'labeled_mask' is defined earlier as ~binary_labels.isna()
-                    if 'labeled_mask' in locals() and isinstance(realized_returns, pd.Series):
-                        valid_ret = realized_returns[labeled_mask]
-                        if len(valid_ret) > 0:
-                            pnl_total_return = float(valid_ret.sum())
-                            wins = valid_ret[valid_ret > 0]
-                            losses = valid_ret[valid_ret < 0]
-
-                            pnl_win_rate = float(len(wins) / len(valid_ret))
-
-                            if len(wins) > 0:
-                                pnl_avg_win = float(wins.mean())
-
-                            if len(losses) > 0:
-                                pnl_avg_loss = float(losses.mean())
-
-                            # NEW: Average return per trade (wins & losses)
-                            pnl_avg_ret = float(valid_ret.mean())
-
-                            loss_sum = abs(float(losses.sum()))
-                            if loss_sum > 1e-9:
-                                pnl_profit_factor = float(wins.sum()) / loss_sum
-                            elif len(wins) > 0:
-                                pnl_profit_factor = 100.0 # Capped infinite profit factor
-                except Exception:
-                    pass
-
-                # Store candidate configuration for later persistence
-                candidate_config = {
-                    'config_id': config_id,
-                    'params': params.copy(),
-                    'learnability': float(learnability_score),
-                    'mean_auc': float(mean_auc),
-                    'profitability': float(profitability_score),
-                    'edge': float(edge_score),
-                    'edge_scaled': float(edge_scaled),
-                    'combined': float(combined_score),
-                    'fidelity_score': float(fidelity_score), # NEW
-                    'ic': float(ic), # NEW
-                    'calibration_score': float(score_calibration), # NEW
-                    'mean_pos': float(mean_pos),
-                    'mean_neg': float(mean_neg),
-                    'sharpe_pos': float(sharpe_pos),
-                    'n_events': int(n_events),
-                    'n_raw_events': int(n_raw_events),
-                    'n_vol_scaled_events': int(n_vol_scaled_events),
-                    'balance_score': float(balance_score),
-                    'trades_per_day': float(trades_per_day),
-                    'mean_tto': float(mean_tto) if np.isfinite(mean_tto) else float('nan'),
-                    'timeout_rate': float(timeout_rate) if np.isfinite(timeout_rate) else float('nan'),
-                    'tto_penalty': float(tto_penalty),
-                    'n_pre_events': int(n_pre_total),
-                    'retention_total': float(retention_total),
-                    'retention_pos': float(retention_pos),
-                    'retention_neg': float(retention_neg),
-                    'snr_pre': float(snr_pre),
-                    'snr_post': float(snr_post),
-                    'effect_size_pre': float(d_pre) if np.isfinite(d_pre) else 0.0,
-                    'effect_size_post': float(d_post) if np.isfinite(d_post) else 0.0,
-                    'n_required_80pct_power': float(n_required_80),
-                    # CV-based robustness proxy from learnability probe
-                    'learnability_worst_fold_auc': float(worst_fold_auc_cv) if worst_fold_auc_cv is not None else None,
-                    'learnability_auc_cv_std': float(auc_cv_std) if auc_cv_std is not None else None,
-                    'model_complexity': model_complexity,
-                    # NEW: Track trade count control parameters
-                    'cusum_threshold': float(cusum_threshold),
-                    'target_signal_density': float(target_signal_density),
-                    'r_multiple_threshold': float(r_multiple_threshold),
-                    'effective_tx_cost': float(effective_tx_cost),
-                    'label_low_q': float(label_low_q),
-                    # NEW: Detailed P&L Stats
-                    'pnl_win_rate': float(pnl_win_rate),
-                    'pnl_avg_win': float(pnl_avg_win),
-                    'pnl_avg_loss': float(pnl_avg_loss),
-                    'pnl_profit_factor': float(pnl_profit_factor),
-                    'pnl_profit_factor': float(pnl_profit_factor),
-                    'pnl_total_return': float(pnl_total_return),
-                    'pnl_avg_ret_per_trade': float(pnl_avg_ret) if 'pnl_avg_ret' in locals() else 0.0,
-                    'pnl_per_day': float(pnl_total_return) / max(days_span, 1.0) if 'days_span' in locals() else 0.0,
-                    'label_high_q': float(label_high_q),
-                    # AUC range tracking (unified into auc_retention_adjusted)
-                    'auc_in_target_range': bool(auc_in_target_range),
-                    'auc_range_adjustment': float(auc_range_adjustment),
-                    'auc_weight_multiplier': float(auc_weight_multiplier),
-                    # NEW: CV fold diagnostics from learnability probe
-                    'fold_aucs': fold_aucs.tolist() if isinstance(fold_aucs, np.ndarray) else list(fold_aucs) if fold_aucs is not None else [],
-                    'auc_interpretation': (
-                        'too_noisy' if mean_auc < 0.54 else
-                        'good_edge' if mean_auc <= 0.62 else
-                        'excellent_check_leakage' if mean_auc <= 0.67 else
-                        'suspicious_leakage' if mean_auc > 0.70 else
-                        'above_target'
-                    ),
-                    # Retention regularization (unified objective)
-                    'retention_penalty': float(retention_penalty),
-                    'retention_asym_penalty': float(retention_asym_penalty),
-                    'auc_retention_adjusted': float(auc_retention_adjusted),
-                    'alpha_retention': float(alpha_retention),
-                    'weighted_brier': float(weighted_brier) if weighted_brier is not None else None,
-                    'weighted_brier_norm': float(weighted_brier_norm) if weighted_brier_norm is not None else None,
-                    'ece_norm': float(ece_norm) if ece_norm is not None else None,
-                    'mid_brier': float(mid_brier) if mid_brier is not None else None,
-                    'mid_brier_norm': float(mid_brier_norm) if mid_brier_norm is not None else None,
-                    'calibration_combo': float(calib_combo_value) if calib_combo_value is not None else None,
-                    'rank_calib_score': float(rank_calib_score),
-                    # NEW: Two-phase HPO and diagnostic gates
-                    'sample_count_bonus': float(sample_count_bonus),
-                    'mi_value': float(mi_value),
-                    'mi_penalty': float(mi_penalty),
-                    'prob_std': float(prob_std),
-                    'prob_variance_penalty': float(prob_variance_penalty),
-                    'single_bin_penalty': float(single_bin_penalty),
-                }
-
-                # Optional per-regime breakdown using attached HMM regimes, if available.
-                per_regime_metrics: Dict[str, Any] = {}
-                regime_coverage_penalty = 0.0  # NEW: Penalty for poor regime coverage
-                n_regimes_with_events = 0
-                try:
-                    if "hmm_regime_label_1h" in market_data.columns:
-                        regimes_all = market_data["hmm_regime_label_1h"]
-                        regimes_events = regimes_all[labeled_mask]
-
-                        # Align calibrated probabilities with labeled events
-                        try:
-                            probs_series_full = pd.Series(calibrated_probs, index=binary_labels.index)
-                            probs_events = probs_series_full[labeled_mask]
-                        except Exception:
-                            probs_events = None
-
-                        from sklearn.metrics import roc_auc_score as _roc_auc_score_reg
-
-                        unique_regs = pd.unique(regimes_events.dropna())
-
-                        # ===== NEW: STRATIFIED REGIME SAMPLING CHECK =====
-                        # Penalize configurations that have poor regime coverage
-                        min_events_per_regime = int(config.get("min_events_per_regime", 20))
-                        expected_n_regimes = int(config.get("expected_n_regimes", 5))
-
-                        for reg_val in unique_regs:
-                            reg_mask = regimes_events == reg_val
-                            n_reg = int(reg_mask.sum())
-                            if n_reg >= min_events_per_regime:
-                                n_regimes_with_events += 1
-
-                        # Penalty for missing regimes
-                        if n_regimes_with_events < expected_n_regimes:
-                            missing_regimes = expected_n_regimes - n_regimes_with_events
-                            regime_coverage_penalty = missing_regimes * 50.0  # 50 points per missing regime
-                            if debug_sample_count < debug_sample_limit:
-                                tprint_warning(
-                                    f"[REGIME_COVERAGE] Only {n_regimes_with_events}/{expected_n_regimes} regimes "
-                                    f"have >= {min_events_per_regime} events. Penalty={regime_coverage_penalty:.1f}"
-                                )
-                        for reg_val in unique_regs:
-                            try:
-                                reg_mask = regimes_events == reg_val
-                                n_reg = int(reg_mask.sum())
-                                if n_reg < 20:
-                                    continue
-
-                                returns_reg = returns_labeled[reg_mask]
-                                labels_reg = labels_labeled[reg_mask]
-
-                                r_pos_reg = returns_reg[labels_reg == 1]
-                                r_neg_reg = returns_reg[labels_reg == 0]
-
-                                mean_pos_reg = float(r_pos_reg.mean()) if len(r_pos_reg) > 0 else 0.0
-                                mean_neg_reg = float(r_neg_reg.mean()) if len(r_neg_reg) > 0 else 0.0
-
-                                # Realized AUC within this regime (diagnostic only)
-                                auc_reg_local = float("nan")
-                                if probs_events is not None:
-                                    try:
-                                        probs_reg = probs_events[reg_mask]
-                                        if len(labels_reg.unique()) >= 2:
-                                            auc_reg_local = float(_roc_auc_score_reg(labels_reg, probs_reg))
-                                    except Exception:
-                                        auc_reg_local = float("nan")
-
-                                # For edge, use the same cross-validated mean_auc and
-                                # Sharpe-like trade-count scaling as the global metric,
-                                # so that regime-level edges are directly comparable to
-                                # the reported best_edge.
-                                auc_for_edge = float(mean_auc)
-
-                                edge_reg = compute_realistic_pnl_edge(
-                                    mean_return_positive=mean_pos_reg,
-                                    mean_auc=auc_for_edge,
-                                    transaction_cost=tx,
-                                    n_trades=n_reg,
-                                    reference_trades=reference_trades,
-                                )
-
-                                trades_per_day_reg = float(n_reg) / max(days_span, 1)
-
-                                per_regime_metrics[str(reg_val)] = {
-                                    'n_events': n_reg,
-                                    'trades_per_day': trades_per_day_reg,
-                                    'mean_pos': mean_pos_reg,
-                                    'mean_neg': mean_neg_reg,
-                                    # Expose the aligned AUC used for edge, and keep the
-                                    # local realized AUC as an auxiliary diagnostic field.
-                                    'auc': auc_for_edge,
-                                    'auc_local': auc_reg_local,
-                                    'edge': edge_reg,
-                                }
-                            except Exception:
-                                continue
-                except Exception:
-                    per_regime_metrics = {}
-
-                # Attach per-regime metrics and optional regression diagnostics
-                if per_regime_metrics:
-                    candidate_config['per_regime_metrics'] = per_regime_metrics
-                    candidate_config['n_regimes_with_events'] = n_regimes_with_events
-                    candidate_config['regime_coverage_penalty'] = float(regime_coverage_penalty)
-                if reg_target_stats is not None:
-                    candidate_config['regression_target_stats'] = reg_target_stats
-
-                # Apply regime coverage penalty to combined score (after per-regime metrics computed)
-                combined_score -= regime_coverage_penalty
-                candidate_config['combined'] = float(combined_score)
-
-                # Append to candidate pool and log a concise summary for debugging
-                candidate_pool.append(candidate_config)
-                try:
-                    pool_size_after = len(candidate_pool)
-                    tprint_info(
-                        f"[CANDIDATE_APPEND] complexity={model_complexity} "
-                        f"edge={edge_score:.6f} combined={combined_score:.6f} "
-                        f"mean_auc={mean_auc:.6f} n_events={n_events} "
-                        f"pool_size={pool_size_after}"
-                    )
-                except Exception:
-                    # Logging must not interfere with HPO; ignore any formatting errors
-                    pass
-
-                return {
-                    'learnability': float(learnability_score),
-                    'profitability': float(profitability_score),
-                    'edge': float(edge_score),
-                    'combined': float(combined_score),
-                }
-
-            except Exception as exc:  # Defensive: never crash HPO on one config
-                tprint_warning(f"[EARLY_EXIT_EXCEPTION] Labeling objective failed: {exc}")
-                gate_stats["exception"] = gate_stats.get("exception", 0) + 1
-                gate_stats["last_exception"] = str(exc)
-                import traceback
-                traceback.print_exc()
-                return {'learnability': 0.0, 'profitability': -1e9, 'edge': -1e9, 'combined': -1e9}
+            "best_params": full_best_params,
+        }
+
+        tprint_success(f"✅ Multi-Layer HPO Complete. Final metrics: {metrics}")
+        # Multi-layer HPO returns early with its results
+        return {"success": True, "metrics": metrics, "artifacts": {"best_params_json": str(json_path)}}
 
         # ------------------------------------------------------------------
         # 4) Multi-objective wrapper for single-objective optimizers
@@ -8053,12 +8784,27 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
         return {"success": True, "metrics": metrics, "artifacts": artifacts}
 
 def register_meta_labeling_hpo_sample_weighted_step() -> None:
-    """Register the meta-labeling HPO sample weighted step in the registry."""
+    """Register the meta-labeling HPO sample weighted step in the registry.
+    
+    This is the CANONICAL HPO entry point for meta-labeling. All HPO step aliases
+    route to MetaLabelingHPOSampleWeightedStep for consistency.
+    """
     from src.training.steps.base_step import step_registry
 
+    # Primary registration
     step_registry.register("meta_labeling_hpo_sample_weighted", MetaLabelingHPOSampleWeightedStep)
+    
+    # Backward compatibility aliases - route old names to weighted version
+    step_registry.register("meta_labeling_hpo_experiment", MetaLabelingHPOSampleWeightedStep)
+    step_registry.register("sr_labeling_xgb", MetaLabelingHPOSampleWeightedStep)
     step_registry.register("sr_labeling_xgb_weighted", MetaLabelingHPOSampleWeightedStep)
-    tprint("✅ Meta-labeling HPO sample weighted step registered (aliases: meta_labeling_hpo_sample_weighted, sr_labeling_xgb_weighted)", "SUCCESS")
+    
+    tprint(
+        "✅ Meta-labeling HPO sample weighted step registered as CANONICAL entry point "
+        "(aliases: meta_labeling_hpo_sample_weighted, meta_labeling_hpo_experiment, "
+        "sr_labeling_xgb, sr_labeling_xgb_weighted)",
+        "SUCCESS"
+    )
 
 
 # Auto-register when module is imported

@@ -1,24 +1,56 @@
 # src/training/steps/labeling/generate_weights_per_label.py
+"""
+Sample Weight Generation for Meta-Labeling HPO.
+
+This module provides functions to compute sample weights based on:
+- Magnitude: Risk-adjusted return magnitude
+- Learnability: Trend consistency score via sigmoid gate
+- Uniqueness: Event overlap/concurrency penalty
+- Cross-term: Interaction between magnitude and learnability
+
+These weights are used in the meta_labeling_hpo_sample_weighted step
+to improve model training by emphasizing high-quality samples.
+"""
 
 import numpy as np
 import pandas as pd
 from scipy.stats import spearmanr
 import optuna
+from typing import Dict, Any, Optional, Union
 
 
 # -------------------------------------------------------------------------
 # 1. Mathematical Helpers
 # -------------------------------------------------------------------------
 def sigmoid_gate(x, threshold, sharpness=10.0, reverse=False):
-    """Smooth sigmoid transition."""
+    """Smooth sigmoid transition.
+    
+    Args:
+        x: Input value
+        threshold: Center point of sigmoid
+        sharpness: Steepness of transition (higher = sharper)
+        reverse: If True, returns 1-sigmoid instead of sigmoid
+        
+    Returns:
+        Sigmoid-gated value in [0, 1]
+    """
     exponent = np.clip(-sharpness * (x - threshold), -50, 50)
     val = 1 / (1 + np.exp(exponent))
     return (1.0 - val) if reverse else val
+
 
 def magnitude_aware_spearman(weights, returns, magnitude_func=np.log1p):
     """
     Vectorized magnitude-aware Spearman correlation.
     Checks if weights rank-order the *magnitude* of returns correctly.
+    
+    Args:
+        weights: Sample weights array
+        returns: Returns array
+        magnitude_func: Function to transform absolute returns (default: log1p)
+        
+    Returns:
+        Correlation coefficient in [-1, 1]
     """
     # 1. Transform returns to magnitude
     abs_rets = np.abs(returns)
@@ -45,10 +77,18 @@ def magnitude_aware_spearman(weights, returns, magnitude_func=np.log1p):
     # Clip to valid correlation range [-1, 1]
     return np.clip(corr, -1.0, 1.0)
 
-def compute_horizon_consistency(close_series, horizon=12):
+
+def compute_horizon_consistency(close_series: pd.Series, horizon: int = 12) -> pd.Series:
     """
     Calculates the Efficiency Ratio (Kaufman) as a proxy for trend consistency.
     ER = |Change| / Sum(|Changes|)
+    
+    Args:
+        close_series: Close price series
+        horizon: Lookback horizon in bars
+        
+    Returns:
+        Series of efficiency ratios in [0, 1]
     """
     # 1. Net change over horizon
     net_change = close_series.diff(horizon).abs()
@@ -62,14 +102,23 @@ def compute_horizon_consistency(close_series, horizon=12):
     
     return efficiency_ratio.fillna(0.0)
 
-def compute_uniqueness(t_events, price_index):
+
+def compute_uniqueness(
+    t_events: pd.Series,
+    price_index: pd.Index,
+    lookahead: Optional[int] = None,
+) -> pd.Series:
     """
     Calculates average uniqueness using the Fast Algorithm (Integral Image).
     Complexity: O(N) instead of O(N * Horizon).
     
     Args:
-        t_events (pd.Series): Index=Start Time, Values=End Time.
-        price_index (pd.Index): Full timeline of bars.
+        t_events: Series with Index=Start Time, Values=End Time.
+        price_index: Full timeline of bars (DatetimeIndex).
+        lookahead: Optional lookahead parameter (currently unused, kept for API compat).
+        
+    Returns:
+        Series of uniqueness scores in [0, 1] indexed by t_events.index
     """
     if t_events.empty:
         return pd.Series(index=t_events.index, dtype=float)
@@ -93,7 +142,7 @@ def compute_uniqueness(t_events, price_index):
     end_idxs = np.minimum(end_idxs, n_bars)
     
     # 2. Compute Concurrency (How many trades active at each bar?)
-    concurrency = np.zeros(n_bars + 1) # +1 for safe indexing
+    concurrency = np.zeros(n_bars + 1)  # +1 for safe indexing
     
     # Add +1 at start, Subtract -1 at end
     np.add.at(concurrency, start_idxs, 1)
@@ -111,7 +160,7 @@ def compute_uniqueness(t_events, price_index):
     # Integral Image (Cumulative Sum of the Inverse)
     # cumsum[i] = sum(0..i)
     inv_cumsum = np.cumsum(inv_concurrency)
-    inv_cumsum = np.insert(inv_cumsum, 0, 0.0) # Prepend 0 for subtraction logic
+    inv_cumsum = np.insert(inv_cumsum, 0, 0.0)  # Prepend 0 for subtraction logic
     
     # Sum over [start, end) = cumsum[end] - cumsum[start]
     sums = inv_cumsum[end_idxs] - inv_cumsum[start_idxs]
@@ -124,98 +173,67 @@ def compute_uniqueness(t_events, price_index):
     
     return pd.Series(means, index=t_events.index).fillna(1.0)
 
-def generate_weights_per_label(
-    returns,
-    t_events,
-    close_series,
-    consistency_scores,
-    uniqueness_scores,
-    y=None,                 # NEW: Class labels
-    vol_proxy=None,
-    
-    # Layer 1 HPO parameters
-    mag_compression=0.8,
-    learn_slope=10.0,
-    learn_center=0.4,
-    uniq_intensity=1.0,
-    
-    # Exponents
-    exp_mag=1.0,
-    exp_learn=1.0,
-    exp_uniq=1.0,
-    
-    # Class Balance
-    class_balance_rate=1.0, # Gamma
-    
-    downside_multiplier=1.0,
-    floor_weight=1e-4,
-    cap_weight=50.0
-):
-    """
-    Vectorized weighting generator including Class Balancing.
-    """
-    # --- 0. Data Hygiene ---
-    returns = np.nan_to_num(returns, nan=0.0)
-    consistency_scores = np.nan_to_num(consistency_scores, nan=0.0)
-    uniqueness_scores = np.nan_to_num(uniqueness_scores, nan=1.0)
-    if vol_proxy is None: vol_proxy = np.ones_like(returns)
-    vol_proxy = np.maximum(vol_proxy, 1e-8)
-
-    # --- 1. Magnitude (Risk Adjusted) ---
-    w_mag = np.power(np.abs(returns / vol_proxy), mag_compression)
-    if downside_multiplier != 1.0:
-        w_mag = np.where(returns < 0, w_mag * downside_multiplier, w_mag)
-
-    # --- 2. Learnability (Consistency Gate) ---
-    w_learn = 1 / (1 + np.exp(-learn_slope * (consistency_scores - learn_center)))
-
-    # --- 3. Uniqueness ---
-    w_uniq = np.power(uniqueness_scores, uniq_intensity)
-
-    # --- 4. Class Balancing ---
-    w_class = np.ones_like(returns)
-    if y is not None and class_balance_rate > 0:
-        classes = np.unique(y)
-        n_samples = len(y)
-        n_classes = len(classes)
-        for c in classes:
-            n_j = np.sum(y == c)
-            if n_j > 0:
-                base_w = n_samples / (n_classes * n_j)
-                w_class[y == c] = np.power(base_w, class_balance_rate)
-
-    # --- 5. Synthesis ---
-    w_final = (w_mag**exp_mag) * (w_learn**exp_learn) * (w_uniq**exp_uniq) * w_class
-
-    # --- 6. Bounds & Norm ---
-    w_final = np.clip(w_final, floor_weight, cap_weight)
-    w_final /= (np.mean(w_final) + 1e-12)
-
-    return w_final
 
 # -------------------------------------------------------------------------
-# 2. The Weight Generator
+# 2. The Weight Generator (CANONICAL VERSION)
 # -------------------------------------------------------------------------
 def generate_weights_per_label(
-    returns,
-    t_events,
-    close_series, # Kept for signature compatibility, though maybe unused if precalc passed
-    consistency_scores,
-    uniqueness_scores,
-    vol_proxy,
-    mag_compression,
-    learn_slope,
-    learn_center,
-    uniq_intensity,
-    exp_mag,
-    exp_learn,
-    exp_uniq,
-    exp_cross,
-    downside_multiplier
-):
+    returns: Union[np.ndarray, pd.Series],
+    t_events: pd.Index,
+    close_series: Optional[pd.Series],  # Kept for signature compatibility
+    consistency_scores: np.ndarray,
+    uniqueness_scores: np.ndarray,
+    vol_proxy: np.ndarray,
+    mag_compression: float,
+    learn_slope: float,
+    learn_center: float,
+    uniq_intensity: float,
+    exp_mag: float,
+    exp_learn: float,
+    exp_uniq: float,
+    exp_cross: float,
+    downside_multiplier: float,
+    # Optional additional parameters for extended functionality
+    y: Optional[np.ndarray] = None,
+    class_balance_rate: float = 0.0,
+    floor_weight: float = 1e-4,
+    cap_weight: float = 50.0,
+) -> np.ndarray:
     """
-    Generates sample weights based on Magnitude, Learnability, and Uniqueness.
+    Generates sample weights based on Magnitude, Learnability, Uniqueness, and Cross-term.
+    
+    This is the CANONICAL weight generation function used throughout the weighted
+    meta-labeling pipeline.
+    
+    Args:
+        returns: Array of realized returns per event
+        t_events: Index of event timestamps
+        close_series: Close price series (kept for API compat, unused)
+        consistency_scores: Pre-computed horizon consistency scores
+        uniqueness_scores: Pre-computed uniqueness scores
+        vol_proxy: Volatility proxy for risk adjustment
+        mag_compression: Compression exponent for magnitude (0-1)
+        learn_slope: Sigmoid slope for learnability gate
+        learn_center: Sigmoid center for learnability gate
+        uniq_intensity: Exponent for uniqueness weighting
+        exp_mag: Final exponent for magnitude component
+        exp_learn: Final exponent for learnability component
+        exp_uniq: Final exponent for uniqueness component
+        exp_cross: Final exponent for cross-term (mag * learn)
+        downside_multiplier: Multiplier for negative returns (emphasize losses)
+        y: Optional class labels for class balancing
+        class_balance_rate: Rate for inverse class frequency weighting (0 = no balancing)
+        floor_weight: Minimum allowed weight
+        cap_weight: Maximum allowed weight
+        
+    Returns:
+        Array of sample weights, normalized to mean=1
     """
+    # Convert to numpy if needed
+    if hasattr(returns, 'values'):
+        returns = returns.values
+    returns = np.asarray(returns, dtype=float)
+    
     # 1. Safety Fix: Infinite Volatility Trap
     # Force vol_proxy to be valid
     safe_vol = np.maximum(vol_proxy, 1e-6)
@@ -226,7 +244,8 @@ def generate_weights_per_label(
 
     # Feature 1: Downside Multiplier
     # Apply multiplier where returns are negative
-    w_mag = np.where(returns < 0, w_mag * downside_multiplier, w_mag)
+    if downside_multiplier != 1.0:
+        w_mag = np.where(returns < 0, w_mag * downside_multiplier, w_mag)
 
     # 3. Learnability Weight (Consistency)
     # Inline Sigmoid Logic (to avoid external dependency in this function)
@@ -240,14 +259,32 @@ def generate_weights_per_label(
     # 5. Feature 2: Cross-term Interaction
     w_cross = w_mag * w_learn
 
-    # 6. Final Combination
+    # 6. Class Balancing (optional)
+    w_class = np.ones_like(returns, dtype=float)
+    if y is not None and class_balance_rate > 0:
+        y = np.asarray(y)
+        classes = np.unique(y[~np.isnan(y)])
+        n_samples = len(y)
+        n_classes = len(classes)
+        for c in classes:
+            n_j = np.sum(y == c)
+            if n_j > 0:
+                base_w = n_samples / (n_classes * n_j)
+                w_class[y == c] = np.power(base_w, class_balance_rate)
+
+    # 7. Final Combination
     # Combine component weights with exponents
     raw_weights = (
         (w_mag ** exp_mag) *
         (w_learn ** exp_learn) *
         (w_uniq ** exp_uniq) *
-        (w_cross ** exp_cross)
+        (w_cross ** exp_cross) *
+        w_class
     )
+
+    # 8. Bounds & Normalization
+    raw_weights = np.clip(raw_weights, floor_weight, cap_weight)
+    raw_weights = raw_weights / (np.mean(raw_weights) + 1e-12)
 
     return raw_weights
 
@@ -255,9 +292,31 @@ def generate_weights_per_label(
 # -------------------------------------------------------------------------
 # 3. The Core Scoring Engine
 # -------------------------------------------------------------------------
-def evaluate_weighting_scheme(weights, returns, consistency_scores, vol_proxy, thresholds):
+def evaluate_weighting_scheme(
+    weights: np.ndarray,
+    returns: np.ndarray,
+    consistency_scores: np.ndarray,
+    vol_proxy: np.ndarray,
+    thresholds: Dict[str, float],
+) -> float:
     """
     Evaluates the 'Teacher Quality' of a weighting vector.
+    
+    Uses multiple metrics:
+    - Information Coefficient (IC): Does weight predict magnitude?
+    - ESS Stability: Are weights well-distributed?
+    - Weighted Consistency: Are high-weight samples learnable?
+    - Volatility Bias: Are we just weighting by vol?
+    
+    Args:
+        weights: Sample weights array
+        returns: Returns array
+        consistency_scores: Trend consistency scores
+        vol_proxy: Volatility proxy
+        thresholds: Dict with 'ess_min' and 'cons_min' thresholds
+        
+    Returns:
+        Composite quality score
     """
     # --- A. Data Hygiene ---
     weights = np.nan_to_num(weights, nan=1e-6)
@@ -306,12 +365,29 @@ def evaluate_weighting_scheme(weights, returns, consistency_scores, vol_proxy, t
     
     return final_score
 
+
 # -------------------------------------------------------------------------
 # 4. The Optuna Objective Wrapper
 # -------------------------------------------------------------------------
-def objective_layer_1(trial, returns, t_events, close_series, precalc_data):
+def objective_layer_1(
+    trial,
+    returns: np.ndarray,
+    t_events: pd.Index,
+    close_series: pd.Series,
+    precalc_data: Dict[str, np.ndarray],
+) -> float:
     """
-    Optuna Objective for Layer 1.
+    Optuna Objective for Layer 1 weight parameter optimization.
+    
+    Args:
+        trial: Optuna trial object
+        returns: Returns array aligned to t_events
+        t_events: Event timestamps
+        close_series: Close prices (for compatibility)
+        precalc_data: Dict with 'consistency', 'volatility', 'uniqueness' arrays
+        
+    Returns:
+        Weighting scheme quality score
     """
     # Unpack pre-calculated heavy data
     # NOTE: These should already be aligned to t_events by run_layer1_optimization
@@ -333,8 +409,6 @@ def objective_layer_1(trial, returns, t_events, close_series, precalc_data):
         # Feature 1: Downside Multiplier
         'downside_multiplier': trial.suggest_float("downside_multiplier", 1.0, 1.5),
     }
-    
-    # Removed 'exp_cons' (Phantom Parameter fix)
 
     thresholds = {
         'ess_min': trial.suggest_float("eval_ess_min", 0.05, 0.15),
@@ -344,9 +418,9 @@ def objective_layer_1(trial, returns, t_events, close_series, precalc_data):
     # --- 2. Generate Weights ---
     # Call the generator with ALL pre-calc data
     weights = generate_weights_per_label(
-        returns,
-        t_events,
-        close_series,
+        returns=returns,
+        t_events=t_events,
+        close_series=close_series,
         consistency_scores=consistency_scores,
         uniqueness_scores=uniqueness_scores,
         vol_proxy=vol_proxy,
@@ -364,40 +438,74 @@ def objective_layer_1(trial, returns, t_events, close_series, precalc_data):
     
     return score
 
+
 # -------------------------------------------------------------------------
 # 5. Driver Function
 # -------------------------------------------------------------------------
-def run_layer1_optimization(df, returns, t_events):
+def run_layer1_optimization(
+    df: pd.DataFrame,
+    returns: Union[np.ndarray, pd.Series],
+    t_events: pd.Index,
+    n_trials: int = 50,
+    horizon: int = 12,
+) -> Dict[str, Any]:
     """
-    Pre-calculates data and runs the study.
+    Pre-calculates data and runs the Layer 1 weighting parameter optimization.
 
-    df: Full dataframe with 'close' column.
-    returns: Series of returns corresponding to t_events (or full? Usually t_events).
-             Wait, if returns has same index as t_events, we are good.
-             If returns is full series, we need to reindex.
-             Assumption: returns passed here are the Label Returns (aligned with t_events).
-    t_events: Index/Series of event start times.
+    Args:
+        df: Full dataframe with 'close' column.
+        returns: Series of returns corresponding to t_events.
+        t_events: Index/Series of event start times.
+        n_trials: Number of Optuna trials (default: 50)
+        horizon: Lookback horizon for consistency calculation (default: 12)
+        
+    Returns:
+        Dict of best weighting parameters
     """
     print("Pre-calculating Layer 1 metrics...")
     
     # 1. Horizon Consistency (Full History)
-    consistency_full = compute_horizon_consistency(df['close'], horizon=12)
+    consistency_full = compute_horizon_consistency(df['close'], horizon=horizon)
 
     # 2. Volatility Proxy (Full History)
     # Fix: Infinite Volatility (will be handled in generator, but cleaner here too)
     volatility_full = df['close'].pct_change().rolling(20, min_periods=1).std().fillna(0)
     
     # 3. Uniqueness (Events)
-    # Calculated relative to full index but returns event-aligned array
-    uniqueness_aligned = compute_uniqueness(t_events, df.index, lookahead=12)
+    # Create t_events as a Series with end times for uniqueness calculation
+    # If t_events is just an index, create end times as index + horizon bars
+    if isinstance(t_events, pd.Series):
+        t_events_series = t_events
+    else:
+        # Assume events end after 'horizon' bars
+        try:
+            t_events_series = pd.Series(
+                index=t_events,
+                data=t_events + pd.Timedelta(minutes=15 * horizon)  # Assuming 15m bars
+            )
+        except Exception:
+            # Fallback: use same timestamp for start/end
+            t_events_series = pd.Series(index=t_events, data=t_events)
+    
+    uniqueness_aligned = compute_uniqueness(t_events_series, df.index)
     
     # Feature 3: Fix "Array Shape" Crash
     # Reindex full-history metrics to t_events
     try:
-        consistency_aligned = consistency_full.reindex(t_events).fillna(0).values
-        volatility_aligned = volatility_full.reindex(t_events).fillna(0).values
+        if isinstance(t_events, pd.Series):
+            event_index = t_events.index
+        else:
+            event_index = t_events
+            
+        consistency_aligned = consistency_full.reindex(event_index).fillna(0).values
+        volatility_aligned = volatility_full.reindex(event_index).fillna(0).values
+        
+        # Ensure uniqueness is aligned
+        if isinstance(uniqueness_aligned, pd.Series):
+            uniqueness_aligned = uniqueness_aligned.reindex(event_index).fillna(1.0).values
+        
         # Ensure returns is also numpy array
-        returns_values = returns.values if hasattr(returns, 'values') else returns
+        returns_values = returns.values if hasattr(returns, 'values') else np.asarray(returns)
 
     except Exception as e:
         print(f"Error reindexing metrics: {e}")
@@ -416,12 +524,20 @@ def run_layer1_optimization(df, returns, t_events):
         lambda trial: objective_layer_1(
             trial,
             returns_values,
-            t_events,
+            event_index,
             df['close'],
             precalc_data
         ), 
-        n_trials=50  # Reduced trial count for speed
+        n_trials=n_trials,
+        show_progress_bar=True,
     )
     
     print("Best Layer 1 Params:", study.best_params)
-    return study.best_params
+    
+    # Extract only the weight generation params (exclude threshold params)
+    weight_params = {
+        k: v for k, v in study.best_params.items()
+        if k not in ('eval_ess_min', 'eval_cons_min')
+    }
+    
+    return weight_params

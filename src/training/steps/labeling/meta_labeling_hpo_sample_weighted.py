@@ -2923,6 +2923,209 @@ def sigmoid_gate(x: float, threshold: float, sharpness: float = 10.0, lower_boun
     return lower_bound + (1.0 - lower_bound) * sigmoid
 
 
+# ============================================================================
+# HPO UTILITY FUNCTIONS (Trapezoidal Gate & Stability-Adjusted Utility)
+# ============================================================================
+
+def trapezoidal_gate(x: float, lower: float, sweet_spot: tuple, upper: float) -> float:
+    """
+    Returns a score [0, 1] based on trapezoidal membership.
+    - Below lower: soft floor (0.01)
+    - Between lower and sweet_spot[0]: Ramp up
+    - Inside sweet_spot: 1.0
+    - Between sweet_spot[1] and upper: Ramp down
+    - Above upper: soft floor (leakage penalty)
+    
+    Args:
+        x: The value to score
+        lower: Lower bound (below this = rejection territory)
+        sweet_spot: Tuple (min, max) for the ideal range
+        upper: Upper bound (above this = leakage/overfit territory)
+    
+    Returns:
+        Score in [0.01, 1.0]
+    """
+    s_min, s_max = sweet_spot
+    
+    if x < lower or x > upper:
+        return 0.01  # Soft floor to avoid log(0) errors if used later
+    elif s_min <= x <= s_max:
+        return 1.0
+    elif lower <= x < s_min:
+        # Ramp up
+        return (x - lower) / (s_min - lower)
+    elif s_max < x <= upper:
+        # Ramp down
+        return (upper - x) / (upper - s_max)
+    return 0.01
+
+
+def calculate_hpo_utility(
+    folds_sharpe: np.ndarray,
+    auc: float,
+    trades_per_day: float,
+    lambda_vol: float = 1.2,
+    w_auc: float = 1.0,
+    w_den: float = 0.5,
+) -> float:
+    """
+    Compute a stable utility for HPO combining Sharpe stability, AUC gate, and trade density.
+    
+    Args:
+        folds_sharpe: Array of per-fold Sharpe ratios
+        auc: Mean AUC across folds
+        trades_per_day: Average trades per day
+        lambda_vol: Penalty weight for Sharpe volatility across folds (default 1.2)
+        w_auc: Weight exponent for AUC gate (default 1.0 = strict)
+        w_den: Weight exponent for density modifier (default 0.5)
+    
+    Returns:
+        Utility score. Returns -1.0 for rejection.
+    """
+    # 1. Stability-adjusted Sharpe (base)
+    avg_sharpe = float(np.mean(folds_sharpe))
+    # Safety check for single-fold runs
+    vol_sharpe = float(np.std(folds_sharpe, ddof=1)) if len(folds_sharpe) > 1 else 0.0
+    
+    # Penalize volatility across folds
+    base_score = avg_sharpe - (lambda_vol * vol_sharpe)
+
+    # Hard early reject for non-positive structural performance
+    if base_score <= 0.0:
+        return -1.0
+
+    # Bound the base score (diminishing returns on super-high Sharpes)
+    base_norm = np.log1p(base_score)
+
+    # 2. Auxiliary modifiers (0..1)
+    
+    # AUC Gate: Returns 0.01 to 1.0
+    # Strict penalty for leakage (AUC > 0.70) or randomness (AUC < 0.54)
+    phi_auc = trapezoidal_gate(auc, lower=0.54, sweet_spot=(0.58, 0.64), upper=0.70)
+
+    # Density: Adjusted Sigmoid
+    # Shifted center to 1.0 so that at 2.0 trades/day, score is ~0.73
+    # At 3.0 trades/day, score is ~0.88. At 5.0, score is ~0.98.
+    phi_density = 1.0 / (1.0 + np.exp(-(trades_per_day - 1.0)))
+
+    # 3. Weighted Geometric Combination
+    # If phi_auc is near 0 (leakage/random), the whole score collapses
+    modifier = (phi_auc ** w_auc) * (phi_density ** w_den)
+
+    utility = float(np.clip(base_norm * modifier, -1.0, 10.0))
+    return utility
+
+
+def linear_size_from_prob(
+    p: float,
+    max_exposure: float = 1.0,
+    min_prob: float = 0.5,
+    scale: float = 1.0,
+) -> float:
+    """
+    Compute long/short signed size in [-max_exposure, +max_exposure] from probability.
+    
+    Args:
+        p: Predicted probability of a positive outcome
+        min_prob: Neutral threshold (default 0.5)
+        scale: Multiplier to control aggressiveness
+        max_exposure: Maximum allowed exposure magnitude
+    
+    Returns:
+        Position size in [-max_exposure, +max_exposure]
+    """
+    # confidence in [-1, 1]: maps 0.5->0, 1.0->1.0, 0.0->-1.0
+    conf = (p - min_prob) / (1.0 - min_prob) if min_prob < 1.0 else 0.0
+    conf = np.clip(conf, -1.0, 1.0)
+    size = scale * conf
+    # clamp to allowed exposure
+    size = np.clip(size, -max_exposure, max_exposure)
+    return float(size)
+
+
+def calibrate_probabilities_isotonic(
+    y_true: np.ndarray,
+    y_prob: np.ndarray,
+    cv_folds: int = 3,
+) -> np.ndarray:
+    """
+    Calibrate probabilities using isotonic regression with cross-validation.
+    
+    Args:
+        y_true: True binary labels
+        y_prob: Uncalibrated predicted probabilities
+        cv_folds: Number of cross-validation folds
+    
+    Returns:
+        Calibrated probabilities
+    """
+    from sklearn.isotonic import IsotonicRegression
+    from sklearn.model_selection import KFold
+    
+    calibrated = np.zeros_like(y_prob, dtype=float)
+    kf = KFold(n_splits=cv_folds, shuffle=False)
+    
+    for train_idx, val_idx in kf.split(y_prob):
+        iso = IsotonicRegression(out_of_bounds='clip')
+        iso.fit(y_prob[train_idx], y_true[train_idx])
+        calibrated[val_idx] = iso.predict(y_prob[val_idx])
+    
+    return calibrated
+
+
+def compute_fold_sharpe_ratios(
+    y_true: np.ndarray,
+    y_prob: np.ndarray,
+    returns: np.ndarray,
+    n_folds: int = 5,
+    use_calibration: bool = True,
+) -> np.ndarray:
+    """
+    Compute per-fold Sharpe ratios for stability assessment.
+    
+    Args:
+        y_true: True binary labels
+        y_prob: Predicted probabilities
+        returns: Realized returns per sample
+        n_folds: Number of folds
+        use_calibration: Whether to calibrate probabilities before sizing
+    
+    Returns:
+        Array of per-fold Sharpe ratios
+    """
+    from sklearn.model_selection import KFold
+    
+    # Pre-calibrate if requested
+    if use_calibration:
+        y_prob_cal = calibrate_probabilities_isotonic(y_true, y_prob, cv_folds=min(3, n_folds))
+    else:
+        y_prob_cal = y_prob
+    
+    fold_sharpes = []
+    kf = KFold(n_splits=n_folds, shuffle=False)
+    
+    for _, fold_idx in kf.split(returns):
+        fold_probs = y_prob_cal[fold_idx]
+        fold_returns = returns[fold_idx]
+        
+        # Compute sized returns: position_size * realized_return
+        sized_returns = []
+        for prob, ret in zip(fold_probs, fold_returns):
+            size = linear_size_from_prob(prob, max_exposure=1.0, min_prob=0.5, scale=1.0)
+            sized_returns.append(size * ret)
+        
+        sized_returns = np.array(sized_returns)
+        
+        if len(sized_returns) > 1 and np.std(sized_returns) > 1e-9:
+            fold_sharpe = np.mean(sized_returns) / np.std(sized_returns)
+        else:
+            fold_sharpe = 0.0
+        
+        fold_sharpes.append(fold_sharpe)
+    
+    return np.array(fold_sharpes)
+
+
 def compute_robust_expectancy(returns: np.ndarray, cap_quantile: float = 0.95) -> float:
     """Calculates the Edge in a way that works for BOTH Trend (Skewed) and Mean Reversion (Normal) strategies.
 
@@ -4382,10 +4585,17 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
         tprint_success("✅ Meta-features pre-calculated.")
 
         def layer2_objective(trial_params: Dict[str, Any]) -> float:
+            """
+            Layer 2 objective using stability-adjusted utility with:
+            - Pre-calibrated probabilities for position sizing
+            - Per-fold Sharpe stability assessment
+            - Trapezoidal AUC gate (penalizes leakage and randomness)
+            - Trade density modifier
+            """
             # A. TBM SIMULATION (Constructive)
             sl_mult = trial_params["sl_atr_mult"]
             rr = trial_params["risk_reward_ratio"]
-            tp_mult = sl_mult * rr # Guarantee: TP >= 2 * SL
+            tp_mult = sl_mult * rr  # Guarantee: TP >= 2 * SL
 
             trail_dist = trial_params.get("trail_distance_atr_mult", 0.0)
 
@@ -4409,11 +4619,12 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 transaction_cost=DEFAULT_TRANSACTION_COST,
                 min_event_spacing=2,
                 trail_distance_atr_mult=trail_dist,
-                atr_series=atr_series # Pass for trailing logic
+                atr_series=atr_series  # Pass for trailing logic
             )
 
             valid_idx = ~l2_labels.isna()
-            if valid_idx.sum() < 50: return -1.0
+            if valid_idx.sum() < 50:
+                return -1.0
 
             l2_t_events = l2_returns.index[valid_idx]
             l2_returns_clean = l2_returns[valid_idx]
@@ -4437,31 +4648,59 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             # C. SUBSET META-FEATURES (Fast)
             X_trial = meta_features_full.loc[valid_idx].fillna(0)
 
-            # D. FAST MODEL TRAINING
+            # D. FAST MODEL TRAINING WITH CV
+            n_cv_folds = 5
             fast_model = lgb.LGBMClassifier(
                 n_estimators=60, max_depth=3, learning_rate=0.1, n_jobs=-1, verbose=-1, random_state=42
             )
 
             try:
                 cv_preds = cross_val_predict(
-                    fast_model, X_trial, l2_labels_clean, cv=3,
+                    fast_model, X_trial, l2_labels_clean, cv=n_cv_folds,
                     method='predict_proba', fit_params={'sample_weight': sample_weights}, n_jobs=-1
                 )[:, 1]
             except Exception:
                 return -1.0
 
-            # E. SCORING (Robust Edge)
-            df_res = pd.DataFrame({
-                'y_true': l2_labels_clean.values,
-                'y_prob': cv_preds,
-                'ret_bps': l2_returns_clean.values
-            })
-            stats = {
-                'num_trades': len(df_res),
-                'sharpe_ratio': df_res['ret_bps'].mean() / (df_res['ret_bps'].std() + 1e-9),
-                'trades_per_day': len(df_res) / (len(market_data)/96.0)
-            }
-            return compute_robust_hpo_objective(stats, df_res, regime_col='none')
+            # E. COMPUTE AUC (for trapezoidal gate)
+            try:
+                mean_auc = roc_auc_score(l2_labels_clean.values, cv_preds)
+            except Exception:
+                mean_auc = 0.5
+
+            # F. COMPUTE FOLD SHARPE RATIOS (with pre-calibration)
+            # Pre-calibrate probabilities using isotonic regression
+            y_true_arr = l2_labels_clean.values.astype(float)
+            y_prob_arr = cv_preds.astype(float)
+            returns_arr = l2_returns_clean.values.astype(float)
+
+            try:
+                folds_sharpe = compute_fold_sharpe_ratios(
+                    y_true=y_true_arr,
+                    y_prob=y_prob_arr,
+                    returns=returns_arr,
+                    n_folds=n_cv_folds,
+                    use_calibration=True,  # Pre-calibrate before sizing
+                )
+            except Exception:
+                # Fallback to simple Sharpe if fold computation fails
+                simple_sharpe = np.mean(returns_arr) / (np.std(returns_arr) + 1e-9)
+                folds_sharpe = np.array([simple_sharpe])
+
+            # G. COMPUTE TRADES PER DAY
+            trades_per_day = len(l2_returns_clean) / max(days_span, 1)
+
+            # H. CALCULATE UTILITY (Trapezoidal Gate + Stability)
+            utility = calculate_hpo_utility(
+                folds_sharpe=folds_sharpe,
+                auc=mean_auc,
+                trades_per_day=trades_per_day,
+                lambda_vol=1.2,   # Penalty for Sharpe volatility across folds
+                w_auc=1.0,        # Strict AUC gate
+                w_den=0.5,        # Moderate density weight
+            )
+
+            return utility
 
         l2_optimizer = BayesianTPEOptimizer(
             config=OptimizationConfig(n_trials=40, execution_mode="full", direction="maximize", seed=42)
@@ -4543,20 +4782,98 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             "colsample_bytree": {"type": "float", "low": 0.5, "high": 1.0},
         }
 
+        # Precompute values needed for Layer 3 utility calculation
+        final_returns_arr = final_returns[valid_final_mask].values.astype(float)
+        final_labels_arr = y_final.values.astype(float)
+
         def layer3_objective(model_params: Dict[str, Any]) -> float:
+            """
+            Layer 3 objective using stability-adjusted utility with:
+            - Pre-calibrated probabilities for position sizing
+            - Per-fold Sharpe stability assessment
+            - Trapezoidal AUC gate (penalizes leakage and randomness)
+            - Trade density modifier
+            """
             model = lgb.LGBMClassifier(n_jobs=-1, verbose=-1, random_state=42, **model_params)
-            cv_scores = []
-            kf = TimeSeriesSplit(n_splits=5)
-            for tr_idx, te_idx in kf.split(X_final):
+            
+            n_cv_folds = 5
+            kf = TimeSeriesSplit(n_splits=n_cv_folds)
+            
+            # Collect per-fold predictions and metrics
+            all_preds = np.full(len(X_final), np.nan)
+            fold_aucs = []
+            fold_sharpes = []
+            
+            for fold_idx, (tr_idx, te_idx) in enumerate(kf.split(X_final)):
                 X_tr, X_te = X_final.iloc[tr_idx], X_final.iloc[te_idx]
                 y_tr, y_te = y_final.iloc[tr_idx], y_final.iloc[te_idx]
                 w_tr = final_weights[tr_idx]
-                if len(np.unique(y_tr)) < 2: continue
+                
+                if len(np.unique(y_tr)) < 2:
+                    continue
+                
+                # Train model
                 model.fit(X_tr, y_tr, sample_weight=w_tr)
                 preds = model.predict_proba(X_te)[:, 1]
-                try: cv_scores.append(roc_auc_score(y_te, preds))
-                except: pass
-            return np.mean(cv_scores) if cv_scores else 0.0
+                all_preds[te_idx] = preds
+                
+                # Compute fold AUC
+                try:
+                    fold_auc = roc_auc_score(y_te, preds)
+                    fold_aucs.append(fold_auc)
+                except Exception:
+                    pass
+                
+                # Calibrate predictions and compute fold Sharpe
+                try:
+                    y_te_arr = y_te.values.astype(float)
+                    preds_arr = preds.astype(float)
+                    ret_te = final_returns_arr[te_idx]
+                    
+                    # Isotonic calibration on this fold (using train data for calibrator)
+                    from sklearn.isotonic import IsotonicRegression
+                    iso = IsotonicRegression(out_of_bounds='clip')
+                    train_preds = model.predict_proba(X_tr)[:, 1]
+                    iso.fit(train_preds, y_tr.values)
+                    preds_cal = iso.predict(preds_arr)
+                    
+                    # Compute sized returns using calibrated probabilities
+                    sized_returns = []
+                    for prob, ret in zip(preds_cal, ret_te):
+                        size = linear_size_from_prob(prob, max_exposure=1.0, min_prob=0.5, scale=1.0)
+                        sized_returns.append(size * ret)
+                    
+                    sized_returns = np.array(sized_returns)
+                    if len(sized_returns) > 1 and np.std(sized_returns) > 1e-9:
+                        fold_sharpe = np.mean(sized_returns) / np.std(sized_returns)
+                    else:
+                        fold_sharpe = 0.0
+                    
+                    fold_sharpes.append(fold_sharpe)
+                except Exception:
+                    pass
+            
+            # Check minimum data quality
+            if len(fold_aucs) < 2 or len(fold_sharpes) < 2:
+                return -1.0
+            
+            # Compute mean AUC
+            mean_auc = float(np.mean(fold_aucs))
+            
+            # Compute trades per day
+            trades_per_day = len(final_returns_arr) / max(days_span, 1)
+            
+            # Calculate utility using trapezoidal gate
+            utility = calculate_hpo_utility(
+                folds_sharpe=np.array(fold_sharpes),
+                auc=mean_auc,
+                trades_per_day=trades_per_day,
+                lambda_vol=1.2,   # Penalty for Sharpe volatility across folds
+                w_auc=1.0,        # Strict AUC gate
+                w_den=0.5,        # Moderate density weight
+            )
+            
+            return utility
 
         l3_optimizer = BayesianTPEOptimizer(
             config=OptimizationConfig(n_trials=30, execution_mode="full", direction="maximize", seed=42)

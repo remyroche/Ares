@@ -2981,48 +2981,7 @@ def compute_robust_hpo_objective(
     # Scale by sqrt(N) to reward sample size (t-stat like scaling)
     robust_score = robust_edge_val * np.sqrt(stats.get('num_trades', 0))
 
-    # --- 2. Regime-Based Learnability Gate (The "Min-Max" Logic) ---
-    # We compute EconAUC for each regime separately.
-    regime_aucs = []
-    if regime_col in df_results.columns:
-        regimes = df_results[regime_col].unique()
-        for r in regimes:
-            mask = df_results[regime_col] == r
-            # Safety check: Ignore regimes with statistically insignificant sample size
-            if mask.sum() < 20:
-                continue
-
-            try:
-                r_auc = compute_economic_auc(
-                    df_results.loc[mask, 'y_true'].to_numpy(dtype=float),
-                    df_results.loc[mask, 'y_prob'].to_numpy(dtype=float),
-                    df_results.loc[mask, 'ret_bps'].to_numpy(dtype=float)
-                )
-                regime_aucs.append(r_auc)
-            except Exception:
-                pass
-
-    # CRITICAL: We gate based on the WORST performing regime.
-    # If it fails in "Low Vol", the whole strategy is penalized.
-    # Default to 0.5 if no valid regimes found.
-    worst_case_auc = np.min(regime_aucs) if regime_aucs else 0.5
-
-    # Gate opens at 0.52 (better than random), closes hard below that.
-    gate_auc = sigmoid_gate(worst_case_auc, threshold=0.52, sharpness=15.0)
-
-    # --- 3. Stability Gates (Sharpe & Freq) ---
-    # Standard Sharpe gate
-    sharpe_val = stats.get('sharpe_ratio', 0.0)
-    gate_sharpe = sigmoid_gate(sharpe_val, threshold=1.0, sharpness=2.0)
-
-    # Frequency gate (Soft penalty for starvation)
-    trades_per_day = stats.get('trades_per_day', 0.0)
-    gate_freq = sigmoid_gate(trades_per_day, threshold=1.5, sharpness=0.5)
-
-    # --- 4. Final Robust Score ---
-    final_score = robust_score * gate_auc * gate_sharpe * gate_freq
-
-    return final_score
+    return robust_score
 
 
 def simulate_concurrent_trades(
@@ -3716,7 +3675,7 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
         # ------------------------------------------------------------------
         param_groups = [
             # Group 1: Signal Structure (3 params)
-            # RELAXED: Lower CUSUM threshold (0.006-0.025) and min_event_spacing (1-3)
+            # RELAXED: Lower CUSUM threshold (0.006-0.025) and min_event_spacing (0)
             # to generate more events and avoid sample starvation
             create_param_group(
                 name="signal_structure",
@@ -3733,8 +3692,8 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                     },
                     "min_event_spacing": {
                         "type": "int",
-                        "low": 1,
-                        "high": 3,  # RELAXED from 5 to allow more events
+                        "low": 0,
+                        "high": 0,
                     },
                 },
                 priority=1,
@@ -3935,7 +3894,7 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                     stop_threshold=float(warm_start_best_params.get("profit_thr_base", 0.012)) * float(warm_start_best_params.get("stop_to_profit_ratio", 0.5)),
                     horizon=int(h),
                     transaction_cost=DEFAULT_TRANSACTION_COST,
-                    min_event_spacing=int(warm_start_best_params.get("min_event_spacing", 2)),
+                    min_event_spacing=int(warm_start_best_params.get("min_event_spacing", 0)),
                     atr_series=stage1_atr_series,
                     trail_distance_atr_mult=float(warm_start_best_params.get("trail_distance", 0.0)),
                 )
@@ -6805,7 +6764,7 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             stop_ratio = float(diag_params.get("stop_to_profit_ratio", 0.5))
             stop_thr_base = max(0.0005, profit_thr_base * stop_ratio)
             horizon = int(diag_params.get("horizon_bars", 24))
-            min_spacing = int(diag_params.get("min_event_spacing", 4))
+            min_spacing = int(diag_params.get("min_event_spacing", 0))
             econ_min_mult = float(diag_params.get("econ_min_return_multiple", 1.5))
             label_low_q = float(diag_params.get("label_low_q", 0.40))
             label_high_q = float(diag_params.get("label_high_q", 0.60))
@@ -7899,7 +7858,7 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
 
                 horizon = int(diag_params["horizon_bars"])
                 # Use safer get() with default 2 if key missing (e.g. older artifact)
-                min_spacing = int(diag_params.get("min_event_spacing", 2))
+                min_spacing = int(diag_params.get("min_event_spacing", 0))
 
                 kalman_Q = float(diag_params.get("kalman_Q", 1e-4))
                 kalman_R = float(diag_params.get("kalman_R", 0.01))

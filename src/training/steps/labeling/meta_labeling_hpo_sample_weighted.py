@@ -2924,6 +2924,366 @@ def sigmoid_gate(x: float, threshold: float, sharpness: float = 10.0, lower_boun
 
 
 # ============================================================================
+# RTS SMOOTHER & KALMAN FILTER FUNCTIONS (For Label & Feature Generation)
+# ============================================================================
+
+def rts_smoother_1d(
+    prices: np.ndarray,
+    Q: float,
+    R: float,
+    init_val: float = None,
+    init_cov: float = 1.0,
+) -> tuple:
+    """
+    Implements a 1D Rauch-Tung-Striebel Smoother (Local Level Model).
+    This is an ACAUSAL (zero-lag) smoother ideal for label generation.
+    
+    Model: x_t = x_{t-1} + w_t  (Process Noise Q)
+           z_t = x_t + v_t      (Measurement Noise R)
+    
+    Args:
+        prices: Raw price series
+        Q: Process noise variance (higher = more responsive, less smooth)
+        R: Measurement noise variance (higher = more smooth)
+        init_val: Initial state value (default: first observation)
+        init_cov: Initial covariance (default: 1.0)
+    
+    Returns:
+        Tuple of (smoothed_state, smoothed_covariance)
+    """
+    n = len(prices)
+    obs = np.asarray(prices, dtype=np.float64)
+    
+    # --- Forward Pass (Standard Kalman Filter) ---
+    m = np.zeros(n)  # State means
+    P = np.zeros(n)  # State covariances
+    
+    # Initialization
+    m[0] = init_val if init_val is not None else obs[0]
+    P[0] = init_cov
+    
+    for t in range(1, n):
+        # Time Update (Prediction)
+        m_minus = m[t-1]
+        P_minus = P[t-1] + Q
+        
+        # Measurement Update (Correction)
+        K = P_minus / (P_minus + R)  # Kalman Gain
+        m[t] = m_minus + K * (obs[t] - m_minus)
+        P[t] = (1 - K) * P_minus
+        
+    # --- Backward Pass (RTS Smoothing) ---
+    s_m = np.zeros(n)  # Smoothed means
+    s_P = np.zeros(n)  # Smoothed covariances
+    
+    # Last step is same as filter
+    s_m[-1] = m[-1]
+    s_P[-1] = P[-1]
+    
+    for t in range(n-2, -1, -1):
+        # Smoothing Gain
+        P_pred = P[t] + Q
+        J = P[t] / P_pred if P_pred > 1e-12 else 0.0
+        
+        # State Update (look-ahead correction)
+        s_m[t] = m[t] + J * (s_m[t+1] - m[t])
+        s_P[t] = P[t] + (J**2) * (s_P[t+1] - P_pred)
+    
+    return s_m, s_P
+
+
+def kalman_filter_1d(
+    prices: np.ndarray,
+    Q: float,
+    R: float,
+    init_val: float = None,
+    init_cov: float = 1.0,
+) -> tuple:
+    """
+    Standard 1D Kalman Filter (CAUSAL) for live feature generation.
+    
+    Model: x_t = x_{t-1} + w_t  (Process Noise Q)
+           z_t = x_t + v_t      (Measurement Noise R)
+    
+    Args:
+        prices: Raw price series
+        Q: Process noise variance
+        R: Measurement noise variance
+        init_val: Initial state value (default: first observation)
+        init_cov: Initial covariance (default: 1.0)
+    
+    Returns:
+        Tuple of (filtered_state, filtered_covariance, kalman_gain)
+    """
+    n = len(prices)
+    obs = np.asarray(prices, dtype=np.float64)
+    
+    m = np.zeros(n)  # State means
+    P = np.zeros(n)  # State covariances
+    K_arr = np.zeros(n)  # Kalman gains
+    
+    # Initialization
+    m[0] = init_val if init_val is not None else obs[0]
+    P[0] = init_cov
+    K_arr[0] = 0.5
+    
+    for t in range(1, n):
+        # Time Update (Prediction)
+        m_minus = m[t-1]
+        P_minus = P[t-1] + Q
+        
+        # Measurement Update (Correction)
+        K = P_minus / (P_minus + R) if (P_minus + R) > 1e-12 else 0.5
+        K_arr[t] = K
+        m[t] = m_minus + K * (obs[t] - m_minus)
+        P[t] = (1 - K) * P_minus
+    
+    return m, P, K_arr
+
+
+def robust_labeling_loss(
+    smoothed: np.ndarray,
+    raw: np.ndarray,
+    alpha: float = 1.0,
+    beta: float = 1.0,
+    gamma: float = 1.0,
+    is_acausal: bool = True,
+) -> tuple:
+    """
+    Compute loss for labeling optimization (RTS Smoother tuning).
+    
+    Optimizes Signal-to-Noise Ratio by balancing:
+    1. Smoothness (minimal wiggle / 2nd derivative)
+    2. Tracking Error (RMSE from raw prices)
+    3. Amplitude Fidelity (preserve ~95% of price volatility)
+    
+    Args:
+        smoothed: Smoothed price series from RTS
+        raw: Raw price series
+        alpha: Weight for smoothness penalty
+        beta: Weight for tracking error penalty
+        gamma: Weight for amplitude error penalty
+        is_acausal: If True (RTS), enforces zero-lag checking
+    
+    Returns:
+        Tuple of (total_loss, details_dict)
+    """
+    s = np.asarray(smoothed, dtype=np.float64)
+    r = np.asarray(raw, dtype=np.float64)
+    
+    # Returns for stationarity
+    s_ret = np.diff(s)
+    r_ret = np.diff(r)
+    raw_vol = np.std(r_ret) + 1e-9
+
+    # --- Component 1: Smoothness (Normalized) ---
+    # Goal: Minimal "wiggle" (2nd derivative)
+    second_diff = np.diff(s, n=2)
+    smooth_error = np.mean(second_diff**2) / (raw_vol**2)
+
+    # --- Component 2: Tracking Error ---
+    if is_acausal:
+        # RTS: Direct RMSE (no lag expected)
+        rmse = np.sqrt(np.mean((s - r)**2))
+        tracking_error = rmse / raw_vol
+    else:
+        # Causal filter: Allow 1-bar lag
+        tau = 1
+        rmse = np.sqrt(np.mean((s[:-tau] - r[tau:])**2))
+        tracking_error = rmse / raw_vol
+
+    # --- Component 3: Amplitude Fidelity ---
+    # CRITICAL FOR LABELS: Ensure we don't "shrink" the events.
+    std_s = np.std(s_ret)
+    std_r = np.std(r_ret)
+    
+    # Target 95% volatility retention
+    # Penalty for over-smoothing (ratio < 0.95) or noise amplification (ratio > 1.05)
+    amp_ratio = std_s / (std_r + 1e-9)
+    amp_error = (amp_ratio - 0.95)**2
+
+    # --- Total Loss ---
+    total_loss = (alpha * smooth_error) + (beta * tracking_error) + (gamma * amp_error)
+    
+    return total_loss, {
+        "loss": total_loss,
+        "smooth": smooth_error,
+        "track": tracking_error,
+        "amp": amp_error,
+        "amp_ratio": amp_ratio,
+    }
+
+
+def smooth_prices_rts(
+    prices: pd.Series,
+    Q: float,
+    R: float,
+) -> pd.Series:
+    """
+    Smooth a price series using RTS Smoother for label generation.
+    
+    RTS is ACAUSAL (uses future data) - only for training labels, NOT live features.
+    For live features, use kalman_filter_1d instead.
+    
+    Args:
+        prices: Raw price series
+        Q: Process noise variance (from Stage 0 optimization)
+        R: Measurement noise variance (from Stage 0 optimization)
+    
+    Returns:
+        Smoothed price series as pandas Series
+    """
+    smoothed, _ = rts_smoother_1d(
+        prices=prices.values,
+        Q=Q,
+        R=R,
+        init_val=None,
+        init_cov=1.0,
+    )
+    return pd.Series(smoothed, index=prices.index, name="rts_smoothed_close")
+
+
+def generate_kalman_features(
+    market_data: pd.DataFrame,
+    kalman_Q: float,
+    kalman_R: float,
+) -> pd.DataFrame:
+    """
+    Generate Kalman-based features for the weighted pipeline.
+    
+    Uses CAUSAL Kalman Filter (not RTS) for features that can be used in live trading.
+    RTS is only used for label generation (acausal, look-ahead).
+    
+    Features generated:
+    - KF_Close, KF_High, KF_Low: Filtered OHLC
+    - KF_Velocity: 1st derivative of filtered close
+    - KF_Acceleration: 2nd derivative of filtered close
+    - KF_Slope: Rolling slope of filtered close
+    - KF_P: Error covariance (uncertainty)
+    - KF_RSI: RSI computed on filtered close
+    - KF_BB_Distance: Distance from Kalman Bollinger Band
+    - KF_LogVolume: Filtered log volume
+    - KF_LogVolume_Slope: Slope of filtered log volume
+    - KF_Volume_Zscore: Standardized volume innovation
+    - KF_Volume_Ratio: Current vs filtered volume ratio
+    - KF_Volume_P: Volume error covariance
+    
+    Args:
+        market_data: DataFrame with OHLCV data
+        kalman_Q: Process noise (from Stage 0 optimization)
+        kalman_R: Measurement noise (from Stage 0 optimization)
+    
+    Returns:
+        DataFrame with Kalman features
+    """
+    features = pd.DataFrame(index=market_data.index)
+    
+    # Extract price series
+    close = market_data["close"].values
+    high = market_data.get("high", market_data["close"]).values
+    low = market_data.get("low", market_data["close"]).values
+    
+    # --- Price-Based Kalman Features ---
+    
+    # 1. Filtered OHLC
+    kf_close, kf_close_P, _ = kalman_filter_1d(close, Q=kalman_Q, R=kalman_R)
+    kf_high, kf_high_P, _ = kalman_filter_1d(high, Q=kalman_Q, R=kalman_R)
+    kf_low, kf_low_P, _ = kalman_filter_1d(low, Q=kalman_Q, R=kalman_R)
+    
+    features["KF_Close"] = kf_close
+    features["KF_High"] = kf_high
+    features["KF_Low"] = kf_low
+    
+    # 2. Kalman Velocity (1st derivative)
+    kf_velocity = np.zeros_like(kf_close)
+    kf_velocity[1:] = np.diff(kf_close)
+    features["KF_Velocity"] = kf_velocity
+    
+    # 3. Kalman Acceleration (2nd derivative)
+    kf_accel = np.zeros_like(kf_close)
+    kf_accel[2:] = np.diff(kf_close, n=2)
+    features["KF_Acceleration"] = kf_accel
+    
+    # 4. Kalman Slope (rolling regression slope)
+    kf_slope = np.zeros_like(kf_close)
+    slope_window = 10
+    for i in range(slope_window, len(kf_close)):
+        y = kf_close[i-slope_window:i]
+        x = np.arange(slope_window)
+        if np.std(y) > 1e-9:
+            slope = np.polyfit(x, y, 1)[0]
+            kf_slope[i] = slope
+    features["KF_Slope"] = kf_slope
+    
+    # 5. Kalman P (Error Covariance / Uncertainty)
+    features["KF_P"] = kf_close_P
+    
+    # 6. Kalman RSI (RSI on filtered close)
+    kf_returns = np.diff(kf_close, prepend=kf_close[0])
+    gains = np.where(kf_returns > 0, kf_returns, 0)
+    losses = np.where(kf_returns < 0, -kf_returns, 0)
+    
+    # Exponential moving average for RSI
+    rsi_period = 14
+    avg_gain = pd.Series(gains).ewm(span=rsi_period, adjust=False).mean().values
+    avg_loss = pd.Series(losses).ewm(span=rsi_period, adjust=False).mean().values
+    rs = avg_gain / (avg_loss + 1e-9)
+    kf_rsi = 100 - (100 / (1 + rs))
+    features["KF_RSI"] = kf_rsi
+    
+    # 7. KF_Close - KF_Bollinger (distance from Kalman Bollinger Band)
+    bb_window = 20
+    kf_close_series = pd.Series(kf_close)
+    kf_ma = kf_close_series.rolling(bb_window).mean()
+    kf_std = kf_close_series.rolling(bb_window).std()
+    kf_upper_bb = kf_ma + 2 * kf_std
+    kf_lower_bb = kf_ma - 2 * kf_std
+    
+    # Normalized distance from center band
+    bb_width = (kf_upper_bb - kf_lower_bb).replace(0, np.nan)
+    kf_bb_distance = (kf_close_series - kf_ma) / (bb_width / 2 + 1e-9)
+    features["KF_BB_Distance"] = kf_bb_distance.values
+    
+    # --- Volume-Based Kalman Features ---
+    if "volume" in market_data.columns:
+        volume = market_data["volume"].values
+        
+        # Transform to log space
+        log_volume = np.log(volume + 1)
+        
+        # Run Kalman Filter on log(Volume + 1)
+        kf_log_vol, kf_vol_P, kf_vol_K = kalman_filter_1d(
+            log_volume, Q=kalman_Q * 0.1, R=kalman_R * 2.0  # Different Q/R for volume
+        )
+        
+        # 8. Smoothed Volume (back to linear space)
+        features["KF_Volume"] = np.exp(kf_log_vol)
+        
+        # 9. KF_LogVolume_Slope
+        kf_log_vol_slope = np.zeros_like(kf_log_vol)
+        kf_log_vol_slope[1:] = np.diff(kf_log_vol)
+        features["KF_LogVolume_Slope"] = kf_log_vol_slope
+        
+        # 10. Volume Z-score: (LogVolume - KF_Predicted_LogVolume) / sqrt(KF_Covariance)
+        # Innovation normalized by uncertainty
+        vol_innovation = log_volume - kf_log_vol
+        vol_zscore = vol_innovation / (np.sqrt(kf_vol_P) + 1e-9)
+        features["KF_Volume_Zscore"] = vol_zscore
+        
+        # 11. Volume Ratio: Current_LogVolume / KF_State_LogVolume
+        vol_ratio = log_volume / (kf_log_vol + 1e-9)
+        features["KF_Volume_Ratio"] = vol_ratio
+        
+        # 12. Volume Error Covariance
+        features["KF_Volume_P"] = kf_vol_P
+    
+    # Fill NaN values
+    features = features.fillna(0)
+    
+    return features
+
+
+# ============================================================================
 # HPO UTILITY FUNCTIONS (Trapezoidal Gate & Stability-Adjusted Utility)
 # ============================================================================
 
@@ -4437,58 +4797,89 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 }
 
         def kalman_objective(params: Dict[str, Any]) -> float:
-            # 1. Generate Smoothed Signals (Primary)
-            # We can't easily re-run generate_primary_signals as it's complex.
-            # Instead, let's optimize a specific feature's predictive power.
-            # "Does this setting make the indicator actually predict price direction?"
+            """
+            Stage 0: RTS Smoother Optimization for Label Generation.
+            
+            Objective: Maximize Signal-to-Noise Ratio (SNR) of the raw price series.
+            Uses RTS (Rauch-Tung-Striebel) smoother which is ACAUSAL (zero-lag) - 
+            ideal for generating training labels.
+            
+            The optimized Q and R values will also be used in the standard (causal)
+            Kalman Filter for live feature generation.
+            
+            Loss components:
+            1. Smoothness: Minimal "wiggle" (2nd derivative)
+            2. Tracking Error: RMSE from raw prices (bias/oversmoothing penalty)
+            3. Amplitude Fidelity: Preserve ~95% of price volatility
+            """
+            Q = params['kalman_Q']
+            R = params['kalman_R']
+            
+            # Get raw close prices
+            raw_close = close_series.values
+            
+            if len(raw_close) < 100:
+                return -10.0  # Reject if insufficient data
+            
+            try:
+                # Run RTS Smoother (acausal, zero-lag)
+                smoothed_close, smoothed_cov = rts_smoother_1d(
+                    prices=raw_close,
+                    Q=Q,
+                    R=R,
+                    init_val=None,
+                    init_cov=1.0,
+                )
+                
+                # Compute robust labeling loss
+                # Loss weights: alpha=smoothness, beta=tracking, gamma=amplitude
+                loss, details = robust_labeling_loss(
+                    smoothed=smoothed_close,
+                    raw=raw_close,
+                    alpha=1.0,   # Smoothness weight
+                    beta=1.0,    # Tracking error weight
+                    gamma=1.0,   # Amplitude fidelity weight
+                    is_acausal=True,  # RTS is acausal
+                )
+                
+                # Optimizer maximizes, so return negative loss
+                # Also add bonus for amplitude ratio being close to 0.95
+                amp_ratio = details.get("amp_ratio", 0.95)
+                amp_bonus = max(0, 0.1 - abs(amp_ratio - 0.95))  # Small bonus for good amplitude
+                
+                score = -loss + amp_bonus
+                
+                return float(score) if np.isfinite(score) else -10.0
+                
+            except Exception as e:
+                tprint_warning(f"[KALMAN_OBJ_ERROR] {e}")
+                return -10.0
 
-            # Use Kalman Smoothed Labels on raw binary labels from a default TBM
-            # This checks if the smoothing improves target alignment.
-
-            # Default TBM for Stage 0
-            def_prof = np.maximum(0.008, atr_series * 2.0)
-            def_stop = np.maximum(0.004, atr_series * 1.0)
-
-            _, stage0_labels, _, _, _, _, _, _ = compute_realized_returns(
-                market_data, primary_signals,
-                profit_threshold=def_prof, stop_threshold=def_stop,
-                horizon=12, transaction_cost=DEFAULT_TRANSACTION_COST
-            )
-
-            valid_mask = ~stage0_labels.isna()
-            if valid_mask.sum() < 50: return -1.0
-
-            y_raw = stage0_labels[valid_mask]
-
-            # Kalman Smooth the Binary Labels
-            smoothed, _ = kalman_smooth_labels(
-                stage0_labels,
-                Q=params['kalman_Q'],
-                R=params['kalman_R'],
-                volatility=full_volatility
-            )
-
-            y_smooth = smoothed[valid_mask]
-
-            # Metric: IC between Smoothed Label and Future Return (forward 12 bars)
-            fwd_ret = returns_series.rolling(12).sum().shift(-12)[valid_mask]
-
-            if len(y_smooth) != len(fwd_ret): return -1.0
-
-            # Clean NaNs
-            mask2 = ~np.isnan(y_smooth) & ~np.isnan(fwd_ret)
-            if mask2.sum() < 20: return -1.0
-
-            ic, _ = spearmanr(y_smooth[mask2], fwd_ret[mask2])
-            return float(ic) if np.isfinite(ic) else -1.0
-
+        # Run Stage 0 optimization
         kalman_optimizer = BayesianTPEOptimizer(
             config=OptimizationConfig(n_trials=30, execution_mode="full", direction="maximize", seed=42)
         )
         kalman_result = kalman_optimizer.optimize(objective=kalman_objective, search_space=kalman_search_space)
         best_kalman_params = kalman_result.get("best_params", {})
-        tprint_success(f"✅ Stage 0 Complete. Best IC: {kalman_result.get('best_value', 0):.4f}")
-        tprint_info(f"   Best Kalman Params: {best_kalman_params}")
+        
+        # Log the results with loss details
+        best_Q = best_kalman_params.get('kalman_Q', 1e-4)
+        best_R = best_kalman_params.get('kalman_R', 0.01)
+        
+        # Compute final loss details for logging
+        try:
+            final_smoothed, _ = rts_smoother_1d(close_series.values, Q=best_Q, R=best_R)
+            final_loss, final_details = robust_labeling_loss(final_smoothed, close_series.values, is_acausal=True)
+            tprint_success(
+                f"✅ Stage 0 Complete. Loss: {final_loss:.4f} "
+                f"(smooth={final_details['smooth']:.4f}, track={final_details['track']:.4f}, "
+                f"amp={final_details['amp']:.4f}, amp_ratio={final_details['amp_ratio']:.3f})"
+            )
+        except Exception:
+            tprint_success(f"✅ Stage 0 Complete. Best Score: {kalman_result.get('best_value', 0):.4f}")
+        
+        tprint_info(f"   Best RTS/Kalman Params: Q={best_Q:.2e}, R={best_R:.2e}")
+        tprint_info("   Note: RTS (acausal) for labels, Kalman (causal) for live features")
 
         # ------------------------------------------------------------------
         # 1. LAYER 1: WEIGHTING OPTIMIZATION
@@ -4582,6 +4973,36 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             volume_available=volume_available,
             meta_feature_cfg=mf_config_opt,
         )
+        
+        # ------------------------------------------------------------------
+        # WEIGHTED PIPELINE: Add Kalman-based Features
+        # ------------------------------------------------------------------
+        # Uses the optimized Q and R from Stage 0 (RTS) in a CAUSAL Kalman Filter
+        # for features that can be used in live trading.
+        tprint_info("🏗️ Generating Kalman-based features (weighted pipeline)...")
+        
+        kalman_Q_opt = best_kalman_params.get('kalman_Q', 1e-4)
+        kalman_R_opt = best_kalman_params.get('kalman_R', 0.01)
+        
+        try:
+            kalman_features = generate_kalman_features(
+                market_data=market_data,
+                kalman_Q=kalman_Q_opt,
+                kalman_R=kalman_R_opt,
+            )
+            
+            # Merge Kalman features with existing meta features
+            # Align indices and handle any missing data
+            kalman_features_aligned = kalman_features.reindex(meta_features_full.index).fillna(0)
+            
+            # Add Kalman features to meta_features_full
+            for col in kalman_features_aligned.columns:
+                meta_features_full[col] = kalman_features_aligned[col]
+            
+            tprint_success(f"✅ Added {len(kalman_features.columns)} Kalman features: {list(kalman_features.columns)}")
+        except Exception as kf_exc:
+            tprint_warning(f"⚠️ Kalman feature generation failed: {kf_exc}. Continuing without Kalman features.")
+        
         tprint_success("✅ Meta-features pre-calculated.")
 
         def layer2_objective(trial_params: Dict[str, Any]) -> float:

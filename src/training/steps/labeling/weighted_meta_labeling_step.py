@@ -76,6 +76,14 @@ from src.training.steps.labeling.generate_weights_per_label import (
     run_layer1_optimization,
 )
 
+# Import Kalman/RTS functions from HPO module
+from src.training.steps.labeling.meta_labeling_hpo_sample_weighted import (
+    generate_kalman_features,
+    rts_smoother_1d,
+    kalman_filter_1d,
+    smooth_prices_rts,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -92,13 +100,19 @@ DEFAULT_WEIGHTING_PARAMS = {
     'downside_multiplier': 1.0,
 }
 
+# Default Kalman/RTS parameters (fallback if HPO not run)
+DEFAULT_KALMAN_PARAMS = {
+    'kalman_Q': 1e-4,  # Process noise
+    'kalman_R': 0.01,   # Measurement noise
+}
+
 
 def _load_weighting_params_from_hpo(
     symbol: str,
     timeframe: str,
     direction: str = "long",
-) -> Tuple[Dict[str, Any], Optional[Path]]:
-    """Load weighting parameters from the multi-stage HPO output.
+) -> Tuple[Dict[str, Any], Dict[str, Any], Optional[Path]]:
+    """Load weighting and Kalman parameters from the multi-stage HPO output.
     
     Searches for files matching:
         outcomes/hpo_multi_stage_best_params_{symbol}_*.json
@@ -109,11 +123,11 @@ def _load_weighting_params_from_hpo(
         direction: Trading direction (long/short)
         
     Returns:
-        Tuple of (params_dict, file_path)
+        Tuple of (weighting_params, kalman_params, file_path)
     """
     outcomes_dir = Path("outcomes")
     if not outcomes_dir.exists():
-        return DEFAULT_WEIGHTING_PARAMS.copy(), None
+        return DEFAULT_WEIGHTING_PARAMS.copy(), DEFAULT_KALMAN_PARAMS.copy(), None
     
     # Look for multi-stage HPO output first
     pattern = f"hpo_multi_stage_best_params_{symbol}_*.json"
@@ -125,7 +139,7 @@ def _load_weighting_params_from_hpo(
         candidates = sorted(outcomes_dir.glob(pattern))
     
     if not candidates:
-        return DEFAULT_WEIGHTING_PARAMS.copy(), None
+        return DEFAULT_WEIGHTING_PARAMS.copy(), DEFAULT_KALMAN_PARAMS.copy(), None
     
     latest = candidates[-1]
     try:
@@ -140,17 +154,26 @@ def _load_weighting_params_from_hpo(
             if key in hpo_cfg:
                 weighting_params[key] = float(hpo_cfg[key])
         
+        # Extract Kalman params
+        kalman_params = DEFAULT_KALMAN_PARAMS.copy()
+        if 'kalman_Q' in hpo_cfg:
+            kalman_params['kalman_Q'] = float(hpo_cfg['kalman_Q'])
+        if 'kalman_R' in hpo_cfg:
+            kalman_params['kalman_R'] = float(hpo_cfg['kalman_R'])
+        
         # If we found at least some params, use them (fill missing with defaults)
+        merged_weighting = DEFAULT_WEIGHTING_PARAMS.copy()
         if weighting_params:
-            merged = DEFAULT_WEIGHTING_PARAMS.copy()
-            merged.update(weighting_params)
-            tprint_info(f"📊 Loaded weighting params from {latest}")
-            return merged, latest
+            merged_weighting.update(weighting_params)
+        
+        tprint_info(f"📊 Loaded params from {latest}")
+        tprint_info(f"   Kalman: Q={kalman_params['kalman_Q']:.2e}, R={kalman_params['kalman_R']:.2e}")
+        return merged_weighting, kalman_params, latest
         
     except Exception as e:
-        tprint_warning(f"⚠️ Failed to load weighting params from {latest}: {e}")
+        tprint_warning(f"⚠️ Failed to load params from {latest}: {e}")
     
-    return DEFAULT_WEIGHTING_PARAMS.copy(), None
+    return DEFAULT_WEIGHTING_PARAMS.copy(), DEFAULT_KALMAN_PARAMS.copy(), None
 
 
 def compute_sample_weights_for_events(
@@ -315,20 +338,32 @@ class WeightedMetaLabelingStep(FeatureGenerationMetaLabelingStep):
     """Production meta-labeling step with sample weighting from HPO.
     
     This step extends FeatureGenerationMetaLabelingStep by:
-    1. Loading optimal weighting parameters from HPO output
+    1. Loading optimal weighting and Kalman parameters from HPO output
     2. Computing sample weights using generate_weights_per_label
-    3. Training weighted bagged LightGBM models
-    4. Using calibration-adjusted position sizing
+    3. Generating Kalman-based features (KF_Close, KF_Velocity, KF_RSI, etc.)
+    4. Training weighted bagged LightGBM models
+    5. Using calibration-adjusted position sizing
+    
+    Kalman Features Added:
+    - KF_Close, KF_High, KF_Low: Filtered OHLC using causal Kalman filter
+    - KF_Velocity, KF_Acceleration: 1st/2nd derivatives of filtered close
+    - KF_Slope: Rolling slope of filtered close
+    - KF_P: Error covariance (uncertainty)
+    - KF_RSI: RSI computed on filtered close
+    - KF_BB_Distance: Distance from Kalman Bollinger Band
+    - KF_Volume, KF_LogVolume_Slope, KF_Volume_Zscore, KF_Volume_Ratio, KF_Volume_P
     
     Config keys (in addition to base class):
     - use_hpo_weighting: bool - Whether to use HPO weighting params (default: True)
     - weighting_params: dict - Override weighting params (optional)
+    - kalman_params: dict - Override Kalman Q/R params (optional)
     - weight_optimization_enabled: bool - Run Layer 1 optimization if HPO not found
     """
     
     def __init__(self, step_name: str = "weighted_meta_labeling") -> None:
         super().__init__(step_name)
         self.weighting_params = DEFAULT_WEIGHTING_PARAMS.copy()
+        self.kalman_params = DEFAULT_KALMAN_PARAMS.copy()
         self.weighting_source = None
     
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
@@ -353,28 +388,31 @@ class WeightedMetaLabelingStep(FeatureGenerationMetaLabelingStep):
         )
         
         # ------------------------------------------------------------------
-        # 1. Load weighting parameters from HPO
+        # 1. Load weighting and Kalman parameters from HPO
         # ------------------------------------------------------------------
         use_hpo_weighting = config.get("use_hpo_weighting", True)
         
         if use_hpo_weighting:
-            self.weighting_params, hpo_path = _load_weighting_params_from_hpo(
+            self.weighting_params, self.kalman_params, hpo_path = _load_weighting_params_from_hpo(
                 symbol=symbol,
                 timeframe=timeframe,
                 direction=direction,
             )
             if hpo_path:
                 self.weighting_source = str(hpo_path)
-                tprint_success(f"✅ Using weighting params from: {hpo_path}")
+                tprint_success(f"✅ Using params from: {hpo_path}")
             else:
-                tprint_warning("⚠️ No HPO weighting params found, using defaults")
+                tprint_warning("⚠️ No HPO params found, using defaults")
                 self.weighting_source = "defaults"
         else:
             self.weighting_source = "config"
             if "weighting_params" in config:
                 self.weighting_params.update(config["weighting_params"])
+            if "kalman_params" in config:
+                self.kalman_params.update(config["kalman_params"])
         
         tprint_info(f"   Weighting params: {self.weighting_params}")
+        tprint_info(f"   Kalman params: Q={self.kalman_params['kalman_Q']:.2e}, R={self.kalman_params['kalman_R']:.2e}")
         
         # ------------------------------------------------------------------
         # 2. Load market data (delegate to base class)
@@ -503,7 +541,37 @@ class WeightedMetaLabelingStep(FeatureGenerationMetaLabelingStep):
             meta_feature_cfg=config.get("meta_feature_engineering", {}),
         )
         
-        tprint_info(f"   Built {meta_features.shape[1]} features")
+        n_base_features = meta_features.shape[1]
+        tprint_info(f"   Built {n_base_features} base features")
+        
+        # ------------------------------------------------------------------
+        # 7b. Add Kalman-based features (WEIGHTED PIPELINE ONLY)
+        # ------------------------------------------------------------------
+        # Uses CAUSAL Kalman Filter for live-compatible features
+        # (RTS is acausal and only used for label generation in HPO)
+        tprint_info("   Generating Kalman-based features...")
+        
+        try:
+            kalman_features = generate_kalman_features(
+                market_data=market_data,
+                kalman_Q=self.kalman_params['kalman_Q'],
+                kalman_R=self.kalman_params['kalman_R'],
+            )
+            
+            # Align indices and merge
+            kalman_features_aligned = kalman_features.reindex(meta_features.index).fillna(0)
+            
+            for col in kalman_features_aligned.columns:
+                meta_features[col] = kalman_features_aligned[col]
+            
+            n_kalman_features = len(kalman_features.columns)
+            tprint_success(f"   ✅ Added {n_kalman_features} Kalman features")
+            tprint_info(f"      Features: {list(kalman_features.columns)}")
+        except Exception as kf_exc:
+            tprint_warning(f"   ⚠️ Kalman feature generation failed: {kf_exc}")
+            n_kalman_features = 0
+        
+        tprint_info(f"   Total features: {meta_features.shape[1]} ({n_base_features} base + {n_kalman_features} Kalman)")
         
         # ------------------------------------------------------------------
         # 8. Train weighted bagged LGBM

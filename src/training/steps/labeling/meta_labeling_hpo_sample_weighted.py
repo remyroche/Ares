@@ -36,6 +36,12 @@ except ImportError:
     XGBOOST_AVAILABLE = False
     xgb = None
 
+from src.data.weighting import (
+    generate_weights_per_label,
+    compute_horizon_consistency,
+    compute_uniqueness,
+)
+
 from src.training.steps.labeling.feature_generation_meta_labeling_step import (
     create_meta_features,
     build_meta_features_for_model,
@@ -618,6 +624,8 @@ def compute_learnability_with_calibration(
     scale_pos_weight: Optional[float] = None,
     use_feature_selection: bool = False,
     use_resampling: bool = False,
+    weight_params: Optional[Dict[str, Any]] = None,
+    close_series: Optional[pd.Series] = None,
 ) -> Tuple[float, float, np.ndarray, Optional[IsotonicRegression], np.ndarray, np.ndarray]:
     """Compute learnability score with isotonic calibration for accurate P&L estimation.
 
@@ -864,62 +872,91 @@ def compute_learnability_with_calibration(
         kf = KFold(n_splits=cv_splits, shuffle=True, random_state=42)
         cv_splits_indices = list(kf.split(X_clean))
 
-    # Cost/return-aware sample weights with slight positive class bias (1.2x)
+    # --- Sample Weighting Logic ---
     returns_array = returns_clean.fillna(0.0).to_numpy(dtype=float)
     y_array = y_clean.to_numpy(dtype=float)
 
-    sample_weights = np.ones_like(returns_array, dtype=float)
+    def _compute_default_sample_weights(returns_array, y_array, signal_strength_scale_max, X_clean, valid_mask):
+        sample_weights = np.ones_like(returns_array, dtype=float)
 
-    # Conservative positive class up-weighting
-    pos_mask = (y_array == 1.0)
-    sample_weights[pos_mask] *= 1.2
+        # Conservative positive class up-weighting
+        pos_mask = (y_array == 1.0)
+        sample_weights[pos_mask] *= 1.2
 
-    # Return-based weighting for label=1: linear in realized return, clipped
-    try:
-        finite_returns = returns_clean.replace([np.inf, -np.inf], np.nan).dropna().values
-        if finite_returns.size >= 50:
-            ret_clip = float(np.nanpercentile(np.abs(finite_returns), 95))
-            ret_clip = max(ret_clip, 1e-4)
-        else:
-            ret_clip = 0.02
-    except Exception:
-        ret_clip = 0.02
-
-    if ret_clip > 0:
-        ret_for_weight = np.clip(np.maximum(returns_array, 0.0), 0.0, ret_clip)
-        weight_factor = 1.0 + (ret_for_weight / ret_clip)
-        sample_weights[pos_mask] *= weight_factor[pos_mask]
-
-    # Optional: scale positive-class weights by signal strength so that
-    # high-confidence signal configurations receive slightly higher weight
-    # in the learnability scorer. We use the "signal_strength_all" meta-feature
-    # when present in X_clean, normalised and clipped for robustness. The
-    # overall strength of this effect is controlled by ``signal_strength_scale_max``.
-    signal_strength = None
-    if isinstance(X_clean, pd.DataFrame) and "signal_strength_all" in X_clean.columns:
+        # Return-based weighting for label=1: linear in realized return, clipped
         try:
-            s = X_clean.loc[valid_mask, "signal_strength_all"].to_numpy(dtype=float)
-            s = np.abs(s)
-            # Robust scaling: use 90th percentile to avoid extreme values
-            if np.isfinite(s).any():
-                s_clean = s[np.isfinite(s)]
-                if s_clean.size >= 10:
-                    s_clip = float(np.nanpercentile(s_clean, 90))
-                    s_clip = max(s_clip, 1e-6)
-                else:
-                    s_clip = float(np.nanmax(s_clean)) if s_clean.size > 0 else 1.0
-                if s_clip <= 0:
-                    s_clip = 1.0
-                strength_norm = np.clip(s / s_clip, 0.0, 1.0)
-                # Map to [1.0, signal_strength_scale_max] so HPO can tune the
-                # influence of signal strength on sample weighting.
-                scale_max = max(1.0, float(signal_strength_scale_max))
-                scale_range = max(0.0, scale_max - 1.0)
-                signal_weight = 1.0 + scale_range * strength_norm
-                sample_weights[pos_mask] *= signal_weight[pos_mask]
+            finite_returns = returns_clean.replace([np.inf, -np.inf], np.nan).dropna().values
+            if finite_returns.size >= 50:
+                ret_clip = float(np.nanpercentile(np.abs(finite_returns), 95))
+                ret_clip = max(ret_clip, 1e-4)
+            else:
+                ret_clip = 0.02
         except Exception:
-            # If anything goes wrong, fall back to return-only weighting.
-            pass
+            ret_clip = 0.02
+
+        if ret_clip > 0:
+            ret_for_weight = np.clip(np.maximum(returns_array, 0.0), 0.0, ret_clip)
+            weight_factor = 1.0 + (ret_for_weight / ret_clip)
+            sample_weights[pos_mask] *= weight_factor[pos_mask]
+
+        # Optional: scale positive-class weights by signal strength
+        if isinstance(X_clean, pd.DataFrame) and "signal_strength_all" in X_clean.columns:
+            try:
+                s = X_clean.loc[valid_mask, "signal_strength_all"].to_numpy(dtype=float)
+                s = np.abs(s)
+                if np.isfinite(s).any():
+                    s_clean = s[np.isfinite(s)]
+                    if s_clean.size >= 10:
+                        s_clip = float(np.nanpercentile(s_clean, 90))
+                        s_clip = max(s_clip, 1e-6)
+                    else:
+                        s_clip = float(np.nanmax(s_clean)) if s_clean.size > 0 else 1.0
+                    if s_clip <= 0:
+                        s_clip = 1.0
+                    strength_norm = np.clip(s / s_clip, 0.0, 1.0)
+                    scale_max = max(1.0, float(signal_strength_scale_max))
+                    scale_range = max(0.0, scale_max - 1.0)
+                    signal_weight = 1.0 + scale_range * strength_norm
+                    sample_weights[pos_mask] *= signal_weight[pos_mask]
+            except Exception:
+                pass
+        return sample_weights
+
+    if weight_params and close_series is not None:
+        try:
+            # --- NEW INTEGRATED CODE ---
+            # 1. Pre-calculate metrics required for the generator
+            consistency = compute_horizon_consistency(close_series, 12)
+            # Reindex to match the current valid subset
+            consistency_subset = consistency.reindex(y_clean.index).fillna(0.0).values
+
+            # Compute uniqueness for the subset events relative to full history
+            # Note: compute_uniqueness expects full price index for context
+            uniqueness_full_aligned = compute_uniqueness(y_clean.index, close_series.index, lookahead=base_horizon_bars or 12)
+
+            # Volatility proxy
+            vol_proxy_full = close_series.pct_change().rolling(20).std()
+            vol_proxy_subset = vol_proxy_full.reindex(y_clean.index).fillna(method='ffill').fillna(0.0).values
+
+            # 2. Generate Optimized Weights
+            sample_weights = generate_weights_per_label(
+                returns=returns_array,
+                t_events=y_clean.index,
+                close_series=close_series,
+                consistency_scores=consistency_subset,
+                uniqueness_scores=uniqueness_full_aligned,
+                vol_proxy=vol_proxy_subset,
+                y=y_clean, # Pass labels for class balancing
+                **weight_params # Unpack: mag_compression, learn_slope, etc.
+            )
+            tprint("[WEIGHTING] Using Layer 1 optimized sample weights.", "INFO")
+        except Exception as e:
+            tprint(f"⚠️ Failed to generate optimized weights: {e}. Falling back to default weighting.", "WARNING")
+            # Fallback to default weighting if Layer 1 fails
+            sample_weights = _compute_default_sample_weights(returns_array, y_array, signal_strength_scale_max, X_clean, valid_mask)
+    else:
+        # Fallback / Default logic
+        sample_weights = _compute_default_sample_weights(returns_array, y_array, signal_strength_scale_max, X_clean, valid_mask)
 
     # Normalize weights for numerical stability
     mean_w = float(sample_weights.mean()) if sample_weights.size > 0 else 1.0
@@ -3105,9 +3142,14 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
     between positive/negative labels using realized returns.
     """
 
-    def __init__(self, step_name: str = "meta_labeling_hpo_sample_weighted") -> None:
+    def __init__(self, step_name: str = "meta_labeling_hpo_sample_weighted", weight_params: dict = None) -> None:
         super().__init__(step_name, use_versioned_artifacts=False)
         self.logger = logger
+        self.weight_params = weight_params or {
+            'mag_compression': 0.8,
+            'uniq_intensity': 1.0,
+            'class_balance_rate': 1.0
+        }
 
     def _create_selection_subsample(
         self,
@@ -4758,6 +4800,8 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                     scale_pos_weight=float(params.get("scale_pos_weight", 1.0)) if "scale_pos_weight" in params else None,
                     use_feature_selection=False,
                     use_resampling=use_resampling,
+                    weight_params=weight_params,
+                    close_series=close_series,
                 )
 
                 # ===== NEW: MUTUAL INFORMATION GATE =====
@@ -6249,6 +6293,8 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 fixed_params: Dict[str, Any],
                 use_stage1_subsample: bool,
                 stage_name: str,
+                weight_params: Optional[Dict[str, Any]] = None,
+                close_series: Optional[pd.Series] = None,
             ) -> callable:
                 """Create a wrapper that injects fixed params from previous stages."""
                 def wrapper(params: Dict[str, Any]) -> float:
@@ -6373,6 +6419,8 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                         fixed_params=group_fixed_params,
                         use_stage1_subsample=(stage_idx == 0),
                         stage_name=stage["name"],
+                        weight_params=self.weight_params,
+                        close_series=market_data['close'] if 'close' in market_data.columns else None
                     )
 
                     group_n_trials = max(5, stage["n_trials"] // n_groups)
@@ -6511,6 +6559,8 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 fixed_params=fixed_params,
                 use_stage1_subsample=False,
                 stage_name=stage["name"],
+                weight_params=self.weight_params,
+                close_series=market_data['close'] if 'close' in market_data.columns else None
             )
 
             bayesian_config = OptimizationConfig(

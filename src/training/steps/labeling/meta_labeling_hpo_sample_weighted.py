@@ -3152,20 +3152,15 @@ def _log_normalize(arr: np.ndarray, epsilon: float = 1e-9) -> np.ndarray:
 
 
 # ============================================================================
-# FEATURE QUALITY & SELECTION FUNCTIONS
+# FEATURE QUALITY & SELECTION FUNCTIONS (De Prado-Inspired)
 # ============================================================================
 
-def calculate_feature_quality(series: np.ndarray) -> float:
+def _base_quality_score(series: np.ndarray) -> float:
     """
-    Unsupervised Signal-to-Noise Ratio for feature quality assessment.
+    Base quality score calculation engine.
     
-    Higher Score = Better Feature (high signal, low noise).
-    
-    Quality = Signal Power (Variance) / Noise Power (Smoothness Error)
-    
-    Logic:
-    - We want features that move a lot (High Variance)
-    - But represent clean trends (Low Wiggle/Smoothness Error)
+    High Stability (low std of score), High Signal (mean), Low Fat Tails (kurtosis).
+    Uses Sharpe-like ratio penalized by kurtosis for robustness.
     
     Args:
         series: Feature values as numpy array
@@ -3173,39 +3168,106 @@ def calculate_feature_quality(series: np.ndarray) -> float:
     Returns:
         Quality score (higher = better). Returns 0.0 for flat/useless features.
     """
-    # Handle NaN/Inf
-    clean_series = series[np.isfinite(series)]
-    if len(clean_series) < 10:
+    from scipy.stats import kurtosis as scipy_kurtosis
+    
+    # 1. Handle constant or empty data
+    if len(series) < 10:
         return 0.0
     
-    # 1. Signal Power (Standard Deviation)
-    signal_power = np.std(clean_series)
+    sigma = np.std(series)
+    if sigma < 1e-9:
+        return 0.0
     
-    if signal_power < 1e-12:
-        return 0.0  # Flatline feature, useless
+    # 2. Calculate components
+    mu = np.mean(series)
     
-    # 2. Noise Estimate (Mean Squared Second Difference)
-    # "How jagged is the curve?"
-    second_diff = np.diff(clean_series, n=2)
-    noise_power = np.mean(second_diff**2)
+    # Fisher kurtosis: normal distribution = 0.0
+    try:
+        kurt = scipy_kurtosis(series, fisher=True, nan_policy='omit')
+        if not np.isfinite(kurt):
+            kurt = 0.0
+    except Exception:
+        kurt = 0.0
     
-    # Avoid division by zero
-    if noise_power < 1e-12:
-        # Very smooth feature - high quality
-        return signal_power * 1e6  # Large but finite
+    # 3. Formulate Score
+    # Signal-to-noise ratio penalized by fat tails
+    signal_to_noise = np.abs(mu / sigma)
     
-    # Quality = Signal / Noise
-    return float(signal_power / noise_power)
+    # Penalty: high kurtosis (fat tails) = unstable feature
+    # (1 + abs(kurt)) ensures strictly positive denominator
+    penalty = 1.0 + np.abs(kurt)
+    
+    return float(signal_to_noise / penalty)
 
 
-def calculate_all_feature_qualities(df_features: pd.DataFrame) -> Dict[str, float]:
+def calculate_time_robust_quality(series: np.ndarray, chunk_size: int = 2000) -> float:
     """
-    Calculate Signal-to-Noise quality scores for all feature columns.
+    Calculate Quality Score in chunks and return the WORST-CASE (10th percentile).
     
-    This is a lightweight, unsupervised operation that runs in milliseconds.
+    This prevents features that are only good in specific market regimes from
+    dominating the selection. A feature must be consistently useful across time.
+    
+    Args:
+        series: Feature values as numpy array
+        chunk_size: Size of each evaluation chunk (default 2000 bars ~ 20 days at 15m)
+    
+    Returns:
+        Conservative (10th percentile) quality score across time chunks
+    """
+    series = np.nan_to_num(series, nan=0.0, posinf=0.0, neginf=0.0)
+    n = len(series)
+    
+    # Fallback for short series: just calculate global score
+    if n < chunk_size:
+        return _base_quality_score(series)
+    
+    scores = []
+    
+    # Rolling/Chunked Evaluation
+    for i in range(0, n, chunk_size):
+        chunk = series[i : i + chunk_size]
+        
+        # Skip small incomplete chunks at the end
+        if len(chunk) < chunk_size // 2:
+            continue
+        
+        q_score = _base_quality_score(chunk)
+        scores.append(q_score)
+    
+    if not scores:
+        return _base_quality_score(series)
+    
+    # Return 10th Percentile (Conservative worst-case)
+    return float(np.percentile(scores, 10))
+
+
+def calculate_feature_quality(series: np.ndarray) -> float:
+    """
+    Calculate time-robust quality score for a feature (unsupervised).
+    
+    This is a wrapper that uses the time-robust chunked evaluation by default.
+    
+    Args:
+        series: Feature values as numpy array
+    
+    Returns:
+        Quality score (higher = better). Returns 0.0 for flat/useless features.
+    """
+    return calculate_time_robust_quality(series)
+
+
+def calculate_all_feature_qualities(
+    df_features: pd.DataFrame,
+    use_time_robust: bool = True,
+    chunk_size: int = 2000,
+) -> Dict[str, float]:
+    """
+    Calculate quality scores for all feature columns.
     
     Args:
         df_features: DataFrame with feature columns
+        use_time_robust: Whether to use time-robust chunked evaluation (default True)
+        chunk_size: Chunk size for time-robust evaluation
     
     Returns:
         Dict mapping column name to quality score
@@ -3213,11 +3275,245 @@ def calculate_all_feature_qualities(df_features: pd.DataFrame) -> Dict[str, floa
     quality_map = {}
     for col in df_features.columns:
         try:
-            quality_map[col] = calculate_feature_quality(df_features[col].values)
+            if use_time_robust:
+                quality_map[col] = calculate_time_robust_quality(
+                    df_features[col].values, chunk_size=chunk_size
+                )
+            else:
+                quality_map[col] = _base_quality_score(df_features[col].values)
         except Exception:
             quality_map[col] = 0.0
     return quality_map
 
+
+# ============================================================================
+# LGBM MAGNITUDE SWEEP (Structure Detection)
+# ============================================================================
+
+def lgbm_magnitude_sweep(
+    df_features: pd.DataFrame,
+    market_data: pd.DataFrame,
+    lookahead: int = 4,
+    max_features: int = 200,
+    importance_threshold: float = 1.0,
+    price_col: str = 'close',
+) -> pd.DataFrame:
+    """
+    Use 'Future Volatility/Magnitude' as a proxy target to prune features
+    that contain no structural market information.
+    
+    This is a CHEAP unsupervised filter that removes noise features before
+    the expensive hierarchical clustering step.
+    
+    Target = Absolute value of the next N-bar return (Volatility Proxy).
+    
+    Args:
+        df_features: DataFrame with feature columns
+        market_data: Market data with price column
+        lookahead: Number of bars to look ahead for magnitude (default 4)
+        max_features: Maximum features to keep (default 200)
+        importance_threshold: Minimum importance % to keep (default 1.0%)
+        price_col: Column name for price data
+    
+    Returns:
+        DataFrame with features that have structural market information
+    """
+    import lightgbm as lgb
+    
+    tprint_info(f"🔬 LGBM Magnitude Sweep: {len(df_features.columns)} features, lookahead={lookahead} bars")
+    
+    # 1. Create Proxy Target: Absolute Future Return (Magnitude)
+    if price_col not in market_data.columns:
+        tprint_warning(f"   ⚠️ Price column '{price_col}' not found, skipping magnitude sweep")
+        return df_features
+    
+    # Log returns for stability
+    log_ret = np.log(market_data[price_col] / market_data[price_col].shift(1))
+    
+    # Target: The MAGNITUDE of the move 'lookahead' bars into the future
+    proxy_target = np.abs(log_ret.shift(-lookahead))
+    
+    # Align indices
+    common_idx = df_features.index.intersection(proxy_target.dropna().index)
+    if len(common_idx) < 500:
+        tprint_warning(f"   ⚠️ Insufficient data for magnitude sweep ({len(common_idx)} rows)")
+        return df_features
+    
+    X = df_features.loc[common_idx].fillna(0)
+    y = proxy_target.loc[common_idx]
+    
+    # Remove any remaining NaN/Inf
+    valid_mask = np.isfinite(y.values)
+    X = X.loc[valid_mask]
+    y = y.loc[valid_mask]
+    
+    if len(X) < 500:
+        tprint_warning(f"   ⚠️ Insufficient valid data for magnitude sweep")
+        return df_features
+    
+    tprint_info(f"   Training shadow LGBM on {X.shape[1]} features ({len(X)} samples)...")
+    
+    # 2. Train Fast LGBM (L1 regression for robustness)
+    dtrain = lgb.Dataset(X, label=y, free_raw_data=False)
+    
+    params = {
+        'objective': 'regression_l1',  # Mean Absolute Error - robust to spikes
+        'boosting': 'gbdt',
+        'verbosity': -1,
+        'num_leaves': 15,             # Very simple trees
+        'max_depth': 3,               # Prevent overfitting
+        'feature_fraction': 0.7,      # Force trees to look at different features
+        'min_data_in_leaf': 100,
+        'learning_rate': 0.1,
+        'seed': 42,
+    }
+    
+    # Train heavily regularized model
+    model = lgb.train(params, dtrain, num_boost_round=150)
+    
+    # 3. Get Feature Importance
+    importance = model.feature_importance(importance_type='gain')
+    feature_names = np.array(model.feature_name())
+    
+    # Handle case where no features have importance
+    if importance.max() < 1e-9:
+        tprint_warning("   ⚠️ No features showed importance, keeping all")
+        return df_features
+    
+    # Normalize importance (0-100)
+    importance_normalized = 100 * (importance / importance.max())
+    
+    # 4. Filter: Keep features above threshold AND limit to max_features
+    # First filter by threshold
+    keep_mask = importance_normalized >= importance_threshold
+    useful_feats = feature_names[keep_mask]
+    useful_importance = importance_normalized[keep_mask]
+    
+    # Then limit to top max_features by importance
+    if len(useful_feats) > max_features:
+        top_indices = np.argsort(useful_importance)[::-1][:max_features]
+        useful_feats = useful_feats[top_indices]
+    
+    dropped_count = len(feature_names) - len(useful_feats)
+    
+    tprint_info(f"   → Dropped {dropped_count} features that failed to predict market magnitude")
+    tprint_info(f"   → Kept {len(useful_feats)} structure-bearing features")
+    
+    # Return only useful features (preserve original column order where possible)
+    useful_feats_set = set(useful_feats)
+    ordered_feats = [c for c in df_features.columns if c in useful_feats_set]
+    
+    return df_features[ordered_feats]
+
+
+# ============================================================================
+# HIERARCHICAL FEATURE SELECTION (De Prado's Method)
+# ============================================================================
+
+def select_features_hierarchical(
+    df_features: pd.DataFrame,
+    quality_scores: Dict[str, float],
+    target_n: int = 70,
+) -> pd.DataFrame:
+    """
+    De Prado's Hierarchical Feature Selection.
+    
+    Guarantees diversity by picking BEST-IN-CLASS from N DISTINCT clusters.
+    This prevents concept dominance where correlated features crowd out
+    diverse information sources.
+    
+    Algorithm:
+    1. Compute correlation matrix (Spearman for robustness)
+    2. Convert to distance: d = sqrt(2(1-|rho|))
+    3. Hierarchical clustering (Ward's method)
+    4. Cut tree into target_n clusters
+    5. Select highest-quality feature from each cluster
+    
+    Args:
+        df_features: DataFrame with feature columns
+        quality_scores: Dict mapping column name to quality score
+        target_n: Target number of features (= number of clusters)
+    
+    Returns:
+        DataFrame with target_n orthogonal features
+    """
+    from scipy.cluster import hierarchy
+    from scipy.spatial.distance import squareform
+    
+    # 0. Safety: Drop constant columns to prevent NaN correlations
+    df_clean = df_features.loc[:, (df_features != df_features.iloc[0]).any()].copy()
+    
+    # Also drop columns with very low std
+    col_stds = df_clean.std()
+    valid_cols = col_stds[col_stds > 1e-9].index.tolist()
+    df_clean = df_clean[valid_cols]
+    
+    n_features = len(df_clean.columns)
+    
+    if n_features == 0:
+        tprint_warning("⚠️ No valid features for hierarchical selection")
+        return df_features.iloc[:, :min(target_n, len(df_features.columns))]
+    
+    if n_features <= target_n:
+        tprint_info(f"   Hierarchical: Only {n_features} features, keeping all")
+        return df_clean
+    
+    tprint_info(f"   Hierarchical clustering: {n_features} → {target_n} features")
+    
+    # 1. Calculate Correlation Matrix (Spearman for non-linear relationships)
+    corr_matrix = df_clean.corr(method='spearman').fillna(0)
+    
+    # 2. Convert to Distance: d = sqrt(2(1-|rho|))
+    # Clip to avoid negative values from float precision errors
+    dist_matrix = np.sqrt(np.clip(2 * (1 - np.abs(corr_matrix.values)), 0, None))
+    
+    # Ensure diagonal is exactly 0
+    np.fill_diagonal(dist_matrix, 0)
+    
+    # Convert to condensed form for scipy
+    try:
+        dist_array = squareform(dist_matrix, checks=False)
+    except Exception as e:
+        tprint_warning(f"   ⚠️ Distance matrix conversion failed: {e}")
+        # Fallback to greedy selection
+        sorted_cols = sorted(df_clean.columns, key=lambda c: quality_scores.get(c, 0.0), reverse=True)
+        return df_clean[sorted_cols[:target_n]]
+    
+    # 3. Hierarchical Clustering (Ward's method for balanced clusters)
+    try:
+        linkage_matrix = hierarchy.linkage(dist_array, method='ward')
+    except Exception as e:
+        tprint_warning(f"   ⚠️ Hierarchical clustering failed: {e}")
+        sorted_cols = sorted(df_clean.columns, key=lambda c: quality_scores.get(c, 0.0), reverse=True)
+        return df_clean[sorted_cols[:target_n]]
+    
+    # 4. Form Clusters (cut tree into target_n clusters)
+    cluster_labels = hierarchy.fcluster(linkage_matrix, t=target_n, criterion='maxclust')
+    
+    # 5. Select Best Feature per Cluster
+    selected_feats = []
+    feature_names = df_clean.columns.tolist()
+    
+    for cluster_id in range(1, target_n + 1):
+        # Get all features in this cluster
+        members = [feature_names[i] for i in range(len(feature_names)) 
+                   if cluster_labels[i] == cluster_id]
+        
+        if not members:
+            continue
+        
+        # Pick the one with highest Quality Score
+        best_in_cluster = max(members, key=lambda x: quality_scores.get(x, 0.0))
+        selected_feats.append(best_in_cluster)
+    
+    tprint_info(f"   → Selected {len(selected_feats)} orthogonal features from {target_n} clusters")
+    
+    return df_clean[selected_feats]
+
+
+# ============================================================================
+# LEGACY GREEDY SELECTION (Kept for comparison/fallback)
+# ============================================================================
 
 def reduce_features_by_correlation(
     df_features: pd.DataFrame,
@@ -3227,38 +3523,13 @@ def reduce_features_by_correlation(
     min_quality_threshold: float = 0.0,
 ) -> pd.DataFrame:
     """
-    Reduce features by removing correlated ones, keeping higher quality features.
+    [LEGACY] Greedy correlation-based feature reduction.
     
-    RELATIONSHIP BETWEEN CORRELATION THRESHOLD AND QUALITY SCORE:
-    ==============================================================
+    WARNING: This method suffers from "Concept Dominance" where features from
+    the same family (e.g., multiple RSI variants) can crowd out diverse features.
     
-    These two parameters serve DIFFERENT, COMPLEMENTARY purposes:
-    
-    1. CORRELATION THRESHOLD (default 0.85):
-       - Determines WHEN features are "redundant"
-       - If |corr(A, B)| > threshold, they carry similar information
-       - At least one must be eliminated to reduce multicollinearity
-       - 0.85 is standard for ML - higher values keep more correlated features
-       
-    2. QUALITY SCORE (Signal/Noise Ratio):
-       - Determines WHICH feature to KEEP when correlated pair is found
-       - Quality = std(series) / mean(second_derivative^2)
-       - High quality = lots of variance (signal) with smooth trends (low noise)
-       - This is NOT a threshold - it's a RANKING for tie-breaking
-       
-    ALGORITHM:
-    ----------
-    1. Sort all features by quality score (highest first)
-    2. For each feature (in quality order):
-       - Check correlation with ALL already-selected features
-       - If corr > threshold with ANY selected: SKIP (inferior duplicate)
-       - Otherwise: ADD to selection
-    3. Continue until target_n features selected
-    
-    KEY INSIGHT: We iterate in quality order, so the FIRST feature 
-    encountered always wins. If RSI_Short and RSI_Medium correlate at 0.90,
-    the one with higher quality score gets selected first, and the other
-    is automatically rejected when we reach it.
+    For production use, prefer select_features_hierarchical() which guarantees
+    diversity through clustering.
     
     Args:
         df_features: DataFrame with all features
@@ -3268,7 +3539,7 @@ def reduce_features_by_correlation(
         min_quality_threshold: Minimum quality score to consider (hard cutoff)
     
     Returns:
-        DataFrame with reduced feature set (target_n columns)
+        DataFrame with reduced feature set
     """
     # 1. Filter out low-quality features first
     valid_cols = [
@@ -3306,7 +3577,6 @@ def reduce_features_by_correlation(
     
     # If we don't have enough features, lower correlation threshold
     if len(selected_features) < target_n:
-        # Second pass with relaxed threshold
         remaining_cols = [c for c in sorted_cols if c not in selected_features]
         relaxed_threshold = min(0.95, correlation_threshold + 0.1)
         
@@ -3324,7 +3594,7 @@ def reduce_features_by_correlation(
                 selected_features.append(col)
     
     tprint_info(
-        f"   Feature reduction: {len(df_features.columns)} → {len(selected_features)} "
+        f"   Greedy reduction: {len(df_features.columns)} → {len(selected_features)} "
         f"(target={target_n}, corr_threshold={correlation_threshold})"
     )
     
@@ -3657,6 +3927,151 @@ def get_feature_inventory() -> Dict[str, List[str]]:
     return inventory
 
 
+# ============================================================================
+# FEATURE SELECTION CACHING
+# ============================================================================
+
+# Global cache for feature selection results
+_FEATURE_SELECTION_CACHE: Dict[str, Dict[str, Any]] = {}
+
+
+def _get_feature_selection_cache_key(
+    symbol: str,
+    exchange: str,
+    timeframe: str,
+) -> str:
+    """Generate cache key for feature selection results."""
+    return f"{symbol}_{exchange}_{timeframe}"
+
+
+def _get_feature_selection_cache_path(
+    symbol: str,
+    exchange: str,
+    timeframe: str,
+) -> Path:
+    """Get file path for cached feature selection results."""
+    cache_dir = Path("cache") / "feature_selection"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    return cache_dir / f"feature_selection_{symbol}_{exchange}_{timeframe}.json"
+
+
+def load_cached_feature_selection(
+    symbol: str,
+    exchange: str,
+    timeframe: str,
+) -> Optional[Dict[str, Any]]:
+    """
+    Load cached feature selection results for an asset/exchange/timeframe.
+    
+    Returns:
+        Dict with 'selected_features' (list) and 'quality_scores' (dict), or None if not cached
+    """
+    cache_key = _get_feature_selection_cache_key(symbol, exchange, timeframe)
+    
+    # Check in-memory cache first
+    if cache_key in _FEATURE_SELECTION_CACHE:
+        tprint_info(f"   📦 Loaded feature selection from memory cache")
+        return _FEATURE_SELECTION_CACHE[cache_key]
+    
+    # Check file cache
+    cache_path = _get_feature_selection_cache_path(symbol, exchange, timeframe)
+    if cache_path.exists():
+        try:
+            with open(cache_path, 'r') as f:
+                cached = json.load(f)
+            _FEATURE_SELECTION_CACHE[cache_key] = cached
+            tprint_info(f"   📦 Loaded feature selection from {cache_path}")
+            return cached
+        except Exception as e:
+            tprint_warning(f"   ⚠️ Failed to load cache: {e}")
+    
+    return None
+
+
+def save_feature_selection_cache(
+    symbol: str,
+    exchange: str,
+    timeframe: str,
+    selected_features: List[str],
+    quality_scores: Dict[str, float],
+) -> None:
+    """
+    Save feature selection results to cache.
+    
+    Args:
+        symbol: Trading symbol
+        exchange: Exchange name
+        timeframe: Timeframe
+        selected_features: List of selected feature names
+        quality_scores: Dict mapping feature name to quality score
+    """
+    cache_key = _get_feature_selection_cache_key(symbol, exchange, timeframe)
+    
+    cache_data = {
+        'selected_features': selected_features,
+        'quality_scores': quality_scores,
+        'timestamp': datetime.now().isoformat(),
+        'n_features': len(selected_features),
+    }
+    
+    # Save to memory
+    _FEATURE_SELECTION_CACHE[cache_key] = cache_data
+    
+    # Save to file
+    cache_path = _get_feature_selection_cache_path(symbol, exchange, timeframe)
+    try:
+        with open(cache_path, 'w') as f:
+            json.dump(cache_data, f, indent=2)
+        tprint_info(f"   💾 Saved feature selection to {cache_path}")
+    except Exception as e:
+        tprint_warning(f"   ⚠️ Failed to save cache: {e}")
+
+
+def invalidate_feature_selection_cache(
+    symbol: Optional[str] = None,
+    exchange: Optional[str] = None,
+    timeframe: Optional[str] = None,
+) -> int:
+    """
+    Invalidate feature selection cache.
+    
+    Args:
+        symbol: If provided, only invalidate for this symbol
+        exchange: If provided, only invalidate for this exchange
+        timeframe: If provided, only invalidate for this timeframe
+        
+    Returns:
+        Number of cache entries invalidated
+    """
+    global _FEATURE_SELECTION_CACHE
+    
+    if symbol is None and exchange is None and timeframe is None:
+        # Clear all
+        count = len(_FEATURE_SELECTION_CACHE)
+        _FEATURE_SELECTION_CACHE = {}
+        return count
+    
+    # Selective invalidation
+    keys_to_remove = []
+    for key in _FEATURE_SELECTION_CACHE:
+        parts = key.split('_')
+        if len(parts) >= 3:
+            k_symbol, k_exchange, k_timeframe = parts[0], parts[1], '_'.join(parts[2:])
+            if ((symbol is None or symbol == k_symbol) and
+                (exchange is None or exchange == k_exchange) and
+                (timeframe is None or timeframe == k_timeframe)):
+                keys_to_remove.append(key)
+    
+    for key in keys_to_remove:
+        del _FEATURE_SELECTION_CACHE[key]
+    
+    return len(keys_to_remove)
+
+
+# ============================================================================
+# MAIN FEATURE SELECTION PIPELINE (De Prado-Inspired)
+# ============================================================================
+
 def select_features_with_quality(
     df_features: pd.DataFrame,
     target_n: int = 70,
@@ -3665,94 +4080,233 @@ def select_features_with_quality(
     horizon_config: Dict[str, int] = None,
     enable_cross_features: bool = True,
     market_data: Optional[pd.DataFrame] = None,
+    # New De Prado pipeline parameters
+    use_hierarchical: bool = True,
+    use_lgbm_sweep: bool = True,
+    lgbm_lookahead: int = 4,
+    lgbm_max_features: int = 200,
+    quality_drop_percentile: float = 20.0,
+    min_std_threshold: float = 1e-9,
+    # Caching parameters
+    symbol: Optional[str] = None,
+    exchange: Optional[str] = None,
+    timeframe: Optional[str] = None,
+    use_cache: bool = True,
+    force_recompute: bool = False,
 ) -> Tuple[pd.DataFrame, Dict[str, float]]:
     """
-    Complete feature selection pipeline with quality scoring.
+    Complete feature selection pipeline with De Prado's hierarchical method.
     
-    Pipeline:
-    1. (Optional) Generate multi-horizon versions of features
-    2. (Optional) Generate cross-feature interactions
-    3. Calculate quality scores for all features
-    4. Reduce features by correlation, using quality as tie-breaker
+    PIPELINE (Anti-Concept-Dominance):
+    ==================================
+    1. Generate multi-horizon features
+    2. Generate cross-feature interactions
+    3. DROP features with std < min_std_threshold (constant/near-constant)
+    4. Calculate time-robust quality scores (worst-case across chunks)
+    5. DROP bottom quality_drop_percentile% by quality
+    6. LGBM Magnitude Sweep: Keep top lgbm_max_features that predict future volatility
+    7. Hierarchical Clustering: Select target_n features from N distinct clusters
     
-    This runs AFTER Layer 0 (Kalman Q/R optimization) but BEFORE the main HPO loop.
+    The hierarchical clustering GUARANTEES diversity by:
+    - Grouping correlated features into clusters
+    - Selecting ONLY the best feature from each cluster
+    - This prevents "concept dominance" where RSI variants crowd out volume features
+    
+    CACHING:
+    ========
+    Results are cached per symbol/exchange/timeframe to avoid recomputation.
+    Set use_cache=False or force_recompute=True to bypass caching.
     
     Args:
         df_features: DataFrame with raw features (base + Kalman merged)
         target_n: Target number of features to select
-        correlation_threshold: Max correlation between selected features
+        correlation_threshold: Correlation threshold (used in fallback greedy method)
         generate_horizons: Whether to create multi-horizon versions
         horizon_config: Custom horizon configuration
-        enable_cross_features: Whether to generate cross-feature interactions (default: True)
-        market_data: Original market data (optional, used for cross-feature generation)
+        enable_cross_features: Whether to generate cross-feature interactions
+        market_data: Original market data (required for LGBM sweep and cross-features)
+        use_hierarchical: Use De Prado hierarchical selection (default True)
+        use_lgbm_sweep: Use LGBM magnitude sweep pre-filter (default True)
+        lgbm_lookahead: Bars to look ahead for magnitude proxy (default 4)
+        lgbm_max_features: Max features to keep after LGBM sweep (default 200)
+        quality_drop_percentile: Drop bottom X% by quality (default 20%)
+        min_std_threshold: Drop features with std below this (default 1e-9)
+        symbol: Trading symbol (for caching)
+        exchange: Exchange name (for caching)
+        timeframe: Timeframe (for caching)
+        use_cache: Whether to use cached results (default True)
+        force_recompute: Force recomputation even if cached (default False)
     
     Returns:
         Tuple of (reduced_features_df, quality_scores_dict)
     """
-    tprint_info("🔍 Starting quality-based feature selection...")
+    tprint_info("🔍 Starting De Prado feature selection pipeline...")
     
-    # 1. Generate multi-horizon features (if enabled)
+    # =========================================================================
+    # STEP 0: Check cache
+    # =========================================================================
+    if use_cache and not force_recompute and symbol and exchange and timeframe:
+        cached = load_cached_feature_selection(symbol, exchange, timeframe)
+        if cached:
+            selected_cols = cached['selected_features']
+            quality_scores = cached['quality_scores']
+            
+            # Verify all cached features exist in current data
+            available_cols = [c for c in selected_cols if c in df_features.columns]
+            if len(available_cols) >= target_n * 0.8:  # Allow 20% missing
+                tprint_success(f"✅ Using cached selection: {len(available_cols)} features")
+                return df_features[available_cols], {c: quality_scores.get(c, 0.0) for c in available_cols}
+            else:
+                tprint_warning(f"   ⚠️ Cache invalid: only {len(available_cols)}/{len(selected_cols)} features found")
+    
+    # =========================================================================
+    # STEP 1: Generate multi-horizon features
+    # =========================================================================
     if generate_horizons:
-        tprint_info(f"   Generating multi-horizon features...")
+        tprint_info(f"   [1/7] Generating multi-horizon features...")
         initial_cols = len(df_features.columns)
         df_expanded = generate_multi_horizon_features(df_features, horizon_config)
-        tprint_info(f"   Expanded: {initial_cols} → {len(df_expanded.columns)} features")
+        tprint_info(f"         Expanded: {initial_cols} → {len(df_expanded.columns)} features")
     else:
         df_expanded = df_features.copy()
     
-    # 2. Generate cross-feature interactions (if enabled)
+    # =========================================================================
+    # STEP 2: Generate cross-feature interactions
+    # =========================================================================
     if enable_cross_features:
-        tprint_info("   Generating cross-feature interactions...")
+        tprint_info("   [2/7] Generating cross-feature interactions...")
         try:
-            # Separate base and Kalman features for cross-feature generation
             kalman_cols = [c for c in df_expanded.columns if c.startswith("KF_")]
             base_cols = [c for c in df_expanded.columns if not c.startswith("KF_")]
             
             kalman_features_df = df_expanded[kalman_cols] if kalman_cols else pd.DataFrame(index=df_expanded.index)
             base_features_df = df_expanded[base_cols] if base_cols else pd.DataFrame(index=df_expanded.index)
             
-            # Generate cross-features (function defined later in this module)
             cross_features_df = generate_cross_features(
                 base_features=base_features_df,
                 kalman_features=kalman_features_df,
                 market_data=market_data if market_data is not None else pd.DataFrame(index=df_expanded.index),
             )
             
-            # Merge cross-features with expanded features
             n_cross = len(cross_features_df.columns)
             for col in cross_features_df.columns:
                 if col not in df_expanded.columns:
                     df_expanded[col] = cross_features_df[col]
             
-            tprint_info(f"   Added {n_cross} cross-feature interactions")
+            tprint_info(f"         Added {n_cross} cross-feature interactions")
         except Exception as e:
-            tprint_warning(f"   ⚠️ Cross-feature generation failed: {e}")
+            tprint_warning(f"         ⚠️ Cross-feature generation failed: {e}")
     
-    # 3. Calculate quality scores for all features
-    tprint_info("   Calculating feature quality scores (Signal/Noise ratio)...")
-    quality_scores = calculate_all_feature_qualities(df_expanded)
+    n_after_expansion = len(df_expanded.columns)
     
-    # Log top/bottom quality features for debugging
+    # =========================================================================
+    # STEP 3: Drop constant/near-constant features (std < threshold)
+    # =========================================================================
+    tprint_info(f"   [3/7] Dropping constant features (std < {min_std_threshold})...")
+    col_stds = df_expanded.std()
+    valid_std_cols = col_stds[col_stds >= min_std_threshold].index.tolist()
+    
+    n_dropped_std = n_after_expansion - len(valid_std_cols)
+    if n_dropped_std > 0:
+        tprint_info(f"         Dropped {n_dropped_std} constant features")
+        df_expanded = df_expanded[valid_std_cols]
+    
+    # =========================================================================
+    # STEP 4: Calculate time-robust quality scores
+    # =========================================================================
+    tprint_info("   [4/7] Calculating time-robust quality scores...")
+    quality_scores = calculate_all_feature_qualities(df_expanded, use_time_robust=True)
+    
+    # Log top/bottom quality features
     sorted_by_quality = sorted(quality_scores.items(), key=lambda x: x[1], reverse=True)
-    top_5 = sorted_by_quality[:5]
-    bottom_5 = sorted_by_quality[-5:]
+    if sorted_by_quality:
+        top_3 = sorted_by_quality[:3]
+        bottom_3 = sorted_by_quality[-3:]
+        tprint_info(f"         Top 3: {[(n, f'{q:.3f}') for n, q in top_3]}")
+        tprint_info(f"         Bottom 3: {[(n, f'{q:.3f}') for n, q in bottom_3]}")
     
-    tprint_info(f"   Top 5 quality: {[(n, f'{q:.2f}') for n, q in top_5]}")
-    tprint_info(f"   Bottom 5 quality: {[(n, f'{q:.2f}') for n, q in bottom_5]}")
+    # =========================================================================
+    # STEP 5: Drop bottom quality_drop_percentile% by quality
+    # =========================================================================
+    tprint_info(f"   [5/7] Dropping bottom {quality_drop_percentile}% by quality...")
     
-    # 4. Reduce by correlation with quality tie-breaker
-    tprint_info(f"   Reducing to {target_n} features by correlation...")
-    df_reduced = reduce_features_by_correlation(
-        df_features=df_expanded,
-        quality_scores=quality_scores,
-        target_n=target_n,
-        correlation_threshold=correlation_threshold,
+    if sorted_by_quality:
+        quality_values = [q for _, q in sorted_by_quality]
+        quality_threshold = np.percentile(quality_values, quality_drop_percentile)
+        
+        quality_filtered_cols = [col for col, q in quality_scores.items() if q > quality_threshold]
+        n_dropped_quality = len(df_expanded.columns) - len(quality_filtered_cols)
+        
+        if n_dropped_quality > 0:
+            tprint_info(f"         Dropped {n_dropped_quality} low-quality features (threshold={quality_threshold:.4f})")
+            df_expanded = df_expanded[quality_filtered_cols]
+            quality_scores = {c: quality_scores[c] for c in quality_filtered_cols}
+    
+    # =========================================================================
+    # STEP 6: LGBM Magnitude Sweep
+    # =========================================================================
+    if use_lgbm_sweep and market_data is not None and len(df_expanded.columns) > lgbm_max_features:
+        tprint_info(f"   [6/7] LGBM Magnitude Sweep (lookahead={lgbm_lookahead}, max={lgbm_max_features})...")
+        try:
+            df_expanded = lgbm_magnitude_sweep(
+                df_features=df_expanded,
+                market_data=market_data,
+                lookahead=lgbm_lookahead,
+                max_features=lgbm_max_features,
+            )
+            # Update quality scores for remaining features
+            quality_scores = {c: quality_scores.get(c, 0.0) for c in df_expanded.columns}
+        except Exception as e:
+            tprint_warning(f"         ⚠️ LGBM sweep failed: {e}")
+    else:
+        tprint_info(f"   [6/7] Skipping LGBM sweep (features={len(df_expanded.columns)} <= {lgbm_max_features})")
+    
+    # =========================================================================
+    # STEP 7: Final Selection (Hierarchical or Greedy)
+    # =========================================================================
+    if use_hierarchical and len(df_expanded.columns) > target_n:
+        tprint_info(f"   [7/7] Hierarchical clustering selection (target={target_n})...")
+        try:
+            df_reduced = select_features_hierarchical(
+                df_features=df_expanded,
+                quality_scores=quality_scores,
+                target_n=target_n,
+            )
+        except Exception as e:
+            tprint_warning(f"         ⚠️ Hierarchical failed: {e}, falling back to greedy")
+            df_reduced = reduce_features_by_correlation(
+                df_features=df_expanded,
+                quality_scores=quality_scores,
+                target_n=target_n,
+                correlation_threshold=correlation_threshold,
+            )
+    else:
+        tprint_info(f"   [7/7] Greedy correlation reduction (target={target_n})...")
+        df_reduced = reduce_features_by_correlation(
+            df_features=df_expanded,
+            quality_scores=quality_scores,
+            target_n=target_n,
+            correlation_threshold=correlation_threshold,
+        )
+    
+    # Final quality scores for selected features
+    selected_quality = {col: quality_scores.get(col, 0.0) for col in df_reduced.columns}
+    
+    # =========================================================================
+    # Save to cache
+    # =========================================================================
+    if use_cache and symbol and exchange and timeframe:
+        save_feature_selection_cache(
+            symbol=symbol,
+            exchange=exchange,
+            timeframe=timeframe,
+            selected_features=list(df_reduced.columns),
+            quality_scores=selected_quality,
+        )
+    
+    tprint_success(
+        f"✅ Feature selection complete: {n_after_expansion} → {len(df_reduced.columns)} features"
     )
-    
-    # Return only quality scores for selected features
-    selected_quality = {col: quality_scores[col] for col in df_reduced.columns}
-    
-    tprint_success(f"✅ Feature selection complete: {len(df_reduced.columns)} features selected")
     
     return df_reduced, selected_quality
 
@@ -5970,6 +6524,13 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
         feature_correlation_threshold = float(config.get("feature_correlation_threshold", 0.85))
         enable_multi_horizon = config.get("enable_multi_horizon_features", True)
         enable_cross_features = config.get("enable_cross_features", True)
+        use_hierarchical_selection = config.get("use_hierarchical_selection", True)
+        use_lgbm_sweep = config.get("use_lgbm_sweep", True)
+        lgbm_lookahead = int(config.get("lgbm_sweep_lookahead", 4))
+        lgbm_max_features = int(config.get("lgbm_max_features", 200))
+        quality_drop_percentile = float(config.get("quality_drop_percentile", 20.0))
+        use_feature_cache = config.get("use_feature_selection_cache", True)
+        force_recompute_features = config.get("force_recompute_features", False)
         
         # Custom horizon configuration (can be overridden in config)
         horizon_config = config.get("feature_horizon_config", {
@@ -5978,7 +6539,7 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             "Long": 60,    # ~15 hours at 15m (slow signals)
         })
         
-        tprint_info("🔬 Running quality-based feature selection...")
+        tprint_info("🔬 Running De Prado feature selection pipeline...")
         try:
             meta_features_full, feature_quality_scores = select_features_with_quality(
                 df_features=meta_features_full,
@@ -5988,6 +6549,18 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 horizon_config=horizon_config,
                 enable_cross_features=enable_cross_features,
                 market_data=market_data,
+                # De Prado pipeline parameters
+                use_hierarchical=use_hierarchical_selection,
+                use_lgbm_sweep=use_lgbm_sweep,
+                lgbm_lookahead=lgbm_lookahead,
+                lgbm_max_features=lgbm_max_features,
+                quality_drop_percentile=quality_drop_percentile,
+                # Caching parameters
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=timeframe,
+                use_cache=use_feature_cache,
+                force_recompute=force_recompute_features,
             )
             
             # Store quality scores for potential later use

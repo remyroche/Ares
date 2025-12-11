@@ -1484,6 +1484,8 @@ def create_quantile_labels_from_vol_scaled_returns(
     vol_scaled: pd.Series,
     low_q: float = 0.3,
     high_q: float = 0.8,
+    realized_returns: Optional[pd.Series] = None,
+    min_return_threshold: Optional[float] = None,
 ) -> pd.Series:
     """Create binary labels using GLOBAL quantile thresholds.
     
@@ -1506,6 +1508,13 @@ def create_quantile_labels_from_vol_scaled_returns(
 
         labels.loc[vol_scaled >= high_val] = 1.0
         labels.loc[vol_scaled <= low_val] = 0.0
+
+        # Absolute profit hurdle: downgrade "winners" that don't meet absolute return threshold
+        if realized_returns is not None and min_return_threshold is not None:
+            rets = realized_returns.reindex(labels.index)
+            # Downgrade to 0.0 (rejected) if absolute return is insufficient
+            labels.loc[(labels == 1.0) & (rets <= min_return_threshold)] = 0.0
+
     except Exception:
         labels[:] = np.nan
 
@@ -1520,6 +1529,8 @@ def create_rolling_quantile_labels_from_vol_scaled_returns(
     lookback_bars: int = 3000,
     min_periods: int = 300,
     expanding_start: bool = True,
+    realized_returns: Optional[pd.Series] = None,
+    min_return_threshold: Optional[float] = None,
 ) -> pd.Series:
     """Create binary labels using ROLLING quantile thresholds (no look-ahead bias).
     
@@ -1533,6 +1544,8 @@ def create_rolling_quantile_labels_from_vol_scaled_returns(
         lookback_bars: Rolling window size in bars (default: 3000 ~= 31 days at 15m)
         min_periods: Minimum observations required before computing quantiles
         expanding_start: If True, use expanding window until lookback_bars is reached
+        realized_returns: Raw realized returns series (for absolute hurdle check)
+        min_return_threshold: Minimum absolute return required for positive label
     
     Returns:
         Series with labels: 1.0 (positive), 0.0 (negative), NaN (unlabeled/insufficient data)
@@ -1579,6 +1592,12 @@ def create_rolling_quantile_labels_from_vol_scaled_returns(
         # Label based on rolling thresholds
         labels.loc[valid_thresholds & (vol_scaled >= rolling_high)] = 1.0
         labels.loc[valid_thresholds & (vol_scaled <= rolling_low)] = 0.0
+
+        # Absolute profit hurdle: downgrade "winners" that don't meet absolute return threshold
+        if realized_returns is not None and min_return_threshold is not None:
+            rets = realized_returns.reindex(labels.index)
+            # Downgrade to 0.0 (rejected) if absolute return is insufficient
+            labels.loc[(labels == 1.0) & (rets <= min_return_threshold)] = 0.0
         
         # Diagnostics
         n_labeled = labels.notna().sum()
@@ -1607,6 +1626,8 @@ def create_rolling_regime_aware_quantile_labels_from_vol_scaled_returns(
     min_periods: int = 300,
     min_samples_per_regime: int = 50,
     expanding_start: bool = True,
+    realized_returns: Optional[pd.Series] = None,
+    min_return_threshold: Optional[float] = None,
 ) -> pd.Series:
     """Regime-aware rolling quantile labeling (no look-ahead bias).
     
@@ -1622,6 +1643,8 @@ def create_rolling_regime_aware_quantile_labels_from_vol_scaled_returns(
         min_periods: Minimum observations before computing quantiles
         min_samples_per_regime: Minimum samples per regime for regime-specific thresholds
         expanding_start: If True, use expanding window until lookback_bars reached
+        realized_returns: Raw realized returns series (for absolute hurdle check)
+        min_return_threshold: Minimum absolute return required for positive label
     
     Returns:
         Series with labels: 1.0 (positive), 0.0 (negative), NaN (unlabeled)
@@ -1638,6 +1661,8 @@ def create_rolling_regime_aware_quantile_labels_from_vol_scaled_returns(
             lookback_bars=lookback_bars,
             min_periods=min_periods,
             expanding_start=expanding_start,
+            realized_returns=realized_returns,
+            min_return_threshold=min_return_threshold,
         )
     
     try:
@@ -1652,6 +1677,8 @@ def create_rolling_regime_aware_quantile_labels_from_vol_scaled_returns(
                 lookback_bars=lookback_bars,
                 min_periods=min_periods,
                 expanding_start=expanding_start,
+                realized_returns=realized_returns,
+                min_return_threshold=min_return_threshold,
             )
         
         for reg_val in unique_regimes:
@@ -1690,6 +1717,12 @@ def create_rolling_regime_aware_quantile_labels_from_vol_scaled_returns(
                 # Skip this regime on error
                 continue
         
+        # Absolute profit hurdle: downgrade "winners" that don't meet absolute return threshold
+        if realized_returns is not None and min_return_threshold is not None:
+            rets = realized_returns.reindex(labels.index)
+            # Downgrade to 0.0 (rejected) if absolute return is insufficient
+            labels.loc[(labels == 1.0) & (rets <= min_return_threshold)] = 0.0
+
         # If no labels assigned (regimes too sparse), fall back to global rolling
         if labels.dropna().empty:
             tprint("⚠️ Regime-aware rolling quantiles: falling back to global", "WARNING")
@@ -1700,6 +1733,8 @@ def create_rolling_regime_aware_quantile_labels_from_vol_scaled_returns(
                 lookback_bars=lookback_bars,
                 min_periods=min_periods,
                 expanding_start=expanding_start,
+                realized_returns=realized_returns,
+                min_return_threshold=min_return_threshold,
             )
         
         n_labeled = labels.notna().sum()
@@ -1722,6 +1757,8 @@ def create_rolling_regime_aware_quantile_labels_from_vol_scaled_returns(
             lookback_bars=lookback_bars,
             min_periods=min_periods,
             expanding_start=expanding_start,
+            realized_returns=realized_returns,
+            min_return_threshold=min_return_threshold,
         )
     
     return labels
@@ -3417,6 +3454,8 @@ def create_regime_aware_quantile_labels_from_vol_scaled_returns(
     low_q: float = 0.3,
     high_q: float = 0.8,
     min_samples_per_regime: int = 50,
+    realized_returns: Optional[pd.Series] = None,
+    min_return_threshold: Optional[float] = None,
 ) -> pd.Series:
     """Regime-aware wrapper around quantile-based label generation.
 
@@ -3434,6 +3473,8 @@ def create_regime_aware_quantile_labels_from_vol_scaled_returns(
             vol_scaled=vol_scaled,
             low_q=low_q,
             high_q=high_q,
+            realized_returns=realized_returns,
+            min_return_threshold=min_return_threshold,
         )
 
     try:
@@ -3444,6 +3485,8 @@ def create_regime_aware_quantile_labels_from_vol_scaled_returns(
                 vol_scaled=vol_scaled,
                 low_q=low_q,
                 high_q=high_q,
+                realized_returns=realized_returns,
+                min_return_threshold=min_return_threshold,
             )
 
         unique_regimes = pd.unique(regimes_aligned.dropna())
@@ -10271,6 +10314,8 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                         high_q=quantile_high_q,
                         lookback_bars=rolling_lookback_bars,
                         min_periods=rolling_min_periods,
+                        realized_returns=realized_returns,
+                        min_return_threshold=1.5 * transaction_cost,
                     )
                 else:
                     quantile_labels = create_rolling_quantile_labels_from_vol_scaled_returns(
@@ -10279,6 +10324,8 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                         high_q=quantile_high_q,
                         lookback_bars=rolling_lookback_bars,
                         min_periods=rolling_min_periods,
+                        realized_returns=realized_returns,
+                        min_return_threshold=1.5 * transaction_cost,
                     )
             else:
                 # Legacy: global quantiles (has look-ahead bias)
@@ -10289,12 +10336,16 @@ class FeatureGenerationMetaLabelingStep(BaseStep):
                         regimes=regimes_for_labeling,
                         low_q=quantile_low_q,
                         high_q=quantile_high_q,
+                        realized_returns=realized_returns,
+                        min_return_threshold=1.5 * transaction_cost,
                     )
                 else:
                     quantile_labels = create_quantile_labels_from_vol_scaled_returns(
                         vol_scaled=vol_scaled_returns,
                         low_q=quantile_low_q,
                         high_q=quantile_high_q,
+                        realized_returns=realized_returns,
+                        min_return_threshold=1.5 * transaction_cost,
                     )
 
             relabel_profitable_timeouts = bool(config.get("relabel_profitable_timeouts", True))

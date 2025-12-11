@@ -88,6 +88,10 @@ from src.training.steps.labeling.meta_labeling_hpo_sample_weighted import (
     calculate_all_feature_qualities,
     reduce_features_by_correlation,
     generate_multi_horizon_features,
+    # Cross-feature interactions
+    generate_cross_features,
+    get_cross_feature_inventory,
+    get_feature_inventory,
 )
 
 logger = logging.getLogger(__name__)
@@ -586,6 +590,7 @@ class WeightedMetaLabelingStep(FeatureGenerationMetaLabelingStep):
         target_feature_count = int(config.get("target_feature_count", 70))
         feature_correlation_threshold = float(config.get("feature_correlation_threshold", 0.85))
         enable_multi_horizon = config.get("enable_multi_horizon_features", True)
+        enable_cross_features = config.get("enable_cross_features", True)
         
         horizon_config = config.get("feature_horizon_config", {
             "Short": 5,
@@ -601,6 +606,8 @@ class WeightedMetaLabelingStep(FeatureGenerationMetaLabelingStep):
                 correlation_threshold=feature_correlation_threshold,
                 generate_horizons=enable_multi_horizon,
                 horizon_config=horizon_config,
+                enable_cross_features=enable_cross_features,
+                market_data=market_data,
             )
             tprint_success(f"   ✅ Selected {meta_features.shape[1]} features (target={target_feature_count})")
         except Exception as fs_exc:

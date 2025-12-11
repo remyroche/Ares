@@ -3591,6 +3591,42 @@ def get_feature_inventory() -> Dict[str, List[str]]:
             "KF_Volume_Ratio",
             "KF_Volume_P",
         ],
+        # Cross-feature interactions (added for sophisticated signal combinations)
+        "cross_price_volume": [
+            "PV_Velocity_x_VolSlope",      # KF_Velocity × KF_LogVolume_Slope
+            "PV_VWAP_x_VolZscore",         # KF_VWAP_Distance × KF_Volume_Zscore
+            "PV_Return_x_VolRatio",        # KF_Close_LogRet × KF_Volume_Ratio
+            "PV_SMADist_x_VolRatio",       # SMA_Distance × Volume_SMA_Ratio
+            "PV_ROC_x_VolP",               # ROC × KF_Volume_P
+        ],
+        "cross_volatility_normalized": [
+            "VN_Velocity_per_ATR",         # KF_Velocity / KF_ATR
+            "VN_Mom5_per_Vol5",            # Momentum_5 / volatility_5
+            "VN_Accel_per_ATRRatio",       # KF_Acceleration / KF_ATR_Ratio
+            "VN_ROC_x_VolRegime",          # ROC × Volatility_Regime
+            "VN_Slope_x_KalmanP",          # KF_Slope × KF_P
+        ],
+        "cross_horizon_divergence": [
+            "XH_RSI_Divergence",           # RSI_Short - RSI_Long
+            "XH_Momentum_Ratio",           # Momentum_Short / Momentum_Long
+            "XH_ATR_Ratio",                # ATR_Short / ATR_Long
+            "XH_SMADist_Divergence",       # SMA_Distance_Short - SMA_Distance_Long
+            "XH_BBDist_Divergence",        # BB_Distance_Short - BB_Distance_Long
+        ],
+        "cross_regime_conditional": [
+            "RC_Mom_x_MetaVolRegime",      # Momentum × meta_volatility_regime
+            "RC_VolSlope_x_MetaVolShock",  # KF_LogVolume_Slope × meta_volume_shock
+            "RC_PriceSMA_x_Trendiness",    # Price_vs_SMA20 × meta_trendiness
+            "RC_VWAPSlope_x_Trendiness",   # KF_VWAP_Slope × meta_trendiness
+            "RC_ATRRatio_x_MetaVolRegime", # KF_ATR_Ratio × meta_volatility_regime
+        ],
+        "cross_kalman": [
+            "KC_FilteredRawATR_Ratio",     # KF_ATR / ATR_14
+            "KC_VolSlope_per_Vol5",        # KF_LogVolume_Slope / volatility_5
+            "KC_Velocity_per_KalmanP",     # KF_Velocity / KF_P
+            "KC_VWAPZscore_x_VolRatio",    # KF_VWAP_Zscore × KF_Volume_Ratio
+            "KC_MomPerVol_x_VolSlope",     # Momentum_per_vol × KF_LogVolume_Slope
+        ],
     }
     
     # Calculate totals
@@ -3601,13 +3637,21 @@ def get_feature_inventory() -> Dict[str, List[str]]:
         len(inventory["kalman_vwap"]) + 
         len(inventory["kalman_volume"])
     )
+    cross_feature_count = (
+        len(inventory["cross_price_volume"]) +
+        len(inventory["cross_volatility_normalized"]) +
+        len(inventory["cross_horizon_divergence"]) +
+        len(inventory["cross_regime_conditional"]) +
+        len(inventory["cross_kalman"])
+    )
     
     inventory["_counts"] = {
         "configurable_technical": configurable_count,
         "fixed_specialist": fixed_count,
         "kalman_features": kalman_count,
-        "total_base": configurable_count + fixed_count + kalman_count,
-        "with_multi_horizon": (configurable_count + fixed_count + kalman_count) * 7,  # base + 6 per horizon
+        "cross_features": cross_feature_count,
+        "total_base": configurable_count + fixed_count + kalman_count + cross_feature_count,
+        "with_multi_horizon": (configurable_count + fixed_count + kalman_count) * 7 + cross_feature_count,
     }
     
     return inventory
@@ -3619,23 +3663,28 @@ def select_features_with_quality(
     correlation_threshold: float = 0.85,
     generate_horizons: bool = True,
     horizon_config: Dict[str, int] = None,
+    enable_cross_features: bool = True,
+    market_data: Optional[pd.DataFrame] = None,
 ) -> Tuple[pd.DataFrame, Dict[str, float]]:
     """
     Complete feature selection pipeline with quality scoring.
     
     Pipeline:
     1. (Optional) Generate multi-horizon versions of features
-    2. Calculate quality scores for all features
-    3. Reduce features by correlation, using quality as tie-breaker
+    2. (Optional) Generate cross-feature interactions
+    3. Calculate quality scores for all features
+    4. Reduce features by correlation, using quality as tie-breaker
     
     This runs AFTER Layer 0 (Kalman Q/R optimization) but BEFORE the main HPO loop.
     
     Args:
-        df_features: DataFrame with raw features
+        df_features: DataFrame with raw features (base + Kalman merged)
         target_n: Target number of features to select
         correlation_threshold: Max correlation between selected features
         generate_horizons: Whether to create multi-horizon versions
         horizon_config: Custom horizon configuration
+        enable_cross_features: Whether to generate cross-feature interactions (default: True)
+        market_data: Original market data (optional, used for cross-feature generation)
     
     Returns:
         Tuple of (reduced_features_df, quality_scores_dict)
@@ -3651,7 +3700,35 @@ def select_features_with_quality(
     else:
         df_expanded = df_features.copy()
     
-    # 2. Calculate quality scores for all features
+    # 2. Generate cross-feature interactions (if enabled)
+    if enable_cross_features:
+        tprint_info("   Generating cross-feature interactions...")
+        try:
+            # Separate base and Kalman features for cross-feature generation
+            kalman_cols = [c for c in df_expanded.columns if c.startswith("KF_")]
+            base_cols = [c for c in df_expanded.columns if not c.startswith("KF_")]
+            
+            kalman_features_df = df_expanded[kalman_cols] if kalman_cols else pd.DataFrame(index=df_expanded.index)
+            base_features_df = df_expanded[base_cols] if base_cols else pd.DataFrame(index=df_expanded.index)
+            
+            # Generate cross-features (function defined later in this module)
+            cross_features_df = generate_cross_features(
+                base_features=base_features_df,
+                kalman_features=kalman_features_df,
+                market_data=market_data if market_data is not None else pd.DataFrame(index=df_expanded.index),
+            )
+            
+            # Merge cross-features with expanded features
+            n_cross = len(cross_features_df.columns)
+            for col in cross_features_df.columns:
+                if col not in df_expanded.columns:
+                    df_expanded[col] = cross_features_df[col]
+            
+            tprint_info(f"   Added {n_cross} cross-feature interactions")
+        except Exception as e:
+            tprint_warning(f"   ⚠️ Cross-feature generation failed: {e}")
+    
+    # 3. Calculate quality scores for all features
     tprint_info("   Calculating feature quality scores (Signal/Noise ratio)...")
     quality_scores = calculate_all_feature_qualities(df_expanded)
     
@@ -3663,7 +3740,7 @@ def select_features_with_quality(
     tprint_info(f"   Top 5 quality: {[(n, f'{q:.2f}') for n, q in top_5]}")
     tprint_info(f"   Bottom 5 quality: {[(n, f'{q:.2f}') for n, q in bottom_5]}")
     
-    # 3. Reduce by correlation with quality tie-breaker
+    # 4. Reduce by correlation with quality tie-breaker
     tprint_info(f"   Reducing to {target_n} features by correlation...")
     df_reduced = reduce_features_by_correlation(
         df_features=df_expanded,
@@ -3886,6 +3963,274 @@ def generate_kalman_features(
     features = features.replace([np.inf, -np.inf], 0)
     
     return features
+
+
+# ============================================================================
+# CROSS-FEATURE INTERACTIONS (Price-Volume, Volatility-Normalized, etc.)
+# ============================================================================
+
+def generate_cross_features(
+    base_features: pd.DataFrame,
+    kalman_features: pd.DataFrame,
+    market_data: pd.DataFrame,
+) -> pd.DataFrame:
+    """
+    Generate sophisticated cross-feature interactions combining price, volume,
+    volatility, and regime signals.
+    
+    These features capture non-linear relationships that single features miss:
+    - Price-Volume Interactions: Momentum scaled by participation
+    - Volatility-Normalized Features: Signals adjusted for current volatility
+    - Cross-Horizon Divergence: Short vs long-term signal disagreements
+    - Regime-Conditional Features: Signals weighted by market regime
+    - Kalman Cross-Features: Filtered signal combinations
+    
+    Args:
+        base_features: DataFrame with base meta-features (from create_meta_features)
+        kalman_features: DataFrame with Kalman-filtered features (from generate_kalman_features)
+        market_data: Original OHLCV data for any additional calculations
+    
+    Returns:
+        DataFrame with cross-feature interactions (log-normalized where appropriate)
+    """
+    cross = pd.DataFrame(index=base_features.index)
+    
+    # Helper to safely get feature, returning zeros if not found
+    def _safe_get(df: pd.DataFrame, col: str) -> np.ndarray:
+        if col in df.columns:
+            return df[col].fillna(0).values
+        return np.zeros(len(df))
+    
+    # Merge available features for easier access
+    all_features = pd.concat([base_features, kalman_features], axis=1)
+    
+    # =========================================================================
+    # 1. PRICE-VOLUME INTERACTIONS
+    # =========================================================================
+    # These capture momentum scaled by market participation/volume trends
+    
+    # KF_Velocity × KF_LogVolume_Slope: Momentum scaled by participation trend
+    kf_velocity = _safe_get(all_features, "KF_Velocity")
+    kf_logvol_slope = _safe_get(all_features, "KF_LogVolume_Slope")
+    cross["PV_Velocity_x_VolSlope"] = _log_normalize(kf_velocity * kf_logvol_slope)
+    
+    # KF_VWAP_Distance × KF_Volume_Zscore: Price deviation from VWAP weighted by volume surprise
+    kf_vwap_dist = _safe_get(all_features, "KF_VWAP_Distance")
+    kf_vol_zscore = _safe_get(all_features, "KF_Volume_Zscore")
+    cross["PV_VWAP_x_VolZscore"] = _log_normalize(kf_vwap_dist * kf_vol_zscore)
+    
+    # KF_Close_LogRet × KF_Volume_Ratio: Return scaled by abnormal volume
+    kf_close_logret = _safe_get(all_features, "KF_Close_LogRet")
+    kf_vol_ratio = _safe_get(all_features, "KF_Volume_Ratio")
+    cross["PV_Return_x_VolRatio"] = _log_normalize(kf_close_logret * kf_vol_ratio)
+    
+    # SMA_Distance × Volume_SMA_Ratio: Price deviation from SMA weighted by volume trend
+    # Try multiple horizon variants
+    for horizon in ["_Short", "_Medium", "_Long", ""]:
+        sma_dist_col = f"SMA_Distance{horizon}" if horizon else "SMA_Distance_Medium"
+        vol_sma_col = f"Volume_SMA_Ratio{horizon}" if horizon else "Volume_SMA_Ratio_Medium"
+        sma_dist = _safe_get(all_features, sma_dist_col)
+        vol_sma_ratio = _safe_get(all_features, vol_sma_col)
+        if np.any(sma_dist != 0) and np.any(vol_sma_ratio != 0):
+            cross[f"PV_SMADist_x_VolRatio{horizon}"] = _log_normalize(sma_dist * vol_sma_ratio)
+            break  # Use first available
+    
+    # ROC × KF_Volume_P: Rate-of-change scaled by volume uncertainty
+    for horizon in ["_Short", "_Medium", "_Long", ""]:
+        roc_col = f"ROC{horizon}" if horizon else "ROC_Medium"
+        roc = _safe_get(all_features, roc_col)
+        kf_vol_p = _safe_get(all_features, "KF_Volume_P")
+        if np.any(roc != 0):
+            cross["PV_ROC_x_VolP"] = _log_normalize(roc * kf_vol_p)
+            break
+    
+    # =========================================================================
+    # 2. VOLATILITY-NORMALIZED FEATURES
+    # =========================================================================
+    # These normalize signals by current volatility regime
+    
+    # KF_Velocity / KF_ATR: Normalized velocity relative to volatility
+    kf_atr = _safe_get(all_features, "KF_ATR")
+    safe_atr = np.where(np.abs(kf_atr) > 1e-9, kf_atr, 1e-9)
+    cross["VN_Velocity_per_ATR"] = _log_normalize(kf_velocity / safe_atr)
+    
+    # Momentum_5 / volatility_5: Short-term momentum scaled by short-term volatility
+    momentum_5 = _safe_get(all_features, "momentum_5")
+    volatility_5 = _safe_get(all_features, "volatility_5")
+    safe_vol5 = np.where(np.abs(volatility_5) > 1e-9, volatility_5, 1e-9)
+    cross["VN_Mom5_per_Vol5"] = _log_normalize(momentum_5 / safe_vol5)
+    
+    # KF_Acceleration / KF_ATR_Ratio: Trend change relative to filtered volatility
+    kf_accel = _safe_get(all_features, "KF_Acceleration")
+    kf_atr_ratio = _safe_get(all_features, "KF_ATR_Ratio")
+    safe_atr_ratio = np.where(np.abs(kf_atr_ratio) > 1e-9, kf_atr_ratio, 1e-9)
+    cross["VN_Accel_per_ATRRatio"] = _log_normalize(kf_accel / safe_atr_ratio)
+    
+    # ROC × Volatility_Regime: Rate-of-change weighted by market volatility regime
+    # Use vol_regime_high as a continuous proxy (0 or 1)
+    vol_regime_high = _safe_get(all_features, "vol_regime_high")
+    vol_regime_med = _safe_get(all_features, "vol_regime_medium")
+    # Create regime score: 0 (low), 0.5 (medium), 1.0 (high)
+    regime_score = vol_regime_med * 0.5 + vol_regime_high * 1.0
+    for horizon in ["_Short", "_Medium", "_Long", ""]:
+        roc_col = f"ROC{horizon}" if horizon else "ROC_Medium"
+        roc = _safe_get(all_features, roc_col)
+        if np.any(roc != 0):
+            cross["VN_ROC_x_VolRegime"] = _log_normalize(roc * (1.0 + regime_score))
+            break
+    
+    # KF_Slope × KF_P: Price slope weighted by Kalman state uncertainty
+    kf_slope = _safe_get(all_features, "KF_Slope")
+    kf_p = _safe_get(all_features, "KF_P")
+    cross["VN_Slope_x_KalmanP"] = _log_normalize(kf_slope * kf_p)
+    
+    # =========================================================================
+    # 3. CROSS-HORIZON DIVERGENCE FEATURES
+    # =========================================================================
+    # These capture disagreements between short and long-term signals
+    
+    # RSI_Short - RSI_Long: Overbought/oversold divergence across horizons
+    rsi_short = _safe_get(all_features, "RSI_Short")
+    rsi_long = _safe_get(all_features, "RSI_Long")
+    if np.any(rsi_short != 0) or np.any(rsi_long != 0):
+        cross["XH_RSI_Divergence"] = rsi_short - rsi_long  # Already normalized [-1, 1]
+    
+    # Velocity_Short / Velocity_Long: Short-term vs long-term momentum ratio
+    # Use Momentum features as velocity proxies
+    mom_short = _safe_get(all_features, "Momentum_Short")
+    mom_long = _safe_get(all_features, "Momentum_Long")
+    safe_mom_long = np.where(np.abs(mom_long) > 1e-9, mom_long, np.sign(mom_long) * 1e-9)
+    safe_mom_long = np.where(safe_mom_long == 0, 1e-9, safe_mom_long)
+    if np.any(mom_short != 0) or np.any(mom_long != 0):
+        cross["XH_Momentum_Ratio"] = _log_normalize(mom_short / safe_mom_long)
+    
+    # ATR_Short / ATR_Long: Short-term vs long-term volatility ratio
+    atr_short = _safe_get(all_features, "ATR_Short")
+    atr_long = _safe_get(all_features, "ATR_Long")
+    safe_atr_long = np.where(np.abs(atr_long) > 1e-9, atr_long, 1e-9)
+    if np.any(atr_short != 0) or np.any(atr_long != 0):
+        cross["XH_ATR_Ratio"] = _log_normalize(atr_short / safe_atr_long)
+    
+    # SMA_Distance_Short - SMA_Distance_Long: Mean-reversion signals across horizons
+    sma_dist_short = _safe_get(all_features, "SMA_Distance_Short")
+    sma_dist_long = _safe_get(all_features, "SMA_Distance_Long")
+    if np.any(sma_dist_short != 0) or np.any(sma_dist_long != 0):
+        cross["XH_SMADist_Divergence"] = _log_normalize(sma_dist_short - sma_dist_long)
+    
+    # BB_Distance_Short - BB_Distance_Long: Relative band positioning between horizons
+    bb_dist_short = _safe_get(all_features, "BB_Distance_Short")
+    bb_dist_long = _safe_get(all_features, "BB_Distance_Long")
+    if np.any(bb_dist_short != 0) or np.any(bb_dist_long != 0):
+        cross["XH_BBDist_Divergence"] = bb_dist_short - bb_dist_long  # Already normalized
+    
+    # =========================================================================
+    # 4. REGIME-CONDITIONAL FEATURES
+    # =========================================================================
+    # These weight signals by the current market regime state
+    
+    # Momentum × meta_volatility_regime: Trend strength conditional on volatility regime
+    meta_vol_regime = _safe_get(all_features, "meta_volatility_regime")
+    momentum_10 = _safe_get(all_features, "momentum_10")
+    if np.any(meta_vol_regime != 0):
+        cross["RC_Mom_x_MetaVolRegime"] = _log_normalize(momentum_10 * meta_vol_regime)
+    
+    # KF_LogVolume_Slope × meta_volume_shock: Participation trend weighted by volume shock
+    meta_vol_shock = _safe_get(all_features, "meta_volume_shock")
+    if np.any(meta_vol_shock != 0):
+        cross["RC_VolSlope_x_MetaVolShock"] = _log_normalize(kf_logvol_slope * meta_vol_shock)
+    
+    # Price_vs_SMA20 × meta_trendiness: Price deviation scaled by trendiness score
+    price_vs_sma20 = _safe_get(all_features, "price_vs_sma20")
+    meta_trendiness = _safe_get(all_features, "meta_trendiness")
+    if np.any(meta_trendiness != 0):
+        cross["RC_PriceSMA_x_Trendiness"] = _log_normalize(price_vs_sma20 * meta_trendiness)
+    
+    # KF_VWAP_Slope × meta_trendiness: VWAP trend scaled by regime trendiness
+    kf_vwap_slope = _safe_get(all_features, "KF_VWAP_Slope")
+    if np.any(meta_trendiness != 0) and np.any(kf_vwap_slope != 0):
+        cross["RC_VWAPSlope_x_Trendiness"] = _log_normalize(kf_vwap_slope * meta_trendiness)
+    
+    # KF_ATR_Ratio × meta_volatility_regime: Volatility relative to baseline under current regime
+    if np.any(meta_vol_regime != 0):
+        cross["RC_ATRRatio_x_MetaVolRegime"] = _log_normalize(kf_atr_ratio * meta_vol_regime)
+    
+    # =========================================================================
+    # 5. KALMAN CROSS-FEATURES
+    # =========================================================================
+    # These combine Kalman-filtered signals for enhanced signal quality
+    
+    # KF_ATR / ATR_14: Filtered vs raw volatility ratio
+    atr_14 = _safe_get(all_features, "atr_14")
+    safe_atr_14 = np.where(np.abs(atr_14) > 1e-9, atr_14, 1e-9)
+    if np.any(kf_atr != 0):
+        cross["KC_FilteredRawATR_Ratio"] = _log_normalize(kf_atr / safe_atr_14)
+    
+    # KF_LogVolume_Slope / volatility_5: Relative volume trend vs recent volatility
+    if np.any(kf_logvol_slope != 0):
+        cross["KC_VolSlope_per_Vol5"] = _log_normalize(kf_logvol_slope / safe_vol5)
+    
+    # KF_Velocity / KF_P: Velocity normalized by Kalman state uncertainty
+    safe_kf_p = np.where(np.abs(kf_p) > 1e-9, kf_p, 1e-9)
+    cross["KC_Velocity_per_KalmanP"] = _log_normalize(kf_velocity / safe_kf_p)
+    
+    # KF_VWAP_Zscore × KF_Volume_Ratio: Standardized VWAP innovation weighted by volume ratio
+    kf_vwap_zscore = _safe_get(all_features, "KF_VWAP_Zscore")
+    cross["KC_VWAPZscore_x_VolRatio"] = _log_normalize(kf_vwap_zscore * kf_vol_ratio)
+    
+    # Momentum_per_vol × KF_LogVolume_Slope: Momentum per unit volatility scaled by participation
+    momentum_per_vol = _safe_get(all_features, "momentum_per_vol")
+    cross["KC_MomPerVol_x_VolSlope"] = _log_normalize(momentum_per_vol * kf_logvol_slope)
+    
+    # Fill NaN and replace infinities
+    cross = cross.fillna(0).replace([np.inf, -np.inf], 0)
+    
+    return cross
+
+
+def get_cross_feature_inventory() -> Dict[str, List[str]]:
+    """
+    Return inventory of cross-features generated by generate_cross_features().
+    
+    Returns:
+        Dict with categories and their feature lists
+    """
+    return {
+        "price_volume_interactions": [
+            "PV_Velocity_x_VolSlope",      # KF_Velocity × KF_LogVolume_Slope
+            "PV_VWAP_x_VolZscore",         # KF_VWAP_Distance × KF_Volume_Zscore
+            "PV_Return_x_VolRatio",        # KF_Close_LogRet × KF_Volume_Ratio
+            "PV_SMADist_x_VolRatio",       # SMA_Distance × Volume_SMA_Ratio (horizon variant)
+            "PV_ROC_x_VolP",               # ROC × KF_Volume_P
+        ],
+        "volatility_normalized": [
+            "VN_Velocity_per_ATR",         # KF_Velocity / KF_ATR
+            "VN_Mom5_per_Vol5",            # Momentum_5 / volatility_5
+            "VN_Accel_per_ATRRatio",       # KF_Acceleration / KF_ATR_Ratio
+            "VN_ROC_x_VolRegime",          # ROC × Volatility_Regime
+            "VN_Slope_x_KalmanP",          # KF_Slope × KF_P
+        ],
+        "cross_horizon_divergence": [
+            "XH_RSI_Divergence",           # RSI_Short - RSI_Long
+            "XH_Momentum_Ratio",           # Momentum_Short / Momentum_Long
+            "XH_ATR_Ratio",                # ATR_Short / ATR_Long
+            "XH_SMADist_Divergence",       # SMA_Distance_Short - SMA_Distance_Long
+            "XH_BBDist_Divergence",        # BB_Distance_Short - BB_Distance_Long
+        ],
+        "regime_conditional": [
+            "RC_Mom_x_MetaVolRegime",      # Momentum × meta_volatility_regime
+            "RC_VolSlope_x_MetaVolShock",  # KF_LogVolume_Slope × meta_volume_shock
+            "RC_PriceSMA_x_Trendiness",    # Price_vs_SMA20 × meta_trendiness
+            "RC_VWAPSlope_x_Trendiness",   # KF_VWAP_Slope × meta_trendiness
+            "RC_ATRRatio_x_MetaVolRegime", # KF_ATR_Ratio × meta_volatility_regime
+        ],
+        "kalman_cross": [
+            "KC_FilteredRawATR_Ratio",     # KF_ATR / ATR_14
+            "KC_VolSlope_per_Vol5",        # KF_LogVolume_Slope / volatility_5
+            "KC_Velocity_per_KalmanP",     # KF_Velocity / KF_P
+            "KC_VWAPZscore_x_VolRatio",    # KF_VWAP_Zscore × KF_Volume_Ratio
+            "KC_MomPerVol_x_VolSlope",     # Momentum_per_vol × KF_LogVolume_Slope
+        ],
+    }
 
 
 # ============================================================================
@@ -5624,6 +5969,7 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
         target_feature_count = int(config.get("target_feature_count", 70))
         feature_correlation_threshold = float(config.get("feature_correlation_threshold", 0.85))
         enable_multi_horizon = config.get("enable_multi_horizon_features", True)
+        enable_cross_features = config.get("enable_cross_features", True)
         
         # Custom horizon configuration (can be overridden in config)
         horizon_config = config.get("feature_horizon_config", {
@@ -5640,6 +5986,8 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 correlation_threshold=feature_correlation_threshold,
                 generate_horizons=enable_multi_horizon,
                 horizon_config=horizon_config,
+                enable_cross_features=enable_cross_features,
+                market_data=market_data,
             )
             
             # Store quality scores for potential later use

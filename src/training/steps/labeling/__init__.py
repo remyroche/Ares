@@ -45,6 +45,10 @@ from .feature_generation_meta_labeling_step import (
     DEFAULT_TRANSACTION_COST,
 )
 
+from .meta_weighted_labeling_step import (
+    MetaWeightedLabelingStep,
+)
+
 try:
     from .meta_labeling_hpo_experiment_step import (
         MetaLabelingHPOExperimentStep,
@@ -94,6 +98,7 @@ from .winning_feature_set_selector import (
 __all__ = [
     "RegimeAwareLabeling",
     "FeatureGenerationMetaLabelingStep",
+    "MetaWeightedLabelingStep",
     "MetaLabelingHPOExperimentStep",
     "TripleBarrierValidator",
     "ValidationResult",

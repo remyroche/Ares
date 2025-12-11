@@ -5,9 +5,6 @@ import pandas as pd
 from scipy.stats import spearmanr
 import optuna
 
-# Assumes you have the generator saved in this path
-# from src.data.weighting.generate_weights_per_label import generate_weights_per_label
-
 # -------------------------------------------------------------------------
 # 1. Mathematical Helpers
 # -------------------------------------------------------------------------

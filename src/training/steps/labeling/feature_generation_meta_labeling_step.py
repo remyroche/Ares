@@ -1518,7 +1518,6 @@ def create_quantile_labels_from_vol_scaled_returns(
     except Exception:
         labels[:] = np.nan
 
-    labels = _enforce_local_label_balance(vol_scaled, labels, min_ratio=0.10)
     return drop_initial_single_class_segments(labels)
 
 
@@ -1613,7 +1612,6 @@ def create_rolling_quantile_labels_from_vol_scaled_returns(
         tprint(f"⚠️ Rolling quantile labeling failed: {e}", "WARNING")
         labels[:] = np.nan
     
-    labels = _enforce_local_label_balance(vol_scaled, labels, min_ratio=0.10)
     return drop_initial_single_class_segments(labels)
 
 
@@ -1745,7 +1743,6 @@ def create_rolling_regime_aware_quantile_labels_from_vol_scaled_returns(
             "INFO"
         )
         
-        labels = _enforce_local_label_balance(vol_scaled, labels, min_ratio=0.10)
         labels = drop_initial_single_class_segments(labels)
         
     except Exception as e:
@@ -1792,97 +1789,6 @@ def drop_initial_single_class_segments(labels: pd.Series) -> pd.Series:
     keep_index = vals.index[cut_pos:]
     drop_mask = ~labels_out.index.isin(keep_index)
     labels_out[drop_mask] = np.nan
-    return labels_out
-
-
-def _enforce_local_label_balance(
-    vol_scaled: pd.Series,
-    labels: pd.Series,
-    min_ratio: float = 0.10,
-    min_bucket_samples: int = 20,
-) -> pd.Series:
-    """Ensure each local time bucket has both label classes when both signs exist.
-    
-    Within each time bucket, if volatility-scaled returns contain both positive
-    and negative values but the labels only contain one class (all 0.0 or all
-    1.0), relax the gate for the missing side by labeling a small set of the
-    largest-magnitude moves of that sign.
-    
-    The target is to give the minority class at least ``min_ratio`` share
-    within that bucket, subject to availability of underlying events.
-    """
-    if labels is None or vol_scaled is None:
-        return labels
-    if not isinstance(labels, pd.Series):
-        labels = pd.Series(labels, index=vol_scaled.index)
-    if labels.empty:
-        return labels
-
-    labels_out = labels.copy()
-    vs = vol_scaled.reindex(labels_out.index)
-    if vs.isna().all():
-        return labels_out
-
-    idx = vs.index
-    mask_non_nan_vs = vs.notna()
-
-    # Define time buckets: use calendar quarters when index is datetime,
-    # otherwise fall back to ~8 equal-sized buckets over the sequence.
-    if isinstance(idx, pd.DatetimeIndex):
-        bucket_ids = pd.Series(idx.to_period("Q"), index=idx)
-    else:
-        n = len(idx)
-        if n == 0:
-            return labels_out
-        bucket_size = max(1, n // 8)
-        bucket_ids = pd.Series(np.arange(n) // bucket_size, index=idx)
-
-    r = float(min_ratio)
-    if not np.isfinite(r):
-        r = 0.10
-    r = max(0.0, min(0.49, r))
-    denom = max(1.0 - r, 1e-6)
-
-    for bucket in pd.unique(bucket_ids):
-        bucket_mask = (bucket_ids == bucket) & mask_non_nan_vs
-        if bucket_mask.sum() < int(min_bucket_samples):
-            continue
-
-        vs_bucket = vs[bucket_mask]
-        raw_pos_mask = vs_bucket > 0
-        raw_neg_mask = vs_bucket < 0
-        raw_pos = int(raw_pos_mask.sum())
-        raw_neg = int(raw_neg_mask.sum())
-        if raw_pos == 0 or raw_neg == 0:
-            # Truly one-sided regime in this bucket; do not fabricate the
-            # missing class.
-            continue
-
-        lab_pos = int(((labels_out == 1.0) & bucket_mask).sum())
-        lab_neg = int(((labels_out == 0.0) & bucket_mask).sum())
-
-        # Rescue positive class if missing but underlying positive moves exist.
-        if lab_pos == 0 and lab_neg > 0:
-            majority = lab_neg
-            # Required minority count so that minority share >= r after rescue:
-            #   n_min >= (r / (1-r)) * n_majority
-            required = int(np.ceil((r / denom) * float(majority)))
-            required = min(raw_pos, max(required, 1))
-            if required > 0:
-                cand = vs_bucket[raw_pos_mask]
-                top_idx = cand.sort_values(ascending=False).index[:required]
-                labels_out.loc[top_idx] = 1.0
-
-        # Rescue negative class if missing but underlying negative moves exist.
-        if lab_neg == 0 and lab_pos > 0:
-            majority = lab_pos
-            required = int(np.ceil((r / denom) * float(majority)))
-            required = min(raw_neg, max(required, 1))
-            if required > 0:
-                cand = vs_bucket[raw_neg_mask]
-                bot_idx = cand.sort_values(ascending=True).index[:required]
-                labels_out.loc[bot_idx] = 0.0
-
     return labels_out
 
 

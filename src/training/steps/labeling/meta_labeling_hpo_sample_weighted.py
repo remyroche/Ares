@@ -8,6 +8,12 @@ It is intentionally decoupled from standard training runs. Invoke it
 explicitly via the launcher with an appropriate config. A simple config
 flag `enable_labeling_hpo` can be used to disable the optimization and
 exit early if desired.
+
+Post-HPO Model Evaluation (NEW):
+After HPO completes, trains multiple ML models for SNR diagnostics:
+1. Simple LGBM (baseline)
+2. Logistic Regression (linear benchmark)
+3. LGBM Bagged with Diversity Defense
 """
 
 from __future__ import annotations
@@ -26,8 +32,18 @@ from sklearn.isotonic import IsotonicRegression
 from sklearn.model_selection import TimeSeriesSplit, cross_val_predict
 from sklearn.metrics import roc_auc_score
 from sklearn.inspection import permutation_importance
-from scipy.stats import spearmanr
+from scipy.stats import spearmanr, pearsonr
 import lightgbm as lgb
+
+# Post-HPO evaluation imports
+from src.training.steps.labeling.post_hpo_model_evaluation import (
+    run_post_hpo_evaluation,
+    compute_parameter_outcome_correlations,
+    generate_correlation_report,
+    compute_calibration_metrics,
+    compute_snr_diagnostics,
+    compute_backtest_metrics,
+)
 
 try:
     import xgboost as xgb
@@ -638,6 +654,9 @@ def compute_learnability_with_calibration(
     Returns:
         Tuple of (learnability_score, mean_auc, calibrated_probabilities, isotonic_regressor, fold_aucs_array, oof_probs_full)
     """
+    tprint_info(f"🔧 compute_learnability_with_calibration() called")
+    tprint_info(f"   model_complexity={model_complexity}, cv_splits={cv_splits}, X_shape={X.shape}")
+    
     from sklearn.model_selection import cross_val_score
     from sklearn.metrics import roc_auc_score
     from sklearn.linear_model import LogisticRegression
@@ -4588,6 +4607,9 @@ def generate_cross_features(
     Returns:
         DataFrame with cross-feature interactions (log-normalized where appropriate)
     """
+    tprint_info("🔧 generate_cross_features() called")
+    tprint_info(f"   base_features: {base_features.shape}, kalman_features: {kalman_features.shape}")
+    
     cross = pd.DataFrame(index=base_features.index)
     
     # Helper to safely get feature, returning zeros if not found
@@ -9915,12 +9937,88 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             best_candidate = max(candidate_pool, key=lambda x: x.get('edge', x.get('combined', 0)))
             best_edge = best_candidate.get('edge', 0.0)
 
+        # =========================================================================
+        # POST-HPO MULTI-MODEL EVALUATION (NEW)
+        # Train multiple ML models for SNR diagnostics and extensive backtesting
+        # =========================================================================
+        tprint_info("\n" + "=" * 70)
+        tprint_info("📊 POST-HPO MULTI-MODEL EVALUATION")
+        tprint_info("=" * 70)
+        
+        post_hpo_evaluation_results = {}
+        try:
+            run_post_hpo_models = config.get("run_post_hpo_models", True)
+            
+            if run_post_hpo_models and 'meta_features_diag' in dir() and meta_features_diag is not None:
+                tprint_info("🔬 Running post-HPO model evaluation...")
+                
+                # Prepare data for evaluation
+                labeled_mask_eval = binary_labels.notna()
+                X_eval = meta_features_diag.loc[labeled_mask_eval].fillna(0)
+                y_eval = binary_labels[labeled_mask_eval]
+                returns_eval = realized_returns[labeled_mask_eval]
+                
+                # Sample weights if available
+                weights_eval = None
+                if 'sample_weights' in dir() and sample_weights is not None:
+                    try:
+                        weights_eval = sample_weights[labeled_mask_eval.values]
+                    except Exception:
+                        weights_eval = None
+                
+                post_hpo_evaluation_results = run_post_hpo_evaluation(
+                    X=X_eval,
+                    y=y_eval,
+                    realized_returns=returns_eval,
+                    sample_weights=weights_eval,
+                    n_splits=config.get("cv_splits", 5),
+                    n_bags=config.get("n_bags", 10),
+                    probability_threshold=config.get("probability_threshold", 0.5),
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    direction=direction,
+                    save_artifacts=True,
+                )
+                
+                tprint_success("✅ Post-HPO model evaluation complete!")
+            else:
+                tprint_info("ℹ️ Skipping post-HPO model evaluation (disabled or no features available)")
+        except Exception as post_hpo_exc:
+            tprint_warning(f"⚠️ Post-HPO model evaluation failed: {post_hpo_exc}")
+            post_hpo_evaluation_results = {"error": str(post_hpo_exc)}
+
+        # =========================================================================
+        # PARAMETER-OUTCOME CORRELATION ANALYSIS
+        # =========================================================================
+        tprint_info("\n" + "=" * 70)
+        tprint_info("📈 PARAMETER-OUTCOME CORRELATION ANALYSIS")
+        tprint_info("=" * 70)
+        
+        correlation_report = ""
+        try:
+            if candidate_pool:
+                corr_df, pval_df = compute_parameter_outcome_correlations(candidate_pool)
+                
+                if not corr_df.empty:
+                    correlation_report = generate_correlation_report(corr_df, pval_df)
+                    tprint_info(correlation_report)
+                    
+                    # Save correlation matrix
+                    corr_csv_path = outcomes_dir / f"hpo_param_outcome_correlations_{symbol}_{timeframe}_{timestamp}.csv"
+                    corr_df.to_csv(corr_csv_path)
+                    tprint_success(f"💾 Saved correlation matrix to {corr_csv_path}")
+                else:
+                    tprint_warning("⚠️ No valid correlations computed")
+        except Exception as corr_exc:
+            tprint_warning(f"⚠️ Correlation analysis failed: {corr_exc}")
+
         metrics: Dict[str, Any] = {
             "best_score": best_score,
             "best_edge": best_edge,
             "best_params": best_params,
             "best_params_json": str(json_path) if json_path is not None else None,
             "round_metrics_csv": str(csv_path) if csv_path is not None else None,
+            "post_hpo_evaluation": post_hpo_evaluation_results.get("model_comparison", []),
             "recommended_diagnostics_path": diagnostics_path,
             "total_trials": all_trials_count,
             "stage_results": stage_results,

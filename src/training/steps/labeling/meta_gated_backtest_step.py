@@ -4,7 +4,7 @@ Meta-Gated Backtest Step.
 This step evaluates a meta-gated strategy using the same artifacts
 that will be used live:
 
-- Labeled data from FeatureGenerationMetaLabelingStep
+- Labeled data from FeatureGenerationMetaLabelingStep OR WeightedMetaLabelingStep
 - meta_gating_config.json produced by that step
 - Iso regressor artifact referenced in meta_gating_config
 
@@ -16,6 +16,8 @@ The backtest operates at the event level:
 
 This mirrors the live decision rule that gates entries on meta
 probabilities and isotonic expected returns.
+
+Supports both standard meta-labeling and weighted meta-labeling (sample-weighted HPO).
 """
 
 from __future__ import annotations
@@ -23,7 +25,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 import json
 import pickle
 
@@ -41,19 +43,129 @@ from src.utils.ml_common.get_specialist_models_outputs import get_specialist_mod
 from src.utils.ml_common.bagged_probability_aggregator import evaluate_prob_variants
 from src.training.steps.labeling.snr_diagnostics import run_full
 
+# Import post-HPO evaluation for enhanced metrics
+try:
+    from src.training.steps.labeling.post_hpo_model_evaluation import (
+        compute_calibration_metrics,
+        compute_snr_diagnostics,
+        compute_backtest_metrics,
+    )
+    POST_HPO_EVAL_AVAILABLE = True
+except ImportError:
+    POST_HPO_EVAL_AVAILABLE = False
+
 
 logger = logging.getLogger(__name__)
 
 
 class MetaGatedBacktestStep(BaseStep):
-    """Meta-gated event-level backtest using meta-labeling artifacts."""
+    """Meta-gated event-level backtest using meta-labeling artifacts.
+    
+    Supports both standard meta-labeling and weighted meta-labeling pipelines.
+    """
 
     def __init__(self, step_name: str = "meta_gated_backtest"):
+        tprint_info("🔧 MetaGatedBacktestStep.__init__() called")
         super().__init__(step_name)
         self.logger = system_logger.getChild("MetaGatedBacktest")
+    
+    def _load_weighted_hpo_artifacts(
+        self,
+        symbol: str,
+        timeframe: str,
+        direction: str = "long",
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Load artifacts from weighted meta-labeling HPO step.
+        
+        Args:
+            symbol: Trading symbol
+            timeframe: Timeframe string
+            direction: Trading direction
+        
+        Returns:
+            Dict with HPO artifacts or None if not found
+        """
+        tprint_info("🔧 _load_weighted_hpo_artifacts() called")
+        tprint_info(f"   symbol={symbol}, timeframe={timeframe}, direction={direction}")
+        
+        outcomes_dir = Path("outcomes")
+        if not outcomes_dir.exists():
+            tprint_warning("   ⚠️ outcomes/ directory not found")
+            return None
+        
+        # Look for weighted HPO best params
+        pattern = f"meta_labeling_hpo_best_params_{symbol}_{timeframe}_{direction}_*.json"
+        json_files = sorted(outcomes_dir.glob(pattern), key=lambda p: p.stat().st_mtime, reverse=True)
+        
+        if not json_files:
+            tprint_info("   ℹ️ No weighted HPO artifacts found")
+            return None
+        
+        latest_json = json_files[0]
+        tprint_info(f"   📂 Found weighted HPO artifacts: {latest_json.name}")
+        
+        try:
+            with open(latest_json, "r") as f:
+                hpo_data = json.load(f)
+            
+            tprint_success(f"   ✅ Loaded weighted HPO artifacts from {latest_json}")
+            return {
+                "best_params": hpo_data.get("best_params", {}),
+                "best_score": hpo_data.get("best_score", 0),
+                "best_edge": hpo_data.get("best_edge", 0),
+                "diagnostics": hpo_data.get("best_config_diagnostics", {}),
+                "gate_stats": hpo_data.get("gate_stats", {}),
+                "source_file": str(latest_json),
+            }
+        except Exception as e:
+            tprint_error(f"   ❌ Failed to load weighted HPO artifacts: {e}")
+            return None
+    
+    def _compute_enhanced_backtest_metrics(
+        self,
+        y_true: np.ndarray,
+        y_prob: np.ndarray,
+        returns: np.ndarray,
+        threshold: float = 0.5,
+    ) -> Dict[str, Any]:
+        """
+        Compute enhanced backtest metrics using post-HPO evaluation module.
+        
+        Args:
+            y_true: Binary labels
+            y_prob: Predicted probabilities
+            returns: Realized returns
+            threshold: Probability threshold
+        
+        Returns:
+            Dict with enhanced metrics
+        """
+        tprint_info("🔧 _compute_enhanced_backtest_metrics() called")
+        
+        if not POST_HPO_EVAL_AVAILABLE:
+            tprint_warning("   ⚠️ Post-HPO evaluation module not available")
+            return {}
+        
+        try:
+            calibration = compute_calibration_metrics(y_true, y_prob)
+            snr = compute_snr_diagnostics(y_true, y_prob, returns, threshold)
+            backtest = compute_backtest_metrics(y_prob, returns, threshold)
+            
+            tprint_success("   ✅ Enhanced metrics computed")
+            return {
+                "calibration": calibration,
+                "snr": snr,
+                "backtest": backtest,
+            }
+        except Exception as e:
+            tprint_error(f"   ❌ Failed to compute enhanced metrics: {e}")
+            return {}
 
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Run a meta-gated backtest using meta-labeling artifacts.
+
+        Supports both standard meta-labeling and weighted meta-labeling (sample-weighted HPO).
 
         Args:
             config: Configuration dictionary with at least:
@@ -61,20 +173,34 @@ class MetaGatedBacktestStep(BaseStep):
                 - exchange: Exchange name (e.g., 'binance')
                 - timeframe: Timeframe string (e.g., '15m')
                 - direction: 'long', 'short', or 'both'
+                - use_weighted_meta_labeling: If True, look for weighted HPO artifacts
 
         Returns:
             Dict with success flag, artifacts, metrics, and optional error.
         """
+        tprint_info("🔧 MetaGatedBacktestStep.execute() called")
+        
         symbol = config.get("symbol", "UNKNOWN")
         exchange = config.get("exchange", "binance")
         timeframe = config.get("timeframe", "15m")
         direction = config.get("direction", "long")
         execution_mode = config.get("execution_mode", "light")
+        use_weighted = config.get("use_weighted_meta_labeling", True)
 
         tprint(
             f"🧪 Starting meta-gated backtest for {symbol} {timeframe} {direction} (mode={execution_mode})",
             "INFO",
         )
+        tprint_info(f"   use_weighted_meta_labeling={use_weighted}")
+        
+        # Try to load weighted HPO artifacts if enabled
+        weighted_hpo_artifacts = None
+        if use_weighted:
+            weighted_hpo_artifacts = self._load_weighted_hpo_artifacts(symbol, timeframe, direction)
+            if weighted_hpo_artifacts:
+                tprint_success(f"   ✅ Using weighted meta-labeling artifacts (edge={weighted_hpo_artifacts.get('best_edge', 0):.4f})")
+            else:
+                tprint_info("   ℹ️ No weighted artifacts found, using standard meta-labeling")
 
         # Ensure context matches analyst training setup so artifacts line up
         self.set_context(
@@ -252,6 +378,8 @@ class MetaGatedBacktestStep(BaseStep):
             # ------------------------------------------------------------------
             # 2) Load meta_gating_config and iso regressor artifact
             # ------------------------------------------------------------------
+            tprint_info("📂 Loading meta_gating_config...")
+            
             va_dir = Path("versioned_artifacts") / f"{symbol}_{exchange}_{timeframe}_{direction}_analyst"
             gating_path = va_dir / "meta_gating_config.json"
 
@@ -272,6 +400,30 @@ class MetaGatedBacktestStep(BaseStep):
             prob_threshold = float(entry_cfg.get("prob_threshold", 0.6))
             use_expected_return = bool(entry_cfg.get("use_expected_return", False))
             er_threshold = float(entry_cfg.get("expected_return_threshold", 0.0))
+            
+            # Override with weighted HPO parameters if available
+            if weighted_hpo_artifacts:
+                tprint_info("   🔄 Applying weighted HPO parameters...")
+                best_params = weighted_hpo_artifacts.get("best_params", {})
+                
+                # Override probability threshold if specified in HPO params
+                if "prob_threshold" in best_params:
+                    prob_threshold = float(best_params["prob_threshold"])
+                    tprint_info(f"      prob_threshold overridden: {prob_threshold:.3f}")
+                
+                if "er_threshold" in best_params:
+                    er_threshold = float(best_params["er_threshold"])
+                    tprint_info(f"      er_threshold overridden: {er_threshold:.4f}")
+                
+                # Log weighted HPO diagnostics if available
+                diagnostics = weighted_hpo_artifacts.get("diagnostics", {})
+                if diagnostics:
+                    tprint_info("   📊 Weighted HPO Diagnostics Summary:")
+                    for key in ["auc_full", "auc_filtered", "best_fold_auc", "brier_score"]:
+                        if key in diagnostics.get("filtering_diagnostics", {}):
+                            tprint_info(f"      {key}: {diagnostics['filtering_diagnostics'][key]}")
+            
+            tprint_info(f"   Final gating config: prob_thr={prob_threshold:.3f}, er_thr={er_threshold:.4f}")
 
             iso_rel_path = calibration_cfg.get("iso_regressor_artifact")
             iso_model = None
@@ -878,11 +1030,12 @@ class MetaGatedBacktestStep(BaseStep):
                     if avg_trades_per_day_diag is not None:
                         f.write(f"- Approximate average trades per day (diagnostics gate): {avg_trades_per_day_diag:.2f}\n")
 
-            tprint_success(f"\x0f Meta-gated backtest report saved to: {filepath}")
+            tprint_success(f"📝 Meta-gated backtest report saved to: {filepath}")
 
             # ------------------------------------------------------------------
             # 5) Run SNR Diagnostics
             # ------------------------------------------------------------------
+            tprint_info("🔧 Running SNR Diagnostics...")
             try:
                 tprint("🔬 Running SNR Diagnostics...", "INFO")
                 run_full(
@@ -899,6 +1052,44 @@ class MetaGatedBacktestStep(BaseStep):
             except Exception as e_snr:
                 tprint_error(f"⚠️ SNR Diagnostics failed: {e_snr}")
 
+            # ------------------------------------------------------------------
+            # 6) Enhanced Backtest Metrics (if weighted meta-labeling)
+            # ------------------------------------------------------------------
+            enhanced_metrics = {}
+            if weighted_hpo_artifacts and POST_HPO_EVAL_AVAILABLE:
+                tprint_info("📊 Computing enhanced backtest metrics (weighted meta-labeling)...")
+                
+                # Get binary labels for enhanced metrics
+                try:
+                    binary_labels = df.get("binary_label", pd.Series(index=df.index, dtype=float))
+                    y_true = binary_labels.loc[eval_mask].values
+                    y_prob = event_probs.values
+                    returns_arr = event_returns.values
+                    
+                    enhanced_metrics = self._compute_enhanced_backtest_metrics(
+                        y_true=y_true,
+                        y_prob=y_prob,
+                        returns=returns_arr,
+                        threshold=prob_threshold,
+                    )
+                    
+                    if enhanced_metrics:
+                        tprint_success("✅ Enhanced metrics computed successfully")
+                        
+                        # Log key enhanced metrics
+                        if "snr" in enhanced_metrics:
+                            snr_data = enhanced_metrics["snr"]
+                            tprint_info(f"   SNR: {snr_data.get('snr_positive', 'N/A'):.4f}")
+                            tprint_info(f"   IC: {snr_data.get('information_coefficient', 'N/A'):.4f}")
+                        
+                        if "calibration" in enhanced_metrics:
+                            calib_data = enhanced_metrics["calibration"]
+                            tprint_info(f"   ECE: {calib_data.get('ece', 'N/A'):.4f}")
+                            tprint_info(f"   Brier: {calib_data.get('brier', 'N/A'):.4f}")
+                except Exception as enh_exc:
+                    tprint_warning(f"⚠️ Enhanced metrics failed: {enh_exc}")
+
+            tprint_info("📊 Assembling final metrics...")
             metrics: Dict[str, Any] = {
                 "n_events": n_events,
                 "n_events_total": n_events_total,
@@ -928,7 +1119,17 @@ class MetaGatedBacktestStep(BaseStep):
                 "expected_return_threshold": er_threshold,
                 "forward_walk_windows": forward_walk_windows_metrics,
                 "permutation_results": permutation_results,
+                # Enhanced metrics from post-HPO evaluation
+                "enhanced_calibration": enhanced_metrics.get("calibration", {}),
+                "enhanced_snr": enhanced_metrics.get("snr", {}),
+                "enhanced_backtest": enhanced_metrics.get("backtest", {}),
+                # Weighted HPO info
+                "weighted_hpo_used": weighted_hpo_artifacts is not None,
+                "weighted_hpo_edge": weighted_hpo_artifacts.get("best_edge", 0) if weighted_hpo_artifacts else None,
             }
+            
+            tprint_success(f"✅ MetaGatedBacktestStep.execute() completed successfully")
+            tprint_info(f"   Trades: {n_trades}, Sharpe: {sharpe_trade:.3f}, Mean Return: {mean_ret:.4%}")
 
             return {
                 "success": True,

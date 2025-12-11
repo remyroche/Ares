@@ -283,6 +283,9 @@ def train_weighted_bagged_lgbm(
     Returns:
         Tuple of (OOF predictions DataFrame, trained models list)
     """
+    tprint_info("🔧 train_weighted_bagged_lgbm() called")
+    tprint_info(f"   X_shape={X.shape}, n_splits={n_splits}, n_bags={n_bags}")
+    
     if base_params is None:
         base_params = {
             'n_estimators': 200,

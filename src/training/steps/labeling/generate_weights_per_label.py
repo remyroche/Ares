@@ -10,13 +10,27 @@ This module provides functions to compute sample weights based on:
 
 These weights are used in the meta_labeling_hpo_sample_weighted step
 to improve model training by emphasizing high-quality samples.
+
+Includes comprehensive reporting for weight diagnostics and parameter-outcome
+correlation analysis.
 """
 
 import numpy as np
 import pandas as pd
-from scipy.stats import spearmanr
+from scipy.stats import spearmanr, pearsonr
 import optuna
-from typing import Dict, Any, Optional, Union
+from typing import Dict, Any, Optional, Union, List, Tuple
+
+try:
+    from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_warning, tprint_error
+except ImportError:
+    # Fallback if tprint not available
+    def tprint(msg, level="INFO"):
+        print(f"[{level}] {msg}")
+    tprint_info = lambda msg: print(f"[INFO] {msg}")
+    tprint_success = lambda msg: print(f"[SUCCESS] {msg}")
+    tprint_warning = lambda msg: print(f"[WARNING] {msg}")
+    tprint_error = lambda msg: print(f"[ERROR] {msg}")
 
 
 # -------------------------------------------------------------------------
@@ -462,18 +476,24 @@ def run_layer1_optimization(
     Returns:
         Dict of best weighting parameters
     """
-    print("Pre-calculating Layer 1 metrics...")
+    tprint_info("🔧 run_layer1_optimization() called")
+    tprint_info(f"   n_trials={n_trials}, horizon={horizon}, n_events={len(t_events)}")
+    
+    tprint_info("📊 Pre-calculating Layer 1 metrics...")
     
     # 1. Horizon Consistency (Full History)
+    tprint_info("   Computing horizon consistency...")
     consistency_full = compute_horizon_consistency(df['close'], horizon=horizon)
 
     # 2. Volatility Proxy (Full History)
     # Fix: Infinite Volatility (will be handled in generator, but cleaner here too)
+    tprint_info("   Computing volatility proxy...")
     volatility_full = df['close'].pct_change().rolling(20, min_periods=1).std().fillna(0)
     
     # 3. Uniqueness (Events)
     # Create t_events as a Series with end times for uniqueness calculation
     # If t_events is just an index, create end times as index + horizon bars
+    tprint_info("   Computing uniqueness scores...")
     if isinstance(t_events, pd.Series):
         t_events_series = t_events
     else:
@@ -491,6 +511,7 @@ def run_layer1_optimization(
     
     # Feature 3: Fix "Array Shape" Crash
     # Reindex full-history metrics to t_events
+    tprint_info("   Aligning metrics to event index...")
     try:
         if isinstance(t_events, pd.Series):
             event_index = t_events.index
@@ -508,7 +529,7 @@ def run_layer1_optimization(
         returns_values = returns.values if hasattr(returns, 'values') else np.asarray(returns)
 
     except Exception as e:
-        print(f"Error reindexing metrics: {e}")
+        tprint_error(f"   ❌ Error reindexing metrics: {e}")
         # Fallback if t_events are not in index
         raise e
     
@@ -518,7 +539,10 @@ def run_layer1_optimization(
         'uniqueness': uniqueness_aligned
     }
     
+    tprint_info(f"   ✅ Pre-calculation complete. Consistency shape: {consistency_aligned.shape}")
+    
     # 4. Run Optimization
+    tprint_info(f"🚀 Starting Optuna optimization ({n_trials} trials)...")
     study = optuna.create_study(direction="maximize")
     study.optimize(
         lambda trial: objective_layer_1(
@@ -532,7 +556,8 @@ def run_layer1_optimization(
         show_progress_bar=True,
     )
     
-    print("Best Layer 1 Params:", study.best_params)
+    tprint_success(f"✅ Optimization complete! Best score: {study.best_value:.6f}")
+    tprint_info(f"   Best Layer 1 Params: {study.best_params}")
     
     # Extract only the weight generation params (exclude threshold params)
     weight_params = {
@@ -541,3 +566,193 @@ def run_layer1_optimization(
     }
     
     return weight_params
+
+
+# -------------------------------------------------------------------------
+# 6. Comprehensive Reporting Functions
+# -------------------------------------------------------------------------
+def generate_weight_diagnostics_report(
+    weights: np.ndarray,
+    returns: np.ndarray,
+    consistency_scores: np.ndarray,
+    vol_proxy: np.ndarray,
+    params: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Generate comprehensive diagnostics report for sample weights.
+    
+    Args:
+        weights: Sample weights array
+        returns: Returns array
+        consistency_scores: Trend consistency scores
+        vol_proxy: Volatility proxy
+        params: Optional parameters used to generate weights
+    
+    Returns:
+        Dict with diagnostic metrics and statistics
+    """
+    tprint_info("📊 generate_weight_diagnostics_report() called")
+    
+    # Basic statistics
+    n_samples = len(weights)
+    
+    # Weight distribution stats
+    weight_stats = {
+        "n_samples": n_samples,
+        "mean": float(np.mean(weights)),
+        "std": float(np.std(weights)),
+        "min": float(np.min(weights)),
+        "max": float(np.max(weights)),
+        "q25": float(np.percentile(weights, 25)),
+        "q50": float(np.percentile(weights, 50)),
+        "q75": float(np.percentile(weights, 75)),
+        "q95": float(np.percentile(weights, 95)),
+    }
+    
+    # Effective Sample Size (ESS)
+    ess = (np.sum(weights) ** 2) / (np.sum(weights ** 2) + 1e-12)
+    ess_ratio = ess / n_samples
+    
+    # Information Coefficient (IC): correlation between weights and magnitude
+    try:
+        ic = magnitude_aware_spearman(weights, returns)
+    except Exception:
+        ic = np.nan
+    
+    # Correlation with different factors
+    correlations = {}
+    try:
+        correlations["weight_vs_abs_return"], _ = spearmanr(weights, np.abs(returns))
+    except Exception:
+        correlations["weight_vs_abs_return"] = np.nan
+    
+    try:
+        correlations["weight_vs_consistency"], _ = spearmanr(weights, consistency_scores)
+    except Exception:
+        correlations["weight_vs_consistency"] = np.nan
+    
+    try:
+        correlations["weight_vs_volatility"], _ = spearmanr(weights, vol_proxy)
+    except Exception:
+        correlations["weight_vs_volatility"] = np.nan
+    
+    # Weighted vs unweighted return comparison
+    norm_w = weights / (np.sum(weights) + 1e-12)
+    weighted_mean_return = np.sum(norm_w * returns)
+    unweighted_mean_return = np.mean(returns)
+    
+    # Weighted consistency
+    weighted_consistency = np.sum(norm_w * consistency_scores)
+    
+    diagnostics = {
+        "weight_statistics": weight_stats,
+        "effective_sample_size": float(ess),
+        "ess_ratio": float(ess_ratio),
+        "information_coefficient": float(ic) if np.isfinite(ic) else None,
+        "correlations": correlations,
+        "weighted_mean_return": float(weighted_mean_return),
+        "unweighted_mean_return": float(unweighted_mean_return),
+        "return_improvement": float(weighted_mean_return - unweighted_mean_return),
+        "weighted_consistency": float(weighted_consistency),
+        "params_used": params,
+    }
+    
+    tprint_success(f"   ✅ Diagnostics: ESS={ess:.1f} ({ess_ratio:.2%}), IC={ic:.4f}")
+    
+    return diagnostics
+
+
+def generate_weight_correlation_matrix(
+    candidate_results: List[Dict[str, Any]],
+) -> Tuple[pd.DataFrame, str]:
+    """
+    Generate correlation matrix between weight parameters and outcomes.
+    
+    Args:
+        candidate_results: List of results from different weight parameter configs
+    
+    Returns:
+        Tuple of (correlation_matrix DataFrame, formatted report string)
+    """
+    tprint_info("📈 generate_weight_correlation_matrix() called")
+    
+    if not candidate_results:
+        tprint_warning("   ⚠️ Empty candidate results")
+        return pd.DataFrame(), "No candidate results to analyze."
+    
+    # Extract parameter and outcome columns
+    data_rows = []
+    for c in candidate_results:
+        row = {}
+        
+        # Extract parameters
+        params = c.get('params', {})
+        if isinstance(params, dict):
+            for k, v in params.items():
+                try:
+                    row[f"param_{k}"] = float(v)
+                except (ValueError, TypeError):
+                    continue
+        
+        # Extract outcomes
+        for k in ['score', 'ic', 'ess_ratio', 'weighted_consistency', 'return_improvement']:
+            if k in c:
+                try:
+                    row[f"outcome_{k}"] = float(c[k])
+                except (ValueError, TypeError):
+                    continue
+        
+        if row:
+            data_rows.append(row)
+    
+    if not data_rows:
+        return pd.DataFrame(), "No valid data for correlation analysis."
+    
+    df = pd.DataFrame(data_rows)
+    
+    # Compute correlation matrix
+    param_cols = [c for c in df.columns if c.startswith('param_')]
+    outcome_cols = [c for c in df.columns if c.startswith('outcome_')]
+    
+    if not param_cols or not outcome_cols:
+        return pd.DataFrame(), "No param/outcome columns for correlation."
+    
+    # Cross-correlation: params vs outcomes
+    corr_data = {}
+    for param in param_cols:
+        param_name = param.replace('param_', '')
+        corr_data[param_name] = {}
+        for outcome in outcome_cols:
+            outcome_name = outcome.replace('outcome_', '')
+            try:
+                corr, _ = spearmanr(df[param], df[outcome])
+                corr_data[param_name][outcome_name] = corr
+            except Exception:
+                corr_data[param_name][outcome_name] = np.nan
+    
+    corr_df = pd.DataFrame(corr_data).T
+    
+    # Generate report
+    report_lines = []
+    report_lines.append("=" * 60)
+    report_lines.append("WEIGHT PARAMETER-OUTCOME CORRELATION MATRIX")
+    report_lines.append("=" * 60)
+    report_lines.append("")
+    report_lines.append(corr_df.to_string())
+    report_lines.append("")
+    report_lines.append("-" * 40)
+    report_lines.append("KEY FINDINGS:")
+    report_lines.append("-" * 40)
+    
+    # Find strongest correlations
+    if 'score' in corr_df.columns:
+        score_corrs = corr_df['score'].dropna().sort_values(key=abs, ascending=False)
+        report_lines.append("\nStrongest correlations with SCORE:")
+        for param, corr in score_corrs.head(5).items():
+            direction = "↑" if corr > 0 else "↓"
+            report_lines.append(f"  {param}: {corr:+.3f} {direction}")
+    
+    report = "\n".join(report_lines)
+    tprint_success(f"   ✅ Correlation matrix computed: {len(param_cols)} params × {len(outcome_cols)} outcomes")
+    
+    return corr_df, report

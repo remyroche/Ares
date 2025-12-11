@@ -11803,3 +11803,7 @@ class MetaWeightedLabelingStep(BaseStep):
                 'error': error_msg,
                 'elapsed_seconds': elapsed_time
             }
+
+# Register the step
+from src.training.steps.base_step import step_registry
+step_registry.register("meta_weighted_labeling_step", MetaWeightedLabelingStep)

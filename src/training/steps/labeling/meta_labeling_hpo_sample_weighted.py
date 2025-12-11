@@ -8,6 +8,12 @@ It is intentionally decoupled from standard training runs. Invoke it
 explicitly via the launcher with an appropriate config. A simple config
 flag `enable_labeling_hpo` can be used to disable the optimization and
 exit early if desired.
+
+Post-HPO Model Evaluation (NEW):
+After HPO completes, trains multiple ML models for SNR diagnostics:
+1. Simple LGBM (baseline)
+2. Logistic Regression (linear benchmark)
+3. LGBM Bagged with Diversity Defense
 """
 
 from __future__ import annotations
@@ -26,8 +32,18 @@ from sklearn.isotonic import IsotonicRegression
 from sklearn.model_selection import TimeSeriesSplit, cross_val_predict
 from sklearn.metrics import roc_auc_score
 from sklearn.inspection import permutation_importance
-from scipy.stats import spearmanr
+from scipy.stats import spearmanr, pearsonr
 import lightgbm as lgb
+
+# Post-HPO evaluation imports
+from src.training.steps.labeling.post_hpo_model_evaluation import (
+    run_post_hpo_evaluation,
+    compute_parameter_outcome_correlations,
+    generate_correlation_report,
+    compute_calibration_metrics,
+    compute_snr_diagnostics,
+    compute_backtest_metrics,
+)
 
 try:
     import xgboost as xgb
@@ -638,6 +654,9 @@ def compute_learnability_with_calibration(
     Returns:
         Tuple of (learnability_score, mean_auc, calibrated_probabilities, isotonic_regressor, fold_aucs_array, oof_probs_full)
     """
+    tprint_info(f"🔧 compute_learnability_with_calibration() called")
+    tprint_info(f"   model_complexity={model_complexity}, cv_splits={cv_splits}, X_shape={X.shape}")
+    
     from sklearn.model_selection import cross_val_score
     from sklearn.metrics import roc_auc_score
     from sklearn.linear_model import LogisticRegression
@@ -3152,20 +3171,15 @@ def _log_normalize(arr: np.ndarray, epsilon: float = 1e-9) -> np.ndarray:
 
 
 # ============================================================================
-# FEATURE QUALITY & SELECTION FUNCTIONS
+# FEATURE QUALITY & SELECTION FUNCTIONS (De Prado-Inspired)
 # ============================================================================
 
-def calculate_feature_quality(series: np.ndarray) -> float:
+def _base_quality_score(series: np.ndarray) -> float:
     """
-    Unsupervised Signal-to-Noise Ratio for feature quality assessment.
+    Base quality score calculation engine.
     
-    Higher Score = Better Feature (high signal, low noise).
-    
-    Quality = Signal Power (Variance) / Noise Power (Smoothness Error)
-    
-    Logic:
-    - We want features that move a lot (High Variance)
-    - But represent clean trends (Low Wiggle/Smoothness Error)
+    High Stability (low std of score), High Signal (mean), Low Fat Tails (kurtosis).
+    Uses Sharpe-like ratio penalized by kurtosis for robustness.
     
     Args:
         series: Feature values as numpy array
@@ -3173,39 +3187,106 @@ def calculate_feature_quality(series: np.ndarray) -> float:
     Returns:
         Quality score (higher = better). Returns 0.0 for flat/useless features.
     """
-    # Handle NaN/Inf
-    clean_series = series[np.isfinite(series)]
-    if len(clean_series) < 10:
+    from scipy.stats import kurtosis as scipy_kurtosis
+    
+    # 1. Handle constant or empty data
+    if len(series) < 10:
         return 0.0
     
-    # 1. Signal Power (Standard Deviation)
-    signal_power = np.std(clean_series)
+    sigma = np.std(series)
+    if sigma < 1e-9:
+        return 0.0
     
-    if signal_power < 1e-12:
-        return 0.0  # Flatline feature, useless
+    # 2. Calculate components
+    mu = np.mean(series)
     
-    # 2. Noise Estimate (Mean Squared Second Difference)
-    # "How jagged is the curve?"
-    second_diff = np.diff(clean_series, n=2)
-    noise_power = np.mean(second_diff**2)
+    # Fisher kurtosis: normal distribution = 0.0
+    try:
+        kurt = scipy_kurtosis(series, fisher=True, nan_policy='omit')
+        if not np.isfinite(kurt):
+            kurt = 0.0
+    except Exception:
+        kurt = 0.0
     
-    # Avoid division by zero
-    if noise_power < 1e-12:
-        # Very smooth feature - high quality
-        return signal_power * 1e6  # Large but finite
+    # 3. Formulate Score
+    # Signal-to-noise ratio penalized by fat tails
+    signal_to_noise = np.abs(mu / sigma)
     
-    # Quality = Signal / Noise
-    return float(signal_power / noise_power)
+    # Penalty: high kurtosis (fat tails) = unstable feature
+    # (1 + abs(kurt)) ensures strictly positive denominator
+    penalty = 1.0 + np.abs(kurt)
+    
+    return float(signal_to_noise / penalty)
 
 
-def calculate_all_feature_qualities(df_features: pd.DataFrame) -> Dict[str, float]:
+def calculate_time_robust_quality(series: np.ndarray, chunk_size: int = 2000) -> float:
     """
-    Calculate Signal-to-Noise quality scores for all feature columns.
+    Calculate Quality Score in chunks and return the WORST-CASE (10th percentile).
     
-    This is a lightweight, unsupervised operation that runs in milliseconds.
+    This prevents features that are only good in specific market regimes from
+    dominating the selection. A feature must be consistently useful across time.
+    
+    Args:
+        series: Feature values as numpy array
+        chunk_size: Size of each evaluation chunk (default 2000 bars ~ 20 days at 15m)
+    
+    Returns:
+        Conservative (10th percentile) quality score across time chunks
+    """
+    series = np.nan_to_num(series, nan=0.0, posinf=0.0, neginf=0.0)
+    n = len(series)
+    
+    # Fallback for short series: just calculate global score
+    if n < chunk_size:
+        return _base_quality_score(series)
+    
+    scores = []
+    
+    # Rolling/Chunked Evaluation
+    for i in range(0, n, chunk_size):
+        chunk = series[i : i + chunk_size]
+        
+        # Skip small incomplete chunks at the end
+        if len(chunk) < chunk_size // 2:
+            continue
+        
+        q_score = _base_quality_score(chunk)
+        scores.append(q_score)
+    
+    if not scores:
+        return _base_quality_score(series)
+    
+    # Return 10th Percentile (Conservative worst-case)
+    return float(np.percentile(scores, 10))
+
+
+def calculate_feature_quality(series: np.ndarray) -> float:
+    """
+    Calculate time-robust quality score for a feature (unsupervised).
+    
+    This is a wrapper that uses the time-robust chunked evaluation by default.
+    
+    Args:
+        series: Feature values as numpy array
+    
+    Returns:
+        Quality score (higher = better). Returns 0.0 for flat/useless features.
+    """
+    return calculate_time_robust_quality(series)
+
+
+def calculate_all_feature_qualities(
+    df_features: pd.DataFrame,
+    use_time_robust: bool = True,
+    chunk_size: int = 2000,
+) -> Dict[str, float]:
+    """
+    Calculate quality scores for all feature columns.
     
     Args:
         df_features: DataFrame with feature columns
+        use_time_robust: Whether to use time-robust chunked evaluation (default True)
+        chunk_size: Chunk size for time-robust evaluation
     
     Returns:
         Dict mapping column name to quality score
@@ -3213,11 +3294,245 @@ def calculate_all_feature_qualities(df_features: pd.DataFrame) -> Dict[str, floa
     quality_map = {}
     for col in df_features.columns:
         try:
-            quality_map[col] = calculate_feature_quality(df_features[col].values)
+            if use_time_robust:
+                quality_map[col] = calculate_time_robust_quality(
+                    df_features[col].values, chunk_size=chunk_size
+                )
+            else:
+                quality_map[col] = _base_quality_score(df_features[col].values)
         except Exception:
             quality_map[col] = 0.0
     return quality_map
 
+
+# ============================================================================
+# LGBM MAGNITUDE SWEEP (Structure Detection)
+# ============================================================================
+
+def lgbm_magnitude_sweep(
+    df_features: pd.DataFrame,
+    market_data: pd.DataFrame,
+    lookahead: int = 4,
+    max_features: int = 200,
+    importance_threshold: float = 1.0,
+    price_col: str = 'close',
+) -> pd.DataFrame:
+    """
+    Use 'Future Volatility/Magnitude' as a proxy target to prune features
+    that contain no structural market information.
+    
+    This is a CHEAP unsupervised filter that removes noise features before
+    the expensive hierarchical clustering step.
+    
+    Target = Absolute value of the next N-bar return (Volatility Proxy).
+    
+    Args:
+        df_features: DataFrame with feature columns
+        market_data: Market data with price column
+        lookahead: Number of bars to look ahead for magnitude (default 4)
+        max_features: Maximum features to keep (default 200)
+        importance_threshold: Minimum importance % to keep (default 1.0%)
+        price_col: Column name for price data
+    
+    Returns:
+        DataFrame with features that have structural market information
+    """
+    import lightgbm as lgb
+    
+    tprint_info(f"🔬 LGBM Magnitude Sweep: {len(df_features.columns)} features, lookahead={lookahead} bars")
+    
+    # 1. Create Proxy Target: Absolute Future Return (Magnitude)
+    if price_col not in market_data.columns:
+        tprint_warning(f"   ⚠️ Price column '{price_col}' not found, skipping magnitude sweep")
+        return df_features
+    
+    # Log returns for stability
+    log_ret = np.log(market_data[price_col] / market_data[price_col].shift(1))
+    
+    # Target: The MAGNITUDE of the move 'lookahead' bars into the future
+    proxy_target = np.abs(log_ret.shift(-lookahead))
+    
+    # Align indices
+    common_idx = df_features.index.intersection(proxy_target.dropna().index)
+    if len(common_idx) < 500:
+        tprint_warning(f"   ⚠️ Insufficient data for magnitude sweep ({len(common_idx)} rows)")
+        return df_features
+    
+    X = df_features.loc[common_idx].fillna(0)
+    y = proxy_target.loc[common_idx]
+    
+    # Remove any remaining NaN/Inf
+    valid_mask = np.isfinite(y.values)
+    X = X.loc[valid_mask]
+    y = y.loc[valid_mask]
+    
+    if len(X) < 500:
+        tprint_warning(f"   ⚠️ Insufficient valid data for magnitude sweep")
+        return df_features
+    
+    tprint_info(f"   Training shadow LGBM on {X.shape[1]} features ({len(X)} samples)...")
+    
+    # 2. Train Fast LGBM (L1 regression for robustness)
+    dtrain = lgb.Dataset(X, label=y, free_raw_data=False)
+    
+    params = {
+        'objective': 'regression_l1',  # Mean Absolute Error - robust to spikes
+        'boosting': 'gbdt',
+        'verbosity': -1,
+        'num_leaves': 15,             # Very simple trees
+        'max_depth': 3,               # Prevent overfitting
+        'feature_fraction': 0.7,      # Force trees to look at different features
+        'min_data_in_leaf': 100,
+        'learning_rate': 0.1,
+        'seed': 42,
+    }
+    
+    # Train heavily regularized model
+    model = lgb.train(params, dtrain, num_boost_round=150)
+    
+    # 3. Get Feature Importance
+    importance = model.feature_importance(importance_type='gain')
+    feature_names = np.array(model.feature_name())
+    
+    # Handle case where no features have importance
+    if importance.max() < 1e-9:
+        tprint_warning("   ⚠️ No features showed importance, keeping all")
+        return df_features
+    
+    # Normalize importance (0-100)
+    importance_normalized = 100 * (importance / importance.max())
+    
+    # 4. Filter: Keep features above threshold AND limit to max_features
+    # First filter by threshold
+    keep_mask = importance_normalized >= importance_threshold
+    useful_feats = feature_names[keep_mask]
+    useful_importance = importance_normalized[keep_mask]
+    
+    # Then limit to top max_features by importance
+    if len(useful_feats) > max_features:
+        top_indices = np.argsort(useful_importance)[::-1][:max_features]
+        useful_feats = useful_feats[top_indices]
+    
+    dropped_count = len(feature_names) - len(useful_feats)
+    
+    tprint_info(f"   → Dropped {dropped_count} features that failed to predict market magnitude")
+    tprint_info(f"   → Kept {len(useful_feats)} structure-bearing features")
+    
+    # Return only useful features (preserve original column order where possible)
+    useful_feats_set = set(useful_feats)
+    ordered_feats = [c for c in df_features.columns if c in useful_feats_set]
+    
+    return df_features[ordered_feats]
+
+
+# ============================================================================
+# HIERARCHICAL FEATURE SELECTION (De Prado's Method)
+# ============================================================================
+
+def select_features_hierarchical(
+    df_features: pd.DataFrame,
+    quality_scores: Dict[str, float],
+    target_n: int = 70,
+) -> pd.DataFrame:
+    """
+    De Prado's Hierarchical Feature Selection.
+    
+    Guarantees diversity by picking BEST-IN-CLASS from N DISTINCT clusters.
+    This prevents concept dominance where correlated features crowd out
+    diverse information sources.
+    
+    Algorithm:
+    1. Compute correlation matrix (Spearman for robustness)
+    2. Convert to distance: d = sqrt(2(1-|rho|))
+    3. Hierarchical clustering (Ward's method)
+    4. Cut tree into target_n clusters
+    5. Select highest-quality feature from each cluster
+    
+    Args:
+        df_features: DataFrame with feature columns
+        quality_scores: Dict mapping column name to quality score
+        target_n: Target number of features (= number of clusters)
+    
+    Returns:
+        DataFrame with target_n orthogonal features
+    """
+    from scipy.cluster import hierarchy
+    from scipy.spatial.distance import squareform
+    
+    # 0. Safety: Drop constant columns to prevent NaN correlations
+    df_clean = df_features.loc[:, (df_features != df_features.iloc[0]).any()].copy()
+    
+    # Also drop columns with very low std
+    col_stds = df_clean.std()
+    valid_cols = col_stds[col_stds > 1e-9].index.tolist()
+    df_clean = df_clean[valid_cols]
+    
+    n_features = len(df_clean.columns)
+    
+    if n_features == 0:
+        tprint_warning("⚠️ No valid features for hierarchical selection")
+        return df_features.iloc[:, :min(target_n, len(df_features.columns))]
+    
+    if n_features <= target_n:
+        tprint_info(f"   Hierarchical: Only {n_features} features, keeping all")
+        return df_clean
+    
+    tprint_info(f"   Hierarchical clustering: {n_features} → {target_n} features")
+    
+    # 1. Calculate Correlation Matrix (Spearman for non-linear relationships)
+    corr_matrix = df_clean.corr(method='spearman').fillna(0)
+    
+    # 2. Convert to Distance: d = sqrt(2(1-|rho|))
+    # Clip to avoid negative values from float precision errors
+    dist_matrix = np.sqrt(np.clip(2 * (1 - np.abs(corr_matrix.values)), 0, None))
+    
+    # Ensure diagonal is exactly 0
+    np.fill_diagonal(dist_matrix, 0)
+    
+    # Convert to condensed form for scipy
+    try:
+        dist_array = squareform(dist_matrix, checks=False)
+    except Exception as e:
+        tprint_warning(f"   ⚠️ Distance matrix conversion failed: {e}")
+        # Fallback to greedy selection
+        sorted_cols = sorted(df_clean.columns, key=lambda c: quality_scores.get(c, 0.0), reverse=True)
+        return df_clean[sorted_cols[:target_n]]
+    
+    # 3. Hierarchical Clustering (Ward's method for balanced clusters)
+    try:
+        linkage_matrix = hierarchy.linkage(dist_array, method='ward')
+    except Exception as e:
+        tprint_warning(f"   ⚠️ Hierarchical clustering failed: {e}")
+        sorted_cols = sorted(df_clean.columns, key=lambda c: quality_scores.get(c, 0.0), reverse=True)
+        return df_clean[sorted_cols[:target_n]]
+    
+    # 4. Form Clusters (cut tree into target_n clusters)
+    cluster_labels = hierarchy.fcluster(linkage_matrix, t=target_n, criterion='maxclust')
+    
+    # 5. Select Best Feature per Cluster
+    selected_feats = []
+    feature_names = df_clean.columns.tolist()
+    
+    for cluster_id in range(1, target_n + 1):
+        # Get all features in this cluster
+        members = [feature_names[i] for i in range(len(feature_names)) 
+                   if cluster_labels[i] == cluster_id]
+        
+        if not members:
+            continue
+        
+        # Pick the one with highest Quality Score
+        best_in_cluster = max(members, key=lambda x: quality_scores.get(x, 0.0))
+        selected_feats.append(best_in_cluster)
+    
+    tprint_info(f"   → Selected {len(selected_feats)} orthogonal features from {target_n} clusters")
+    
+    return df_clean[selected_feats]
+
+
+# ============================================================================
+# LEGACY GREEDY SELECTION (Kept for comparison/fallback)
+# ============================================================================
 
 def reduce_features_by_correlation(
     df_features: pd.DataFrame,
@@ -3227,38 +3542,13 @@ def reduce_features_by_correlation(
     min_quality_threshold: float = 0.0,
 ) -> pd.DataFrame:
     """
-    Reduce features by removing correlated ones, keeping higher quality features.
+    [LEGACY] Greedy correlation-based feature reduction.
     
-    RELATIONSHIP BETWEEN CORRELATION THRESHOLD AND QUALITY SCORE:
-    ==============================================================
+    WARNING: This method suffers from "Concept Dominance" where features from
+    the same family (e.g., multiple RSI variants) can crowd out diverse features.
     
-    These two parameters serve DIFFERENT, COMPLEMENTARY purposes:
-    
-    1. CORRELATION THRESHOLD (default 0.85):
-       - Determines WHEN features are "redundant"
-       - If |corr(A, B)| > threshold, they carry similar information
-       - At least one must be eliminated to reduce multicollinearity
-       - 0.85 is standard for ML - higher values keep more correlated features
-       
-    2. QUALITY SCORE (Signal/Noise Ratio):
-       - Determines WHICH feature to KEEP when correlated pair is found
-       - Quality = std(series) / mean(second_derivative^2)
-       - High quality = lots of variance (signal) with smooth trends (low noise)
-       - This is NOT a threshold - it's a RANKING for tie-breaking
-       
-    ALGORITHM:
-    ----------
-    1. Sort all features by quality score (highest first)
-    2. For each feature (in quality order):
-       - Check correlation with ALL already-selected features
-       - If corr > threshold with ANY selected: SKIP (inferior duplicate)
-       - Otherwise: ADD to selection
-    3. Continue until target_n features selected
-    
-    KEY INSIGHT: We iterate in quality order, so the FIRST feature 
-    encountered always wins. If RSI_Short and RSI_Medium correlate at 0.90,
-    the one with higher quality score gets selected first, and the other
-    is automatically rejected when we reach it.
+    For production use, prefer select_features_hierarchical() which guarantees
+    diversity through clustering.
     
     Args:
         df_features: DataFrame with all features
@@ -3268,7 +3558,7 @@ def reduce_features_by_correlation(
         min_quality_threshold: Minimum quality score to consider (hard cutoff)
     
     Returns:
-        DataFrame with reduced feature set (target_n columns)
+        DataFrame with reduced feature set
     """
     # 1. Filter out low-quality features first
     valid_cols = [
@@ -3306,7 +3596,6 @@ def reduce_features_by_correlation(
     
     # If we don't have enough features, lower correlation threshold
     if len(selected_features) < target_n:
-        # Second pass with relaxed threshold
         remaining_cols = [c for c in sorted_cols if c not in selected_features]
         relaxed_threshold = min(0.95, correlation_threshold + 0.1)
         
@@ -3324,7 +3613,7 @@ def reduce_features_by_correlation(
                 selected_features.append(col)
     
     tprint_info(
-        f"   Feature reduction: {len(df_features.columns)} → {len(selected_features)} "
+        f"   Greedy reduction: {len(df_features.columns)} → {len(selected_features)} "
         f"(target={target_n}, corr_threshold={correlation_threshold})"
     )
     
@@ -3591,6 +3880,73 @@ def get_feature_inventory() -> Dict[str, List[str]]:
             "KF_Volume_Ratio",
             "KF_Volume_P",
         ],
+        # Cross-feature interactions (added for sophisticated signal combinations)
+        "cross_price_volume": [
+            "PV_Velocity_x_VolSlope",      # KF_Velocity × KF_LogVolume_Slope
+            "PV_VWAP_x_VolZscore",         # KF_VWAP_Distance × KF_Volume_Zscore
+            "PV_Return_x_VolRatio",        # KF_Close_LogRet × KF_Volume_Ratio
+            "PV_SMADist_x_VolRatio",       # SMA_Distance × Volume_SMA_Ratio
+            "PV_ROC_x_VolP",               # ROC × KF_Volume_P
+        ],
+        "cross_volatility_normalized": [
+            "VN_Velocity_per_ATR",         # KF_Velocity / KF_ATR
+            "VN_Mom5_per_Vol5",            # Momentum_5 / volatility_5
+            "VN_Accel_per_ATRRatio",       # KF_Acceleration / KF_ATR_Ratio
+            "VN_ROC_x_VolRegime",          # ROC × Volatility_Regime
+            "VN_Slope_x_KalmanP",          # KF_Slope × KF_P
+        ],
+        "cross_horizon_divergence": [
+            "XH_RSI_Divergence",           # RSI_Short - RSI_Long
+            "XH_Momentum_Ratio",           # Momentum_Short / Momentum_Long
+            "XH_ATR_Ratio",                # ATR_Short / ATR_Long
+            "XH_SMADist_Divergence",       # SMA_Distance_Short - SMA_Distance_Long
+            "XH_BBDist_Divergence",        # BB_Distance_Short - BB_Distance_Long
+        ],
+        "cross_regime_conditional": [
+            "RC_Mom_x_MetaVolRegime",      # Momentum × meta_volatility_regime
+            "RC_VolSlope_x_MetaVolShock",  # KF_LogVolume_Slope × meta_volume_shock
+            "RC_PriceSMA_x_Trendiness",    # Price_vs_SMA20 × meta_trendiness
+            "RC_VWAPSlope_x_Trendiness",   # KF_VWAP_Slope × meta_trendiness
+            "RC_ATRRatio_x_MetaVolRegime", # KF_ATR_Ratio × meta_volatility_regime
+        ],
+        "cross_kalman": [
+            "KC_FilteredRawATR_Ratio",     # KF_ATR / ATR_14
+            "KC_VolSlope_per_Vol5",        # KF_LogVolume_Slope / volatility_5
+            "KC_Velocity_per_KalmanP",     # KF_Velocity / KF_P
+            "KC_VWAPZscore_x_VolRatio",    # KF_VWAP_Zscore × KF_Volume_Ratio
+            "KC_MomPerVol_x_VolSlope",     # Momentum_per_vol × KF_LogVolume_Slope
+        ],
+        # Path, Entropy, and Liquidity features
+        "cross_path_efficiency": [
+            "PATH_ER_x_Momentum",          # Kaufman ER × Momentum
+            "PATH_ER_x_Volatility",        # Kaufman ER × Volatility
+            "PATH_ER_x_VolRatio",          # Kaufman ER × Volume Ratio
+            "PATH_Efficiency_10",          # 10-bar path efficiency
+            "PATH_Efficiency_30",          # 30-bar path efficiency
+            "PATH_Efficiency_Divergence",  # Short vs long path efficiency
+        ],
+        "cross_entropy_complexity": [
+            "ENT_Return_x_Momentum",       # Return entropy × Momentum
+            "ENT_Return_x_Volatility",     # Return entropy × Volatility
+            "ENT_ApproxEntropy_20",        # Approximate entropy proxy
+            "ENT_PermEntropy_Proxy",       # Permutation entropy proxy
+            "ENT_PathComplexity",          # Price path complexity
+        ],
+        "cross_liquidity_proxy": [
+            "LIQ_Imbalance_x_Momentum",    # Volume imbalance × Momentum
+            "LIQ_Imbalance_x_ATR",         # Volume imbalance × ATR
+            "LIQ_Amihud_Ratio",            # Amihud illiquidity ratio
+            "LIQ_KyleLambda",              # Kyle's lambda (price impact)
+            "LIQ_RollsSpread",             # Roll's spread estimator
+            "LIQ_VolPressure",             # Volume pressure ratio
+            "LIQ_HLSpread_Ratio",          # High-Low spread ratio
+            "LIQ_ParkinsonVol",            # Parkinson volatility
+        ],
+        "cross_pel_interactions": [
+            "PEL_PathEff_x_Entropy",       # Path efficiency × Entropy
+            "PEL_Amihud_x_Entropy",        # Amihud × Entropy
+            "PEL_PathEff_x_Liquidity",     # Path efficiency × Liquidity
+        ],
     }
     
     # Calculate totals
@@ -3601,17 +3957,180 @@ def get_feature_inventory() -> Dict[str, List[str]]:
         len(inventory["kalman_vwap"]) + 
         len(inventory["kalman_volume"])
     )
+    cross_feature_count = (
+        len(inventory["cross_price_volume"]) +
+        len(inventory["cross_volatility_normalized"]) +
+        len(inventory["cross_horizon_divergence"]) +
+        len(inventory["cross_regime_conditional"]) +
+        len(inventory["cross_kalman"]) +
+        len(inventory["cross_path_efficiency"]) +
+        len(inventory["cross_entropy_complexity"]) +
+        len(inventory["cross_liquidity_proxy"]) +
+        len(inventory["cross_pel_interactions"])
+    )
     
     inventory["_counts"] = {
         "configurable_technical": configurable_count,
         "fixed_specialist": fixed_count,
         "kalman_features": kalman_count,
-        "total_base": configurable_count + fixed_count + kalman_count,
-        "with_multi_horizon": (configurable_count + fixed_count + kalman_count) * 7,  # base + 6 per horizon
+        "cross_features": cross_feature_count,
+        "path_entropy_liquidity": (
+            len(inventory["cross_path_efficiency"]) +
+            len(inventory["cross_entropy_complexity"]) +
+            len(inventory["cross_liquidity_proxy"]) +
+            len(inventory["cross_pel_interactions"])
+        ),
+        "total_base": configurable_count + fixed_count + kalman_count + cross_feature_count,
+        "with_multi_horizon": (configurable_count + fixed_count + kalman_count) * 7 + cross_feature_count,
     }
     
     return inventory
 
+
+# ============================================================================
+# FEATURE SELECTION CACHING
+# ============================================================================
+
+# Global cache for feature selection results
+_FEATURE_SELECTION_CACHE: Dict[str, Dict[str, Any]] = {}
+
+
+def _get_feature_selection_cache_key(
+    symbol: str,
+    exchange: str,
+    timeframe: str,
+) -> str:
+    """Generate cache key for feature selection results."""
+    return f"{symbol}_{exchange}_{timeframe}"
+
+
+def _get_feature_selection_cache_path(
+    symbol: str,
+    exchange: str,
+    timeframe: str,
+) -> Path:
+    """Get file path for cached feature selection results."""
+    cache_dir = Path("cache") / "feature_selection"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    return cache_dir / f"feature_selection_{symbol}_{exchange}_{timeframe}.json"
+
+
+def load_cached_feature_selection(
+    symbol: str,
+    exchange: str,
+    timeframe: str,
+) -> Optional[Dict[str, Any]]:
+    """
+    Load cached feature selection results for an asset/exchange/timeframe.
+    
+    Returns:
+        Dict with 'selected_features' (list) and 'quality_scores' (dict), or None if not cached
+    """
+    cache_key = _get_feature_selection_cache_key(symbol, exchange, timeframe)
+    
+    # Check in-memory cache first
+    if cache_key in _FEATURE_SELECTION_CACHE:
+        tprint_info(f"   📦 Loaded feature selection from memory cache")
+        return _FEATURE_SELECTION_CACHE[cache_key]
+    
+    # Check file cache
+    cache_path = _get_feature_selection_cache_path(symbol, exchange, timeframe)
+    if cache_path.exists():
+        try:
+            with open(cache_path, 'r') as f:
+                cached = json.load(f)
+            _FEATURE_SELECTION_CACHE[cache_key] = cached
+            tprint_info(f"   📦 Loaded feature selection from {cache_path}")
+            return cached
+        except Exception as e:
+            tprint_warning(f"   ⚠️ Failed to load cache: {e}")
+    
+    return None
+
+
+def save_feature_selection_cache(
+    symbol: str,
+    exchange: str,
+    timeframe: str,
+    selected_features: List[str],
+    quality_scores: Dict[str, float],
+) -> None:
+    """
+    Save feature selection results to cache.
+    
+    Args:
+        symbol: Trading symbol
+        exchange: Exchange name
+        timeframe: Timeframe
+        selected_features: List of selected feature names
+        quality_scores: Dict mapping feature name to quality score
+    """
+    cache_key = _get_feature_selection_cache_key(symbol, exchange, timeframe)
+    
+    cache_data = {
+        'selected_features': selected_features,
+        'quality_scores': quality_scores,
+        'timestamp': datetime.now().isoformat(),
+        'n_features': len(selected_features),
+    }
+    
+    # Save to memory
+    _FEATURE_SELECTION_CACHE[cache_key] = cache_data
+    
+    # Save to file
+    cache_path = _get_feature_selection_cache_path(symbol, exchange, timeframe)
+    try:
+        with open(cache_path, 'w') as f:
+            json.dump(cache_data, f, indent=2)
+        tprint_info(f"   💾 Saved feature selection to {cache_path}")
+    except Exception as e:
+        tprint_warning(f"   ⚠️ Failed to save cache: {e}")
+
+
+def invalidate_feature_selection_cache(
+    symbol: Optional[str] = None,
+    exchange: Optional[str] = None,
+    timeframe: Optional[str] = None,
+) -> int:
+    """
+    Invalidate feature selection cache.
+    
+    Args:
+        symbol: If provided, only invalidate for this symbol
+        exchange: If provided, only invalidate for this exchange
+        timeframe: If provided, only invalidate for this timeframe
+        
+    Returns:
+        Number of cache entries invalidated
+    """
+    global _FEATURE_SELECTION_CACHE
+    
+    if symbol is None and exchange is None and timeframe is None:
+        # Clear all
+        count = len(_FEATURE_SELECTION_CACHE)
+        _FEATURE_SELECTION_CACHE = {}
+        return count
+    
+    # Selective invalidation
+    keys_to_remove = []
+    for key in _FEATURE_SELECTION_CACHE:
+        parts = key.split('_')
+        if len(parts) >= 3:
+            k_symbol, k_exchange, k_timeframe = parts[0], parts[1], '_'.join(parts[2:])
+            if ((symbol is None or symbol == k_symbol) and
+                (exchange is None or exchange == k_exchange) and
+                (timeframe is None or timeframe == k_timeframe)):
+                keys_to_remove.append(key)
+    
+    for key in keys_to_remove:
+        del _FEATURE_SELECTION_CACHE[key]
+    
+    return len(keys_to_remove)
+
+
+# ============================================================================
+# MAIN FEATURE SELECTION PIPELINE (De Prado-Inspired)
+# ============================================================================
 
 def select_features_with_quality(
     df_features: pd.DataFrame,
@@ -3619,63 +4138,235 @@ def select_features_with_quality(
     correlation_threshold: float = 0.85,
     generate_horizons: bool = True,
     horizon_config: Dict[str, int] = None,
+    enable_cross_features: bool = True,
+    market_data: Optional[pd.DataFrame] = None,
+    # New De Prado pipeline parameters
+    use_hierarchical: bool = True,
+    use_lgbm_sweep: bool = True,
+    lgbm_lookahead: int = 4,
+    lgbm_max_features: int = 200,
+    quality_drop_percentile: float = 20.0,
+    min_std_threshold: float = 1e-9,
+    # Caching parameters
+    symbol: Optional[str] = None,
+    exchange: Optional[str] = None,
+    timeframe: Optional[str] = None,
+    use_cache: bool = True,
+    force_recompute: bool = False,
 ) -> Tuple[pd.DataFrame, Dict[str, float]]:
     """
-    Complete feature selection pipeline with quality scoring.
+    Complete feature selection pipeline with De Prado's hierarchical method.
     
-    Pipeline:
-    1. (Optional) Generate multi-horizon versions of features
-    2. Calculate quality scores for all features
-    3. Reduce features by correlation, using quality as tie-breaker
+    PIPELINE (Anti-Concept-Dominance):
+    ==================================
+    1. Generate multi-horizon features
+    2. Generate cross-feature interactions
+    3. DROP features with std < min_std_threshold (constant/near-constant)
+    4. Calculate time-robust quality scores (worst-case across chunks)
+    5. DROP bottom quality_drop_percentile% by quality
+    6. LGBM Magnitude Sweep: Keep top lgbm_max_features that predict future volatility
+    7. Hierarchical Clustering: Select target_n features from N distinct clusters
     
-    This runs AFTER Layer 0 (Kalman Q/R optimization) but BEFORE the main HPO loop.
+    The hierarchical clustering GUARANTEES diversity by:
+    - Grouping correlated features into clusters
+    - Selecting ONLY the best feature from each cluster
+    - This prevents "concept dominance" where RSI variants crowd out volume features
+    
+    CACHING:
+    ========
+    Results are cached per symbol/exchange/timeframe to avoid recomputation.
+    Set use_cache=False or force_recompute=True to bypass caching.
     
     Args:
-        df_features: DataFrame with raw features
+        df_features: DataFrame with raw features (base + Kalman merged)
         target_n: Target number of features to select
-        correlation_threshold: Max correlation between selected features
+        correlation_threshold: Correlation threshold (used in fallback greedy method)
         generate_horizons: Whether to create multi-horizon versions
         horizon_config: Custom horizon configuration
+        enable_cross_features: Whether to generate cross-feature interactions
+        market_data: Original market data (required for LGBM sweep and cross-features)
+        use_hierarchical: Use De Prado hierarchical selection (default True)
+        use_lgbm_sweep: Use LGBM magnitude sweep pre-filter (default True)
+        lgbm_lookahead: Bars to look ahead for magnitude proxy (default 4)
+        lgbm_max_features: Max features to keep after LGBM sweep (default 200)
+        quality_drop_percentile: Drop bottom X% by quality (default 20%)
+        min_std_threshold: Drop features with std below this (default 1e-9)
+        symbol: Trading symbol (for caching)
+        exchange: Exchange name (for caching)
+        timeframe: Timeframe (for caching)
+        use_cache: Whether to use cached results (default True)
+        force_recompute: Force recomputation even if cached (default False)
     
     Returns:
         Tuple of (reduced_features_df, quality_scores_dict)
     """
-    tprint_info("🔍 Starting quality-based feature selection...")
+    tprint_info("🔍 Starting De Prado feature selection pipeline...")
     
-    # 1. Generate multi-horizon features (if enabled)
+    # =========================================================================
+    # STEP 0: Check cache
+    # =========================================================================
+    if use_cache and not force_recompute and symbol and exchange and timeframe:
+        cached = load_cached_feature_selection(symbol, exchange, timeframe)
+        if cached:
+            selected_cols = cached['selected_features']
+            quality_scores = cached['quality_scores']
+            
+            # Verify all cached features exist in current data
+            available_cols = [c for c in selected_cols if c in df_features.columns]
+            if len(available_cols) >= target_n * 0.8:  # Allow 20% missing
+                tprint_success(f"✅ Using cached selection: {len(available_cols)} features")
+                return df_features[available_cols], {c: quality_scores.get(c, 0.0) for c in available_cols}
+            else:
+                tprint_warning(f"   ⚠️ Cache invalid: only {len(available_cols)}/{len(selected_cols)} features found")
+    
+    # =========================================================================
+    # STEP 1: Generate multi-horizon features
+    # =========================================================================
     if generate_horizons:
-        tprint_info(f"   Generating multi-horizon features...")
+        tprint_info(f"   [1/7] Generating multi-horizon features...")
         initial_cols = len(df_features.columns)
         df_expanded = generate_multi_horizon_features(df_features, horizon_config)
-        tprint_info(f"   Expanded: {initial_cols} → {len(df_expanded.columns)} features")
+        tprint_info(f"         Expanded: {initial_cols} → {len(df_expanded.columns)} features")
     else:
         df_expanded = df_features.copy()
     
-    # 2. Calculate quality scores for all features
-    tprint_info("   Calculating feature quality scores (Signal/Noise ratio)...")
-    quality_scores = calculate_all_feature_qualities(df_expanded)
+    # =========================================================================
+    # STEP 2: Generate cross-feature interactions
+    # =========================================================================
+    if enable_cross_features:
+        tprint_info("   [2/7] Generating cross-feature interactions...")
+        try:
+            kalman_cols = [c for c in df_expanded.columns if c.startswith("KF_")]
+            base_cols = [c for c in df_expanded.columns if not c.startswith("KF_")]
+            
+            kalman_features_df = df_expanded[kalman_cols] if kalman_cols else pd.DataFrame(index=df_expanded.index)
+            base_features_df = df_expanded[base_cols] if base_cols else pd.DataFrame(index=df_expanded.index)
+            
+            cross_features_df = generate_cross_features(
+                base_features=base_features_df,
+                kalman_features=kalman_features_df,
+                market_data=market_data if market_data is not None else pd.DataFrame(index=df_expanded.index),
+            )
+            
+            n_cross = len(cross_features_df.columns)
+            for col in cross_features_df.columns:
+                if col not in df_expanded.columns:
+                    df_expanded[col] = cross_features_df[col]
+            
+            tprint_info(f"         Added {n_cross} cross-feature interactions")
+        except Exception as e:
+            tprint_warning(f"         ⚠️ Cross-feature generation failed: {e}")
     
-    # Log top/bottom quality features for debugging
+    n_after_expansion = len(df_expanded.columns)
+    
+    # =========================================================================
+    # STEP 3: Drop constant/near-constant features (std < threshold)
+    # =========================================================================
+    tprint_info(f"   [3/7] Dropping constant features (std < {min_std_threshold})...")
+    col_stds = df_expanded.std()
+    valid_std_cols = col_stds[col_stds >= min_std_threshold].index.tolist()
+    
+    n_dropped_std = n_after_expansion - len(valid_std_cols)
+    if n_dropped_std > 0:
+        tprint_info(f"         Dropped {n_dropped_std} constant features")
+        df_expanded = df_expanded[valid_std_cols]
+    
+    # =========================================================================
+    # STEP 4: Calculate time-robust quality scores
+    # =========================================================================
+    tprint_info("   [4/7] Calculating time-robust quality scores...")
+    quality_scores = calculate_all_feature_qualities(df_expanded, use_time_robust=True)
+    
+    # Log top/bottom quality features
     sorted_by_quality = sorted(quality_scores.items(), key=lambda x: x[1], reverse=True)
-    top_5 = sorted_by_quality[:5]
-    bottom_5 = sorted_by_quality[-5:]
+    if sorted_by_quality:
+        top_3 = sorted_by_quality[:3]
+        bottom_3 = sorted_by_quality[-3:]
+        tprint_info(f"         Top 3: {[(n, f'{q:.3f}') for n, q in top_3]}")
+        tprint_info(f"         Bottom 3: {[(n, f'{q:.3f}') for n, q in bottom_3]}")
     
-    tprint_info(f"   Top 5 quality: {[(n, f'{q:.2f}') for n, q in top_5]}")
-    tprint_info(f"   Bottom 5 quality: {[(n, f'{q:.2f}') for n, q in bottom_5]}")
+    # =========================================================================
+    # STEP 5: Drop bottom quality_drop_percentile% by quality
+    # =========================================================================
+    tprint_info(f"   [5/7] Dropping bottom {quality_drop_percentile}% by quality...")
     
-    # 3. Reduce by correlation with quality tie-breaker
-    tprint_info(f"   Reducing to {target_n} features by correlation...")
-    df_reduced = reduce_features_by_correlation(
-        df_features=df_expanded,
-        quality_scores=quality_scores,
-        target_n=target_n,
-        correlation_threshold=correlation_threshold,
+    if sorted_by_quality:
+        quality_values = [q for _, q in sorted_by_quality]
+        quality_threshold = np.percentile(quality_values, quality_drop_percentile)
+        
+        quality_filtered_cols = [col for col, q in quality_scores.items() if q > quality_threshold]
+        n_dropped_quality = len(df_expanded.columns) - len(quality_filtered_cols)
+        
+        if n_dropped_quality > 0:
+            tprint_info(f"         Dropped {n_dropped_quality} low-quality features (threshold={quality_threshold:.4f})")
+            df_expanded = df_expanded[quality_filtered_cols]
+            quality_scores = {c: quality_scores[c] for c in quality_filtered_cols}
+    
+    # =========================================================================
+    # STEP 6: LGBM Magnitude Sweep
+    # =========================================================================
+    if use_lgbm_sweep and market_data is not None and len(df_expanded.columns) > lgbm_max_features:
+        tprint_info(f"   [6/7] LGBM Magnitude Sweep (lookahead={lgbm_lookahead}, max={lgbm_max_features})...")
+        try:
+            df_expanded = lgbm_magnitude_sweep(
+                df_features=df_expanded,
+                market_data=market_data,
+                lookahead=lgbm_lookahead,
+                max_features=lgbm_max_features,
+            )
+            # Update quality scores for remaining features
+            quality_scores = {c: quality_scores.get(c, 0.0) for c in df_expanded.columns}
+        except Exception as e:
+            tprint_warning(f"         ⚠️ LGBM sweep failed: {e}")
+    else:
+        tprint_info(f"   [6/7] Skipping LGBM sweep (features={len(df_expanded.columns)} <= {lgbm_max_features})")
+    
+    # =========================================================================
+    # STEP 7: Final Selection (Hierarchical or Greedy)
+    # =========================================================================
+    if use_hierarchical and len(df_expanded.columns) > target_n:
+        tprint_info(f"   [7/7] Hierarchical clustering selection (target={target_n})...")
+        try:
+            df_reduced = select_features_hierarchical(
+                df_features=df_expanded,
+                quality_scores=quality_scores,
+                target_n=target_n,
+            )
+        except Exception as e:
+            tprint_warning(f"         ⚠️ Hierarchical failed: {e}, falling back to greedy")
+            df_reduced = reduce_features_by_correlation(
+                df_features=df_expanded,
+                quality_scores=quality_scores,
+                target_n=target_n,
+                correlation_threshold=correlation_threshold,
+            )
+    else:
+        tprint_info(f"   [7/7] Greedy correlation reduction (target={target_n})...")
+        df_reduced = reduce_features_by_correlation(
+            df_features=df_expanded,
+            quality_scores=quality_scores,
+            target_n=target_n,
+            correlation_threshold=correlation_threshold,
+        )
+    
+    # Final quality scores for selected features
+    selected_quality = {col: quality_scores.get(col, 0.0) for col in df_reduced.columns}
+    
+    # =========================================================================
+    # Save to cache
+    # =========================================================================
+    if use_cache and symbol and exchange and timeframe:
+        save_feature_selection_cache(
+            symbol=symbol,
+            exchange=exchange,
+            timeframe=timeframe,
+            selected_features=list(df_reduced.columns),
+            quality_scores=selected_quality,
+        )
+    
+    tprint_success(
+        f"✅ Feature selection complete: {n_after_expansion} → {len(df_reduced.columns)} features"
     )
-    
-    # Return only quality scores for selected features
-    selected_quality = {col: quality_scores[col] for col in df_reduced.columns}
-    
-    tprint_success(f"✅ Feature selection complete: {len(df_reduced.columns)} features selected")
     
     return df_reduced, selected_quality
 
@@ -3886,6 +4577,465 @@ def generate_kalman_features(
     features = features.replace([np.inf, -np.inf], 0)
     
     return features
+
+
+# ============================================================================
+# CROSS-FEATURE INTERACTIONS (Price-Volume, Volatility-Normalized, etc.)
+# ============================================================================
+
+def generate_cross_features(
+    base_features: pd.DataFrame,
+    kalman_features: pd.DataFrame,
+    market_data: pd.DataFrame,
+) -> pd.DataFrame:
+    """
+    Generate sophisticated cross-feature interactions combining price, volume,
+    volatility, and regime signals.
+    
+    These features capture non-linear relationships that single features miss:
+    - Price-Volume Interactions: Momentum scaled by participation
+    - Volatility-Normalized Features: Signals adjusted for current volatility
+    - Cross-Horizon Divergence: Short vs long-term signal disagreements
+    - Regime-Conditional Features: Signals weighted by market regime
+    - Kalman Cross-Features: Filtered signal combinations
+    
+    Args:
+        base_features: DataFrame with base meta-features (from create_meta_features)
+        kalman_features: DataFrame with Kalman-filtered features (from generate_kalman_features)
+        market_data: Original OHLCV data for any additional calculations
+    
+    Returns:
+        DataFrame with cross-feature interactions (log-normalized where appropriate)
+    """
+    tprint_info("🔧 generate_cross_features() called")
+    tprint_info(f"   base_features: {base_features.shape}, kalman_features: {kalman_features.shape}")
+    
+    cross = pd.DataFrame(index=base_features.index)
+    
+    # Helper to safely get feature, returning zeros if not found
+    def _safe_get(df: pd.DataFrame, col: str) -> np.ndarray:
+        if col in df.columns:
+            return df[col].fillna(0).values
+        return np.zeros(len(df))
+    
+    # Merge available features for easier access
+    all_features = pd.concat([base_features, kalman_features], axis=1)
+    
+    # =========================================================================
+    # 1. PRICE-VOLUME INTERACTIONS
+    # =========================================================================
+    # These capture momentum scaled by market participation/volume trends
+    
+    # KF_Velocity × KF_LogVolume_Slope: Momentum scaled by participation trend
+    kf_velocity = _safe_get(all_features, "KF_Velocity")
+    kf_logvol_slope = _safe_get(all_features, "KF_LogVolume_Slope")
+    cross["PV_Velocity_x_VolSlope"] = _log_normalize(kf_velocity * kf_logvol_slope)
+    
+    # KF_VWAP_Distance × KF_Volume_Zscore: Price deviation from VWAP weighted by volume surprise
+    kf_vwap_dist = _safe_get(all_features, "KF_VWAP_Distance")
+    kf_vol_zscore = _safe_get(all_features, "KF_Volume_Zscore")
+    cross["PV_VWAP_x_VolZscore"] = _log_normalize(kf_vwap_dist * kf_vol_zscore)
+    
+    # KF_Close_LogRet × KF_Volume_Ratio: Return scaled by abnormal volume
+    kf_close_logret = _safe_get(all_features, "KF_Close_LogRet")
+    kf_vol_ratio = _safe_get(all_features, "KF_Volume_Ratio")
+    cross["PV_Return_x_VolRatio"] = _log_normalize(kf_close_logret * kf_vol_ratio)
+    
+    # SMA_Distance × Volume_SMA_Ratio: Price deviation from SMA weighted by volume trend
+    # Try multiple horizon variants
+    for horizon in ["_Short", "_Medium", "_Long", ""]:
+        sma_dist_col = f"SMA_Distance{horizon}" if horizon else "SMA_Distance_Medium"
+        vol_sma_col = f"Volume_SMA_Ratio{horizon}" if horizon else "Volume_SMA_Ratio_Medium"
+        sma_dist = _safe_get(all_features, sma_dist_col)
+        vol_sma_ratio = _safe_get(all_features, vol_sma_col)
+        if np.any(sma_dist != 0) and np.any(vol_sma_ratio != 0):
+            cross[f"PV_SMADist_x_VolRatio{horizon}"] = _log_normalize(sma_dist * vol_sma_ratio)
+            break  # Use first available
+    
+    # ROC × KF_Volume_P: Rate-of-change scaled by volume uncertainty
+    for horizon in ["_Short", "_Medium", "_Long", ""]:
+        roc_col = f"ROC{horizon}" if horizon else "ROC_Medium"
+        roc = _safe_get(all_features, roc_col)
+        kf_vol_p = _safe_get(all_features, "KF_Volume_P")
+        if np.any(roc != 0):
+            cross["PV_ROC_x_VolP"] = _log_normalize(roc * kf_vol_p)
+            break
+    
+    # =========================================================================
+    # 2. VOLATILITY-NORMALIZED FEATURES
+    # =========================================================================
+    # These normalize signals by current volatility regime
+    
+    # KF_Velocity / KF_ATR: Normalized velocity relative to volatility
+    kf_atr = _safe_get(all_features, "KF_ATR")
+    safe_atr = np.where(np.abs(kf_atr) > 1e-9, kf_atr, 1e-9)
+    cross["VN_Velocity_per_ATR"] = _log_normalize(kf_velocity / safe_atr)
+    
+    # Momentum_5 / volatility_5: Short-term momentum scaled by short-term volatility
+    momentum_5 = _safe_get(all_features, "momentum_5")
+    volatility_5 = _safe_get(all_features, "volatility_5")
+    safe_vol5 = np.where(np.abs(volatility_5) > 1e-9, volatility_5, 1e-9)
+    cross["VN_Mom5_per_Vol5"] = _log_normalize(momentum_5 / safe_vol5)
+    
+    # KF_Acceleration / KF_ATR_Ratio: Trend change relative to filtered volatility
+    kf_accel = _safe_get(all_features, "KF_Acceleration")
+    kf_atr_ratio = _safe_get(all_features, "KF_ATR_Ratio")
+    safe_atr_ratio = np.where(np.abs(kf_atr_ratio) > 1e-9, kf_atr_ratio, 1e-9)
+    cross["VN_Accel_per_ATRRatio"] = _log_normalize(kf_accel / safe_atr_ratio)
+    
+    # ROC × Volatility_Regime: Rate-of-change weighted by market volatility regime
+    # Use vol_regime_high as a continuous proxy (0 or 1)
+    vol_regime_high = _safe_get(all_features, "vol_regime_high")
+    vol_regime_med = _safe_get(all_features, "vol_regime_medium")
+    # Create regime score: 0 (low), 0.5 (medium), 1.0 (high)
+    regime_score = vol_regime_med * 0.5 + vol_regime_high * 1.0
+    for horizon in ["_Short", "_Medium", "_Long", ""]:
+        roc_col = f"ROC{horizon}" if horizon else "ROC_Medium"
+        roc = _safe_get(all_features, roc_col)
+        if np.any(roc != 0):
+            cross["VN_ROC_x_VolRegime"] = _log_normalize(roc * (1.0 + regime_score))
+            break
+    
+    # KF_Slope × KF_P: Price slope weighted by Kalman state uncertainty
+    kf_slope = _safe_get(all_features, "KF_Slope")
+    kf_p = _safe_get(all_features, "KF_P")
+    cross["VN_Slope_x_KalmanP"] = _log_normalize(kf_slope * kf_p)
+    
+    # =========================================================================
+    # 3. CROSS-HORIZON DIVERGENCE FEATURES
+    # =========================================================================
+    # These capture disagreements between short and long-term signals
+    
+    # RSI_Short - RSI_Long: Overbought/oversold divergence across horizons
+    rsi_short = _safe_get(all_features, "RSI_Short")
+    rsi_long = _safe_get(all_features, "RSI_Long")
+    if np.any(rsi_short != 0) or np.any(rsi_long != 0):
+        cross["XH_RSI_Divergence"] = rsi_short - rsi_long  # Already normalized [-1, 1]
+    
+    # Velocity_Short / Velocity_Long: Short-term vs long-term momentum ratio
+    # Use Momentum features as velocity proxies
+    mom_short = _safe_get(all_features, "Momentum_Short")
+    mom_long = _safe_get(all_features, "Momentum_Long")
+    safe_mom_long = np.where(np.abs(mom_long) > 1e-9, mom_long, np.sign(mom_long) * 1e-9)
+    safe_mom_long = np.where(safe_mom_long == 0, 1e-9, safe_mom_long)
+    if np.any(mom_short != 0) or np.any(mom_long != 0):
+        cross["XH_Momentum_Ratio"] = _log_normalize(mom_short / safe_mom_long)
+    
+    # ATR_Short / ATR_Long: Short-term vs long-term volatility ratio
+    atr_short = _safe_get(all_features, "ATR_Short")
+    atr_long = _safe_get(all_features, "ATR_Long")
+    safe_atr_long = np.where(np.abs(atr_long) > 1e-9, atr_long, 1e-9)
+    if np.any(atr_short != 0) or np.any(atr_long != 0):
+        cross["XH_ATR_Ratio"] = _log_normalize(atr_short / safe_atr_long)
+    
+    # SMA_Distance_Short - SMA_Distance_Long: Mean-reversion signals across horizons
+    sma_dist_short = _safe_get(all_features, "SMA_Distance_Short")
+    sma_dist_long = _safe_get(all_features, "SMA_Distance_Long")
+    if np.any(sma_dist_short != 0) or np.any(sma_dist_long != 0):
+        cross["XH_SMADist_Divergence"] = _log_normalize(sma_dist_short - sma_dist_long)
+    
+    # BB_Distance_Short - BB_Distance_Long: Relative band positioning between horizons
+    bb_dist_short = _safe_get(all_features, "BB_Distance_Short")
+    bb_dist_long = _safe_get(all_features, "BB_Distance_Long")
+    if np.any(bb_dist_short != 0) or np.any(bb_dist_long != 0):
+        cross["XH_BBDist_Divergence"] = bb_dist_short - bb_dist_long  # Already normalized
+    
+    # =========================================================================
+    # 4. REGIME-CONDITIONAL FEATURES
+    # =========================================================================
+    # These weight signals by the current market regime state
+    
+    # Momentum × meta_volatility_regime: Trend strength conditional on volatility regime
+    meta_vol_regime = _safe_get(all_features, "meta_volatility_regime")
+    momentum_10 = _safe_get(all_features, "momentum_10")
+    if np.any(meta_vol_regime != 0):
+        cross["RC_Mom_x_MetaVolRegime"] = _log_normalize(momentum_10 * meta_vol_regime)
+    
+    # KF_LogVolume_Slope × meta_volume_shock: Participation trend weighted by volume shock
+    meta_vol_shock = _safe_get(all_features, "meta_volume_shock")
+    if np.any(meta_vol_shock != 0):
+        cross["RC_VolSlope_x_MetaVolShock"] = _log_normalize(kf_logvol_slope * meta_vol_shock)
+    
+    # Price_vs_SMA20 × meta_trendiness: Price deviation scaled by trendiness score
+    price_vs_sma20 = _safe_get(all_features, "price_vs_sma20")
+    meta_trendiness = _safe_get(all_features, "meta_trendiness")
+    if np.any(meta_trendiness != 0):
+        cross["RC_PriceSMA_x_Trendiness"] = _log_normalize(price_vs_sma20 * meta_trendiness)
+    
+    # KF_VWAP_Slope × meta_trendiness: VWAP trend scaled by regime trendiness
+    kf_vwap_slope = _safe_get(all_features, "KF_VWAP_Slope")
+    if np.any(meta_trendiness != 0) and np.any(kf_vwap_slope != 0):
+        cross["RC_VWAPSlope_x_Trendiness"] = _log_normalize(kf_vwap_slope * meta_trendiness)
+    
+    # KF_ATR_Ratio × meta_volatility_regime: Volatility relative to baseline under current regime
+    if np.any(meta_vol_regime != 0):
+        cross["RC_ATRRatio_x_MetaVolRegime"] = _log_normalize(kf_atr_ratio * meta_vol_regime)
+    
+    # =========================================================================
+    # 5. KALMAN CROSS-FEATURES
+    # =========================================================================
+    # These combine Kalman-filtered signals for enhanced signal quality
+    
+    # KF_ATR / ATR_14: Filtered vs raw volatility ratio
+    atr_14 = _safe_get(all_features, "atr_14")
+    safe_atr_14 = np.where(np.abs(atr_14) > 1e-9, atr_14, 1e-9)
+    if np.any(kf_atr != 0):
+        cross["KC_FilteredRawATR_Ratio"] = _log_normalize(kf_atr / safe_atr_14)
+    
+    # KF_LogVolume_Slope / volatility_5: Relative volume trend vs recent volatility
+    if np.any(kf_logvol_slope != 0):
+        cross["KC_VolSlope_per_Vol5"] = _log_normalize(kf_logvol_slope / safe_vol5)
+    
+    # KF_Velocity / KF_P: Velocity normalized by Kalman state uncertainty
+    safe_kf_p = np.where(np.abs(kf_p) > 1e-9, kf_p, 1e-9)
+    cross["KC_Velocity_per_KalmanP"] = _log_normalize(kf_velocity / safe_kf_p)
+    
+    # KF_VWAP_Zscore × KF_Volume_Ratio: Standardized VWAP innovation weighted by volume ratio
+    kf_vwap_zscore = _safe_get(all_features, "KF_VWAP_Zscore")
+    cross["KC_VWAPZscore_x_VolRatio"] = _log_normalize(kf_vwap_zscore * kf_vol_ratio)
+    
+    # Momentum_per_vol × KF_LogVolume_Slope: Momentum per unit volatility scaled by participation
+    momentum_per_vol = _safe_get(all_features, "momentum_per_vol")
+    cross["KC_MomPerVol_x_VolSlope"] = _log_normalize(momentum_per_vol * kf_logvol_slope)
+    
+    # =========================================================================
+    # 6. PATH EFFICIENCY FEATURES
+    # =========================================================================
+    # These measure path quality - directness of price movement
+    
+    # Kaufman Efficiency Ratio: Already computed, but create interactions
+    kaufman_er = _safe_get(all_features, "kaufman_efficiency_ratio")
+    if np.any(kaufman_er != 0):
+        # Path efficiency × momentum: Strong trends with efficient paths
+        cross["PATH_ER_x_Momentum"] = _log_normalize(kaufman_er * momentum_10)
+        
+        # Path efficiency × volatility: Efficient paths in volatile markets
+        cross["PATH_ER_x_Volatility"] = _log_normalize(kaufman_er * safe_vol5)
+        
+        # Path efficiency × volume: Efficient paths with volume confirmation
+        vol_ratio = _safe_get(all_features, "volume_ratio")
+        cross["PATH_ER_x_VolRatio"] = _log_normalize(kaufman_er * vol_ratio)
+    
+    # Compute path efficiency from market data if available
+    if market_data is not None and 'close' in market_data.columns:
+        close = market_data['close'].reindex(base_features.index)
+        
+        # Path Efficiency (10-bar): |Net Change| / Sum(|Changes|)
+        net_change_10 = close.diff(10).abs()
+        path_length_10 = close.diff().abs().rolling(10).sum()
+        path_eff_10 = (net_change_10 / (path_length_10 + 1e-9)).fillna(0).values
+        cross["PATH_Efficiency_10"] = path_eff_10
+        
+        # Path Efficiency (30-bar): Longer-term path quality
+        net_change_30 = close.diff(30).abs()
+        path_length_30 = close.diff().abs().rolling(30).sum()
+        path_eff_30 = (net_change_30 / (path_length_30 + 1e-9)).fillna(0).values
+        cross["PATH_Efficiency_30"] = path_eff_30
+        
+        # Path divergence: Short-term vs long-term efficiency
+        cross["PATH_Efficiency_Divergence"] = _log_normalize(path_eff_10 - path_eff_30)
+    
+    # =========================================================================
+    # 7. ENTROPY FEATURES (Predictability/Complexity)
+    # =========================================================================
+    # These measure market complexity and predictability
+    
+    # Returns entropy: Already computed in base features, create interactions
+    returns_entropy = _safe_get(all_features, "returns_entropy")
+    if np.any(returns_entropy != 0):
+        # Entropy × momentum: Trend strength in complex markets
+        cross["ENT_Return_x_Momentum"] = _log_normalize(returns_entropy * momentum_10)
+        
+        # Entropy × volatility: Complexity under volatile conditions
+        cross["ENT_Return_x_Volatility"] = _log_normalize(returns_entropy * safe_vol5)
+    
+    # Compute additional entropy features from market data
+    if market_data is not None and 'close' in market_data.columns:
+        returns = market_data['close'].pct_change().reindex(base_features.index).fillna(0)
+        
+        # Approximate Entropy proxy: Rolling std of |returns| (simpler than true ApEn)
+        returns_abs = returns.abs()
+        approx_entropy_20 = returns_abs.rolling(20).std().fillna(0).values
+        cross["ENT_ApproxEntropy_20"] = _log_normalize(approx_entropy_20)
+        
+        # Permutation Entropy proxy: Rank correlation volatility
+        # (True permutation entropy is expensive, this is a fast approximation)
+        rank_changes = returns.rolling(5).apply(
+            lambda x: np.corrcoef(x, np.arange(len(x)))[0, 1] if len(x) > 1 else 0,
+            raw=False
+        ).fillna(0)
+        perm_entropy_proxy = rank_changes.rolling(20).std().fillna(0).values
+        cross["ENT_PermEntropy_Proxy"] = _log_normalize(perm_entropy_proxy)
+        
+        # Price path complexity: Second derivative variance
+        price_accel = returns.diff()
+        path_complexity = price_accel.rolling(20).std().fillna(0).values
+        cross["ENT_PathComplexity"] = _log_normalize(path_complexity)
+    
+    # =========================================================================
+    # 8. LIQUIDITY PROXY FEATURES (Microstructure)
+    # =========================================================================
+    # These approximate liquidity conditions without order book data
+    
+    # Volume imbalance: Already computed, create interactions
+    vol_imbalance = _safe_get(all_features, "volume_imbalance")
+    if np.any(vol_imbalance != 0):
+        # Volume imbalance × momentum: Directional pressure with volume confirmation
+        cross["LIQ_Imbalance_x_Momentum"] = _log_normalize(vol_imbalance * momentum_10)
+        
+        # Volume imbalance × ATR: Liquidity pressure under volatile conditions
+        cross["LIQ_Imbalance_x_ATR"] = _log_normalize(vol_imbalance * safe_atr)
+    
+    if market_data is not None and 'close' in market_data.columns:
+        close = market_data['close'].reindex(base_features.index)
+        returns = close.pct_change().fillna(0)
+        
+        # Amihud Illiquidity Proxy: |Return| / Volume
+        # Higher = less liquid (price moves more per unit volume)
+        if 'volume' in market_data.columns:
+            volume = market_data['volume'].reindex(base_features.index).fillna(1)
+            amihud_raw = returns.abs() / (volume + 1e-9)
+            amihud_20 = amihud_raw.rolling(20).mean().fillna(0)
+            amihud_baseline = amihud_20.rolling(96).median()
+            amihud_ratio = (amihud_20 / (amihud_baseline + 1e-9)).fillna(1).values
+            cross["LIQ_Amihud_Ratio"] = _log_normalize(amihud_ratio - 1.0)
+            
+            # Kyle's Lambda Proxy: Price impact per unit volume flow
+            # Higher = larger price impact from volume
+            price_change_6 = close.diff(6)
+            signed_volume_6 = (volume * np.sign(returns)).rolling(6).sum()
+            kyles_lambda = (price_change_6 / (signed_volume_6 + 1e-9)).fillna(0)
+            kyles_lambda_smoothed = kyles_lambda.ewm(span=6).mean().fillna(0).values
+            cross["LIQ_KyleLambda"] = _log_normalize(kyles_lambda_smoothed)
+            
+            # Roll's Spread Estimator Proxy: 2 * sqrt(-cov(r_t, r_{t-1}))
+            # Negative autocovariance implies bid-ask bounce
+            return_autocov = returns.rolling(20).apply(
+                lambda x: np.cov(x[:-1], x[1:])[0, 1] if len(x) > 1 else 0,
+                raw=False
+            ).fillna(0)
+            # Only use when autocov is negative (as expected for bid-ask bounce)
+            rolls_spread = 2 * np.sqrt(np.maximum(-return_autocov, 0)).fillna(0).values
+            cross["LIQ_RollsSpread"] = _log_normalize(rolls_spread)
+            
+            # Volume Pressure Ratio: Recent volume vs baseline
+            vol_short = volume.rolling(5).mean()
+            vol_long = volume.rolling(50).mean()
+            vol_pressure = ((vol_short / (vol_long + 1e-9)) - 1).fillna(0).values
+            cross["LIQ_VolPressure"] = _log_normalize(vol_pressure)
+        
+        # High-Low Spread Proxy: (High - Low) / Close
+        # Proxy for intraday volatility/liquidity
+        if 'high' in market_data.columns and 'low' in market_data.columns:
+            high = market_data['high'].reindex(base_features.index)
+            low = market_data['low'].reindex(base_features.index)
+            hl_spread = ((high - low) / (close + 1e-9)).fillna(0)
+            hl_spread_norm = (hl_spread / hl_spread.rolling(50).mean()).fillna(1).values
+            cross["LIQ_HLSpread_Ratio"] = _log_normalize(hl_spread_norm - 1.0)
+            
+            # Parkinson Volatility: More efficient volatility estimator
+            parkinson_vol = np.sqrt((np.log(high / low) ** 2).rolling(20).mean() / (4 * np.log(2))).fillna(0).values
+            cross["LIQ_ParkinsonVol"] = _log_normalize(parkinson_vol)
+    
+    # =========================================================================
+    # 9. PATH-ENTROPY-LIQUIDITY INTERACTIONS
+    # =========================================================================
+    # These combine the three concept families for rich signal extraction
+    
+    # Path efficiency × Entropy: Efficient paths in predictable markets
+    if "PATH_Efficiency_10" in cross.columns and np.any(returns_entropy != 0):
+        cross["PEL_PathEff_x_Entropy"] = _log_normalize(cross["PATH_Efficiency_10"].values * returns_entropy)
+    
+    # Liquidity × Entropy: Market microstructure under uncertainty
+    if "LIQ_Amihud_Ratio" in cross.columns and np.any(returns_entropy != 0):
+        cross["PEL_Amihud_x_Entropy"] = _log_normalize(cross["LIQ_Amihud_Ratio"].values * returns_entropy)
+    
+    # Path efficiency × Liquidity: Path quality under different liquidity conditions
+    if "PATH_Efficiency_10" in cross.columns and "LIQ_VolPressure" in cross.columns:
+        cross["PEL_PathEff_x_Liquidity"] = _log_normalize(
+            cross["PATH_Efficiency_10"].values * cross["LIQ_VolPressure"].values
+        )
+    
+    # Fill NaN and replace infinities
+    cross = cross.fillna(0).replace([np.inf, -np.inf], 0)
+    
+    return cross
+
+
+def get_cross_feature_inventory() -> Dict[str, List[str]]:
+    """
+    Return inventory of cross-features generated by generate_cross_features().
+    
+    Returns:
+        Dict with categories and their feature lists
+    """
+    return {
+        "price_volume_interactions": [
+            "PV_Velocity_x_VolSlope",      # KF_Velocity × KF_LogVolume_Slope
+            "PV_VWAP_x_VolZscore",         # KF_VWAP_Distance × KF_Volume_Zscore
+            "PV_Return_x_VolRatio",        # KF_Close_LogRet × KF_Volume_Ratio
+            "PV_SMADist_x_VolRatio",       # SMA_Distance × Volume_SMA_Ratio (horizon variant)
+            "PV_ROC_x_VolP",               # ROC × KF_Volume_P
+        ],
+        "volatility_normalized": [
+            "VN_Velocity_per_ATR",         # KF_Velocity / KF_ATR
+            "VN_Mom5_per_Vol5",            # Momentum_5 / volatility_5
+            "VN_Accel_per_ATRRatio",       # KF_Acceleration / KF_ATR_Ratio
+            "VN_ROC_x_VolRegime",          # ROC × Volatility_Regime
+            "VN_Slope_x_KalmanP",          # KF_Slope × KF_P
+        ],
+        "cross_horizon_divergence": [
+            "XH_RSI_Divergence",           # RSI_Short - RSI_Long
+            "XH_Momentum_Ratio",           # Momentum_Short / Momentum_Long
+            "XH_ATR_Ratio",                # ATR_Short / ATR_Long
+            "XH_SMADist_Divergence",       # SMA_Distance_Short - SMA_Distance_Long
+            "XH_BBDist_Divergence",        # BB_Distance_Short - BB_Distance_Long
+        ],
+        "regime_conditional": [
+            "RC_Mom_x_MetaVolRegime",      # Momentum × meta_volatility_regime
+            "RC_VolSlope_x_MetaVolShock",  # KF_LogVolume_Slope × meta_volume_shock
+            "RC_PriceSMA_x_Trendiness",    # Price_vs_SMA20 × meta_trendiness
+            "RC_VWAPSlope_x_Trendiness",   # KF_VWAP_Slope × meta_trendiness
+            "RC_ATRRatio_x_MetaVolRegime", # KF_ATR_Ratio × meta_volatility_regime
+        ],
+        "kalman_cross": [
+            "KC_FilteredRawATR_Ratio",     # KF_ATR / ATR_14
+            "KC_VolSlope_per_Vol5",        # KF_LogVolume_Slope / volatility_5
+            "KC_Velocity_per_KalmanP",     # KF_Velocity / KF_P
+            "KC_VWAPZscore_x_VolRatio",    # KF_VWAP_Zscore × KF_Volume_Ratio
+            "KC_MomPerVol_x_VolSlope",     # Momentum_per_vol × KF_LogVolume_Slope
+        ],
+        "path_efficiency": [
+            "PATH_ER_x_Momentum",          # Kaufman ER × Momentum
+            "PATH_ER_x_Volatility",        # Kaufman ER × Volatility
+            "PATH_ER_x_VolRatio",          # Kaufman ER × Volume Ratio
+            "PATH_Efficiency_10",          # 10-bar path efficiency
+            "PATH_Efficiency_30",          # 30-bar path efficiency
+            "PATH_Efficiency_Divergence",  # Short vs long path efficiency
+        ],
+        "entropy_complexity": [
+            "ENT_Return_x_Momentum",       # Return entropy × Momentum
+            "ENT_Return_x_Volatility",     # Return entropy × Volatility
+            "ENT_ApproxEntropy_20",        # Approximate entropy proxy
+            "ENT_PermEntropy_Proxy",       # Permutation entropy proxy
+            "ENT_PathComplexity",          # Price path complexity
+        ],
+        "liquidity_proxy": [
+            "LIQ_Imbalance_x_Momentum",    # Volume imbalance × Momentum
+            "LIQ_Imbalance_x_ATR",         # Volume imbalance × ATR
+            "LIQ_Amihud_Ratio",            # Amihud illiquidity ratio
+            "LIQ_KyleLambda",              # Kyle's lambda (price impact)
+            "LIQ_RollsSpread",             # Roll's spread estimator
+            "LIQ_VolPressure",             # Volume pressure ratio
+            "LIQ_HLSpread_Ratio",          # High-Low spread ratio
+            "LIQ_ParkinsonVol",            # Parkinson volatility
+        ],
+        "path_entropy_liquidity": [
+            "PEL_PathEff_x_Entropy",       # Path efficiency × Entropy
+            "PEL_Amihud_x_Entropy",        # Amihud × Entropy
+            "PEL_PathEff_x_Liquidity",     # Path efficiency × Liquidity
+        ],
+    }
 
 
 # ============================================================================
@@ -5624,6 +6774,14 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
         target_feature_count = int(config.get("target_feature_count", 70))
         feature_correlation_threshold = float(config.get("feature_correlation_threshold", 0.85))
         enable_multi_horizon = config.get("enable_multi_horizon_features", True)
+        enable_cross_features = config.get("enable_cross_features", True)
+        use_hierarchical_selection = config.get("use_hierarchical_selection", True)
+        use_lgbm_sweep = config.get("use_lgbm_sweep", True)
+        lgbm_lookahead = int(config.get("lgbm_sweep_lookahead", 4))
+        lgbm_max_features = int(config.get("lgbm_max_features", 200))
+        quality_drop_percentile = float(config.get("quality_drop_percentile", 20.0))
+        use_feature_cache = config.get("use_feature_selection_cache", True)
+        force_recompute_features = config.get("force_recompute_features", False)
         
         # Custom horizon configuration (can be overridden in config)
         horizon_config = config.get("feature_horizon_config", {
@@ -5632,7 +6790,7 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             "Long": 60,    # ~15 hours at 15m (slow signals)
         })
         
-        tprint_info("🔬 Running quality-based feature selection...")
+        tprint_info("🔬 Running De Prado feature selection pipeline...")
         try:
             meta_features_full, feature_quality_scores = select_features_with_quality(
                 df_features=meta_features_full,
@@ -5640,6 +6798,20 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 correlation_threshold=feature_correlation_threshold,
                 generate_horizons=enable_multi_horizon,
                 horizon_config=horizon_config,
+                enable_cross_features=enable_cross_features,
+                market_data=market_data,
+                # De Prado pipeline parameters
+                use_hierarchical=use_hierarchical_selection,
+                use_lgbm_sweep=use_lgbm_sweep,
+                lgbm_lookahead=lgbm_lookahead,
+                lgbm_max_features=lgbm_max_features,
+                quality_drop_percentile=quality_drop_percentile,
+                # Caching parameters
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=timeframe,
+                use_cache=use_feature_cache,
+                force_recompute=force_recompute_features,
             )
             
             # Store quality scores for potential later use
@@ -8765,12 +9937,88 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
             best_candidate = max(candidate_pool, key=lambda x: x.get('edge', x.get('combined', 0)))
             best_edge = best_candidate.get('edge', 0.0)
 
+        # =========================================================================
+        # POST-HPO MULTI-MODEL EVALUATION (NEW)
+        # Train multiple ML models for SNR diagnostics and extensive backtesting
+        # =========================================================================
+        tprint_info("\n" + "=" * 70)
+        tprint_info("📊 POST-HPO MULTI-MODEL EVALUATION")
+        tprint_info("=" * 70)
+        
+        post_hpo_evaluation_results = {}
+        try:
+            run_post_hpo_models = config.get("run_post_hpo_models", True)
+            
+            if run_post_hpo_models and 'meta_features_diag' in dir() and meta_features_diag is not None:
+                tprint_info("🔬 Running post-HPO model evaluation...")
+                
+                # Prepare data for evaluation
+                labeled_mask_eval = binary_labels.notna()
+                X_eval = meta_features_diag.loc[labeled_mask_eval].fillna(0)
+                y_eval = binary_labels[labeled_mask_eval]
+                returns_eval = realized_returns[labeled_mask_eval]
+                
+                # Sample weights if available
+                weights_eval = None
+                if 'sample_weights' in dir() and sample_weights is not None:
+                    try:
+                        weights_eval = sample_weights[labeled_mask_eval.values]
+                    except Exception:
+                        weights_eval = None
+                
+                post_hpo_evaluation_results = run_post_hpo_evaluation(
+                    X=X_eval,
+                    y=y_eval,
+                    realized_returns=returns_eval,
+                    sample_weights=weights_eval,
+                    n_splits=config.get("cv_splits", 5),
+                    n_bags=config.get("n_bags", 10),
+                    probability_threshold=config.get("probability_threshold", 0.5),
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    direction=direction,
+                    save_artifacts=True,
+                )
+                
+                tprint_success("✅ Post-HPO model evaluation complete!")
+            else:
+                tprint_info("ℹ️ Skipping post-HPO model evaluation (disabled or no features available)")
+        except Exception as post_hpo_exc:
+            tprint_warning(f"⚠️ Post-HPO model evaluation failed: {post_hpo_exc}")
+            post_hpo_evaluation_results = {"error": str(post_hpo_exc)}
+
+        # =========================================================================
+        # PARAMETER-OUTCOME CORRELATION ANALYSIS
+        # =========================================================================
+        tprint_info("\n" + "=" * 70)
+        tprint_info("📈 PARAMETER-OUTCOME CORRELATION ANALYSIS")
+        tprint_info("=" * 70)
+        
+        correlation_report = ""
+        try:
+            if candidate_pool:
+                corr_df, pval_df = compute_parameter_outcome_correlations(candidate_pool)
+                
+                if not corr_df.empty:
+                    correlation_report = generate_correlation_report(corr_df, pval_df)
+                    tprint_info(correlation_report)
+                    
+                    # Save correlation matrix
+                    corr_csv_path = outcomes_dir / f"hpo_param_outcome_correlations_{symbol}_{timeframe}_{timestamp}.csv"
+                    corr_df.to_csv(corr_csv_path)
+                    tprint_success(f"💾 Saved correlation matrix to {corr_csv_path}")
+                else:
+                    tprint_warning("⚠️ No valid correlations computed")
+        except Exception as corr_exc:
+            tprint_warning(f"⚠️ Correlation analysis failed: {corr_exc}")
+
         metrics: Dict[str, Any] = {
             "best_score": best_score,
             "best_edge": best_edge,
             "best_params": best_params,
             "best_params_json": str(json_path) if json_path is not None else None,
             "round_metrics_csv": str(csv_path) if csv_path is not None else None,
+            "post_hpo_evaluation": post_hpo_evaluation_results.get("model_comparison", []),
             "recommended_diagnostics_path": diagnostics_path,
             "total_trials": all_trials_count,
             "stage_results": stage_results,

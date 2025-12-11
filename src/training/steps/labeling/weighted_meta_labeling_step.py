@@ -82,12 +82,23 @@ from src.training.steps.labeling.meta_labeling_hpo_sample_weighted import (
     rts_smoother_1d,
     kalman_filter_1d,
     smooth_prices_rts,
-    # Feature selection functions
+    # Feature selection functions (De Prado pipeline)
     select_features_with_quality,
     calculate_feature_quality,
+    calculate_time_robust_quality,
     calculate_all_feature_qualities,
     reduce_features_by_correlation,
+    select_features_hierarchical,
+    lgbm_magnitude_sweep,
     generate_multi_horizon_features,
+    # Cross-feature interactions
+    generate_cross_features,
+    get_cross_feature_inventory,
+    get_feature_inventory,
+    # Caching utilities
+    load_cached_feature_selection,
+    save_feature_selection_cache,
+    invalidate_feature_selection_cache,
 )
 
 logger = logging.getLogger(__name__)
@@ -272,6 +283,9 @@ def train_weighted_bagged_lgbm(
     Returns:
         Tuple of (OOF predictions DataFrame, trained models list)
     """
+    tprint_info("🔧 train_weighted_bagged_lgbm() called")
+    tprint_info(f"   X_shape={X.shape}, n_splits={n_splits}, n_bags={n_bags}")
+    
     if base_params is None:
         base_params = {
             'n_estimators': 200,
@@ -586,6 +600,14 @@ class WeightedMetaLabelingStep(FeatureGenerationMetaLabelingStep):
         target_feature_count = int(config.get("target_feature_count", 70))
         feature_correlation_threshold = float(config.get("feature_correlation_threshold", 0.85))
         enable_multi_horizon = config.get("enable_multi_horizon_features", True)
+        enable_cross_features = config.get("enable_cross_features", True)
+        use_hierarchical_selection = config.get("use_hierarchical_selection", True)
+        use_lgbm_sweep = config.get("use_lgbm_sweep", True)
+        lgbm_lookahead = int(config.get("lgbm_sweep_lookahead", 4))
+        lgbm_max_features = int(config.get("lgbm_max_features", 200))
+        quality_drop_percentile = float(config.get("quality_drop_percentile", 20.0))
+        use_feature_cache = config.get("use_feature_selection_cache", True)
+        force_recompute_features = config.get("force_recompute_features", False)
         
         horizon_config = config.get("feature_horizon_config", {
             "Short": 5,
@@ -593,7 +615,7 @@ class WeightedMetaLabelingStep(FeatureGenerationMetaLabelingStep):
             "Long": 60,
         })
         
-        tprint_info("   Running quality-based feature selection...")
+        tprint_info("   Running De Prado feature selection pipeline...")
         try:
             meta_features, self._feature_quality_scores = select_features_with_quality(
                 df_features=meta_features,
@@ -601,6 +623,20 @@ class WeightedMetaLabelingStep(FeatureGenerationMetaLabelingStep):
                 correlation_threshold=feature_correlation_threshold,
                 generate_horizons=enable_multi_horizon,
                 horizon_config=horizon_config,
+                enable_cross_features=enable_cross_features,
+                market_data=market_data,
+                # De Prado pipeline parameters
+                use_hierarchical=use_hierarchical_selection,
+                use_lgbm_sweep=use_lgbm_sweep,
+                lgbm_lookahead=lgbm_lookahead,
+                lgbm_max_features=lgbm_max_features,
+                quality_drop_percentile=quality_drop_percentile,
+                # Caching parameters
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=timeframe,
+                use_cache=use_feature_cache,
+                force_recompute=force_recompute_features,
             )
             tprint_success(f"   ✅ Selected {meta_features.shape[1]} features (target={target_feature_count})")
         except Exception as fs_exc:

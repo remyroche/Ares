@@ -55,6 +55,13 @@ except Exception:
     # and training steps continue to function.
     MetaLabelingHPOExperimentStep = None
 
+try:
+    from .meta_labeling_hpo_sample_weighted import (
+        MetaLabelingHPOSampleWeightedStep,
+    )
+except Exception:
+    MetaLabelingHPOSampleWeightedStep = None
+
 from .triple_barrier_validator import (
     TripleBarrierValidator,
     ValidationResult,
@@ -95,6 +102,7 @@ __all__ = [
     "RegimeAwareLabeling",
     "FeatureGenerationMetaLabelingStep",
     "MetaLabelingHPOExperimentStep",
+    "MetaLabelingHPOSampleWeightedStep",
     "TripleBarrierValidator",
     "ValidationResult",
     "ValidationReport",

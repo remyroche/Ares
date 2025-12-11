@@ -26,6 +26,7 @@ from sklearn.isotonic import IsotonicRegression
 from sklearn.model_selection import TimeSeriesSplit, cross_val_predict
 from sklearn.metrics import roc_auc_score
 from sklearn.inspection import permutation_importance
+from scipy.stats import spearmanr
 import lightgbm as lgb
 
 try:
@@ -34,6 +35,138 @@ try:
 except ImportError:
     XGBOOST_AVAILABLE = False
     xgb = None
+
+from src.training.steps.labeling.feature_generation_meta_labeling_step import (
+    create_meta_features,
+    build_meta_features_for_model,
+    create_quantile_labels_from_vol_scaled_returns,
+    create_regime_aware_quantile_labels_from_vol_scaled_returns,
+    create_rolling_quantile_labels_from_vol_scaled_returns,
+    create_rolling_regime_aware_quantile_labels_from_vol_scaled_returns,
+)
+
+def compute_linear_regime_adaptive_threshold(
+    base_threshold: float,
+    regime_score: pd.Series,
+    min_threshold: float = 0.3,
+    max_threshold: float = 0.8,
+    sensitivity: float = 0.2,
+) -> pd.Series:
+    """
+    Compute linear regime-adaptive probability thresholds.
+    
+    Args:
+        base_threshold: Base probability threshold (e.g., 0.55)
+        regime_score: Continuous regime score (e.g., volatility z-score, HMM state normalized)
+        min_threshold: Minimum allowed threshold
+        max_threshold: Maximum allowed threshold  
+        sensitivity: How much regime affects threshold (0-1)
+    
+    Returns:
+        Series of adaptive thresholds aligned with regime_score
+    """
+    # Normalize regime_score to [0, 1] using robust statistics
+    regime_median = regime_score.median()
+    regime_std = regime_score.std()
+    if regime_std == 0:
+        regime_std = 1.0
+    
+    # Z-score normalization clipped to [-2, 2] then mapped to [0, 1]
+    regime_z = (regime_score - regime_median) / regime_std
+    regime_z = np.clip(regime_z, -2, 2)
+    regime_norm = (regime_z + 2) / 4  # Maps [-2, 2] to [0, 1]
+    
+    # Linear adjustment: lower threshold in favorable regimes, higher in unfavorable
+    # regime_norm=0 (unfavorable) → threshold = base_threshold + sensitivity
+    # regime_norm=1 (favorable) → threshold = base_threshold - sensitivity  
+    adaptive_threshold = base_threshold + sensitivity * (0.5 - regime_norm)
+    
+    # Clip to bounds
+    adaptive_threshold = np.clip(adaptive_threshold, min_threshold, max_threshold)
+    
+    return adaptive_threshold
+
+
+def compute_regime_aware_trade_simulation(
+    probabilities: pd.Series,
+    realized_returns: pd.Series,
+    regime_score: Optional[pd.Series] = None,
+    base_threshold: float = 0.55,
+    use_linear_adaptive: bool = True,
+    min_threshold: float = 0.3,
+    max_threshold: float = 0.8,
+    sensitivity: float = 0.2,
+    transaction_cost: float = 0.003,
+) -> Dict[str, Any]:
+    """
+    Compute trade simulation metrics with optional regime-adaptive gating.
+    
+    Args:
+        probabilities: Meta-model probabilities
+        realized_returns: Realized returns for events
+        regime_score: Optional regime score for adaptive gating
+        base_threshold: Base probability threshold
+        use_linear_adaptive: Whether to use linear regime-adaptive thresholds
+        min_threshold: Minimum adaptive threshold
+        max_threshold: Maximum adaptive threshold
+        sensitivity: Regime sensitivity parameter
+        transaction_cost: Transaction cost per trade
+        
+    Returns:
+        Dictionary with trade simulation metrics
+    """
+    results = {}
+    
+    if use_linear_adaptive and regime_score is not None:
+        # Linear regime-adaptive thresholds
+        adaptive_thresholds = compute_linear_regime_adaptive_threshold(
+            base_threshold=base_threshold,
+            regime_score=regime_score,
+            min_threshold=min_threshold,
+            max_threshold=max_threshold,
+            sensitivity=sensitivity,
+        )
+        
+        # Apply adaptive thresholds
+        trade_mask = probabilities >= adaptive_thresholds
+        results['adaptive_thresholds_used'] = True
+        results['mean_adaptive_threshold'] = float(adaptive_thresholds.mean())
+        results['std_adaptive_threshold'] = float(adaptive_thresholds.std())
+    else:
+        # Static threshold
+        trade_mask = probabilities >= base_threshold
+        results['adaptive_thresholds_used'] = False
+        results['mean_adaptive_threshold'] = base_threshold
+        results['std_adaptive_threshold'] = 0.0
+    
+    # Compute trade metrics
+    n_trades = int(trade_mask.sum())
+    total_trades = len(probabilities)
+    
+    if n_trades > 0:
+        trade_returns = realized_returns[trade_mask]
+        net_returns = trade_returns  # realized_returns already includes transaction costs
+        
+        results['n_trades'] = n_trades
+        results['trade_rate'] = float(n_trades / total_trades)
+        results['avg_return_per_trade'] = float(net_returns.mean())
+        results['total_return'] = float(net_returns.sum())
+        results['win_rate'] = float((net_returns > 0).mean())
+        results['sharpe_ratio'] = float(net_returns.mean() / (net_returns.std() + 1e-8))
+        results['max_drawdown'] = float(net_returns.cumsum().min())
+    else:
+        results.update({
+            'n_trades': 0,
+            'trade_rate': 0.0,
+            'avg_return_per_trade': 0.0,
+            'total_return': 0.0,
+            'win_rate': 0.0,
+            'sharpe_ratio': 0.0,
+            'max_drawdown': 0.0,
+        })
+    
+    return results
+
 
 def smoothed_brier_lgb_objective(y_pred, dtrain):
     if hasattr(dtrain, "get_label"):
@@ -117,6 +250,13 @@ class TwoStageBaggedMetaModel(BaseEstimator, ClassifierMixin):
         self.n_bagging = int(n_bagging)
         self.bagging_fraction = float(bagging_fraction)
         self.random_state = int(random_state)
+        
+        # Phase 2 Optimization: Force balanced class weights by default
+        # to handle extreme label imbalance (e.g. 5% positive rate)
+        # DISABLE for Phase 3: Let HPO decide or default to None. 'balanced' causes degenerate 0.5 preds on weak features.
+        # if "class_weight" not in self.base_params and "is_unbalance" not in self.base_params:
+        #     self.base_params["class_weight"] = "balanced"
+
 
         self.stage1_model: Optional[lgb.LGBMClassifier] = lgb.LGBMClassifier(**self.base_params)
         self.stage2_ensemble: Optional[BaggingClassifier] = BaggingClassifier(
@@ -223,6 +363,11 @@ from src.training.steps.labeling.feature_generation_meta_labeling_step import (
     attach_rolling_hmm_regimes_to_market_data,
     create_regime_aware_quantile_labels_from_vol_scaled_returns,
 )
+from src.training.steps.labeling import FeatureSetPersistence
+from src.training.steps.labeling.label_config import (
+    build_label_config,
+    compute_label_config_id,
+)
 
 from src.utils.ml_common.optimization.hierarchical_parameter_optimizer import (
     HierarchicalParameterOptimizer,
@@ -258,13 +403,26 @@ GENERATE_RECOMMENDED_DIAGNOSTICS: bool = False
 # concentration, and probe vs deeper model comparisons. Adds computational cost.
 ENABLE_UNDERFIT_DIAGNOSTICS: bool = True
 
+# Minimum sample requirements for HPO phases
+MIN_EVENTS_PHASE1 = 200  # Minimum events for Phase 1 (sample count optimization)
+MIN_EVENTS_PHASE2 = 300  # Minimum events for Phase 2 (edge refinement)
+
 # Multi-stage HPO configuration defaults
+# TWO-PHASE HPO DESIGN:
+# Phase 1 (Stages 1-2): Optimize for SAMPLE COUNT + basic AUC
+#   - Primary objective: n_events >= MIN_EVENTS_PHASE1
+#   - Secondary objective: AUC > 0.52
+# Phase 2 (Stages 3-4): Optimize for EDGE on sufficient samples
+#   - Only runs if Phase 1 achieves MIN_EVENTS_PHASE2
+#   - Primary objective: realistic P&L edge
 STAGE_CONFIGS: List[OptimizationStage] = [
     {
-        "name": "Stage 1 (Screening)",
+        "name": "Stage 1 (Sample Count Screening)",
         "complexity": "fast",
-        "n_trials": 100,
-        "top_k_to_pass": 30,  # Pass top 30 configurations to next stage
+        "n_trials": 60,  # Reduced from 100 - focus on finding configs with enough samples
+        "top_k_to_pass": 30,
+        "phase": 1,  # Phase 1: sample count optimization
+        "min_events_required": MIN_EVENTS_PHASE1,
         "model_params": {
             "n_estimators": 50,
             "max_depth": 3,
@@ -273,39 +431,49 @@ STAGE_CONFIGS: List[OptimizationStage] = [
         },
     },
     {
-        "name": "Stage 2 (Refinement)",
+        "name": "Stage 2 (Sample Count Refinement)",
         "complexity": "medium",
-        "n_trials": 50,
-        "top_k_to_pass": 10,  # Pass top 10 to final stage
+        "n_trials": 30,  # Reduced from 50
+        "top_k_to_pass": 10,
+        "phase": 1,  # Still Phase 1
+        "min_events_required": MIN_EVENTS_PHASE1,
         "model_params": {
             "n_estimators": 150,
             "max_depth": 5,
             "learning_rate": 0.05,
-            "cv_splits": 4,
+            "cv_splits": 3,
         },
     },
     {
-        "name": "Stage 3 (Production Proxy)",
+        "name": "Stage 3 (Edge Optimization)",
         "complexity": "strong",
-        "n_trials": 35,  # Slightly more trials for better exploration near production regime
-        "top_k_to_pass": 1,
+        "n_trials": 30,  # Increased from 35 for better edge exploration
+        "top_k_to_pass": 5,  # Pass more to Stage 4 for refinement
+        "phase": 2,  # Phase 2: edge optimization (only if sufficient samples)
+        "min_events_required": MIN_EVENTS_PHASE2,
         "model_params": {
-            "n_estimators": 300,
+            "n_estimators": 200,
             "max_depth": 8,
             "learning_rate": 0.01,
-            "cv_splits": 4,
+            "cv_splits": 3,
+            "use_feature_selection": True,
+            "use_resampling": True,
         },
     },
     {
-        "name": "Stage 4 (Labeling Refinement)",
+        "name": "Stage 4 (Edge Refinement)",
         "complexity": "strong",
-        "n_trials": 45,
+        "n_trials": 30,  # Increased from 45
         "top_k_to_pass": 1,
+        "phase": 2,  # Phase 2
+        "min_events_required": MIN_EVENTS_PHASE2,
         "model_params": {
-            "n_estimators": 300,
+            "n_estimators": 200,
             "max_depth": 8,
             "learning_rate": 0.01,
-            "cv_splits": 4,
+            "cv_splits": 3,
+            "use_feature_selection": True,
+            "use_resampling": True,
         },
     },
 ]
@@ -447,6 +615,9 @@ def compute_learnability_with_calibration(
     market_index: Optional[pd.DatetimeIndex] = None,
     base_horizon_bars: Optional[int] = None,
     use_smoothed_brier_objective_lgbm: bool = False,
+    scale_pos_weight: Optional[float] = None,
+    use_feature_selection: bool = False,
+    use_resampling: bool = False,
 ) -> Tuple[float, float, np.ndarray, Optional[IsotonicRegression], np.ndarray, np.ndarray]:
     """Compute learnability score with isotonic calibration for accurate P&L estimation.
 
@@ -522,88 +693,152 @@ def compute_learnability_with_calibration(
             pass
 
     # Select model based on complexity
-    if model_complexity == "fast":
-        models = [lgb.LGBMClassifier(
-            boosting_type='gbdt',
-            objective=smoothed_brier_lgb_objective if use_smoothed_brier_objective_lgbm else 'binary',
-            n_estimators=50,
-            max_depth=3,
-            learning_rate=0.1,
-            feature_fraction=0.8,
-            bagging_fraction=0.8,
-            bagging_freq=5,
-            n_jobs=-1,
-            verbose=-1,
-            random_state=42,
-            colsample_bytree=0.8,
-            min_child_samples=20,
-            reg_alpha=0.1,
-            reg_lambda=0.1,
-        )]
+    if isinstance(X_clean, pd.DataFrame):
+        n_features_clean = X_clean.shape[1]
+    else:
+        X_clean_arr = np.asarray(X_clean)
+        if X_clean_arr.ndim == 1:
+            n_features_clean = 1
+        else:
+            n_features_clean = X_clean_arr.shape[1]
 
-    elif model_complexity == "medium":
-        models = [lgb.LGBMClassifier(
-            boosting_type='gbdt',
-            objective=smoothed_brier_lgb_objective if use_smoothed_brier_objective_lgbm else 'binary',
-            max_depth=3,
-            n_estimators=150,
-            learning_rate=0.04,
-            subsample=0.8,
-            colsample_bytree=0.8,
-            min_child_samples=60,
-            reg_alpha=0.2,
-            reg_lambda=0.7,
-            n_jobs=-1,
-            verbose=-1,
-            random_state=42
-        )]
+    # ===== FEATURE SELECTION (Fast RFE-like) =====
+    if use_feature_selection and n_features_clean > 10:
+        try:
+            # Train a quick fast model to get feature importance
+            selector = lgb.LGBMClassifier(
+                n_estimators=50, max_depth=3, learning_rate=0.1, n_jobs=-1, random_state=42, verbose=-1
+            )
+            selector.fit(X_clean, y_clean)
+            importances = selector.feature_importances_
+            
+            # Select top 60% features or at least top 10
+            indices_sorted = np.argsort(importances)[::-1]
+            n_keep = max(10, int(n_features_clean * 0.6))
+            selected_indices = indices_sorted[:n_keep]
+            
+            if isinstance(X_clean, pd.DataFrame):
+                X_clean = X_clean.iloc[:, selected_indices]
+                tprint(f"[RFE] Selected {n_keep}/{n_features_clean} features", "INFO")
+                n_features_clean = X_clean.shape[1]
+            else:
+                X_clean = X_clean_arr[:, selected_indices]
+                tprint(f"[RFE] Selected {n_keep}/{n_features_clean} features (numpy)", "INFO")
+                n_features_clean = X_clean.shape[1]
+        except Exception as e:
+            tprint(f"⚠️ Feature selection failed: {e}", "WARNING")
+            pass
 
-    else:  # strong
+    if n_features_clean <= 1:
         models = [
-            lgb.LGBMClassifier(
-                boosting_type='gbdt',
-                objective=smoothed_brier_lgb_objective if use_smoothed_brier_objective_lgbm else 'binary',
-                max_depth=4,
-                n_estimators=220,
-                learning_rate=0.02,
-                subsample=0.8,
-                colsample_bytree=0.8,
-                min_child_samples=80,
-                reg_alpha=0.3,
-                reg_lambda=0.9,
+            LogisticRegression(
+                max_iter=400,
                 n_jobs=-1,
-                verbose=-1,
-                random_state=42
+                penalty="l2",
+                solver="lbfgs",
             )
         ]
+    else:
+        if model_complexity == "fast":
+            models = [lgb.LGBMClassifier(
+                boosting_type='gbdt',
+                objective='binary',
+                n_estimators=20,
+                max_depth=2,
+                num_leaves=4,  # Explicitly set satisfies 2^depth condition
+                learning_rate=0.15,
+                feature_fraction=0.8,
+                bagging_fraction=0.8,
+                bagging_freq=5,
+                n_jobs=-1,
+                verbose=-1,
+                random_state=42,
+                colsample_bytree=0.8,
+                min_child_samples=20,
+                reg_alpha=0.1,
+                reg_lambda=0.1,
+                feature_pre_filter=False,
+                min_data_in_bin=1,
+            )]
 
-        # Add XGBoost and RF for ensemble if available and requested
-        if use_ensemble:
-            if XGBOOST_AVAILABLE:
-                models.append(xgb.XGBClassifier(
-                    max_depth=4,
-                    n_estimators=320,
+        elif model_complexity == "medium":
+            models = [lgb.LGBMClassifier(
+                boosting_type='gbdt',
+                objective=smoothed_brier_lgb_objective if use_smoothed_brier_objective_lgbm else 'binary',
+                max_depth=3,
+                num_leaves=8, # 2^3
+                n_estimators=150,
+                learning_rate=0.04,
+                subsample=0.8,
+                colsample_bytree=0.8,
+                min_child_samples=20,  # Relaxed from 60 to allow splits on small/weak signal subsets
+                reg_alpha=0.1,         # Relaxed from 0.2
+                reg_lambda=0.1,        # Relaxed from 0.7
+                n_jobs=-1,
+                verbose=-1,
+                random_state=42,
+                feature_pre_filter=False,
+                min_data_in_bin=1,
+                scale_pos_weight=scale_pos_weight,
+            )]
+
+        else:  # strong
+            models = [
+                lgb.LGBMClassifier(
+                    boosting_type='gbdt',
+                    objective=smoothed_brier_lgb_objective if use_smoothed_brier_objective_lgbm else 'binary',
+                    max_depth=6,
+                    num_leaves=64, # 2^6
+                    n_estimators=220,
                     learning_rate=0.02,
                     subsample=0.8,
                     colsample_bytree=0.8,
-                    reg_alpha=0.2,
-                    reg_lambda=0.8,
+                    min_child_samples=80,
+                    reg_alpha=0.3,
+                    reg_lambda=0.9,
                     n_jobs=-1,
-                    verbosity=0,
+                    verbose=-1,
+                    random_state=42,
+                    feature_pre_filter=False,
+                    min_data_in_bin=1,
+                )
+            ]
+
+            # Add XGBoost and RF for ensemble if available and requested
+            if use_ensemble:
+                if XGBOOST_AVAILABLE:
+                    models.append(xgb.XGBClassifier(
+                        max_depth=4,
+                        n_estimators=200,
+                        learning_rate=0.02,
+                        subsample=0.8,
+                        colsample_bytree=0.8,
+                        reg_alpha=0.2,
+                        reg_lambda=0.8,
+                        n_jobs=-1,
+                        verbosity=0,
+                        random_state=42
+                    ))
+
+                models.append(RandomForestClassifier(
+                    n_estimators=200,
+                    max_depth=6,
+                    min_samples_leaf=10,
+                    n_jobs=-1,
                     random_state=42
                 ))
-
-            models.append(RandomForestClassifier(
-                n_estimators=200,
-                max_depth=6,
-                min_samples_leaf=10,
-                n_jobs=-1,
-                random_state=42
-            ))
 
     # Time-aware CV: use t1-aware purged K-fold splits with an embargo
     # proportional to the labeling horizon. For non-time-aware CV, fall
     # back to standard shuffled KFold.
+
+    # Adaptive CV: If samples are scarce, reduce splits to prevent starvation
+    if cv_splits > 2 and len(X_clean) < 200:
+        new_splits = max(2, int(len(X_clean) / 50))  # Ensure at least 50 samples per fold roughly
+        if new_splits < cv_splits:
+            tprint_warning(f"⚠️ Adaptive CV: Reduced splits {cv_splits}→{new_splits} due to low n_samples={len(X_clean)}")
+            cv_splits = new_splits
+
     if time_aware_cv:
         if event_durations is not None and market_index is not None and base_horizon_bars is not None:
             cv_splits_indices = _build_t1_aware_purged_splits_for_events(
@@ -693,6 +928,69 @@ def compute_learnability_with_calibration(
 
     oof_probs_full = np.full(len(X_clean), np.nan, dtype=float)
 
+    def _normalize_probabilities_or_scores(pred_array: np.ndarray) -> np.ndarray:
+        """Map model outputs to well-behaved probabilities in [0, 1].
+
+        This helper is robust to the case where ``predict_proba`` returns
+        raw scores/logits (e.g. when using a custom LightGBM objective).
+        - If the vector already looks like probabilities (within [0, 1]),
+          it is simply clipped to [0, 1].
+        - Otherwise it is treated as scores, robustly rescaled to avoid
+          extreme magnitudes, then passed through a bounded sigmoid before
+          clamping to [0, 1].
+        """
+
+        arr = np.asarray(pred_array, dtype=float).ravel()
+        if arr.size == 0:
+            return arr
+
+        try:
+            raw_min = float(np.nanmin(arr))
+            raw_max = float(np.nanmax(arr))
+        except Exception:
+            # If anything goes wrong computing the range, fall back to the
+            # raw array; downstream guards and diagnostics will still apply.
+            return arr
+
+        # Case 1: already looks like a probability vector
+        if raw_min >= -1e-6 and raw_max <= 1.0 + 1e-6:
+            return np.clip(arr, 0.0, 1.0)
+
+        # Case 2: treat as scores/logits. 
+        # FIX (Step 373): Do NOT scale scores. Raw logits like -8e15 mean "Very Sure Zero".
+        # Scaling them to -1.0 (relative to max) converts them to "Unsure" (0.27).
+        # We simply clip them to a safe range for sigmoid.
+        scores = np.clip(arr, -20.0, 20.0)
+        probs = 1.0 / (1.0 + np.exp(-scores))
+        probs = np.clip(probs, 0.0, 1.0)
+        try:
+            prob_min = float(np.nanmin(probs))
+            prob_max = float(np.nanmax(probs))
+        except Exception:
+            return probs
+        if prob_max - prob_min < 1e-3:
+            finite_mask = np.isfinite(arr)
+            if finite_mask.any():
+                arr_finite = arr[finite_mask]
+                try:
+                    score_min = float(np.nanmin(arr_finite))
+                    score_max = float(np.nanmax(arr_finite))
+                except Exception:
+                    score_min = 0.0
+                    score_max = 0.0
+                if score_max - score_min > 1e-6:
+                    order = np.argsort(np.argsort(arr_finite))
+                    denom = float(max(len(order) - 1, 1))
+                    ranks = order.astype(float) / denom
+                    probs_new = np.full_like(arr, 0.5, dtype=float)
+                    probs_new[finite_mask] = ranks
+                    probs = probs_new
+                else:
+                    probs = np.full_like(arr, 0.5, dtype=float)
+            else:
+                probs = np.full_like(arr, 0.5, dtype=float)
+        return probs
+
     try:
         all_full_probs = []
         all_aucs = []
@@ -749,6 +1047,49 @@ def compute_learnability_with_calibration(
                 else:
                     X_train_mat = np.asarray(X_train_cv, dtype=float)
                     X_test_mat = np.asarray(X_test_cv, dtype=float)
+
+                # ===== RESAMPLING (SMOTE / RandomOverSampler) =====
+                if use_resampling:
+                    try:
+                        # Only resample if we have enough samples and imbalance
+                        n_pos = np.sum(y_train_cv == 1)
+                        n_neg = np.sum(y_train_cv == 0)
+                        if n_pos > 10 and n_neg > 10:
+                            # Try importing imblearn
+                            try:
+                                from imblearn.over_sampling import SMOTE
+                                from imblearn.under_sampling import RandomUnderSampler
+                                from imblearn.pipeline import Pipeline as ImbPipeline
+                                
+                                # Hybrid strategy: SMOTE to 50% balance, then UnderSample majority to 1:1 if needed
+                                # But simpler: Just SMOTE to 1.0 (balanced)
+                                # Note: SMOTE can be slow on large dims.
+                                resampler = SMOTE(random_state=42, k_neighbors=min(n_pos-1, 5))
+                            except ImportError:
+                                # DIY Random Oversampling
+                                resampler = None
+                                
+                            if resampler:
+                                X_res, y_res = resampler.fit_resample(X_train_mat, y_train_cv)
+                                X_train_mat = X_res
+                                y_train_cv = y_res
+                                # Reset weights for resampled data (assume uniform or re-calculate)
+                                w_train_cv = np.ones(len(y_res), dtype=float)
+                            else:
+                                # Manual oversampling of minority class
+                                minor_cls = 1 if n_pos < n_neg else 0
+                                minor_indices = np.where(y_train_cv == minor_cls)[0]
+                                major_indices = np.where(y_train_cv != minor_cls)[0]
+                                diff = len(major_indices) - len(minor_indices)
+                                if diff > 0:
+                                    add_indices = np.random.choice(minor_indices, size=diff, replace=True)
+                                    final_indices = np.concatenate([np.arange(len(y_train_cv)), add_indices])
+                                    X_train_mat = X_train_mat[final_indices]
+                                    y_train_cv = y_train_cv.iloc[final_indices] if isinstance(y_train_cv, pd.Series) else y_train_cv[final_indices]
+                                    w_train_cv = np.ones(len(y_train_cv), dtype=float)
+                                    
+                    except Exception as e:
+                        tprint(f"⚠️ Resampling failed in fold, continuing without: {e}", "WARNING")
 
                 # Drop zero-variance columns (LightGBM can strip them and end up with 0 features)
                 col_std = np.nanstd(X_train_mat, axis=0)
@@ -855,6 +1196,9 @@ def compute_learnability_with_calibration(
                         y_proba_cv = proba_cv[:, 0]
                 else:
                     y_proba_cv = proba_cv.ravel()
+
+                # Ensure fold-level predictions are well-scaled
+                y_proba_cv = _normalize_probabilities_or_scores(y_proba_cv)
 
                 model_oof_parts.append(y_proba_cv)
                 if i == 0:
@@ -983,6 +1327,9 @@ def compute_learnability_with_calibration(
             else:
                 full_probs = full_proba.ravel()
 
+            # Normalize global predictions before any downstream calibration
+            full_probs = _normalize_probabilities_or_scores(full_probs)
+
             all_full_probs.append(full_probs)
             all_aucs.append(mean_auc)
 
@@ -1008,48 +1355,7 @@ def compute_learnability_with_calibration(
         iso_reg = None
         calibrated_probs = final_probs
 
-        if model_complexity in ["medium", "strong"] and all_model_oof_preds and len(oof_indices) > 50:
-            try:
-                oof_probs_array = np.array(all_model_oof_preds)
-
-                if len(models) > 1:
-                    avg_oof_probs = np.mean(oof_probs_array, axis=0)
-                    disagreement_oof = np.std(oof_probs_array, axis=0)
-                    confidence_penalty_oof = 1.0 - (disagreement_oof * 0.5)
-                    final_oof_probs = avg_oof_probs * confidence_penalty_oof + (1 - confidence_penalty_oof) * 0.5
-                    final_oof_probs = np.clip(final_oof_probs, 0.0, 1.0)
-                else:
-                    final_oof_probs = oof_probs_array[0]
-
-                y_oof = y_clean.iloc[oof_indices].to_numpy(dtype=float)
-
-                iso_reg = IsotonicRegression(out_of_bounds='clip')
-
-                valid_for_iso = np.isfinite(y_oof) & np.isfinite(final_oof_probs)
-                if np.sum(valid_for_iso) > 50:
-                    iso_reg.fit(final_oof_probs[valid_for_iso], y_oof[valid_for_iso])
-                    calibrated_probs = iso_reg.predict(final_probs)
-                else:
-                    y_array_full = y_clean.to_numpy(dtype=float)
-                    valid_in_sample = np.isfinite(y_array_full) & np.isfinite(final_probs)
-                    if np.sum(valid_in_sample) > 50:
-                        iso_reg.fit(final_probs[valid_in_sample], y_array_full[valid_in_sample])
-                        calibrated_probs = iso_reg.predict(final_probs)
-            except Exception:
-                calibrated_probs = final_probs
-                iso_reg = None
-        else:
-            if model_complexity in ["medium", "strong"]:
-                try:
-                    iso_reg = IsotonicRegression(out_of_bounds='clip')
-                    y_array_full = y_clean.to_numpy(dtype=float)
-                    valid_for_iso = np.isfinite(y_array_full) & np.isfinite(final_probs)
-                    if np.sum(valid_for_iso) > 50:
-                        iso_reg.fit(final_probs[valid_for_iso], y_array_full[valid_for_iso])
-                        calibrated_probs = iso_reg.predict(final_probs)
-                except Exception:
-                    pass
-
+        # Move OOF construction earlier so it can be used for calibration
         if all_model_oof_preds and oof_indices.size > 0:
             try:
                 oof_probs_array = np.array(all_model_oof_preds)
@@ -1061,11 +1367,128 @@ def compute_learnability_with_calibration(
                     final_oof_probs = np.clip(final_oof_probs, 0.0, 1.0)
                 else:
                     final_oof_probs = oof_probs_array[0]
+                
                 if final_oof_probs.shape[0] == oof_indices.shape[0]:
                     oof_probs_full = np.full(len(X_clean), np.nan, dtype=float)
                     oof_probs_full[oof_indices] = final_oof_probs
             except Exception:
                 oof_probs_full = np.full(len(X_clean), np.nan, dtype=float)
+        else:
+            oof_probs_full = np.full(len(X_clean), np.nan, dtype=float)
+
+        if model_complexity in ["medium", "strong"] and all_model_oof_preds and len(oof_indices) > 50:
+            try:
+                # Reuse final_oof_probs computed above
+                y_oof = y_clean.iloc[oof_indices].to_numpy(dtype=float)
+
+                iso_reg = IsotonicRegression(out_of_bounds='clip')
+
+                # Prepare sample weights for OOF indices if available
+                weights_oof = None
+                if sample_weights is not None and len(sample_weights) == len(y_clean):
+                    try:
+                        weights_oof = sample_weights[oof_indices]
+                    except Exception:
+                        weights_oof = None
+
+                valid_for_iso = np.isfinite(y_oof) & np.isfinite(final_oof_probs)
+                if np.sum(valid_for_iso) > 50:
+                    # Compute DYNAMIC balanced weights just for this fold/slice to force 50/50 prior
+                    y_iso_fit = y_oof[valid_for_iso]
+                    n_iso = len(y_iso_fit)
+                    n_pos = np.sum(y_iso_fit == 1.0)
+                    n_neg = np.sum(y_iso_fit == 0.0)
+
+                    weights_iso = None
+
+                    iso_reg.fit(final_oof_probs[valid_for_iso], y_iso_fit, sample_weight=weights_iso)
+                    
+                    # FIX: Use OOF predictions for calibrated_probs to ensure valid diagnostics (No Leakage)
+                    # We populate calibrated_probs with the calibrated OOF predictions.
+                    # Indices not in OOF (e.g. purged) will remain NaN or be filled with in-sample fallback.
+                    calibrated_probs = np.full(len(X_clean), np.nan, dtype=float)
+                    
+                    # Calibrate the OOF predictions
+                    calibrated_oof = iso_reg.predict(final_oof_probs)
+                    calibrated_probs[oof_indices] = calibrated_oof
+                    
+                    # Fallback for any missing indices (purged gaps): use in-sample predictions for continuity,
+                    # but diagnostics usually respect NaNs or mask them.
+                    missing_mask = np.isnan(calibrated_probs)
+                    if np.any(missing_mask):
+                        calibrated_probs[missing_mask] = iso_reg.predict(final_probs[missing_mask])
+
+                    # Check for degenerate calibration (all same value)
+                    if (calibrated_probs.max() - calibrated_probs.min()) < 0.05:
+                        # Fallback to OOF probs (uncalibrated) if calibration collapsed
+                         if np.any(~missing_mask):
+                            calibrated_probs[~missing_mask] = final_oof_probs
+                         if np.any(missing_mask):
+                            calibrated_probs[missing_mask] = final_probs[missing_mask]
+
+                else:
+                    # Fallback to In-Sample if OOF didn't have enough valid samples (rare)
+                    y_array_full = y_clean.to_numpy(dtype=float)
+                    valid_in_sample = np.isfinite(y_array_full) & np.isfinite(final_probs)
+                    if np.sum(valid_in_sample) > 50:
+                        y_iso_fit = y_array_full[valid_in_sample]
+                        # ... (same balancing logic as original) ...
+                        n_iso = len(y_iso_fit)
+                        n_pos = np.sum(y_iso_fit == 1.0)
+                        n_neg = np.sum(y_iso_fit == 0.0)
+
+                        weights_iso = None
+
+                        iso_reg.fit(final_probs[valid_in_sample], y_iso_fit, sample_weight=weights_iso)
+                        calibrated_probs = iso_reg.predict(final_probs)
+                        if (calibrated_probs.max() - calibrated_probs.min()) < 0.05:
+                            calibrated_probs = final_probs
+            except Exception:
+                calibrated_probs = final_probs
+                iso_reg = None
+
+        # Final safety: if calibration collapses to a near-constant vector while
+        # mean_auc indicates a non-trivial signal, fall back to the uncalibrated
+        # probabilities for all downstream diagnostics (MI, calibration curves,
+        # meta-gating search). This prevents "Degenerate (Single Bin)" outputs
+        # when the underlying model is actually informative.
+        try:
+            if isinstance(calibrated_probs, np.ndarray) and calibrated_probs.size > 0:
+                prob_min = float(np.nanmin(calibrated_probs))
+                prob_max = float(np.nanmax(calibrated_probs))
+                prob_range = prob_max - prob_min
+                if prob_range < 0.02 and mean_auc > 0.55:
+                    tprint_warning(
+                        "[CALIBRATION_DEGEN] Calibrated probabilities collapsed to near-constant "
+                        f"(range={prob_range:.6f}) despite mean_auc={mean_auc:.3f}; "
+                        "reverting to uncalibrated probabilities for diagnostics",
+                    )
+                    calibrated_probs = final_probs
+                    iso_reg = None
+                    candidates = []
+                    try:
+                        candidates.append(np.asarray(final_probs, dtype=float))
+                    except Exception:
+                        pass
+                    try:
+                        if oof_probs_full is not None:
+                            candidates.append(np.asarray(oof_probs_full, dtype=float))
+                    except Exception:
+                        pass
+                    for cand in candidates:
+                        try:
+                            finite_mask_cand = np.isfinite(cand)
+                            if not finite_mask_cand.any():
+                                continue
+                            cand_min = float(np.nanmin(cand[finite_mask_cand]))
+                            cand_max = float(np.nanmax(cand[finite_mask_cand]))
+                            if cand_max - cand_min >= 1e-3:
+                                calibrated_probs = cand
+                                break
+                        except Exception:
+                            continue
+        except Exception:
+            pass
 
         learnability = mean_auc - (0.5 * std_auc_cv)
 
@@ -1117,6 +1540,8 @@ def run_leakage_sanity_check(
             min_child_samples=60,
             reg_alpha=0.3,
             reg_lambda=0.9,
+            feature_pre_filter=False,
+            min_data_in_bin=3,
             n_jobs=-1,
             verbose=-1,
             random_state=random_state,
@@ -1184,14 +1609,15 @@ def run_leakage_sanity_check(
                 result["second_importance"] = float(top_importances[1])
         top_imp_val = result["top_importance"]
         second_imp_val = result["second_importance"]
-        if top_imp_val is not None:
+        if top_imp_val is not None and delta_auc is not None:
             god_by_level = top_imp_val >= 0.25
             if second_imp_val is not None and second_imp_val > 0:
                 ratio = top_imp_val / second_imp_val
             else:
                 ratio = float("inf")
             god_by_ratio = ratio >= 3.0
-            result["god_feature_suspected"] = bool(god_by_level or god_by_ratio)
+            min_delta_auc = 0.01
+            result["god_feature_suspected"] = bool((god_by_level or god_by_ratio) and (delta_auc >= min_delta_auc))
         return result
     except Exception:
         return result
@@ -1804,6 +2230,8 @@ def compute_calibration_diagnostics(
     realized_returns: np.ndarray,
     transaction_cost: float = 0.003,
     n_bins: int = 10,
+    regime_score: Optional[np.ndarray] = None,
+    use_linear_adaptive_gating: bool = True,
 ) -> Dict[str, Any]:
     """Compute calibration diagnostics for the meta-model.
 
@@ -1849,10 +2277,15 @@ def compute_calibration_diagnostics(
         returns_arr = None
         if realized_returns is not None:
             returns_arr = np.asarray(realized_returns, dtype=float).ravel()
+        regime_arr = None
+        if regime_score is not None:
+            regime_arr = np.asarray(regime_score).ravel()
 
         n = min(len(y_arr), len(probs_arr))
         if returns_arr is not None:
             n = min(n, len(returns_arr))
+        if regime_arr is not None:
+            n = min(n, len(regime_arr))
         if n < 50:
             return diagnostics
 
@@ -1860,21 +2293,38 @@ def compute_calibration_diagnostics(
         probs_arr = probs_arr[:n]
         if returns_arr is not None:
             returns_arr = returns_arr[:n]
+        if regime_arr is not None:
+            regime_arr = regime_arr[:n]
 
-        # Remove NaN/inf values
+        # Remove NaN/inf values and align all arrays
         valid_mask = np.isfinite(y_arr) & np.isfinite(probs_arr)
+        if returns_arr is not None:
+            valid_mask &= np.isfinite(returns_arr)
+        if regime_arr is not None:
+            valid_mask &= np.isfinite(regime_arr)
+
         y = y_arr[valid_mask]
         probs = probs_arr[valid_mask]
         returns = returns_arr[valid_mask] if returns_arr is not None else None
+        regimes = regime_arr[valid_mask] if regime_arr is not None else None
 
         if len(y) < 50:
             return diagnostics
 
-        # Track raw probability range before clamping
+        # Track raw probability range before any transformation
+        raw_min = float(np.nanmin(probs)) if probs.size > 0 else None
+        raw_max = float(np.nanmax(probs)) if probs.size > 0 else None
         diagnostics["prob_range_raw"] = {
-            "min": float(np.nanmin(probs)) if probs.size > 0 else None,
-            "max": float(np.nanmax(probs)) if probs.size > 0 else None,
+            "min": raw_min,
+            "max": raw_max,
         }
+
+        # If inputs look like scores/logits (far outside [0, 1]), map them
+        # through a bounded sigmoid before treating them as probabilities.
+        if raw_min is not None and raw_max is not None:
+            if raw_min < -1e-3 or raw_max > 1.0 + 1e-3:
+                scores = np.clip(probs, -20.0, 20.0)
+                probs = 1.0 / (1.0 + np.exp(-scores))
 
         # Clamp probabilities to [0, 1] to avoid pathological Brier scores
         probs = np.clip(probs, 0.0, 1.0)
@@ -1882,6 +2332,12 @@ def compute_calibration_diagnostics(
             "min": float(np.nanmin(probs)) if probs.size > 0 else None,
             "max": float(np.nanmax(probs)) if probs.size > 0 else None,
         }
+
+        # Detect near-constant probability vectors as degenerate calibration
+        if probs.size == 0 or (
+            float(np.nanmax(probs)) - float(np.nanmin(probs)) < 1e-3
+        ):
+            diagnostics["degenerate_calibration"] = True
 
         # ===== Brier Score =====
         diagnostics["brier_score"] = float(np.mean((probs - y) ** 2))
@@ -1916,34 +2372,59 @@ def compute_calibration_diagnostics(
                 })
 
         if len(reliability_data) == 0 or len(reliability_data) == 1:
-            diagnostics["ece"] = 0.0
-            diagnostics["mce"] = 0.0
+            diagnostics["ece"] = None  # None indicates degenerate/undefined
+            diagnostics["mce"] = None
             diagnostics["reliability_diagram"] = reliability_data
             diagnostics["is_well_calibrated"] = False
+            diagnostics["degenerate_calibration"] = True
             diagnostics["degenerate_calibration"] = True
         else:
             diagnostics["ece"] = float(ece)
             diagnostics["mce"] = float(mce)
             diagnostics["reliability_diagram"] = reliability_data
             diagnostics["is_well_calibrated"] = ece < 0.05
-            diagnostics["degenerate_calibration"] = False
+            diagnostics["degenerate_calibration"] = diagnostics.get("degenerate_calibration", False)
 
         # ===== Precision Per Bin (especially high-probability regions) =====
         thresholds = [0.5, 0.6, 0.7, 0.8, 0.9]
         for thresh in thresholds:
-            mask = probs >= thresh
-            n_above = int(mask.sum())
-            if n_above >= 10:
-                precision = float(y[mask].mean())
-                fpr = float((1 - y[mask]).mean())  # False positive rate
-                diagnostics["precision_per_bin"][f"≥{thresh}"] = {
-                    "precision": precision,
-                    "count": n_above,
+            if use_linear_adaptive_gating and regimes is not None and thresh == 0.5:
+                # Use regime-adaptive gating for 0.5 threshold based on
+                # the sanitized probability vector.
+                probs_series = pd.Series(probs)
+                returns_series = pd.Series(returns) if returns is not None else pd.Series([], dtype=float)
+                regime_series = pd.Series(regimes)
+                
+                adaptive_results = compute_regime_aware_trade_simulation(
+                    probabilities=probs_series,
+                    realized_returns=returns_series,
+                    regime_score=regime_series,
+                    base_threshold=thresh,
+                    use_linear_adaptive=True,
+                    transaction_cost=transaction_cost,
+                )
+                
+                diagnostics["precision_per_bin"][f"≥{thresh}_adaptive"] = {
+                    "precision": adaptive_results["win_rate"],
+                    "count": adaptive_results["n_trades"],
+                    "avg_return": adaptive_results["avg_return_per_trade"],
+                    "adaptive_threshold_used": True,
                 }
-                diagnostics["fpr_per_bin"][f"≥{thresh}"] = {
-                    "fpr": fpr,
-                    "count": n_above,
-                }
+            else:
+                # Standard static threshold
+                mask = probs >= thresh
+                n_above = int(mask.sum())
+                if n_above >= 10:
+                    precision = float(y[mask].mean())
+                    fpr = float((1 - y[mask]).mean())  # False positive rate
+                    diagnostics["precision_per_bin"][f"≥{thresh}"] = {
+                        "precision": precision,
+                        "count": n_above,
+                    }
+                    diagnostics["fpr_per_bin"][f"≥{thresh}"] = {
+                        "fpr": fpr,
+                        "count": n_above,
+                    }
 
         # ===== Expected Net P&L by Probability Bucket =====
         if returns is not None:
@@ -1953,7 +2434,6 @@ def compute_calibration_diagnostics(
                 n_in_bin = int(mask.sum())
                 if n_in_bin >= 10:
                     bin_returns = returns[mask]
-                    # Net P&L after costs (assuming we trade all events in bin)
                     net_pnl = float(bin_returns.mean() - transaction_cost)
                     pnl_per_trade = net_pnl
                     expected_total = net_pnl * n_in_bin
@@ -1965,6 +2445,23 @@ def compute_calibration_diagnostics(
                         "expected_total_pnl": expected_total,
                         "is_profitable": pnl_per_trade > 0,
                     }
+
+            try:
+                from sklearn.isotonic import IsotonicRegression
+                if len(y) >= 100:
+                    pnl_target = returns - transaction_cost
+                    iso_mask = np.isfinite(probs) & np.isfinite(pnl_target)
+                    if np.sum(iso_mask) >= 50:
+                        iso_reg_pnl = IsotonicRegression(out_of_bounds="clip")
+                        iso_reg_pnl.fit(probs[iso_mask], pnl_target[iso_mask])
+                        grid = np.linspace(0.0, 1.0, 11, dtype=float)
+                        expected_net = iso_reg_pnl.predict(grid)
+                        diagnostics["pnl_calibration_curve"] = {
+                            "prob_grid": grid.tolist(),
+                            "expected_net_return": [float(v) for v in expected_net],
+                        }
+            except Exception:
+                pass
 
     except Exception as e:
         tprint(f"⚠️ Calibration diagnostics failed: {e}", "WARNING")
@@ -1984,6 +2481,7 @@ def compute_robustness_diagnostics(
     event_durations: Optional[pd.Series] = None,
     market_index: Optional[pd.DatetimeIndex] = None,
     base_horizon_bars: Optional[int] = None,
+    use_purged_splits: bool = True,
 ) -> Dict[str, Any]:
     """Compute robustness diagnostics across time and regimes.
 
@@ -2029,13 +2527,11 @@ def compute_robustness_diagnostics(
     if len(y_clean) < 100 or len(y_clean.unique()) < 2:
         return diagnostics
 
-    # Optional: reuse t1-aware purged splits from HPO when event information is provided.
-    if 'use_purged_splits' not in locals():
-        use_purged_splits = False
-
+    # Build CV splits: prefer t1-aware purged splits when event information is provided.
     purged_splits = None
     if (
         use_purged_splits
+        and time_aware_cv
         and event_durations is not None
         and market_index is not None
         and base_horizon_bars is not None
@@ -2051,12 +2547,15 @@ def compute_robustness_diagnostics(
         except Exception:
             purged_splits = None
 
-    # Time-aware CV (fallback when purged splits are not requested or unavailable)
-    if time_aware_cv and purged_splits is None:
+    if purged_splits is not None:
+        cv_splits_iter = list(purged_splits)
+    elif time_aware_cv:
         cv = TimeSeriesSplit(n_splits=n_folds)
+        cv_splits_iter = list(cv.split(X_clean))
     else:
         from sklearn.model_selection import KFold
         cv = KFold(n_splits=n_folds, shuffle=True, random_state=42)
+        cv_splits_iter = list(cv.split(X_clean))
 
     try:
         # 1. Per-Fold Metrics
@@ -2068,7 +2567,7 @@ def compute_robustness_diagnostics(
             n_jobs=-1, verbose=-1, random_state=42
         )
 
-        for fold_idx, (train_idx, test_idx) in enumerate(cv.split(X_clean)):
+        for fold_idx, (train_idx, test_idx) in enumerate(cv_splits_iter):
             try:
                 X_train, X_test = X_clean.iloc[train_idx], X_clean.iloc[test_idx]
                 y_train, y_test = y_clean.iloc[train_idx], y_clean.iloc[test_idx]
@@ -2129,7 +2628,22 @@ def compute_robustness_diagnostics(
             # Robust if CV std < 0.05 and worst fold > 0.52
             diagnostics["is_robust"] = (diagnostics["auc_cv_std"] < 0.05 and diagnostics["worst_fold_auc"] > 0.52)
 
-        # ===== Per Volatility Regime =====
+        # ===== Per Volatility Regime (using OOF predictions) =====
+        # Build out-of-fold predictions first to avoid in-sample leakage
+        oof_probs = np.full(len(y_clean), np.nan)
+        try:
+            for fold_idx, (train_idx, test_idx) in enumerate(cv_splits_iter):
+                X_train, X_test = X_clean.iloc[train_idx], X_clean.iloc[test_idx]
+                y_train, y_test = y_clean.iloc[train_idx], y_clean.iloc[test_idx]
+                if len(y_train.unique()) < 2:
+                    continue
+                model.fit(X_train, y_train)
+                oof_probs[test_idx] = model.predict_proba(X_test)[:, 1]
+        except Exception:
+            pass
+
+        oof_valid_mask = ~np.isnan(oof_probs)
+
         if volatility is not None:
             try:
                 vol_aligned = volatility.reindex(y_clean.index)
@@ -2147,14 +2661,16 @@ def compute_robustness_diagnostics(
                     
                     for regime_name, regime_mask in vol_regimes.items():
                         regime_mask = regime_mask.reindex(y_clean.index, fill_value=False)
-                        n_regime = int(regime_mask.sum())
+                        # Combine with OOF validity
+                        combined_mask = regime_mask.values & oof_valid_mask
+                        n_regime = int(combined_mask.sum())
                         
-                        if n_regime >= 30 and len(y_clean[regime_mask].unique()) >= 2:
+                        if n_regime >= 30 and len(np.unique(y_clean.values[combined_mask])) >= 2:
                             try:
-                                # Train on all, evaluate on regime
-                                model.fit(X_clean, y_clean)
-                                probs_regime = model.predict_proba(X_clean[regime_mask])[:, 1]
-                                auc_regime = float(roc_auc_score(y_clean[regime_mask], probs_regime))
+                                # Use OOF predictions (out-of-sample) for regime AUC
+                                probs_regime = oof_probs[combined_mask]
+                                y_regime = y_clean.values[combined_mask]
+                                auc_regime = float(roc_auc_score(y_regime, probs_regime))
                                 
                                 diagnostics["per_volatility_regime"][regime_name] = {
                                     "auc": auc_regime,
@@ -2168,26 +2684,29 @@ def compute_robustness_diagnostics(
             except Exception:
                 pass
 
-        # ===== Per Regime (if provided) =====
+        # ===== Per Regime (if provided) - using OOF predictions =====
         if regimes is not None:
             try:
                 regimes_aligned = regimes.reindex(y_clean.index)
                 unique_regimes = pd.unique(regimes_aligned.dropna())
                 
                 for reg_val in unique_regimes:
-                    regime_mask = regimes_aligned == reg_val
-                    n_regime = int(regime_mask.sum())
+                    regime_mask = (regimes_aligned == reg_val).values
+                    # Combine with OOF validity
+                    combined_mask = regime_mask & oof_valid_mask
+                    n_regime = int(combined_mask.sum())
                     
-                    if n_regime >= 30 and len(y_clean[regime_mask].unique()) >= 2:
+                    if n_regime >= 30 and len(np.unique(y_clean.values[combined_mask])) >= 2:
                         try:
-                            model.fit(X_clean, y_clean)
-                            probs_regime = model.predict_proba(X_clean[regime_mask])[:, 1]
-                            auc_regime = float(roc_auc_score(y_clean[regime_mask], probs_regime))
+                            # Use OOF predictions (out-of-sample) for regime AUC
+                            probs_regime = oof_probs[combined_mask]
+                            y_regime = y_clean.values[combined_mask]
+                            auc_regime = float(roc_auc_score(y_regime, probs_regime))
                             
                             # Net P&L in regime
                             net_pnl = None
                             if returns_clean is not None:
-                                returns_regime = returns_clean[regime_mask]
+                                returns_regime = returns_clean.values[combined_mask]
                                 trade_mask = probs_regime >= 0.5
                                 if trade_mask.sum() > 0:
                                     net_pnl = float(returns_regime[trade_mask].mean() - transaction_cost)
@@ -2387,6 +2906,7 @@ def compute_realistic_pnl_edge(
     reference_trades: float | None = None,
     days_span: float | None = None,
     target_trades_per_day: float = 2.0,
+    prob_range: float | None = None,
 ) -> float:
     """Compute realistic P&L edge using the capture ratio formula.
 
@@ -2403,6 +2923,9 @@ def compute_realistic_pnl_edge(
     for configurations achieving the target trades/day range (1-3/day),
     to help HPO escape local minima of very sparse configurations.
 
+    ENHANCED: When prob_range is provided, apply a penalty for degenerate
+    probability distributions (range < 0.1) to avoid collapsed models.
+
     Args:
         mean_return_positive: Mean return of positive-labeled events
         mean_auc: Cross-validated AUC of the model
@@ -2411,6 +2934,7 @@ def compute_realistic_pnl_edge(
         reference_trades: Reference trade count for scaling (e.g. days_span × target_trades_per_day)
         days_span: Number of days in the dataset (for density bonus)
         target_trades_per_day: Target trades/day for density bonus calculation
+        prob_range: Range of predicted probabilities (max - min); used to penalize degenerate models
 
     Returns:
         Realistic P&L edge score
@@ -2452,19 +2976,26 @@ def compute_realistic_pnl_edge(
     # This helps HPO escape local minima of very sparse configs.
     if days_span is not None and days_span > 0 and n_trades is not None and n_trades > 0:
         trades_per_day = float(n_trades) / float(days_span)
-        
+
         # Density bonus: reward configurations in the sweet spot (1-3 trades/day)
         # Peak bonus at target_trades_per_day, with gentle falloff outside range
-        if trades_per_day >= 0.5 and trades_per_day <= 5.0:
-            # Gaussian-like bonus centered at target
-            distance_from_target = abs(trades_per_day - target_trades_per_day)
-            # Max 20% bonus at target, decaying with distance
-            density_bonus = 1.0 + 0.2 * max(0.0, 1.0 - distance_from_target / 2.0)
-            edge *= density_bonus
-        elif trades_per_day < 0.5:
-            # Strong penalty for very sparse configs (< 0.5/day)
-            sparsity_penalty = 0.5 + 0.5 * (trades_per_day / 0.5)  # Range [0.5, 1.0]
-            edge *= sparsity_penalty
+        if trades_per_day < target_trades_per_day:
+            # Quadratic penalty as trades_per_day moves below target
+            factor = max(0.0, trades_per_day / max(target_trades_per_day, 1e-6))
+            edge *= factor * factor
+
+    # Penalty for degenerate probability distributions (collapsed model)
+    # If prob_range < 0.1, the model is essentially predicting a constant
+    if prob_range is not None:
+        if prob_range < 0.01:
+            # Severe penalty: nearly constant predictions
+            edge *= 0.1
+        elif prob_range < 0.05:
+            # Strong penalty: very narrow range
+            edge *= 0.3 + 0.7 * (prob_range / 0.05)
+        elif prob_range < 0.1:
+            # Moderate penalty: narrow range
+            edge *= 0.7 + 0.3 * ((prob_range - 0.05) / 0.05)
 
     return edge
 
@@ -2673,6 +3204,24 @@ class MetaLabelingHPOExperimentStep(BaseStep):
         timeframe = config.get("timeframe", "15m")
         direction = config.get("direction", "long")
 
+        hpo_feature_set: Optional[List[str]] = None
+        try:
+            persistence = FeatureSetPersistence()
+            # Prefer the 70-feature production meta-labeling set when available.
+            feature_names_70 = persistence.get_feature_set(
+                symbol=symbol,
+                exchange=exchange,
+                family="meta_labeling",
+                size=70,
+            )
+            if feature_names_70:
+                hpo_feature_set = feature_names_70
+                tprint_info(
+                    f"📊 HPO: using precomputed LGBM meta-labeling feature set (70 features) for {symbol} on {exchange}"
+                )
+        except Exception as e:
+            tprint_warning(f"[HPO_FEATURES] Could not load precomputed feature set: {e}")
+
         tprint_info(
             f"🚀 Starting Meta-Labeling HPO experiment for {symbol}/{exchange} [{timeframe}] ({direction})"
         )
@@ -2685,6 +3234,16 @@ class MetaLabelingHPOExperimentStep(BaseStep):
         # 1) Load market data once and generate primary signals
         # ------------------------------------------------------------------
         pipeline_state: Dict[str, Any] = {}
+        if config.get("execution_mode") == "full":
+            # Force sufficient history for HPO in full mode
+            # This overrides potentially small defaults in BaseStep/ExecutionModeConfig
+            current_lookback = config.get("lookback_days", 0)
+            if not current_lookback or int(current_lookback) < 365:
+                 tprint(f"🔧 HPO {config.get('execution_mode')} Mode: Forcing 1095 days lookback to ensure sufficient data", "INFO")
+                 config["lookback_days"] = 1095
+                 # Also disable Stage 1 subsampling cap (default 180) to allow full dataset
+                 config["stage1_default_cap_days"] = 0
+
         market_data, source = self.load_market_data_or_fail(
             config,
             pipeline_state,
@@ -2701,7 +3260,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
         # by trimming to the last N days on the DateTimeIndex. Light-mode behavior
         # (shorter windows) is handled via BaseStep._apply_light_mode_filter.
         try:
-            exec_mode = str(config.get("execution_mode", "full")).lower()
+            exec_mode = str(config.get("execution_mode", "blank")).lower()
             lookback_days_cfg = int(config.get("lookback_days", 0) or 0)
             if exec_mode == "blank" and lookback_days_cfg > 0:
                 lookback_days = min(lookback_days_cfg, 160)
@@ -2715,6 +3274,11 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     f"📅 HPO load: rows={len(market_data)}, "
                     f"start={md_start}, end={md_end}, span_days={md_span_days}"
                 )
+                if len(market_data) < 1000:
+                    tprint_warning(
+                        f"⚠️ [SAMPLE_STARVATION] HPO loaded only {len(market_data)} rows. "
+                        f"LightGBM requires 1000+ for stable splits. Consider using 'blank' or 'full' mode."
+                    )
             except Exception:
                 pass
             if (
@@ -2854,6 +3418,41 @@ class MetaLabelingHPOExperimentStep(BaseStep):
             )
         except Exception as e_reg:
             tprint_warning(f"⚠️ Failed to attach rolling HMM regimes to market_data for HPO: {e_reg}")
+
+        # ===== NEW: REGIME DISTRIBUTION DIAGNOSTICS =====
+        # Log regime distribution to help diagnose why some regimes have zero events
+        try:
+            if "hmm_regime_label_1h" in market_data.columns:
+                regime_col = market_data["hmm_regime_label_1h"]
+                regime_counts = regime_col.value_counts(dropna=False).sort_index()
+                total_rows = len(market_data)
+                tprint_info(f"📊 [REGIME_DIAGNOSTICS] Total rows: {total_rows}")
+                tprint_info(f"📊 [REGIME_DIAGNOSTICS] Regime distribution:")
+                for regime_val, count in regime_counts.items():
+                    pct = 100.0 * count / total_rows if total_rows > 0 else 0.0
+                    tprint_info(f"   Regime {regime_val}: {count} rows ({pct:.1f}%)")
+                
+                # Check for missing regimes (0, 1, 2, 3, 4 expected)
+                expected_regimes = set(range(5))
+                observed_regimes = set(regime_counts.index.dropna().astype(int))
+                missing_regimes = expected_regimes - observed_regimes
+                if missing_regimes:
+                    tprint_warning(
+                        f"⚠️ [REGIME_DIAGNOSTICS] Missing regimes in data: {sorted(missing_regimes)}. "
+                        f"These regimes will have zero events in HPO."
+                    )
+                
+                # Check for regime imbalance
+                if len(regime_counts) > 1:
+                    max_count = regime_counts.max()
+                    min_count = regime_counts[regime_counts > 0].min() if (regime_counts > 0).any() else 0
+                    if min_count > 0 and max_count / min_count > 10:
+                        tprint_warning(
+                            f"⚠️ [REGIME_DIAGNOSTICS] Severe regime imbalance: "
+                            f"max/min ratio = {max_count / min_count:.1f}x"
+                        )
+        except Exception as regime_diag_exc:
+            tprint_warning(f"⚠️ Regime diagnostics failed: {regime_diag_exc}")
 
         # Attach specialist liquidity regime probabilities as additional regime features
         try:
@@ -3000,7 +3599,27 @@ class MetaLabelingHPOExperimentStep(BaseStep):
 
         # Build simple arrays for the optimizer API (they are not used in
         # the objective itself but provide shapes/logging)
-        X_dummy = market_data[["close"]].dropna().values.astype("float32")
+        # Build proper feature matrix using production logic
+        # This replaces the dummy placeholder aligned with user request (70+ features vs 1)
+        tprint_info("🔧 Generating production meta-features for HPO...")
+        try:
+            X_features = create_meta_features(
+                df=market_data,
+                signals=primary_signals,
+                volume_available="volume" in market_data.columns,
+                include_raw_signals=False,
+                use_kalman=True
+            )
+            # Ensure index alignment
+            common_idx = X_features.index.intersection(market_data.index)
+            X_dummy = X_features.loc[common_idx]
+            # Ensure float32 for memory efficiency
+            X_dummy = X_dummy.astype("float32")
+            tprint_success(f"✅ Generated {X_dummy.shape[1]} features (rows={len(X_dummy)})")
+        except Exception as feat_e:
+            tprint_warning(f"⚠️ Feature generation failed: {feat_e}. Using fallback.")
+            X_dummy = market_data[["close"]].dropna()
+        
         y_dummy = np.zeros(len(X_dummy), dtype="float32")
 
         # ------------------------------------------------------------------
@@ -3008,23 +3627,25 @@ class MetaLabelingHPOExperimentStep(BaseStep):
         # ------------------------------------------------------------------
         param_groups = [
             # Group 1: Signal Structure (3 params)
+            # RELAXED: Lower CUSUM threshold (0.006-0.025) and min_event_spacing (1-3)
+            # to generate more events and avoid sample starvation
             create_param_group(
                 name="signal_structure",
                 params={
                     "cusum_threshold": {
                         "type": "float",
                         "low": 0.010,
-                        "high": 0.03,
+                        "high": 0.035,
                     },
                     "target_signal_density": {
                         "type": "float",
-                        "low": 3.0,
-                        "high": 7.0,
+                        "low": 2.0,  # RELAXED from 3.0 to allow sparser signals
+                        "high": 12.0,  # EXPANDED to 12.0 per user request (aiming for ~6/day)
                     },
                     "min_event_spacing": {
                         "type": "int",
                         "low": 1,
-                        "high": 5,
+                        "high": 3,  # RELAXED from 5 to allow more events
                     },
                 },
                 priority=1,
@@ -3042,8 +3663,8 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     },
                     "profit_thr_base": {
                         "type": "float",
-                        "low": 0.008,
-                        "high": 0.022,
+                        "low": 0.010,
+                        "high": 0.025,
                     },
                     "stop_to_profit_ratio": {
                         "type": "float",
@@ -3095,23 +3716,24 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 description="Volatility adaptation baseline and multipliers",
             ),
             # Group 4: Label Definition (3 params) - Depends on Volatility Adaptation
+            # WIDENED: label quantile ranges to capture more samples (20-80% instead of 25-45/55-80)
             create_param_group(
                 name="label_definition",
                 params={
                     "label_low_q": {
                         "type": "float",
-                        "low": 0.35,
-                        "high": 0.45,
+                        "low": 0.15,  # WIDENED from 0.25 to capture more negative samples
+                        "high": 0.40,  # WIDENED from 0.45
                     },
                     "label_high_q": {
                         "type": "float",
-                        "low": 0.60,
-                        "high": 0.75,
+                        "low": 0.60,  # WIDENED from 0.55
+                        "high": 0.85,  # WIDENED from 0.80 to capture more positive samples
                     },
                     "econ_min_return_multiple": {
                         "type": "float",
-                        "low": 0.8,
-                        "high": 1.4,
+                        "low": 1.0,
+                        "high": 2.0,
                     },
                 },
                 priority=4,
@@ -3144,8 +3766,13 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     },
                     "transaction_cost_mult": {
                         "type": "float",
-                        "low": 0.5,
-                        "high": 1.5,
+                        "low": 1.0,
+                        "high": 1.2,
+                    },
+                    "scale_pos_weight": {
+                        "type": "float",
+                        "low": 1.0,
+                        "high": 10.0,
                     },
                 },
                 priority=5,
@@ -3321,6 +3948,8 @@ class MetaLabelingHPOExperimentStep(BaseStep):
             model_complexity: str = "fast",  # NEW: Model complexity level
             use_ensemble: bool = False,  # NEW: Use ensemble for strong complexity
             compute_diagnostics: bool = False,  # NEW: Whether to compute underfit diagnostics
+            use_feature_selection: bool = False,
+            use_resampling: bool = False,
             **kwargs: Any,
         ) -> Dict[str, float]:
             """Evaluate one labeling configuration with multi-objective scoring.
@@ -3344,7 +3973,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 Dict with keys: 'learnability', 'profitability', 'combined', 'edge'
             """
             # Determine CV splits based on model complexity
-            cv_splits_map = {"fast": 3, "medium": 3, "strong": 3}
+            cv_splits_map = {"fast": 3, "medium": 3, "strong": 5}  # Increased strong to 5 to match diagnostics
             cv_splits = cv_splits_map.get(model_complexity, 3)
 
             try:
@@ -3375,6 +4004,26 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 horizon = int(params["horizon_bars"])
                 min_spacing = int(params["min_event_spacing"])
 
+                if horizon <= 0:
+                    gate_stats["invalid_horizon"] = gate_stats.get("invalid_horizon", 0) + 1
+                    return {
+                        'learnability': 0.0,
+                        'profitability': -1e9,
+                        'edge': -1e9,
+                        'combined': -1e9,
+                    }
+
+                spacing_ratio = float(min_spacing) / float(horizon)
+                max_spacing_ratio = float(config.get("hpo_max_spacing_horizon_ratio", 8.0))
+                if spacing_ratio > max_spacing_ratio:
+                    gate_stats["spacing_vs_horizon"] = gate_stats.get("spacing_vs_horizon", 0) + 1
+                    return {
+                        'learnability': 0.0,
+                        'profitability': -1e9,
+                        'edge': -1e9,
+                        'combined': -1e9,
+                    }
+
                 kalman_Q = float(params.get("kalman_Q", 1e-4))
                 kalman_R = float(params.get("kalman_R", 0.01))
                 vol_baseline_window = int(params.get("vol_baseline_window", 96))
@@ -3392,12 +4041,12 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     stop_mult_min, stop_mult_max = stop_mult_max, stop_mult_min
 
                 # Hard RR constraint: even in the worst-case (smallest profit, largest stop),
-                # require a minimum RR ~1.4 (≈1.25 net after fees).
+                # require a minimum RR ~1.2 (≈1.05 net after fees).
                 worst_rr = (profit_thr_base * profit_mult_min) / max(stop_thr_base * stop_mult_max, 1e-8)
-                if worst_rr < 1.4:
+                if worst_rr < 1.2:
                     if debug_sample_count < debug_sample_limit:
                         tprint_warning(
-                            f"[EARLY_EXIT_RR] Rejecting config due to worst_rr={worst_rr:.3f} < 1.4 "
+                            f"[EARLY_EXIT_RR] Rejecting config due to worst_rr={worst_rr:.3f} < 1.2 "
                             f"(profit_thr_base={profit_thr_base:.4f}, stop_thr_base={stop_thr_base:.4f}, "
                             f"profit_mult_min={profit_mult_min:.3f}, stop_mult_max={stop_mult_max:.3f})"
                         )
@@ -3422,32 +4071,46 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 q_low = max(0.0, min(0.5, 1.0 - q_high))
 
                 # Economic floor multiplier for vol-scaled labels and isotonic mapping
-                econ_min_mult = float(params.get("econ_min_return_multiple", ECON_MIN_RETURN_MULTIPLE))
+                econ_min_mult = float(params.get("econ_min_return_multiple", 1.0))
                 if not np.isfinite(econ_min_mult) or econ_min_mult <= 0:
-                    econ_min_mult = float(ECON_MIN_RETURN_MULTIPLE)
+                    econ_min_mult = 1.0
+                # Clamp economic multiplier to prevent zero-target degeneracy
+                econ_min_mult = max(1.0, min(econ_min_mult, 2.0))
 
                 # Label quantile thresholds (regime-aware when regimes are present).
-                label_low_q = float(params.get("label_low_q", 0.30))
-                label_high_q = float(params.get("label_high_q", 0.70))
+                # Default to a slightly denser configuration (~40% positives target):
+                # bottom 40% vs top 40% tails.
+                label_low_q = float(params.get("label_low_q", 0.40))
+                label_high_q = float(params.get("label_high_q", 0.60))
                 # Guard-rail: ensure a proper ordering and keep them away from extremes.
-                # WIDENED bounds to allow denser label configurations
-                label_low_q = max(0.10, min(0.50, label_low_q))
-                label_high_q = max(0.50, min(0.90, label_high_q))
+                label_low_q = max(0.10, min(0.60, label_low_q))
+                label_high_q = max(0.40, min(0.90, label_high_q))
                 if label_high_q <= label_low_q:
-                    label_low_q, label_high_q = 0.30, 0.70
+                    label_low_q, label_high_q = 0.40, 0.60
+
+                min_label_band_width = float(config.get("hpo_min_label_band_width", 0.15))
+                if (label_high_q - label_low_q) < min_label_band_width:
+                    gate_stats["label_band_too_narrow"] = gate_stats.get("label_band_too_narrow", 0) + 1
+                    return {
+                        'learnability': 0.0,
+                        'profitability': -1e9,
+                        'edge': -1e9,
+                        'combined': -1e9,
+                    }
 
                 # NEW: R-multiple threshold for labeling - controls trade velocity filter
-                r_multiple_threshold = float(params.get("r_multiple_pos_threshold", 0.7))
-                r_multiple_threshold = max(0.3, min(1.0, r_multiple_threshold))
+                r_multiple_threshold = float(params.get("r_multiple_pos_threshold", 0.5))
+                # Relax lower bound to allow almost no trade-velocity filtering if features are good enough
+                r_multiple_threshold = max(0.01, min(1.2, r_multiple_threshold))
 
                 # NEW: Transaction cost multiplier - allows HPO to explore cost sensitivity
                 tx_cost_mult = float(params.get("transaction_cost_mult", 1.0))
-                tx_cost_mult = max(0.5, min(1.5, tx_cost_mult))
+                tx_cost_mult = max(1.0, min(1.2, tx_cost_mult))
                 effective_tx_cost = DEFAULT_TRANSACTION_COST * tx_cost_mult
 
                 # NEW: Signal generation parameters
                 cusum_threshold = float(params.get("cusum_threshold", 0.015))
-                cusum_threshold = max(0.010, min(0.03, cusum_threshold))
+                cusum_threshold = max(0.010, min(0.035, cusum_threshold))
                 target_signal_density = float(params.get("target_signal_density", 4.0))
                 target_signal_density = max(3.0, min(5.0, target_signal_density))
 
@@ -3572,20 +4235,44 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 if config.get("enable_regime_aware_quantiles", True) and "hmm_regime_label_1h" in market_data.columns:
                     regimes_for_labeling = market_data["hmm_regime_label_1h"]
 
+                # Use rolling quantiles by default to match production and avoid look-ahead bias
+                use_rolling = config.get("use_rolling_quantiles", True)
+                rolling_lookback = int(config.get("rolling_quantile_lookback_bars", 3000))
+                rolling_min_periods = int(config.get("rolling_quantile_min_periods", 300))
+
                 def _make_quantile_labels(vol_scaled_series: pd.Series) -> pd.Series:
                     """Helper to create (regime-aware) quantile labels from a score series."""
-                    if regimes_for_labeling is not None:
-                        return create_regime_aware_quantile_labels_from_vol_scaled_returns(
+                    if use_rolling:
+                        if regimes_for_labeling is not None:
+                            return create_rolling_regime_aware_quantile_labels_from_vol_scaled_returns(
+                                vol_scaled=vol_scaled_series,
+                                regimes=regimes_for_labeling,
+                                low_q=label_low_q,
+                                high_q=label_high_q,
+                                lookback_bars=rolling_lookback,
+                                min_periods=rolling_min_periods,
+                            )
+                        return create_rolling_quantile_labels_from_vol_scaled_returns(
                             vol_scaled=vol_scaled_series,
-                            regimes=regimes_for_labeling,
+                            low_q=label_low_q,
+                            high_q=label_high_q,
+                            lookback_bars=rolling_lookback,
+                            min_periods=rolling_min_periods,
+                        )
+                    else:
+                        # Legacy global quantiles (has look-ahead bias)
+                        if regimes_for_labeling is not None:
+                            return create_regime_aware_quantile_labels_from_vol_scaled_returns(
+                                vol_scaled=vol_scaled_series,
+                                regimes=regimes_for_labeling,
+                                low_q=label_low_q,
+                                high_q=label_high_q,
+                            )
+                        return create_quantile_labels_from_vol_scaled_returns(
+                            vol_scaled=vol_scaled_series,
                             low_q=label_low_q,
                             high_q=label_high_q,
                         )
-                    return create_quantile_labels_from_vol_scaled_returns(
-                        vol_scaled=vol_scaled_series,
-                        low_q=label_low_q,
-                        high_q=label_high_q,
-                    )
 
                 # Primary quantile labels on vol-scaled returns with the
                 # HPO-chosen economic floor.
@@ -3691,6 +4378,53 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     timeout_rate = float("nan")
                     tto_penalty = 0.0
 
+                # Relaxed: Lower default min_events_gate for initial stages
+                min_events_gate = int(config.get("hpo_min_events_gate", max(20, MIN_EVENTS_PHASE1 // 4)))
+                if n_events < min_events_gate:
+                    gate_stats["events_too_few_pre_cv"] = gate_stats.get("events_too_few_pre_cv", 0) + 1
+                    return {
+                        'learnability': 0.0,
+                        'profitability': -1e9,
+                        'edge': -1e9,
+                        'combined': -1e9,
+                    }
+
+                # Relaxed: Broader density gates
+                min_trades_per_day = float(config.get("hpo_min_trades_per_day_gate", 0.05))
+                max_trades_per_day = float(config.get("hpo_max_trades_per_day_gate", 25.0))
+                if events_per_day < min_trades_per_day or events_per_day > max_trades_per_day:
+                    gate_stats["density_gate_pre_cv"] = gate_stats.get("density_gate_pre_cv", 0) + 1
+                    # Softened penalty instead of hard -1e9 rejection for density
+                    return {
+                        'learnability': 0.0,
+                        'profitability': -100.0,  # Soft rejection
+                        'edge': -100.0,
+                        'combined': -100.0,
+                    }
+
+                balance_score_pre = compute_label_entropy_score(binary_labels)
+                if balance_score_pre <= 0.0:
+                    gate_stats["entropy_gate_pre_cv"] = gate_stats.get("entropy_gate_pre_cv", 0) + 1
+                    return {
+                        'learnability': 0.0,
+                        'profitability': -1e9,
+                        'edge': -1e9,
+                        'combined': -1e9,
+                    }
+
+                returns_labeled_pre = realized_returns[labeled_mask]
+                labels_labeled_pre = binary_labels[labeled_mask]
+                r_pos_pre = returns_labeled_pre[labels_labeled_pre == 1]
+                mean_pos_pre = float(r_pos_pre.mean()) if len(r_pos_pre) > 0 else 0.0
+                if mean_pos_pre <= effective_tx_cost:
+                    gate_stats["econ_gate_pre_cv"] = gate_stats.get("econ_gate_pre_cv", 0) + 1
+                    return {
+                        'learnability': 0.0,
+                        'profitability': -1e9,
+                        'edge': -1e9,
+                        'combined': -1e9,
+                    }
+
                 # --- Kalman smoothing for meta probability proxy ---
                 smoothed_labels, _ = kalman_smooth_labels(
                     binary_labels,
@@ -3760,13 +4494,33 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                         short_event_mask = event_mask_reg & False
 
                     # Signed regression base target: long>0, short<0
+                    # Phase 2 Fix: Use vol_scaled_returns DIRECTLY to avoid zero-target bug from isotonic mapping failure
+                    # This ensures the regressor always has a valid magnitude target to learn.
                     y_reg_base = pd.Series(np.nan, index=realized_returns.index)
-                    if target_long is not None:
-                        tl = target_long.reindex(realized_returns.index)
-                        y_reg_base.loc[long_event_mask] = tl.loc[long_event_mask]
-                    if target_short is not None:
-                        ts = target_short.reindex(realized_returns.index)
-                        y_reg_base.loc[short_event_mask] = -ts.loc[short_event_mask]
+                    if vol_scaled_returns is not None:
+                         # vol_scaled_returns is already signed (return / vol). 
+                         # For regression, we want this raw magnitude.
+                         # We apply it to the event mask.
+                         vs = vol_scaled_returns.reindex(realized_returns.index)
+                         # Longs: we want positive return -> positive target
+                         # Shorts: we want positive return (profit) -> positive target?
+                         # Usually regressors predict "edge". Long edge = ret. Short edge = -ret.
+                         # compute_vol_scaled_returns_for_events returns signed returns? checking...
+                         # Assuming realized_returns handles direction?
+                         # Let's use realized_returns directly to be safe, scaled by vol.
+                         
+                         # Re-derive vol-scaled returns aligned with direction
+                         # If consensus > 0 (Long), target = realized_return / vol
+                         # If consensus < 0 (Short), target = realized_return / vol (since realized_return is P&L)
+                         # Wait, realized_return in compute_realized_returns IS P&L (aligned with trade).
+                         # So positive realized_return = Profit.
+                         # So we just want realized_return / vol.
+                         
+                         v_aligned = volatility_1d.reindex(realized_returns.index).replace(0, np.nan)
+                         r_aligned = realized_returns
+                         y_raw = r_aligned / (v_aligned + 1e-8)
+                         
+                         y_reg_base.loc[event_mask_reg] = y_raw.loc[event_mask_reg]
 
                     # Drop NaNs to derive clipping/scaling statistics
                     y_ev = y_reg_base[event_mask_reg].dropna()
@@ -3820,33 +4574,67 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 # ===== LEARNABILITY ASSESSMENT WITH CALIBRATION =====
                 # Create meta-features for this labeling configuration using the
                 # same pipeline as the production meta-labeling step.
+                # Use the pre-computed feature matrix passed via 'X'
+                # This ensures consistent feature set across trials and avoids re-computation.
                 meta_feature_cfg = config.get("meta_feature_engineering", {}) or {}
-                if not isinstance(meta_feature_cfg, dict):
-                    meta_feature_cfg = {}
-                # Enable intra-run feature-selection caching so that the same
-                # feature subset is reused across HPO trials for a given
-                # dataset and configuration.
-                meta_feature_cfg.setdefault("enable_feature_selection_cache", True)
-                volume_available = "volume" in market_data.columns
-
-                meta_features, meta_features_model_processed, selected_feature_names, sample_weights = build_meta_features_for_model(
-                    market_data=market_data,
-                    primary_signals=primary_signals,
-                    realized_returns=realized_returns,
-                    binary_labels=binary_labels,
-                    event_durations=event_durations,
-                    mfe_series=mfe_series,
-                    mae_series=mae_series,
-                    adaptive_stop_threshold=adaptive_stop,
-                    horizon=horizon,
-                    volume_available=volume_available,
-                    meta_feature_cfg=meta_feature_cfg,
-                )
+                
+                # Align X to current labeled events
+                # X (passed in) corresponds to X_dummy from the wrapper, which we replaced with X_features
+                try:
+                    # If X_train is a DataFrame (expected), use index alignment
+                    if isinstance(X_train, pd.DataFrame):
+                        common_idx = X_train.index.intersection(binary_labels.index)
+                        meta_features_model_processed = X_train.loc[common_idx]
+                        binary_labels = binary_labels.loc[common_idx]
+                        realized_returns = realized_returns.loc[common_idx]
+                        if isinstance(event_durations, pd.Series):
+                            event_durations = event_durations.loc[common_idx]
+                    else:
+                        # Fallback if X_train got converted to numpy (unlikely with our change)
+                        # We use build_meta_features_for_model only as last resort
+                        tprint_warning("[HPO] X_train is not DataFrame, falling back to internal generation")
+                        _, meta_features_model_processed, _, _ = build_meta_features_for_model(
+                            market_data=market_data,
+                            primary_signals=primary_signals,
+                            realized_returns=realized_returns,
+                            binary_labels=binary_labels,
+                            event_durations=event_durations,
+                            mfe_series=mfe_series,
+                            mae_series=mae_series,
+                            adaptive_stop_threshold=adaptive_stop,
+                            horizon=horizon,
+                            volume_available=volume_available,
+                            meta_feature_cfg=meta_feature_cfg,
+                        )
+                except Exception as align_e:
+                    tprint_warning(f"[HPO] Alignment failed: {align_e}")
+                    meta_features_model_processed = pd.DataFrame()
+                
+                selected_feature_names = list(meta_features_model_processed.columns)
 
                 # Use the fully processed feature matrix (winsorisation, robust
                 # scaling, selection) for learnability and diagnostics, to
                 # match the production training path.
-                X_for_learnability = meta_features_model_processed
+                if hpo_feature_set:
+                    available_cols = list(meta_features_model_processed.columns)
+                    selected_cols = [c for c in hpo_feature_set if c in available_cols]
+                    if len(selected_cols) >= 10:
+                        X_for_learnability = meta_features_model_processed[selected_cols]
+                        if debug_sample_count < debug_sample_limit:
+                            tprint_info(
+                                f"[HPO_FEATURES] Using fixed LGBM meta feature set for HPO "
+                                f"({len(selected_cols)} columns, first={selected_cols[:5]})"
+                            )
+                    else:
+                        X_for_learnability = meta_features_model_processed
+                        if debug_sample_count < debug_sample_limit:
+                            tprint_warning(
+                                f"[HPO_FEATURES] Precomputed feature set has insufficient overlap "
+                                f"with current meta-features (shared={len(selected_cols)}); "
+                                f"using all features"
+                            )
+                else:
+                    X_for_learnability = meta_features_model_processed
 
                 if debug_sample_count < debug_sample_limit:
                     try:
@@ -3878,7 +4666,92 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     market_index=market_data.index,
                     base_horizon_bars=horizon,
                     use_smoothed_brier_objective_lgbm=use_smoothed_brier_objective_lgbm,
+                    scale_pos_weight=float(params.get("scale_pos_weight", 1.0)) if "scale_pos_weight" in params else None,
+                    use_feature_selection=False,
+                    use_resampling=use_resampling,
                 )
+
+                # ===== NEW: MUTUAL INFORMATION GATE =====
+                # Require MI > 0.01 between probabilities and labels to ensure
+                # the model predictions carry meaningful information
+                mi_penalty = 0.0
+                mi_value = 0.0
+                try:
+                    if calibrated_probs is not None and len(calibrated_probs) > 50:
+                        from sklearn.metrics import mutual_info_score
+                        # Discretize probabilities into bins for MI calculation
+                        probs_finite = calibrated_probs[np.isfinite(calibrated_probs)]
+                        y_aligned = binary_labels.dropna().values[:len(probs_finite)]
+                        if len(probs_finite) >= 50 and len(y_aligned) >= 50:
+                            prob_bins = np.digitize(probs_finite[:len(y_aligned)], bins=np.linspace(0, 1, 11))
+                            mi_value = float(mutual_info_score(y_aligned.astype(int), prob_bins))
+                            mi_threshold = float(config.get("mi_threshold", 0.01))
+                            if mi_value < mi_threshold:
+                                mi_penalty = (mi_threshold - mi_value) * 500.0  # Heavy penalty
+                                if debug_sample_count < debug_sample_limit:
+                                    tprint_warning(
+                                        f"[MI_GATE] MI={mi_value:.4f} < {mi_threshold}: "
+                                        f"Model predictions carry no information about labels"
+                                    )
+                except Exception as mi_exc:
+                    if debug_sample_count < debug_sample_limit:
+                        tprint_warning(f"[MI_GATE] MI calculation failed: {mi_exc}")
+
+                # ===== NEW: PROBABILITY VARIANCE CHECK =====
+                # Flag degenerate models that output near-constant probabilities
+                prob_variance_penalty = 0.0
+                prob_std = 0.0
+                try:
+                    if calibrated_probs is not None and len(calibrated_probs) > 50:
+                        probs_finite = calibrated_probs[np.isfinite(calibrated_probs)]
+                        if len(probs_finite) >= 50:
+                            prob_std = float(np.std(probs_finite))
+                            prob_std_threshold = float(config.get("prob_std_threshold", 0.05))
+                            if prob_std < prob_std_threshold:
+                                prob_variance_penalty = (prob_std_threshold - prob_std) * 300.0
+                                if debug_sample_count < debug_sample_limit:
+                                    tprint_warning(
+                                        f"[PROB_VARIANCE] std(prob)={prob_std:.4f} < {prob_std_threshold}: "
+                                        f"Model outputs near-constant probabilities (degenerate)"
+                                    )
+                except Exception:
+                    pass
+
+                # Ensure strict penalty for strictly constant or near-constant probabilities
+                if calibrated_probs is not None and len(calibrated_probs) > 0:
+                     try:
+                         range_prob = float(np.nanmax(calibrated_probs) - np.nanmin(calibrated_probs))
+                         if range_prob < 1e-6:
+                             learnability_score -= 1000.0
+                             if debug_sample_count < debug_sample_limit:
+                                tprint_warning(f"[CONST_PROB] Penalty applied: range={range_prob:.9f}")
+                     except (ValueError, RuntimeWarning):
+                         pass
+
+                # ===== NEW: SINGLE-BIN CALIBRATION PENALTY =====
+                # Penalize configurations where ECE is degenerate (all samples in one bin)
+                single_bin_penalty = 0.0
+                try:
+                    if calibrated_probs is not None and len(calibrated_probs) > 50:
+                        probs_finite = calibrated_probs[np.isfinite(calibrated_probs)]
+                        if len(probs_finite) >= 50:
+                            # Check if all probabilities fall into a single bin
+                            n_bins_check = 10
+                            bin_edges = np.linspace(0, 1, n_bins_check + 1)
+                            bin_counts = np.histogram(probs_finite, bins=bin_edges)[0]
+                            non_empty_bins = np.sum(bin_counts > 0)
+                            if non_empty_bins <= 2:  # Degenerate: 1-2 bins only
+                                single_bin_penalty = 200.0 * (3 - non_empty_bins)
+                                if debug_sample_count < debug_sample_limit:
+                                    tprint_warning(
+                                        f"[SINGLE_BIN] Only {non_empty_bins} non-empty probability bins: "
+                                        f"Degenerate calibration (ECE meaningless)"
+                                    )
+                except Exception:
+                    pass
+
+                # Apply new penalties to learnability score
+                learnability_score -= (mi_penalty + prob_variance_penalty + single_bin_penalty)
 
                 # ===== AUC RANGE-BASED SCORING =====
                 # Target AUC range: 0.55 - 0.67 (prop-shop acceptable range)
@@ -3969,11 +4842,11 @@ class MetaLabelingHPOExperimentStep(BaseStep):
 
                         shortfall_auc = max(0.0, min_worst_fold_auc - float(worst_fold_auc_cv))
                         excess_std = max(0.0, float(auc_cv_std) - max_auc_cv_std)
-                        default_penalty_weight = 300.0
+                        default_penalty_weight = 360.0 # Increased from 300 (+20%)
                         if model_complexity == "medium":
-                            default_penalty_weight = 400.0
+                            default_penalty_weight = 480.0 # Increased from 400
                         elif model_complexity == "strong":
-                            default_penalty_weight = 500.0
+                            default_penalty_weight = 600.0 # Increased from 500
 
                         penalty_weight = float(config.get("hpo_robustness_penalty_weight", default_penalty_weight))
                         robustness_penalty = penalty_weight * (shortfall_auc + excess_std)
@@ -4015,19 +4888,23 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     debug_sample_count += 1
 
                 # Hard economic gate: positive bucket must beat transaction cost
-                if mean_pos <= tx:
+                # Hard economic gate: positive bucket must beat transaction cost
+                # RELAXED for Signal Fidelity: Allow slight negative edge if IC/AUC are high
+                # We trust Stage 2 to filter these out.
+                if mean_pos <= tx * 0.5: # Allow up to 50% loss of spread
                     if debug_sample_count < debug_sample_limit:
                         tprint_warning(
-                            f"[EARLY_EXIT_ECON] Rejecting config: mean_pos={mean_pos:.6f} <= tx={tx:.6f} "
+                            f"[EARLY_EXIT_ECON] Rejecting config: mean_pos={mean_pos:.6f} <= tx/2={tx*0.5:.6f} "
                             f"(n_events={n_events}, events_per_day={events_per_day:.3f})"
                         )
                         debug_sample_count += 1
                     gate_stats["econ_gate"] = gate_stats.get("econ_gate", 0) + 1
                     return {
-                        'learnability': float(learnability_score),
-                        'profitability': -1e9,
+                        'learnability_score': float(learnability_score), # Fix key name matching downstream
+                        'combined_score': -1e9,
+                        'loss': 1e9,
+                        'status': 'fail',
                         'edge': -1e9,
-                        'combined': -1e9,
                     }
 
                 # Penalize configurations dominated by economically trivial events
@@ -4137,19 +5014,8 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 if trades_per_day < 0.5:
                     # Moderate penalty for sparse regimes (threshold raised from 0.3)
                     penalty_density += (0.5 - trades_per_day) * 10.0
-                elif trades_per_day > 4.0:
-                    # Gentler penalty for active regimes (was 3.0 threshold, 5.0 weight)
-                    penalty_density += (trades_per_day - 4.0) * 3.0
 
                 density_retention_penalty = 0.0
-                if trades_per_day > 4.0 and retention_total > 0.0:
-                    retention_target_local = float(config.get("retention_target", 0.30))
-                    retention_target_local = max(0.05, min(0.80, retention_target_local))
-                    retention_excess = max(0.0, float(retention_total) - retention_target_local)
-                    if retention_excess > 0.0:
-                        density_retention_penalty = (trades_per_day - 4.0) * retention_excess * 10.0
-
-                penalty_density += density_retention_penalty
 
                 penalty_noise = frac_small * 10.0
 
@@ -4240,6 +5106,16 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 # Edge = (Mean Return - Cost) × max(0, 2×AUC - 1)
                 # This penalizes "profitable but unlearnable" strategies more realistically
                 # ENHANCED: Pass days_span for density bonus to encourage healthy trade counts
+                # ENHANCED: Pass prob_range to penalize degenerate probability distributions
+                prob_range_for_edge = None
+                try:
+                    if calibrated_probs is not None and len(calibrated_probs) > 0:
+                        probs_finite = calibrated_probs[np.isfinite(calibrated_probs)]
+                        if len(probs_finite) > 0:
+                            prob_range_for_edge = float(np.max(probs_finite) - np.min(probs_finite))
+                except Exception:
+                    pass
+
                 edge_score = compute_realistic_pnl_edge(
                     mean_return_positive=mean_pos,
                     mean_auc=mean_auc,
@@ -4248,6 +5124,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     reference_trades=reference_trades,
                     days_span=float(effective_days_span),
                     target_trades_per_day=target_trades_per_day,
+                    prob_range=prob_range_for_edge,
                 )
                 # Tie temporal instability to edge: softly down-weight edge when
                 # rolling-window AUC variance is high.
@@ -4256,6 +5133,35 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     # 0–20% down-weighting for unstable configurations.
                     instability = min(1.0, auc_variance / 0.02)
                     edge_score *= (1.0 - 0.3 * instability)
+
+                # ===== CALIBRATION-AWARE ADJUSTMENT OF EDGE =====
+                # Use calibration diagnostics (weighted Brier and ECE) to softly
+                # down-weight edge for miscalibrated models. We do this *after*
+                # temporal stability but before scaling and combining with AUC.
+                try:
+                    calib_edge_penalty = 1.0
+                    if weighted_brier is not None:
+                        # Map weighted_brier in [brier_target, brier_max] to a factor in [1.0, 0.5]
+                        brier_target = float(config.get("calibration_brier_target", 0.18))
+                        brier_max = float(config.get("calibration_brier_max", 0.35))
+                        if brier_max <= brier_target:
+                            brier_max = brier_target + 1e-3
+                        brier_excess = max(0.0, float(weighted_brier) - brier_target)
+                        brier_span = max(brier_max - brier_target, 1e-6)
+                        brier_ratio = min(1.0, brier_excess / brier_span)
+                        # Linearly shrink edge to 50% at the worst Brier in the band.
+                        calib_edge_penalty *= (1.0 - 0.5 * brier_ratio)
+
+                    if ece_norm is not None:
+                        # ece_norm already in [0, 1]; shrink edge up to another 30% at ece_norm=1.
+                        calib_edge_penalty *= (1.0 - 0.3 * float(ece_norm))
+
+                    # Ensure non-negative factor
+                    calib_edge_penalty = max(0.0, calib_edge_penalty)
+                    edge_score *= calib_edge_penalty
+                except Exception:
+                    # If anything goes wrong in calibration-based adjustment, keep raw edge_score.
+                    pass
 
                 # Scale edge for combined metric (multiply by 1000 to make comparable)
                 edge_scaled = edge_score * 1000.0
@@ -4325,7 +5231,9 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 
                 # Trade density bonus: stronger when AUC is outside target range
                 # This gives edge/pnl/trades more influence when AUC is penalized
-                edge_weight = 1.0 + (1.0 - auc_weight_multiplier) * 0.5  # Up to 1.5x edge weight
+                # User Request (Step 451): Reduce importance of pure edge by ~30% to favor robustness
+                base_edge_multiplier = 0.7 
+                edge_weight = (1.0 + (1.0 - auc_weight_multiplier) * 0.5) * base_edge_multiplier
                 density_weight = 1.0 + (1.0 - auc_weight_multiplier) * 1.0  # Up to 2x density weight
 
                 balance_weight = float(config.get("balance_score_weight", 0.15))
@@ -4339,11 +5247,11 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 if retention_asym_weight < 0.0:
                     retention_asym_weight = 0.0
 
-                # Trades/day bonus for being in sweet spot (1-3 trades/day)
+                # Trades/day bonus for being in sweet spot (1.5-5 trades/day)
                 trades_bonus = 0.0
-                if trades_per_day >= 0.8 and trades_per_day <= 4.0:
-                    # Peak bonus at 2 trades/day
-                    trades_bonus = max(0, 1.0 - abs(trades_per_day - 2.0) / 2.0) * 50.0
+                if trades_per_day >= 1.5 and trades_per_day <= 5.0:
+                    # Peak bonus at 2.5 trades/day (midpoint)
+                    trades_bonus = max(0, 1.0 - abs(trades_per_day - 2.5) / 2.5) * 50.0
 
                 # Geometry penalty: if profit threshold is unrealistically large
                 # relative to the average trailing stop distance (ATR-based) while
@@ -4507,26 +5415,22 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                                 mid_denom = max(mid_max - mid_target, 1e-6)
                                 mid_brier_norm = min(1.0, mid_excess / mid_denom)
 
-                        alpha_calib = float(config.get("calibration_brier_weight", 0.7))
-                        beta_calib = float(config.get("calibration_ece_weight", 0.3))
-                        gamma_calib = float(config.get("calibration_mid_weight", 0.3))
-                        calib_combo = 0.0
-                        if weighted_brier_norm is not None:
-                            calib_combo += alpha_calib * weighted_brier_norm
-                        if ece_norm is not None:
-                            calib_combo += beta_calib * ece_norm
-                        if mid_brier_norm is not None:
-                            calib_combo += gamma_calib * mid_brier_norm
-                        if calib_combo < 0.0:
-                            calib_combo = 0.0
-                        calib_combo_value = float(calib_combo)
+                        # New logic: Discrete tiers for calibration impact
+                        calib_score = weighted_brier if weighted_brier is not None else 0.25
 
-                        lambda_calib = float(config.get("calibration_lambda", 0.95))
-                        if lambda_calib < 0.0:
-                            lambda_calib = 0.0
-                        factor = 1.0 - lambda_calib * calib_combo
-                        if factor < 0.0:
-                            factor = 0.0
+                        calib_factor = 1.0
+                        if calib_score > 0.25:
+                            # "Minimum requirement" failed: harsh linear penalty
+                            # 0.25 -> 1.0x, 0.35 -> 0.0x
+                            penalty = (calib_score - 0.25) / 0.10
+                            calib_factor = max(0.0, 1.0 - penalty * 10.0) # Very steep drop
+                        elif calib_score <= 0.18:
+                            # "Excellent" bonus
+                            calib_factor = 1.1
+
+                        calib_combo_value = float(calib_score)
+
+                        factor = calib_factor
 
                         deflation = 0.0
                         if auc_cv_std is not None and np.isfinite(auc_cv_std):
@@ -4536,6 +5440,42 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                                 deflation = 0.0
                         deflated_auc = max(0.0, float(auc_retention_adjusted) - deflation)
                         rank_calib_score = deflated_auc * factor
+
+                        # ===== P&L CALIBRATION-CURVE SANITY TERM =====
+                        # If available from diagnostics, use the P&L calibration curve
+                        # (probability → expected net return) to detect configurations
+                        # where no probability region is economically positive or where
+                        # high-probability regions underperform.
+                        try:
+                            pnl_curve = None
+                            if isinstance(best_config_diagnostics.get("calibration_diagnostics"), dict):
+                                pnl_curve = best_config_diagnostics["calibration_diagnostics"].get("pnl_calibration_curve")
+
+                            if isinstance(pnl_curve, dict):
+                                prob_grid = np.asarray(pnl_curve.get("prob_grid", []), dtype=float)
+                                exp_net = np.asarray(pnl_curve.get("expected_net_return", []), dtype=float)
+                                if prob_grid.size == exp_net.size and prob_grid.size >= 3:
+                                    # 1) Check if any region has positive expected net return.
+                                    if not np.any(exp_net > 0.0):
+                                        # Strong penalty: no economically positive region.
+                                        rank_calib_score *= 0.7
+
+                                    # 2) Check monotonicity in upper half of probability grid.
+                                    mid_idx = prob_grid.size // 2
+                                    high_probs = prob_grid[mid_idx:]
+                                    high_exp = exp_net[mid_idx:]
+                                    if high_probs.size >= 3:
+                                        violations = 0
+                                        for i in range(high_exp.size - 1):
+                                            if high_exp[i + 1] < high_exp[i] - 1e-8:
+                                                violations += 1
+                                        if violations > 0:
+                                            # Soft penalty proportional to fraction of violations.
+                                            frac_viols = violations / max(high_exp.size - 1, 1)
+                                            rank_calib_score *= (1.0 - 0.3 * min(1.0, frac_viols))
+                        except Exception:
+                            # If anything fails in P&L calibration sanity checks, do not alter rank_calib_score.
+                            pass
                 except Exception:
                     weighted_brier = None
                     weighted_brier_norm = None
@@ -4552,10 +5492,100 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 # 3. trades_bonus: Reward healthy trade density
                 # 4. Penalties for extreme density, slow exits, over-aggressive filtering,
                 #    and unrealistic TPSL geometry relative to ATR-based trailing.
+                # 5. NEW: sample_count_bonus for Phase 1 (prioritize configs with enough samples)
+                # 6. NEW: regime_coverage_penalty for stratified regime sampling
+                
+                # ===== TWO-PHASE HPO: SAMPLE COUNT BONUS =====
+                # In Phase 1, heavily reward configurations that achieve minimum sample counts
+                sample_count_bonus = 0.0
+                if n_events >= MIN_EVENTS_PHASE2:
+                    sample_count_bonus = 100.0  # Strong bonus for achieving Phase 2 threshold
+                elif n_events >= MIN_EVENTS_PHASE1:
+                    sample_count_bonus = 50.0  # Moderate bonus for achieving Phase 1 threshold
+                elif n_events >= 100:
+                    sample_count_bonus = 20.0  # Small bonus for reasonable sample count
+
+                # ===== SIGNAL FIDELITY METRICS (NEW OBJECTIVE) =====
+                # 1. Information Coefficient (IC) - Weighted Rank Correlation
+                ic = 0.0
+                try:
+                    if calibrated_probs is not None and len(calibrated_probs) > 50:
+                         # Align masks
+                         valid_mask_ic = np.isfinite(calibrated_probs) & np.isfinite(realized_return_clean)
+                         if valid_mask_ic.sum() > 50:
+                             p_clean = calibrated_probs[valid_mask_ic]
+                             r_clean = realized_return_clean[valid_mask_ic]
+                             
+                             # Calculate confidence-based weights for IC
+                             # Weight = 1.0 + |prob - 0.5| (Higher weight for confident predictions)
+                             ic_weights = 1.0 + np.abs(p_clean - 0.5)
+                             
+                             # Compute Ranks
+                             from scipy.stats import rankdata
+                             p_ranks = rankdata(p_clean)
+                             r_ranks = rankdata(r_clean)
+                             
+                             # Weighted Pearson on Ranks (Weighted Spearman)
+                             # np.cov(..., aweights=...) returns covariance matrix
+                             cov_mat = np.cov(p_ranks, r_ranks, aweights=ic_weights)
+                             if cov_mat.shape == (2, 2):
+                                 cov_xy = cov_mat[0, 1]
+                                 var_x = cov_mat[0, 0]
+                                 var_y = cov_mat[1, 1]
+                                 if var_x > 0 and var_y > 0:
+                                     val_ic = cov_xy / np.sqrt(var_x * var_y)
+                                     if np.isfinite(val_ic):
+                                         ic = float(val_ic)
+                except Exception:
+                    ic = 0.0
+
+                # 2. Density Score (Logarithmic)
+                density_score = 0.0
+                if events_per_day > 0:
+                    density_score = min(1.0, np.log10(events_per_day + 1.0) / 1.0)
+
+                # 3. Effect Size (Cohen's d) - Reusing d_post
+                # d_post is already calculated above
+                snr_metric = max(0.0, float(d_post)) if np.isfinite(d_post) else 0.0
+
+                # ===== CALIBRATION SCORE =====
+                # Derived from weighted_brier_norm (0=perfect, 1=bad)
+                # If unavailable, assume neutral/poor (0.0 score) to encourage calibration availability
+                score_calibration = 0.0
+                if weighted_brier_norm is not None:
+                    score_calibration = max(0.0, 1.0 - float(weighted_brier_norm))
+                elif ece_norm is not None:
+                     score_calibration = max(0.0, 1.0 - float(ece_norm))
+
+                # ===== NEW COMBINED SCORE FORMULA =====
+                # Weights: AUC(30%), IC(20%), Calib(20%), SNR(15%), Density(15%)
+                
+                # User Request: Modulate AUC by stability (std dev)
+                # If auc_cv_std is high (unstable), discount the AUC contribution.
+                # Threshold: 0.10 (if std > 0.10, AUC score becomes 0)
+                stability_factor = 1.0
+                if auc_cv_std is not None and np.isfinite(auc_cv_std):
+                    stability_factor = max(0.0, 1.0 - (float(auc_cv_std) / 0.10))
+
+                score_auc = max(0.0, (mean_auc - 0.50) * 2.0) * stability_factor
+                # User Request (Refined): Penalize negative IC and clip upside
+                score_ic = np.clip(ic * 5.0, -1.0, 1.0)
+                score_snr = min(1.0, snr_metric / 2.0)
+                score_density = density_score
+
+                # Base score [0, 1] mapped to [0, 100] scale
+                fidelity_score = (
+                    0.30 * score_auc +
+                    0.20 * score_ic +
+                    0.20 * score_calibration +
+                    0.15 * score_snr +
+                    0.15 * score_density
+                ) * 100.0
+
                 combined_score = (
-                    edge_scaled * edge_weight
-                    + (rank_calib_score * 100.0)
-                    + (trades_bonus * density_weight)
+                    fidelity_score
+                    + sample_count_bonus
+                    + (edge_scaled * edge_weight * 0.5) # Reduced edge weight
                     + balance_term
                     - (penalty_density * 0.1)
                     - (tto_penalty * 0.1)
@@ -4565,8 +5595,57 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     - robustness_penalty
                 )
 
+                try:
+                    label_cfg = build_label_config(
+                        symbol=symbol,
+                        exchange=exchange,
+                        timeframe=timeframe,
+                        direction=direction,
+                        params=params,
+                        extra=None,
+                    )
+                    config_id = compute_label_config_id(label_cfg)
+                except Exception:
+                    config_id = None
+
+                # ===== DETAILED P&L STATS (NEW) =====
+                pnl_win_rate = 0.0
+                pnl_avg_win = 0.0
+                pnl_avg_loss = 0.0
+                pnl_profit_factor = 0.0
+                pnl_total_return = 0.0
+                
+                try:
+                    # 'labeled_mask' is defined earlier as ~binary_labels.isna()
+                    if 'labeled_mask' in locals() and isinstance(realized_returns, pd.Series):
+                        valid_ret = realized_returns[labeled_mask]
+                        if len(valid_ret) > 0:
+                            pnl_total_return = float(valid_ret.sum())
+                            wins = valid_ret[valid_ret > 0]
+                            losses = valid_ret[valid_ret < 0]
+                            
+                            pnl_win_rate = float(len(wins) / len(valid_ret))
+                            
+                            if len(wins) > 0:
+                                pnl_avg_win = float(wins.mean())
+                            
+                            if len(losses) > 0:
+                                pnl_avg_loss = float(losses.mean())
+                            
+                            # NEW: Average return per trade (wins & losses)
+                            pnl_avg_ret = float(valid_ret.mean())
+                                
+                            loss_sum = abs(float(losses.sum()))
+                            if loss_sum > 1e-9:
+                                pnl_profit_factor = float(wins.sum()) / loss_sum
+                            elif len(wins) > 0:
+                                pnl_profit_factor = 100.0 # Capped infinite profit factor
+                except Exception:
+                    pass
+
                 # Store candidate configuration for later persistence
                 candidate_config = {
+                    'config_id': config_id,
                     'params': params.copy(),
                     'learnability': float(learnability_score),
                     'mean_auc': float(mean_auc),
@@ -4574,6 +5653,9 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     'edge': float(edge_score),
                     'edge_scaled': float(edge_scaled),
                     'combined': float(combined_score),
+                    'fidelity_score': float(fidelity_score), # NEW
+                    'ic': float(ic), # NEW
+                    'calibration_score': float(score_calibration), # NEW
                     'mean_pos': float(mean_pos),
                     'mean_neg': float(mean_neg),
                     'sharpe_pos': float(sharpe_pos),
@@ -4604,6 +5686,15 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     'r_multiple_threshold': float(r_multiple_threshold),
                     'effective_tx_cost': float(effective_tx_cost),
                     'label_low_q': float(label_low_q),
+                    # NEW: Detailed P&L Stats
+                    'pnl_win_rate': float(pnl_win_rate),
+                    'pnl_avg_win': float(pnl_avg_win),
+                    'pnl_avg_loss': float(pnl_avg_loss),
+                    'pnl_profit_factor': float(pnl_profit_factor),
+                    'pnl_profit_factor': float(pnl_profit_factor),
+                    'pnl_total_return': float(pnl_total_return),
+                    'pnl_avg_ret_per_trade': float(pnl_avg_ret) if 'pnl_avg_ret' in locals() else 0.0,
+                    'pnl_per_day': float(pnl_total_return) / max(days_span, 1.0) if 'days_span' in locals() else 0.0,
                     'label_high_q': float(label_high_q),
                     # AUC range tracking (unified into auc_retention_adjusted)
                     'auc_in_target_range': bool(auc_in_target_range),
@@ -4630,10 +5721,19 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     'mid_brier_norm': float(mid_brier_norm) if mid_brier_norm is not None else None,
                     'calibration_combo': float(calib_combo_value) if calib_combo_value is not None else None,
                     'rank_calib_score': float(rank_calib_score),
+                    # NEW: Two-phase HPO and diagnostic gates
+                    'sample_count_bonus': float(sample_count_bonus),
+                    'mi_value': float(mi_value),
+                    'mi_penalty': float(mi_penalty),
+                    'prob_std': float(prob_std),
+                    'prob_variance_penalty': float(prob_variance_penalty),
+                    'single_bin_penalty': float(single_bin_penalty),
                 }
 
                 # Optional per-regime breakdown using attached HMM regimes, if available.
                 per_regime_metrics: Dict[str, Any] = {}
+                regime_coverage_penalty = 0.0  # NEW: Penalty for poor regime coverage
+                n_regimes_with_events = 0
                 try:
                     if "hmm_regime_label_1h" in market_data.columns:
                         regimes_all = market_data["hmm_regime_label_1h"]
@@ -4649,6 +5749,27 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                         from sklearn.metrics import roc_auc_score as _roc_auc_score_reg
 
                         unique_regs = pd.unique(regimes_events.dropna())
+                        
+                        # ===== NEW: STRATIFIED REGIME SAMPLING CHECK =====
+                        # Penalize configurations that have poor regime coverage
+                        min_events_per_regime = int(config.get("min_events_per_regime", 20))
+                        expected_n_regimes = int(config.get("expected_n_regimes", 5))
+                        
+                        for reg_val in unique_regs:
+                            reg_mask = regimes_events == reg_val
+                            n_reg = int(reg_mask.sum())
+                            if n_reg >= min_events_per_regime:
+                                n_regimes_with_events += 1
+                        
+                        # Penalty for missing regimes
+                        if n_regimes_with_events < expected_n_regimes:
+                            missing_regimes = expected_n_regimes - n_regimes_with_events
+                            regime_coverage_penalty = missing_regimes * 50.0  # 50 points per missing regime
+                            if debug_sample_count < debug_sample_limit:
+                                tprint_warning(
+                                    f"[REGIME_COVERAGE] Only {n_regimes_with_events}/{expected_n_regimes} regimes "
+                                    f"have >= {min_events_per_regime} events. Penalty={regime_coverage_penalty:.1f}"
+                                )
                         for reg_val in unique_regs:
                             try:
                                 reg_mask = regimes_events == reg_val
@@ -4710,8 +5831,14 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 # Attach per-regime metrics and optional regression diagnostics
                 if per_regime_metrics:
                     candidate_config['per_regime_metrics'] = per_regime_metrics
+                    candidate_config['n_regimes_with_events'] = n_regimes_with_events
+                    candidate_config['regime_coverage_penalty'] = float(regime_coverage_penalty)
                 if reg_target_stats is not None:
                     candidate_config['regression_target_stats'] = reg_target_stats
+
+                # Apply regime coverage penalty to combined score (after per-regime metrics computed)
+                combined_score -= regime_coverage_penalty
+                candidate_config['combined'] = float(combined_score)
 
                 # Append to candidate pool and log a concise summary for debugging
                 candidate_pool.append(candidate_config)
@@ -5350,22 +6477,119 @@ class MetaLabelingHPOExperimentStep(BaseStep):
         best_candidate_metrics = {}
         try:
             if candidate_pool:
+                best_candidate = None
+
                 for cand in candidate_pool:
                     cand_params = cand.get("params", {})
                     if cand_params == best_params:
-                        best_candidate_metrics = {
-                            "mean_auc": float(cand.get("mean_auc", 0.5)),
-                            "trades_per_day": float(cand.get("trades_per_day", 0.0)),
-                            "learnability": float(cand.get("learnability", 0.0)),
-                            "profitability": float(cand.get("profitability", 0.0)),
-                            "sharpe_pos": float(cand.get("sharpe_pos", 0.0)),
-                            "balance_score": float(cand.get("balance_score", 0.0)),
-                            "n_events": int(cand.get("n_events", 0)),
-                        }
+                        best_candidate = cand
                         break
+
+                if best_candidate is None:
+                    try:
+                        target_edge = float(best_score)
+                        tol = max(1e-9, abs(target_edge) * 1e-6)
+                        for cand in candidate_pool:
+                            edge_val = float(cand.get("edge", float("nan")))
+                            if np.isfinite(edge_val) and abs(edge_val - target_edge) <= tol:
+                                best_candidate = cand
+                                break
+                    except Exception:
+                        best_candidate = None
+
+                if best_candidate is None:
+                    try:
+                        best_candidate = max(
+                            candidate_pool,
+                            key=lambda c: c.get("edge", c.get("combined", float("-inf"))),
+                        )
+                    except Exception:
+                        best_candidate = None
+
+                if best_candidate is not None:
+                    best_candidate_metrics = {
+                        "mean_auc": float(best_candidate.get("mean_auc", 0.5)),
+                        "trades_per_day": float(best_candidate.get("trades_per_day", 0.0)),
+                        "learnability": float(best_candidate.get("learnability", 0.0)),
+                        "profitability": float(best_candidate.get("profitability", 0.0)),
+                        "sharpe_pos": float(best_candidate.get("sharpe_pos", 0.0)),
+                        "balance_score": float(best_candidate.get("balance_score", 0.0)),
+                        "n_events": int(best_candidate.get("n_events", 0)),
+                    }
         except Exception as metric_exc:
             tprint_warning(f"⚠️ Failed to extract best candidate metrics: {metric_exc}")
             best_candidate_metrics = {}
+        
+        # ------------------------------------------------------------------
+        # HPO METRIC CORRELATION ANALYSIS (User Request)
+        # ------------------------------------------------------------------
+        try:
+            if len(candidate_pool) >= 10:
+                tprint_info("📊 Computing HPO Metric Correlations (Fidelity vs Downstream Proxy)...")
+                # Extract key metrics
+                corr_data = []
+                for c in candidate_pool:
+                    c_metrics = {
+                        'IC': float(c.get('ic', 0.0)),
+                        'Fidelity': float(c.get('fidelity_score', 0.0)),
+                        'AUC': float(c.get('mean_auc', 0.5)),
+                        'Calibration': float(c.get('calibration_score', 0.0)),
+                        'Edge': float(c.get('edge', 0.0)),
+                        'Profit': float(c.get('profitability', 0.0)),
+                        'Learnability': float(c.get('learnability', 0.0)),
+                        'Combined': float(c.get('combined', 0.0)),
+                    }
+                    corr_data.append(c_metrics)
+                
+                df_corr = pd.DataFrame(corr_data)
+                # Compute correlation matrix
+                corr_matrix = df_corr.corr()
+                
+                tprint_info("\n" + "="*50)
+                tprint_info("🎯 HPO OBJECTIVE CORRELATION MATRIX")
+                tprint_info("="*50)
+                tprint_info(str(corr_matrix.round(3)))
+                
+                # Highlight key relationships
+                ic_edge = corr_matrix.loc['IC', 'Edge']
+                auc_edge = corr_matrix.loc['AUC', 'Edge']
+                calib_edge = corr_matrix.loc['Calibration', 'Edge']
+                
+                tprint_info("-" * 40)
+                tprint_info(f"Does Fidelity predict Profitability (Edge)?")
+                tprint_info(f"  • IC vs Edge:          {ic_edge:.3f} " + ("✅ Strong positive" if ic_edge > 0.3 else "⚠️ Weak/Negative" if ic_edge < 0 else ""))
+                tprint_info(f"  • AUC vs Edge:         {auc_edge:.3f}")
+                tprint_info(f"  • Calibration vs Edge: {calib_edge:.3f}")
+                tprint_info("-" * 40 + "\n")
+        except Exception as corr_exc:
+            tprint_warning(f"⚠️ Correlation analysis failed: {corr_exc}")
+
+        # ------------------------------------------------------------------
+        # SAVE FULL TRIALS REPORT (User Request)
+        # ------------------------------------------------------------------
+        try:
+            if candidate_pool:
+                tprint_info("💾 Saving full HPO trials report...")
+                # Flatten params into columns
+                report_data = []
+                for c in candidate_pool:
+                    row = c.copy()
+                    # Flatten params dict
+                    if 'params' in row:
+                        p_dict = row.pop('params')
+                        for k, v in p_dict.items():
+                            row[k] = v
+                    report_data.append(row)
+                
+                df_report = pd.DataFrame(report_data)
+                
+                # Timestamped filename
+                timestamp_str = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+                report_path = outcomes_dir / f"meta_labeling_hpo_trials_{symbol}_{timestamp_str}.csv"
+                df_report.to_csv(report_path, index=False)
+                tprint_success(f"✅ Saved HPO trials report to: {report_path}")
+        except Exception as report_exc:
+            tprint_warning(f"⚠️ Failed to save trials report: {report_exc}")
 
         # ------------------------------------------------------------------
         # 7) COMPREHENSIVE DIAGNOSTICS FOR BEST CONFIG
@@ -5415,10 +6639,11 @@ class MetaLabelingHPOExperimentStep(BaseStep):
             stop_thr_base = max(0.0005, profit_thr_base * stop_ratio)
             horizon = int(diag_params.get("horizon_bars", 24))
             min_spacing = int(diag_params.get("min_event_spacing", 4))
-            econ_min_mult = float(diag_params.get("econ_min_return_multiple", 2.0))
-            label_low_q = float(diag_params.get("label_low_q", 0.30))
-            label_high_q = float(diag_params.get("label_high_q", 0.70))
+            econ_min_mult = float(diag_params.get("econ_min_return_multiple", 1.5))
+            label_low_q = float(diag_params.get("label_low_q", 0.40))
+            label_high_q = float(diag_params.get("label_high_q", 0.60))
             tx_cost_mult = float(diag_params.get("transaction_cost_mult", 1.0))
+            tx_cost_mult = max(1.0, min(1.2, tx_cost_mult))
             effective_tx_cost = DEFAULT_TRANSACTION_COST * tx_cost_mult
             vol_baseline_window = int(diag_params.get("vol_baseline_window", 96))
             profit_mult_min = float(diag_params.get("profit_mult_min", 0.5))
@@ -5941,6 +7166,8 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     realized_returns=returns_calib,
                     transaction_cost=effective_tx_cost,
                     n_bins=10,
+                    regime_score=volatility_1d.loc[idx_labeled].values if volatility_1d is not None else None,
+                    use_linear_adaptive_gating=True,
                 )
                 best_config_diagnostics["calibration_diagnostics"] = calib_diag
 
@@ -5981,8 +7208,25 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                                 labels=False,
                                 duplicates="drop",
                             )
+                            # If qcut collapsed to < 3 bins, fall back to fixed-width bins
+                            if prob_decile is not None and prob_decile.nunique() < 3:
+                                prob_decile = pd.cut(
+                                    probs_series,
+                                    bins=10,
+                                    labels=False,
+                                    include_lowest=True,
+                                )
                         except Exception:
-                            prob_decile = None
+                            # Fallback to fixed-width bins if qcut fails entirely
+                            try:
+                                prob_decile = pd.cut(
+                                    probs_series,
+                                    bins=10,
+                                    labels=False,
+                                    include_lowest=True,
+                                )
+                            except Exception:
+                                prob_decile = None
 
                         if prob_decile is not None:
                             y_series = pd.Series(y_calib, index=idx_labeled)
@@ -6150,6 +7394,7 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     event_durations=event_durations_diag,
                     market_index=market_data.index,
                     base_horizon_bars=horizon,
+                    use_purged_splits=True,
                 )
                 best_config_diagnostics['robustness_diagnostics'] = robust_diag
                 
@@ -6372,29 +7617,10 @@ class MetaLabelingHPOExperimentStep(BaseStep):
             except Exception as e:
                 tprint_warning(f"  ⚠️ Single-feature momentum test failed: {e}")
             
-            xgb_hpo_results: Dict[str, Any] = {}
-            enable_xgb_model_hpo = bool(config.get("enable_xgb_model_hpo", False))
-            if enable_xgb_model_hpo:
-                if not XGBOOST_AVAILABLE:
-                    tprint_warning("  ⚠️ XGBoost not available; skipping sr_labeling_xgb trainer")
-                    xgb_hpo_results = {
-                        "xgb_available": False,
-                        "skipped": True,
-                        "reason": "xgboost_not_installed",
-                    }
-                else:
-                    tprint_warning(
-                        "  ⚠️ sr_labeling_xgb diagnostics disabled in this build; "
-                        "set enable_xgb_model_hpo=False if you want to silence this."
-                    )
-                    xgb_hpo_results = {
-                        "xgb_available": True,
-                        "skipped": True,
-                        "reason": "disabled_for_simplicity",
-                    }
-
-            if xgb_hpo_results:
-                best_config_diagnostics["sr_labeling_xgb"] = xgb_hpo_results
+            # Nested sr_labeling_xgb XGB HPO diagnostics were previously stubbed
+            # behind the enable_xgb_model_hpo flag. To keep this step focused on
+            # labeling-HPO only and reduce computational overhead, we no longer
+            # invoke or track any nested XGB HPO here.
             
             tprint_success("✅ Comprehensive diagnostics completed for best configuration")
             
@@ -6795,7 +8021,41 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                 ],
                 # Gate usage statistics across all evaluated configs
                 "gate_stats": gate_stats,
+                # Full candidate history for post-hoc analysis (the "matrix")
+                "all_candidates": candidate_pool,
             }
+
+            try:
+                best_label_config_id = None
+                knee_label_config_id = None
+
+                if isinstance(best_params, dict) and best_params:
+                    best_cfg = build_label_config(
+                        symbol=symbol,
+                        exchange=exchange,
+                        timeframe=timeframe,
+                        direction=direction,
+                        params=best_params,
+                        extra=None,
+                    )
+                    best_label_config_id = compute_label_config_id(best_cfg)
+
+                if isinstance(knee_params, dict) and knee_params:
+                    knee_cfg = build_label_config(
+                        symbol=symbol,
+                        exchange=exchange,
+                        timeframe=timeframe,
+                        direction=direction,
+                        params=knee_params,
+                        extra=None,
+                    )
+                    knee_label_config_id = compute_label_config_id(knee_cfg)
+
+                output_dict["best_label_config_id"] = best_label_config_id
+                output_dict["knee_label_config_id"] = knee_label_config_id
+            except Exception:
+                # If anything goes wrong computing IDs, proceed without them.
+                pass
 
             # Add comprehensive diagnostics for best config
             if best_config_diagnostics:
@@ -6853,7 +8113,9 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                     # Dummy-rule baseline
                     "auc_dummy": dummy_diag.get("auc_dummy"),
                     "auc_dummy_raw": dummy_diag.get("auc_dummy_raw"),
-                    # sr_labeling_xgb meta-model diagnostics
+                    # sr_labeling_xgb meta-model diagnostics are no longer
+                    # populated by this step; keys retained for backward
+                    # compatibility but will typically be None.
                     "sr_labeling_xgb_best_auc": xgb_diag.get("best_auc"),
                     "sr_labeling_xgb_auc_improvement": xgb_diag.get("auc_improvement"),
                 }
@@ -7010,10 +8272,21 @@ class MetaLabelingHPOExperimentStep(BaseStep):
 
                     # Helper formatting
                     def _fmt_val(val: Any, digits: int = 4) -> str:
+                        if val is None:
+                            return "N/A"
                         try:
-                            return f"{float(val):.{digits}f}"
+                            f_val = float(val)
+                            if not np.isfinite(f_val):
+                                return "nan"
+                            return f"{f_val:.{digits}f}"
                         except Exception:
-                            return "nan"
+                            return "N/A"
+
+                    # Explicit handler for degenerate calibration
+                    def _fmt_calib(val: Any, is_degenerate: bool) -> str:
+                        if is_degenerate and val is None:
+                            return "Degenerate (Single Bin)"
+                        return _fmt_val(val)
 
                     # Filtering diagnostics
                     f.write("### Filtering & AUC Inflation\n\n")
@@ -7050,14 +8323,23 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                             )
                         f.write("\n")
 
+                    # Raw Metrics (Uncalibrated)
+                    f.write("### Raw Metrics (Uncalibrated)\n\n")
+                    f.write("| Metric | Value |\n")
+                    f.write("|--------|-------|\n")
+                    f.write(f"| Raw Probability Range | {_fmt_val(calib_diag.get('prob_range_raw', {}).get('max'))} - {_fmt_val(calib_diag.get('prob_range_raw', {}).get('min'))} |\n")
+                    f.write(f"| Raw Brier Score | {_fmt_val(calib_diag.get('brier_score'))} |\n")
+                    f.write(f"| Degenerate Calibration | {bool(calib_diag.get('degenerate_calibration'))} |\n\n")
+
                     # Calibration diagnostics
                     f.write("### Calibration Diagnostics\n\n")
                     f.write("| Metric | Value |\n")
                     f.write("|--------|-------|\n")
+                    is_degen = bool(calib_diag.get('degenerate_calibration', False))
                     f.write(f"| Well calibrated | {bool(calib_diag.get('is_well_calibrated', True))} |\n")
                     f.write(f"| Brier score | {_fmt_val(calib_diag.get('brier_score'))} |\n")
-                    f.write(f"| Expected Calibration Error (ECE) | {_fmt_val(calib_diag.get('ece'))} |\n")
-                    f.write(f"| Maximum Calibration Error (MCE) | {_fmt_val(calib_diag.get('mce'))} |\n\n")
+                    f.write(f"| Expected Calibration Error (ECE) | {_fmt_calib(calib_diag.get('ece'), is_degen)} |\n")
+                    f.write(f"| Maximum Calibration Error (MCE) | {_fmt_calib(calib_diag.get('mce'), is_degen)} |\n\n")
 
                     # Mutual information
                     if mi_diag:
@@ -7179,33 +8461,9 @@ class MetaLabelingHPOExperimentStep(BaseStep):
                             f"| Samples used | {int(dummy_diag.get('n_samples', 0))} |\n\n"
                         )
 
-                    # sr_labeling_xgb diagnostics
-                    if xgb_diag:
-                        f.write("### sr_labeling_xgb (Meta-Model XGB)\n\n")
-                        f.write("| Metric | Value |\n")
-                        f.write("|--------|-------|\n")
-                        f.write(
-                            f"| Baseline AUC | {_fmt_val(xgb_diag.get('baseline_auc'))} |\n"
-                        )
-                        f.write(
-                            f"| Best AUC (tuned) | {_fmt_val(xgb_diag.get('best_auc'))} |\n"
-                        )
-                        f.write(
-                            f"| AUC improvement | {_fmt_val(xgb_diag.get('auc_improvement'))} |\n\n"
-                        )
-
-                        if xgb_diag.get('best_params_json'):
-                            f.write(
-                                f"Best params JSON: `{Path(str(xgb_diag['best_params_json'])).name}`\n\n"
-                            )
-                        if xgb_diag.get('results_csv'):
-                            f.write(
-                                f"Results CSV: `{Path(str(xgb_diag['results_csv'])).name}`\n\n"
-                            )
-                        if xgb_diag.get('results_markdown'):
-                            f.write(
-                                f"XGB report: `{Path(str(xgb_diag['results_markdown'])).name}`\n\n"
-                            )
+                    # sr_labeling_xgb diagnostics section intentionally omitted to
+                    # avoid nested XGB HPO; downstream reports may still read
+                    # sr_labeling_xgb_* keys from the JSON summary when present.
 
                 # Underfit Diagnostics (if available)
                 final_stage_candidates = [

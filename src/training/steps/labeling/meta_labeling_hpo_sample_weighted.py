@@ -3143,6 +3143,14 @@ def smooth_prices_rts(
     return pd.Series(smoothed, index=prices.index, name="rts_smoothed_close")
 
 
+def _log_normalize(arr: np.ndarray, epsilon: float = 1e-9) -> np.ndarray:
+    """
+    Log-normalize an array: sign(x) * log(1 + |x|).
+    Preserves sign while compressing magnitude for better ML performance.
+    """
+    return np.sign(arr) * np.log1p(np.abs(arr) + epsilon)
+
+
 def generate_kalman_features(
     market_data: pd.DataFrame,
     kalman_Q: float,
@@ -3154,19 +3162,23 @@ def generate_kalman_features(
     Uses CAUSAL Kalman Filter (not RTS) for features that can be used in live trading.
     RTS is only used for label generation (acausal, look-ahead).
     
+    All price-derivative features are LOG-NORMALIZED for better ML performance.
+    
     Features generated:
-    - KF_Close, KF_High, KF_Low: Filtered OHLC
-    - KF_Velocity: 1st derivative of filtered close
-    - KF_Acceleration: 2nd derivative of filtered close
-    - KF_Slope: Rolling slope of filtered close
-    - KF_P: Error covariance (uncertainty)
-    - KF_RSI: RSI computed on filtered close
-    - KF_BB_Distance: Distance from Kalman Bollinger Band
+    - KF_Close, KF_High, KF_Low: Filtered OHLC (log-returns vs raw)
+    - KF_Velocity: 1st derivative of filtered close (log-normalized)
+    - KF_Acceleration: 2nd derivative of filtered close (log-normalized)
+    - KF_Slope: Rolling slope of filtered close (log-normalized)
+    - KF_P: Error covariance (log-normalized)
+    - KF_RSI: RSI computed on filtered close (already bounded 0-100)
+    - KF_BB_Distance: Distance from Kalman Bollinger Band (normalized)
+    - KF_ATR: Kalman-filtered ATR (log-normalized)
+    - KF_VWAP: Kalman-filtered VWAP distance (normalized)
     - KF_LogVolume: Filtered log volume
     - KF_LogVolume_Slope: Slope of filtered log volume
     - KF_Volume_Zscore: Standardized volume innovation
-    - KF_Volume_Ratio: Current vs filtered volume ratio
-    - KF_Volume_P: Volume error covariance
+    - KF_Volume_Ratio: Current vs filtered volume ratio (log-normalized)
+    - KF_Volume_P: Volume error covariance (log-normalized)
     
     Args:
         market_data: DataFrame with OHLCV data
@@ -3174,7 +3186,7 @@ def generate_kalman_features(
         kalman_R: Measurement noise (from Stage 0 optimization)
     
     Returns:
-        DataFrame with Kalman features
+        DataFrame with Kalman features (log-normalized where appropriate)
     """
     features = pd.DataFrame(index=market_data.index)
     
@@ -3182,6 +3194,7 @@ def generate_kalman_features(
     close = market_data["close"].values
     high = market_data.get("high", market_data["close"]).values
     low = market_data.get("low", market_data["close"]).values
+    open_price = market_data.get("open", market_data["close"]).values
     
     # --- Price-Based Kalman Features ---
     
@@ -3190,21 +3203,22 @@ def generate_kalman_features(
     kf_high, kf_high_P, _ = kalman_filter_1d(high, Q=kalman_Q, R=kalman_R)
     kf_low, kf_low_P, _ = kalman_filter_1d(low, Q=kalman_Q, R=kalman_R)
     
-    features["KF_Close"] = kf_close
-    features["KF_High"] = kf_high
-    features["KF_Low"] = kf_low
+    # Store as log-returns relative to raw (normalized difference)
+    features["KF_Close_LogRet"] = _log_normalize((kf_close - close) / (close + 1e-9))
+    features["KF_High_LogRet"] = _log_normalize((kf_high - high) / (high + 1e-9))
+    features["KF_Low_LogRet"] = _log_normalize((kf_low - low) / (low + 1e-9))
     
-    # 2. Kalman Velocity (1st derivative)
+    # 2. Kalman Velocity (1st derivative) - LOG-NORMALIZED
     kf_velocity = np.zeros_like(kf_close)
-    kf_velocity[1:] = np.diff(kf_close)
-    features["KF_Velocity"] = kf_velocity
+    kf_velocity[1:] = np.diff(kf_close) / (kf_close[:-1] + 1e-9)  # Percent change
+    features["KF_Velocity"] = _log_normalize(kf_velocity)
     
-    # 3. Kalman Acceleration (2nd derivative)
+    # 3. Kalman Acceleration (2nd derivative) - LOG-NORMALIZED
     kf_accel = np.zeros_like(kf_close)
-    kf_accel[2:] = np.diff(kf_close, n=2)
-    features["KF_Acceleration"] = kf_accel
+    kf_accel[2:] = np.diff(kf_velocity[1:])  # Change in velocity
+    features["KF_Acceleration"] = _log_normalize(kf_accel)
     
-    # 4. Kalman Slope (rolling regression slope)
+    # 4. Kalman Slope (rolling regression slope) - LOG-NORMALIZED
     kf_slope = np.zeros_like(kf_close)
     slope_window = 10
     for i in range(slope_window, len(kf_close)):
@@ -3212,13 +3226,14 @@ def generate_kalman_features(
         x = np.arange(slope_window)
         if np.std(y) > 1e-9:
             slope = np.polyfit(x, y, 1)[0]
-            kf_slope[i] = slope
-    features["KF_Slope"] = kf_slope
+            # Normalize by price level
+            kf_slope[i] = slope / (kf_close[i] + 1e-9)
+    features["KF_Slope"] = _log_normalize(kf_slope)
     
-    # 5. Kalman P (Error Covariance / Uncertainty)
-    features["KF_P"] = kf_close_P
+    # 5. Kalman P (Error Covariance / Uncertainty) - LOG-NORMALIZED
+    features["KF_P"] = _log_normalize(kf_close_P)
     
-    # 6. Kalman RSI (RSI on filtered close)
+    # 6. Kalman RSI (RSI on filtered close) - Already bounded 0-100
     kf_returns = np.diff(kf_close, prepend=kf_close[0])
     gains = np.where(kf_returns > 0, kf_returns, 0)
     losses = np.where(kf_returns < 0, -kf_returns, 0)
@@ -3229,7 +3244,8 @@ def generate_kalman_features(
     avg_loss = pd.Series(losses).ewm(span=rsi_period, adjust=False).mean().values
     rs = avg_gain / (avg_loss + 1e-9)
     kf_rsi = 100 - (100 / (1 + rs))
-    features["KF_RSI"] = kf_rsi
+    # Normalize RSI to [-1, 1] range for consistency
+    features["KF_RSI"] = (kf_rsi - 50) / 50
     
     # 7. KF_Close - KF_Bollinger (distance from Kalman Bollinger Band)
     bb_window = 20
@@ -3239,10 +3255,66 @@ def generate_kalman_features(
     kf_upper_bb = kf_ma + 2 * kf_std
     kf_lower_bb = kf_ma - 2 * kf_std
     
-    # Normalized distance from center band
+    # Normalized distance from center band (already normalized by band width)
     bb_width = (kf_upper_bb - kf_lower_bb).replace(0, np.nan)
     kf_bb_distance = (kf_close_series - kf_ma) / (bb_width / 2 + 1e-9)
     features["KF_BB_Distance"] = kf_bb_distance.values
+    
+    # --- NEW: Kalman ATR ---
+    # 8. Compute True Range and filter with Kalman
+    tr1 = high - low
+    tr2 = np.abs(high - np.roll(close, 1))
+    tr3 = np.abs(low - np.roll(close, 1))
+    tr2[0] = tr1[0]  # Handle first element
+    tr3[0] = tr1[0]
+    true_range = np.maximum(np.maximum(tr1, tr2), tr3)
+    
+    # Filter True Range with Kalman (use higher R for smoothing)
+    kf_tr, _, _ = kalman_filter_1d(true_range, Q=kalman_Q * 0.5, R=kalman_R * 3.0)
+    
+    # ATR as rolling mean of filtered TR
+    kf_atr = pd.Series(kf_tr).rolling(14).mean().values
+    
+    # Normalize ATR by price level and log-transform
+    kf_atr_normalized = kf_atr / (close + 1e-9)
+    features["KF_ATR"] = _log_normalize(kf_atr_normalized)
+    
+    # Also store raw ATR ratio (KF_ATR vs standard ATR)
+    raw_atr = pd.Series(true_range).rolling(14).mean().values
+    atr_ratio = kf_atr / (raw_atr + 1e-9)
+    features["KF_ATR_Ratio"] = _log_normalize(atr_ratio - 1.0)  # Center around 0
+    
+    # --- NEW: Kalman VWAP ---
+    # 9. Volume-Weighted Average Price with Kalman filtering
+    if "volume" in market_data.columns:
+        volume = market_data["volume"].values
+        
+        # Typical price
+        typical_price = (high + low + close) / 3.0
+        
+        # Cumulative VWAP components
+        cumulative_tp_vol = np.cumsum(typical_price * volume)
+        cumulative_vol = np.cumsum(volume)
+        
+        # Raw VWAP
+        raw_vwap = cumulative_tp_vol / (cumulative_vol + 1e-9)
+        
+        # Filter VWAP with Kalman
+        kf_vwap, kf_vwap_P, _ = kalman_filter_1d(raw_vwap, Q=kalman_Q * 0.3, R=kalman_R * 2.0)
+        
+        # Distance from VWAP (normalized by price)
+        vwap_distance = (close - kf_vwap) / (close + 1e-9)
+        features["KF_VWAP_Distance"] = _log_normalize(vwap_distance)
+        
+        # VWAP slope (momentum of VWAP)
+        kf_vwap_slope = np.zeros_like(kf_vwap)
+        kf_vwap_slope[1:] = np.diff(kf_vwap) / (kf_vwap[:-1] + 1e-9)
+        features["KF_VWAP_Slope"] = _log_normalize(kf_vwap_slope)
+        
+        # Price position relative to VWAP bands
+        vwap_std = pd.Series(close - kf_vwap).rolling(20).std().values
+        vwap_zscore = (close - kf_vwap) / (vwap_std + 1e-9)
+        features["KF_VWAP_Zscore"] = np.clip(vwap_zscore, -5, 5) / 5  # Normalize to [-1, 1]
     
     # --- Volume-Based Kalman Features ---
     if "volume" in market_data.columns:
@@ -3256,29 +3328,33 @@ def generate_kalman_features(
             log_volume, Q=kalman_Q * 0.1, R=kalman_R * 2.0  # Different Q/R for volume
         )
         
-        # 8. Smoothed Volume (back to linear space)
-        features["KF_Volume"] = np.exp(kf_log_vol)
+        # 10. Smoothed Volume (back to linear space, then log-normalize the ratio)
+        kf_volume_linear = np.exp(kf_log_vol)
+        vol_diff = (kf_volume_linear - volume) / (volume + 1e-9)
+        features["KF_Volume_Diff"] = _log_normalize(vol_diff)
         
-        # 9. KF_LogVolume_Slope
+        # 11. KF_LogVolume_Slope - already in log space
         kf_log_vol_slope = np.zeros_like(kf_log_vol)
         kf_log_vol_slope[1:] = np.diff(kf_log_vol)
-        features["KF_LogVolume_Slope"] = kf_log_vol_slope
+        features["KF_LogVolume_Slope"] = kf_log_vol_slope  # Already log-scale
         
-        # 10. Volume Z-score: (LogVolume - KF_Predicted_LogVolume) / sqrt(KF_Covariance)
-        # Innovation normalized by uncertainty
+        # 12. Volume Z-score: (LogVolume - KF_Predicted_LogVolume) / sqrt(KF_Covariance)
         vol_innovation = log_volume - kf_log_vol
         vol_zscore = vol_innovation / (np.sqrt(kf_vol_P) + 1e-9)
-        features["KF_Volume_Zscore"] = vol_zscore
+        features["KF_Volume_Zscore"] = np.clip(vol_zscore, -5, 5) / 5  # Normalize
         
-        # 11. Volume Ratio: Current_LogVolume / KF_State_LogVolume
-        vol_ratio = log_volume / (kf_log_vol + 1e-9)
-        features["KF_Volume_Ratio"] = vol_ratio
+        # 13. Volume Ratio: log of ratio for symmetry
+        vol_ratio = volume / (kf_volume_linear + 1e-9)
+        features["KF_Volume_Ratio"] = _log_normalize(vol_ratio - 1.0)  # Center around 0
         
-        # 12. Volume Error Covariance
-        features["KF_Volume_P"] = kf_vol_P
+        # 14. Volume Error Covariance - LOG-NORMALIZED
+        features["KF_Volume_P"] = _log_normalize(kf_vol_P)
     
     # Fill NaN values
     features = features.fillna(0)
+    
+    # Final cleanup: replace infinities with 0
+    features = features.replace([np.inf, -np.inf], 0)
     
     return features
 

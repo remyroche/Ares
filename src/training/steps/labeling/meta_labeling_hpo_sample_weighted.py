@@ -3897,6 +3897,37 @@ def get_feature_inventory() -> Dict[str, List[str]]:
             "KC_VWAPZscore_x_VolRatio",    # KF_VWAP_Zscore × KF_Volume_Ratio
             "KC_MomPerVol_x_VolSlope",     # Momentum_per_vol × KF_LogVolume_Slope
         ],
+        # Path, Entropy, and Liquidity features
+        "cross_path_efficiency": [
+            "PATH_ER_x_Momentum",          # Kaufman ER × Momentum
+            "PATH_ER_x_Volatility",        # Kaufman ER × Volatility
+            "PATH_ER_x_VolRatio",          # Kaufman ER × Volume Ratio
+            "PATH_Efficiency_10",          # 10-bar path efficiency
+            "PATH_Efficiency_30",          # 30-bar path efficiency
+            "PATH_Efficiency_Divergence",  # Short vs long path efficiency
+        ],
+        "cross_entropy_complexity": [
+            "ENT_Return_x_Momentum",       # Return entropy × Momentum
+            "ENT_Return_x_Volatility",     # Return entropy × Volatility
+            "ENT_ApproxEntropy_20",        # Approximate entropy proxy
+            "ENT_PermEntropy_Proxy",       # Permutation entropy proxy
+            "ENT_PathComplexity",          # Price path complexity
+        ],
+        "cross_liquidity_proxy": [
+            "LIQ_Imbalance_x_Momentum",    # Volume imbalance × Momentum
+            "LIQ_Imbalance_x_ATR",         # Volume imbalance × ATR
+            "LIQ_Amihud_Ratio",            # Amihud illiquidity ratio
+            "LIQ_KyleLambda",              # Kyle's lambda (price impact)
+            "LIQ_RollsSpread",             # Roll's spread estimator
+            "LIQ_VolPressure",             # Volume pressure ratio
+            "LIQ_HLSpread_Ratio",          # High-Low spread ratio
+            "LIQ_ParkinsonVol",            # Parkinson volatility
+        ],
+        "cross_pel_interactions": [
+            "PEL_PathEff_x_Entropy",       # Path efficiency × Entropy
+            "PEL_Amihud_x_Entropy",        # Amihud × Entropy
+            "PEL_PathEff_x_Liquidity",     # Path efficiency × Liquidity
+        ],
     }
     
     # Calculate totals
@@ -3912,7 +3943,11 @@ def get_feature_inventory() -> Dict[str, List[str]]:
         len(inventory["cross_volatility_normalized"]) +
         len(inventory["cross_horizon_divergence"]) +
         len(inventory["cross_regime_conditional"]) +
-        len(inventory["cross_kalman"])
+        len(inventory["cross_kalman"]) +
+        len(inventory["cross_path_efficiency"]) +
+        len(inventory["cross_entropy_complexity"]) +
+        len(inventory["cross_liquidity_proxy"]) +
+        len(inventory["cross_pel_interactions"])
     )
     
     inventory["_counts"] = {
@@ -3920,6 +3955,12 @@ def get_feature_inventory() -> Dict[str, List[str]]:
         "fixed_specialist": fixed_count,
         "kalman_features": kalman_count,
         "cross_features": cross_feature_count,
+        "path_entropy_liquidity": (
+            len(inventory["cross_path_efficiency"]) +
+            len(inventory["cross_entropy_complexity"]) +
+            len(inventory["cross_liquidity_proxy"]) +
+            len(inventory["cross_pel_interactions"])
+        ),
         "total_base": configurable_count + fixed_count + kalman_count + cross_feature_count,
         "with_multi_horizon": (configurable_count + fixed_count + kalman_count) * 7 + cross_feature_count,
     }
@@ -4735,6 +4776,164 @@ def generate_cross_features(
     momentum_per_vol = _safe_get(all_features, "momentum_per_vol")
     cross["KC_MomPerVol_x_VolSlope"] = _log_normalize(momentum_per_vol * kf_logvol_slope)
     
+    # =========================================================================
+    # 6. PATH EFFICIENCY FEATURES
+    # =========================================================================
+    # These measure path quality - directness of price movement
+    
+    # Kaufman Efficiency Ratio: Already computed, but create interactions
+    kaufman_er = _safe_get(all_features, "kaufman_efficiency_ratio")
+    if np.any(kaufman_er != 0):
+        # Path efficiency × momentum: Strong trends with efficient paths
+        cross["PATH_ER_x_Momentum"] = _log_normalize(kaufman_er * momentum_10)
+        
+        # Path efficiency × volatility: Efficient paths in volatile markets
+        cross["PATH_ER_x_Volatility"] = _log_normalize(kaufman_er * safe_vol5)
+        
+        # Path efficiency × volume: Efficient paths with volume confirmation
+        vol_ratio = _safe_get(all_features, "volume_ratio")
+        cross["PATH_ER_x_VolRatio"] = _log_normalize(kaufman_er * vol_ratio)
+    
+    # Compute path efficiency from market data if available
+    if market_data is not None and 'close' in market_data.columns:
+        close = market_data['close'].reindex(base_features.index)
+        
+        # Path Efficiency (10-bar): |Net Change| / Sum(|Changes|)
+        net_change_10 = close.diff(10).abs()
+        path_length_10 = close.diff().abs().rolling(10).sum()
+        path_eff_10 = (net_change_10 / (path_length_10 + 1e-9)).fillna(0).values
+        cross["PATH_Efficiency_10"] = path_eff_10
+        
+        # Path Efficiency (30-bar): Longer-term path quality
+        net_change_30 = close.diff(30).abs()
+        path_length_30 = close.diff().abs().rolling(30).sum()
+        path_eff_30 = (net_change_30 / (path_length_30 + 1e-9)).fillna(0).values
+        cross["PATH_Efficiency_30"] = path_eff_30
+        
+        # Path divergence: Short-term vs long-term efficiency
+        cross["PATH_Efficiency_Divergence"] = _log_normalize(path_eff_10 - path_eff_30)
+    
+    # =========================================================================
+    # 7. ENTROPY FEATURES (Predictability/Complexity)
+    # =========================================================================
+    # These measure market complexity and predictability
+    
+    # Returns entropy: Already computed in base features, create interactions
+    returns_entropy = _safe_get(all_features, "returns_entropy")
+    if np.any(returns_entropy != 0):
+        # Entropy × momentum: Trend strength in complex markets
+        cross["ENT_Return_x_Momentum"] = _log_normalize(returns_entropy * momentum_10)
+        
+        # Entropy × volatility: Complexity under volatile conditions
+        cross["ENT_Return_x_Volatility"] = _log_normalize(returns_entropy * safe_vol5)
+    
+    # Compute additional entropy features from market data
+    if market_data is not None and 'close' in market_data.columns:
+        returns = market_data['close'].pct_change().reindex(base_features.index).fillna(0)
+        
+        # Approximate Entropy proxy: Rolling std of |returns| (simpler than true ApEn)
+        returns_abs = returns.abs()
+        approx_entropy_20 = returns_abs.rolling(20).std().fillna(0).values
+        cross["ENT_ApproxEntropy_20"] = _log_normalize(approx_entropy_20)
+        
+        # Permutation Entropy proxy: Rank correlation volatility
+        # (True permutation entropy is expensive, this is a fast approximation)
+        rank_changes = returns.rolling(5).apply(
+            lambda x: np.corrcoef(x, np.arange(len(x)))[0, 1] if len(x) > 1 else 0,
+            raw=False
+        ).fillna(0)
+        perm_entropy_proxy = rank_changes.rolling(20).std().fillna(0).values
+        cross["ENT_PermEntropy_Proxy"] = _log_normalize(perm_entropy_proxy)
+        
+        # Price path complexity: Second derivative variance
+        price_accel = returns.diff()
+        path_complexity = price_accel.rolling(20).std().fillna(0).values
+        cross["ENT_PathComplexity"] = _log_normalize(path_complexity)
+    
+    # =========================================================================
+    # 8. LIQUIDITY PROXY FEATURES (Microstructure)
+    # =========================================================================
+    # These approximate liquidity conditions without order book data
+    
+    # Volume imbalance: Already computed, create interactions
+    vol_imbalance = _safe_get(all_features, "volume_imbalance")
+    if np.any(vol_imbalance != 0):
+        # Volume imbalance × momentum: Directional pressure with volume confirmation
+        cross["LIQ_Imbalance_x_Momentum"] = _log_normalize(vol_imbalance * momentum_10)
+        
+        # Volume imbalance × ATR: Liquidity pressure under volatile conditions
+        cross["LIQ_Imbalance_x_ATR"] = _log_normalize(vol_imbalance * safe_atr)
+    
+    if market_data is not None and 'close' in market_data.columns:
+        close = market_data['close'].reindex(base_features.index)
+        returns = close.pct_change().fillna(0)
+        
+        # Amihud Illiquidity Proxy: |Return| / Volume
+        # Higher = less liquid (price moves more per unit volume)
+        if 'volume' in market_data.columns:
+            volume = market_data['volume'].reindex(base_features.index).fillna(1)
+            amihud_raw = returns.abs() / (volume + 1e-9)
+            amihud_20 = amihud_raw.rolling(20).mean().fillna(0)
+            amihud_baseline = amihud_20.rolling(96).median()
+            amihud_ratio = (amihud_20 / (amihud_baseline + 1e-9)).fillna(1).values
+            cross["LIQ_Amihud_Ratio"] = _log_normalize(amihud_ratio - 1.0)
+            
+            # Kyle's Lambda Proxy: Price impact per unit volume flow
+            # Higher = larger price impact from volume
+            price_change_6 = close.diff(6)
+            signed_volume_6 = (volume * np.sign(returns)).rolling(6).sum()
+            kyles_lambda = (price_change_6 / (signed_volume_6 + 1e-9)).fillna(0)
+            kyles_lambda_smoothed = kyles_lambda.ewm(span=6).mean().fillna(0).values
+            cross["LIQ_KyleLambda"] = _log_normalize(kyles_lambda_smoothed)
+            
+            # Roll's Spread Estimator Proxy: 2 * sqrt(-cov(r_t, r_{t-1}))
+            # Negative autocovariance implies bid-ask bounce
+            return_autocov = returns.rolling(20).apply(
+                lambda x: np.cov(x[:-1], x[1:])[0, 1] if len(x) > 1 else 0,
+                raw=False
+            ).fillna(0)
+            # Only use when autocov is negative (as expected for bid-ask bounce)
+            rolls_spread = 2 * np.sqrt(np.maximum(-return_autocov, 0)).fillna(0).values
+            cross["LIQ_RollsSpread"] = _log_normalize(rolls_spread)
+            
+            # Volume Pressure Ratio: Recent volume vs baseline
+            vol_short = volume.rolling(5).mean()
+            vol_long = volume.rolling(50).mean()
+            vol_pressure = ((vol_short / (vol_long + 1e-9)) - 1).fillna(0).values
+            cross["LIQ_VolPressure"] = _log_normalize(vol_pressure)
+        
+        # High-Low Spread Proxy: (High - Low) / Close
+        # Proxy for intraday volatility/liquidity
+        if 'high' in market_data.columns and 'low' in market_data.columns:
+            high = market_data['high'].reindex(base_features.index)
+            low = market_data['low'].reindex(base_features.index)
+            hl_spread = ((high - low) / (close + 1e-9)).fillna(0)
+            hl_spread_norm = (hl_spread / hl_spread.rolling(50).mean()).fillna(1).values
+            cross["LIQ_HLSpread_Ratio"] = _log_normalize(hl_spread_norm - 1.0)
+            
+            # Parkinson Volatility: More efficient volatility estimator
+            parkinson_vol = np.sqrt((np.log(high / low) ** 2).rolling(20).mean() / (4 * np.log(2))).fillna(0).values
+            cross["LIQ_ParkinsonVol"] = _log_normalize(parkinson_vol)
+    
+    # =========================================================================
+    # 9. PATH-ENTROPY-LIQUIDITY INTERACTIONS
+    # =========================================================================
+    # These combine the three concept families for rich signal extraction
+    
+    # Path efficiency × Entropy: Efficient paths in predictable markets
+    if "PATH_Efficiency_10" in cross.columns and np.any(returns_entropy != 0):
+        cross["PEL_PathEff_x_Entropy"] = _log_normalize(cross["PATH_Efficiency_10"].values * returns_entropy)
+    
+    # Liquidity × Entropy: Market microstructure under uncertainty
+    if "LIQ_Amihud_Ratio" in cross.columns and np.any(returns_entropy != 0):
+        cross["PEL_Amihud_x_Entropy"] = _log_normalize(cross["LIQ_Amihud_Ratio"].values * returns_entropy)
+    
+    # Path efficiency × Liquidity: Path quality under different liquidity conditions
+    if "PATH_Efficiency_10" in cross.columns and "LIQ_VolPressure" in cross.columns:
+        cross["PEL_PathEff_x_Liquidity"] = _log_normalize(
+            cross["PATH_Efficiency_10"].values * cross["LIQ_VolPressure"].values
+        )
+    
     # Fill NaN and replace infinities
     cross = cross.fillna(0).replace([np.inf, -np.inf], 0)
     
@@ -4783,6 +4982,36 @@ def get_cross_feature_inventory() -> Dict[str, List[str]]:
             "KC_Velocity_per_KalmanP",     # KF_Velocity / KF_P
             "KC_VWAPZscore_x_VolRatio",    # KF_VWAP_Zscore × KF_Volume_Ratio
             "KC_MomPerVol_x_VolSlope",     # Momentum_per_vol × KF_LogVolume_Slope
+        ],
+        "path_efficiency": [
+            "PATH_ER_x_Momentum",          # Kaufman ER × Momentum
+            "PATH_ER_x_Volatility",        # Kaufman ER × Volatility
+            "PATH_ER_x_VolRatio",          # Kaufman ER × Volume Ratio
+            "PATH_Efficiency_10",          # 10-bar path efficiency
+            "PATH_Efficiency_30",          # 30-bar path efficiency
+            "PATH_Efficiency_Divergence",  # Short vs long path efficiency
+        ],
+        "entropy_complexity": [
+            "ENT_Return_x_Momentum",       # Return entropy × Momentum
+            "ENT_Return_x_Volatility",     # Return entropy × Volatility
+            "ENT_ApproxEntropy_20",        # Approximate entropy proxy
+            "ENT_PermEntropy_Proxy",       # Permutation entropy proxy
+            "ENT_PathComplexity",          # Price path complexity
+        ],
+        "liquidity_proxy": [
+            "LIQ_Imbalance_x_Momentum",    # Volume imbalance × Momentum
+            "LIQ_Imbalance_x_ATR",         # Volume imbalance × ATR
+            "LIQ_Amihud_Ratio",            # Amihud illiquidity ratio
+            "LIQ_KyleLambda",              # Kyle's lambda (price impact)
+            "LIQ_RollsSpread",             # Roll's spread estimator
+            "LIQ_VolPressure",             # Volume pressure ratio
+            "LIQ_HLSpread_Ratio",          # High-Low spread ratio
+            "LIQ_ParkinsonVol",            # Parkinson volatility
+        ],
+        "path_entropy_liquidity": [
+            "PEL_PathEff_x_Entropy",       # Path efficiency × Entropy
+            "PEL_Amihud_x_Entropy",        # Amihud × Entropy
+            "PEL_PathEff_x_Liquidity",     # Path efficiency × Liquidity
         ],
     }
 

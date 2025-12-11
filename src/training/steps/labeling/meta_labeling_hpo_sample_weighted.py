@@ -3728,8 +3728,8 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                     },
                     "target_signal_density": {
                         "type": "float",
-                        "low": 2.0,  # RELAXED from 3.0 to allow sparser signals
-                        "high": 12.0,  # EXPANDED to 12.0 per user request (aiming for ~6/day)
+                        "low": 10.0,
+                        "high": 40.0,
                     },
                     "min_event_spacing": {
                         "type": "int",
@@ -4200,8 +4200,8 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 # NEW: Signal generation parameters
                 cusum_threshold = float(params.get("cusum_threshold", 0.015))
                 cusum_threshold = max(0.010, min(0.035, cusum_threshold))
-                target_signal_density = float(params.get("target_signal_density", 4.0))
-                target_signal_density = max(3.0, min(5.0, target_signal_density))
+                target_signal_density = float(params.get("target_signal_density", 20.0))
+                target_signal_density = max(5.0, min(50.0, target_signal_density))
 
                 # --- Recompute realized returns ---
                 # NO FUTURE LEAKAGE in volatility-based thresholds:

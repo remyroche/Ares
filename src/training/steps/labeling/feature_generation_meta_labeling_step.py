@@ -589,7 +589,7 @@ def generate_primary_signals(
     macd_signal_long: int = 36,  # 4x longer
     macd_threshold: float = 0.02,  # LOOSER difference threshold
     momentum_threshold: Optional[float] = None,  # If None, will be auto-tuned
-    target_trades_per_day: float = 4.0,  # Target signal density (increased from 2.0 for more signals)
+    target_trades_per_day: float = 20.0,  # Target signal density (increased from 4.0 for more signals)
     enable_dynamic_tuning: bool = True,  # Enable auto-tuning of momentum threshold
     use_cusum_filter: bool = True,  # Use CUSUM filter instead of momentum threshold
     cusum_threshold: float = 0.015,  # CUSUM threshold for event detection

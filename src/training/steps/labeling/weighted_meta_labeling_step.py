@@ -594,6 +594,10 @@ class WeightedMetaLabelingStep(FeatureGenerationMetaLabelingStep):
         })
         
         tprint_info("   Running quality-based feature selection...")
+        
+        # Base horizon for configurable technical features
+        base_horizon_bars = int(config.get("feature_base_horizon", 20))
+        
         try:
             meta_features, self._feature_quality_scores = select_features_with_quality(
                 df_features=meta_features,
@@ -601,6 +605,8 @@ class WeightedMetaLabelingStep(FeatureGenerationMetaLabelingStep):
                 correlation_threshold=feature_correlation_threshold,
                 generate_horizons=enable_multi_horizon,
                 horizon_config=horizon_config,
+                market_data=market_data,  # Enables configurable technical features
+                base_horizon=base_horizon_bars,
             )
             tprint_success(f"   ✅ Selected {meta_features.shape[1]} features (target={target_feature_count})")
         except Exception as fs_exc:

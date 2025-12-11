@@ -3619,14 +3619,33 @@ def select_features_with_quality(
     correlation_threshold: float = 0.85,
     generate_horizons: bool = True,
     horizon_config: Dict[str, int] = None,
+    market_data: pd.DataFrame = None,
+    base_horizon: int = 20,
 ) -> Tuple[pd.DataFrame, Dict[str, float]]:
     """
     Complete feature selection pipeline with quality scoring.
     
     Pipeline:
-    1. (Optional) Generate multi-horizon versions of features
-    2. Calculate quality scores for all features
-    3. Reduce features by correlation, using quality as tie-breaker
+    1. (Optional) Add configurable technical features with horizon-aware lookbacks
+    2. (Optional) Generate multi-horizon EMA versions of all features
+    3. Calculate quality scores for all features (Signal/Noise ratio)
+    4. Reduce features by correlation, using quality as tie-breaker
+    
+    CONFIGURABLE BASE TIMEFRAMES:
+    =============================
+    If market_data is provided, generates technical features with configurable
+    base horizons. All lookback windows are derived from:
+        lookback = base_horizon × horizon_multiplier
+    
+    Example with base_horizon=20 (5 hours at 15m):
+        - Short: 20 × 0.25 = 5 bars (~1.25 hours)
+        - Medium: 20 × 1.0 = 20 bars (~5 hours)
+        - Long: 20 × 3.0 = 60 bars (~15 hours)
+    
+    SPECIALIST FEATURES (NOT adjusted):
+        - Volatility_1D: Always 96 bars (24 hours at 15m)
+        - Volatility_1W: Always 672 bars (7 days at 15m)
+        - Daily_Range: Always 96-bar lookback
     
     This runs AFTER Layer 0 (Kalman Q/R optimization) but BEFORE the main HPO loop.
     
@@ -3642,14 +3661,49 @@ def select_features_with_quality(
     """
     tprint_info("🔍 Starting quality-based feature selection...")
     
-    # 1. Generate multi-horizon features (if enabled)
+    # Start with input features
+    df_working = df_features.copy()
+    initial_count = len(df_working.columns)
+    
+    # 0. (Optional) Add configurable technical features if market_data provided
+    if market_data is not None:
+        tprint_info(f"   Adding horizon-configurable technical features (base_horizon={base_horizon})...")
+        try:
+            # Convert horizon_config bars to multipliers if needed
+            horizon_multipliers = HORIZON_MULTIPLIERS.copy()
+            if horizon_config:
+                # horizon_config is in bars, convert to multipliers
+                # Default base is Medium (20 bars)
+                for name, bars in horizon_config.items():
+                    horizon_multipliers[name] = bars / base_horizon
+            
+            configurable_features = generate_configurable_technical_features(
+                market_data=market_data,
+                base_horizon=base_horizon,
+                horizons=horizon_multipliers,
+            )
+            
+            # Align indices and merge
+            configurable_aligned = configurable_features.reindex(df_working.index).fillna(0)
+            
+            # Add to working dataframe (avoid duplicates)
+            for col in configurable_aligned.columns:
+                if col not in df_working.columns:
+                    df_working[col] = configurable_aligned[col]
+            
+            n_added = len(configurable_features.columns)
+            tprint_info(f"   Added {n_added} configurable technical features")
+        except Exception as cfg_exc:
+            tprint_warning(f"   ⚠️ Configurable features failed: {cfg_exc}")
+    
+    # 1. Generate multi-horizon EMA versions (if enabled)
     if generate_horizons:
-        tprint_info(f"   Generating multi-horizon features...")
-        initial_cols = len(df_features.columns)
-        df_expanded = generate_multi_horizon_features(df_features, horizon_config)
-        tprint_info(f"   Expanded: {initial_cols} → {len(df_expanded.columns)} features")
+        tprint_info(f"   Generating multi-horizon EMA features...")
+        pre_expand = len(df_working.columns)
+        df_expanded = generate_multi_horizon_features(df_working, horizon_config)
+        tprint_info(f"   Expanded: {pre_expand} → {len(df_expanded.columns)} features")
     else:
-        df_expanded = df_features.copy()
+        df_expanded = df_working
     
     # 2. Calculate quality scores for all features
     tprint_info("   Calculating feature quality scores (Signal/Noise ratio)...")
@@ -3664,7 +3718,7 @@ def select_features_with_quality(
     tprint_info(f"   Bottom 5 quality: {[(n, f'{q:.2f}') for n, q in bottom_5]}")
     
     # 3. Reduce by correlation with quality tie-breaker
-    tprint_info(f"   Reducing to {target_n} features by correlation...")
+    tprint_info(f"   Reducing to {target_n} features by correlation (threshold={correlation_threshold})...")
     df_reduced = reduce_features_by_correlation(
         df_features=df_expanded,
         quality_scores=quality_scores,
@@ -3675,7 +3729,10 @@ def select_features_with_quality(
     # Return only quality scores for selected features
     selected_quality = {col: quality_scores[col] for col in df_reduced.columns}
     
-    tprint_success(f"✅ Feature selection complete: {len(df_reduced.columns)} features selected")
+    tprint_success(
+        f"✅ Feature selection: {initial_count} input → {len(df_expanded.columns)} expanded "
+        f"→ {len(df_reduced.columns)} selected"
+    )
     
     return df_reduced, selected_quality
 
@@ -5633,6 +5690,10 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
         })
         
         tprint_info("🔬 Running quality-based feature selection...")
+        
+        # Base horizon for configurable technical features (default 20 = ~5 hours at 15m)
+        base_horizon_bars = int(config.get("feature_base_horizon", 20))
+        
         try:
             meta_features_full, feature_quality_scores = select_features_with_quality(
                 df_features=meta_features_full,
@@ -5640,6 +5701,8 @@ class MetaLabelingHPOSampleWeightedStep(BaseStep):
                 correlation_threshold=feature_correlation_threshold,
                 generate_horizons=enable_multi_horizon,
                 horizon_config=horizon_config,
+                market_data=market_data,  # Enables configurable technical features
+                base_horizon=base_horizon_bars,
             )
             
             # Store quality scores for potential later use

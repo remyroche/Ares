@@ -3229,21 +3229,46 @@ def reduce_features_by_correlation(
     """
     Reduce features by removing correlated ones, keeping higher quality features.
     
-    Algorithm:
-    1. Remove features below minimum quality threshold
-    2. Sort features by quality (descending)
-    3. Iteratively add features if not highly correlated with already selected
-    4. Use quality score as tie-breaker when removing correlated features
+    RELATIONSHIP BETWEEN CORRELATION THRESHOLD AND QUALITY SCORE:
+    ==============================================================
+    
+    These two parameters serve DIFFERENT, COMPLEMENTARY purposes:
+    
+    1. CORRELATION THRESHOLD (default 0.85):
+       - Determines WHEN features are "redundant"
+       - If |corr(A, B)| > threshold, they carry similar information
+       - At least one must be eliminated to reduce multicollinearity
+       - 0.85 is standard for ML - higher values keep more correlated features
+       
+    2. QUALITY SCORE (Signal/Noise Ratio):
+       - Determines WHICH feature to KEEP when correlated pair is found
+       - Quality = std(series) / mean(second_derivative^2)
+       - High quality = lots of variance (signal) with smooth trends (low noise)
+       - This is NOT a threshold - it's a RANKING for tie-breaking
+       
+    ALGORITHM:
+    ----------
+    1. Sort all features by quality score (highest first)
+    2. For each feature (in quality order):
+       - Check correlation with ALL already-selected features
+       - If corr > threshold with ANY selected: SKIP (inferior duplicate)
+       - Otherwise: ADD to selection
+    3. Continue until target_n features selected
+    
+    KEY INSIGHT: We iterate in quality order, so the FIRST feature 
+    encountered always wins. If RSI_Short and RSI_Medium correlate at 0.90,
+    the one with higher quality score gets selected first, and the other
+    is automatically rejected when we reach it.
     
     Args:
         df_features: DataFrame with all features
         quality_scores: Dict mapping column name to quality score
         target_n: Target number of features to keep
-        correlation_threshold: Max allowed correlation between features
-        min_quality_threshold: Minimum quality score to consider
+        correlation_threshold: Max allowed |correlation| between features
+        min_quality_threshold: Minimum quality score to consider (hard cutoff)
     
     Returns:
-        DataFrame with reduced feature set
+        DataFrame with reduced feature set (target_n columns)
     """
     # 1. Filter out low-quality features first
     valid_cols = [
@@ -3309,6 +3334,7 @@ def reduce_features_by_correlation(
 def generate_multi_horizon_features(
     base_features: pd.DataFrame,
     horizons: Dict[str, int] = None,
+    include_base: bool = True,
 ) -> pd.DataFrame:
     """
     Generate multi-horizon versions of features (short, medium, long).
@@ -3316,13 +3342,27 @@ def generate_multi_horizon_features(
     For each feature, creates smoothed versions at different lookback windows
     to capture different time scales of the same signal.
     
+    NOTE: This creates EMA-smoothed versions of ALREADY COMPUTED features.
+    For truly configurable base timeframes, use generate_configurable_features().
+    
     Args:
         base_features: DataFrame with base feature columns
         horizons: Dict mapping horizon name to lookback bars
                   Default: {"Short": 5, "Medium": 20, "Long": 60}
+        include_base: Whether to include original features (default True)
     
     Returns:
         DataFrame with multi-horizon features added
+        
+    Features created per input column:
+        - {col}_Short: EMA(5) smoothed
+        - {col}_Medium: EMA(20) smoothed
+        - {col}_Long: EMA(60) smoothed
+        - {col}_Short_Diff: Momentum vs short EMA
+        - {col}_Medium_Diff: Momentum vs medium EMA
+        - {col}_Long_Diff: Momentum vs long EMA
+    
+    Total: 6 new columns per input feature (+ original if include_base=True)
     """
     if horizons is None:
         horizons = {
@@ -3331,7 +3371,10 @@ def generate_multi_horizon_features(
             "Long": 60,    # ~15 hours at 15m
         }
     
-    result = base_features.copy()
+    if include_base:
+        result = base_features.copy()
+    else:
+        result = pd.DataFrame(index=base_features.index)
     
     for col in base_features.columns:
         series = base_features[col]
@@ -3349,6 +3392,225 @@ def generate_multi_horizon_features(
             result[diff_col_name] = _log_normalize((series - smoothed).values)
     
     return result
+
+
+# ============================================================================
+# CONFIGURABLE BASE FEATURE GENERATION (Horizon-Aware)
+# ============================================================================
+
+# Default horizon multipliers for different feature types
+# Base unit is the "Medium" horizon (e.g., 20 bars at 15m = 5 hours)
+HORIZON_MULTIPLIERS = {
+    "Short": 0.25,   # 5 bars at 15m
+    "Medium": 1.0,   # 20 bars at 15m (base)
+    "Long": 3.0,     # 60 bars at 15m
+}
+
+# Features that should NOT be horizon-adjusted (specialist features)
+FIXED_HORIZON_FEATURES = {
+    "volatility_1d",      # Always 1-day (96 bars at 15m)
+    "volatility_1w",      # Always 1-week
+    "daily_range",        # Daily high-low
+    "overnight_gap",      # Session-based
+}
+
+
+def generate_configurable_technical_features(
+    market_data: pd.DataFrame,
+    base_horizon: int = 20,
+    horizons: Dict[str, float] = None,
+) -> pd.DataFrame:
+    """
+    Generate technical features with CONFIGURABLE base timeframes.
+    
+    All lookback windows are derived from `base_horizon` multiplied by
+    horizon multipliers, allowing bulk adjustment of feature timeframes.
+    
+    Args:
+        market_data: DataFrame with OHLCV columns
+        base_horizon: Base lookback in bars (default 20 = ~5 hours at 15m)
+        horizons: Multipliers for Short/Medium/Long (default from HORIZON_MULTIPLIERS)
+    
+    Returns:
+        DataFrame with configurable-horizon technical features
+        
+    Feature List (per horizon):
+        1. RSI_{horizon}: Relative Strength Index
+        2. ATR_{horizon}: Average True Range (normalized)
+        3. BB_Distance_{horizon}: Bollinger Band position
+        4. SMA_Distance_{horizon}: Distance from SMA
+        5. EMA_Distance_{horizon}: Distance from EMA
+        6. ROC_{horizon}: Rate of Change
+        7. Momentum_{horizon}: Price momentum
+        8. Volatility_{horizon}: Rolling volatility
+        9. Volume_SMA_Ratio_{horizon}: Volume vs SMA (if volume available)
+        10. High_Low_Range_{horizon}: Normalized range
+        
+    Total: 10 features x 3 horizons = 30 configurable features
+    Plus fixed features (volatility_1d, etc.)
+    """
+    if horizons is None:
+        horizons = HORIZON_MULTIPLIERS.copy()
+    
+    features = pd.DataFrame(index=market_data.index)
+    
+    close = market_data["close"]
+    high = market_data.get("high", close)
+    low = market_data.get("low", close)
+    volume = market_data.get("volume", None)
+    
+    # Generate features for each horizon
+    for horizon_name, multiplier in horizons.items():
+        lookback = max(2, int(base_horizon * multiplier))
+        suffix = f"_{horizon_name}"
+        
+        # 1. RSI
+        delta = close.diff()
+        gain = delta.where(delta > 0, 0).rolling(lookback).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(lookback).mean()
+        rs = gain / (loss + 1e-9)
+        rsi = 100 - (100 / (1 + rs))
+        features[f"RSI{suffix}"] = (rsi - 50) / 50  # Normalize to [-1, 1]
+        
+        # 2. ATR (normalized by price)
+        tr1 = high - low
+        tr2 = (high - close.shift(1)).abs()
+        tr3 = (low - close.shift(1)).abs()
+        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        atr = tr.rolling(lookback).mean()
+        features[f"ATR{suffix}"] = _log_normalize((atr / close).values)
+        
+        # 3. Bollinger Band Distance
+        sma = close.rolling(lookback).mean()
+        std = close.rolling(lookback).std()
+        bb_upper = sma + 2 * std
+        bb_lower = sma - 2 * std
+        bb_width = bb_upper - bb_lower
+        features[f"BB_Distance{suffix}"] = ((close - sma) / (bb_width / 2 + 1e-9)).values
+        
+        # 4. SMA Distance
+        features[f"SMA_Distance{suffix}"] = _log_normalize(((close - sma) / close).values)
+        
+        # 5. EMA Distance
+        ema = close.ewm(span=lookback, adjust=False).mean()
+        features[f"EMA_Distance{suffix}"] = _log_normalize(((close - ema) / close).values)
+        
+        # 6. Rate of Change (ROC)
+        roc = (close - close.shift(lookback)) / (close.shift(lookback) + 1e-9)
+        features[f"ROC{suffix}"] = _log_normalize(roc.values)
+        
+        # 7. Momentum
+        momentum = close - close.shift(lookback)
+        features[f"Momentum{suffix}"] = _log_normalize((momentum / close).values)
+        
+        # 8. Rolling Volatility
+        returns = close.pct_change()
+        vol = returns.rolling(lookback).std()
+        features[f"Volatility{suffix}"] = _log_normalize(vol.values)
+        
+        # 9. Volume SMA Ratio (if available)
+        if volume is not None:
+            vol_sma = volume.rolling(lookback).mean()
+            vol_ratio = volume / (vol_sma + 1e-9)
+            features[f"Volume_SMA_Ratio{suffix}"] = _log_normalize((vol_ratio - 1).values)
+        
+        # 10. High-Low Range (normalized)
+        hl_range = (high - low) / close
+        hl_range_ma = hl_range.rolling(lookback).mean()
+        features[f"HL_Range{suffix}"] = _log_normalize(hl_range_ma.values)
+    
+    # Add FIXED horizon features (specialist features)
+    # These are NOT adjusted by horizon config
+    
+    # Volatility 1D (always 96 bars at 15m)
+    returns = close.pct_change()
+    features["Volatility_1D"] = _log_normalize(returns.rolling(96).std().values)
+    
+    # Volatility 1W (always 672 bars at 15m)
+    features["Volatility_1W"] = _log_normalize(returns.rolling(672).std().values)
+    
+    # Daily Range (24-hour high-low, 96 bars at 15m)
+    daily_high = high.rolling(96).max()
+    daily_low = low.rolling(96).min()
+    features["Daily_Range"] = _log_normalize(((daily_high - daily_low) / close).values)
+    
+    # Fill NaN and replace infinities
+    features = features.fillna(0).replace([np.inf, -np.inf], 0)
+    
+    return features
+
+
+def get_feature_inventory() -> Dict[str, List[str]]:
+    """
+    Return a complete inventory of features generated by the pipeline.
+    
+    Returns:
+        Dict with categories and their feature lists
+    """
+    inventory = {
+        "configurable_technical": [
+            # Per horizon (Short, Medium, Long) = 3 versions each
+            "RSI",
+            "ATR",
+            "BB_Distance",
+            "SMA_Distance",
+            "EMA_Distance",
+            "ROC",
+            "Momentum",
+            "Volatility",
+            "Volume_SMA_Ratio",
+            "HL_Range",
+        ],
+        "fixed_specialist": [
+            "Volatility_1D",
+            "Volatility_1W",
+            "Daily_Range",
+        ],
+        "kalman_price": [
+            "KF_Close_LogRet",
+            "KF_High_LogRet",
+            "KF_Low_LogRet",
+            "KF_Velocity",
+            "KF_Acceleration",
+            "KF_Slope",
+            "KF_P",
+            "KF_RSI",
+            "KF_BB_Distance",
+            "KF_ATR",
+            "KF_ATR_Ratio",
+        ],
+        "kalman_vwap": [
+            "KF_VWAP_Distance",
+            "KF_VWAP_Slope",
+            "KF_VWAP_Zscore",
+        ],
+        "kalman_volume": [
+            "KF_Volume_Diff",
+            "KF_LogVolume_Slope",
+            "KF_Volume_Zscore",
+            "KF_Volume_Ratio",
+            "KF_Volume_P",
+        ],
+    }
+    
+    # Calculate totals
+    configurable_count = len(inventory["configurable_technical"]) * 3  # 3 horizons
+    fixed_count = len(inventory["fixed_specialist"])
+    kalman_count = (
+        len(inventory["kalman_price"]) + 
+        len(inventory["kalman_vwap"]) + 
+        len(inventory["kalman_volume"])
+    )
+    
+    inventory["_counts"] = {
+        "configurable_technical": configurable_count,
+        "fixed_specialist": fixed_count,
+        "kalman_features": kalman_count,
+        "total_base": configurable_count + fixed_count + kalman_count,
+        "with_multi_horizon": (configurable_count + fixed_count + kalman_count) * 7,  # base + 6 per horizon
+    }
+    
+    return inventory
 
 
 def select_features_with_quality(
